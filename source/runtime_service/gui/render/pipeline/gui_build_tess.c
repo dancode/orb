@@ -993,6 +993,96 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     tess_prim_commit( 4u, 6u );
 }
 
+/*==============================================================================================
+    tess_checker / tess_grid -- the framebuffer-tiling pattern quads.
+
+    ONE quad each: the fragment computes the pattern from gl_FragCoord / SV_Position, not from
+    the effect coordinate, and the reason is precision where these shapes actually live.  A
+    backdrop is the one shape that reaches fullscreen, and there the HALF2 coordinate's ulp is a
+    full pixel at the far corners -- a fine lattice line would land half a pixel wrong and blur.
+    The rasterizer's own pixel coordinate is exact everywhere at any size.  (It also means the
+    pattern assumes the pixel-space ortho mvp, which is the only mvp this pipeline has.)
+
+    The CPU's share is the ANCHOR: quantize the cell pitch EXACTLY as the packed word carries it
+    (1/4 px), then derive the phase against that quantized pitch -- deriving it against the raw
+    pitch would let phase and pitch disagree by up to 1/8 px per cell, which walks the pattern
+    off its anchor across a wide panel.  The checker's phase is a fraction of the TWO-cell
+    colour period (one cell of phase would swap the colours); the grid's is a fraction of one
+    cell, in the uv lanes the single-colour lattice leaves free.
+==============================================================================================*/
+
+static void
+tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
+{
+    /* Snap like tess_rect_filled: the pattern anchors at the box origin, so the box must land
+       where the plain fill under it does. */
+    x = floorf( x + 0.5f );
+    y = floorf( y + 0.5f );
+
+    cell = floorf( cell * 4.0f + 0.5f ) * 0.25f;
+    if ( cell < 1.0f ) cell = 1.0f;
+    if ( cell > GUI_FX_CELL_MAX ) cell = GUI_FX_CELL_MAX;
+
+    f32 period = 2.0f * cell;
+    f32 phx    = ( x - period * floorf( x / period ) ) / period;
+    f32 phy    = ( y - period * floorf( y / period ) ) / period;
+
+    f32              wu, wv;
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
+        return;
+
+    s_tess.cur_fx = gui_fx_pack_checker( cell, phx, phy );
+
+    /* col_b in the ARC_GRAD uv lanes; the fragment never samples there (self-sampled, gui.h). */
+    wu = (f32)(   col_b         & 0xFFFFu ) / 65535.0f;
+    wv = (f32)( ( col_b >> 16 ) & 0xFFFFu ) / 65535.0f;
+
+    v[ 0 ] = gui_vert( x,     y,     wu, wv, col_a );
+    v[ 1 ] = gui_vert( x + w, y,     wu, wv, col_a );
+    v[ 2 ] = gui_vert( x + w, y + h, wu, wv, col_a );
+    v[ 3 ] = gui_vert( x,     y + h, wu, wv, col_a );
+    tess_quad_idx( idx, base );
+    tess_prim_commit( 4u, 6u );
+}
+
+static void
+tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness, u32 abgr )
+{
+    x = floorf( x + 0.5f );
+    y = floorf( y + 0.5f );
+
+    cell = floorf( cell * 4.0f + 0.5f ) * 0.25f;
+    if ( cell < 1.0f ) cell = 1.0f;
+    if ( cell > GUI_FX_CELL_MAX ) cell = GUI_FX_CELL_MAX;
+
+    /* The lattice anchor, mod the quantized pitch.  (ox, oy) is a screen-space content origin
+       and may be anywhere (a panned canvas sends large negatives); only its residue matters. */
+    f32 phx = ( ox - cell * floorf( ox / cell ) ) / cell;
+    f32 phy = ( oy - cell * floorf( oy / cell ) ) / cell;
+
+    f32              wu, wv;
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
+        return;
+
+    s_tess.cur_fx = gui_fx_pack_grid( cell, thickness );
+
+    wu = phx;
+    wv = phy;
+
+    v[ 0 ] = gui_vert( x,     y,     wu, wv, abgr );
+    v[ 1 ] = gui_vert( x + w, y,     wu, wv, abgr );
+    v[ 2 ] = gui_vert( x + w, y + h, wu, wv, abgr );
+    v[ 3 ] = gui_vert( x,     y + h, wu, wv, abgr );
+    tess_quad_idx( idx, base );
+    tess_prim_commit( 4u, 6u );
+}
+
 /* Tessellate a glyph run from the font atlas into s_tess, hard-clipped to the horizontal pixel
    window [clip_x0, clip_x1].  Glyphs fully outside the window are skipped; glyphs fully inside emit
    whole; the (at most two) straddling glyphs are cut on a pixel boundary with their U remapped by
@@ -1533,6 +1623,19 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              (f32)(   c->arc_grad.col_b         & 0xFFFFu ) / 65535.0f,
                              (f32)( ( c->arc_grad.col_b >> 16 ) & 0xFFFFu ) / 65535.0f,
                              c->arc_grad.col_a );
+                break;
+
+            /* The framebuffer-tiling patterns: the fragment does the tiling, the CPU's share is
+               the quantized pitch + anchor phase (see tess_checker). */
+            case GUI_CMD_CHECKER:
+                tess_checker( c->checker.x, c->checker.y, c->checker.w, c->checker.h,
+                              c->checker.cell, c->checker.col_a, c->checker.col_b );
+                break;
+
+            case GUI_CMD_GRID:
+                tess_grid( c->grid.x, c->grid.y, c->grid.w, c->grid.h,
+                           c->grid.ox, c->grid.oy, c->grid.cell, c->grid.thickness,
+                           c->grid.abgr );
                 break;
 
             /* One textured quad about its centre -- the glyph-run transform (tess_quad_xf)

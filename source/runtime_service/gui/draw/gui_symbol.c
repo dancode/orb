@@ -404,40 +404,25 @@ draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
 ==============================================================================================*/
 
 /* Checkerboard fill of `box` with `cell`-sized squares alternating col_a / col_b -- the classic
-   transparency backdrop behind a color swatch.  Cell count is capped so a large area cannot flood
-   the command list; partial edge cells are clamped to the box. */
+   transparency backdrop behind a color swatch.  ONE quad: the fragment tiles the pattern in
+   framebuffer space (GUI_FX_CHECKER), so any area at any cell costs four vertices.  This used to
+   be a rect-pool expansion capped at 64x64 cells -- 64 commands and up to 4096 quads per call,
+   with the pattern coarsening past the clamp; both the cost and the clamp are gone. */
 void
 draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b )
 {
-    if ( cell < 1.0f ) cell = 1.0f;
-    u32 cols = (u32)ceilf( box.w / cell ), rows = (u32)ceilf( box.h / cell );
-    if ( cols > 64 ) cols = 64;
-    if ( rows > 64 ) rows = 64;
+    draw_push_checker( box.x, box.y, box.w, box.h, cell, col_a, col_b );
+}
 
-    /* Batched through the rect POOL, not one command per cell.  This is the exact caller
-       draw_push_rect_list was added for: at the 64x64 clamp a checker is 4096 quads, four times
-       the whole per-frame command budget in a normal build, so the one-command-per-cell form did
-       not merely cost slots -- it silently ate the budget and every shape emitted after it in the
-       frame vanished.  Chunked a row at a time so the scratch stays a fixed 64 entries and a full
-       checker costs 64 commands instead of 4096. */
-    gui_rect_col_t run[ 64 ];
-
-    f32 save = draw_rounding();
-    draw_set_rounding( 0.0f );
-    for ( u32 yy = 0; yy < rows; ++yy )
-    {
-        u32 n = 0;
-        for ( u32 xx = 0; xx < cols; ++xx )
-        {
-            f32 px = box.x + xx * cell, py = box.y + yy * cell;
-            f32 cw = px + cell > box.x + box.w ? box.x + box.w - px : cell;
-            f32 ch = py + cell > box.y + box.h ? box.y + box.h - py : cell;
-            bool is_odd_cell = ( ( xx + yy ) & 1u ) != 0;
-            run[ n++ ] = ( gui_rect_col_t ){ px, py, cw, ch, is_odd_cell ? col_b : col_a };
-        }
-        draw_push_rect_list( run, n );
-    }
-    draw_set_rounding( save );
+/* Line lattice over `box`: a `thickness` px line every `cell` px, drawn over NOTHING -- layer it
+   on your own fill (two quads make the classic node-graph backdrop: a fill and this).  The
+   lattice anchors to (origin_x, origin_y) in screen px, so a panning canvas passes its content
+   origin and the grid rides the pan; a static backdrop passes the box origin.  For major/minor
+   graph paper, draw twice at two pitches. */
+void
+draw_grid( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f32 origin_y, u32 col )
+{
+    draw_push_grid( box.x, box.y, box.w, box.h, origin_x, origin_y, cell, thickness, col );
 }
 
 /* Diagonal hatch fill of `box`: 45-degree lines `spacing` px apart (a disabled / read-only backdrop,
@@ -638,6 +623,8 @@ void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, 
 /* patterned lines + fills.  (gui_draw_dashed_line is the backend primitive in gui_emit_path.c;
    the vtable binds straight to it.) */
 void gui_draw_checker ( gui_rect_t box, f32 cell, u32 col_a, u32 col_b )  { draw_checker( box, cell, col_a, col_b ); }
+void gui_draw_grid    ( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f32 origin_y, u32 col )
+                                                                               { draw_grid( box, cell, thickness, origin_x, origin_y, col ); }
 void gui_draw_hatch   ( gui_rect_t box, f32 spacing, f32 thickness, u32 col ) { draw_hatch( box, spacing, thickness, col ); }
 void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal ) { draw_gradient( box, col_a, col_b, horizontal ); }
 void gui_draw_shadow  ( gui_rect_t box, f32 spread, u32 col )             { draw_shadow( box, spread, col ); }

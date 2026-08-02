@@ -422,6 +422,11 @@ step_cmd_bounds( const gui_cmd_t* c )
             f32 g = c->arc_grad.r + c->arc_grad.thickness * 0.5f;
             return ( gui_rect_t ){ c->arc_grad.cx - g, c->arc_grad.cy - g, g * 2.0f, g * 2.0f };
         }
+        /* The pattern quads paint exactly their box -- the tiling is inside it. */
+        case GUI_CMD_CHECKER:
+            return ( gui_rect_t ){ c->checker.x, c->checker.y, c->checker.w, c->checker.h };
+        case GUI_CMD_GRID:
+            return ( gui_rect_t ){ c->grid.x, c->grid.y, c->grid.w, c->grid.h };
         /* The rotated AABB, exactly as the emit-side cull computes it. */
         case GUI_CMD_IMAGE_XF:
         {

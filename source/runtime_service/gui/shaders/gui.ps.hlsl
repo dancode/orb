@@ -48,7 +48,7 @@ struct ps_in_t
 //
 // pc.time -- the wrapped frame clock -- is the band's animation seam, and PULSE is what reading it
 // looks like: frame-constant, so it costs no vertex change, no re-emit and no batch split.
-float fx_coverage( float2 fx_coord, uint fx, float2 uv )
+float fx_coverage( float2 fx_coord, uint fx, float2 uv, float2 px )
 {
     uint mode = fx & 0xFu;
     // 0 NONE, and the two modes that are not shapes: 4 TILE_U acted in the vertex stage, 5
@@ -56,6 +56,27 @@ float fx_coverage( float2 fx_coord, uint fx, float2 uv )
     // the band names what the fragment does, and "nothing, here" is a legal answer.
     if ( mode == 0u || mode == 4u || mode == 5u )
         return 1.0;
+
+    // modes 11 CHECKER / 12 GRID -- the framebuffer-tiling patterns (gui.h).  Taken before the
+    // sector decode, whose `mode >= 7` gate would otherwise swallow them.  Both compute in
+    // SV_Position pixels: exact at any panel size, where the HALF2 effect coordinate's ulp
+    // reaches a full pixel at the corners of a fullscreen backdrop.  The phase re-anchors the
+    // pattern to the shape; the CPU derived it against the same quantized cell the word carries.
+    if ( mode >= 11u )
+    {
+        if ( mode == 11u )
+            return 1.0;   // CHECKER cuts nothing: it picks between two colours in main()
+
+        // GRID: distance to the nearest lattice line on either axis, the line `thickness` px
+        // wide straddling it, resolved with a 1 px AA band.  The mod is floor-based on purpose:
+        // fmod truncates, and the phase-shifted coordinate can go negative near the origin.
+        float  cell = float( ( fx >>  4 ) & 0xFFFu ) * 0.25;
+        float  ht   = float( ( fx >> 16 ) & 0x7Fu  ) * 0.0625;   // HALF the line width
+        float2 p    = px - uv * cell;                            // uv = per-axis phase fraction
+        float2 m    = p - cell * floor( p / cell );
+        float2 dl   = min( m, float2( cell, cell ) - m );
+        return saturate( 0.5 + ht - min( dl.x, dl.y ) );
+    }
 
     // modes 7 ARC and 8 PIE -- circular sectors.  Taken before the shared decode below because they
     // re-partition the word completely: there is no feather field (a sector gets a fixed 1 px band,
@@ -206,13 +227,14 @@ float4 main( ps_in_t i ) : SV_Target0
     uint   samp     = ( tex_mode == 0u ) ? pc.samp_point : pc.samp_image;
     float4 s        = u_textures[ NonUniformResourceIndex( tex_slot ) ]
                           .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], i.uv );
-    float  cov = fx_coverage( i.fx_coord, i.fx, i.uv );
+    float  cov = fx_coverage( i.fx_coord, i.fx, i.uv, i.sv_pos.xy );
 
     // SELF-SAMPLED fx modes (9+): the shape is solid colour by definition, so the texel is not
     // consulted -- the uv word carried mode parameters instead (the sample above read a garbage
     // location of a VALID texture, which is harmless and cheaper than a divergent skip).  Mode 10
     // additionally sweeps the colour toward a second RGBA8 riding that word, lerped by the same
     // signed angle the aperture cut uses -- the gradient a 4-corner vertex colour cannot express.
+    // Mode 11 picks between the vertex colour and that same second RGBA8 by cell parity.
     float4 vcol = i.color;
     uint   fxm  = i.fx & 0xFu;
     if ( fxm >= 9u )
@@ -229,6 +251,25 @@ float4 main( ps_in_t i ) : SV_Target0
             float t   = saturate( ( atan2( i.fx_coord.x, i.fx_coord.y ) + ap )
                                   / max( 2.0 * ap, 1e-4 ) );
             vcol = lerp( vcol, c2, t );
+        }
+        // mode 11 CHECKER -- col_b decodes exactly as GRAD's does; the cell pitch and the parity
+        // phase come from the effect word (phase is a fraction of the TWO-cell colour period, so
+        // /255 * 2*cell = cell/127.5).  Parity is floor-based like every pattern mod here (fmod
+        // truncates), and odd cells take the second colour.
+        else if ( fxm == 11u )
+        {
+            uint   bu = uint( round( i.uv.x * 65535.0 ) );
+            uint   bv = uint( round( i.uv.y * 65535.0 ) );
+            float4 c2 = float4( float( bu & 0xFFu ), float( bu >> 8 ),
+                                float( bv & 0xFFu ), float( bv >> 8 ) ) / 255.0;
+            c2.rgb     = srgb_to_linear( c2.rgb );   // authored sRGB, never saw the vertex stage
+            float  cell = float( ( i.fx >>  4 ) & 0xFFFu ) * 0.25;
+            float2 ph   = float2( float( ( i.fx >> 16 ) & 0xFFu ),
+                                  float( ( i.fx >> 24 ) & 0xFFu ) ) * ( cell / 127.5 );
+            float2 t    = ( i.sv_pos.xy - ph ) / cell;
+            float  k    = floor( t.x ) + floor( t.y );
+            if ( k - 2.0 * floor( k * 0.5 ) >= 0.5 )
+                vcol = c2;
         }
     }
 

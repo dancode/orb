@@ -248,6 +248,14 @@ void draw_push_arc_dashed       ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, 
 void draw_push_arc_gradient     ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
                                   u32 col_a, u32 col_b );
 
+/* The framebuffer-tiling pattern quads -- ONE quad each at any area and any cell (gui.h).
+   CHECKER alternates col_a / col_b in cell-sized squares anchored at the box origin.  GRID draws
+   a `thickness` px line every `cell` px OVER NOTHING (layer it on your own fill); the lattice
+   anchors to (ox, oy) in screen px, so a panning canvas passes its content origin. */
+void draw_push_checker          ( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b );
+void draw_push_grid             ( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy,
+                                  f32 cell, f32 thickness, u32 abgr );
+
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr );
 

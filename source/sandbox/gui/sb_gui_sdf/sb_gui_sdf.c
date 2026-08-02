@@ -1375,6 +1375,79 @@ win_five( void )
 }
 
 /*==============================================================================================
+    WINDOW: Backdrops -- the framebuffer-tiling patterns (fx modes 11 CHECKER / 12 GRID).
+
+    Both are ONE quad whose fragment tiles in framebuffer pixels, re-anchored by a phase so the
+    pattern rides its shape.  The checker used to be a rect-pool expansion -- 64 commands and up
+    to 4096 quads per call, coarsening past its 64x64 clamp; the line grid was not affordable as
+    geometry at all.  A full node-graph backdrop here is THREE quads: fill + minor + major.
+==============================================================================================*/
+
+static f32  s_bd_cell = 12.0f;
+static bool s_bd_pan  = true;
+
+static void
+win_backdrops( void )
+{
+    gui()->stack();
+
+    gui()->slider_float( "cell (px)", &s_bd_cell, 4.0f, 64.0f );
+
+    gui()->separator_text( "checker (mode 11) -- one quad, any area, any cell" );
+    {
+        gui_rect_t r = gui()->canvas( 110.0f );
+        gui()->draw_checker( r, s_bd_cell, GUI_COLOR( 0x2A, 0x2A, 0x30, 0xFF ),
+                             GUI_COLOR( 0x1E, 0x1E, 0x24, 0xFF ) );
+
+        /* Translucent plates: the checker is the classic alpha ground, so alpha must read. */
+        f32 y = r.y + r.h * 0.5f;
+        gui()->draw_circle( r.x + r.w * 0.20f, y, 36.0f, true, 0.0f,
+                            GUI_COLOR( 0xFF, 0x70, 0x50, 0xA0 ) );
+        gui()->draw_round_rect( ( gui_rect_t ){ r.x + r.w * 0.38f, y - 30.0f, 140.0f, 60.0f },
+                                8.0f, 8.0f, 8.0f, 8.0f, true, 0.0f,
+                                GUI_COLOR( 0x4C, 0x9E, 0xFF, 0x70 ) );
+        gui()->draw_circle( r.x + r.w * 0.78f, y, 36.0f, true, 0.0f,
+                            GUI_COLOR( 0x60, 0xE0, 0x80, 0x40 ) );
+    }
+
+    gui()->separator_text( "line grid (mode 12) -- fill + minor + major = three quads" );
+    gui()->checkbox( "pan", &s_bd_pan );
+    {
+        gui_rect_t r = gui()->canvas( 240.0f );
+
+        /* The content origin a node graph would own: the lattice AND the nodes hang off it, so
+           panning moves both together -- the grid quad re-emits (its origin changed) but it is
+           still one quad. */
+        f32 ox = r.x, oy = r.y;
+        if ( s_bd_pan )
+        {
+            ox += sinf( s_time * 0.40f ) * 90.0f;
+            oy += sinf( s_time * 0.73f ) * 50.0f;
+            keep_awake();
+        }
+
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+        gui()->draw_grid( r, s_bd_cell,        1.0f, ox, oy, GUI_COLOR( 0x2C, 0x2C, 0x36, 0xFF ) );
+        gui()->draw_grid( r, s_bd_cell * 4.0f, 1.0f, ox, oy, GUI_COLOR( 0x46, 0x46, 0x54, 0xFF ) );
+
+        /* Two "nodes" and a wire, placed in CONTENT space (offsets from the origin). */
+        gui()->push_clip( r.x, r.y, r.w, r.h );
+        gui_rect_t na = { ox + 150.0f, oy + 60.0f,  120.0f, 56.0f };
+        gui_rect_t nb = { ox + 380.0f, oy + 140.0f, 120.0f, 56.0f };
+        gui()->draw_bezier_cubic( na.x + na.w, na.y + na.h * 0.5f,
+                                  na.x + na.w + 60.0f, na.y + na.h * 0.5f,
+                                  nb.x - 60.0f, nb.y + nb.h * 0.5f,
+                                  nb.x, nb.y + nb.h * 0.5f, 2.0f, TEAL );
+        gui()->draw_round_rect( na, 6.0f, 6.0f, 6.0f, 6.0f, true, 0.0f, EDGE );
+        gui()->draw_round_rect( nb, 6.0f, 6.0f, 6.0f, 6.0f, true, 0.0f, EDGE );
+        gui()->pop_clip();
+    }
+
+    gui()->text( "the fragment tiles in framebuffer pixels -- exact at any panel size, where the "
+                 "half-precision effect coordinate would blur far-corner lines" );
+}
+
+/*==============================================================================================
     WINDOW: Frontier Notes -- what the suite could NOT draw, and how close each miss is.
 
     Kept in the sandbox on purpose: the demos above are the argument for each of these, and the
@@ -1429,6 +1502,7 @@ static sdf_demo_t s_demos[] = {
     { "Radial Menu",    "Radial Menu",    "arc wedges as hit-tested interactive UI",               win_radial,    620.0f, 470.0f, false },
     { "Dials",          "Dials",          "draggable knob / clock / compass with rotated labels",  win_dials,     900.0f, 400.0f, false },
     { "New Verbs",      "New Verbs",      "box_xf / icon_xf / corner shadow / dashed + gradient arcs", win_five,  980.0f, 760.0f, false },
+    { "Backdrops",      "Backdrops",      "checker + line grid as one-quad fragment patterns",     win_backdrops, 760.0f, 560.0f, false },
     { "Frontier Notes", "Frontier Notes", "what shipped and what is still out",                    win_frontier,  640.0f, 480.0f, false },
 };
 

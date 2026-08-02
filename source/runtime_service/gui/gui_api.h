@@ -721,6 +721,12 @@ typedef struct gui_api_s
     void ( *draw_bezier_cubic      )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
     void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
     void ( *draw_checker           )( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
+    /* Line lattice over `box`: a `thickness` px line every `cell` px, over NOTHING -- layer it on
+       your own fill.  Anchored to (origin_x, origin_y) in screen px, so a panning canvas passes
+       its content origin and the lattice rides the pan.  ONE quad, like draw_checker: both tile
+       in the fragment, so area and cell count cost nothing.  Major/minor graph paper = two calls. */
+    void ( *draw_grid              )( gui_rect_t box, f32 cell, f32 thickness,
+                                      f32 origin_x, f32 origin_y, u32 col );
     void ( *draw_hatch             )( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
     void ( *draw_gradient          )( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
     void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );

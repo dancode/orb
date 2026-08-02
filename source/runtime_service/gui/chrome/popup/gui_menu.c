@@ -77,9 +77,9 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
         g_ctx->popup.open_count = s_popup_begin_count;
 
     /* Row highlight on hover / nav (active tint while pressed).  ONE mix for the row and its
-       check gutter, gated on the weights rather than the live flags so the highlight fades out
-       after the cursor has moved on instead of being cut at its first frame. */
-    gui_style_mix_t mix = style_mix( id, st, false );
+       check gutter.  GUI_ID_NONE: menu rows snap -- a damped highlight trailing the cursor down
+       a menu reads as several lit entries at once (see gui_selectable). */
+    gui_style_mix_t mix = style_mix( GUI_ID_NONE, st, false );
     if ( mix.hot > 0.0f || mix.act > 0.0f )
         draw_face_mix( r, GUI_ROLE_BG, mix );
 
@@ -209,8 +209,9 @@ gui_menu_begin( const char* label )
 
     /* Entry visuals: lit while hovered / nav-highlighted or while its submenu is open.  An open
        entry is the CHOSEN one of its bar -- the SELECT plane -- so it keeps its hover step and a
-       cursor moving along an open menu bar still reads as moving. */
-    gui_style_mix_t bmix = style_mix( id, st, this_open );
+       cursor moving along an open menu bar still reads as moving.  GUI_ID_NONE: entries snap,
+       like every selection-type row (see gui_selectable). */
+    gui_style_mix_t bmix = style_mix( GUI_ID_NONE, st, this_open );
     if ( bmix.hot > 0.0f || bmix.act > 0.0f || bmix.sel > 0.0f )
         draw_push_rect_filled( box.x, box.y, box.w, box.h, 0,0,1,1, 0,
                                style_col_mix( GUI_ROLE_BG, bmix ) );

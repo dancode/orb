@@ -56,6 +56,7 @@ void draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
 void draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, bool filled,
                          f32 thickness, u32 col );
 void draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
+void draw_grid( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f32 origin_y, u32 col );
 void draw_dropdown_arrow( gui_rect_t box, u32 color );
 
 /*==============================================================================================

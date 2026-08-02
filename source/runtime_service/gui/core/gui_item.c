@@ -166,11 +166,18 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
         if ( kind == ITEM_FOCUSABLE && focus_allowed( s_scope.win ) )
             s_interaction.focused_id = id;
 
-        /* Keep the nav ring synced to the last interacted item: a click moves the cursor here, so
-           resuming the keyboard later continues from what was clicked (only once a ring exists). */
+        /* A click moves the nav cursor to the clicked item, so the keyboard resumes from what
+           was clicked -- Shift+arrow then extends a selection from the clicked row instead of
+           re-entering the window at its first item.  Unconditional on nav.active: this frame's
+           press already dropped it (nav_new_frame), so gating on it would never fire.  Nothing
+           paints until a nav key raises nav.active again.  Same gate as the registration below:
+           only an item the nav window would list may take the cursor. */
 
-        if ( g_ctx->nav.active )
-            g_ctx->nav.id = id;
+        if ( s_scope.win == g_ctx->nav.win && !nav_skip )
+        {
+            g_ctx->nav.id       = id;
+            g_ctx->nav.goal_set = false;
+        }
     }
 
     st.hover   = ( s_interaction.hover_id == id );

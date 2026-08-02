@@ -367,9 +367,11 @@ gui_selectable( const char* label, bool* selected )
        take their phase from the live state -- so a selected row still lifts under the cursor and
        sinks under a press.  It used to be `on ? COL_BG_ACTIVE : COL_BG_HOT`, which spent the
        selection to say it and left the most-clicked widget in the library with no hover feedback
-       at all.  Idle and unchosen still paints nothing, so the region background shows through. */
+       at all.  Idle and unchosen still paints nothing, so the region background shows through.
+       GUI_ID_NONE mix: list rows SNAP -- a damped hover fading out row by row behind a sweeping
+       cursor reads as a growing multi-selection, so selection-type rows take no motion. */
     bool            on  = ( selected && *selected );
-    gui_style_mix_t mix = style_mix( id, st, on );
+    gui_style_mix_t mix = style_mix( GUI_ID_NONE, st, on );
     if ( mix.hot > 0.0f || mix.act > 0.0f || mix.sel > 0.0f )
         draw_face_mix( r, GUI_ROLE_BG, mix );
 
@@ -430,8 +432,9 @@ gui_msel_item( const char* label, i32 index, bool selected )
     nav_item_stamp_label( id, label );   /* type-ahead opt-in (GUI_ITEM_NO_TYPEAHEAD to skip) */
 
     /* Same fill story as gui_selectable: chosen rows read the SELECT plane, phase from the
-       live state, idle-unchosen paints nothing. */
-    gui_style_mix_t mix = style_mix( id, st, selected );
+       live state, idle-unchosen paints nothing -- and the same GUI_ID_NONE snap: a lingering
+       hover trail over a multi-select list is indistinguishable from selection. */
+    gui_style_mix_t mix = style_mix( GUI_ID_NONE, st, selected );
     if ( mix.hot > 0.0f || mix.act > 0.0f || mix.sel > 0.0f )
         draw_face_mix( r, GUI_ROLE_BG, mix );
 

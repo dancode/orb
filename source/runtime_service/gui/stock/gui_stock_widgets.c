@@ -292,11 +292,10 @@ gui_stock_selectable( gui_rect_t r, const char* label, bool* selected )
 {
     gui_comp_selectable_t s = gui_comp_selectable( label, r, selected );
 
-    /* The row is transparent at REST, so its mix has to be read before the emit is skipped:
-       a row fading back out is neither hovered nor selected any more, and testing the live flags
-       would cut the fade off at its first frame.  The weights are what say "still moving". */
+    /* GUI_ID_NONE mix: list rows snap, matching chrome's gui_selectable -- a damped hover fading
+       out row by row behind a sweeping cursor reads as a growing multi-selection. */
     bool            on  = ( selected && *selected );
-    gui_style_mix_t mix = style_mix( item_id( label ), s.state, on );
+    gui_style_mix_t mix = style_mix( GUI_ID_NONE, s.state, on );
     if ( mix.hot > 0.0f || mix.act > 0.0f || mix.sel > 0.0f )
         draw_face_mix( r, GUI_ROLE_BG, mix );
 

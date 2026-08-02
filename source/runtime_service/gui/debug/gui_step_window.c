@@ -58,7 +58,7 @@ static const char* k_step_type_name[] = {
     "rect_filled", "rect_outline", "triangle", "text", "text_xf",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
     "sprite", "fx_box", "round_rect_ex", "arc", "pie",
-    "arc_dash", "arc_grad", "image_xf",
+    "arc_dash", "arc_grad", "image_xf", "checker", "grid",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -232,6 +232,19 @@ step_cmd_detail( const step_cmd_info_t* ci )
                           (u32)gui_tex_mode( c->image_xf.tex_idx ) );
             row2 = b2;
             break;
+        case GUI_CMD_CHECKER:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->checker.x, c->checker.y,
+                       c->checker.w, c->checker.h );
+            fmt_snprintf( b2, sizeof( b2 ), "cell %.1f", c->checker.cell );
+            row2 = b2;
+            break;
+        case GUI_CMD_GRID:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->grid.x, c->grid.y,
+                       c->grid.w, c->grid.h );
+            fmt_snprintf( b2, sizeof( b2 ), "cell %.1f   t %.1f   origin %.0f,%.0f",
+                          c->grid.cell, c->grid.thickness, c->grid.ox, c->grid.oy );
+            row2 = b2;
+            break;
     }
     gui_text( row2 ? row2 : " " );
 
@@ -249,6 +262,12 @@ step_cmd_detail( const step_cmd_info_t* ci )
         {
             f32 x = step_swatch( r, r.x, "col_a", c->arc_grad.col_a );
             step_swatch( r, x, "col_b", c->arc_grad.col_b );
+            break;
+        }
+        case GUI_CMD_CHECKER:
+        {
+            f32 x = step_swatch( r, r.x, "col_a", c->checker.col_a );
+            step_swatch( r, x, "col_b", c->checker.col_b );
             break;
         }
         case GUI_CMD_RECT_LIST:
@@ -273,6 +292,7 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_PIE:           step_swatch( r, r.x, "color", c->arc.abgr );          break;
                 case GUI_CMD_ARC_DASH:      step_swatch( r, r.x, "color", c->arc_dash.abgr );     break;
                 case GUI_CMD_IMAGE_XF:      step_swatch( r, r.x, "color", c->image_xf.abgr );     break;
+                case GUI_CMD_GRID:          step_swatch( r, r.x, "color", c->grid.abgr );         break;
                 default:                                                                          break;
             }
             break;

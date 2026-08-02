@@ -70,8 +70,8 @@ gui_tree_node( const char* label )
     if ( st.clicked ) hs->open = !hs->open;
 
     /* No framed bar: tint only while the row is lit (like selectable), so a tree is a list of rows.
-       Gated on the MIX, not the live flags -- the fade out happens after the cursor has left. */
-    gui_style_mix_t mix = style_mix( id, st, false );
+       GUI_ID_NONE: tree rows snap like every selection-type row (see gui_selectable). */
+    gui_style_mix_t mix = style_mix( GUI_ID_NONE, st, false );
     if ( mix.hot > 0.0f || mix.act > 0.0f )
         draw_face_mix( r, GUI_ROLE_BG, mix );
 

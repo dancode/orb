@@ -1538,6 +1538,18 @@ typedef enum
     GUI_FX_ARC_GRAD  = 10, /* ARC whose colour sweeps from the vertex colour at the sector start
                               to a second RGBA8 riding the uv word (x = r|g<<8, y = b|a<<8)      */
 
+    /* The FRAMEBUFFER-TILING pattern modes.  Self-sampled like the two above, but the pattern
+       coordinate is gl_FragCoord / SV_Position -- exact float pixels straight from the
+       rasterizer -- rather than the interpolated HALF2 effect coordinate, whose ulp reaches a
+       full pixel at the far corners of a fullscreen backdrop, and backdrops are exactly the
+       shapes that get that big.  The phase rides the packed words, so the pattern anchors to
+       the SHAPE, not the screen: a backdrop drags with its window instead of sliding under it. */
+    GUI_FX_CHECKER   = 11, /* two colours alternating in cell-sized squares: col_b rides the uv
+                              word (the ARC_GRAD lanes); cell + phase live in the effect word   */
+    GUI_FX_GRID      = 12, /* line lattice every `cell` px, `thickness` px wide, antialiased.
+                              The vertex colour draws the LINES only -- layer it over any fill.
+                              Phase rides the uv word as a per-axis fraction of the cell        */
+
 } gui_fx_mode_t;
 
 /* The effect coordinate (ex, ey) is the shape-local quantity `|p| - c`, where p is the vertex's
@@ -1714,6 +1726,38 @@ gui_fx_pack_arc( gui_fx_mode_t mode, f32 ra, f32 tube, f32 aperture )
     u32 t = gui_fx_fixed( tube, 8.0f, 0x7Fu  );
     u32 a = gui_fx_fixed( aperture, GUI_FX_ARC_APERTURE_STEPS / GUI_FX_PI, 0x1FFu );
     return ( (u32)mode & 0xFu ) | ( r << 4 ) | ( t << 16 ) | ( a << 23 );
+}
+
+/* CHECKER / GRID -- the framebuffer-tiling patterns.  Both spend the 12 bits the box modes give
+   the radius on the CELL pitch instead, at 1/4 px (a pattern pitch is authored in whole pixels;
+   1023.75 px caps well past any backdrop cell).  What remains differs per mode:
+     CHECKER -- phase_x / phase_y, 8 bits each: the box origin's offset into the TWO-cell colour
+                period, as a fraction of that period, so the fragment re-anchors cell PARITY to
+                the shape (one cell of phase would swap the two colours).  1/256 of a period is
+                1/8 px on a 16 px cell -- under the rasterizer's floor.  col_b rides the uv word
+                in the ARC_GRAD lanes.
+     GRID    -- thickness, 7 bits at 1/8 px (the border field's own partition): the full line
+                width, straddling the lattice line.  The phase pair moves to the uv word (one
+                unorm16 per axis, fraction of ONE cell -- lines repeat per cell, so parity does
+                not exist) because a grid has one colour and it is the vertex colour, which
+                leaves the whole uv word free. */
+#define GUI_FX_CELL_MAX      1023.75f    /* 12 bits at 1/4 px */
+
+static inline u32
+gui_fx_pack_checker( f32 cell, f32 phase_x, f32 phase_y )   /* phases: fraction of 2*cell, [0,1) */
+{
+    u32 c  = gui_fx_fixed( cell,    4.0f,   0xFFFu );
+    u32 px = gui_fx_fixed( phase_x, 255.0f, 0xFFu  );
+    u32 py = gui_fx_fixed( phase_y, 255.0f, 0xFFu  );
+    return (u32)GUI_FX_CHECKER | ( c << 4 ) | ( px << 16 ) | ( py << 24 );
+}
+
+static inline u32
+gui_fx_pack_grid( f32 cell, f32 thickness )
+{
+    u32 c = gui_fx_fixed( cell,      4.0f, 0xFFFu );
+    u32 t = gui_fx_fixed( thickness, 8.0f, 0x7Fu  );
+    return (u32)GUI_FX_GRID | ( c << 4 ) | ( t << 16 );
 }
 
 /* abgr is the same R-in-the-low-byte word every other colour here uses (R8G8B8A8_UNORM order). */
@@ -1916,6 +1960,11 @@ typedef enum
                              //   (GUI_FX_ARC_GRAD): the hot/cold value arc -- still one quad
     GUI_CMD_IMAGE_XF,        // textured quad under a rotation about its centre: rotated icons,
                              //   images, markers -- the text_xf treatment for one quad
+    GUI_CMD_CHECKER,         // two-colour cell pattern resolved in the FRAGMENT (GUI_FX_CHECKER):
+                             //   the transparency backdrop as ONE quad, where the rect-pool
+                             //   expansion cost 64 commands / 4096 quads at its 64x64 clamp
+    GUI_CMD_GRID,            // line lattice (GUI_FX_GRID): graph-paper / node-graph backdrop in
+                             //   one quad; the lattice anchors to (ox, oy) so it pans with content
 
 } gui_cmd_type_t;
 
@@ -1987,7 +2036,7 @@ gui_tex_index( u32 tex_idx )
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (18 values)
+    u8 type;       // gui_cmd_type_t, fits u8 (20 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
@@ -2103,6 +2152,15 @@ typedef struct
            Centre pivot rather than the text anchor because a marker / needle / spinner glyph
            turns about its own middle -- the one pivot every caller was computing anyway. */
         struct { f32 x, y, w, h; f32 u0, v0, u1, v1; f32 rot; u32 tex_idx; u32 abgr; } image_xf;
+        /* The cell pattern: col_a fills even cells, col_b odd, anchored at the box origin.  The
+           fragment tiles it in framebuffer space (GUI_FX_CHECKER), so this is ONE quad at any
+           area and any cell -- the rect-pool expansion this replaces capped at 64x64 cells. */
+        struct { f32 x, y, w, h; f32 cell; u32 col_a, col_b; } checker;
+        /* The line lattice: a line every `cell` px, `thickness` px wide, in abgr over NOTHING --
+           the caller layers it on its own fill.  (ox, oy) is the lattice anchor in screen px:
+           lines land on ox + k*cell, so a panning canvas passes its content origin and the grid
+           rides along (GUI_FX_GRID). */
+        struct { f32 x, y, w, h; f32 cell, thickness, ox, oy; u32 abgr; } grid;
     };
 } gui_cmd_t;
 

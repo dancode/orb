@@ -66,6 +66,27 @@ float fx_coverage()
     if ( mode == 0u || mode == 4u || mode == 5u )
         return 1.0;
 
+    // modes 11 CHECKER / 12 GRID -- the framebuffer-tiling patterns (gui.h).  Taken before the
+    // sector decode, whose `mode >= 7` gate would otherwise swallow them.  Both compute in
+    // gl_FragCoord pixels: exact at any panel size, where the HALF2 effect coordinate's ulp
+    // reaches a full pixel at the corners of a fullscreen backdrop.  The phase re-anchors the
+    // pattern to the shape; the CPU derived it against the same quantized cell the word carries.
+    if ( mode >= 11u )
+    {
+        if ( mode == 11u )
+            return 1.0;   // CHECKER cuts nothing: it picks between two colours in main()
+
+        // GRID: distance to the nearest lattice line on either axis, the line `thickness` px
+        // wide straddling it, resolved with a 1 px AA band.  The mod is floor-based on purpose:
+        // the phase-shifted coordinate can go negative near the origin.
+        float cell = float( ( v_fx >>  4 ) & 0xFFFu ) * 0.25;
+        float ht   = float( ( v_fx >> 16 ) & 0x7Fu  ) * 0.0625;   // HALF the line width
+        vec2  p    = gl_FragCoord.xy - v_uv * cell;               // uv = per-axis phase fraction
+        vec2  m    = p - cell * floor( p / cell );
+        vec2  dl   = min( m, vec2( cell ) - m );
+        return clamp( 0.5 + ht - min( dl.x, dl.y ), 0.0, 1.0 );
+    }
+
     // modes 7 ARC and 8 PIE -- circular sectors.  Taken before the shared decode below because they
     // re-partition the word completely: there is no feather field (a sector gets a fixed 1 px band,
     // which is what `0.5 - d` is), and the 9 bits it would have cost carry the APERTURE instead.
@@ -210,6 +231,7 @@ void main()
     // location of a VALID texture, which is harmless and cheaper than a divergent skip).  Mode 10
     // additionally sweeps the colour toward a second RGBA8 riding that word, lerped by the same
     // signed angle the aperture cut uses -- the gradient a 4-corner vertex colour cannot express.
+    // Mode 11 picks between the vertex colour and that same second RGBA8 by cell parity.
     vec4 vcol = v_color;
     uint fxm  = v_fx & 0xFu;
     if ( fxm >= 9u )
@@ -226,6 +248,25 @@ void main()
             float t  = clamp( ( atan( v_fx_coord.x, v_fx_coord.y ) + ap )
                               / max( 2.0 * ap, 1e-4 ), 0.0, 1.0 );
             vcol = mix( vcol, c2, t );
+        }
+        // mode 11 CHECKER -- col_b decodes exactly as GRAD's does; the cell pitch and the parity
+        // phase come from the effect word (phase is a fraction of the TWO-cell colour period, so
+        // /255 * 2*cell = cell/127.5).  Parity is floor-based like every pattern mod here, and
+        // odd cells take the second colour.
+        else if ( fxm == 11u )
+        {
+            uint  bu = uint( round( v_uv.x * 65535.0 ) );
+            uint  bv = uint( round( v_uv.y * 65535.0 ) );
+            vec4  c2 = vec4( float( bu & 0xFFu ), float( bu >> 8 ),
+                             float( bv & 0xFFu ), float( bv >> 8 ) ) / 255.0;
+            c2.rgb     = srgb_to_linear( c2.rgb );   // authored sRGB, never saw the vertex stage
+            float cell = float( ( v_fx >>  4 ) & 0xFFFu ) * 0.25;
+            vec2  ph   = vec2( float( ( v_fx >> 16 ) & 0xFFu ),
+                               float( ( v_fx >> 24 ) & 0xFFu ) ) * ( cell / 127.5 );
+            vec2  t    = ( gl_FragCoord.xy - ph ) / cell;
+            float k    = floor( t.x ) + floor( t.y );
+            if ( k - 2.0 * floor( k * 0.5 ) >= 0.5 )
+                vcol = c2;
         }
     }
 

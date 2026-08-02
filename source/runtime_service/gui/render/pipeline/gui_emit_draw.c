@@ -767,6 +767,8 @@ static const u8 k_cmd_hash_len[] = {
     [GUI_CMD_ARC_DASH]      = sizeof( ( (gui_cmd_t*)0 )->arc_dash ),
     [GUI_CMD_ARC_GRAD]      = sizeof( ( (gui_cmd_t*)0 )->arc_grad ),
     [GUI_CMD_IMAGE_XF]      = sizeof( ( (gui_cmd_t*)0 )->image_xf ),
+    [GUI_CMD_CHECKER]       = sizeof( ( (gui_cmd_t*)0 )->checker ),
+    [GUI_CMD_GRID]          = sizeof( ( (gui_cmd_t*)0 )->grid ),
 };
 
 static u32
@@ -1377,6 +1379,64 @@ draw_push_arc_gradient( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     c->arc_grad.a1        = a1;
     c->arc_grad.col_a     = ca;
     c->arc_grad.col_b     = cb;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_checker / draw_push_grid -- the framebuffer-tiling pattern quads.
+
+    Each is ONE quad whose fragment tiles the pattern in framebuffer pixels (GUI_FX_CHECKER /
+    GUI_FX_GRID, gui.h); the CPU's share -- quantizing the cell pitch and deriving the anchor
+    phase against it -- runs at tessellation, where the box has been snapped.  Emit just gates
+    and stores the semantic fields.
+==============================================================================================*/
+
+void
+draw_push_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
+{
+    if ( cell < 1.0f )
+        cell = 1.0f;
+
+    /* Visible if EITHER colour is -- the OR'd alpha, the two-colour rule (draw_push_rect_gradient). */
+    u32 ca = draw_apply_alpha( col_a );
+    u32 cb = draw_apply_alpha( col_b );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_CHECKER, ca | cb, x, y, w, h, 0.0f );
+    if ( !c )
+        return;
+    c->checker.x     = x;
+    c->checker.y     = y;
+    c->checker.w     = w;
+    c->checker.h     = h;
+    c->checker.cell  = cell;
+    c->checker.col_a = ca;
+    c->checker.col_b = cb;
+    draw_cmd_seal();
+}
+
+void
+draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness, u32 abgr )
+{
+    /* A lattice denser than its own line width is a fill; keep the parameters meaning what they
+       say rather than letting the fragment resolve a moire. */
+    if ( thickness < 1.0f ) thickness = 1.0f;
+    if ( cell < 2.0f ) cell = 2.0f;
+    if ( cell < thickness ) cell = thickness;
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_GRID, col, x, y, w, h, 0.0f );
+    if ( !c )
+        return;
+    c->grid.x         = x;
+    c->grid.y         = y;
+    c->grid.w         = w;
+    c->grid.h         = h;
+    c->grid.cell      = cell;
+    c->grid.thickness = thickness;
+    c->grid.ox        = ox;
+    c->grid.oy        = oy;
+    c->grid.abgr      = col;
     draw_cmd_seal();
 }
 

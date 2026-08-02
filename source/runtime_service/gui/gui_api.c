@@ -125,6 +125,7 @@ const gui_api_t g_gui_api_struct =
     .draw_bezier_cubic                  = gui_draw_bezier_cubic,
     .draw_dashed_line                   = gui_draw_dashed_line,
     .draw_checker                       = gui_draw_checker,
+    .draw_grid                          = gui_draw_grid,
     .draw_hatch                         = gui_draw_hatch,
     .draw_gradient                      = gui_draw_gradient,
     .draw_shadow                        = gui_draw_shadow,
