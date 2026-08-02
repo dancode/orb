@@ -292,10 +292,11 @@ color_hex_field( gui_id_t hid, f32* v, bool has_alpha )
     color_edit_n hosts it in the swatch popup.
 ==============================================================================================*/
 
-#define PICKER_BAR_W    14.0f    /* hue / alpha bar width */
-#define PICKER_SIDE_MAX 240.0f   /* SV square edge cap -- keeps wide windows sane */
-#define PICKER_SIDE_MIN 64.0f
-#define PICKER_CURSOR_R 4.5f
+#define PICKER_BAR_W        14.0f    /* hue / alpha bar width */
+#define PICKER_SIDE_MAX     240.0f   /* SV square edge cap -- keeps wide windows sane */
+#define PICKER_SIDE_MIN     140.0f   /* SV square edge floor -- below this the block overflows the view instead */
+#define PICKER_INPUTS_MIN_W 220.0f   /* content width floor while the drag row shows: 4 boxes of "R:255" */
+#define PICKER_CURSOR_R     4.5f
 
 /* The white-in-black marker line across a vertical bar at fraction t (0 = top). */
 static void
@@ -341,6 +342,18 @@ color_picker_body( gui_id_t id, f32* v, u32 n, gui_color_edit_flags_t flags )
     gui_rect_t sv_r  = { cv.x, cv.y, side, side };
     gui_rect_t hue_r = { sv_r.x + side + gap, cv.y, PICKER_BAR_W, side };
     gui_rect_t alp_r = { hue_r.x + PICKER_BAR_W + gap, cv.y, PICKER_BAR_W, side };
+
+    /* Declare the width this block WANTS to the content measure (cell_reach -- the leaf-widget
+       overflow seam).  A canvas fills its track, and a filled cell deliberately contributes no
+       width to the region's content_w (the anti-feedback rule in line_place_cell) -- so inside
+       an autosize popup, whose seed is narrower than the picker, nothing would ever ask the
+       window to grow and the whole block would stay clamped at its floor.  Reaching the true
+       right edge (plus the drag row's floor while inputs show) is what makes the popup open at
+       a usable size; in a wide window the reach lands inside the view and is a no-op. */
+    f32 want_w = side + (f32)bars * ( PICKER_BAR_W + gap );
+    if ( !( flags & GUI_COLOR_EDIT_NO_INPUTS ) && want_w < PICKER_INPUTS_MIN_W )
+        want_w = PICKER_INPUTS_MIN_W;
+    cell_reach( cv.x + want_w );
 
     /* State first, paint after -- the house widget order.  All three surfaces are ITEM_DRAG:
        the press captures active_id, so the pick keeps tracking while the cursor sweeps out. */
@@ -593,9 +606,9 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
         if ( gui_popup_begin( pid, GUI_WIN_ALWAYS_AUTOSIZE ) )
         {
             gui_stack();
-            /* Pin the popup width: autosize normally sizes to content; an explicit empty at the
-               target width forces content_w so the picker block gets a stable track to fill. */
-            gui_empty( 232.0f, 0.0f );
+            /* No width pin: the picker body declares its own wanted width through cell_reach,
+               which is what actually grows an autosize popup (a gui_empty wider than the seed
+               track clamps to it and measures nothing). */
             if ( color_picker_body( id_combine( id, 0xC01Bu ), v, n, flags ) )
                 changed = true;
             gui_popup_end();
