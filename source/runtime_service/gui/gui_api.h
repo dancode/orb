@@ -2174,6 +2174,14 @@ typedef struct gui_api_s
     bool ( *color_edit3 )( const char* label, f32 col[ 3 ], gui_color_edit_flags_t flags );
     bool ( *color_edit4 )( const char* label, f32 col[ 4 ], gui_color_edit_flags_t flags );
 
+    /* color_picker3/4 -- the full picker block inline: a saturation/value square with a hue bar
+       (and an alpha bar for picker4 without NO_ALPHA), then a per-component drag row and a hex
+       entry field (NO_INPUTS trims it to the square + bars).  label is an id only -- nothing is
+       rendered from it.  color_edit's swatch popup hosts this same body, so embedding one inline
+       is exactly the popup experience without the popup. */
+    bool ( *color_picker3 )( const char* label, f32 col[ 3 ], gui_color_edit_flags_t flags );
+    bool ( *color_picker4 )( const char* label, f32 col[ 4 ], gui_color_edit_flags_t flags );
+
     bool ( *input_text    )( const char* label, char* buf, u32 bufsz );
 
     /* input_text_ex -- like input_text but with an on_change callback fired after any frame

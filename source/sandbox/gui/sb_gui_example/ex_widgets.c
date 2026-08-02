@@ -376,21 +376,28 @@ ex_widgets_sliders( void )
 static void
 ex_widgets_color( void )
 {
-    if ( ex_begin( "Color Editors", 420, 400, GUI_WIN_NONE ) )
+    if ( ex_begin( "Color Editors", 420, 640, GUI_WIN_NONE ) )
     {
         gui()->stack();
 
         static u32 flags = 0;   /* gui_color_edit_flags_t bits */
-        gui()->text( "Display flags (applied to both editors):" );
+        gui()->text( "Display flags (applied to all editors):" );
         ex_flag_checkbox( "NO_ALPHA (hide/ignore alpha)", &flags, GUI_COLOR_EDIT_NO_ALPHA );
         ex_flag_checkbox( "DISPLAY_HSV",                  &flags, GUI_COLOR_EDIT_DISPLAY_HSV );
         ex_flag_checkbox( "FLOAT (0..1 not 0..255)",      &flags, GUI_COLOR_EDIT_FLOAT );
+        ex_flag_checkbox( "NO_PICKER (swatch won't open the popup)", &flags, GUI_COLOR_EDIT_NO_PICKER );
+        ex_flag_checkbox( "NO_INPUTS (picker: square + bars only)",  &flags, GUI_COLOR_EDIT_NO_INPUTS );
 
         gui()->separator_text( "color_edit3 / color_edit4" );
         static f32 c3[ 3 ] = { 0.4f, 0.7f, 0.1f };
         static f32 c4[ 4 ] = { 0.2f, 0.5f, 0.9f, 0.8f };
         gui()->color_edit3( "rgb",  c3, (gui_color_edit_flags_t)flags );
         gui()->color_edit4( "rgba", c4, (gui_color_edit_flags_t)flags );
+
+        /* The inline picker edits the same rgba storage the color_edit4 row above shows, so
+           either widget's edits appear live in the other. */
+        gui()->separator_text( "color_picker4 (inline, same storage as rgba)" );
+        gui()->color_picker4( "##picker4", c4, (gui_color_edit_flags_t)flags );
 
         /* Swatch strip: the edited colors drawn raw, plus a blend gradient between them. */
         gui()->separator_text( "Live swatches" );

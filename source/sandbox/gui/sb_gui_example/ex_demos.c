@@ -116,6 +116,7 @@ static ex_demo_t s_demos[] =
     { "Interact", "Item Queries",     "Item Queries",     "the is_item_* family + get_item_rect",              ex_interact_queries,    false },
     { "Interact", "Keyboard & Focus", "Keyboard & Focus", "focus / caret / edit key hook / key readers",       ex_interact_keyboard,   false },
     { "Interact", "Mouse & Cursor",   "Mouse & Cursor",   "mouse readers / hardware cursor / capture",         ex_interact_mouse,      false },
+    { "Interact", "Multi-select",     "Multi-select",     "msel scope / modifiers / custom rows via msel_feed", ex_interact_msel,      false },
 
     { "Data",     "Tables",           "Tables",           "table flags / sortable headers / widgets in cells", ex_data_tables,         false },
     { "Data",     "Debug & Stats",    "Debug & Stats",    "overlay layers / render modes / stats levers",      ex_data_debug,          false },

@@ -607,6 +607,8 @@ bool gui_drag_float4( const char* label, f32* v, f32 v_speed, f32 v_min, f32 v_m
 
 bool gui_color_edit3( const char* label, f32 col[ 3 ], gui_color_edit_flags_t flags );
 bool gui_color_edit4( const char* label, f32 col[ 4 ], gui_color_edit_flags_t flags );
+bool gui_color_picker3( const char* label, f32 col[ 3 ], gui_color_edit_flags_t flags );
+bool gui_color_picker4( const char* label, f32 col[ 4 ], gui_color_edit_flags_t flags );
 
 /* widget - input boxes */
 bool gui_input_text( const char* label, char* buf, u32 bufsz );

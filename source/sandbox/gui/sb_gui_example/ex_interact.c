@@ -305,4 +305,111 @@ ex_interact_mouse( void )
     gui()->window_end();
 }
 
+/*==============================================================================================
+    Multi-select -- the msel protocol worked twice over the SAME verbs: once through the stock
+    row (msel_item) and once through a fully custom presentation (a tile grid on item() +
+    msel_feed), because the engine only ever sees (index, item state).  Selection storage is
+    this demo's bool arrays; each scope resolves to one range action msel_apply plays back.
+==============================================================================================*/
+
+static void
+ex_interact_msel( void )
+{
+    static const char* op_names[] = { "NONE", "SET", "ADD", "TOGGLE", "ALL", "CLEAR" };
+
+    if ( ex_begin( "Multi-select", 460, 640, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text( "Click replaces, Ctrl toggles, Shift ranges from the" );
+        gui()->text( "anchor, Ctrl+Shift adds.  Space/Enter select on the" );
+        gui()->text( "nav cursor, Shift+arrow extends, Ctrl+A selects all." );
+
+        /* --- stock rows: msel_item over a bool array --------------------------------------- */
+        gui()->separator_text( "stock rows (msel_item)" );
+        enum { N_FILES = 16 };
+        static bool files[ N_FILES ] = { false };
+
+        gui()->msel_begin( "files", N_FILES );
+        if ( gui()->child_begin( "msel_files", 0, gui()->sz_rows_h( 7 ), GUI_WIN_NONE ) )
+        {
+            gui()->stack();
+            for ( i32 i = 0; i < N_FILES; i++ )
+            {
+                char row[ 32 ];
+                snprintf( row, sizeof( row ), "document_%02d.txt", i );
+                gui()->msel_item( row, i, files[ i ] );
+            }
+        }
+        gui()->child_end();
+
+        /* The frame's resolved action -- shown before it is applied, so the readout teaches
+           what each gesture produced. */
+        gui_msel_t act = gui()->msel_end();
+        gui()->msel_apply( act, files, N_FILES );
+
+        static gui_msel_t last = { GUI_MSEL_NONE, 0, 0 };
+        if ( act.op != GUI_MSEL_NONE )
+            last = act;
+        if ( last.op == GUI_MSEL_NONE )
+            gui()->text_disabled( "last action: (none yet)" );
+        else
+            gui()->textf( "last action: %s [%d..%d]", op_names[ last.op ], last.lo, last.hi );
+
+        i32 n_on = 0;
+        for ( i32 i = 0; i < N_FILES; i++ )
+            n_on += files[ i ] ? 1 : 0;
+        gui()->textf( "%d of %d selected", n_on, N_FILES );
+
+        /* ALL / CLEAR are also plain caller vocabulary -- a button applies one directly. */
+        if ( gui()->small_button( "Select all" ) )
+            gui()->msel_apply( ( gui_msel_t ){ GUI_MSEL_ALL, 0, 0 }, files, N_FILES );
+        gui()->same_line( -1.0f );
+        if ( gui()->small_button( "Clear" ) )
+            gui()->msel_apply( ( gui_msel_t ){ GUI_MSEL_CLEAR, 0, 0 }, files, N_FILES );
+
+        /* --- custom rows: a thumbnail grid on item() + msel_feed --------------------------- */
+        /* The tile draws itself entirely; only msel_feed joins it to the protocol.  No
+           request_redraw needed here: msel_end raises it whenever an action resolves. */
+        gui()->separator_text( "custom rows (item() + msel_feed)" );
+        enum { N_TILES = 12, TILES_PER_ROW = 6 };
+        static bool tiles[ N_TILES ] = { false };
+
+        gui()->msel_begin( "tiles", N_TILES );
+        for ( i32 row0 = 0; row0 < N_TILES; row0 += TILES_PER_ROW )
+        {
+            gui_rect_t strip = gui()->canvas( 58.0f );
+            for ( i32 c = 0; c < TILES_PER_ROW && row0 + c < N_TILES; c++ )
+            {
+                i32        i   = row0 + c;
+                gui_rect_t box = { strip.x + (f32)c * 62.0f, strip.y + 1.0f, 56.0f, 56.0f };
+
+                gui()->push_id_int( i );
+                gui_item_state_t st = gui()->item( "tile", box );
+
+                u32 body   = tiles[ i ] ? EX_AMBR_T
+                           : st.active  ? 0xFF3E5A78u
+                           : st.hover   ? 0xFF35485Eu : EX_BG;
+                u32 border = st.nav ? EX_CYAN : 0xFF505050u;
+                gui()->draw_frame( box, body, border, 1.0f );
+                char tag[ 8 ];
+                snprintf( tag, sizeof( tag ), "%02d", i );
+                gui()->draw_text_in( box, GUI_ALIGN_CENTER, EX_INK, tag );
+
+                gui()->msel_feed( i, st );
+                gui()->pop_id();
+            }
+        }
+        gui()->msel_apply( gui()->msel_end(), tiles, N_TILES );
+
+        i32 t_on = 0;
+        for ( i32 i = 0; i < N_TILES; i++ )
+            t_on += tiles[ i ] ? 1 : 0;
+        gui()->textf( "%d of %d tiles selected", t_on, N_TILES );
+
+        gui()->text_disabled( "Same modifiers in both lists; each scope has its" );
+        gui()->text_disabled( "own anchor, and the engine never stores the selection." );
+    }
+    gui()->window_end();
+}
+
 /*============================================================================================*/
