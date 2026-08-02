@@ -138,5 +138,125 @@ gui_font_active_id( void )
     return font_active_id();
 }
 
+/*==============================================================================================
+    DPI response -- monitor scale -> font retarget.
+
+    The engine works in physical pixels end to end, so gui scales by swapping the ACTIVE FONT
+    for a bake of the same family nearer the wanted size: a bigger bake raises em, and every
+    layout metric already rescales from em (metrics_compute).  No second scale factor exists
+    anywhere -- the response granularity is the set of baked sizes the family ships.
+
+    Managed only while the host's init() preset lineage is active: gui_dpi_poll retargets when
+    the active font is the one it last activated (slot 0 at init).  A host that font_use()s /
+    font_load()s its own font takes over; retargeting resumes when the managed font is active
+    again.  GUI_FONT_NONE at init disables the mechanism entirely.
+==============================================================================================*/
+
+static struct
+{
+    gui_dpi_mode_t     mode;                                // OFF / AUTO / MANUAL
+    f32                manual;                              // MANUAL-mode factor
+    gui_builtin_font_t base;                                // init() preset; NONE = unmanaged
+    gui_builtin_font_t applied;                             // bake currently in effect
+    u32                applied_id;                          // font id holding `applied` (0 = init slot)
+    u32                loaded_id[ GUI_FONT_BUILTIN_COUNT ]; // preset -> loaded font id (0 = not yet)
+
+} s_dpi = { .mode = GUI_DPI_AUTO, .manual = 1.0f };
+
+/* Seed the managed lineage after init() loads the host's preset into slot 0. */
+
+void
+gui_dpi_base_set( gui_builtin_font_t font )
+{
+    s_dpi.base       = font;
+    s_dpi.applied    = font;
+    s_dpi.applied_id = 0;
+    for ( u32 i = 0; i < GUI_FONT_BUILTIN_COUNT; ++i )
+        s_dpi.loaded_id[ i ] = 0;
+}
+
+void
+gui_dpi_set( gui_dpi_mode_t mode, f32 scale )
+{
+    s_dpi.mode = mode;
+    if ( scale > 0.0f )
+        s_dpi.manual = scale;
+}
+
+gui_dpi_mode_t
+gui_dpi_mode( void )
+{
+    return s_dpi.mode;
+}
+
+/* The scale actually in effect: applied bake size over the init() preset's size.  1.0 while
+   unmanaged -- the wanted monitor scale is app()->window_dpi_scale; this is what the UI IS. */
+
+f32
+gui_dpi_scale( void )
+{
+    u32 base = font_builtin_size( s_dpi.base );
+    u32 now  = font_builtin_size( s_dpi.applied );
+    return ( base && now ) ? (f32)now / (f32)base : 1.0f;
+}
+
+/* Frame-begin poll (gui_frame_loop.c): resolve the wanted scale, retarget the font on change.
+   Returns true when the active font changed -- the caller forces a full rebuild.  Runs before
+   gui_font_flush_deferred so a fresh bake's atlas pixels upload in the same frame's flush, and
+   before draw_reset, which re-seeds the ambient text font from font_active_id(). */
+
+bool
+gui_dpi_poll( void )
+{
+    if ( s_dpi.base == GUI_FONT_NONE )
+        return false;
+
+    /* A host-driven font is active (font_use / push_font / a custom load): not ours to move. */
+    if ( font_active_id() != s_dpi.applied_id )
+        return false;
+
+    f32 want = 1.0f;
+    if ( s_dpi.mode == GUI_DPI_AUTO )
+        want = app()->window_dpi_scale( s_vp_count > 0 ? s_vp_pool[ 0 ].win_id : -1 );
+    else if ( s_dpi.mode == GUI_DPI_MANUAL )
+        want = s_dpi.manual;
+
+    if ( want < 0.5f ) want = 0.5f;
+    if ( want > 4.0f ) want = 4.0f;
+
+    gui_builtin_font_t pick = font_builtin_pick( s_dpi.base, want );
+    if ( pick == s_dpi.applied )
+        return false;
+
+    /* The base preset lives in init's slot 0; every other bake loads once into its own id.
+       A failed load latches a sentinel so a missing asset costs one attempt, not one per frame. */
+    #define GUI_DPI_LOAD_FAILED 0xFFFFFFFFu
+    u32 id = 0;
+    if ( pick != s_dpi.base )
+    {
+        id = s_dpi.loaded_id[ pick ];
+        if ( id == GUI_DPI_LOAD_FAILED )
+            return false;                         // asset missing -- stay at the current bake
+        if ( id == 0 )
+        {
+            id = gui_font_load_builtin( pick );   // new id, activated, layout rescaled
+            if ( id == 0 )
+            {
+                s_dpi.loaded_id[ pick ] = GUI_DPI_LOAD_FAILED;
+                return false;
+            }
+            s_dpi.loaded_id[ pick ] = id;
+            s_dpi.applied           = pick;
+            s_dpi.applied_id        = id;
+            return true;
+        }
+    }
+
+    gui_font_use( id );                           // cached bake: activate + rescale + stamp
+    s_dpi.applied    = pick;
+    s_dpi.applied_id = id;
+    return true;
+}
+
 // clang-format on
 /*============================================================================================*/

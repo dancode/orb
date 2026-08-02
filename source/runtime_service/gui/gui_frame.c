@@ -81,6 +81,9 @@ void           ctx_pool_init  ( void );                                         
 bool           viewport_create ( gui_vp_t vp, rhi_texture_t target, i32 win_id );             /* gui_viewport.c */
 void           viewport_destroy( gui_vp_t vp );                                               /* gui_viewport.c */
 
+void           gui_dpi_base_set( gui_builtin_font_t font );                                   /* gui_frame_font.c */
+bool           gui_dpi_poll    ( void );                                                      /* gui_frame_font.c */
+
 /* The theme registry, base/active style state (s_style_base, s_style, s_font_size), the style
    stacks, and metrics_compute live in the STYLE UNIT (gui_style.c); this unit reads
    s_style and the resolvers through the style/gui_style.h externs + seams.

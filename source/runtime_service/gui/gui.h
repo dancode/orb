@@ -2672,14 +2672,38 @@ typedef i32 ( *gui_table_sort_cmp_fn )( i32 a, i32 b, i32 col, bool descending, 
 typedef enum
 {
     GUI_FONT_NONE = 0,        // load nothing; caller loads its own font(s) via font_load()
+    GUI_FONT_JETBRAINS_12,
     GUI_FONT_JETBRAINS_16,
+    GUI_FONT_JETBRAINS_20,
+    GUI_FONT_ROBOTO_12,
     GUI_FONT_ROBOTO_16,
+    GUI_FONT_ROBOTO_20,
     GUI_FONT_CASCADIA_MONO_12,
     GUI_FONT_CASCADIA_MONO_16,
     GUI_FONT_CASCADIA_MONO_20,
-    GUI_FONT_CASCADIA_CODE_16
+    GUI_FONT_CASCADIA_CODE_16,
+
+    GUI_FONT_BUILTIN_COUNT
 
 } gui_builtin_font_t;
+
+/*==============================================================================================
+    GUI_FRAME -- DPI response mode
+
+    How gui reacts to the main window's monitor scale (app()->window_dpi_scale; the process is
+    per-monitor DPI aware, so all engine coordinates are physical pixels).  gui scales by
+    retargeting the ACTIVE FONT within the init() preset's family -- a bigger bake raises em, and
+    every layout metric already rescales from em -- so the response granularity is the set of
+    baked sizes that family ships.  See dpi_set() in gui_api.h.
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_DPI_OFF = 0,    // ignore monitor scale -- UI stays at the authored bake, 1:1 pixels
+    GUI_DPI_AUTO,       // follow the main window's monitor scale (default)
+    GUI_DPI_MANUAL      // apply the explicit factor passed to dpi_set()
+
+} gui_dpi_mode_t;
 
 /*==============================================================================================
     GUI_FRAME -- boot descriptor

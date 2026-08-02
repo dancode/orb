@@ -210,6 +210,11 @@ static bool     s_draw_inited = false;
 static bool     s_gui_inited  = false;
 static bool     s_console     = false;
 
+/* UI scale cvars, registered when gui is live and pushed into gui()->dpi_set each frame --
+   gui deps are { rhi, app }, deliberately not core, so the cvar half of the seam lives here. */
+static cvar_t*  s_cv_dpi_mode = NULL;   // ui_dpi_mode -- off / auto / manual (string enum)
+static cvar_t*  s_cv_ui_scale = NULL;   // ui_scale    -- manual-mode factor
+
 /*==============================================================================================
     gui diagnostics sink -- the seam between gui and core's log.
 
@@ -596,6 +601,20 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                     run_host_shutdown();
                     return 1;
                 }
+
+                /* UI scale control.  gui defaults to AUTO (follow the monitor scale); these
+                   cvars make the mode and the manual factor user-settable from the console /
+                   configs, applied by the per-frame dpi_set push in the loop below. */
+                {
+                    static const char* k_dpi_modes[] = { "off", "auto", "manual" };
+                    s_cv_dpi_mode = cvar_register_s(
+                        "ui_dpi_mode", "UI response to the monitor scale: off = authored size, "
+                        "auto = follow the main window's monitor, manual = apply ui_scale.",
+                        k_dpi_modes, 3, 1 /* default: auto */, CVAR_ARCHIVE );
+                    s_cv_ui_scale = cvar_register_f(
+                        "ui_scale", "UI scale factor applied when ui_dpi_mode is manual.",
+                        1.0f, 0.5f, 4.0f, CVAR_ARCHIVE );
+                }
             }
         }
     }
@@ -793,6 +812,18 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         PROF_ZONE_BEGIN( "host/gui" );
         if ( s_gui_inited )
         {
+            /* Push the cvar-selected DPI mode before frame_begin -- its poll resolves the wanted
+               scale there.  Every frame: dpi_set is a cheap store, and a console / config edit
+               takes hold on the next frame with no change tracking here. */
+            if ( s_cv_dpi_mode )
+            {
+                const char*    m    = cvar_get_string( s_cv_dpi_mode );
+                gui_dpi_mode_t mode = ( m[ 0 ] == 'o' ) ? GUI_DPI_OFF
+                                    : ( m[ 0 ] == 'm' ) ? GUI_DPI_MANUAL
+                                                        : GUI_DPI_AUTO;
+                gui()->dpi_set( mode, cvar_get_float( s_cv_ui_scale ) );
+            }
+
             if ( gui()->frame_begin( dt ) )
             {
                 gui()->ctx_begin( GUI_CTX_DEFAULT );

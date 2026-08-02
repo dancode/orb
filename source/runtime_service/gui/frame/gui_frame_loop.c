@@ -149,8 +149,12 @@ gui_init( gui_builtin_font_t font )
        failed load) leaves it at the zero-font values gui_theme_set seeded above until the caller's
        own font_load() activates one. */
 
-    if ( font != GUI_FONT_NONE && font_load_builtin( font ) == false ) {
-         gui_log( GUI_LOG_WARN, "built-in font load failed; continuing without text" );
+    if ( font != GUI_FONT_NONE )
+    {
+        if ( font_load_builtin( font ) )
+            gui_dpi_base_set( font );   /* DPI retargeting manages this preset's family */
+        else
+            gui_log( GUI_LOG_WARN, "built-in font load failed; continuing without text" );
     }
 
     gui_style_apply();
@@ -341,6 +345,12 @@ gui_frame_begin( f32 dt )
     if ( gui_debug_get_layers() )
         s_frame_dirty = true;
     #endif
+
+    /* DPI retarget: if the wanted monitor / manual scale picked a different bake of the managed
+       font family, activate it now (layout rescales through the em pipeline).  Before the font
+       flush so a freshly loaded bake's atlas pixels upload in the same frame's flush below. */
+    if ( gui_dpi_poll() )
+        s_frame_dirty = true;
 
     /* Commit deferred font (re)loads at this safe between-frames point -- always, since the host
        can request a load between frames independent of the widget emit.  A committed swap changes

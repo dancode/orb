@@ -125,6 +125,27 @@ typedef struct gui_api_s
     u32                 ( *font_load )          ( const char* path );
     u32                 ( *font_load_builtin )  ( gui_builtin_font_t font );
 
+    /* DPI response (gui_dpi_mode_t, gui.h).  The engine is per-monitor DPI aware and works in
+       physical pixels, so on a scaled monitor an unresponsive UI renders crisp but small.  When
+       enabled, gui retargets the init() preset's font family to the bake nearest the wanted
+       scale each frame; em-driven layout does the rest.  Granularity = the family's baked sizes.
+
+        dpi_set()
+            : select the response mode.  AUTO follows the main window's monitor scale
+              (app window_dpi_scale, tracked live across monitor moves / OS scale edits);
+              MANUAL applies `scale` (0.5..4, clamped); OFF pins the authored bake.
+              `scale` <= 0 keeps the previous manual factor.  Cheap and idempotent --
+              a host may push it every frame (e.g. from a cvar).
+        dpi_mode()
+            : the current response mode.
+        dpi_scale()
+            : the scale actually in effect -- applied bake size / init() preset size.
+              1.0 while unmanaged (GUI_FONT_NONE init, or a host-driven font active). */
+
+    void                ( *dpi_set   )          ( gui_dpi_mode_t mode, f32 scale );
+    gui_dpi_mode_t      ( *dpi_mode  )          ( void );
+    f32                 ( *dpi_scale )          ( void );
+
     /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
        backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
        bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */

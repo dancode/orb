@@ -51,6 +51,11 @@ gui_render_stats_t gui_render_stats( void );
 u32  gui_font_load( const char* path );
 u32  gui_font_load_builtin( gui_builtin_font_t font );
 
+/* DPI response -- monitor-scale font retargeting (see dpi_set in gui_api.h) */
+void           gui_dpi_set  ( gui_dpi_mode_t mode, f32 scale );
+gui_dpi_mode_t gui_dpi_mode ( void );
+f32            gui_dpi_scale( void );
+
 /* asset_path -- resolve a path relative to the engine's assets/ root (see gui_api.h) */
 void gui_asset_path( const char* relative, char* out, int out_size );
 
