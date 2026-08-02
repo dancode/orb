@@ -31,6 +31,8 @@
                                 glyph measurement, mouse-drag select, scroll-into-view (no paint)
     interact/gui_edit_multi.c -- multi-line text edit engine: 2D caret, line geometry, undo,
                                 mouse-drag select, horizontal pan (region vertical scroll is chrome)
+    interact/gui_msel.c      -- multi-select protocol engine: click/modifier rule, range anchor,
+                                keyboard extend, one index-range action per frame (caller storage)
 
 ==============================================================================================*/
 
@@ -67,6 +69,7 @@
 #include "runtime_service/gui/interact/gui_feature.c"
 #include "runtime_service/gui/interact/gui_edit.c"
 #include "runtime_service/gui/interact/gui_edit_multi.c"
+#include "runtime_service/gui/interact/gui_msel.c"
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory

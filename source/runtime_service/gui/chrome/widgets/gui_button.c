@@ -407,5 +407,47 @@ gui_selectable( const char* label, bool* selected )
     return st.clicked;
 }
 
+/*==============================================================================================
+    msel_item -- the stock row of a multi-select scope (msel_begin .. msel_end).
+
+    gui_selectable's presentation over the msel protocol instead of a bool toggle: the row
+    paints from the CALLER's `selected` (this frame's storage -- the resolved action lands
+    next emit) and feeds its (index, state) to the engine, which turns clicks + modifiers +
+    keyboard into the scope's index-range action.  The row id folds in `index` so repeated
+    labels stay distinct.  No popup auto-close: a multi-selection is built across several
+    clicks, so a popup hosting one must survive them.
+==============================================================================================*/
+
+bool
+gui_msel_item( const char* label, i32 index, bool selected )
+{
+    gui_push_id_int( index );
+
+    gui_id_t   id = item_id( label );
+    gui_rect_t r  = cell_next( WIDGET_H );
+
+    gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
+    nav_item_stamp_label( id, label );   /* type-ahead opt-in (GUI_ITEM_NO_TYPEAHEAD to skip) */
+
+    /* Same fill story as gui_selectable: chosen rows read the SELECT plane, phase from the
+       live state, idle-unchosen paints nothing. */
+    gui_style_mix_t mix = style_mix( id, st, selected );
+    if ( mix.hot > 0.0f || mix.act > 0.0f || mix.sel > 0.0f )
+        draw_face_mix( r, GUI_ROLE_BG, mix );
+
+    gui_style_mix_t ink = { 0.0f, 0.0f, mix.sel };
+    draw_label( r.x + WIDGET_PAD, text_center_y( r.y, r.h ),
+                style_col_mix( GUI_ROLE_TEXT, ink ), label );
+    cell_reach( r.x + WIDGET_PAD + label_width( label ) );
+
+    gui_msel_feed( index, st );
+
+    if ( st.clicked )
+        redraw_request();   /* the action lands in caller storage; show it next frame */
+
+    gui_pop_id();
+    return st.clicked;
+}
+
 // clang-format on
 /*============================================================================================*/

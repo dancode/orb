@@ -182,6 +182,16 @@ u32  medit_line_end   ( const char* buf, u32 len, u32 off );           /* '\n' o
 u32  medit_row_start  ( const char* buf, u32 len, u32 row );           /* start offset of `row`   */
 void medit_caret_rowx ( const char* buf, u32 off, u32* row, f32* x );  /* (row, px) of the caret  */
 
+/*==============================================================================================
+    Multi-select protocol engine (interact/gui_msel.c) -- the modifier/anchor rule behind a
+    multi-selected list, resolving each frame to one index-range action (gui_msel_t, gui.h)
+    the caller applies to its own selection storage.  The scope bracket + feed + apply are
+    public (gui_msel_begin/feed/end/apply, gui_host.h); the click rule is exposed here pure
+    for the headless test bed.
+==============================================================================================*/
+
+gui_msel_t msel_click_op( i32 anchor, i32 index, bool ctrl, bool shift );
+
 /* Decentralized memory accounting -- this unit's fixed statics (root gui_interact.c foot),
    summed into cpu_frontend_bytes by gui_ui_memory (gui_ui_mem.c). */
 u32 interact_unit_mem_bytes( void );

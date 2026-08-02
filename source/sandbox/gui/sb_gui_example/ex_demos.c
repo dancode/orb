@@ -76,7 +76,7 @@ static ex_demo_t s_demos[] =
     { "Widgets",  "Numeric Inputs",   "Numeric Inputs",   "input_int/float/double / steps / vector rows",      ex_widgets_numeric,     false },
     { "Widgets",  "Sliders & Drags",  "Sliders & Drags",  "slider_float/int/step / drag_int/floatN",           ex_widgets_sliders,     false },
     { "Widgets",  "Color Editors",    "Color Editors",    "color_edit3/4 + display flags",                     ex_widgets_color,       false },
-    { "Widgets",  "Selection & Lists","Selection & Lists","selectable / combo / listbox + begin/end forms",    ex_widgets_selection,   false },
+    { "Widgets",  "Selection & Lists","Selection & Lists","selectable / msel multi-select / combo / listbox",  ex_widgets_selection,   false },
     { "Widgets",  "Tab Bar",          "Tab Bar",          "tab_bar_begin / tab_item_begin + closeable tabs",   ex_widgets_tabs,        false },
     { "Widgets",  "Multiline Text",   "Multiline Text",   "input_text_multiline -- text area / 2D caret",      ex_widgets_multiline,   false },
 

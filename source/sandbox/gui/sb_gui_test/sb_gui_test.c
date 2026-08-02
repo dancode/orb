@@ -28,6 +28,7 @@
         test_log.c   -- the GUI_LOG sink contract + the GUI_WARN_ONCE latch
         test_font.c  -- the two-tier glyph lookup: ASCII dense tier, ext binary search, '?' miss
         test_edit.c  -- UTF-8 caret math: boundary-only carets, midpoint snapping, word classes
+        test_msel.c  -- multi-select protocol: the click/modifier rule + the range application
 
 ==============================================================================================*/
 
@@ -77,6 +78,7 @@ cstr_equal( const char* a, const char* b )
 #include "sandbox/gui/sb_gui_test/test_log.c"
 #include "sandbox/gui/sb_gui_test/test_font.c"
 #include "sandbox/gui/sb_gui_test/test_edit.c"
+#include "sandbox/gui/sb_gui_test/test_msel.c"
 
 /*============================================================================================*/
 
@@ -136,6 +138,12 @@ main( int argc, char* argv[] )
     /* Edit seams -- UTF-8 caret math + word classes */
     test_register( "edit_caret_utf8",     test_edit_caret_utf8 );
     test_register( "edit_word_utf8",      test_edit_word_utf8 );
+
+    /* Multi-select protocol -- click rule + range application */
+    test_register( "msel_click_rule",     test_msel_click_rule );
+    test_register( "msel_apply_ops",      test_msel_apply_ops );
+    test_register( "msel_apply_clamp",    test_msel_apply_clamp );
+    test_register( "msel_scenario",       test_msel_scenario );
 
     return test_run( "sb_gui" );
 }

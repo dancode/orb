@@ -177,6 +177,13 @@ const gui_api_t g_gui_api_struct =
     .drag_active                        = gui_drag_active,
     .drag_payload_peek                  = gui_drag_payload_peek,
 
+    /* multi-select -- clicks + modifiers -> one range action */
+
+    .msel_begin                         = gui_msel_begin,
+    .msel_feed                          = gui_msel_feed,
+    .msel_end                           = gui_msel_end,
+    .msel_apply                         = gui_msel_apply,
+
     /* queries -- io snapshot, item state, redraw state */
 
     .want_capture_mouse                 = gui_want_capture_mouse,
@@ -472,6 +479,7 @@ const gui_api_t g_gui_api_struct =
     .input_float3                       = gui_input_float3,
     .input_float4                       = gui_input_float4,
     .selectable                         = gui_selectable,
+    .msel_item                          = gui_msel_item,
     .combo_begin                        = gui_combo_begin,
     .combo_end                          = gui_combo_end,
     .combo                              = gui_combo,

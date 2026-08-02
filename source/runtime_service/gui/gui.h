@@ -940,6 +940,35 @@ typedef struct gui_item_state_t
 } gui_item_state_t;
 
 /*==============================================================================================
+    Multi-select protocol -- the frame's resolved selection action (interact/gui_msel.c).
+
+    The engine never stores the selection; the caller does (bool array, bitset, component
+    flag).  Each frame the msel scope (msel_begin .. row feeds .. msel_end) resolves clicks,
+    modifiers, and keyboard extension against a persistent range anchor into ONE index-range
+    action the caller applies -- msel_apply is the ready-made application for a dense bool
+    array.  Index math, so an action spans rows a virtualized list never emitted.
+==============================================================================================*/
+
+typedef enum
+{
+    GUI_MSEL_NONE = 0,   // no selection change this frame
+    GUI_MSEL_SET,        // clear everything, then select [lo..hi]      (plain / shift click)
+    GUI_MSEL_ADD,        // select [lo..hi], keep the rest              (ctrl+shift click)
+    GUI_MSEL_TOGGLE,     // invert [lo..hi] (single row: lo == hi)      (ctrl click)
+    GUI_MSEL_ALL,        // select the whole list                       (ctrl+A in the scope)
+    GUI_MSEL_CLEAR,      // clear the whole list (caller vocabulary: empty-space click, Escape)
+
+} gui_msel_op_t;
+
+typedef struct gui_msel_t
+{
+    gui_msel_op_t op;    // what to do to the caller's selection storage
+    i32           lo;    // first affected row (inclusive) for SET / ADD / TOGGLE
+    i32           hi;    // last affected row (inclusive)
+
+} gui_msel_t;
+
+/*==============================================================================================
     GUI_COMPONENT -- widget LOGIC building blocks (staging)
 
     A component consumes an (id, rect) + config and does the interaction math -- hit, drag,

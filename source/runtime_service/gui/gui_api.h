@@ -888,6 +888,21 @@ typedef struct gui_api_s
     bool                      ( *drag_active         )( void );
     const gui_drag_payload_t* ( *drag_payload_peek   )( void );
 
+    /*==========================  multi-select -- clicks + modifiers -> one range action  =======================*/
+
+    /* Multi-select protocol (interact/gui_msel.c) -- the Explorer click/modifier rule (plain
+       replaces, Ctrl toggles, Shift ranges from the anchor, Ctrl+Shift adds, Shift+arrow extends,
+       Ctrl+A selects all) over CALLER-owned selection storage.  Bracket a list with
+       msel_begin(id, full_count) .. msel_end(); rows report through the stock msel_item (chrome)
+       or, for a custom presentation (grid tile, tree line), rect + item() + msel_feed(index, st).
+       msel_end returns the frame's resolved index-range action; msel_apply plays it onto a dense
+       bool array (other storage switches on .op itself).  Ranges are index math, so actions span
+       rows a virtualized list (rows_clip) never emitted. */
+    void       ( *msel_begin )( const char* id_str, i32 count );
+    void       ( *msel_feed  )( i32 index, gui_item_state_t st );
+    gui_msel_t ( *msel_end   )( void );
+    void       ( *msel_apply )( gui_msel_t act, bool* sel, i32 count );
+
     /*===========================  queries -- io snapshot, item state, redraw state  ============================*/
 
     /* IO accessors -- the frame-coherent input snapshot the widgets see, for UI / tool code that
@@ -2200,6 +2215,12 @@ typedef struct gui_api_s
        list-box building block.  A click toggles *selected (pass NULL for click-only); returns
        true on the clicked frame so a caller managing single-selection can set its own index. */
     bool ( *selectable  )( const char* label, bool* selected );
+
+    /* msel_item -- selectable's presentation as the stock row of a multi-select scope
+       (GUI_CORE msel_begin .. msel_end): paints from the caller's `selected`, feeds
+       (index, state) to the protocol, and never auto-closes a popup (a multi-selection is
+       built across several clicks).  The row id folds in `index`, so repeated labels are fine. */
+    bool ( *msel_item   )( const char* label, i32 index, bool selected );
 
     /* Combo box -- a framed preview box (selected text + a down arrow) with a trailing label that
        drops a popup of rows below it on click.  combo_begin opens the dropdown: it returns true

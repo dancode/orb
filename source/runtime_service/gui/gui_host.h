@@ -238,6 +238,14 @@ void gui_drag_target_end( void );
 bool gui_drag_active( void );
 const gui_drag_payload_t* gui_drag_payload_peek( void );
 
+/* multi-select protocol (interact/gui_msel.c) -- scope bracket + row feed resolving clicks /
+   modifiers / keyboard into one index-range action for caller-owned selection storage; apply
+   is the dense bool-array application.  Stock row: gui_msel_item (chrome). */
+void       gui_msel_begin( const char* id_str, i32 count );
+void       gui_msel_feed( i32 index, gui_item_state_t st );
+gui_msel_t gui_msel_end( void );
+void       gui_msel_apply( gui_msel_t act, bool* sel, i32 count );
+
 /* input capture fences */
 bool gui_want_capture_mouse( void );
 bool gui_want_capture_keyboard( void );
@@ -614,6 +622,7 @@ bool gui_input_float4( const char* label, f32* v, const char* fmt );
 
 /* widget - combo and list box */
 bool gui_selectable( const char* label, bool* selected );
+bool gui_msel_item( const char* label, i32 index, bool selected );
 bool gui_combo_begin( const char* label, const char* preview_value, gui_combo_flags_t flags );
 void gui_combo_end( void );
 bool gui_combo( const char* label, i32* current_item, const char* const items[], i32 count );

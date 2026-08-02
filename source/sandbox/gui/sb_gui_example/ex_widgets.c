@@ -457,6 +457,37 @@ ex_widgets_selection( void )
         }
         gui()->child_end();
 
+        /* msel -- the multi-select protocol: plain click replaces, Ctrl toggles, Shift ranges
+           from the anchor, Ctrl+Shift adds, Shift+arrow extends, Ctrl+A selects all.  Storage
+           is THIS demo's bool array; the scope resolves each frame to one range action and
+           msel_apply plays it. */
+        gui()->separator_text( "msel (click / ctrl / shift / ctrl+A)" );
+        static bool msel[ 12 ] = { false };
+        const i32   n_msel     = (i32)( sizeof( msel ) / sizeof( msel[ 0 ] ) );
+
+        gui()->msel_begin( "msel_demo", n_msel );
+        if ( gui()->child_begin( "msel_rows", 0, gui()->sz_rows_h( 6 ), GUI_WIN_NONE ) )
+        {
+            gui()->stack();
+            for ( i32 i = 0; i < n_msel; i++ )
+            {
+                char row[ 32 ];
+                snprintf( row, sizeof( row ), "asset_%02d.png", i );
+                gui()->msel_item( row, i, msel[ i ] );
+            }
+        }
+        gui()->child_end();
+        gui()->msel_apply( gui()->msel_end(), msel, n_msel );
+
+        i32 n_on = 0;
+        for ( i32 i = 0; i < n_msel; i++ )
+            n_on += msel[ i ] ? 1 : 0;
+        char status[ 48 ];
+        snprintf( status, sizeof( status ), "%d of %d selected", n_on, n_msel );
+        gui()->label_text( "msel", status );
+        if ( gui()->small_button( "Clear selection" ) )
+            gui()->msel_apply( ( gui_msel_t ){ GUI_MSEL_CLEAR, 0, 0 }, msel, n_msel );
+
         /* combo -- one-liner over a string array. */
         gui()->separator_text( "combo (one-liner)" );
         static const char* items[] = { "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta" };
