@@ -44,12 +44,16 @@ static const builtin_font_info_t s_builtin_font[ GUI_FONT_BUILTIN_COUNT ] =
     [ GUI_FONT_JETBRAINS_12 ]       = { "assets/font/JetBrainsMonoNL-Regular_12px.orb_font", FONT_FAM_JETBRAINS,     12 },
     [ GUI_FONT_JETBRAINS_16 ]       = { "assets/font/JetBrainsMonoNL-Regular_16px.orb_font", FONT_FAM_JETBRAINS,     16 },
     [ GUI_FONT_JETBRAINS_20 ]       = { "assets/font/JetBrainsMonoNL-Regular_20px.orb_font", FONT_FAM_JETBRAINS,     20 },
+    [ GUI_FONT_JETBRAINS_24 ]       = { "assets/font/JetBrainsMonoNL-Regular_24px.orb_font", FONT_FAM_JETBRAINS,     24 },
     [ GUI_FONT_ROBOTO_12 ]          = { "assets/font/Roboto-Regular_12px.orb_font",          FONT_FAM_ROBOTO,        12 },
     [ GUI_FONT_ROBOTO_16 ]          = { "assets/font/Roboto-Regular_16px.orb_font",          FONT_FAM_ROBOTO,        16 },
     [ GUI_FONT_ROBOTO_20 ]          = { "assets/font/Roboto-Regular_20px.orb_font",          FONT_FAM_ROBOTO,        20 },
+    [ GUI_FONT_ROBOTO_24 ]          = { "assets/font/Roboto-Regular_24px.orb_font",          FONT_FAM_ROBOTO,        24 },
     [ GUI_FONT_CASCADIA_MONO_12 ]   = { "assets/font/CascadiaMono_12px.orb_font",            FONT_FAM_CASCADIA_MONO, 12 },
     [ GUI_FONT_CASCADIA_MONO_16 ]   = { "assets/font/CascadiaMono_16px.orb_font",            FONT_FAM_CASCADIA_MONO, 16 },
     [ GUI_FONT_CASCADIA_MONO_20 ]   = { "assets/font/CascadiaMono_20px.orb_font",            FONT_FAM_CASCADIA_MONO, 20 },
+    [ GUI_FONT_CASCADIA_MONO_24 ]   = { "assets/font/CascadiaMono_24px.orb_font",            FONT_FAM_CASCADIA_MONO, 24 },
+    [ GUI_FONT_CASCADIA_MONO_32 ]   = { "assets/font/CascadiaMono_32px.orb_font",            FONT_FAM_CASCADIA_MONO, 32 },
     [ GUI_FONT_CASCADIA_CODE_16 ]   = { "assets/font/CascadiaCode_16px.orb_font",            FONT_FAM_CASCADIA_CODE, 16 },
 };
 
