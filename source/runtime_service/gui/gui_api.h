@@ -2136,6 +2136,19 @@ typedef struct gui_api_s
     bool ( *small_button )( const char* label );
     void ( *progress_bar )( f32 fraction, const char* overlay );
 
+    /* plot_lines / plot_histogram -- a read-only sparkline over a caller-owned f32 array (the
+       ImGui PlotLines / PlotHistogram analogues): lines connect the samples, histogram raises
+       one bar per sample from the zero line (both stride-sample when there are more samples
+       than pixels).  `offset` rotates the read order -- a ring buffer passes its write index
+       and the plot scrolls without any memmove.  scale_min >= scale_max auto-fits the data
+       range; h <= 0 takes the default three-row height.  Hovering highlights the sample and
+       shows "index: value" in a tooltip.  overlay draws centered at the top (NULL / "" =
+       none); the label trails past the right edge like listbox / input_text_multiline. */
+    void ( *plot_lines     )( const char* label, const f32* values, i32 count, i32 offset,
+                              const char* overlay, f32 scale_min, f32 scale_max, f32 h );
+    void ( *plot_histogram )( const char* label, const f32* values, i32 count, i32 offset,
+                              const char* overlay, f32 scale_min, f32 scale_max, f32 h );
+
     /* arrow_button -- a square, framed, non-text button drawing a triangle pointing `dir`.  The id
        comes from the label (use a "##id" string, nothing is displayed).  Combine with
        push_item_flag( GUI_ITEM_BUTTON_REPEAT, true ) for press-and-hold stepping (spin buttons). */

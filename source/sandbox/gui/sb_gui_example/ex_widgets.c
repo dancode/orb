@@ -386,6 +386,80 @@ ex_widgets_sliders( void )
 }
 
 /*==============================================================================================
+    Plots -- plot_lines / plot_histogram: read-only sparklines over a caller-owned f32 array,
+    with ring-buffer scrolling (offset), auto vs fixed scale, and pixel-budget downsampling.
+==============================================================================================*/
+
+static void
+ex_widgets_plots( void )
+{
+    if ( ex_begin( "Plots", 520, 820, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text( "The caller owns the array; the widget only reads it.  Hover any plot" );
+        gui()->text( "for the sample under the cursor as an \"index: value\" tooltip." );
+        gui()->separator();
+
+        /* A static array, auto-fit scale (scale_min >= scale_max scans the data's own range). */
+        gui()->separator_text( "Static array, auto-fit scale" );
+        static const f32 frame_ms[] = { 6.2f, 5.9f, 6.1f, 9.8f, 6.0f, 5.8f, 16.4f, 6.3f,
+                                        6.1f, 5.9f, 7.2f, 6.0f, 6.2f, 12.1f, 6.1f, 5.9f };
+        i32 fm_count = (i32)( sizeof( frame_ms ) / sizeof( frame_ms[ 0 ] ) );
+        gui()->plot_lines(     "lines",     frame_ms, fm_count, 0, "frame ms", 0.0f, 0.0f, 120.0f );
+        gui()->plot_histogram( "histogram", frame_ms, fm_count, 0, NULL,       0.0f, 0.0f, 120.0f );
+
+        /* Ring buffer: pass the write index as `offset` and the plot scrolls -- no memmove. */
+        gui()->separator_text( "Scrolling ring buffer (offset)" );
+        static f32  ring[ 120 ];
+        static i32  ring_i  = 0;
+        static f32  next_t  = 0.0f;
+        static bool animate = true;
+        static f32  plot_h  = 140.0f;
+        gui()->checkbox( "Animate", &animate );
+        gui()->same_line( -1.0f );
+        gui()->help_marker( "Animation keeps content changing, so idle-skip stays awake while on." );
+        gui()->slider_float( "height", &plot_h, 40.0f, 300.0f );
+        if ( animate )
+        {
+            /* Frame-rate-independent 60 Hz sample feed (catch up after a slow frame, but never
+               spin after a long idle stretch). */
+            f32 t = (f32)gui()->get_time();
+            if ( next_t == 0.0f || t - next_t > 1.0f ) next_t = t;
+            while ( next_t < t )
+            {
+                ring[ ring_i ] = sinf( next_t * 3.0f ) + 0.25f * sinf( next_t * 11.0f );
+                ring_i         = ( ring_i + 1 ) % 120;
+                next_t        += 1.0f / 60.0f;
+            }
+        }
+        gui()->plot_lines( "signal", ring, 120, ring_i, "sin blend", -1.5f, 1.5f, plot_h );
+
+        /* Fixed scale + signed data: the histogram raises bars from the ZERO line when the
+           range spans it, from the range edge otherwise. */
+        gui()->separator_text( "Fixed scale + zero baseline" );
+        static bool signed_data = true;
+        gui()->checkbox( "Signed data (bars from the zero line)", &signed_data );
+        f32 bars[ 24 ];
+        for ( i32 i = 0; i < 24; ++i )
+        {
+            f32 v     = sinf( (f32)i * 0.45f );
+            bars[ i ] = signed_data ? v : 0.5f + 0.5f * v;
+        }
+        gui()->plot_histogram( "bars", bars, 24, 0, NULL, signed_data ? -1.2f : 0.0f, 1.2f, 120.0f );
+
+        /* More samples than pixels: both plots stride-sample down to one mark per pixel. */
+        gui()->separator_text( "Sample density (downsampling)" );
+        static i32 dense_n = 600;
+        gui()->slider_int( "count", &dense_n, 2, 1024 );
+        f32 dense[ 1024 ];
+        for ( i32 i = 0; i < dense_n; ++i )
+            dense[ i ] = sinf( (f32)i * 0.05f ) * ( 1.0f - (f32)i / 1024.0f );
+        gui()->plot_lines( "dense", dense, dense_n, 0, NULL, -1.0f, 1.0f, 120.0f );
+    }
+    gui()->window_end();
+}
+
+/*==============================================================================================
     Color Editors -- color_edit3/4 with every display flag toggled live, plus a swatch strip.
 ==============================================================================================*/
 

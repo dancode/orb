@@ -588,6 +588,10 @@ bool gui_small_button( const char* label );
 bool gui_button_fill( const char* label );
 f32  gui_button_width( const char* label );
 void gui_progress_bar( f32 fraction, const char* overlay );
+void gui_plot_lines( const char* label, const f32* values, i32 count, i32 offset,
+                     const char* overlay, f32 scale_min, f32 scale_max, f32 h );
+void gui_plot_histogram( const char* label, const f32* values, i32 count, i32 offset,
+                         const char* overlay, f32 scale_min, f32 scale_max, f32 h );
 bool gui_arrow_button( const char* id_str, gui_dir_t dir );
 bool gui_checkbox( const char* label, bool* v );
 bool gui_radio_button( const char* label, i32* v, i32 value );

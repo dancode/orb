@@ -64,6 +64,7 @@ MOD_USE_APP;
 #include "runtime_service/gui/chrome/widgets/gui_volatile.c"
 #include "runtime_service/gui/chrome/widgets/gui_widget_slider.c"
 #include "runtime_service/gui/chrome/widgets/gui_widget_numeric.c"
+#include "runtime_service/gui/chrome/widgets/gui_plot.c"
 #include "runtime_service/gui/chrome/widgets/gui_widget_color.c"
 #include "runtime_service/gui/chrome/widgets/gui_tab_bar.c"
 #include "runtime_service/gui/chrome/widgets/gui_box.c"
