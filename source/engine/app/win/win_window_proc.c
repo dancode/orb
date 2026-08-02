@@ -367,6 +367,33 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
             return TRUE;
         }
 
+        case WM_DPICHANGED:
+        {
+            /* The window crossed onto a monitor with a different scale (or the user edited the
+               OS scale setting).  Record the new DPI and queue the event BEFORE applying the
+               OS-suggested rect: the SetWindowPos fires WM_SIZE synchronously, so consumers see
+               the DPI change ahead of the resize it causes.  The suggested rect keeps the window
+               the same apparent size on the new monitor (scaled physical pixels). */
+            win->dpi = ( u32 )HIWORD( wp );
+
+            /* Keep the default edge-resize band at its apparent thickness (gui overwrites this
+               each frame for GUI-driven windows via window_set_native_frame). */
+            if ( win->native.enabled )
+                win->native.border = win_dpi_metric( SM_CXSIZEFRAME, win->dpi )
+                                   + win_dpi_metric( SM_CXPADDEDBORDER, win->dpi );
+
+            app_event_t ev    = win_make_event( APP_EV_WIN_DPI, win->id );
+            ev.data.win_dpi.dpi   = win->dpi;
+            ev.data.win_dpi.scale = ( f32 )win->dpi / ( f32 )APP_DPI_BASE;
+            win_post_event( &ev );
+
+            const RECT* r = ( const RECT* )lp;
+            SetWindowPos( hwnd, NULL, r->left, r->top,
+                          r->right - r->left, r->bottom - r->top,
+                          SWP_NOZORDER | SWP_NOACTIVATE );
+        }
+            return 0;
+
         case WM_PAINT:
         {
             PAINTSTRUCT ps;
@@ -403,8 +430,8 @@ app_wnd_proc( HWND hwnd, UINT msg, WPARAM wp, LPARAM lp )
                 NCCALCSIZE_PARAMS* p = ( NCCALCSIZE_PARAMS* )lp;
                 if ( IsZoomed( hwnd ) )
                 {
-                    int fx = GetSystemMetrics( SM_CXFRAME ) + GetSystemMetrics( SM_CXPADDEDBORDER );
-                    int fy = GetSystemMetrics( SM_CYFRAME ) + GetSystemMetrics( SM_CXPADDEDBORDER );
+                    int fx = win_dpi_metric( SM_CXFRAME, win->dpi ) + win_dpi_metric( SM_CXPADDEDBORDER, win->dpi );
+                    int fy = win_dpi_metric( SM_CYFRAME, win->dpi ) + win_dpi_metric( SM_CXPADDEDBORDER, win->dpi );
                     p->rgrc[ 0 ].left   += fx;
                     p->rgrc[ 0 ].right  -= fx;
                     p->rgrc[ 0 ].top    += fy;

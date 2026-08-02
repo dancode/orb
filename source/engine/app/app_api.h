@@ -49,6 +49,14 @@ typedef struct app_api_s
     void            ( *window_get_pos           )( win_id_t id, i32* out_x, i32* out_y );
     void            ( *window_set_pos           )( win_id_t id, i32 x, i32 y );
 
+    /* The window's current monitor scale factor (1.0 = 96 DPI, 1.5 = 150%, ...).  The process
+       declares Per-Monitor V2 awareness at first window open, so all sizes/coords everywhere in
+       the engine are PHYSICAL pixels; this factor is advisory -- a UI layer multiplies its
+       metrics by it to keep apparent size, or ignores it to stay 1:1.  Updates arrive as
+       APP_EV_WIN_DPI events (queued before the resize they cause).  1.0 on an invalid id and on
+       systems without per-monitor DPI support. */
+    f32             ( *window_dpi_scale         )( win_id_t id );
+
     app_win_state_t ( *window_state             )( win_id_t id );
     void            ( *window_set_fillscreen    )( win_id_t id, bool enabled );
     void            ( *window_toggle_fillscreen )( win_id_t id );

@@ -84,6 +84,10 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
     /* Register the window class on first use. */
     if ( !g_pool.hinst )
     {
+        /* Declare Per-Monitor V2 DPI awareness before any window exists -- the OS refuses
+           awareness changes once a window has been created. */
+        win_dpi_boot();
+
         g_pool.hinst = GetModuleHandleW( NULL );
 
         /* style: no CS_HREDRAW/CS_VREDRAW -- RHI owns pixels, suppress resize invalidation */
@@ -164,10 +168,13 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
 
     /* Custom-frame state: a borderless window claims its whole rect as client (WM_NCCALCSIZE) and
        returns HTCLIENT from WM_NCHITTEST for everything inside the edge-resize band.  The resize
-       grab defaults to the OS sizing-frame width so the borders are draggable at once. */
+       grab defaults to the OS sizing-frame width so the borders are draggable at once.  Sized for
+       the system DPI here; re-derived below once the window exists and its monitor DPI is known. */
+    win->dpi            = win_dpi_system();
     win->native.enabled = ( flags & APP_WIN_BORDERLESS ) != 0;
     win->native.border  = win->native.enabled
-                          ? GetSystemMetrics( SM_CXSIZEFRAME ) + GetSystemMetrics( SM_CXPADDEDBORDER )
+                          ? win_dpi_metric( SM_CXSIZEFRAME, win->dpi )
+                            + win_dpi_metric( SM_CXPADDEDBORDER, win->dpi )
                           : 0;
 
     /* Determine client size — 0 then 50% of desktop work area */
@@ -184,7 +191,7 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
        stripped) caption + borders and the client would end up larger than the requested w x h. */
     RECT rect = { 0, 0, w, h };
     if ( !win->native.enabled )
-        AdjustWindowRectEx( &rect, style, FALSE, ex_style );
+        win_dpi_adjust_rect( &rect, style, ex_style, win->dpi );
 
     /* x = y = 0 then OS positions (CW_USEDEFAULT) */
     i32 win_x = ( x == 0 && y == 0 ) ? CW_USEDEFAULT : x;
@@ -208,6 +215,13 @@ app_window_open( const char* title, i32 x, i32 y, i32 w, i32 h, u32 flags )
 
     win->hwnd = hwnd;
     SetWindowLongPtrW( hwnd, GWLP_USERDATA, ( LONG_PTR )win );
+
+    /* The window now has a monitor: replace the system-DPI guess with the real per-monitor
+       value (later changes arrive via WM_DPICHANGED). */
+    win->dpi = win_dpi_for_window( hwnd );
+    if ( win->native.enabled )
+        win->native.border = win_dpi_metric( SM_CXSIZEFRAME, win->dpi )
+                           + win_dpi_metric( SM_CXPADDEDBORDER, win->dpi );
 
     /* The WM_NCCALCSIZE during CreateWindowExW ran before the back-pointer above was set, so the
        custom frame was not yet stripped.  Re-fire it now that the WndProc can see win->native. */
@@ -390,6 +404,13 @@ app_window_get_size( win_id_t id, i32* out_w, i32* out_h )
     app_window_t* win = win_get( id );
     if ( out_w ) *out_w = win ? win->w : 0;
     if ( out_h ) *out_h = win ? win->h : 0;
+}
+
+static f32
+app_window_dpi_scale( win_id_t id )
+{
+    app_window_t* win = win_get( id );
+    return win ? ( f32 )win->dpi / ( f32 )APP_DPI_BASE : 1.0f;
 }
 
 /* Window CLIENT-area top-left in virtual-desktop screen coordinates.  Client (not frame) origin so

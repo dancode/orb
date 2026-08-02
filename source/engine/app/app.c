@@ -9,7 +9,8 @@
         3. Platform headers           (windows.h, gated by OS_WINDOWS)
         4. mod_export.h               (mod_desc_t, get_api_fn)
         5. app.h                      (app_api_t definition + key/button enums)
-        6. Platform backends          (win_input.c — input handlers and snapshot;
+        6. Platform backends          (win_dpi.c — per-monitor DPI awareness + helpers;
+                                       win_input.c — input handlers and snapshot;
                                        win_gamepad.c — XInput poll into the same arrays;
                                        win_window_proc.c — WndProc uses those handlers;
                                        win_fiber.c — fiber pump, guarded by APP_WIN_FIBER;
@@ -128,6 +129,7 @@ typedef struct app_window_s
     app_cursor_t        cursor;
 
     i32                 w, h;           /* cached client dimensions — valid even when minimized */
+    u32                 dpi;            /* monitor DPI (96 = 100%); tracks WM_DPICHANGED         */
     bool                hover_tracking; /* TrackMouseEvent is armed                              */
     bool                resize_modal;   /* inside WM_ENTERSIZEMOVE / WM_EXITSIZEMOVE loop        */
 
@@ -187,6 +189,7 @@ typedef struct win_pool_s
 
 static win_pool_t g_pool = { .main_id = APP_WIN_INVALID };
 
+    #include "engine/app/win/win_dpi.c"
     #include "engine/app/win/win_input.c"
     #include "engine/app/win/win_gamepad.c"
     #include "engine/app/win/win_window_proc.c"

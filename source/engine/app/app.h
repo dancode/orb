@@ -174,6 +174,7 @@ typedef enum app_event_type_e
     APP_EV_WIN_FOCUS,     // window gained OS focus
     APP_EV_WIN_BLUR,      // window lost OS focus
     APP_EV_WIN_RESIZE,    // client area resized
+    APP_EV_WIN_DPI,       // window's monitor DPI changed (moved monitors / OS scale edit)
     APP_EV_WIN_CLOSE,     // user triggered window close
 
     APP_EV_QUIT,    // application should exit
@@ -255,6 +256,17 @@ typedef struct app_win_resize_event_s /* 8 bytes */
 
 } app_win_resize_event_t;
 
+/* Monitor DPI change.  Fires when the window crosses onto a monitor with a different scale or
+   the user edits the OS scale setting.  The platform layer queues this first and then applies
+   the OS-suggested window rect, so the matching APP_EV_WIN_RESIZE follows it in the ring and a
+   consumer already knows the new scale when the resize arrives. */
+typedef struct app_win_dpi_event_s /* 8 bytes */
+{
+    u32 dpi;   /* new dots-per-inch (96 = 100%)              */
+    f32 scale; /* dpi / 96.0f — convenience factor           */
+
+} app_win_dpi_event_t;
+
 /*==============================================================================================
     app_event_t — 32 bytes, ring-buffer friendly.
     event_id:   monotonic counter for ordering / replay.
@@ -278,6 +290,7 @@ typedef struct app_event_s
         app_mouse_btn_event_t   mouse_btn;
         app_mouse_wheel_event_t mouse_wheel;
         app_win_resize_event_t  win_resize;
+        app_win_dpi_event_t     win_dpi;
         app_clipboard_event_t   clipboard;
 
     } data;

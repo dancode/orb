@@ -65,7 +65,7 @@ win_set_fillscreen( app_window_t* win, bool enabled )
         SetWindowLongW( hwnd, GWL_EXSTYLE, fill->prev_exstyle );
 
         RECT rect = { 0, 0, fill->prev_w, fill->prev_h };
-        AdjustWindowRectEx( &rect, fill->prev_style, FALSE, fill->prev_exstyle );
+        win_dpi_adjust_rect( &rect, fill->prev_style, fill->prev_exstyle, win->dpi );
 
         SetWindowPos( hwnd, NULL,
                       fill->prev_x, fill->prev_y,
@@ -132,7 +132,7 @@ app_window_resize( win_id_t id, i32 w, i32 h )
     {
         DWORD style    = (DWORD)GetWindowLongW( win->hwnd, GWL_STYLE );
         DWORD ex_style = (DWORD)GetWindowLongW( win->hwnd, GWL_EXSTYLE );
-        AdjustWindowRectEx( &rect, style, FALSE, ex_style );
+        win_dpi_adjust_rect( &rect, style, ex_style, win->dpi );
     }
 
     /* Keep position and z-order; the WM_SIZE this generates updates win->w/h and posts the event. */

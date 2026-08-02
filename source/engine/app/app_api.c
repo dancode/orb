@@ -21,6 +21,7 @@ const app_api_t g_app_api_struct = {
     .window_get_size          = app_window_get_size,
     .window_get_pos           = app_window_get_pos,
     .window_set_pos           = app_window_set_pos,
+    .window_dpi_scale         = app_window_dpi_scale,
     .window_state             = app_window_state,
     .window_set_fillscreen    = app_window_set_fillscreen,
     .window_toggle_fillscreen = app_window_toggle_fillscreen,
