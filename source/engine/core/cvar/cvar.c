@@ -649,7 +649,14 @@ cvar_print_value( const cvar_t* cv )
             else    con_printf( " [float]" );
             break;
 
-        case CVAR_STR: con_printf( " [choice: %u of %u]", cv->s.value, cv->s.count ); break;
+        case CVAR_STR:
+            /* List the actual choices -- an index-vs-count readout ("1 of 3") misreads as
+               one-based and tells the user nothing about what to type. */
+            con_printf( " [choices:" );
+            for ( u32 i = 0; i < cv->s.count; ++i )
+                con_printf( " %s", cvar_get_string_from_id( cv, ( i32 )i ) );
+            con_printf( "]" );
+            break;
         case CVAR_BUF: con_printf( " [string]" ); break;
         case CVAR_REF: con_printf( " [readonly]" ); break;
         case CVAR_USR: con_printf( " [user]" ); break;

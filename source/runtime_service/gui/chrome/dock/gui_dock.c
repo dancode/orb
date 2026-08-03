@@ -52,6 +52,10 @@ gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
     if ( vp >= GUI_MAX_VIEWPORTS )
         return GUI_DOCK_NONE;
 
+    /* Mixed DPI: the tree's node rects (strip heights, splitter thickness) resolve from s_style,
+       so land this surface's bake before the layout below.  No-op when already landed. */
+    gui_dpi_land( vp );
+
     gui_viewport_t*  v    = &s_vp_pool[ vp ];
     v->dock_flags      = flags;   /* re-published each frame; NO_SPLIT gates the chips + split verbs */
     v->dock_seen_frame = gui_frame_index();   /* tree ACTIVE this build; unstamped = dormant */

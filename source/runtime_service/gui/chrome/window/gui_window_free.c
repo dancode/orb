@@ -792,6 +792,11 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     if ( route.node )
         return window_begin_docked( win, id, title, flags, &route );
 
+    /* Mixed DPI: land this surface's bake before any metric below (title_h, shelf chip, autosize
+       bounds) reads s_style -- surfaces on differently-scaled monitors carry different bakes.
+       A no-op when the bake is already landed (the overwhelmingly common case). */
+    gui_dpi_land( win->viewport );
+
     /* Next-window channel: apply any queued window_set_next_pos / _size before this frame's drag,
        resize, and autosize act on the geometry, so a ONCE / APPEARING seed becomes the incoming
        state the user then interacts with.  `appearing` is the first begin (last_frame 0) or the
@@ -1105,30 +1110,36 @@ gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
 }
 
 /*==============================================================================================
-    windows_dpi_rescale -- keep window footprints at their apparent size across a DPI scale step.
+    windows_dpi_rescale -- keep ONE surface's window footprints at their apparent size across a
+    DPI scale step.
 
-    Called from gui_dpi_poll (frame/gui_frame_font.c) after a font retarget: metrics and text just
-    grew by `ratio`, so a rect sized for the old scale now clips its own content and covers less
-    of the screen.  Multiply every persisted free-window rect by the same ratio.  Windows are
-    per-context but the step is global, so every live context's pool is visited (the same rule as
-    the viewport-close migration in frame/gui_viewport.c).
+    Called from gui_dpi_poll (frame/gui_frame_font.c) when a viewport's bake changed: metrics and
+    text on that surface just grew by `ratio`, so a rect sized for the old scale now clips its
+    own content and covers less of the screen.  Multiply that surface's persisted free-window
+    rects by the same ratio.  Windows are per-context but a viewport is global, so every live
+    context's pool is visited (the same rule as the viewport-close migration in
+    frame/gui_viewport.c).
 
     Docked windows need no special case: the node owns their geometry (splits are RATIOS, so the
     dock tree tracks its viewport at any scale) and window_begin_docked overwrites the record
-    every frame -- scaling those records is a harmless one-frame no-op.  Skipped records:
-      - windows on a gui-OWNED viewport -- their rect is slaved to the OS surface
-        (window_sync_native pins it), so the OS floater window itself is resized instead, via the
-        same window_resize primitive the autosize grip uses.  Screen POSITION is left alone: it
-        is desktop-absolute, not UI-relative.
+    every frame -- scaling those records is a harmless one-frame no-op.
+
+    A gui-OWNED surface has nothing here to scale: its windows' rects are slaved to the OS
+    surface (window_sync_native pins them), so the poll resizes that OS floater window itself
+    instead -- and only for a gui-driven step; an OS-driven one (monitor move) already applied
+    the suggested rect.  Screen POSITION is left alone either way: it is desktop-absolute, not
+    UI-relative.
 
     The scaled rects stay lattice-clean: the quantum scales by this same ratio (metrics_compute),
     so a multiple of the old pitch maps to a multiple of the new one exactly.
 ==============================================================================================*/
 
 void
-windows_dpi_rescale( f32 ratio )
+windows_dpi_rescale( u32 vp, f32 ratio )
 {
     if ( !( ratio > 0.0f ) || ratio == 1.0f )
+        return;
+    if ( vp >= GUI_MAX_VIEWPORTS || s_vp_pool[ vp ].owned )
         return;
 
     for ( u32 c = 0; c < s_ctx_pool_count; ++c )
@@ -1140,9 +1151,7 @@ windows_dpi_rescale( f32 ratio )
         for ( u32 i = 0; i < ctx->win.count; ++i )
         {
             gui_window_t* win = &ctx->win.pool[ i ];
-            if ( win->id == 0 )
-                continue;
-            if ( win->viewport != 0 && s_vp_pool[ win->viewport ].owned )
+            if ( win->id == 0 || win->viewport != vp )
                 continue;
 
             win->x *= ratio;        win->y *= ratio;
@@ -1151,20 +1160,6 @@ windows_dpi_rescale( f32 ratio )
             win->norm.w *= ratio;   win->norm.h *= ratio;
             win->reopen.w *= ratio; win->reopen.h *= ratio;  /* closed-floater respawn size */
         }
-    }
-
-    /* gui-owned OS floaters: grow the OS client area so the pinned shell keeps its footprint. */
-    for ( u32 v = 1; v < GUI_MAX_VIEWPORTS; ++v )
-    {
-        if ( !s_vp_pool[ v ].owned || s_vp_pool[ v ].win_id < 0 )
-            continue;
-
-        i32 w = 0, h = 0;
-        app()->window_get_size( s_vp_pool[ v ].win_id, &w, &h );
-        if ( w > 0 && h > 0 )
-            app()->window_resize( s_vp_pool[ v ].win_id,
-                                  (i32)( (f32)w * ratio + 0.5f ),
-                                  (i32)( (f32)h * ratio + 0.5f ) );
     }
 }
 

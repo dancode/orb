@@ -52,6 +52,8 @@ viewport_create( gui_vp_t vp, rhi_texture_t target, i32 win_id )
     v->dock_inset      = 0.0f;             // no host menu/toolbar band until one publishes it
     v->dock_root       = GUI_DOCK_REF_NONE; // free-float until docking assigns a tree
     v->dock_seen_frame = 0;                 // never emitted; frame clock starts at 1 so 0 = dormant
+    v->dpi_bake        = s_dpi.base;        // managed-family bake; per-surface once poll resolves it
+    v->dpi_os_scale    = 1.0f;              // OS-scale snapshot; first poll takes the real value
 
     return surface_geo_create( &v->vb, &v->ib );
 }
@@ -381,6 +383,21 @@ viewport_service_tearoff( gui_window_t* win, bool has_home )
     {
         /* window_open positions the FRAME; set_pos lands the CLIENT corner on (sx,sy). */
         app()->window_set_pos( s_vp_pool[ vp ].win_id, sx, sy );
+
+        /* The floater may have landed on a monitor at a different scale than the origin surface
+           (mixed DPI): resolve its bake now -- before its first frame, so it never emits one
+           frame at the wrong scale -- snapshot its OS scale so the next poll reads no phantom
+           change, and match the OS window size so the panel keeps its apparent size (spawned
+           with origin-scale sw/sh; the slaved window record follows via window_sync_native). */
+        f32 src = dpi_bake_scale( s_vp_pool[ 0 ].dpi_bake );
+        gui_dpi_vp_resolve( (u32)vp );
+        s_vp_pool[ vp ].dpi_os_scale = s_vp_pool[ vp ].win_id >= 0
+                                         ? app()->window_dpi_scale( s_vp_pool[ vp ].win_id ) : 1.0f;
+        f32 dst = dpi_bake_scale( s_vp_pool[ vp ].dpi_bake );
+        if ( dst != src && src > 0.0f )
+            app()->window_resize( s_vp_pool[ vp ].win_id,
+                                  (i32)( (f32)sw * dst / src + 0.5f ),
+                                  (i32)( (f32)sh * dst / src + 0.5f ) );
         win->viewport = vp;
         win->x        = 0.0f;
         win->y        = 0.0f;
@@ -404,6 +421,22 @@ viewport_service_mergeback( gui_window_t* win )
 
     win->viewport = 0;
 
+    /* Coming home from a surface at a different scale (mixed DPI): the record's size -- and, on
+       the drag path below, the grab offset -- are in the floater's scale.  Rescale them into the
+       host surface's so the panel keeps its apparent size and the cursor keeps its grip point. */
+    f32 dpi_r = 1.0f;
+    if ( fvp > 0 && fvp < GUI_MAX_VIEWPORTS )
+    {
+        f32 from = dpi_bake_scale( s_vp_pool[ fvp ].dpi_bake );
+        if ( from > 0.0f )
+            dpi_r = dpi_bake_scale( s_vp_pool[ 0 ].dpi_bake ) / from;
+    }
+    if ( dpi_r != 1.0f )
+    {
+        win->w *= dpi_r;
+        win->h *= dpi_r;
+    }
+
     /* Clamp the window to fit inside the host surface on any pop-in path.  Size first so
        that position clamping below always has a non-negative travel range.  A panel that was
        fullscreened while floating must not land with resize handles off-screen.
@@ -422,8 +455,8 @@ viewport_service_mergeback( gui_window_t* win )
     {
         f32 gox = 0.0f, goy = 0.0f;
         move_grab_offset( &gox, &goy );
-        win->x = s_io.mouse_x - gox;
-        win->y = s_io.mouse_y - goy;
+        win->x = s_io.mouse_x - gox * dpi_r;
+        win->y = s_io.mouse_y - goy * dpi_r;
     }
     else
     {

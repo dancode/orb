@@ -136,6 +136,10 @@ overlay_reattach( gui_overlay_save_t s )
     s_build.win = s.win;
     s_scope     = s.scope;
     draw_scope_set( s.draw );
+
+    /* Mixed DPI: the overlay's window_begin landed ITS surface's bake; put the parent's back so
+       the rest of the parent's emit lays out at its own scale.  No-op when they share one. */
+    gui_dpi_land( s_build.win.viewport );
 }
 
 /*==============================================================================================

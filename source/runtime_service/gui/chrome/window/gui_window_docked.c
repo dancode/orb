@@ -36,6 +36,11 @@ window_begin_docked( gui_window_t* win, gui_id_t id, const char* title,
 
     /* Geometry owned by the node; mirror it onto the record so a later undock resumes here. */
     win->viewport   = node->viewport;
+
+    /* Mixed DPI: land the node's surface bake before the strip / body metrics below read
+       s_style.  No-op when already landed. */
+    gui_dpi_land( node->viewport );
+
     win->x          = node->rect.x;
     win->y          = node->rect.y;
     win->w          = node->rect.w;

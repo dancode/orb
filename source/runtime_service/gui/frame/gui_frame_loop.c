@@ -346,11 +346,16 @@ gui_frame_begin( f32 dt )
         s_frame_dirty = true;
     #endif
 
-    /* DPI retarget: if the wanted monitor / manual scale picked a different bake of the managed
-       font family, activate it now (layout rescales through the em pipeline).  Before the font
-       flush so a freshly loaded bake's atlas pixels upload in the same frame's flush below. */
+    /* DPI retarget: if any surface's wanted monitor / manual scale picked a different bake of
+       the managed font family, restamp it now (layout rescales through the em pipeline).  Before
+       the font flush so a freshly loaded bake's atlas pixels upload in the same frame's flush
+       below.  Then land the PRIMARY surface's bake unconditionally: the last window emitted last
+       frame may sit on a differently-scaled monitor, and the ambient state every pre-window step
+       reads (the font flush's style apply, draw_reset's cur_font seed, the boot shell) must be
+       viewport 0's.  A no-op when it is already landed. */
     if ( gui_dpi_poll() )
         s_frame_dirty = true;
+    gui_dpi_land( 0 );
 
     /* Commit deferred font (re)loads at this safe between-frames point -- always, since the host
        can request a load between frames independent of the widget emit.  A committed swap changes

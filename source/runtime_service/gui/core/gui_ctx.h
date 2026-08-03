@@ -417,6 +417,16 @@ typedef struct
        GPU viewport/scissor clamp at submit time; the clip baked into each draw command is built here. */
     i32 disp_w, disp_h;
 
+    /* Per-surface DPI response (mixed-DPI monitors; orchestration in frame/gui_frame_font.c).
+       dpi_bake is the managed-family bake THIS surface's windows lay out and draw with, resolved
+       from its own OS window's monitor scale by gui_dpi_poll and activated per window by
+       gui_dpi_land -- surfaces on differently-scaled monitors carry different bakes through one
+       sequential frame.  dpi_os_scale is last frame's app()->window_dpi_scale snapshot, kept to
+       tell an OS-driven change (WM_DPICHANGED already resized the window) from a gui-driven one
+       (ui_scale / mode flip: gui must resize the owned floater itself). */
+    gui_builtin_font_t dpi_bake;      // bake in effect on this surface (GUI_FONT_NONE = unmanaged)
+    f32                dpi_os_scale;  // last polled OS scale of the hosting window (1.0 = 100%)
+
     /* Top band (pixels) drawn by this surface's native host caption (the GUI_WIN_NATIVE shell
        window's title bar height), published each frame by that shell.  window_clamp keeps non-native
        windows' top edge at or below this inset so their title bars stay grabbable above the drawn

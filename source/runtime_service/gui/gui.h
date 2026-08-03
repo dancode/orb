@@ -827,6 +827,13 @@ const gui_style_t* gui_style_peek( void );
 
 void         gui_style_apply( void );
 
+/* gui_dpi_land() -- activate the DPI bake a viewport carries and rescale the live metrics to
+   it.  Internal seam: window_begin calls it as each window's surface comes up, so surfaces on
+   differently-scaled monitors emit with their own bake in one sequential frame.  A no-op when
+   that bake is already landed, when DPI is unmanaged, or while a host-driven font is active. */
+
+void         gui_dpi_land( u32 viewport );
+
 /* gui_style_bake() -- derive the 96-cell colour grid from s->palette, in place.  The one step
    between what a theme AUTHORS and what a render READS, and the only writer of col[][][] the
    engine has.  Pure: a function of the palette alone, so the same palette always bakes to the
@@ -2694,17 +2701,19 @@ typedef enum
 /*==============================================================================================
     GUI_FRAME -- DPI response mode
 
-    How gui reacts to the main window's monitor scale (app()->window_dpi_scale; the process is
-    per-monitor DPI aware, so all engine coordinates are physical pixels).  gui scales by
-    retargeting the ACTIVE FONT within the init() preset's family -- a bigger bake raises em, and
-    every layout metric already rescales from em -- so the response granularity is the set of
-    baked sizes that family ships.  See dpi_set() in gui_api.h.
+    How gui reacts to monitor scale (app()->window_dpi_scale; the process is per-monitor DPI
+    aware, so all engine coordinates are physical pixels).  gui scales by retargeting the
+    ACTIVE FONT within the init() preset's family -- a bigger bake raises em, and every layout
+    metric already rescales from em -- so the response granularity is the set of baked sizes
+    that family ships.  Each surface (viewport) resolves against ITS OWN hosting window's
+    scale, so floaters on differently-scaled monitors each get the right bake (mixed DPI).
+    See dpi_set() in gui_api.h.
 ==============================================================================================*/
 
 typedef enum
 {
     GUI_DPI_OFF = 0,    // ignore monitor scale -- UI stays at the authored bake, 1:1 pixels
-    GUI_DPI_AUTO,       // follow the main window's monitor scale (default)
+    GUI_DPI_AUTO,       // follow each surface's own monitor scale (default)
     GUI_DPI_MANUAL      // apply the explicit factor passed to dpi_set()
 
 } gui_dpi_mode_t;

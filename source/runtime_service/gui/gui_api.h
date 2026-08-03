@@ -131,16 +131,17 @@ typedef struct gui_api_s
        scale each frame; em-driven layout does the rest.  Granularity = the family's baked sizes.
 
         dpi_set()
-            : select the response mode.  AUTO follows the main window's monitor scale
-              (app window_dpi_scale, tracked live across monitor moves / OS scale edits);
-              MANUAL applies `scale` (0.5..4, clamped); OFF pins the authored bake.
+            : select the response mode.  AUTO follows EACH surface's own monitor scale
+              (app window_dpi_scale of its hosting window, tracked live across monitor moves /
+              OS scale edits -- mixed-DPI monitors get per-surface bakes); MANUAL applies
+              `scale` (0.5..4, clamped) everywhere; OFF pins the authored bake.
               `scale` <= 0 keeps the previous manual factor.  Cheap and idempotent --
               a host may push it every frame (e.g. from a cvar).
         dpi_mode()
             : the current response mode.
         dpi_scale()
-            : the scale actually in effect -- applied bake size / init() preset size.
-              1.0 while unmanaged (GUI_FONT_NONE init, or a host-driven font active). */
+            : the scale in effect on the PRIMARY surface -- applied bake size / init() preset
+              size.  1.0 while unmanaged (GUI_FONT_NONE init, or a host-driven font active). */
 
     void                ( *dpi_set   )          ( gui_dpi_mode_t mode, f32 scale );
     gui_dpi_mode_t      ( *dpi_mode  )          ( void );
