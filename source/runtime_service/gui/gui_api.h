@@ -140,8 +140,10 @@ typedef struct gui_api_s
         dpi_mode()
             : the current response mode.
         dpi_scale()
-            : the scale in effect on the PRIMARY surface -- applied bake size / init() preset
-              size.  1.0 while unmanaged (GUI_FONT_NONE init, or a host-driven font active). */
+            : the scale in effect on the PRIMARY surface -- its bake's size / init() preset
+              size.  1.0 while unmanaged (GUI_FONT_NONE init).  During a host font takeover
+              (font_use / a custom load) it keeps reporting the last landed bake's scale --
+              retargeting is suspended, not reset. */
 
     void                ( *dpi_set   )          ( gui_dpi_mode_t mode, f32 scale );
     gui_dpi_mode_t      ( *dpi_mode  )          ( void );

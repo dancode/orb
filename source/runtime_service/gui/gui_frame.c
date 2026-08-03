@@ -22,6 +22,7 @@
                                       (home -- conductor code, never part of the debug unit)
     frame/gui_frame_loop.c       -- frame lifecycle: init/shutdown, frame_begin/end, ctx_begin/end, render, clip
     frame/gui_frame_font.c       -- font API (load/use/push/pop/active_id) + the font -> layout bridge (gui_style_apply)
+    frame/gui_frame_dpi.c        -- the DPI response engine: per-viewport bake resolve / land / poll (monitor scale -> font retarget)
     frame/gui_pane.c             -- the pane bracket: pane_tag + gui_pane_begin/end stamp BOTH servers
     frame/gui_context.c          -- public multi-context lifecycle + the context block allocation
     frame/gui_viewport.c         -- surface record lifecycle (viewport_create/destroy) + viewport open/resize/
@@ -81,8 +82,8 @@ void           ctx_pool_init  ( void );                                         
 bool           viewport_create ( gui_vp_t vp, rhi_texture_t target, i32 win_id );             /* gui_viewport.c */
 void           viewport_destroy( gui_vp_t vp );                                               /* gui_viewport.c */
 
-void           gui_dpi_base_set( gui_builtin_font_t font );                                   /* gui_frame_font.c */
-bool           gui_dpi_poll    ( void );                                                      /* gui_frame_font.c */
+void           gui_dpi_base_set( gui_builtin_font_t font );                                   /* gui_frame_dpi.c */
+bool           gui_dpi_poll    ( void );                                                      /* gui_frame_dpi.c */
 
 /* The theme registry, base/active style state (s_style_base, s_style, s_font_size), the style
    stacks, and metrics_compute live in the STYLE UNIT (gui_style.c); this unit reads
@@ -149,6 +150,11 @@ bool           gui_dpi_poll    ( void );                                        
 #include "runtime_service/gui/frame/gui_frame_overlay.c"
 #include "runtime_service/gui/frame/gui_frame_loop.c"
 #include "runtime_service/gui/frame/gui_frame_font.c"
+
+// The DPI response engine -- AFTER the font file (bake loads ride gui_font_load_builtin;
+// gui_style_apply reads dpi_scale_landed() through its forward decl) and BEFORE gui_viewport.c
+// (viewport_create seeds dpi_bake from s_dpi.base; tear-off drives gui_dpi_vp_resolve).
+#include "runtime_service/gui/frame/gui_frame_dpi.c"
 
 // The pane bracket -- the go-between verb stamping BOTH servers; and the public
 // multi-context lifecycle -- context destruction tears down GPU surfaces, orchestrator work.

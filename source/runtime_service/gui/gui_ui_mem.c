@@ -63,8 +63,8 @@ gui_ui_memory( void )
        with what is loaded).  It moved down from the draw unit so both servers can measure text. */
     b += font_unit_mem_bytes();
 
-    /* frame/ + root -- lifecycle stacks, boot/present state. */
-    b += (u32)( sizeof( s_ctx_save_stack ) + sizeof( s_font_stack )
+    /* frame/ + root -- lifecycle stacks, DPI response state, boot/present state. */
+    b += (u32)( sizeof( s_ctx_save_stack ) + sizeof( s_font_stack ) + sizeof( s_dpi )
               + sizeof( s_boot ) + sizeof( s_present ) );
 
     /* core/gui_ctx.c -- the one global viewport table (s_vp_pool).  A fixed static now, not part
