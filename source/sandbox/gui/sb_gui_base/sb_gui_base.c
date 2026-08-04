@@ -118,11 +118,38 @@ tier_surface( void )
     gui()->draw_frame( box, FACE[ gui()->item_phase( st ) ], s_on ? AMBER : PANEL_LN, 1.0f );
     gui()->draw_text_in( box, GUI_ALIGN_CENTER, INK, s_on ? "ON  -- click me" : "OFF -- click me" );
 
+    /* hover and active are LEVELS -- true for as long as the condition holds, so reading them
+       straight off st is enough.  pressed and clicked are EDGES: each is true for exactly one
+       frame (the button going down, and the release completing over the item).  A live readout
+       of an edge therefore reads 0 essentially always -- the single frame carrying the 1 is
+       replaced before an eye can catch it.  So the edges are latched instead: a running count,
+       plus a lit marker held HOLD seconds past the edge.  request_redraw during the hold keeps
+       frames coming while the mouse sits still, so the marker actually goes back out. */
+
+    static const f64 HOLD      = 0.6;
+    static u32       s_press_n = 0, s_click_n = 0;
+    static f64       s_press_t = -1000.0, s_click_t = -1000.0;
+
+    f64 now = gui()->get_time();
+    if ( st.pressed ) { s_press_n++; s_press_t = now; }
+    if ( st.clicked ) { s_click_n++; s_click_t = now; }
+
+    bool press_lit = ( now - s_press_t ) < HOLD;
+    bool click_lit = ( now - s_click_t ) < HOLD;
+    if ( press_lit || click_lit ) gui()->request_redraw();
+
     char readout[ 64 ];
-    snprintf( readout, sizeof readout, "hover %d  active %d  pressed %d  clicked %d",
-              st.hover, st.active, st.pressed, st.clicked );
+    snprintf( readout, sizeof readout, "level:  hover %d   active %d", st.hover, st.active );
     body.y += 8.0f;
     gui()->draw_text( body.x, body.y, INK_DIM, readout );
+
+    body.y += gui()->text_size( readout ).y + 4.0f;
+    snprintf( readout, sizeof readout, "edge:   pressed %u", s_press_n );
+    gui()->draw_text( body.x, body.y, press_lit ? AMBER : INK_DIM, readout );
+
+    f32 gap = gui()->text_size( "edge:   pressed 0000   " ).x;
+    snprintf( readout, sizeof readout, "clicked %u", s_click_n );
+    gui()->draw_text( body.x + gap, body.y, click_lit ? AMBER : INK_DIM, readout );
 
     gui()->pane_end();
 }

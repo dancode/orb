@@ -51,8 +51,8 @@ typedef struct game_state_s
 } game_state_t;
 
 static game_state_t* g_game_state  = NULL;
-static get_api_fn    g_get_api     = NULL;   // host lookup fn -- re-stowed every init/reload
-static cvar_t*       g_cv_fixed_hz = NULL;
+static get_api_fn    g_get_api     = NULL;   // host lookup and call function
+static cvar_t*       g_cv_fixed_hz = NULL;   // 
 
 /* The fixed step is read per tick so a cvar change lands on the next frame; the cvar's
    min bound keeps the division safe. */

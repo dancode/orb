@@ -74,6 +74,7 @@ game_host_ready( void )
 {
     /* Hand the project to the runner: bind resolves its stable api slot (live across
        hot-reloads), play starts the session.  This host's policy is "play at boot". */
+
     if ( !MOD_HOST_FETCH_API( game ) || !game()->project_bind( s_proj.name ) )
     {
         fprintf( stderr, "[host_game] project '%s' has no api\n", s_proj.name );
