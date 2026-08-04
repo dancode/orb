@@ -296,15 +296,25 @@ void layout_pop_region ( void );
     one-clip model, the header paint, stripes / dividers, and the scroll-region policy.
 ==============================================================================================*/
 
-/* Per-table persistent state: column widths, sort choice, and scroll position survive frames.
-   A big-class tenant of the keyed state pool (GUI_STATE), so every field's default must be its
-   zero -- the zero-on-create contract: sort_col is 1-BASED with 0 = unsorted.  The scroll link
-   is storage for the caller's scrolling body region (the engine never reads it). */
+/* Per-table persistent state: column widths, display order, visibility, sort choice, and scroll
+   position survive frames.  A big-class tenant of the keyed state pool (GUI_STATE), so every
+   field's default must be its zero -- the zero-on-create contract: sort_col is 1-BASED with
+   0 = unsorted, and `seeded` is the one flag that says "the zeros below are still zeros, not a
+   user choice" (a fresh slot's identity display order and DEFAULT_HIDE / DEFAULT_SORT setup are
+   seeded by chrome on the first frame, which is the only tier that knows the column flags).
+   The scroll link is storage for the caller's scrolling body region (the engine never reads it).
+
+   Everything here is indexed by LOGICAL column (setup order); `disp` is the one mapping out of
+   it: disp[ display position ] = logical column. */
 typedef struct
 {
-    f32        col_w[ GUI_TABLE_COLS_MAX ];   /* 0 = use the setup width / default   */
-    i8         sort_col;                        /* 1-based sorted column; 0 = unsorted */
-    i8         sort_dir;                        /* 0 = ascending, 1 = descending       */
+    f32        col_w [ GUI_TABLE_COLS_MAX ];    /* user/fit width; 0 = use the setup width  */
+    u16        fit_w [ GUI_TABLE_COLS_MAX ];    /* widest content measured last frame (px)  */
+    i8         disp  [ GUI_TABLE_COLS_MAX ];    /* display position -> logical column       */
+    u16        hidden;                          /* bit per logical column; 1 = not shown    */
+    i8         sort_col;                        /* 1-based sorted column; 0 = unsorted      */
+    i8         sort_dir;                        /* 0 = ascending, 1 = descending            */
+    u8         seeded;                          /* 0 = fresh slot; chrome seeds the defaults */
 
     gui_scroll_link_t scroll;                   /* the caller's body-region scroll + extent */
 
@@ -313,22 +323,27 @@ typedef struct
 ORB_STATIC_ASSERT( sizeof( gui_table_persist_t ) <= GUI_STATE_BIG_CAP,
                    "gui_table_persist_t is the big class's sizing tenant; grow GUI_STATE_BIG_CAP" );
 
-/* Resolve column origins / widths into out_x / out_w.  Priority per column: user-resized
-   persist width > setup fixed px (init_w[i] > 1) > stretch.  x / w = the column strip. */
+/* Resolve column origins / widths into out_x / out_w, which are indexed by DISPLAY POSITION --
+   disp[ slot ] names the logical column each slot draws, so hidden columns are simply absent
+   from the list the caller passes.  Priority per column: user-resized / fitted persist width >
+   setup fixed px (init_w[i] > 1) > stretch.  init_w is indexed logically.  x / w = the strip. */
 void table_tracks_resolve( const gui_table_persist_t* p, const f32* init_w, i32 init_n,
-                           i32 ncols, f32 x, f32 w, f32* out_x, f32* out_w );
+                           const i32* disp, i32 ndisp, f32 x, f32 w, f32* out_x, f32* out_w );
 
 /* Interior-boundary pair-resize drag over the resolved columns; mutates p->col_w and
-   re-resolves col_x / col_w on a live drag.  pin_mask bit i pins the boundary on column i's
-   right edge; band_box spans the grab bands vertically; `front` gates the hover.  Returns the
-   hot / dragged boundary (-1 none).  The caller owns the hit-clip policy around the call. */
+   re-resolves col_x / col_w on a live drag.  Slot-indexed like the tracks above: pin_mask bit i
+   pins the boundary on the right edge of display slot i; band_box spans the grab bands
+   vertically; `front` gates the hover.  Returns the hot / dragged boundary (-1 none), and
+   reports a double-clicked boundary in *out_dbl (-1 none) -- the caller's cue to size-to-fit,
+   since the fit measure is chrome's.  The caller owns the hit-clip policy around the call. */
 i32  table_resize_drag( gui_id_t id, gui_table_persist_t* p, const f32* init_w, i32 init_n,
-                        i32 ncols, u32 pin_mask, gui_rect_t band_box, bool front,
-                        f32 x, f32 w, f32* col_x, f32* col_w );
+                        const i32* disp, i32 ndisp, u32 pin_mask, gui_rect_t band_box, bool front,
+                        f32 x, f32 w, f32* col_x, f32* col_w, i32* out_dbl );
 
-/* Header sort click on 0-based `col`: same column flips direction, a new column sorts it
-   ascending.  Pure persist-state cycle; the caller owns any dirty flag. */
-void table_sort_click( gui_table_persist_t* p, i32 col );
+/* Header sort click on 0-based logical `col`: a new column sorts it in its preferred direction,
+   the same column advances the cycle (flip, or asc -> desc -> unsorted when tristate).  Pure
+   persist-state cycle; the caller owns any dirty flag. */
+void table_sort_click( gui_table_persist_t* p, i32 col, bool tristate, bool prefer_desc );
 
 /* Stable reorder of a caller-owned display-order index array by (col, desc) via the public
    sort callbacks (cmp_fn wins over val_fn).  Pure; true when it reordered. */

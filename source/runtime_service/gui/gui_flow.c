@@ -76,7 +76,8 @@ u32
 flow_unit_mem_bytes( void )
 {
     return (u32)( sizeof( s_layout_stack ) + sizeof( s_layout_state_stack )
-                + sizeof( s_split_stack ) + sizeof( s_sublayout_sink ) );
+                + sizeof( s_split_stack ) + sizeof( s_sublayout_sink )
+                + sizeof( s_table_fit_press ) );
 }
 
 /*============================================================================================*/

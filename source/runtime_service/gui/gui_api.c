@@ -526,6 +526,11 @@ const gui_api_t g_gui_api_struct =
     .table_get_sort_specs               = gui_table_get_sort_specs,
     .table_sort_order                   = gui_table_sort_order,
     .table_set_bg_color                 = gui_table_set_bg_color,
+    .table_is_column_visible            = gui_table_is_column_visible,
+    .table_set_column_visible           = gui_table_set_column_visible,
+    .table_get_hovered_column           = gui_table_get_hovered_column,
+    .table_fit_column                   = gui_table_fit_column,
+    .table_reset_columns                = gui_table_reset_columns,
     .window_set_drag                    = gui_window_set_drag,
     .window_set_nav                     = gui_window_set_nav,
 

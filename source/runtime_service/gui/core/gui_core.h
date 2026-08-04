@@ -62,7 +62,8 @@
                                             //   open_frame stamps -- the one-or-two-word renters)
 #define GUI_STATE_CAP               32      // small-class payload bytes (max tenant: gui_region_t --
                                             //   scroll link + user_w/h + the anchor tail-follow pair)
-#define GUI_STATE_BIG_CAP           96      // big-class payload bytes (max tenant: gui_table_persist_t)
+#define GUI_STATE_BIG_CAP           160     // big-class payload bytes (max tenant: gui_table_persist_t --
+                                            //   per-column widths + fit measures + display order)
 #ifdef GUI_STRESS_TEST
 #define GUI_STATE_BIG_SLOTS         128     // stress-bench build: 4x
 #else

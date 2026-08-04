@@ -34,8 +34,13 @@ ex_data_tables( void )
         /* --- the flag suite ----------------------------------------------------------------- */
         gui()->separator_text( "gui_table_flags_t (applied below)" );
         static u32 tflags = GUI_TABLE_SORTABLE | GUI_TABLE_ROW_STRIPES | GUI_TABLE_RESIZABLE |
-                            GUI_TABLE_BORDERS_V | GUI_TABLE_BORDERS_OUTER | GUI_TABLE_SCROLL_Y;
-        gui()->row_cols_n( 0, 2 );
+                            GUI_TABLE_BORDERS_V | GUI_TABLE_BORDERS_OUTER | GUI_TABLE_SCROLL_Y |
+                            GUI_TABLE_REORDERABLE | GUI_TABLE_HIDEABLE | GUI_TABLE_HIGHLIGHT_COL;
+        /* Declare the row four standard rows tall BEFORE the sub-layouts: push_layout gets one
+           standard-height cell unless the row height was declared up front, and it never grows the
+           parent row to fit -- so a 0 here leaves the four checkboxes overflowing onto whatever
+           follows them. */
+        gui()->row_cols_n( gui()->sz_rows_h( 4 ), 3 );
         gui()->push_layout();
             gui()->stack();
             ex_flag_checkbox( "BORDERS_H",     &tflags, GUI_TABLE_BORDERS_H );
@@ -50,13 +55,24 @@ ex_data_tables( void )
             ex_flag_checkbox( "RESIZABLE",     &tflags, GUI_TABLE_RESIZABLE );
             ex_flag_checkbox( "NO_HEADER",     &tflags, GUI_TABLE_NO_HEADER );
         gui()->pop_layout();
+        gui()->push_layout();
+            gui()->stack();
+            ex_flag_checkbox( "REORDERABLE",   &tflags, GUI_TABLE_REORDERABLE );
+            ex_flag_checkbox( "HIDEABLE",      &tflags, GUI_TABLE_HIDEABLE );
+            ex_flag_checkbox( "HIGHLIGHT_COL", &tflags, GUI_TABLE_HIGHLIGHT_COL );
+            ex_flag_checkbox( "SORT_TRISTATE", &tflags, GUI_TABLE_SORT_TRISTATE );
+        gui()->pop_layout();
         gui()->row( 0 );
 
+        /* Height is the table's box, scrolling or not (0 would mean "auto, 8 rows tall"). */
         static i32 theight = 180;
-        gui()->slider_int( "body height (SCROLL_Y)", &theight, 80, 320 );
+        gui()->slider_int( "body height", &theight, 80, 320 );
 
         /* --- sortable three-column table ---------------------------------------------------- */
-        gui()->separator_text( "sortable data (click the headers)" );
+        /* Column management is all user-driven: click a header to sort, drag a boundary (or
+           double-click it to size-to-fit), drag a header sideways to reorder, right-click the
+           header for the built-in menu (fit / reset / a checkbox per column). */
+        gui()->separator_text( "sortable data (click, drag, or right-click the headers)" );
 
         static const ex_item_t k_items[] = {
             { "pos_x",   "float",  1.234f   },
@@ -84,12 +100,14 @@ ex_data_tables( void )
             s_order_init = true;
         }
 
-        f32 body_h = ( tflags & GUI_TABLE_SCROLL_Y ) ? (f32)theight : 0.0f;
+        f32 body_h = (f32)theight;
         if ( gui()->table_begin( "props", 3, (gui_table_flags_t)tflags, body_h ) )
         {
-            gui()->table_setup_column( "Name",  GUI_TABLE_COL_STRETCH,   0     );
+            /* Name opens as the sort column (DEFAULT_SORT sorts on the first frame, no click
+               needed); Value carries its numbers right-aligned, like a spreadsheet. */
+            gui()->table_setup_column( "Name",  GUI_TABLE_COL_STRETCH | GUI_TABLE_COL_DEFAULT_SORT, 0 );
             gui()->table_setup_column( "Type",  GUI_TABLE_COL_FIXED,     64.0f );
-            gui()->table_setup_column( "Value", GUI_TABLE_COL_FIXED,    128.0f );
+            gui()->table_setup_column( "Value", GUI_TABLE_COL_FIXED | GUI_TABLE_COL_ALIGN_RIGHT, 128.0f );
             if ( !( tflags & GUI_TABLE_NO_HEADER ) )
                 gui()->table_headers_row();
 
@@ -123,13 +141,19 @@ ex_data_tables( void )
                 }
             }
 
-            /* Raw sort state -- the do-it-yourself alternative to table_sort_order. */
+            /* Raw sort state -- the do-it-yourself alternative to table_sort_order -- plus the
+               live column queries.  All of these read the table, so they run before table_end. */
             gui_table_sort_specs_t specs;
             gui()->table_get_sort_specs( &specs );
+            i32 hov  = gui()->table_get_hovered_column();
+            i32 vis  = 0;
+            for ( i32 c = 0; c < 3; ++c )
+                if ( gui()->table_is_column_visible( c ) ) ++vis;
             gui()->table_end();
-            gui()->textf( "sort: col %d %s   (cols=%d)", specs.col,
+
+            gui()->textf( "sort: col %d %s   hovered col: %d   visible: %d/3", specs.col,
                           specs.col < 0 ? "" : ( specs.descending ? "desc" : "asc" ),
-                          3 );
+                          hov, vis );
         }
 
         /* --- interactive cells --------------------------------------------------------------- */

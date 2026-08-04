@@ -2479,18 +2479,37 @@ typedef struct gui_api_s
            }
 
        table_set_column_index( col ) -- jump to a specific column (0-based) rather than advancing.
+                                        Returns false when that column is hidden this frame.
        table_get_column_count()      -- number of columns the table was opened with.
        table_get_column_index()      -- current column index (-1 before the first next_column).
        table_get_row_index()         -- current row index (-1 before the first next_row).
-       table_get_sort_specs( out )   -- read raw sort state (column + direction); returns true on
-                                        the frame a header was clicked.  Use when you want to sort
-                                        your own data structure by hand.
+       table_get_sort_specs( out )   -- read raw sort state (column + direction); out is filled
+                                        whenever a table is open, and the RETURN says the sort
+                                        changed this frame.  Use when you want to sort your own
+                                        data structure by hand.
        table_sort_order( order, n, val_fn, cmp_fn, user )
                                      -- built-in sort: reorder a display-order index array to match
                                         the active sort.  Pass val_fn for automatic alphabetical /
                                         numeric ordering, or cmp_fn for a custom comparator.  Cheap
-                                        to call every frame (only reorders on a header click).
-       table_set_bg_color( target, abgr ) -- override the current row's or cell's background. */
+                                        to call every frame (only reorders when the sort changed --
+                                        a header click, or the first frame of a DEFAULT_SORT column).
+       table_set_bg_color( target, abgr ) -- override the current row's or cell's background.
+
+       COLUMN MANAGEMENT.  Widths, display order, and visibility persist per table id, and the
+       user drives all three directly: drag a boundary to resize (GUI_TABLE_RESIZABLE),
+       double-click one to size that column to its content, drag a header sideways to reorder
+       (GUI_TABLE_REORDERABLE), and right-click the header for the built-in menu (size-to-fit,
+       reset, and a checkbox per column with GUI_TABLE_HIDEABLE).  GUI_TABLE_NO_CONTEXT_MENU
+       suppresses that menu for a table that wants the right button itself.  Programmatically:
+
+       table_is_column_visible( col )        -- is that logical column shown this frame.
+       table_set_column_visible( col, vis )  -- show / hide it (refused for NO_HIDE and for the
+                                                last visible column).
+       table_get_hovered_column()            -- logical column under the cursor, -1 if none.  Pair
+                                                with GUI_TABLE_HIGHLIGHT_COL for the tint.
+       table_fit_column( col )               -- size a column to its widest measured content
+                                                (col < 0 = every visible column).
+       table_reset_columns()                 -- widths, order, and visibility back to the setup. */
 
     bool ( *table_begin            )( const char* id_str, i32 ncols, gui_table_flags_t flags, f32 height );
     void ( *table_end              )( void );
@@ -2510,6 +2529,12 @@ typedef struct gui_api_s
     bool ( *table_sort_order       )( i32* order, i32 count, gui_table_sort_value_fn val_fn,
                                       gui_table_sort_cmp_fn cmp_fn, void* user );
     void ( *table_set_bg_color     )( gui_table_bg_target_t target, u32 abgr );
+
+    bool ( *table_is_column_visible  )( i32 col );
+    void ( *table_set_column_visible )( i32 col, bool visible );
+    i32  ( *table_get_hovered_column )( void );
+    void ( *table_fit_column         )( i32 col );
+    void ( *table_reset_columns      )( void );
 
     /* window_set_drag() -- select how windows may be dragged (global default TITLEBAR).
        Call between frames; affects every window. */

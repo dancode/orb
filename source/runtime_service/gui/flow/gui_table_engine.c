@@ -23,25 +23,27 @@
 
 void
 table_tracks_resolve( const gui_table_persist_t* p, const f32* init_w, i32 init_n,
-                      i32 ncols, f32 x, f32 w, f32* out_x, f32* out_w )
+                      const i32* disp, i32 ndisp, f32 x, f32 w, f32* out_x, f32* out_w )
 {
     f32 tracks[ GUI_TABLE_COLS_MAX ];
 
-    for ( i32 i = 0; i < ncols; ++i )
+    for ( i32 s = 0; s < ndisp; ++s )
     {
-        /* Priority: user-resized persist width > setup fixed width > default stretch. */
+        i32 c = disp[ s ];   /* logical column shown at display slot s */
+
+        /* Priority: user-resized / fitted persist width > setup fixed width > default stretch. */
         f32 track = 1.0f;    /* stretch / fill by default */
 
-        if ( p->col_w[ i ] > 0.0f )
-            track = p->col_w[ i ];
-        else if ( i < init_n && init_w[ i ] > 1.0f )
-            track = init_w[ i ];   /* explicit fixed width */
+        if ( p->col_w[ c ] > 0.0f )
+            track = p->col_w[ c ];
+        else if ( c < init_n && init_w[ c ] > 1.0f )
+            track = init_w[ c ];   /* explicit fixed width */
 
-        tracks[ i ] = track;
+        tracks[ s ] = track;
     }
 
     /* Zero gap between columns -- dividers are chrome lines, not gaps. */
-    layout_tracks_resolve( tracks, (u32)ncols, x, w, 0.0f, out_x, out_w );
+    layout_tracks_resolve( tracks, (u32)ndisp, x, w, 0.0f, out_x, out_w );
 }
 
 /* Pair-resize: the dragged boundary grows the column on its left and gives the difference back
@@ -51,40 +53,62 @@ table_tracks_resolve( const gui_table_persist_t* p, const f32* init_w, i32 init_
    the bare item_grab protocol (core/gui_item.c), claiming the left button like the dock
    splitter; a live drag re-resolves col_x / col_w so the columns laid out this frame reflect
    the drag with no lag. */
+/* The boundary whose current press was spent on a size-to-fit double-click.  item_grab claims the
+   button on that second press like any other, so without this latch the drag that follows would
+   walk the freshly fitted width straight back to wherever the cursor sits.  Cleared on release. */
+static gui_id_t s_table_fit_press;
+
 i32
 table_resize_drag( gui_id_t id, gui_table_persist_t* p, const f32* init_w, i32 init_n,
-                   i32 ncols, u32 pin_mask, gui_rect_t band_box, bool front,
-                   f32 x, f32 w, f32* col_x, f32* col_w )
+                   const i32* disp, i32 ndisp, u32 pin_mask, gui_rect_t band_box, bool front,
+                   f32 x, f32 w, f32* col_x, f32* col_w, i32* out_dbl )
 {
     const f32 thick = 6.0f;          /* grab band width, centered on the boundary */
     const f32 min_w = WIDGET_MIN_W;  /* floor for each side of the resized pair    */
     i32       hot   = -1;
 
-    for ( i32 i = 0; i < ncols - 1; ++i )
+    if ( out_dbl ) *out_dbl = -1;
+    if ( !s_io.mouse_down[ 0 ] ) s_table_fit_press = GUI_ID_NONE;
+
+    for ( i32 i = 0; i < ndisp - 1; ++i )
     {
         /* A pinned boundary (NO_RESIZE column) offers no band. */
         if ( pin_mask & ( 1u << i ) ) continue;
 
-        f32        bx  = col_x[ i + 1 ];   /* boundary between col i and col i+1 */
+        f32        bx  = col_x[ i + 1 ];   /* boundary between slot i and slot i+1 */
         gui_rect_t hr  = { bx - thick * 0.5f, band_box.y, thick, band_box.h };
-        gui_id_t   rid = id_combine( id, (gui_id_t)( 0x5200u + i ) );
+
+        /* Key the grab off the LOGICAL column: a reorder drag moves a column between display
+           slots mid-frame, and a slot-keyed id would hand the live grab to its new neighbour. */
+        gui_id_t   rid = id_combine( id, (gui_id_t)( 0x5200u + disp[ i ] ) );
 
         bool active = false;
         if ( item_grab( rid, hr, front, &active ) )
+        {
             hot = i;
+
+            /* Double-click on the boundary = size-to-fit, the standard spreadsheet gesture.
+               Reported out: the fit measure lives with the chrome that emitted the cells. */
+            if ( s_io.mouse_double[ 0 ] )
+            {
+                if ( out_dbl ) *out_dbl = i;
+                s_table_fit_press = rid;
+            }
+        }
 
         if ( active )
         {
             hot = i;
+            if ( rid == s_table_fit_press ) continue;   /* this press was the fit gesture */
 
             f32 pair_w = col_w[ i ] + col_w[ i + 1 ];
             if ( pair_w >= 2.0f * min_w )   /* enough room to keep both sides above the floor */
             {
                 f32 new_left = clampf( s_io.mouse_x - col_x[ i ], min_w, pair_w - min_w );
-                p->col_w[ i ]     = new_left;
-                p->col_w[ i + 1 ] = pair_w - new_left;
+                p->col_w[ disp[ i ]     ] = new_left;
+                p->col_w[ disp[ i + 1 ] ] = pair_w - new_left;
 
-                table_tracks_resolve( p, init_w, init_n, ncols, x, w, col_x, col_w );
+                table_tracks_resolve( p, init_w, init_n, disp, ndisp, x, w, col_x, col_w );
             }
         }
     }
@@ -93,16 +117,23 @@ table_resize_drag( gui_id_t id, gui_table_persist_t* p, const f32* init_w, i32 i
 }
 
 void
-table_sort_click( gui_table_persist_t* p, i32 col )
+table_sort_click( gui_table_persist_t* p, i32 col, bool tristate, bool prefer_desc )
 {
     if ( (i32)p->sort_col == col + 1 )
     {
-        p->sort_dir = ( p->sort_dir == 0 ) ? 1 : 0;
+        /* Same column: flip.  Tristate adds a third step -- leaving the second direction drops
+           back to unsorted, so a table can be returned to its source order without a reset. */
+        if ( tristate && p->sort_dir != ( prefer_desc ? 0 : 1 ) )
+            p->sort_dir = (i8)( p->sort_dir == 0 ? 1 : 0 );
+        else if ( tristate )
+            p->sort_col = 0;
+        else
+            p->sort_dir = (i8)( p->sort_dir == 0 ? 1 : 0 );
     }
     else
     {
         p->sort_col = (i8)( col + 1 );   /* stored 1-based; 0 = unsorted */
-        p->sort_dir = 0;
+        p->sort_dir = (i8)( prefer_desc ? 1 : 0 );
     }
 }
 

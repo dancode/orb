@@ -107,7 +107,7 @@ chrome_unit_mem_bytes( void )
     /* Both text-edit undo rings (single-line s_undo + multiline s_medit_undo) moved to the
        interact edit engines and are counted by interact_unit_mem_bytes. */
     b += (u32)( sizeof( s_num_edit_buf ) + sizeof( s_tabbars ) + sizeof( s_hex_buf ) );
-    b += (u32)( sizeof( s_tab ) + sizeof( s_tab_scroll_dummy ) );
+    b += (u32)sizeof( s_tab_stack );
     b += (u32)sizeof( s_select );   /* window text selection (chrome/window/gui_select.c) */
     b += (u32)( sizeof( s_dock_drag ) + sizeof( s_dock_tab_drag ) + sizeof( s_dock_float_req ) );
     b += (u32)( sizeof( s_menubar_sink ) + sizeof( s_menubar_saved_clip )

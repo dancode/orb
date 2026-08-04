@@ -30,7 +30,7 @@
        is reused.
     2. GPU tessellation cache (gui_build_cache.c): granular per window. A per-window hash mismatch
        re-tessellates only that window's slot; sibling windows reuse their geometry in place.
-
+    
     Contents -- types sit in DEPENDENCY order (a struct follows the enums it embeds), each
     section banner tagged with its gui_api.h strata band.  Band -> sections:
 
@@ -2598,6 +2598,12 @@ typedef enum
 
     Column count limit is GUI_TABLE_COLS_MAX.  Column sizes use the same overloaded f32 as
     the layout engine: >1 = fixed pixels, 1 = stretch / fill, (0,1) = fraction.
+
+    Columns have a LOGICAL index (setup order -- what every table_*_column call takes and
+    returns) and a DISPLAY position (left-to-right on screen, which GUI_TABLE_REORDERABLE lets
+    the user drag around).  Hidden columns (GUI_TABLE_HIDEABLE) keep their logical index and
+    are simply skipped by table_next_column.  Widths, display order, visibility, sort choice,
+    and scroll are all persisted per table id.
 ==============================================================================================*/
 
 #define GUI_TABLE_COLS_MAX 16
@@ -2615,6 +2621,11 @@ typedef enum
     GUI_TABLE_ROW_STRIPES     = 1 << 6,   // alternating even/odd row background tint
     GUI_TABLE_RESIZABLE       = 1 << 7,   // drag column borders to resize
     GUI_TABLE_NO_HEADER       = 1 << 8,   // skip table_headers_row entirely
+    GUI_TABLE_REORDERABLE     = 1 << 9,   // drag a header sideways to reorder columns
+    GUI_TABLE_HIDEABLE        = 1 << 10,  // columns can be hidden (see the context menu below)
+    GUI_TABLE_SORT_TRISTATE   = 1 << 11,  // sort cycle gains an unsorted step: asc -> desc -> none
+    GUI_TABLE_HIGHLIGHT_COL   = 1 << 12,  // tint the whole column under the cursor
+    GUI_TABLE_NO_CONTEXT_MENU = 1 << 13,  // suppress the built-in right-click header menu
 
 } gui_table_flags_t;
 
@@ -2625,8 +2636,14 @@ typedef enum
     GUI_TABLE_COL_STRETCH      = 1 << 1,  // fill remaining space (default when width==0)
     GUI_TABLE_COL_NO_RESIZE    = 1 << 2,  // pins this column's right boundary (no drag)
     GUI_TABLE_COL_NO_SORT      = 1 << 3,  // not clickable for sort
-    GUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  // FUTURE: right-align cell content (flag reserved, unconsumed)
-    GUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  // FUTURE: center cell content (flag reserved, unconsumed)
+    GUI_TABLE_COL_ALIGN_RIGHT  = 1 << 4,  // right-align cell content (and the header label)
+    GUI_TABLE_COL_ALIGN_CENTER = 1 << 5,  // center cell content (and the header label)
+    GUI_TABLE_COL_WIDTH_AUTO   = 1 << 6,  // width tracks the widest content measured (fit-to-content)
+    GUI_TABLE_COL_DEFAULT_HIDE = 1 << 7,  // starts hidden (GUI_TABLE_HIDEABLE tables)
+    GUI_TABLE_COL_NO_HIDE      = 1 << 8,  // cannot be hidden -- omitted from the context menu
+    GUI_TABLE_COL_NO_REORDER   = 1 << 9,  // cannot be dragged, and no column may cross it
+    GUI_TABLE_COL_DEFAULT_SORT = 1 << 10, // table opens sorted on this column
+    GUI_TABLE_COL_PREFER_DESC  = 1 << 11, // first sort click on it sorts descending
 
 } gui_table_col_flags_t;
 
@@ -2639,10 +2656,11 @@ typedef enum
 
 } gui_table_bg_target_t;
 
-/* Sort specification returned by table_get_sort_specs. */
+/* Sort specification returned by table_get_sort_specs (always filled, whether or not the sort
+   changed this frame -- the return value is the "it changed" signal). */
 typedef struct
 {
-    i32  col;          // sorted column index; -1 = unsorted
+    i32  col;          // sorted column index (logical); -1 = unsorted
     bool descending;   // false = ascending
 
 } gui_table_sort_specs_t;

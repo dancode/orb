@@ -678,6 +678,11 @@ i32  gui_table_get_row_index( void );
 bool gui_table_get_sort_specs( gui_table_sort_specs_t* out );
 bool gui_table_sort_order( i32* order, i32 count, gui_table_sort_value_fn val_fn,
                            gui_table_sort_cmp_fn cmp_fn, void* user );
+bool gui_table_is_column_visible( i32 col );
+void gui_table_set_column_visible( i32 col, bool visible );
+i32  gui_table_get_hovered_column( void );
+void gui_table_fit_column( i32 col );
+void gui_table_reset_columns( void );
 
 /* themes -- chrome's named style presets (style kit) */
 const gui_theme_t* gui_theme_list ( u32* count_out );
