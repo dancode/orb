@@ -253,20 +253,22 @@ window_end_titlebar( gui_window_t* win, bool native )
             if ( det_st.clicked )
                 native_popin_request( win );   /* 0 = main surface -> tear off; else floater -> merge back */
 
-            /* Icon: an outlined box when docked (click to pop out), a filled box when floating
-               (click to dock back in). */
+            /* Hover/press background, same as its neighbours (and as the floater's caption pop-in
+               button) -- without it the control read as dead next to a lit close / max / min. */
+            if ( det_st.hover || det_st.active )
+            {
+                draw_set_rounding( ROUND_WIDGET );
+                draw_push_rect_filled( det_r.x, det_r.y, det_r.w, det_r.h, 0, 0, 1, 1, 0,
+                                       det_st.active ? COL_BG_ACTIVE : COL_BG_HOT );
+            }
+
+            /* Icon: an arrow lifting up out of a dock tray when docked (click to pop out), the same
+               arrow dropping back into it when floating.  native_draw_dock_glyph
+               (gui_window_native.c) also paints the floater's caption pop-in button, so the mark
+               is identical on both sides of the transition -- and, being an arrow rather than a
+               box, is never mistaken for the maximize / restore squares beside it. */
             bool attached = !win || win->viewport == 0;
-            u32  icol     = col_btn_glyph( det_st );
-            f32  isz      = title_h * 0.42f;
-            f32  ix       = det_r.x + ( det_r.w - isz ) * 0.5f;
-            f32  iy       = det_r.y + ( det_r.h - isz ) * 0.5f;
-            f32 det_save = draw_rounding();
-            draw_set_rounding( 0.0f );   /* small box glyph stays square */
-            if ( attached )
-                draw_push_rect_outline( ix, iy, isz, isz, 1.0f, icol );
-            else
-                draw_push_rect_filled( ix, iy, isz, isz, 0.0f, 0.0f, 1.0f, 1.0f, 0, icol );
-            draw_set_rounding( det_save );
+            native_draw_dock_glyph( det_r, attached, col_btn_glyph( det_st ) );
 
             right_limit = det_r.x - WIDGET_PAD;   /* keep the title text clear of the button */
         }

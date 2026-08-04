@@ -60,9 +60,12 @@ static bool window_is_native( const gui_window_t* win, gui_win_flags_t flags )
     exactly aligned with the drawn buttons.
 
     Buttons are title-bar-height squares laid out right-to-left from the bar's right edge:
-    minimize, maximize/restore, then a primary action -- close for the main window, pop-in (merge
-    back into the main surface) for a detached floater.  GUI_WIN_NO_MINIMIZE / NO_MAXIMIZE drop the
-    matching button per-window (the primary is never dropped); the layout closes up around the gap.
+    close, maximize/restore, minimize, then pop-in (merge back into the main surface) innermost
+    for a detached floater.  That is the SAME slot order the docked window paints in window_end
+    (close, max, min, detach), so tearing a window off or merging it back never makes a button
+    hop across its neighbours -- detach and pop-in are one control that stays put through the
+    transition.  GUI_WIN_NO_MINIMIZE / NO_MAXIMIZE drop the matching button per-window (close on
+    the main window and a floater's pop-in are never dropped); the layout closes up around the gap.
 ==============================================================================================*/
 
 typedef enum
@@ -84,11 +87,12 @@ typedef struct
 } native_btn_t;
 
 /* Fill `out` with this native window's caption buttons; returns the count (0 when no title bar).
-   The primary (rightmost) button is pop-in for a floater (owned viewport) or close for the main
-   window, and is always present.  Minimize / maximize are each suppressed by the matching NO_* flag,
-   so the set the OS hit-tests against (the holes window_begin publishes) and the set window_end draws
-   stay identical -- both call here with the same flags.  out[count-1] is the leftmost button -- its x
-   bounds the title text. */
+   Close is outermost (a floater's only when CLOSEABLE; the main window always has it), then
+   maximize and minimize -- each suppressed by the matching NO_* flag -- then a floater's pop-in
+   innermost, holding the same slot the docked detach button holds.  The set the OS hit-tests
+   against (the holes window_begin publishes) and the set window_end draws stay identical -- both
+   call here with the same flags.  out[count-1] is the leftmost button -- its x bounds the title
+   text. */
 static i32
 native_caption_buttons( const gui_window_t* win, gui_win_flags_t flags,
                         f32 win_x, f32 win_y, f32 win_w, f32 title_h,
@@ -97,22 +101,18 @@ native_caption_buttons( const gui_window_t* win, gui_win_flags_t flags,
     if ( title_h <= 0.0f )
         return 0;
 
-    bool              floater = win && win->viewport != 0;   /* detached: pop back in, not close */
-    native_btn_kind_t primary = floater ? NATIVE_BTN_POPIN : NATIVE_BTN_CLOSE;
+    bool floater = win && win->viewport != 0;   /* detached: pops back in, and may also close */
 
     f32 x = win_x + win_w;   /* march leftward from the right edge */
     i32 n = 0;
 
-    /* A CLOSEABLE floater gets a close (X) as the outermost button, in addition to its pop-in
-       primary -- closing hides the window (and frees its OS surface) while pop-in merges it back
-       into the main surface.  The main window's primary is already close, so the flag adds nothing
-       there. */
-    if ( floater && ( flags & GUI_WIN_CLOSEABLE ) )
+    /* Close (X), outermost.  The main window's close IS its graceful quit, so it is unconditional
+       there; a floater only offers one when CLOSEABLE -- closing hides the window (and frees its
+       OS surface) where pop-in merges it back into the main surface. */
+    if ( !floater || ( flags & GUI_WIN_CLOSEABLE ) )
     {
         x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_CLOSE };
     }
-
-    x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, primary };
     if ( !( flags & GUI_WIN_NO_MAXIMIZE ) )
     {
         x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_MAXIMIZE };
@@ -121,11 +121,69 @@ native_caption_buttons( const gui_window_t* win, gui_win_flags_t flags,
     {
         x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_MINIMIZE };
     }
+
+    /* Pop-in, innermost -- the slot the docked window's detach button occupies, so the control
+       does not jump over min / max when the window tears off or merges back.  Never dropped: it
+       is a floater's only way home. */
+    if ( floater )
+    {
+        x -= title_h; out[ n++ ] = ( native_btn_t ){ { x, win_y, title_h, title_h }, NATIVE_BTN_POPIN };
+    }
     return n;
 }
 
+/* Detach / pop-in mark: a vertical arrow over a dock tray -- lifting up and out when the window is
+   attached (click = tear it off into its own OS window), dropping back down into the tray when it
+   is floating (click = merge it back into the main surface).  The tray is the surface; the arrow
+   is the panel leaving it or returning to it.
+
+   Deliberately not a box: maximize and restore own the plain and doubled square outlines, and an
+   outlined-vs-filled box reads as the same glyph twice.  The two states here share one shaft and
+   differ only in which end carries the head, so the pair reads as one control with a direction.
+
+   Sized to the maximize box (half-extent 0.20 * button, against its 0.18) so the mark carries the
+   same weight as its neighbours rather than looming over them -- which is also why the tray is
+   three strokes and not a closed frame.  The tray's turned-up end walls are what keep it from
+   reading as the minimize bar sitting right beside it.  Every stroke is axis-aligned or exactly
+   45 degrees, so the mark stays crisp at title-bar size and scales with DPI.
+
+   One painter serves both the docked window's detach button (window_end) and the floater's caption
+   pop-in, so the pair can never drift apart. */
+static void
+native_draw_dock_glyph( gui_rect_t r, bool attached, u32 col )
+{
+    f32 cx = r.x + r.w * 0.5f;
+    f32 cy = r.y + r.h * 0.5f;
+    f32 e  = floorf( r.h * 0.20f );      /* half-extent of the whole mark */
+    if ( e < 3.0f ) e = 3.0f;
+    f32 t  = WIN_BORDER;
+
+    /* Dock tray along the bottom: a baseline with a short wall turned up at each end. */
+    f32 yb = cy + e;
+    gui_draw_line( cx - e, yb, cx + e, yb, t, col );
+    gui_draw_line( cx - e, yb, cx - e, yb - e * 0.5f, t, col );
+    gui_draw_line( cx + e, yb, cx + e, yb - e * 0.5f, t, col );
+
+    /* The arrow: one shaft standing clear of the tray, head on the travelling end. */
+    f32 y_top = cy - e;
+    f32 y_bot = cy + e * 0.35f;
+    f32 hw    = e * 0.55f;               /* head half-width == its leg drop, so the legs sit at 45 */
+
+    gui_draw_line( cx, y_top, cx, y_bot, t, col );
+    if ( attached )
+    {
+        gui_draw_line( cx, y_top, cx - hw, y_top + hw, t, col );   /* head up: out of the tray */
+        gui_draw_line( cx, y_top, cx + hw, y_top + hw, t, col );
+    }
+    else
+    {
+        gui_draw_line( cx, y_bot, cx - hw, y_bot - hw, t, col );   /* head down: into the tray */
+        gui_draw_line( cx, y_bot, cx + hw, y_bot - hw, t, col );
+    }
+}
+
 /* Draw the glyph for one caption button, centered in its square: a minimize bar, a maximize box
-   (two offset boxes when already maximized = restore), a close X, or a filled pop-in box. */
+   (two offset boxes when already maximized = restore), a close X, or the pop-in mark. */
 static void
 native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32 col )
 {
@@ -164,9 +222,10 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
             break;
 
         case NATIVE_BTN_POPIN:
-            /* Filled box: a docked target the floating panel snaps back into (mirrors the old
-               detach glyph, where a filled box meant "floating -- click to dock back in"). */
-            draw_push_rect_filled( cx - s, cy - s, 2.0f * s, 2.0f * s, 0, 0, 1, 1, 0, col );
+            /* The floating half of the detach pair: the arrow dropping back into the dock tray.
+               Same painter the docked detach button uses, so the control keeps its identity
+               across the tear-off. */
+            native_draw_dock_glyph( r, false, col );
             break;
     }
 
