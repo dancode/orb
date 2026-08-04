@@ -69,6 +69,13 @@
 /* Nesting depth: a table cell may host another whole table (one more frame-scratch slot each). */
 #define GUI_TABLE_DEPTH 4
 
+/* Sort indicator triangle: its size, and the horizontal room a header label gives up for it.
+   The label placement and the header's own contribution to the fit measure both read these, so
+   the arrow can never overlap the text that was measured around it. */
+#define GUI_TABLE_ARROW_W       6.0f
+#define GUI_TABLE_ARROW_H       4.0f
+#define GUI_TABLE_ARROW_RESERVE ( GUI_TABLE_ARROW_W + (f32)WIDGET_PAD )
+
 /* Per-column setup data filled by table_setup_column before the first row. */
 typedef struct
 {
@@ -205,8 +212,138 @@ table_is_open( void )
 }
 
 /*==============================================================================================
-    Internal helpers
+    Internal helpers -- the vocabulary every layer below is written in
 ==============================================================================================*/
+
+/* Tables are square: a rounded fill under the rectangular table scissor leaves a gap at each
+   rounded corner that whatever sits behind the table shows through.  So every piece of table
+   chrome paints inside a zero-radius scope -- push it, paint, restore the ambient radius (cell
+   widgets keep their own rounding, which is why it is a scope and not a global). */
+static f32
+table_square_push( void )
+{
+    f32 save = draw_rounding();
+    draw_set_rounding( 0.0f );
+    return save;
+}
+
+static void
+table_square_pop( f32 save )
+{
+    draw_set_rounding( save );
+}
+
+/* One square fill -- the whole paint vocabulary of the table's decoration layers. */
+static void
+table_fill( gui_rect_t r, u32 abgr )
+{
+    f32 save = table_square_push();
+    draw_fill( r, abgr );
+    table_square_pop( save );
+}
+
+/* Fill the current row's BAND (its full pitch, so consecutive rows tile with no unpainted seam --
+   see table_row_metrics) across the horizontal span [ x, x + w ). */
+static void
+table_band_fill( const gui_table_t* t, f32 x, f32 w, u32 abgr )
+{
+    table_fill( ( gui_rect_t ){ x, t->row_top, w, t->row_band }, abgr );
+}
+
+/* The table box as a hit rect: the outer box under the clip the caller had on entry. */
+static gui_rect_t
+table_box( const gui_table_t* t )
+{
+    return rect_intersect( t->saved_clip, t->outer_rect );
+}
+
+/* Chrome above the body (the header strip, the full-height resize bands) sits outside the body
+   hit clip table_open_body left in place, so its queries would be rejected.  Widen the hit clip
+   to the whole table box for them; the returned clip goes back through table_hit_narrow before
+   any row content is emitted. */
+static gui_rect_t
+table_hit_widen( const gui_table_t* t )
+{
+    gui_rect_t body_hit = s_scope.clip;
+    s_scope.clip        = table_box( t );
+    return body_hit;
+}
+
+static void
+table_hit_narrow( gui_rect_t body_hit )
+{
+    s_scope.clip = body_hit;
+}
+
+/* Bound text to [ x, x + w ) clamped to the table viewport -- the ambient glyph-clip window both
+   cells and header labels draw under, so a column scrolled partway off the edge cuts its glyphs
+   cleanly at the table border instead of bleeding past it.  Cleared in table_end. */
+static void
+table_text_clip( const gui_table_t* t, f32 x, f32 w )
+{
+    f32 vx0 = t->outer_rect.x;
+    f32 vx1 = t->outer_rect.x + t->outer_rect.w;
+    f32 x1  = x + w;
+    draw_set_text_clip_x( ( x > vx0 ) ? x : vx0, ( x1 < vx1 ) ? x1 : vx1 );
+}
+
+/* Interaction id for a column's header.  Keyed on the LOGICAL column: a reorder drag moves a
+   column between display slots mid-drag, and a slot-keyed id would hand the live press to
+   whatever column slid under the cursor. */
+static gui_id_t
+table_header_id( const gui_table_t* t, i32 col )
+{
+    return id_combine( t->id, (gui_id_t)( col + 1 ) );
+}
+
+/* Point the layout template at one horizontal span: the content column the pen flows in AND the
+   STACK-mode cell widgets measure themselves against (cell_next_w reads tmpl.cellx / cellw[ 0 ]). */
+static void
+table_span_set( layout_frame_t* f, f32 x, f32 w )
+{
+    f->content_x       = x;
+    f->content_w       = w;
+    f->tmpl.cellx[ 0 ] = x;
+    f->tmpl.cellw[ 0 ] = w;
+}
+
+/* A scrolling table frames a fixed viewport and takes the wheel; a plain one frames the rows it
+   laid out and declines it (see table_open_body). */
+static bool
+table_scrolls( const gui_table_t* t )
+{
+    return ( t->flags & ( GUI_TABLE_SCROLL_Y | GUI_TABLE_SCROLL_X ) ) != 0;
+}
+
+/* Does the built-in header menu have anything to offer?  Both the open and the emit gate on this
+   -- an opened-but-never-begun popup would sit in the stack until the stale-close drops it. */
+static bool
+table_has_menu( const gui_table_t* t )
+{
+    if ( t->flags & GUI_TABLE_NO_CONTEXT_MENU ) return false;
+    return ( t->flags & ( GUI_TABLE_RESIZABLE | GUI_TABLE_REORDERABLE | GUI_TABLE_HIDEABLE ) ) != 0;
+}
+
+static bool
+table_col_hidden( const gui_table_t* t, i32 c )
+{
+    return ( t->persist->hidden & ( 1u << c ) ) != 0;
+}
+
+/* A column's header label, or `fallback` when it was never set up (or set up blank). */
+static const char*
+table_col_label( const gui_table_t* t, i32 c, const char* fallback )
+{
+    return ( c < t->col_setup_n && t->cols[ c ].label[ 0 ] ) ? t->cols[ c ].label : fallback;
+}
+
+/* The sorted column as a 0-based LOGICAL index, -1 when unsorted (the persist stores it 1-based
+   so a zeroed slot reads as unsorted). */
+static i32
+table_sort_col( const gui_table_t* t )
+{
+    return (i32)t->persist->sort_col - 1;
+}
 
 /* Setup flags for a logical column (columns past the setup count carry none). */
 static gui_table_col_flags_t
@@ -238,6 +375,23 @@ table_init_widths( gui_table_t* t, f32* out )
     return t->col_setup_n;
 }
 
+/* Stamp the setup's own layout choices onto the persist slot: identity display order plus the
+   DEFAULT_HIDE mask.  Shared by the first-use seed and the explicit reset, which differ only in
+   what else each one does (clear the widths / seed the default sort). */
+static void
+table_layout_defaults( gui_table_t* t )
+{
+    gui_table_persist_t* p = t->persist;
+
+    for ( i32 i = 0; i < GUI_TABLE_COLS_MAX; ++i )
+        p->disp[ i ] = (i8)i;
+
+    p->hidden = 0;
+    for ( i32 i = 0; i < t->col_setup_n; ++i )
+        if ( t->cols[ i ].flags & GUI_TABLE_COL_DEFAULT_HIDE )
+            p->hidden |= (u16)( 1u << i );
+}
+
 /* Seed a fresh persist slot from the setup flags.  The keyed pool zeroes new slots and the zero
    of every field is its default, but "identity display order" and the DEFAULT_HIDE / DEFAULT_SORT
    choices are only knowable here (chrome owns the column flags), so they are stamped once and
@@ -249,25 +403,19 @@ table_seed_persist( gui_table_t* t )
     if ( p->seeded ) return;
     p->seeded = 1;
 
-    for ( i32 i = 0; i < GUI_TABLE_COLS_MAX; ++i )
-        p->disp[ i ] = (i8)i;
+    table_layout_defaults( t );
 
     for ( i32 i = 0; i < t->col_setup_n; ++i )
     {
         gui_table_col_flags_t cf = t->cols[ i ].flags;
+        if ( !( cf & GUI_TABLE_COL_DEFAULT_SORT ) ) continue;
 
-        if ( cf & GUI_TABLE_COL_DEFAULT_HIDE )
-            p->hidden |= (u16)( 1u << i );
+        p->sort_col = (i8)( i + 1 );
+        p->sort_dir = (i8)( ( cf & GUI_TABLE_COL_PREFER_DESC ) ? 1 : 0 );
 
-        if ( cf & GUI_TABLE_COL_DEFAULT_SORT )
-        {
-            p->sort_col = (i8)( i + 1 );
-            p->sort_dir = (i8)( ( cf & GUI_TABLE_COL_PREFER_DESC ) ? 1 : 0 );
-
-            /* Report the seeded sort as a change: table_sort_order only reorders on a dirty
-               frame, so without this the opening sort would wait for a first click. */
-            t->sort_dirty = true;
-        }
+        /* Report the seeded sort as a change: table_sort_order only reorders on a dirty frame,
+           so without this the opening sort would wait for a first click. */
+        t->sort_dirty = true;
     }
 }
 
@@ -287,9 +435,10 @@ table_columns_build( gui_table_t* t )
 
     for ( i32 s = 0; s < GUI_TABLE_COLS_MAX; ++s )
     {
-        i32 c = (i32)p->disp[ s ];
-        if ( c < 0 || c >= t->ncols ) continue;   /* stale entry */
-        if ( seen & ( 1u << c ) )     continue;   /* duplicate   */
+        i32  c     = (i32)p->disp[ s ];
+        bool stale = ( c < 0 || c >= t->ncols );
+        bool dup   = !stale && ( seen & ( 1u << c ) ) != 0;
+        if ( stale || dup ) continue;
         seen |= 1u << c;
         order[ n++ ] = c;
     }
@@ -306,7 +455,7 @@ table_columns_build( gui_table_t* t )
         i32 c = order[ i ];
         p->disp[ i ] = (i8)c;
 
-        if ( p->hidden & ( 1u << c ) ) continue;  /* hidden: keeps its place, skips the list */
+        if ( table_col_hidden( t, c ) ) continue;  /* hidden: keeps its place, skips the list */
 
         t->slot_of [ c        ] = t->ndisp;
         t->disp    [ t->ndisp ] = c;
@@ -318,13 +467,16 @@ table_columns_build( gui_table_t* t )
 }
 
 /* Resolve column positions and widths through the engine (persist override > setup / fit >
-   stretch).  x / w are the screen-space origin and total width of the column strip. */
+   stretch).  The strip is always the OPEN REGION's content column -- header and body share that
+   one authoritative width, which is why every re-resolve (drag, reorder, fit, reset) reads it
+   back from the live layout frame rather than carrying a remembered box around. */
 static void
-table_columns_resolve( gui_table_t* t, f32 x, f32 w )
+table_columns_resolve( gui_table_t* t )
 {
     f32 init_w[ GUI_TABLE_COLS_MAX ];
     i32 init_n = table_init_widths( t, init_w );
-    table_tracks_resolve( t->persist, init_w, init_n, t->disp, t->ndisp, x, w, t->col_x, t->col_w );
+    table_tracks_resolve( t->persist, init_w, init_n, t->disp, t->ndisp,
+                          lf()->content_x, lf()->content_w, t->col_x, t->col_w );
 }
 
 /* Size a logical column to the content measured last frame; col < 0 fits every visible column.
@@ -349,10 +501,12 @@ table_visible_count( const gui_table_t* t )
 {
     i32 n = 0;
     for ( i32 c = 0; c < t->ncols; ++c )
-        if ( !( t->persist->hidden & ( 1u << c ) ) ) ++n;
+        if ( !table_col_hidden( t, c ) ) ++n;
     return n;
 }
 
+/* Show / hide a logical column.  Hiding is refused for a NO_HIDE column and for the last visible
+   one; showing is always allowed (it can only widen the table's way back). */
 static void
 table_show_column( gui_table_t* t, i32 col, bool show )
 {
@@ -361,13 +515,14 @@ table_show_column( gui_table_t* t, i32 col, bool show )
     if ( show )
     {
         t->persist->hidden &= (u16)~( 1u << col );
+        return;
     }
-    else
-    {
-        if ( table_col_flags( t, col ) & GUI_TABLE_COL_NO_HIDE ) return;
-        if ( table_visible_count( t ) <= 1 )                     return;
-        t->persist->hidden |= (u16)( 1u << col );
-    }
+
+    bool pinned = ( table_col_flags( t, col ) & GUI_TABLE_COL_NO_HIDE ) != 0;
+    bool last   = ( table_visible_count( t ) <= 1 );
+    if ( pinned || last ) return;
+
+    t->persist->hidden |= (u16)( 1u << col );
 }
 
 /* Drag an interior column boundary to resize (GUI_TABLE_RESIZABLE) -- the engine's pair-resize
@@ -382,8 +537,7 @@ table_resize_interact( gui_table_t* t )
 {
     if ( !( t->flags & GUI_TABLE_RESIZABLE ) ) return;
 
-    gui_rect_t body_hit = s_scope.clip;
-    s_scope.clip = rect_intersect( t->saved_clip, t->outer_rect );
+    gui_rect_t body_hit = table_hit_widen( t );
 
     /* A column flagged NO_RESIZE pins the boundary on its right edge (by display slot, which is
        where the boundaries actually are). */
@@ -408,10 +562,10 @@ table_resize_interact( gui_table_t* t )
     if ( dbl >= 0 && dbl < t->ndisp )
     {
         table_fit_apply( t, t->disp[ dbl ] );
-        table_columns_resolve( t, lf()->content_x, lf()->content_w );
+        table_columns_resolve( t );
     }
 
-    s_scope.clip = body_hit;
+    table_hit_narrow( body_hit );
 }
 
 /* Resolve which column the cursor is over (LOGICAL + slot), for the hovered-column highlight and
@@ -424,13 +578,13 @@ table_hover_resolve( gui_table_t* t )
     t->hover_slot = -1;
 
     if ( s_build.win.id != s_interaction.hover_win ) return;
-
-    gui_rect_t box = rect_intersect( t->saved_clip, t->outer_rect );
-    if ( !gui_rect_contains( box, s_io.mouse_x, s_io.mouse_y ) ) return;
+    if ( !gui_rect_contains( table_box( t ), s_io.mouse_x, s_io.mouse_y ) ) return;
 
     for ( i32 s = 0; s < t->ndisp; ++s )
     {
-        if ( s_io.mouse_x >= t->col_x[ s ] && s_io.mouse_x < t->col_x[ s ] + t->col_w[ s ] )
+        bool over = ( s_io.mouse_x >= t->col_x[ s ] )
+                 && ( s_io.mouse_x <  t->col_x[ s ] + t->col_w[ s ] );
+        if ( over )
         {
             t->hover_col  = (i8)t->disp[ s ];
             t->hover_slot = (i8)s;
@@ -460,18 +614,37 @@ table_cell_close( gui_table_t* t )
        The bounds test keeps a previous cell's item out of the answer when this one emitted
        nothing (logical emit order is not display order once columns are reordered).  The value
        stays out of `raw`: the region's own measurement must not learn about filled widths. */
-    f32 fit  = raw;
-    f32 seat = f->line.prev_item.x + f->line.prev_item.w;
-    if ( f->line.prev_item.x >= t->cell_x0 - 0.5f
-         && f->line.prev_item.x <= t->cell_x0 + t->cell_w0
-         && seat > fit )
-        fit = seat;
+    f32  seat      = f->line.prev_item.x + f->line.prev_item.w;
+    bool seat_mine = ( f->line.prev_item.x >= t->cell_x0 - 0.5f )
+                  && ( f->line.prev_item.x <= t->cell_x0 + t->cell_w0 );
 
+    f32 fit = ( seat_mine && seat > raw ) ? seat : raw;
     f32 wid = fit - t->cell_x0;
-    if ( t->cur_col >= 0 && wid > t->fit_w[ t->cur_col ] )
+
+    bool widest = ( t->cur_col >= 0 ) && ( wid > t->fit_w[ t->cur_col ] );
+    if ( widest )
         t->fit_w[ t->cur_col ] = wid;
 
     f->high_x = ( t->cell_high_x > raw ) ? t->cell_high_x : raw;
+}
+
+/* Set the row pitch the whole table steps and paints by.  The BAND is the full pitch -- content
+   height plus the inter-row gap -- and every painted layer (stripe, hovered column, bg override,
+   divider) covers the band, so consecutive rows tile with no unpainted seam between them.
+   Painting only the content height instead leaves the gap bare, which reads as alternating row
+   heights: a striped row looks like a box with its text jammed against the top, the unstriped row
+   between looks taller with its text floating in the middle.  The content sits inset by half the
+   gap (row_pad), so a standard-height widget is centered in its band and the air above the first
+   row matches the air below the last (see table_end).  Shared by table_next_row and the row
+   clipper, which must describe rows exactly the same way or the pen lands off-band. */
+static void
+table_row_metrics( gui_table_t* t, f32 min_h )
+{
+    f32 gap = (f32)WIDGET_GAP;
+
+    t->row_h    = ( min_h > 0.0f ) ? min_h : (f32)WIDGET_H;
+    t->row_band = t->row_h + gap;
+    t->row_pad  = floorf( gap * 0.5f );
 }
 
 /* Advance the layout cursor past the current row.  The table is an imperative host: it owns the
@@ -497,12 +670,12 @@ table_open_body( gui_table_t* t )
        to overpaint rows that scroll up under it -- so the entire table needs just this one clip. */
     t->saved_clip = s_scope.clip;
     draw_push_clip_rect( t->outer_rect.x, t->outer_rect.y, t->outer_rect.w, t->outer_rect.h );
-    s_scope.clip = rect_intersect( t->saved_clip, t->outer_rect );
+    s_scope.clip = table_box( t );
 
     gui_rect_t body = { t->outer_rect.x,
-                          t->outer_rect.y + t->header_h,
-                          t->outer_rect.w,
-                          t->outer_rect.h - t->header_h };
+                        t->outer_rect.y + t->header_h,
+                        t->outer_rect.w,
+                        t->outer_rect.h - t->header_h };
     t->body_rect = body;
 
     /* Scrolling body: the persist slot supplies the scroll + content storage (the region biases
@@ -518,19 +691,15 @@ table_open_body( gui_table_t* t )
        A non-scrolling table also declines the wheel (NOMOUSESCROLL): with no bars and no scroll
        there is nothing for it to do with a notch, so it belongs to the window underneath, which
        is where the user is aiming. */
-    bool scroll = ( t->flags & ( GUI_TABLE_SCROLL_Y | GUI_TABLE_SCROLL_X ) ) != 0;
-
     gui_win_flags_t rflags = GUI_WIN_NOSCROLL | GUI_WIN_NOMOUSESCROLL;
-    if ( scroll )
+    if ( table_scrolls( t ) )
         rflags = ( t->flags & GUI_TABLE_SCROLL_X ) ? GUI_WIN_HSCROLL : GUI_WIN_NONE;
-
-    gui_scroll_link_t* link = &t->persist->scroll;
 
     /* own_clip=false: the region does NOT push its own clip -- it reuses the table clip for drawing
        (so rows scroll under where the header will be) and only narrows the hit-test clip to the body
        box.  Exactly the window-body-with-chrome pattern. */
     layout_push_region( t->id, body, ( gui_pad_t ){ 0, 0, 0, 0 }, rflags,
-                        link, /* own_clip */ false );
+                        &t->persist->scroll, /* own_clip */ false );
 
     /* STACK mode so cell_next_w uses tmpl.cellx[0] / tmpl.cellw[0], overridden per column. */
     layout_set_default( lf() );
@@ -541,7 +710,7 @@ table_open_body( gui_table_t* t )
        gutter, so header and body columns share one authoritative width. */
     table_seed_persist( t );
     table_columns_build( t );
-    table_columns_resolve( t, lf()->content_x, lf()->content_w );
+    table_columns_resolve( t );
     t->body_rect.x = lf()->content_x;
     t->body_rect.w = lf()->content_w;
 
@@ -565,30 +734,29 @@ table_draw_borders( gui_table_t* t, f32 content_bottom )
     const f32 h  = content_bottom - y0;   /* used height: header strip + drawn rows */
     if ( h <= 0.0f ) return;
 
-    /* Tables are square: force a zero radius so the outer frame's corners meet flush with the
-       rectangular table scissor instead of leaving a rounded-corner gap (see table_next_row). */
-    f32 save_round = draw_rounding();
-    draw_set_rounding( 0.0f );
+    /* Square, so the outer frame's corners meet flush with the rectangular table scissor. */
+    f32 save_round = table_square_push();
 
     /* Vertical dividers between columns, full used height (run through the header strip too). */
     if ( t->flags & GUI_TABLE_BORDERS_V )
     {
         for ( i32 s = 1; s < t->ndisp; ++s )
-            draw_push_rect_filled( t->col_x[ s ], y0, 1.0f, h, 0, 0, 0, 0, 0, COL_BORDER_IDLE );
+            draw_fill( ( gui_rect_t ){ t->col_x[ s ], y0, 1.0f, h }, COL_BORDER_IDLE );
     }
 
     /* Outer frame around the used table box. */
     if ( t->flags & GUI_TABLE_BORDERS_OUTER )
-        draw_push_rect_outline( x0, y0, w, h, 1.0f, COL_BORDER_IDLE );
+        draw_outline( ( gui_rect_t ){ x0, y0, w, h }, 1.0f, COL_BORDER_IDLE );
 
     /* Column-resize feedback: recolor the hot / dragged boundary in COL_BORDER_HOT, drawn LAST so
        it wins over the BORDERS_V divider that sits at the same x (and over the outer frame).  Drawn
        here -- in the parent clip after the one table clip is popped -- for the same reason the
-       dividers are: so it is not half-clipped by the table box edge.  Square like all table chrome. */
-    if ( t->resize_hot >= 0 && t->resize_hot < t->ndisp - 1 )
-        draw_push_rect_filled( t->col_x[ t->resize_hot + 1 ], y0, 1.0f, h, 0, 0, 0, 0, 0, COL_BORDER_HOT );
+       dividers are: so it is not half-clipped by the table box edge. */
+    bool boundary_lit = ( t->resize_hot >= 0 ) && ( t->resize_hot < t->ndisp - 1 );
+    if ( boundary_lit )
+        draw_fill( ( gui_rect_t ){ t->col_x[ t->resize_hot + 1 ], y0, 1.0f, h }, COL_BORDER_HOT );
 
-    draw_set_rounding( save_round );
+    table_square_pop( save_round );
 }
 
 /* Defined below; table_end draws the header (as chrome) and emits the context menu, and the
@@ -602,18 +770,10 @@ static void table_menu_open    ( gui_table_t* t, i32 col );
 static void
 table_reset_apply( gui_table_t* t )
 {
-    gui_table_persist_t* p = t->persist;
-
     for ( i32 i = 0; i < GUI_TABLE_COLS_MAX; ++i )
-    {
-        p->col_w[ i ] = 0.0f;
-        p->disp [ i ] = (i8)i;
-    }
+        t->persist->col_w[ i ] = 0.0f;
 
-    p->hidden = 0;
-    for ( i32 i = 0; i < t->col_setup_n; ++i )
-        if ( t->cols[ i ].flags & GUI_TABLE_COL_DEFAULT_HIDE )
-            p->hidden |= (u16)( 1u << i );
+    table_layout_defaults( t );
 }
 
 /*==============================================================================================
@@ -686,28 +846,23 @@ gui_table_end( void )
     for ( i32 c = 0; c < t->ncols; ++c )
     {
         if ( t->fit_w[ c ] <= 0.0f ) continue;
-        f32 m = t->fit_w[ c ];
-        if ( m > 65535.0f ) m = 65535.0f;
+        f32 m = ( t->fit_w[ c ] > 65535.0f ) ? 65535.0f : t->fit_w[ c ];
         t->persist->fit_w[ c ] = (u16)( m + 0.5f );
     }
 
     /* Bottom edge the borders frame to.  A scrolling table frames its fixed viewport box (rows
        scroll inside it); a non-scrolling table frames exactly the content it laid out -- the last
        row's bottom edge, or the body top when no rows were emitted.  Captured before pop. */
-    f32 content_bottom;
-    if ( t->flags & ( GUI_TABLE_SCROLL_Y | GUI_TABLE_SCROLL_X ) )
-        content_bottom = t->outer_rect.y + t->outer_rect.h;
-    else
-        content_bottom = ( t->cur_row >= 0 ) ? ( t->row_top + t->row_band ) : t->body_rect.y;
+    bool any_rows       = ( t->cur_row >= 0 );
+    f32  content_bottom = table_scrolls( t )
+                        ? ( t->outer_rect.y + t->outer_rect.h )
+                        : ( any_rows ? ( t->row_top + t->row_band ) : t->body_rect.y );
 
     /* Restore the full-width content column before pop so layout_pop_region measures the correct
        horizontal extent (high_x tracks the rightmost draw edge for hscroll decisions). */
     layout_frame_t* f = lf();
-    f->content_x  = t->body_rect.x;
-    f->content_w  = t->body_rect.w;
-    f->tmpl.cellx[ 0 ] = t->body_rect.x;
-    f->tmpl.cellw[ 0 ] = t->body_rect.w;
-    f->mod.align  = t->align_base;
+    table_span_set( f, t->body_rect.x, t->body_rect.w );
+    f->mod.align = t->align_base;
 
     /* Chrome is painted bottom-to-top while the one table clip is still on the draw stack, so every
        layer is bounded by the table box:
@@ -754,8 +909,9 @@ gui_table_setup_column( const char* label, gui_table_col_flags_t flags, f32 widt
 
     if ( label )
     {
-        i32 i = 0;
-        while ( i < 31 && label[ i ] ) { col->label[ i ] = label[ i ]; ++i; }
+        const i32 cap = (i32)sizeof( col->label ) - 1;   /* truncates; the header self-fits anyway */
+        i32       i   = 0;
+        while ( i < cap && label[ i ] ) { col->label[ i ] = label[ i ]; ++i; }
         col->label[ i ] = '\0';
     }
 
@@ -788,7 +944,7 @@ table_reorder_interact( gui_table_t* t )
     for ( i32 s = 0; s < t->ndisp; ++s )
     {
         i32      c   = t->disp[ s ];
-        gui_id_t hid = id_combine( t->id, (gui_id_t)( c + 1 ) );
+        gui_id_t hid = table_header_id( t, c );
 
         if ( s_interaction.active_id != hid ) continue;
 
@@ -797,30 +953,35 @@ table_reorder_interact( gui_table_t* t )
         if ( s_tab_reorder_id == hid ) s_tab_reorder_frame = gui_frame_index();
 
         /* Cursor motion since the last frame of THIS press (a fresh press starts at zero). */
-        f32 dx = ( s_tab_drag_id == hid ) ? ( s_io.mouse_x - s_tab_drag_mx ) : 0.0f;
-        if ( s_tab_drag_id != hid )
+        bool fresh_press = ( s_tab_drag_id != hid );
+        f32  dx          = fresh_press ? 0.0f : ( s_io.mouse_x - s_tab_drag_mx );
+        if ( fresh_press )
         {
             s_tab_drag_id   = hid;
             s_tab_drag_lock = false;
         }
         s_tab_drag_mx = s_io.mouse_x;
 
-        bool inside = ( s_io.mouse_x >= t->col_x[ s ] )
-                   && ( s_io.mouse_x <  t->col_x[ s ] + t->col_w[ s ] );
+        const f32 cl = t->col_x[ s ];
+        const f32 cr = t->col_x[ s ] + t->col_w[ s ];
+
+        bool inside = ( s_io.mouse_x >= cl ) && ( s_io.mouse_x < cr );
         if ( inside ) s_tab_drag_lock = false;   /* the cursor caught up: swaps are armed again */
 
-        if ( s_tab_drag_lock )                                    break;
-        if ( table_col_flags( t, c ) & GUI_TABLE_COL_NO_REORDER ) break;
+        bool settling = s_tab_drag_lock;
+        bool pinned   = ( table_col_flags( t, c ) & GUI_TABLE_COL_NO_REORDER ) != 0;
+        if ( settling || pinned ) break;
 
         /* Which way did the cursor leave the column, and is it still going that way? */
-        i32 other = -1;
-        if ( s > 0 && dx < 0.0f && s_io.mouse_x < t->col_x[ s ] )
-            other = s - 1;
-        else if ( s < t->ndisp - 1 && dx > 0.0f && s_io.mouse_x > t->col_x[ s ] + t->col_w[ s ] )
-            other = s + 1;
+        bool push_left  = ( dx < 0.0f ) && ( s_io.mouse_x < cl );
+        bool push_right = ( dx > 0.0f ) && ( s_io.mouse_x > cr );
 
-        if ( other < 0 )                                                          break;
-        if ( table_col_flags( t, t->disp[ other ] ) & GUI_TABLE_COL_NO_REORDER )  break;
+        i32 other = -1;
+        if ( push_left && s > 0 )                   other = s - 1;
+        else if ( push_right && s < t->ndisp - 1 )  other = s + 1;
+
+        if ( other < 0 ) break;
+        if ( table_col_flags( t, t->disp[ other ] ) & GUI_TABLE_COL_NO_REORDER ) break;
 
         /* Swap through the PERSISTED permutation (disp_src), so hidden columns parked between the
            two keep their own places. */
@@ -835,7 +996,7 @@ table_reorder_interact( gui_table_t* t )
         s_tab_drag_lock     = true;
 
         table_columns_build( t );
-        table_columns_resolve( t, lf()->content_x, lf()->content_w );
+        table_columns_resolve( t );
         table_hover_resolve( t );   /* geometry moved: the column highlight follows it this frame */
         break;
     }
@@ -855,8 +1016,7 @@ table_reorder_interact( gui_table_t* t )
 static void
 table_header_interact( gui_table_t* t )
 {
-    gui_rect_t body_hit = s_scope.clip;
-    s_scope.clip = rect_intersect( t->saved_clip, t->outer_rect );
+    gui_rect_t body_hit = table_hit_widen( t );
 
     table_reorder_interact( t );
 
@@ -870,14 +1030,12 @@ table_header_interact( gui_table_t* t )
 
     for ( i32 s = 0; s < t->ndisp; ++s )
     {
-        i32                   c  = t->disp[ s ];
-        gui_table_col_flags_t cf = table_col_flags( t, c );
-        bool no_sort = !sortable || ( cf & GUI_TABLE_COL_NO_SORT );
+        i32                   c        = t->disp[ s ];
+        gui_table_col_flags_t cf       = table_col_flags( t, c );
+        bool                  can_sort = sortable && !( cf & GUI_TABLE_COL_NO_SORT );
 
-        /* The header id is LOGICAL: a reorder drag moves the column between display slots
-           mid-drag, and a slot-keyed id would hand the live press to whatever slid under it. */
-        gui_id_t         hid = id_combine( t->id, (gui_id_t)( c + 1 ) );
-        gui_rect_t       cr  = { t->col_x[ s ], hy, t->col_w[ s ], hh };
+        gui_id_t   hid = table_header_id( t, c );
+        gui_rect_t cr  = { t->col_x[ s ], hy, t->col_w[ s ], hh };
 
         /* Headers are chrome, not keyboard targets -- the same opt-out scrollbars and tab chips
            take.  Without it a header click adopts the nav cursor, and because the strip sits
@@ -897,7 +1055,7 @@ table_header_interact( gui_table_t* t )
         if ( c < t->col_setup_n )
         {
             f32 lw = font_text_w( t->cols[ c ].label );
-            if ( !no_sort ) lw += 6.0f + (f32)WIDGET_PAD;
+            if ( can_sort ) lw += GUI_TABLE_ARROW_RESERVE;
             if ( lw > t->fit_w[ c ] ) t->fit_w[ c ] = lw;
         }
 
@@ -907,19 +1065,24 @@ table_header_interact( gui_table_t* t )
 
         /* Sort click: the engine cycles the persist's column / direction.  A press that ended a
            reorder drag is consumed here instead -- the column moved, the user did not ask to sort. */
-        if ( st.clicked && hid == s_tab_reorder_id
-             && gui_frame_index() <= s_tab_reorder_frame + 1u )
+        bool ended_reorder = ( hid == s_tab_reorder_id )
+                          && ( gui_frame_index() <= s_tab_reorder_frame + 1u );
+
+        if ( st.clicked )
         {
-            s_tab_reorder_id = 0;
-        }
-        else if ( !no_sort && st.clicked )
-        {
-            table_sort_click( t->persist, c, tristate, ( cf & GUI_TABLE_COL_PREFER_DESC ) != 0 );
-            t->sort_dirty = true;
+            if ( ended_reorder )
+            {
+                s_tab_reorder_id = 0;   /* the press repositioned the column; swallow it */
+            }
+            else if ( can_sort )
+            {
+                table_sort_click( t->persist, c, tristate, ( cf & GUI_TABLE_COL_PREFER_DESC ) != 0 );
+                t->sort_dirty = true;
+            }
         }
     }
 
-    s_scope.clip = body_hit;
+    table_hit_narrow( body_hit );
 }
 
 /* Draw the header strip.  Called LAST (from table_end) within the one table clip so it overpaints
@@ -931,15 +1094,14 @@ table_draw_header( gui_table_t* t )
     const f32 hy = t->outer_rect.y;
     const f32 hh = t->header_h;
 
-    /* Square header fills -- tables never round (see table_next_row).  Text and the sort triangle
-       below are unaffected by the ambient radius, so holding it at zero for the whole strip is safe. */
-    f32 save_round = draw_rounding();
-    draw_set_rounding( 0.0f );
+    /* Square header fills (see table_square_push).  Text and the sort triangle below are
+       unaffected by the ambient radius, so holding it at zero for the whole strip is safe. */
+    f32 save_round = table_square_push();
 
     /* Full-width opaque header background (also the cover for rows scrolled under the header). */
     draw_face( ( gui_rect_t ){ t->outer_rect.x, hy, t->outer_rect.w, hh }, GUI_ROLE_TITLE, GUI_PHASE_IDLE );
 
-    i8 sort_col = (i8)( t->persist->sort_col - 1 );   /* local is 0-based; -1 = unsorted */
+    const i32 sorted_col = table_sort_col( t );
 
     for ( i32 s = 0; s < t->ndisp; ++s )
     {
@@ -947,27 +1109,28 @@ table_draw_header( gui_table_t* t )
         f32 cx = t->col_x[ s ];
         f32 cw = t->col_w[ s ];
 
-        gui_table_col_flags_t cf = table_col_flags( t, c );
+        gui_table_col_flags_t cf     = table_col_flags( t, c );
+        bool                  sorted = ( sorted_col == c );
 
         /* Hover / active tint (state captured in table_header_interact); a hovered column tints
            its header too when the whole-column highlight is on. */
-        bool lit = ( s == (i32)t->hdr_act ) || ( s == (i32)t->hdr_hot )
-                || ( ( t->flags & GUI_TABLE_HIGHLIGHT_COL ) && s == (i32)t->hover_slot );
-        if ( lit )
-        {
-            u32 tint = ( s == (i32)t->hdr_act ) ? COL_BG_ACTIVE : COL_BG_HOT;
-            draw_push_rect_filled( cx, hy, cw, hh, 0, 0, 0, 0, 0, tint );
-        }
+        bool pressed = ( s == (i32)t->hdr_act );
+        bool hovered = ( s == (i32)t->hdr_hot );
+        bool col_lit = ( t->flags & GUI_TABLE_HIGHLIGHT_COL ) && ( s == (i32)t->hover_slot );
+
+        if ( pressed || hovered || col_lit )
+            draw_fill( ( gui_rect_t ){ cx, hy, cw, hh }, pressed ? COL_BG_ACTIVE : COL_BG_HOT );
 
         /* Column label, self-fitted to the column (reserving the right pad, plus the sort triangle
            on the sorted column) so a long label ellipsizes instead of bleeding into the next column
            -- no per-column clip.  Placed by the column's own alignment, like its cells. */
-        const char* lbl   = ( c < t->col_setup_n && t->cols[ c ].label[ 0 ] ) ? t->cols[ c ].label : "";
-        f32         arrow = ( sort_col == (i8)c ) ? ( 6.0f + (f32)WIDGET_PAD ) : 0.0f;
+        const char* lbl   = table_col_label( t, c, "" );
+        f32         arrow = sorted ? GUI_TABLE_ARROW_RESERVE : 0.0f;
         f32         lblx  = cx + (f32)WIDGET_PAD;
         f32         lblw  = ( cx + cw - (f32)WIDGET_PAD - arrow ) - lblx;
         if ( lblw < 0.0f ) lblw = 0.0f;
 
+        /* Alignment only has somewhere to move the label when it fits its slot. */
         f32 tw = font_text_w( lbl );
         if ( tw < lblw )
         {
@@ -976,32 +1139,30 @@ table_draw_header( gui_table_t* t )
         }
 
         /* Same glyph-clip window as the body cells: clamp the label to its column, intersected with
-           the table viewport, so a header at the scroll edge cuts cleanly at the border too. */
-        f32 hvx0 = t->outer_rect.x;
-        f32 hvx1 = t->outer_rect.x + t->outer_rect.w;
-        draw_set_text_clip_x( lblx > hvx0 ? lblx : hvx0,
-                              lblx + lblw < hvx1 ? lblx + lblw : hvx1 );
-        /* Vertically centered in the strip (a fixed gap offset drifts whenever the metric ramp
+           the table viewport, so a header at the scroll edge cuts cleanly at the border too.
+           Vertically centered in the strip (a fixed gap offset drifts whenever the metric ramp
            changes the header height / glyph size ratio). */
+        table_text_clip( t, lblx, lblw );
         draw_text_fit_n( lblx, hy + ( hh - font_char_h() ) * 0.5f, COL_TEXT_IDLE, lbl, 0xFFFFFFFFu, lblw );
 
-        /* Sort indicator triangle on the active sort column. */
-        if ( sort_col == (i8)c )
+        /* Sort indicator triangle on the active sort column: tip up for ascending, down for
+           descending, seated in the reserve the label just gave up. */
+        if ( sorted )
         {
-            const f32 aw = 6.0f, ah = 4.0f;
-            f32 tx = cx + cw - (f32)WIDGET_PAD - aw * 0.5f;  /* right edge inset by WIDGET_PAD */
-            f32 ty = hy + ( hh - ah ) * 0.5f;                /* vertically centered */
+            const f32 aw = GUI_TABLE_ARROW_W, ah = GUI_TABLE_ARROW_H;
+            f32       tx = cx + cw - (f32)WIDGET_PAD - aw * 0.5f;  /* right edge inset by WIDGET_PAD */
+            f32       ty = hy + ( hh - ah ) * 0.5f;                /* vertically centered */
 
-            if ( t->persist->sort_dir == 0 )    /* ascending: tip at top */
+            if ( t->persist->sort_dir == 0 )
                 draw_push_triangle( tx - aw * 0.5f, ty + ah, tx, ty, tx + aw * 0.5f, ty + ah,
                                     COL_TEXT_IDLE );
-            else                                 /* descending: tip at bottom */
+            else
                 draw_push_triangle( tx - aw * 0.5f, ty, tx, ty + ah, tx + aw * 0.5f, ty,
                                     COL_TEXT_IDLE );
         }
     }
 
-    draw_set_rounding( save_round );
+    table_square_pop( save_round );
 }
 
 /* Reserve the header strip and run its sort interaction up front; the strip itself is drawn last
@@ -1031,23 +1192,11 @@ gui_table_next_row( f32 min_h )
 
     table_end_row( t );   /* advance past the previous row if any */
 
-    /* The row's BAND is the full pitch -- its content height plus the inter-row gap -- and every
-       painted layer (stripe, hovered column, bg override, divider) covers the band, so consecutive
-       rows tile with no unpainted seam between them.  Painting only the content height instead
-       leaves the gap bare, which reads as alternating row heights: a striped row looks like a
-       box with its text jammed against the top, the unstriped row between looks taller with its
-       text floating in the middle.  The content sits inset by half the gap, so a standard-height
-       widget is centered in its band and the air above the first row matches the air below the
-       last (see table_end).  Pitch is unchanged -- only where the paint and the pen land is. */
-    f32 gap  = (f32)WIDGET_GAP;
-    f32 h    = ( min_h > 0.0f ) ? min_h : (f32)WIDGET_H;
     t->cur_row++;
     t->cur_col  = -1;
     t->cur_disp = -1;
-    t->row_h    = h;
-    t->row_band = h + gap;
-    t->row_pad  = floorf( gap * 0.5f );
     t->row_top  = lf()->pen_y;
+    table_row_metrics( t, min_h );
 
     /* Reserve the whole band: the scroll range must reach the band's bottom edge, not just the
        last widget in it, or the final row ends flush against the view with its padding cut off. */
@@ -1057,31 +1206,24 @@ gui_table_next_row( f32 min_h )
        so the keyboard sees the table as rows of cells: Up/Down step rows, Left/Right the cells. */
     t->nav_row_line = ++s_build.nav_line_seq;
 
-    /* Table fills are always square -- a rounded fill under the rectangular table scissor would
-       leave a gap at each rounded corner that content behind shows through.  Save the ambient
-       radius, force square for the chrome below, and restore so cell widgets keep their rounding. */
-    f32 save_round = draw_rounding();
-    draw_set_rounding( 0.0f );
+    /* The row's decoration layers, painted here so cell content (emitted after next_column) sits
+       on top of all of them -- a tint over the content would wash out its text.  All auto-clipped
+       to the body region by the active draw clip. */
+    bool striped = ( t->flags & GUI_TABLE_ROW_STRIPES ) && ( t->cur_row & 1 );
+    bool col_lit = ( t->flags & GUI_TABLE_HIGHLIGHT_COL ) && ( t->hover_slot >= 0 );
+    bool ruled   = ( t->flags & GUI_TABLE_BORDERS_H ) && ( t->cur_row > 0 );
 
-    /* Alternating row tint, drawn first so cell content (emitted after next_column) sits on top.
-       Auto-clipped to the body region by the active draw clip. */
-    bool is_odd_row = ( t->cur_row & 1 ) != 0;
-    if ( ( t->flags & GUI_TABLE_ROW_STRIPES ) && is_odd_row )
-        draw_push_rect_filled( t->body_rect.x, t->row_top, t->body_rect.w, t->row_band,
-                               0, 0, 0, 0, 0, GUI_COLOR( 0xFF, 0xFF, 0xFF, 0x12 ) );
+    if ( striped )
+        table_band_fill( t, t->body_rect.x, t->body_rect.w, GUI_COLOR( 0xFF, 0xFF, 0xFF, 0x12 ) );
 
-    /* Hovered-column tint, drawn with the stripes so it lands UNDER the cell content (a tint over
-       the content would wash out its text). */
-    if ( ( t->flags & GUI_TABLE_HIGHLIGHT_COL ) && t->hover_slot >= 0 )
-        draw_push_rect_filled( t->col_x[ t->hover_slot ], t->row_top, t->col_w[ t->hover_slot ],
-                               t->row_band, 0, 0, 0, 0, 0, GUI_COLOR( 0xFF, 0xFF, 0xFF, 0x10 ) );
+    if ( col_lit )
+        table_band_fill( t, t->col_x[ t->hover_slot ], t->col_w[ t->hover_slot ],
+                         GUI_COLOR( 0xFF, 0xFF, 0xFF, 0x10 ) );
 
     /* Horizontal divider in the gap above this row (between the previous row and this one). */
-    if ( ( t->flags & GUI_TABLE_BORDERS_H ) && t->cur_row > 0 )
-        draw_push_rect_filled( t->body_rect.x, t->row_top, t->body_rect.w, 1.0f,
-                               0, 0, 0, 0, 0, COL_BORDER_IDLE );
-
-    draw_set_rounding( save_round );
+    if ( ruled )
+        table_fill( ( gui_rect_t ){ t->body_rect.x, t->row_top, t->body_rect.w, 1.0f },
+                    COL_BORDER_IDLE );
 }
 
 /* Fixed-pitch row clipper for tables -- the table face of rows_clip (see gui_layout.c for the
@@ -1107,23 +1249,19 @@ gui_table_rows_clip( i32 count, f32 min_h )
 
     table_end_row( t );   /* close any row already emitted; the pen is at its bottom + gap */
 
-    f32 h     = ( min_h > 0.0f ) ? min_h : (f32)WIDGET_H;
-    f32 pitch = h + (f32)WIDGET_GAP;
-    f32 top   = lf()->pen_y;   /* imperative host: the pen is authoritative, no gap owed */
+    table_row_metrics( t, min_h );   /* same pitch the emitted rows will use */
+    f32 top = lf()->pen_y;           /* imperative host: the pen is authoritative, no gap owed */
 
     /* The engine reserves the full extent, computes the visible span, and jumps the pen past
        the culled head. */
-    gui_span_t s = table_rows_span( count, h, top );
+    gui_span_t s = table_rows_span( count, t->row_h, top );
 
     /* Seed the culled head as the "previous row": absolute cur_row keeps stripe/divider phase,
-       and row_top/row_h must describe the last culled row -- the next table_next_row re-steps the
-       pen from them via table_end_row (row_top + row_h + gap), and left at table_begin's zeros
-       that step would yank the pen to the screen top and strand the whole run above the view. */
-    t->cur_row  = s.first - 1;
-    t->row_top  = top + (f32)s.first * pitch - pitch;
-    t->row_h    = h;
-    t->row_band = pitch;                       /* band == pitch, as table_next_row sets it */
-    t->row_pad  = floorf( (f32)WIDGET_GAP * 0.5f );
+       and row_top must describe the last culled row -- the next table_next_row re-steps the pen
+       from it via table_end_row (row_top + row_band), and left at table_begin's zeros that step
+       would yank the pen to the screen top and strand the whole run above the view. */
+    t->cur_row = s.first - 1;
+    t->row_top = top + (f32)( s.first - 1 ) * t->row_band;
 
     return s;
 }
@@ -1142,10 +1280,14 @@ gui_table_next_column( void )
     table_cell_close( t );
 
     t->cur_col++;
-    if ( t->cur_col >= t->ncols ) { t->cur_col = t->ncols; t->cur_disp = -1; return false; }
+
+    bool past_last = ( t->cur_col >= t->ncols );
+    if ( past_last ) { t->cur_col = t->ncols; t->cur_disp = -1; return false; }
 
     t->cur_disp = t->slot_of[ t->cur_col ];
-    if ( t->cur_disp < 0 ) return false;   /* hidden this frame */
+
+    bool hidden = ( t->cur_disp < 0 );
+    if ( hidden ) return false;   /* consumed the call, emits nothing */
 
     /* Set the layout pen and column geometry so cell_next_w returns the correct cell.
        Content stays inside the column because widgets self-fit to tmpl.cellw (text ellipsizes, labeled
@@ -1167,12 +1309,9 @@ gui_table_next_column( void )
     if ( iw < 0.0f ) iw = 0.0f;
 
     /* Pen to the row's content top for each column -- the band's top plus its inset, so the
-       content is centered in the band (see table_next_row).  No gap is owed either way. */
+       content is centered in the band (see table_row_metrics).  No gap is owed either way. */
     layout_pen_jump( f, t->row_top + t->row_pad );
-    f->content_x  = ix;
-    f->content_w  = iw;
-    f->tmpl.cellx[ 0 ] = ix;
-    f->tmpl.cellw[ 0 ] = iw;
+    table_span_set( f, ix, iw );
 
     /* Per-column content alignment (GUI_TABLE_COL_ALIGN_*): the horizontal bits come from the
        column, the vertical bits stay whatever the region was set to -- so a numeric column can be
@@ -1201,10 +1340,8 @@ gui_table_next_column( void )
        the border instead of bleeding under the row-selection highlight (which stops at the
        viewport) -- the worst-case overlap that reads as unpolished.  draw_push_text picks this up
        ambiently, so selectable labels and plain cell text self-terminate at the cell / viewport
-       edge with no per-cell scissor.  Cleared in table_end. */
-    f32 vx0 = t->outer_rect.x;
-    f32 vx1 = t->outer_rect.x + t->outer_rect.w;
-    draw_set_text_clip_x( ix > vx0 ? ix : vx0, ix + iw < vx1 ? ix + iw : vx1 );
+       edge with no per-cell scissor. */
+    table_text_clip( t, ix, iw );
 
     return true;
 }
@@ -1255,7 +1392,7 @@ gui_table_is_column_visible( i32 col )
     if ( !table_is_open() ) return false;
     gui_table_t* t = tab();
     if ( col < 0 || col >= t->ncols ) return false;
-    return ( t->persist->hidden & ( 1u << col ) ) == 0;
+    return !table_col_hidden( t, col );
 }
 
 /* Show / hide a logical column.  Refused for a NO_HIDE column, and for the last visible one
@@ -1277,7 +1414,7 @@ gui_table_fit_column( i32 col )
     gui_table_t* t = tab();
     table_fit_apply( t, col );
     if ( t->header_done )
-        table_columns_resolve( t, lf()->content_x, lf()->content_w );
+        table_columns_resolve( t );
 }
 
 /* Drop every user column choice -- widths, display order, and visibility -- back to what the
@@ -1293,7 +1430,7 @@ gui_table_reset_columns( void )
     if ( t->header_done )
     {
         table_columns_build( t );
-        table_columns_resolve( t, lf()->content_x, lf()->content_w );
+        table_columns_resolve( t );
     }
 }
 
@@ -1307,11 +1444,12 @@ gui_table_get_sort_specs( gui_table_sort_specs_t* out )
 
     if ( out )
     {
-        out->col        = (i32)t->persist->sort_col - 1;   /* stored 1-based; report 0-based */
+        out->col        = table_sort_col( t );
         out->descending = ( t->persist->sort_dir != 0 );
     }
 
-    if ( !t->sort_dirty || t->persist->sort_col == 0 ) return false;
+    bool changed = t->sort_dirty && ( table_sort_col( t ) >= 0 );
+    if ( !changed ) return false;
 
     t->sort_dirty = false;
     return true;
@@ -1331,14 +1469,16 @@ gui_table_sort_order( i32* order, i32 count, gui_table_sort_value_fn val_fn,
 {
     if ( !table_is_open() || !order || count < 2 ) return false;
     gui_table_t* t = tab();
-    if ( !t->sort_dirty || t->persist->sort_col == 0 ) return false;
+
+    i32  col     = table_sort_col( t );
+    bool changed = t->sort_dirty && ( col >= 0 );
+    if ( !changed ) return false;
 
     /* Consume the dirty flag regardless: with no comparator there is nothing to do, but we should
        not keep re-reporting the same click on later frames. */
     t->sort_dirty = false;
 
-    return table_order_sort( order, count, (i32)t->persist->sort_col - 1,
-                             t->persist->sort_dir != 0, val_fn, cmp_fn, user );
+    return table_order_sort( order, count, col, t->persist->sort_dir != 0, val_fn, cmp_fn, user );
 }
 
 /* Tint the current row or cell.  Call after table_next_row (for ROW) or after table_next_column
@@ -1350,26 +1490,15 @@ gui_table_set_bg_color( gui_table_bg_target_t target, u32 abgr )
     gui_table_t* t = tab();
     if ( t->cur_row < 0 ) return;
 
-    /* Square fills only -- tables never round (see table_next_row). */
-    f32 save_round = draw_rounding();
-    draw_set_rounding( 0.0f );
+    /* Both fills cover the row's BAND (the full pitch), so a tinted row or cell tiles flush with
+       its neighbours exactly like the stripes -- see table_row_metrics.  The one table clip keeps
+       them in bounds; there is no per-cell clip. */
+    bool cell_open = ( target == GUI_TABLE_BG_CELL ) && ( t->cur_disp >= 0 );
 
-    /* Fills cover the row's BAND (the full pitch), so a tinted row tiles flush with its
-       neighbours exactly like the stripes -- see table_next_row. */
     if ( target == GUI_TABLE_BG_ROW )
-    {
-        /* Full-row fill across all columns; auto-clipped to the body region. */
-        draw_push_rect_filled( t->body_rect.x, t->row_top, t->body_rect.w, t->row_band,
-                               0, 0, 0, 0, 0, abgr );
-    }
-    else if ( target == GUI_TABLE_BG_CELL && t->cur_disp >= 0 )
-    {
-        /* Current cell fill; the one table clip keeps it in bounds (there is no per-cell clip). */
-        draw_push_rect_filled( t->col_x[ t->cur_disp ], t->row_top, t->col_w[ t->cur_disp ],
-                               t->row_band, 0, 0, 0, 0, 0, abgr );
-    }
-
-    draw_set_rounding( save_round );
+        table_band_fill( t, t->body_rect.x, t->body_rect.w, abgr );
+    else if ( cell_open )
+        table_band_fill( t, t->col_x[ t->cur_disp ], t->col_w[ t->cur_disp ], abgr );
 }
 
 /*==============================================================================================
@@ -1396,11 +1525,7 @@ table_menu_key( const gui_table_t* t, char* buf, u32 cap )
 static void
 table_menu_open( gui_table_t* t, i32 col )
 {
-    /* Same gate as the emit below: no menu, no open (an opened-but-never-begun popup would just
-       sit in the stack until the stale-close drops it). */
-    if ( t->flags & GUI_TABLE_NO_CONTEXT_MENU ) return;
-    if ( !( t->flags & ( GUI_TABLE_RESIZABLE | GUI_TABLE_REORDERABLE | GUI_TABLE_HIDEABLE ) ) )
-        return;
+    if ( !table_has_menu( t ) ) return;
 
     char key[ 32 ];
     table_menu_key( t, key, sizeof( key ) );
@@ -1413,17 +1538,14 @@ table_menu_open( gui_table_t* t, i32 col )
 static void
 table_context_menu( gui_table_t* t )
 {
-    if ( t->flags & GUI_TABLE_NO_CONTEXT_MENU ) return;
-
-    /* Nothing to offer unless at least one column feature is enabled. */
-    if ( !( t->flags & ( GUI_TABLE_RESIZABLE | GUI_TABLE_REORDERABLE | GUI_TABLE_HIDEABLE ) ) )
-        return;
+    if ( !table_has_menu( t ) ) return;
 
     char key[ 32 ];
     table_menu_key( t, key, sizeof( key ) );
 
     if ( !gui_popup_begin( key, GUI_WIN_NONE ) ) return;
 
+    /* The column the menu was raised over, if this table is the one that raised it. */
     i32 ctx_col = ( s_tab_ctx_id == t->id ) ? (i32)s_tab_ctx_col : -1;
     if ( ctx_col >= t->ncols ) ctx_col = -1;
 
@@ -1449,9 +1571,8 @@ table_context_menu( gui_table_t* t )
         {
             if ( table_col_flags( t, c ) & GUI_TABLE_COL_NO_HIDE ) continue;
 
-            const char* lbl = ( c < t->col_setup_n && t->cols[ c ].label[ 0 ] )
-                            ? t->cols[ c ].label : "(column)";
-            bool on = ( t->persist->hidden & ( 1u << c ) ) == 0;
+            const char* lbl = table_col_label( t, c, "(column)" );
+            bool        on  = !table_col_hidden( t, c );
 
             gui_push_id_int( c );
             if ( gui_checkbox( lbl, &on ) )

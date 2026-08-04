@@ -75,42 +75,38 @@ table_resize_drag( gui_id_t id, gui_table_persist_t* p, const f32* init_w, i32 i
         /* A pinned boundary (NO_RESIZE column) offers no band. */
         if ( pin_mask & ( 1u << i ) ) continue;
 
-        f32        bx  = col_x[ i + 1 ];   /* boundary between slot i and slot i+1 */
-        gui_rect_t hr  = { bx - thick * 0.5f, band_box.y, thick, band_box.h };
+        f32        bx = col_x[ i + 1 ];   /* boundary between slot i and slot i+1 */
+        gui_rect_t hr = { bx - thick * 0.5f, band_box.y, thick, band_box.h };
 
         /* Key the grab off the LOGICAL column: a reorder drag moves a column between display
            slots mid-frame, and a slot-keyed id would hand the live grab to its new neighbour. */
-        gui_id_t   rid = id_combine( id, (gui_id_t)( 0x5200u + disp[ i ] ) );
+        gui_id_t rid = id_combine( id, (gui_id_t)( 0x5200u + disp[ i ] ) );
 
         bool active = false;
-        if ( item_grab( rid, hr, front, &active ) )
-        {
-            hot = i;
+        bool over   = item_grab( rid, hr, front, &active );
+        if ( over || active ) hot = i;
 
-            /* Double-click on the boundary = size-to-fit, the standard spreadsheet gesture.
-               Reported out: the fit measure lives with the chrome that emitted the cells. */
-            if ( s_io.mouse_double[ 0 ] )
-            {
-                if ( out_dbl ) *out_dbl = i;
-                s_table_fit_press = rid;
-            }
+        /* Double-click on the boundary = size-to-fit, the standard spreadsheet gesture.
+           Reported out: the fit measure lives with the chrome that emitted the cells. */
+        if ( over && s_io.mouse_double[ 0 ] )
+        {
+            if ( out_dbl ) *out_dbl = i;
+            s_table_fit_press = rid;
         }
 
-        if ( active )
-        {
-            hot = i;
-            if ( rid == s_table_fit_press ) continue;   /* this press was the fit gesture */
+        bool fit_gesture = ( rid == s_table_fit_press );
+        if ( !active || fit_gesture ) continue;
 
-            f32 pair_w = col_w[ i ] + col_w[ i + 1 ];
-            if ( pair_w >= 2.0f * min_w )   /* enough room to keep both sides above the floor */
-            {
-                f32 new_left = clampf( s_io.mouse_x - col_x[ i ], min_w, pair_w - min_w );
-                p->col_w[ disp[ i ]     ] = new_left;
-                p->col_w[ disp[ i + 1 ] ] = pair_w - new_left;
+        /* Pair-resize proper: only with room to keep both sides above the floor. */
+        f32  pair_w = col_w[ i ] + col_w[ i + 1 ];
+        bool room   = ( pair_w >= 2.0f * min_w );
+        if ( !room ) continue;
 
-                table_tracks_resolve( p, init_w, init_n, disp, ndisp, x, w, col_x, col_w );
-            }
-        }
+        f32 new_left = clampf( s_io.mouse_x - col_x[ i ], min_w, pair_w - min_w );
+        p->col_w[ disp[ i ]     ] = new_left;
+        p->col_w[ disp[ i + 1 ] ] = pair_w - new_left;
+
+        table_tracks_resolve( p, init_w, init_n, disp, ndisp, x, w, col_x, col_w );
     }
 
     return hot;
@@ -119,22 +115,24 @@ table_resize_drag( gui_id_t id, gui_table_persist_t* p, const f32* init_w, i32 i
 void
 table_sort_click( gui_table_persist_t* p, i32 col, bool tristate, bool prefer_desc )
 {
-    if ( (i32)p->sort_col == col + 1 )
-    {
-        /* Same column: flip.  Tristate adds a third step -- leaving the second direction drops
-           back to unsorted, so a table can be returned to its source order without a reset. */
-        if ( tristate && p->sort_dir != ( prefer_desc ? 0 : 1 ) )
-            p->sort_dir = (i8)( p->sort_dir == 0 ? 1 : 0 );
-        else if ( tristate )
-            p->sort_col = 0;
-        else
-            p->sort_dir = (i8)( p->sort_dir == 0 ? 1 : 0 );
-    }
-    else
+    bool same_col = ( (i32)p->sort_col == col + 1 );
+    if ( !same_col )
     {
         p->sort_col = (i8)( col + 1 );   /* stored 1-based; 0 = unsorted */
         p->sort_dir = (i8)( prefer_desc ? 1 : 0 );
+        return;
     }
+
+    /* Same column: flip.  Tristate adds a third step -- leaving the SECOND direction (the one
+       opposite the column's preferred first) drops back to unsorted, so a table can be returned
+       to its source order without a reset. */
+    i8   second_dir = (i8)( prefer_desc ? 0 : 1 );
+    bool at_second  = ( p->sort_dir == second_dir );
+
+    if ( tristate && at_second )
+        p->sort_col = 0;
+    else
+        p->sort_dir = (i8)( p->sort_dir == 0 ? 1 : 0 );
 }
 
 /* Compare two user rows by the sort column via the value callback.  Returns the ascending
@@ -175,16 +173,10 @@ table_order_sort( i32* order, i32 count, i32 col, bool desc,
         i32 j   = i - 1;
         while ( j >= 0 )
         {
-            i32 c;
-            if ( cmp_fn )
-            {
-                c = cmp_fn( order[ j ], key, col, desc, user );
-            }
-            else
-            {
-                c = table_sort_value_cmp( order[ j ], key, col, val_fn, user );
-                if ( desc ) c = -c;
-            }
+            i32 c = cmp_fn ? cmp_fn( order[ j ], key, col, desc, user )
+                           : table_sort_value_cmp( order[ j ], key, col, val_fn, user );
+            if ( !cmp_fn && desc ) c = -c;   /* val_fn compares ascending; cmp_fn owns direction */
+
             if ( c <= 0 ) break;   /* <= keeps equal keys stable (no swap on tie) */
             order[ j + 1 ] = order[ j ];
             --j;
@@ -205,8 +197,10 @@ table_rows_span( i32 count, f32 h, f32 top )
        range and clamp see the full table regardless of how few rows the loop emits. */
     extent_track( f, f->content_x, top + (f32)count * pitch - (f32)WIDGET_GAP );
 
+    /* The visible window in row indices, clamped into [ 0, count ] and ordered. */
     i32 first = (i32)floorf( ( f->view.y - top ) / pitch );
     i32 last  = (i32)ceilf ( ( f->view.y + f->view.h - top ) / pitch );
+
     if ( first < 0 )     first = 0;
     if ( first > count ) first = count;
     if ( last  > count ) last  = count;
