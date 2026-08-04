@@ -89,7 +89,7 @@ typedef struct run_project_api_s
     void ( *on_frame )( f32 dt, const run_view_t* view );     // once per frame, variable rate
     void ( *on_draw  )( f32 alpha, const run_view_t* view );  // scene submission, interpolated
     void ( *on_hud   )( f32 dt, const run_view_t* view );     // gui emission, inside the host's
-                                                              //   gui bracket; stub if gui-less
+                                                              // gui bracket; stub if gui-less
     void ( *on_stop  )( void );                               // play ends
 
 } run_project_api_t;

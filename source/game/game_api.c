@@ -3,17 +3,21 @@
     game_api.c -- game module wiring.
     Implements the game_api_t vtable struct and the mod_desc_t lifecycle descriptor.
 
-    The RUNNER: the standard driver of the project contract (runtime/run_project.h).  Owns
-    the play session so hosts don't have to: the state machine (stopped/playing/paused),
-    the fixed-step accumulator, and the per-frame phase drive of the bound project DLL.
+    The runtime callbacks are sent to the host (game/editor) that connects the game module. 
+    The game module owns the play session over a project DLL (runtime/run_project.h):
 
-    Hosts bind the runtime-loaded project once at on_ready, control the session with
-    play/stop/pause/step, and call tick( dt, view ) every frame.  See game_api.h for the
-    host-side picture.
+        - the state machine (stopped/playing/paused)
+        - the fixed-step accumulator
+        - the per-frame phase drive of the bound project DLL
 
-    Shutdown: hosts must stop() before quitting (close-request / quit paths).  exit()
-    deliberately never calls into the project -- module exit order is not guaranteed, so
-    the project DLL may already be gone; the project's own exit() is its backstop.
+    1. Game/Editor host binds the runtime-loaded project once at on_ready. 
+    2. Control the session with play/stop/pause/step, and call tick( dt, view ) every frame.
+      
+    See game_api.h for the host-side picture.
+
+    Shutdown: hosts must stop() before quitting (close-request / quit paths). 
+    exit() deliberately never calls into the project -- module exit order is not guaranteed,
+    so the project DLL may already be gone; the project's own exit() is its backstop.
 
 ==============================================================================================*/
 
@@ -30,26 +34,29 @@ MOD_USE_CORE;
 /* Stall guard: never run more than this many sim steps in one tick -- excess accumulated
    time is dropped (the sim slows down instead of spiraling: more steps -> longer frame ->
    more steps).  4 steps absorbs a 4x frame spike at the configured rate. */
+
 #define GAME_MAX_SIM_STEPS 4
 
 typedef struct game_state_s
 {
-    i32  play_state;      /* game_play_state_t                        */
-    f32  acc;             /* fixed-step accumulator, seconds          */
-    char project[ 64 ];   /* bound project module name; "" = unbound  */
+    i32  play_state;      // game_play_state_t
+    f32  acc;             // fixed-step accumulator, seconds
+    char project[ 64 ];   // bound project module name; "" = unbound
 
-    /* The project's stable api slot -- the mod system rewrites its contents on every
+    /* The game project's stable api slot -- the mod system rewrites its contents on every
        hot-reload, so this pointer stays live across project AND framework reloads. */
+
     const run_project_api_t* proj;
 
 } game_state_t;
 
 static game_state_t* g_game_state  = NULL;
-static get_api_fn    g_get_api     = NULL;   /* host lookup fn -- re-stowed every init/reload */
+static get_api_fn    g_get_api     = NULL;   // host lookup fn -- re-stowed every init/reload
 static cvar_t*       g_cv_fixed_hz = NULL;
 
 /* The fixed step is read per tick so a cvar change lands on the next frame; the cvar's
    min bound keeps the division safe. */
+
 static f32
 game_fixed_dt( void )
 {
