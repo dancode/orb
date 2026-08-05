@@ -236,6 +236,18 @@ medit_erase( char* buf, u32* len, gui_medit_state_t* es, u32 lo, u32 hi )
     es->cursor = es->anchor = lo;
 }
 
+/* Erase the CURRENT selection and clear the caller's selection bookkeeping with it, so the code
+   after the call reads "no selection" without re-deriving it.  The single-line engine's
+   edit_erase_sel (interact/gui_edit.c) verbatim, over this engine's state -- the two editors
+   share a shape, so they should share a vocabulary. */
+static void
+medit_erase_sel( char* buf, u32* len, gui_medit_state_t* es, u32* lo, u32* hi, bool* has )
+{
+    medit_erase( buf, len, es, *lo, *hi );
+    *has = false;
+    *lo  = *hi = es->cursor;
+}
+
 /* Insert one byte at the caret; false (untouched) when the buffer is full. */
 static bool
 medit_insert( char* buf, u32 bufsz, u32* len, gui_medit_state_t* es, char ch )
@@ -329,8 +341,7 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
     if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_X ] )
     {
         gui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
-        medit_erase( buf, &len, es, sel_lo, sel_hi );
-        has_sel = false; sel_lo = sel_hi = es->cursor;
+        medit_erase_sel( buf, &len, es, &sel_lo, &sel_hi, &has_sel );
         medit_undo_push( &s_medit_undo, buf, es->cursor, es->anchor );
         changed = true;
         blink   = true;
@@ -341,8 +352,7 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
     {
         if ( has_sel )
         {
-            medit_erase( buf, &len, es, sel_lo, sel_hi );
-            has_sel = false; sel_lo = sel_hi = es->cursor;
+            medit_erase_sel( buf, &len, es, &sel_lo, &sel_hi, &has_sel );
         }
         /* Newlines survive a multiline paste: CRLF and lone CR normalise to '\n', tabs expand
            to four spaces (the atlas has no tab glyph), other control bytes and malformed UTF-8
@@ -567,8 +577,7 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
         bool did = false;
         if ( has_sel )
         {
-            medit_erase( buf, &len, es, sel_lo, sel_hi );
-            has_sel = false; sel_lo = sel_hi = es->cursor;
+            medit_erase_sel( buf, &len, es, &sel_lo, &sel_hi, &has_sel );
             did = true;
         }
         if ( medit_insert( buf, bufsz, &len, es, '\n' ) ) did = true;
@@ -595,8 +604,7 @@ medit_apply_keys( char* buf, u32 bufsz, gui_medit_state_t* es, bool ctrl, bool s
         if ( has_sel )
         {
             s_medit_undo.last_was_char = false;
-            medit_erase( buf, &len, es, sel_lo, sel_hi );
-            has_sel = false; sel_lo = sel_hi = es->cursor;
+            medit_erase_sel( buf, &len, es, &sel_lo, &sel_hi, &has_sel );
             changed = true;   /* the erase already changed the buffer */
         }
         if ( !medit_insert_seq( buf, bufsz, &len, es, ch, nb ) ) break;

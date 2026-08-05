@@ -432,8 +432,7 @@ color_picker_body( gui_id_t id, f32* v, u32 n, gui_color_edit_flags_t flags )
                        GUI_COLOR( color_chan_u8( hr ), color_chan_u8( hg ), color_chan_u8( hb ), 255u ),
                        true );
         draw_gradient( sv_r, GUI_COLOR( 0, 0, 0, 0 ), GUI_COLOR( 0, 0, 0, 255 ), false );
-        draw_outline( sv_r, WIN_BORDER,
-                      ( sv_st.hover || sv_st.nav ) ? COL_BORDER_HOT : COL_BORDER_IDLE );
+        draw_outline( sv_r, WIN_BORDER, col_track_border( sv_st ) );
 
         /* Pick cursor: the flat color it sits on, ringed white-in-black so it reads on any
            ground.  Half-pixel centered so the 1.5px ring straddles the pick point evenly. */
@@ -453,8 +452,7 @@ color_picker_body( gui_id_t id, f32* v, u32 n, gui_color_edit_flags_t flags )
             gui_rect_t seg = { hue_r.x, y0, hue_r.w, y1 - y0 };
             draw_gradient( seg, s_hue_ramp[ i ], s_hue_ramp[ i + 1u ], false );
         }
-        draw_outline( hue_r, WIN_BORDER,
-                      ( hue_st.hover || hue_st.nav ) ? COL_BORDER_HOT : COL_BORDER_IDLE );
+        draw_outline( hue_r, WIN_BORDER, col_track_border( hue_st ) );
         picker_bar_marker( hue_r, h );
 
         /* Alpha bar: checker ground under an opaque -> transparent fall of the current color. */
@@ -462,8 +460,7 @@ color_picker_body( gui_id_t id, f32* v, u32 n, gui_color_edit_flags_t flags )
         {
             draw_checker( alp_r, 4.0f, GUI_COLOR( 200, 200, 200, 255 ), GUI_COLOR( 100, 100, 100, 255 ) );
             draw_gradient( alp_r, cur_rgb, cur_rgb & 0x00FFFFFFu, false );
-            draw_outline( alp_r, WIN_BORDER,
-                          ( alp_st.hover || alp_st.nav ) ? COL_BORDER_HOT : COL_BORDER_IDLE );
+            draw_outline( alp_r, WIN_BORDER, col_track_border( alp_st ) );
             picker_bar_marker( alp_r, 1.0f - saturate( v[ 3 ] ) );
         }
 
@@ -556,10 +553,8 @@ color_edit_n( const char* label, f32* v, u32 n, gui_color_edit_flags_t flags )
         if ( pa < 255u )
             draw_checker( inner, 3.0f, GUI_COLOR( 200, 200, 200, 255 ), GUI_COLOR( 100, 100, 100, 255 ) );
         draw_fill( inner, abgr );
-        /* A line is BORDER, never a BG face -- and nav lights it like a hover, per the house
-           predicate. */
-        draw_outline( preview_r, WIN_BORDER,
-                      ( pst.hover || pst.nav ) ? COL_BORDER_HOT : COL_BORDER_IDLE );
+        /* A line is BORDER, never a BG face -- the swatch paints its own ground. */
+        draw_outline( preview_r, WIN_BORDER, col_track_border( pst ) );
         draw_set_rounding( sv );
     }
 

@@ -73,7 +73,7 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
     /* Pointing at a leaf row -- by mouse or by the nav cursor -- collapses any submenu open at this
        depth, so moving off a sibling menu_begin onto a plain item closes that submenu: the menu
        reads as one active path under either input. */
-    if ( ( st.hover || st.nav ) && g_ctx->popup.open_count > s_popup_begin_count )
+    if ( style_is_hot( st ) && g_ctx->popup.open_count > s_popup_begin_count )
         g_ctx->popup.open_count = s_popup_begin_count;
 
     /* Row highlight on hover / nav (active tint while pressed).  ONE mix for the row and its

@@ -106,7 +106,8 @@ gui_msel_feed( i32 index, gui_item_state_t st )
 
     gui_msel_state_t* ms = s_msel.st;
 
-    if ( st.hover || st.nav )
+    if ( st.hover || st.nav )   /* engaged by either instrument; NOT the style predicate --
+                                   interact reads no style projection (see the tier contract) */
         s_msel.engaged = true;
 
     if ( st.nav )

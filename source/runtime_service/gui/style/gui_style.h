@@ -243,6 +243,14 @@ f32 lat_round    ( f32 v, u32 q );
    the next rescale rebuilds it wholesale from the base, so a poke there silently evaporates. */
 extern u32 s_font_size;         /* style/gui_theme.c -- active em (0 = never set) */
 
+/* The two state predicates every projection below is written in (gui_style_core.c).  style_phase
+   is the ONE authoring of the interact-state -> phase rule: the public gui_item_phase
+   (stock/gui_stock_widgets.c) is a cast over it, so a user widget and a stock render can never
+   pick different faces.  style_is_hot stays separate because the MIX needs the hot weight even
+   while an item is also active, where style_phase reports ACTIVE. */
+bool style_is_hot( gui_item_state_t st );
+u8   style_phase ( gui_item_state_t st );
+
 /* State -> color projections (gui_style_core.c) -- pure: the state flags arrive as
    parameters, so these resolve identically with no interact server present. */
 u32 col_item_bg( gui_item_state_t st );
@@ -271,6 +279,10 @@ u32 col_btn_glyph( gui_item_state_t st );
    on its ground and the border alone carries focus, on BORDER[ACTIVE].  One spelling for the rule
    the whole field family shares; the reasoning is written out once, at input_text_begin. */
 u32 col_field_border( gui_item_state_t st );
+
+/* Border of a bare TRACK (a gradient ramp, a checker bar, a swatch): it paints its own ground, so
+   the edge is the only thing left to light on hover.  col_field_border's sibling on the hot axis. */
+u32 col_track_border( gui_item_state_t st );
 
 /* Tab chip face / ink -- the TITLE band speaking ( state, current ).  The current chip reads
    TITLE[ACTIVE], the body colour (a live tab IS its panel -- see the bake); a pressed chip reads

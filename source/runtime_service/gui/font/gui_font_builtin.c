@@ -77,6 +77,12 @@ font_builtin_size( gui_builtin_font_t font )
     return s_builtin_font[ font ].size;
 }
 
+/* |a - b| -- the size distance font_builtin_pick minimizes.  Spelled out because this leaf unit
+   pulls in no math header for one absolute value. */
+
+static f32
+size_dist( f32 a, f32 b ) { return a > b ? a - b : b - a; }
+
 /* The preset in `base`'s family whose baked size lands nearest base_size * scale -- the DPI
    retarget pick.  Returns `base` itself when its size already fits best, when the family ships no
    other bake, or when `base` carries no family (GUI_FONT_NONE / out-of-range).  Ties break toward
@@ -94,7 +100,7 @@ font_builtin_pick( gui_builtin_font_t base, f32 scale )
 
     f32                want   = (f32)b->size * scale;
     gui_builtin_font_t best   = base;
-    f32                best_d = want > (f32)b->size ? want - (f32)b->size : (f32)b->size - want;
+    f32                best_d = size_dist( want, (f32)b->size );
 
     for ( u32 i = 1; i < GUI_FONT_BUILTIN_COUNT; ++i )
     {
@@ -102,7 +108,7 @@ font_builtin_pick( gui_builtin_font_t base, f32 scale )
         if ( c->family != b->family )
             continue;
 
-        f32 d = want > (f32)c->size ? want - (f32)c->size : (f32)c->size - want;
+        f32 d = size_dist( want, (f32)c->size );
         if ( d < best_d || ( d == best_d && c->size > s_builtin_font[ best ].size ) )
         {
             best   = (gui_builtin_font_t)i;
@@ -122,17 +128,15 @@ font_load_builtin( gui_builtin_font_t font )
         return true;
 
     const char* rel = font_builtin_rel_path( font );
-    if ( rel != NULL )
-    {
-        /* Built-in presets are engine assets at <root>/assets/font -- resolve against sys_root_dir()
-           so hosts work from any working directory. */
-        char path[ 576 ];
-        fmt_snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), rel );
+    if ( !rel )
+        return false;
 
-        return font_load_into( 0, path );   // slot 0 = the default font
-    }
+    /* Built-in presets are engine assets at <root>/assets/font -- resolve against sys_root_dir()
+       so hosts work from any working directory. */
+    char path[ 576 ];
+    fmt_snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), rel );
 
-    return false;
+    return font_load_into( 0, path );   // slot 0 = the default font
 }
 
 // clang-format on

@@ -3,7 +3,7 @@
     runtime_service/gui/font/gui_font_core.c -- the loaded-font registry + metric readers.
 
     The registry half of the font resource: the id-addressed registry (s_fonts[]), the active-font
-    pointers (s_active / s_font), the measurement readers, and the selection + fill surface the
+    selection (s_active / s_active_id), the measurement readers, and the fill surface the
     loader (font/gui_font_load.c) and the render side share.  No fs, no atlas, no GPU -- glyph UV
     dispatch and atlas upload live render-side and reach a slot's pixels through font_slot_ptr.
 
@@ -13,9 +13,8 @@
 // clang-format off
 
 static font_slot_t      s_fonts     [ GUI_FONT_REGISTRY_MAX ];  // font registry; slot 0 is the default
-static font_slot_t*     s_active    = NULL;                     // active slot (s_font == &s_active->metrics)
+static font_slot_t*     s_active    = NULL;                     // active slot, or NULL before the first activate
 static u32              s_active_id = 0;                        // active slot id (0 = default, 1..MAX-1 = user-loaded)
-static font_metrics_t*  s_font      = NULL;                     // active font's metrics (read by every accessor)
 
 /*==============================================================================================
     The internal fallback default -- what every reader resolves against when no loaded font is
@@ -80,7 +79,7 @@ font_slot_cp( const font_slot_t* slot, u32 cp )
 }
 
 /*==============================================================================================
-    Metric readers -- resolved from s_font / s_active, aimed by font_activate().
+    Metric readers -- every one resolves through font_live_slot(), aimed by font_activate().
 ==============================================================================================*/
 
 f32  font_char_h      ( void ) { return font_live_slot()->metrics.char_h; }
@@ -190,7 +189,6 @@ font_activate( u32 id )
 {
     s_active_id = id;
     s_active    = &s_fonts[ id ];
-    s_font      = &s_active->metrics;
 }
 
 /* First free slot id in 1..MAX-1, or 0 when the registry is full (0 is reserved for the default). */
@@ -233,7 +231,6 @@ font_registry_reset( void )
     memset( s_fonts, 0, sizeof( s_fonts ) );
     s_active    = NULL;
     s_active_id = 0;
-    s_font      = NULL;
 }
 
 /* Decentralized memory accounting -- the registry plus each loaded font's resident R8 glyph pixels

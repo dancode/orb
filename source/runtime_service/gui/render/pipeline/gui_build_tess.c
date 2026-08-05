@@ -122,6 +122,34 @@ static struct
 } s_tess_stats;
 
 /*==============================================================================================
+    Quantizers -- the two grids geometry lands on.
+
+    Every axis-aligned fill snaps its ORIGIN to the pixel grid so its edges stay crisp; a shape
+    with no straight edge (a disc, a rotated box) deliberately does not, since quantizing its
+    centre makes an animated dot stutter.  A pattern's cell rides a quarter-pixel grid instead:
+    fine enough that a scaled lattice does not visibly step, coarse enough that the fragment's
+    packed cell field can carry it.
+==============================================================================================*/
+
+/* Round to the nearest whole pixel -- the snap every straight-edged primitive puts its origin
+   through.  Named so a call site says WHY it rounds, not merely that it does. */
+static f32
+tess_snap_px( f32 v )
+{
+    return floorf( v + 0.5f );
+}
+
+/* A pattern cell quantized to quarter-pixels and clamped to what the effect word can describe. */
+static f32
+tess_snap_cell( f32 cell )
+{
+    cell = floorf( cell * 4.0f + 0.5f ) * 0.25f;
+    if ( cell < 1.0f )             cell = 1.0f;
+    if ( cell > GUI_FX_CELL_MAX )  cell = GUI_FX_CELL_MAX;
+    return cell;
+}
+
+/*==============================================================================================
     Tessellation helpers -- mirrors of the draw_push_* functions in gui_emit_draw.c, but writing
     into s_tess instead of s_draw.  These are the backend half of the command-list split.
     Called from tess_dispatch; not called from anywhere else.
@@ -314,8 +342,8 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
         res_atlas_white_uv( &u0, &v0 );
         u1 = u0; v1 = v0;
     }
-    x = floorf( x + 0.5f );
-    y = floorf( y + 0.5f );
+    x = tess_snap_px( x );
+    y = tess_snap_px( y );
 
     gui_draw_vert_t* v;
     u16*             idx;
@@ -337,8 +365,8 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
 static void
 tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal )
 {
-    x = floorf( x + 0.5f );
-    y = floorf( y + 0.5f );
+    x = tess_snap_px( x );
+    y = tess_snap_px( y );
 
     f32              wu, wv;
     gui_draw_vert_t* v;
@@ -648,8 +676,8 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        centre is the animated-dot mistake again (tess_quad_xf's rule). */
     if ( rot == 0.0f && !( hx == hy && rmin >= lim ) )
     {
-        x = floorf( x + 0.5f );
-        y = floorf( y + 0.5f );
+        x = tess_snap_px( x );
+        y = tess_snap_px( y );
     }
 
     /* tex_idx 0 = solid-color convention, same as tess_rect_filled: the atlas white texel. */
@@ -1016,12 +1044,10 @@ tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
 {
     /* Snap like tess_rect_filled: the pattern anchors at the box origin, so the box must land
        where the plain fill under it does. */
-    x = floorf( x + 0.5f );
-    y = floorf( y + 0.5f );
+    x = tess_snap_px( x );
+    y = tess_snap_px( y );
 
-    cell = floorf( cell * 4.0f + 0.5f ) * 0.25f;
-    if ( cell < 1.0f ) cell = 1.0f;
-    if ( cell > GUI_FX_CELL_MAX ) cell = GUI_FX_CELL_MAX;
+    cell = tess_snap_cell( cell );
 
     f32 period = 2.0f * cell;
     f32 phx    = ( x - period * floorf( x / period ) ) / period;
@@ -1051,12 +1077,10 @@ tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
 static void
 tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness, u32 abgr )
 {
-    x = floorf( x + 0.5f );
-    y = floorf( y + 0.5f );
+    x = tess_snap_px( x );
+    y = tess_snap_px( y );
 
-    cell = floorf( cell * 4.0f + 0.5f ) * 0.25f;
-    if ( cell < 1.0f ) cell = 1.0f;
-    if ( cell > GUI_FX_CELL_MAX ) cell = GUI_FX_CELL_MAX;
+    cell = tess_snap_cell( cell );
 
     /* The lattice anchor, mod the quantized pitch.  (ox, oy) is a screen-space content origin
        and may be anywhere (a panned canvas sends large negatives); only its residue matters. */

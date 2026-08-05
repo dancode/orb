@@ -979,6 +979,35 @@ gui_style_source_set( gui_style_source_fn fn, void* user )
     identically with no server present.
 ==============================================================================================*/
 
+/*==============================================================================================
+    The two state predicates every projection below is written in.  Both were open-coded at six
+    sites between them, so the rule "the nav cursor lights a widget exactly like the mouse does"
+    was authored six times; it is authored here instead.
+==============================================================================================*/
+
+/* "Reads as hovered."  The keyboard nav cursor lights a widget exactly like the mouse, and the
+   two are mutually exclusive (gui_nav.c drops nav.highlight on any mouse move), so at most one
+   is ever set.  Kept separate from style_phase because the MIX needs this weight even while the
+   item is ALSO active, where the phase distillation below reports ACTIVE instead. */
+bool
+style_is_hot( gui_item_state_t st )
+{
+    return st.hover || st.nav;
+}
+
+/* Interact state -> style PHASE: the three-way rule every projection here and every render above
+   picks a face with.  This is the whole body of the PUBLIC gui_item_phase (stock/), which now
+   delegates down to it -- authored here because style is the lowest unit that needs the rule, and
+   a rule with two homes is a rule that drifts.  (GUI_PHASE_DIM is the inert / disabled variant --
+   a render selects it deliberately, never from live interaction.) */
+u8
+style_phase( gui_item_state_t st )
+{
+    return st.active            ? GUI_PHASE_ACTIVE
+         : style_is_hot( st )   ? GUI_PHASE_HOT
+                                : GUI_PHASE_IDLE;
+}
+
 /* Frame-background tint for a "framed field" widget (checkbox box, slider track, drag box, input):
    hover / nav / active lift it to the shared hot / active cells -- one at a time, since hover and
    nav-highlight are mutually exclusive -- over a caller-supplied idle base so each field keeps its
@@ -988,9 +1017,12 @@ gui_style_source_set( gui_style_source_fn fn, void* user )
 u32
 col_frame_bg( gui_item_state_t st, u32 idle_color )
 {
-    if ( st.active )            return COL_BG_ACTIVE;
-    if ( st.hover || st.nav )   return COL_BG_HOT;   /* nav cursor lights the body like a hover */
-    return idle_color;
+    switch ( style_phase( st ) )
+    {
+        case GUI_PHASE_ACTIVE: return COL_BG_ACTIVE;
+        case GUI_PHASE_HOT:    return COL_BG_HOT;
+        default:               return idle_color;   /* the field keeps its own resting colour */
+    }
 }
 
 /* Common case background color for a pushbutton style widget.
@@ -1009,16 +1041,12 @@ u32 col_item_bg( gui_item_state_t st )
    which plane that phase is read out of -- so a chosen row lifts on hover and sinks on press
    like every other surface in the system, one plane over.
 
-   The phase distillation is spelled out rather than deferred to gui_item_phase() because that
-   lives in stock/, above this unit -- the same reason col_frame_bg spells it out. */
+   The phase comes from style_phase above -- the same rule the public gui_item_phase hands a user
+   widget, so a stock render and its sibling can never pick different faces. */
 u32
 col_item_bg_look( gui_item_state_t st, gui_style_look_t look )
 {
-    u8 phase = st.active             ? GUI_PHASE_ACTIVE
-             : ( st.hover || st.nav ) ? GUI_PHASE_HOT
-                                      : GUI_PHASE_IDLE;
-
-    return style_col_look( GUI_ROLE_BG, phase, (u8)look );
+    return style_col_look( GUI_ROLE_BG, style_phase( st ), (u8)look );
 }
 
 /* The ink for a glyph drawn on a BARE ICON BUTTON -- one that paints no face at rest and fills
@@ -1052,6 +1080,17 @@ col_field_border( gui_item_state_t st )
     return st.focused ? COL_BORDER_ACTIVE : COL_BORDER_IDLE;
 }
 
+/* The border of a bare TRACK -- a surface that paints its own ground (a gradient ramp, a checker,
+   a swatch) and so cannot show hover in its fill the way a framed field does.  Its edge is the
+   only thing left to light, which is why this is a border projection and not a BG one.  The
+   sibling of col_field_border on the hot axis rather than the focus axis; the colour picker's
+   four ramps spelled this ternary by hand before it had a name. */
+u32
+col_track_border( gui_item_state_t st )
+{
+    return style_is_hot( st ) ? COL_BORDER_HOT : COL_BORDER_IDLE;
+}
+
 /* The tab chip -- the TITLE band speaking ( state, current ).  TITLE[ACTIVE] is baked as the
    BODY colour ("a live tab IS its panel"), so the CURRENT chip reads it to merge into the
    content below -- and a PRESSED chip reads the same cell, previewing the join a release
@@ -1061,10 +1100,7 @@ col_field_border( gui_item_state_t st )
 u32
 col_tab_bg( gui_item_state_t st, bool current )
 {
-    u8 phase = ( current || st.active ) ? GUI_PHASE_ACTIVE
-             : ( st.hover || st.nav )   ? GUI_PHASE_HOT
-                                        : GUI_PHASE_IDLE;
-    return style_col( GUI_ROLE_TITLE, phase );
+    return style_col( GUI_ROLE_TITLE, current ? GUI_PHASE_ACTIVE : style_phase( st ) );
 }
 
 /* The chip's ink, keyed on the SAME predicate as its fill -- the col_btn_glyph rule: splitting
@@ -1072,7 +1108,7 @@ col_tab_bg( gui_item_state_t st, bool current )
 u32
 col_tab_ink( gui_item_state_t st, bool current )
 {
-    return ( current || st.hover || st.nav || st.active ) ? COL_TEXT_IDLE : COL_TEXT_DIM;
+    return ( current || style_phase( st ) != GUI_PHASE_IDLE ) ? COL_TEXT_IDLE : COL_TEXT_DIM;
 }
 
 /* The movable part of a track control -- slider knob, scrollbar thumb -- off the GRAB row.
@@ -1084,9 +1120,7 @@ col_tab_ink( gui_item_state_t st, bool current )
    selected from live interaction, and DIM is the deliberate inert face a render picks itself. */
 u32 col_grab( gui_item_state_t st )
 {
-    return style_col( GUI_ROLE_GRAB, st.active           ? GUI_PHASE_ACTIVE
-                                   : st.hover || st.nav  ? GUI_PHASE_HOT
-                                                         : GUI_PHASE_IDLE );
+    return style_col( GUI_ROLE_GRAB, style_phase( st ) );
 }
 
 /*==============================================================================================
@@ -1125,9 +1159,9 @@ u32 col_grab( gui_item_state_t st )
 gui_style_mix_t
 style_mix( gui_id_t id, gui_item_state_t st, bool selected )
 {
-    gui_style_mix_t want = { ( st.hover || st.nav ) ? 1.0f : 0.0f,
-                             st.active              ? 1.0f : 0.0f,
-                             selected               ? 1.0f : 0.0f };
+    gui_style_mix_t want = { style_is_hot( st ) ? 1.0f : 0.0f,
+                             st.active          ? 1.0f : 0.0f,
+                             selected           ? 1.0f : 0.0f };
 
     if ( id == GUI_ID_NONE )
         return want;   /* no identity -> no storage -> no motion, by the caller's choice */

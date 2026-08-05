@@ -48,13 +48,15 @@
    Published because a user widget is the stock render's sibling: both pick a face from the same
    three-way rule, so neither should re-derive it.  nav counts as HOT so a keyboard-navigated
    widget lights up exactly like a hovered one.  (GUI_PHASE_DIM is the inert / disabled variant --
-   a render selects it deliberately, never from live interaction.) */
+   a render selects it deliberately, never from live interaction.)
+
+   This is the PUBLIC DOOR onto style_phase, not a second copy of the rule: the style unit's own
+   projections resolve through the same function one tier down, so the face a user widget picks
+   and the face col_item_bg picks are the same face by construction. */
 gui_style_phase_t
 gui_item_phase( gui_item_state_t st )
 {
-    return st.active           ? GUI_PHASE_ACTIVE
-         : st.hover || st.nav  ? GUI_PHASE_HOT
-                               : GUI_PHASE_IDLE;
+    return ( gui_style_phase_t )style_phase( st );
 }
 
 /* gui_style_color -- the resolved grid read published for a render outside this library: the

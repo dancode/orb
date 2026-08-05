@@ -40,6 +40,14 @@
 /* Make a vec2 (the render server owns its own v2; this is the draw unit's local one). */
 static gui_vec2_t sv2( f32 x, f32 y ) { return ( gui_vec2_t ){ x, y }; }
 
+/* Stroke width floored at one pixel.  A sub-pixel thickness strokes to nothing, so every mark
+   that takes a caller thickness passes it through here -- one rule, not ten open-coded clamps. */
+static f32 sym_thick( f32 thickness ) { return thickness < 1.0f ? 1.0f : thickness; }
+
+/* The box's inscribed extent -- the shorter side, which is what a square mark (arrow, plus,
+   spinner) sizes itself against so it stays square in a non-square cell. */
+static f32 sym_min_side( gui_rect_t box ) { return box.w < box.h ? box.w : box.h; }
+
 /* Segment count for an arc of radius r sweeping `sweep` radians: ~one segment per 6px of arc
    length, clamped so tiny marks stay cheap (3) and big wheels stay smooth (64). */
 static u32
@@ -88,10 +96,10 @@ sym_fill_convex( const gui_vec2_t* pts, u32 n, u32 col )
 static void
 draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 color )
 {
-    f32 cx = box.x + box.w * 0.5f;
-    f32 cy = box.y + box.h * 0.5f;
-    f32 s  = floorf( box.h * 0.22f );
-    if ( thickness < 1.0f ) thickness = 1.0f;
+    gui_vec2_t c  = gui_rect_center( box );
+    f32        cx = c.x, cy = c.y;
+    f32        s  = floorf( box.h * 0.22f );
+    thickness = sym_thick( thickness );
 
     gui_vec2_t p[ 3 ];
     switch ( dir )
@@ -116,7 +124,7 @@ draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 color )
 static void
 draw_check_mark( gui_rect_t box, u32 color )
 {
-    f32 sz = box.w < box.h ? box.w : box.h;
+    f32 sz = sym_min_side( box );
     f32 ox = box.x + ( box.w - sz ) * 0.5f;     /* center the glyph square in the box */
     f32 oy = box.y + ( box.h - sz ) * 0.5f;
     f32 t  = floorf( sz * 0.15f );  if ( t < 1.5f ) t = 1.5f;   /* stroke thickness */
@@ -139,10 +147,10 @@ draw_check_mark( gui_rect_t box, u32 color )
 void
 draw_dropdown_arrow( gui_rect_t box, u32 color )
 {
-    f32 sz = box.w < box.h ? box.w : box.h;
-    f32 cx = box.x + box.w * 0.5f;
-    f32 cy = box.y + box.h * 0.5f;
-    f32 s  = floorf( sz * 0.22f );          /* half-extent */
+    gui_vec2_t c  = gui_rect_center( box );
+    f32        cx = c.x, cy = c.y;
+    f32        sz = sym_min_side( box );
+    f32        s  = floorf( sz * 0.22f );   /* half-extent */
     f32 t  = floorf( sz * 0.15f );  if ( t < 1.5f ) t = 1.5f;   /* stroke thickness */
 
     gui_draw_line( cx - s, cy - s * 0.4f, cx, cy + s * 0.6f, t, color );
@@ -178,10 +186,10 @@ draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 color )
 static void
 draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 color )
 {
-    f32 cx = box.x + box.w * 0.5f;
-    f32 cy = box.y + box.h * 0.5f;
-    f32 s  = floorf( ( box.w < box.h ? box.w : box.h ) * 0.3f );
-    if ( thickness < 1.0f ) thickness = 1.0f;
+    gui_vec2_t c  = gui_rect_center( box );
+    f32        cx = c.x, cy = c.y;
+    f32        s  = floorf( sym_min_side( box ) * 0.3f );
+    thickness = sym_thick( thickness );
 
     gui_draw_line( cx - s, cy, cx + s, cy, thickness, color );
     if ( plus )
@@ -244,7 +252,7 @@ draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
     }
     gui_vec2_t pts[ 4 * 17 + 4 ];
     u32 n = round_rect_perimeter_ex( b, rtl, rtr, rbr, rbl, pts );
-    gui_draw_polyline( pts, n, thickness < 1.0f ? 1.0f : thickness, GUI_STROKE_CENTER, true, col );
+    gui_draw_polyline( pts, n, sym_thick( thickness ), GUI_STROKE_CENTER, true, col );
 }
 
 /* Regular n-gon centred at (cx,cy), circumradius r, first vertex at angle `rot`.  Filled (fan) or
@@ -263,7 +271,7 @@ draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness
     if ( filled )
         sym_fill_convex( pts, sides, col );
     else
-        gui_draw_polyline( pts, sides, thickness < 1.0f ? 1.0f : thickness, GUI_STROKE_CENTER, true, col );
+        gui_draw_polyline( pts, sides, sym_thick( thickness ), GUI_STROKE_CENTER, true, col );
 }
 
 /* Circle at arbitrary radius: filled or stroked (a ring of `thickness`).  The ring is the outlined
@@ -294,7 +302,7 @@ draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
         return;
     }
 
-    if ( thickness < 1.0f ) thickness = 1.0f;
+    thickness = sym_thick( thickness );
 
     /* A band wider than the packed word's border field cannot be described to the fragment, so the
        heavy case keeps the polyline rather than silently drawing a thinner ring.  At 15.875 px this
@@ -330,7 +338,7 @@ draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
 static void
 draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )
 {
-    if ( thickness < 1.0f ) thickness = 1.0f;
+    thickness = sym_thick( thickness );
 
     /* A band wider than the packed word's tube field cannot be described to the fragment, so the
        heavy case keeps the polyline rather than silently drawing a thinner arc -- the same rule and
@@ -377,7 +385,7 @@ draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness,
         pts[ i ] = sv2( u * u * x0 + 2.0f * u * t * cx + t * t * x1,
                         u * u * y0 + 2.0f * u * t * cy + t * t * y1 );
     }
-    gui_draw_polyline( pts, SYM_BEZIER_SEGS + 1, thickness < 1.0f ? 1.0f : thickness,
+    gui_draw_polyline( pts, SYM_BEZIER_SEGS + 1, sym_thick( thickness ),
                          GUI_STROKE_CENTER, false, col );
 }
 
@@ -395,7 +403,7 @@ draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
         pts[ i ] = sv2( b0 * x0 + b1 * c0x + b2 * c1x + b3 * x1,
                         b0 * y0 + b1 * c0y + b2 * c1y + b3 * y1 );
     }
-    gui_draw_polyline( pts, SYM_BEZIER_SEGS + 1, thickness < 1.0f ? 1.0f : thickness,
+    gui_draw_polyline( pts, SYM_BEZIER_SEGS + 1, sym_thick( thickness ),
                          GUI_STROKE_CENTER, false, col );
 }
 
@@ -524,8 +532,9 @@ draw_grip_dots( gui_rect_t box, u32 col )
 static void
 draw_spinner( gui_rect_t box, f32 t, f32 thickness, u32 col )
 {
-    f32 cx = box.x + box.w * 0.5f, cy = box.y + box.h * 0.5f;
-    f32 r  = ( box.w < box.h ? box.w : box.h ) * 0.5f - thickness;
+    gui_vec2_t c = gui_rect_center( box );
+    f32        r = sym_min_side( box ) * 0.5f - thickness;
+    f32        cx = c.x, cy = c.y;
     if ( r < 1.0f ) r = 1.0f;
     f32 a0 = t * 6.0f;                  /* ~one revolution per second */
     draw_arc( cx, cy, r, a0, a0 + SYM_PI * 1.5f, thickness, col );
@@ -574,7 +583,7 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
         draw_set_rounding( r_tl );
         if ( filled ) draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0, 0, 1, 1, 0, col );
         else          draw_push_rect_outline( box.x, box.y, box.w, box.h,
-                                              thickness < 1.0f ? 1.0f : thickness, col );
+                                              sym_thick( thickness ), col );
         draw_set_rounding( save );
         return;
     }
@@ -592,13 +601,13 @@ void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )             
 void gui_draw_arc_dashed( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
                           f32 dash, f32 gap, u32 col )
 {
-    if ( thickness < 1.0f ) thickness = 1.0f;
+    thickness = sym_thick( thickness );
     draw_push_arc_dashed( cx, cy, r, thickness, a0, a1, dash, gap, col );
 }
 void gui_draw_arc_gradient( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
                             u32 col_a, u32 col_b )
 {
-    if ( thickness < 1.0f ) thickness = 1.0f;
+    thickness = sym_thick( thickness );
     draw_push_arc_gradient( cx, cy, r, thickness, a0, a1, col_a, col_b );
 }
 

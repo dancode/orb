@@ -850,6 +850,22 @@ draw_hash_cmd( const gui_cmd_t* c )
     visible TEXT_EDGE keeps a transparent-fill run alive (the outline paints outside the glyph).
 ==============================================================================================*/
 
+/* Claim the next command slot and stamp the ambient BATCH KEY onto it.  (clip_idx, vp) is the
+   whole key -- texture and effect ride the vertex and cannot cut a draw call -- so stamping it is
+   the one thing every command must do and no command may get wrong.  Split out of draw_cmd_open
+   below because the pool-backed pushes cannot use that function's preamble (their pool copy has
+   to succeed before a slot is spent, and their cull is not an axis-aligned box test) but they owe
+   the identical stamp.  Seven sites open-coded these four lines before it had a name. */
+static gui_cmd_t*
+draw_cmd_claim( u8 type )
+{
+    gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type      = type;
+    c->clip_idx  = s_draw.cur_clip_idx;
+    c->vp        = (u8)s_draw.cur_vp;
+    return c;
+}
+
 static gui_cmd_t*
 draw_cmd_open( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
 {
@@ -860,11 +876,7 @@ draw_cmd_open( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
     if ( draw_cull_box( x - pad, y - pad, w + 2.0f * pad, h + 2.0f * pad ) )
         return NULL;
 
-    gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type      = type;
-    c->clip_idx  = s_draw.cur_clip_idx;
-    c->vp        = (u8)s_draw.cur_vp;
-    return c;
+    return draw_cmd_claim( type );
 }
 
 static void
@@ -983,12 +995,9 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
     if ( s_draw.rect_count == offset )
         return;   /* everything culled: no command slot spent */
 
-    gui_cmd_t* c        = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type               = GUI_CMD_RECT_LIST;
-    c->clip_idx           = s_draw.cur_clip_idx;
-    c->vp                 = (u8)s_draw.cur_vp;
-    c->rect_list.offset   = offset;
-    c->rect_list.count    = s_draw.rect_count - offset;
+    gui_cmd_t* c        = draw_cmd_claim( GUI_CMD_RECT_LIST );
+    c->rect_list.offset = offset;
+    c->rect_list.count  = s_draw.rect_count - offset;
     draw_cmd_seal();   /* entries are L1-hot here */
 }
 
@@ -1561,10 +1570,7 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     if ( !draw_text_pool_copy( str, len, &off ) )
         return;
 
-    gui_cmd_t* c  = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type         = GUI_CMD_TEXT;
-    c->clip_idx     = s_draw.cur_clip_idx;
-    c->vp           = (u8)s_draw.cur_vp;
+    gui_cmd_t* c    = draw_cmd_claim( GUI_CMD_TEXT );
     c->text.x       = x;
     c->text.y       = y;
     c->text.off     = off;
@@ -1623,10 +1629,7 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
     if ( !draw_text_pool_copy( str, len, &off ) )
         return;
 
-    gui_cmd_t* c     = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type          = GUI_CMD_TEXT_XF;
-    c->clip_idx      = s_draw.cur_clip_idx;
-    c->vp            = (u8)s_draw.cur_vp;
+    gui_cmd_t* c     = draw_cmd_claim( GUI_CMD_TEXT_XF );
     c->text_xf.x     = x;
     c->text_xf.y     = y;
     c->text_xf.off   = off;

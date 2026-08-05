@@ -330,6 +330,30 @@ edit_insert_seq( char* buf, u32 bufsz, u32* len, gui_edit_state_t* es, const cha
     return true;
 }
 
+/* Erase [lo,hi) from buf and seat the caret at lo -- edit_insert_seq's twin, and THE buffer
+   deletion.  Every path that removes text is this one operation: cut, paste-over, backspace,
+   delete, type-over.  The `+ 1u` carries the NUL along with the tail, which is precisely the
+   arithmetic that was written out at seven sites before it had a name. */
+static void
+edit_erase( char* buf, u32* len, gui_edit_state_t* es, u32 lo, u32 hi )
+{
+    memmove( buf + lo, buf + hi, *len - hi + 1u );
+    *len      -= ( hi - lo );
+    es->cursor = es->anchor = (u16)lo;
+}
+
+/* Erase the CURRENT selection and clear the caller's selection bookkeeping with it, so the code
+   after the call reads "no selection" without re-deriving it.  The five delete-the-selection
+   paths differ only in what they do before and after; the erase itself is identical in all of
+   them, down to the collapse. */
+static void
+edit_erase_sel( char* buf, u32* len, gui_edit_state_t* es, u32* lo, u32* hi, bool* has )
+{
+    edit_erase( buf, len, es, *lo, *hi );
+    *has = false;
+    *lo  = *hi = es->cursor;
+}
+
 /*==============================================================================================
     Character filter -- the ambient vocabulary gate for the CURRENT edit_field run.
 
@@ -413,10 +437,7 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
     if ( ctrl && has_sel && s_io.keys_pressed[ APP_KEY_X ] )
     {
         gui_clipboard_set( buf + sel_lo, sel_hi - sel_lo );
-        memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
-        len -= ( sel_hi - sel_lo );
-        es->cursor = es->anchor = (u16)sel_lo;
-        has_sel = false; sel_lo = sel_hi = es->cursor;
+        edit_erase_sel( buf, &len, es, &sel_lo, &sel_hi, &has_sel );
         undo_push( &s_undo, buf, es->cursor, es->anchor );
         res.changed = true;
         blink_reset = true;
@@ -426,12 +447,7 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
     {
         /* Drop the selection first so the paste lands where it was. */
         if ( has_sel )
-        {
-            memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
-            len -= ( sel_hi - sel_lo );
-            es->cursor = es->anchor = (u16)sel_lo;
-            has_sel = false; sel_lo = sel_hi = es->cursor;
-        }
+            edit_erase_sel( buf, &len, es, &sel_lo, &sel_hi, &has_sel );
         /* Insert the paste one whole UTF-8 sequence at a time at the advancing caret, skipping
            control characters (a single-line field rejects newlines / tabs) and malformed bytes
            (a lone continuation or invalid lead decodes to U+FFFD with a 1-byte step -- dropping
@@ -567,9 +583,7 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
     {
         if ( has_sel )
         {
-            memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
-            len -= ( sel_hi - sel_lo );
-            es->cursor = es->anchor = (u16)sel_lo;
+            edit_erase_sel( buf, &len, es, &sel_lo, &sel_hi, &has_sel );
             undo_push( &s_undo, buf, es->cursor, es->anchor );
             res.changed = true;
         }
@@ -577,10 +591,7 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
         {
             /* Erase the WHOLE preceding sequence -- one Backspace removes one character,
                and a partial erase would leave invalid UTF-8 in the buffer. */
-            u32 prev = (u32)utf8_prev( buf, (i32)es->cursor );
-            memmove( buf + prev, buf + es->cursor, len - es->cursor + 1u );
-            len       -= ( es->cursor - prev );
-            es->cursor = es->anchor = (u16)prev;
+            edit_erase( buf, &len, es, (u32)utf8_prev( buf, (i32)es->cursor ), es->cursor );
             undo_push( &s_undo, buf, es->cursor, es->anchor );
             res.changed = true;
         }
@@ -593,18 +604,15 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
     {
         if ( has_sel )
         {
-            memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
-            len -= ( sel_hi - sel_lo );
-            es->cursor = es->anchor = (u16)sel_lo;
+            edit_erase_sel( buf, &len, es, &sel_lo, &sel_hi, &has_sel );
             undo_push( &s_undo, buf, es->cursor, es->anchor );
             res.changed = true;
         }
         else if ( es->cursor < len )
         {
-            /* Whole following sequence, the forward twin of Backspace. */
-            u32 nxt = (u32)utf8_next( buf, (i32)len, (i32)es->cursor );
-            memmove( buf + es->cursor, buf + nxt, len - nxt + 1u );
-            len -= ( nxt - es->cursor );
+            /* Whole following sequence, the forward twin of Backspace.  The caret does not move
+               (lo IS the caret), so edit_erase's seat is a no-op here -- anchor already equals it. */
+            edit_erase( buf, &len, es, es->cursor, (u32)utf8_next( buf, (i32)len, (i32)es->cursor ) );
             undo_push( &s_undo, buf, es->cursor, es->anchor );
             res.changed = true;
         }
@@ -637,10 +645,7 @@ edit_apply_keys( char* buf, u32 bufsz, gui_edit_state_t* es, bool ctrl, bool shi
             /* Selection replacement ends the current char group (ring[cur] already holds
                the pre-replacement state) but does not push a redundant duplicate. */
             s_undo.last_was_char = false;
-            memmove( buf + sel_lo, buf + sel_hi, len - sel_hi + 1u );
-            len -= ( sel_hi - sel_lo );
-            es->cursor = es->anchor = (u16)sel_lo;
-            has_sel    = false; sel_lo = sel_hi = es->cursor;
+            edit_erase_sel( buf, &len, es, &sel_lo, &sel_hi, &has_sel );
             res.changed = true;   /* the erase already changed the buffer, even if the
                                      insert below finds no room */
         }

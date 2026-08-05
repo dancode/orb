@@ -84,8 +84,8 @@ typedef struct
     are ready on return, the pixels reach the GPU at the render side's next frame_begin sync.
 ==============================================================================================*/
 
-u32             font_load          ( const char* path );         // parse into a new id + activate; 0 = fail
-bool            font_load_into      ( u32 id, const char* path ); // parse into an existing id (0 = default); false = bad id / load fail
+u32             font_load          ( const char* path );          // parse into a new id + activate; 0 = fail
+bool            font_load_into     ( u32 id, const char* path );  // parse into an existing id (0 = default); false = bad id / load fail
 
 /*==============================================================================================
     Built-in font presets -- a convenience over font_load_into: map a gui_builtin_font_t (gui.h) to

@@ -20,6 +20,33 @@
 // clang-format off
 
 /*==============================================================================================
+    The three primitives every stepper below is spelled in.  Each of the four public steppers
+    used to re-write all three inline, so the family's feel was authored in a dozen places; it
+    is authored here instead, and a stepper now reads as the policy it actually is.
+==============================================================================================*/
+
+#define ANIM_DT_MIN   0.0001f   /* floor on the step clock -- see anim_dt */
+#define ANIM_SETTLED  0.001f    /* closer than this counts as arrived; the whole family's epsilon */
+
+/* This frame's step time, floored.  A paused or zero dt would freeze every damper mid-flight
+   (and expf of a negative product would run one backwards), so no stepper reads s_io.dt raw. */
+static f32
+anim_dt( void ) { return s_io.dt > ANIM_DT_MIN ? s_io.dt : ANIM_DT_MIN; }
+
+/* One exponential-decay step of `current` toward `target` at `speed` (Hz-like; see the damper
+   note below).  Frame-rate independent: the decay is over elapsed time, not over frames. */
+static f32
+anim_step( f32 current, f32 target, f32 speed, f32 dt )
+{
+    return current + ( target - current ) * ( 1.0f - expf( -speed * dt ) );
+}
+
+/* True while two values are far enough apart to be worth another step.  The one settle test:
+   "still moving" and "still away from rest" are the same question asked of different pairs. */
+static bool
+anim_apart( f32 a, f32 b ) { return fabsf( a - b ) >= ANIM_SETTLED; }
+
+/*==============================================================================================
     Single-channel exponential-decay damper -- gui_anim_f32_from, and gui_anim_f32 over it
 
     Steps a named float toward `target` each frame.  `speed` is in Hz-like units:
@@ -47,11 +74,10 @@ gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed )
     const gui_anim_f32_t* peek = GUI_STATE_PEEK( gui_anim_f32_t, anim_id );
     f32 current = peek ? peek->current : rest;
 
-    bool moving = fabsf( target - current ) >= 0.001f;
+    bool moving = anim_apart( target, current );
     if ( moving )
     {
-        f32 dt = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
-        current += ( target - current ) * ( 1.0f - expf( -speed * dt ) );
+        current = anim_step( current, target, speed, anim_dt() );
         g_ctx->retained.wants_redraw = true;   /* value changed this frame -- keep frames coming */
     }
     else
@@ -64,7 +90,7 @@ gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed )
        when parked exactly AT rest do we skip the stamp and let the slot go cold: reseeding from rest
        then reproduces the same value, so eviction is invisible.  gui_anim_f32 (rest == target) always
        takes that cold path once settled, preserving its original evict-when-idle behavior. */
-    if ( moving || fabsf( current - rest ) >= 0.001f )
+    if ( moving || anim_apart( current, rest ) )
         GUI_STATE( gui_anim_f32_t, anim_id )->current = current;
 
     return current;
@@ -101,10 +127,9 @@ gui_anim_track( gui_id_t anim_id, f32 target, f32 speed )
     const gui_anim_f32_t* peek = GUI_STATE_PEEK( gui_anim_f32_t, anim_id );
     f32 current = peek ? peek->current : target;   /* no history: adopt, never ramp in */
 
-    if ( fabsf( target - current ) >= 0.001f )
+    if ( anim_apart( target, current ) )
     {
-        f32 dt = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
-        current += ( target - current ) * ( 1.0f - expf( -speed * dt ) );
+        current = anim_step( current, target, speed, anim_dt() );
         g_ctx->retained.wants_redraw = true;   /* value changed this frame -- keep frames coming */
     }
     else
@@ -136,7 +161,7 @@ gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed 
 {
     const gui_anim4_t* peek = GUI_STATE_PEEK( gui_anim4_t, id );
     gui_anim4_t        cur  = peek ? *peek : rest;
-    f32                dt   = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
+    f32                dt   = anim_dt();
 
     /* gui_anim4_t is four contiguous floats -- index the channels through a flat view. */
     f32*       c = (f32*)&cur;
@@ -147,17 +172,17 @@ gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed 
     bool moved = false, persist = false;
     for ( u32 i = 0; i < 4; ++i )
     {
-        if ( s[ i ] <= 0.0f )                          /* instant / unused channel: snap */
+        if ( s[ i ] <= 0.0f )                       /* instant / unused channel: snap */
             c[ i ] = t[ i ];
-        else if ( fabsf( t[ i ] - c[ i ] ) >= 0.001f ) /* moving: one damper step */
+        else if ( anim_apart( t[ i ], c[ i ] ) )    /* moving: one damper step */
         {
-            c[ i ] += ( t[ i ] - c[ i ] ) * ( 1.0f - expf( -s[ i ] * dt ) );
-            moved = true;
+            c[ i ] = anim_step( c[ i ], t[ i ], s[ i ], dt );
+            moved  = true;
         }
-        else                                           /* settled: snap exactly onto target */
+        else                                        /* settled: snap exactly onto target */
             c[ i ] = t[ i ];
 
-        if ( fabsf( c[ i ] - r[ i ] ) >= 0.001f )      /* away from rest -> keep the slot warm */
+        if ( anim_apart( c[ i ], r[ i ] ) )         /* away from rest -> keep the slot warm */
             persist = true;
     }
 
@@ -220,9 +245,8 @@ gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active )
         return 1.0f;
     }
 
-    gui_anim_timer_t* a  = GUI_STATE( gui_anim_timer_t, id );   /* restamp seen_frame */
-    f32 dt = s_io.dt > 0.0001f ? s_io.dt : 0.0001f;
-    a->elapsed += dt;
+    gui_anim_timer_t* a = GUI_STATE( gui_anim_timer_t, id );   /* restamp seen_frame */
+    a->elapsed += anim_dt();
 
     if ( a->elapsed >= a->duration )
     {
