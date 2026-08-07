@@ -80,6 +80,7 @@ static ex_demo_t s_demos[] =
     { "Widgets",  "Selection & Lists","Selection & Lists","selectable / msel multi-select / combo / listbox",  ex_widgets_selection,   false },
     { "Widgets",  "Tab Bar",          "Tab Bar",          "tab_bar_begin / tab_item_begin + closeable tabs",   ex_widgets_tabs,        false },
     { "Widgets",  "Multiline Text",   "Multiline Text",   "input_text_multiline -- text area / 2D caret",      ex_widgets_multiline,   false },
+    { "Widgets",  "Toolbars",         "Toolbars",         "toolbar_begin / button / toggle / dropdown strips", ex_widgets_toolbar,     false },
 
     { "Layout",   "Rows & Columns",   "Rows & Columns",   "stack / row / cols / row2..4 / layout desc",        ex_layout_rows,         false },
     { "Layout",   "Field Forms",      "Field Forms",      "form / field_split / field_label_left/right",       ex_layout_fields,       false },
@@ -92,15 +93,19 @@ static ex_demo_t s_demos[] =
     { "Layout",   "Sizing Helpers",   "Sizing Helpers",   "sz_* family / content_avail / empty",               ex_layout_sizing,       false },
     { "Layout",   "Split & Carve",    "Split & Carve",    "split_begin / split / carve / anchor / overlay",    ex_layout_carve,        false },
     { "Layout",   "Flow Seams",       "Flow Seams",       "flow_begin / flow_cell / flow_end -- recursive",    ex_layout_flow,         false },
+    { "Layout",   "Panel Shell",      "Panel Shell",      "carve + overlay -- an applied app shell",           ex_layout_shell,        false },
+    { "Layout",   "HUD Overlay",      "HUD Overlay",      "anchor / anchor_box / rect_align free placement",   ex_layout_hud,          false },
 
     { "Windows",  "Raw Pane",         "Raw Pane",         "pane_begin/pane_end -- hand-built chrome vs stock z", ex_windows_pane,      false },
     { "Windows",  "Feature Kit",      "Feature Kit",      "feat_move/resize/collapse/maximize over a pane",    ex_windows_features,    false },
+    { "Windows",  "Root Region",      "Root Region",      "region_begin/end -- flow layout, no chrome",        ex_windows_region,      false },
     { "Windows",  "Window Playground","Window Playground","every window flag, toggled live",                   ex_windows_playground,  false },
     { "Windows",  "Multiple Windows", "Default Window",   "overlap / z-order / closeable / control",           ex_windows_multi,       false },
     { "Windows",  "Auto-size",        "Always Auto-size", "ALWAYS_AUTOSIZE / CAN_AUTOSIZE / auto child",       ex_windows_autosize,    false },
     { "Windows",  "Popups & Modals",  "Popups & Modals",  "popup_open/begin / modal / context menus",          ex_windows_popups,      false },
     { "Windows",  "Tooltips",         "Tooltips",         "set_item_tooltip / tooltip_begin / help_marker",    ex_windows_tooltips,    false },
     { "Windows",  "Menu Bars",        "Menu Bars",        "window menu bar / submenus / checkable items",      ex_windows_menus,       false },
+    { "Windows",  "Tab Groups",       "Tab Groups",       "window_tab -- N windows on one floating frame",     ex_windows_tabgroups,   false },
 
     { "Style",    "Themes",           "Themes",           "theme_list / theme_set / theme_reset",              ex_style_themes,        false },
     { "Style",    "Style Stacks",     "Style Stacks",     "push_style_color/var / next_* / scale ramp",        ex_style_stacks,        false },
@@ -114,6 +119,7 @@ static ex_demo_t s_demos[] =
     { "Draw",     "Volatile Widgets", "Volatile Widgets", "volatile_cb -- animation on idle frames",           ex_draw_volatile,       false },
 
     { "Interact", "Drag & Drop",      "Drag & Drop",      "drag_source/target / payloads / peek",              ex_interact_dragdrop,   false },
+    { "Interact", "Drag Reorder",     "Drag Reorder",     "row = source + target -- list reorder / move",      ex_interact_reorder,    false },
     { "Interact", "Item Queries",     "Item Queries",     "the is_item_* family + get_item_rect",              ex_interact_queries,    false },
     { "Interact", "Keyboard & Focus", "Keyboard & Focus", "focus / caret / edit key hook / key readers",       ex_interact_keyboard,   false },
     { "Interact", "Mouse & Cursor",   "Mouse & Cursor",   "mouse readers / hardware cursor / capture",         ex_interact_mouse,      false },

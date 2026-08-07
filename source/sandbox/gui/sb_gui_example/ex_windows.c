@@ -661,4 +661,117 @@ ex_windows_features( void )
     gui()->pane_end();
 }
 
+/*==============================================================================================
+    Root Region -- a fixed rect with widgets and no window chrome (region_begin / region_end).
+
+    The sibling of "Raw Pane" above, one tier up: a pane is a bare surface the caller draws into
+    with stock_* rect widgets, a region is a real flow layout (stack / rows / scroll policy) that
+    simply has no title bar, no drag, and no close button.  Position is a caller-owned value --
+    a region cannot be dragged, so relocating it is entirely the app's job each frame, which is
+    what the control window's Move button below is proving.
+==============================================================================================*/
+
+static void
+ex_windows_region( void )
+{
+    static const struct { f32 x, y; } spots[] =
+    {
+        {  40.0f, 340.0f }, { 500.0f, 340.0f }, { 500.0f, 520.0f }, {  40.0f, 520.0f },
+    };
+    static i32 slot = 0;
+
+    /* Control window -- the demo's primary (the registry syncs its X button through this title). */
+    if ( ex_begin( "Root Region", 420, 200, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text_wrapped( "The box below the windows is a region: a fixed rect with a real flow "
+                             "layout inside and no chrome around it.  It cannot be dragged, so its "
+                             "position is whatever the app passes in this frame." );
+        gui()->textf( "region at %.0f, %.0f", spots[ slot ].x, spots[ slot ].y );
+        if ( gui()->button( "Move it" ) )
+            slot = ( slot + 1 ) % ( i32 )( sizeof( spots ) / sizeof( spots[ 0 ] ) );
+    }
+    gui()->window_end();
+
+    /* The region itself -- root level, never inside a window bracket. */
+    gui()->region_begin( "Root Region Box", spots[ slot ].x, spots[ slot ].y, 260.0f, 160.0f,
+                         GUI_REGION_BG, GUI_WIN_NOSCROLL );
+        gui()->stack();
+        gui()->text( "A region: fixed rect, no window chrome." );
+        gui()->textf( "pos %.0f, %.0f", spots[ slot ].x, spots[ slot ].y );
+
+        /* The item queries read the same inside a region as they do inside a window. */
+        gui()->textf( "hover:%d active:%d capture:%d",
+                      gui()->is_item_hovered(), gui()->is_item_active(),
+                      gui()->want_capture_mouse() );
+
+        gui()->row2( 0.5f, 0.5f );
+        gui()->button( "A" );                       /* default: shrinks to label, seated by align */
+        gui()->next_item_fit( 1.0f );
+        gui()->button( "B" );                       /* overridden: stretches to fill its half     */
+    gui()->region_end();
+}
+
+
+/*==============================================================================================
+    Tab Groups -- windows merged onto ONE floating frame (window_tab / the title-bar drop chip).
+
+    A standalone feature, not a docking one: no split panes, no dockspace, nothing persisted to a
+    layout -- just N windows sharing one frame and one tab strip.  Docking can consume the same
+    gesture (see sb_gui_dock), which is exactly why the feature gets its own demo here.
+
+    The member windows below emit UNCONDITIONALLY: a window tabbed behind another returns false
+    from window_begin, so gating siblings on that return would blank the whole demo.
+==============================================================================================*/
+
+static void
+ex_tab_member( const char* title, const char* body, f32 seed_x )
+{
+    gui()->window_set_next_pos ( seed_x, 340.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 260.0f, 170.0f, GUI_COND_ONCE );
+    if ( gui()->window_begin( title, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text_wrapped( body );
+        gui()->textf( "tabbed: %s", gui()->window_is_docked( title ) ? "yes" : "no" );
+    }
+    gui()->window_end();
+}
+
+static void
+ex_windows_tabgroups( void )
+{
+    /* NO_TAB_TARGET: this is a control panel -- it explains the feature, it must not itself
+       become a tab (a tabbed-behind window returns false from window_begin, which would skip
+       the member windows below).  A drop on its title bar shows no chip. */
+    if ( ex_begin( "Tab Groups", 340, 240, GUI_WIN_NO_TAB_TARGET ) )
+    {
+        gui()->stack();
+        gui()->text_wrapped( "Drag one window's title bar onto another's and drop on the center chip "
+                             "to merge them into a floating tab group -- no split panes.  Drag a tab "
+                             "out of the strip to pull a window back out (the group dissolves when one "
+                             "tab remains).  Drag the strip's empty band to move the group, its edges "
+                             "to resize, tabs sideways to reorder." );
+        gui()->separator();
+
+        if ( gui()->button( "Group programmatically" ) )
+        {
+            gui()->window_tab( "Tab Beta",  "Tab Alpha" );
+            gui()->window_tab( "Tab Gamma", "Tab Alpha" );
+        }
+        if ( gui()->button( "Ungroup all" ) )
+        {
+            gui()->dock_undock( "Tab Beta" );
+            gui()->dock_undock( "Tab Gamma" );
+            gui()->dock_undock( "Tab Alpha" );
+        }
+    }
+    gui()->window_end();
+
+    ex_tab_member( "Tab Alpha", "The Alpha window.  Drop another window on this title bar to grow "
+                                "a tab group around it.", 60.0f );
+    ex_tab_member( "Tab Beta",  "The Beta window.  Drag this by its title bar onto Alpha's.", 340.0f );
+    ex_tab_member( "Tab Gamma", "The Gamma window.  Groups take a third tab just the same.", 620.0f );
+}
+
 /*============================================================================================*/

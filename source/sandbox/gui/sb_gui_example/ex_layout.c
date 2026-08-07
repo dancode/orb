@@ -684,4 +684,181 @@ ex_layout_natural( void )
     gui()->window_end();
 }
 
+/*==============================================================================================
+    Panel Shell -- one carve form spent on a whole app shell, real widgets inside every leaf.
+
+    The applied companion to "Split & Carve" above: that demo shows what carve() RETURNS (frames
+    drawn into the leaves, every parameter on a slider), this one spends the result -- a fixed
+    sidebar beside a filling content column, and that column cut top to bottom into header /
+    body / footer.  Known sizes, one pass, plain gui_rect_t locals: no layout tree and no cached
+    heights.  Absolute rects leave the pen where it started, so the band is reserved with empty()
+    at the end or the window would size to nothing.
+==============================================================================================*/
+
+static void
+ex_layout_shell( void )
+{
+    if ( ex_begin( "Panel Shell", 520, 380, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text_wrapped( "One gui()->carve form describes the whole nested layout: a column split "
+                             "(80px sidebar + fill content), the content track itself cut into rows "
+                             "(header / body / footer).  Leaf rects come back in reading order." );
+
+        /* The entire layout as one flat form -- structure lives in where the CUT/END sentinels sit.
+           Leaves stream back in reading order: 0 sidebar, 1 header, 2 body, 3 footer. */
+        static const f32 FORM[] =
+        {
+            GUI_CUT_X,                  /* root: cut the band into columns           */
+                80.0f,                  /*   leaf 0 : 80px sidebar                    */
+                1.0f, GUI_CUT_Y,        /*   fill content column, cut into rows:      */
+                    28.0f,              /*       leaf 1 : 28px header                 */
+                    1.0f,               /*       leaf 2 : fill body                   */
+                    28.0f,              /*       leaf 3 : 28px footer                 */
+                GUI_END,                /*   close rows                               */
+                // 128.0f,                  /*   leaf 4 : 128px right sidebar         */
+            GUI_END,                    /* close columns                              */
+        };
+
+        /* A fixed-height band carved from the region's available area. */
+        gui_rect_t band = gui()->content_rect();
+        band.h = 180.0f;
+
+        gui_rect_t cell[ GUI_LAYOUT_COLS ];
+        u32        n = gui()->carve( FORM, band, -1.0f, cell, GUI_LAYOUT_COLS );
+        if ( n >= 4 )
+        {
+            /* Sidebar -- a stack of nav buttons. */
+            gui()->push_layout_overlay( cell[ 0 ] );
+                gui()->stack();
+                gui()->button( "Nav A" );
+                gui()->button( "Nav B" );
+                gui()->button( "Nav C" );
+            gui()->pop_layout();
+
+            /* Header. */
+            gui()->push_layout_overlay( cell[ 1 ] );
+                gui()->stack();
+                gui()->text( "Header" );
+            gui()->pop_layout();
+
+            /* Body. */
+            gui()->push_layout_overlay( cell[ 2 ] );
+                gui()->child_begin( "##body", 0.0f, 0.0f, 0 );   /* clip content to the body rect */
+                    gui()->stack();
+                    gui()->text( "Body content fills the middle." );
+                    gui()->text( "The layout is one flat f32 form." );
+                    gui()->text( "Each leaf is a plain gui_rect_t." );
+                gui()->child_end();
+            gui()->pop_layout();
+
+            /* Footer. */
+            gui()->push_layout_overlay( cell[ 3 ] );
+                gui()->stack();
+                gui()->text_disabled( "Footer" );
+            gui()->pop_layout();
+        }
+
+        /* The panels used absolute rects, so the window pen has not moved -- reserve the band. */
+        gui()->empty( 0.0f, band.h );
+    }
+    gui()->window_end();
+}
+
+/*==============================================================================================
+    HUD Overlay -- free placement over one content area, the companion to split / carve.
+
+    Every element takes the HUD rect and returns its own rect (no pen, no flow), so the order
+    below is just draw order: a stretched top bar (anchor mixing per-axis stretch + point pin),
+    corner-anchored minimap / health / ammo (gui_anchor_box), a fraction-pinned banner (anchor
+    pivot), and a centered crosshair (gui_rect_align).  Real widgets drop into an anchored rect
+    through push_layout_overlay -- the health bar is a stock progress_bar in a corner box.
+==============================================================================================*/
+
+static void
+ex_layout_hud( void )
+{
+    if ( ex_begin( "HUD Overlay", 560, 460, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->text_wrapped( "Overlay placement: every element positions itself inside one HUD rect via "
+                             "gui_anchor_box (corners), gui()->anchor (stretch / fraction) and "
+                             "gui_rect_align (center).  No layout pen -- draw order is z order." );
+
+        /* The HUD viewport: a fixed-height band carved from the region's available area. */
+        gui_rect_t hud = gui()->content_rect();
+        hud.h = 260.0f;
+
+        const gui_pad_t  pad   = { 10, 10, 10, 10 };
+        const u32        back  = 0xC0141820;   /* ABGR: dark translucent backdrop  */
+        const u32        panel = 0xE0283038;   /* a HUD panel fill                 */
+        const u32        ink   = 0xFFE0E8F0;   /* near-white text                  */
+        const u32        good  = 0xFF50C878;   /* health green                     */
+        const u32        warn  = 0xFF30A0FF;   /* ammo amber                       */
+
+        gui()->draw_rect( hud.x, hud.y, hud.w, hud.h, back );
+
+        /* Top status bar -- one anchor, two axis behaviors: stretch across X (min.x 0 -> max.x 1, the
+           off.l / off.r become margins), point-pin to the top on Y (min.y == max.y == 0, fixed height). */
+        {
+            gui_anchor_t a = { .min = { 0.0f, 0.0f }, .max = { 1.0f, 0.0f },
+                               .size = { 0.0f, 22.0f }, .pivot = { 0.0f, 0.0f },
+                               .off  = { 10, 10, 10, 0 } };
+            gui_rect_t bar = gui()->anchor( hud, a );
+            gui()->draw_rect( bar.x, bar.y, bar.w, bar.h, panel );
+            gui()->draw_text_in( bar, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, ink, " Sector 7 - Clear" );
+            gui()->draw_text_in( bar, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER, ink, "12:04  " );
+        }
+
+        /* Minimap -- fixed box anchored to the top-right corner with a uniform margin. */
+        {
+            gui_rect_t mm = gui_anchor_box( hud, 92.0f, 92.0f, GUI_ALIGN_RIGHT | GUI_ALIGN_TOP,
+                                            ( gui_pad_t ){ 10, 42, 10, 10 } );
+            gui()->draw_rect( mm.x, mm.y, mm.w, mm.h, panel );
+            gui()->draw_circle( mm.x + mm.w * 0.5f, mm.y + mm.h * 0.5f, 5.0f, true, 0.0f, good );
+            gui()->draw_text_in( mm, GUI_ALIGN_CENTER | GUI_ALIGN_BOTTOM, ink, "MAP" );
+        }
+
+        /* Health bar -- anchored bottom-left; a real progress_bar widget fills the anchored rect. */
+        {
+            gui_rect_t hb = gui_anchor_box( hud, 200.0f, 20.0f, GUI_ALIGN_LEFT | GUI_ALIGN_BOTTOM, pad );
+            gui()->push_layout_overlay( hb );
+                gui()->stack();
+                gui()->push_style_color( GUI_ROLE_ACCENT, GUI_PHASE_IDLE, good );
+                gui()->progress_bar( 0.72f, "HP 72/100" );
+                gui()->pop_style_color( 1 );
+            gui()->pop_layout();
+        }
+
+        /* Ammo readout -- anchored bottom-right, drawn directly. */
+        {
+            gui_rect_t am = gui_anchor_box( hud, 120.0f, 40.0f, GUI_ALIGN_RIGHT | GUI_ALIGN_BOTTOM, pad );
+            gui()->draw_rect( am.x, am.y, am.w, am.h, panel );
+            gui()->draw_text_in( am, GUI_ALIGN_CENTER, warn, "24 / 120" );
+        }
+
+        /* Wave banner -- point-anchored 50% across, near the top, hung off its own center (pivot 0.5)
+           so it stays visually centered regardless of width. */
+        {
+            gui_anchor_t a = { .min = { 0.5f, 0.18f }, .max = { 0.5f, 0.18f },
+                               .size = { 120.0f, 24.0f }, .pivot = { 0.5f, 0.5f } };
+            gui_rect_t banner = gui()->anchor( hud, a );
+            gui()->draw_rect( banner.x, banner.y, banner.w, banner.h, panel );
+            gui()->draw_text_in( banner, GUI_ALIGN_CENTER, ink, "WAVE 3" );
+        }
+
+        /* Crosshair -- a fixed box centered in the HUD; gui_rect_align is the pure-center case. */
+        {
+            gui_rect_t cr = gui_rect_align( hud, 18.0f, 18.0f, GUI_ALIGN_CENTER );
+            f32 cx = cr.x + cr.w * 0.5f, cy = cr.y + cr.h * 0.5f;
+            gui()->draw_line( cx - 9.0f, cy, cx + 9.0f, cy, 2.0f, ink );
+            gui()->draw_line( cx, cy - 9.0f, cx, cy + 9.0f, 2.0f, ink );
+        }
+
+        /* Placement used absolute rects, so reserve the band so the window sizes around it. */
+        gui()->empty( 0.0f, hud.h );
+    }
+    gui()->window_end();
+}
+
 /*============================================================================================*/

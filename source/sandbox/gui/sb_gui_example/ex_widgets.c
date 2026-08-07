@@ -772,4 +772,167 @@ ex_widgets_multiline( void )
     gui()->window_end();
 }
 
+/*==============================================================================================
+    Toolbars -- icon strips: buttons, latched toggles, separators, and split-button dropdowns.
+
+    Exercises gui_toolbar.c end to end.  toolbar_begin/end brackets a bar() run and opens an id
+    scope; it does NOT push a scale itself -- the caller wraps it in scale_push/scale_pop, which
+    is what lets one app mix toolbar sizes.  toolbar_dropdown_begin/end opens an arbitrary-widget
+    popup under a split button (plain menu_item rows here, but the body is not a fixed row type).
+
+    The icons are generated into R8 coverage buffers right here so the demo carries no assets --
+    except one, which comes off disk through load_icon to show that path too.  The second strip
+    deliberately reuses the first strip's icon ids AND widget id strings: it proves the id scope
+    keeps two strips from colliding, at a different scale to prove sizes coexist.
+==============================================================================================*/
+
+static void
+ex_tb_save( u8* p, i32 n )
+{
+    /* A floppy-disk silhouette: body, a clipped top-right corner, and a label window cut out. */
+    for ( i32 y = 0; y < n; ++y )
+        for ( i32 x = 0; x < n; ++x )
+        {
+            bool body  = ( x >= 3 && x <= 28 && y >= 3 && y <= 28 );
+            bool notch = ( x >= 20 && y <= 8 );
+            bool label = ( x >= 7 && x <= 24 && y >= 15 && y <= 25 );
+            p[ y * n + x ] = ( body && !notch && !label ) ? 255 : 0;
+        }
+}
+
+static void
+ex_tb_grid( u8* p, i32 n )
+{
+    /* A 3x3 grid glyph, for a grid-snap style toggle.  2px strokes: the icon atlas samples
+       NEAREST with no mip / box filter, and this glyph draws well below its native 32x32 in a
+       toolbar cell, so a 1px line falls between sampled texels and vanishes -- 2px survives the
+       minification. */
+    for ( i32 y = 0; y < n; ++y )
+        for ( i32 x = 0; x < n; ++x )
+        {
+            bool in     = ( x >= 3 && x <= 28 && y >= 3 && y <= 28 );
+            bool border = in && ( x <= 4 || x >= 27 || y <= 4 || y >= 27 );
+            bool vline  = in && ( ( x >= 11 && x <= 12 ) || ( x >= 19 && x <= 20 ) );
+            bool hline  = in && ( ( y >= 11 && y <= 12 ) || ( y >= 19 && y <= 20 ) );
+            p[ y * n + x ] = ( border || vline || hline ) ? 255 : 0;
+        }
+}
+
+static void
+ex_tb_wire( u8* p, i32 n )
+{
+    /* A boxed X, for a wireframe style toggle. */
+    for ( i32 y = 0; y < n; ++y )
+        for ( i32 x = 0; x < n; ++x )
+        {
+            bool in    = ( x >= 3 && x <= 28 && y >= 3 && y <= 28 );
+            i32  dx    = x - y;
+            i32  dy    = x + y - ( n - 1 );
+            bool diag1 = dx >= -1 && dx <= 1;
+            bool diag2 = dy >= -1 && dy <= 1;
+            p[ y * n + x ] = ( in && ( diag1 || diag2 ) ) ? 255 : 0;
+        }
+}
+
+static void
+ex_tb_view( u8* p, i32 n )
+{
+    /* An eye glyph (lens ring + pupil), for the view-mode dropdown. */
+    f32 cx = (f32)n * 0.5f, cy = (f32)n * 0.5f;
+    for ( i32 y = 0; y < n; ++y )
+        for ( i32 x = 0; x < n; ++x )
+        {
+            f32  px    = (f32)x + 0.5f - cx, py = (f32)y + 0.5f - cy;
+            f32  lens  = ( px * px ) / ( 15.0f * 15.0f ) + ( py * py ) / ( 8.0f * 8.0f );
+            f32  pupil = sqrtf( px * px + py * py );
+            bool ring  = lens <= 1.0f && lens >= 0.55f;
+            bool dot   = pupil <= 4.0f;
+            p[ y * n + x ] = ( ring || dot ) ? 255 : 0;
+        }
+}
+
+static void
+ex_widgets_toolbar( void )
+{
+    if ( ex_begin( "Toolbars", 560, 420, GUI_WIN_CAN_AUTOSIZE ) )
+    {
+        static gui_icon_id_t ic_save = GUI_ICON_NONE;
+        static gui_icon_id_t ic_grid = GUI_ICON_NONE;
+        static gui_icon_id_t ic_wire = GUI_ICON_NONE;
+        static gui_icon_id_t ic_view = GUI_ICON_NONE;
+        static gui_icon_id_t ic_dl   = GUI_ICON_NONE;   // loaded from disk (PNG), not procedural
+        if ( ic_save == GUI_ICON_NONE )
+        {
+            static u8 buf[ 32 * 32 ];
+            ex_tb_save( buf, 32 ); ic_save = gui()->register_icon( "tb_save", 32, 32, buf );
+            ex_tb_grid( buf, 32 ); ic_grid = gui()->register_icon( "tb_grid", 32, 32, buf );
+            ex_tb_wire( buf, 32 ); ic_wire = gui()->register_icon( "tb_wire", 32, 32, buf );
+            ex_tb_view( buf, 32 ); ic_view = gui()->register_icon( "tb_view", 32, 32, buf );
+
+            /* Demonstrate the from-disk icon path: decode assets/icon/folder_icon.png to R8
+               coverage and register it exactly like the procedural icons above.  load_icon resolves
+               the path itself (asset_path, engine-relative like the built-in fonts). */
+            ic_dl = gui()->load_icon( "folder", "assets/icon/audio2.png" );
+        }
+
+        static bool grid_snap   = true;
+        static bool wireframe   = false;
+        static i32  save_clicks = 0;
+        static i32  view_mode   = 0;
+        static const char* const view_names[] = { "Lit", "Unlit", "Wireframe" };
+
+        gui()->stack();
+        gui()->text_wrapped( "toolbar_begin/end brackets a bar() run, id-scoped so two strips never "
+                             "collide.  It does not push a scale itself -- the caller wraps it in "
+                             "scale_push/scale_pop, so one app can mix toolbar sizes.  toolbar_button "
+                             "presses, toolbar_toggle latches, toolbar_dropdown_begin/end opens an "
+                             "arbitrary-widget popup (here, plain menu_item rows) anchored below the "
+                             "split button." );
+        gui()->separator();
+
+        gui()->scale_push( GUI_SCALE_BAR );
+        gui()->toolbar_begin( "main" );
+            if ( gui()->toolbar_button( "##save", ic_save, "Save (Ctrl+S)" ) )
+                save_clicks++;
+            gui()->toolbar_toggle( "##grid", ic_grid, &grid_snap, "Grid Snap" );
+            gui()->toolbar_toggle( "##wire", ic_wire, &wireframe, "Wireframe" );
+            gui()->toolbar_separator();
+            if ( gui()->toolbar_button( "##folder", ic_dl, "Folder (loaded from folder_icon.png)" ) )
+                save_clicks++;
+            gui()->toolbar_separator();
+            if ( gui()->toolbar_dropdown_begin( "##view", ic_view, "View Mode" ) )
+            {
+                for ( i32 i = 0; i < 3; ++i )
+                {
+                    bool sel = ( i == view_mode );
+                    if ( gui()->menu_item( view_names[ i ], NULL, &sel ) )
+                        view_mode = i;
+                }
+                gui()->toolbar_dropdown_end();
+            }
+        gui()->toolbar_end();
+        gui()->scale_pop();
+
+        gui()->separator();
+        gui()->textf( "save clicks: %d", save_clicks );
+        gui()->textf( "grid snap: %s", grid_snap ? "on" : "off" );
+        gui()->textf( "wireframe: %s", wireframe ? "on" : "off" );
+        gui()->textf( "view mode: %s", view_names[ view_mode ] );
+
+        /* A second strip, same icon ids and widget id strings -- proves toolbar_begin's push_id
+           scope keeps it from colliding with the first strip's state.  Scaled GUI_SCALE_ROOMY
+           (larger than the first strip's GUI_SCALE_BAR) to prove mixed toolbar sizes coexist. */
+        gui()->separator_text( "Second strip (independent id scope, larger scale)" );
+        static bool locked = false;
+        gui()->scale_push( GUI_SCALE_ROOMY );
+        gui()->toolbar_begin( "secondary" );
+            gui()->toolbar_toggle( "##grid", ic_grid, &locked, "Lock" );
+            if ( gui()->toolbar_button( "##save", ic_save, "Save (secondary)" ) )
+                save_clicks++;
+        gui()->toolbar_end();
+        gui()->scale_pop();
+    }
+    gui()->window_end();
+}
+
 /*============================================================================================*/
