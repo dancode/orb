@@ -170,14 +170,22 @@ perf_span_ema( f32* dst, f64 t0 )
    beneath it; over a busy editor UI the digits are unreadable without it.  Sized from the region's
    persisted content measure (the same state its w/h <= 0 autosize reads, gui_region.c), so no
    second content-size tracker is needed; the size is last frame's -- one frame of lag, and the
-   very first frame draws no backdrop (no measure exists yet). */
+   very first frame draws no backdrop (no measure exists yet).
+
+   fixed_w > 0 overrides the measured width, for a region opened at an EXPLICIT width (the selector
+   panel).  The content measure is not that width: a widget that FILLS its track (slider, input)
+   deliberately contributes nothing to the x highwater -- its width is just the track's, which is
+   derived from the region's own view width (see line_place_cell, flow/gui_layout_core.c) -- so a
+   panel of sliders measures only as wide as its widest SHRINKING widget (a checkbox label) and the
+   backdrop stopped short of the slider rows.  An explicit-width region already knows its width;
+   only an autosizing one (w <= 0) has to read it back from the measure. */
 static void
-overlay_backdrop( gui_id_t id, f32 x, f32 y )
+overlay_backdrop( gui_id_t id, f32 x, f32 y, f32 fixed_w )
 {
     gui_scroll_link_t* scroll = GUI_STATE( gui_scroll_link_t, id );
-    if ( scroll->content_w > 0.0f && scroll->content_h > 0.0f )
-        gui_draw_rect( x, y, scroll->content_w, scroll->content_h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
-                       // GUI_COLOR( 0x10, 0x10, 0x14, 0xC8 ) );
+    f32                w      = ( fixed_w > 0.0f ) ? fixed_w : scroll->content_w;
+    if ( w > 0.0f && scroll->content_h > 0.0f )
+        gui_draw_rect( x, y, w, scroll->content_h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
 }
 
 static void
@@ -209,7 +217,7 @@ overlay_perf( int mode )
     gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f, GUI_REGION_FG,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
     {
-        overlay_backdrop( id_hash( "perf_overlay" ), left_x, top_y );
+        overlay_backdrop( id_hash( "perf_overlay" ), left_x, top_y, 0.0f );
         gui_stack();
         gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
 
@@ -361,7 +369,7 @@ overlay_state( int mode )
     gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_REGION_FG,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
     {
-        overlay_backdrop( id_hash( "state_overlay" ), 260.0f, top_y );
+        overlay_backdrop( id_hash( "state_overlay" ), 260.0f, top_y, 0.0f );
         gui_stack();
         gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
 
@@ -444,11 +452,13 @@ gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
                 (picking a command under the mouse is the stepper window's Pick toggle -- a
                 hotkey fought the focused window's keyboard nav / type-ahead)
 
-    While armed, a dense checkbox-list selector (debug_selector_menu, right edge of the
-    viewport) is also up, mirroring NP+ / NP- as sliders alongside the levers that no longer have
-    keys of their own: retained skip (tessellation cache), force redraw, and idle skip -- toggled
-    there now instead of the old C / F / I letters. It is part of debug rendering, so it never
-    perturbs perf-stats or counts (same GUI_WIN_DEBUG_BAND exemption as the overlays).
+    While armed, a dense selector panel (debug_selector_menu, right edge of the viewport) is also
+    up, mirroring NP+ / NP- as sliders alongside the levers that no longer have keys of their own:
+    retained skip (tessellation cache), force redraw, and idle skip -- toggled there now instead of
+    the old C / F / I letters -- and closing with the KEY LEGEND, where every key above prints with
+    its name and live value (lit when on).  That legend is the only readout the NP1-NP7 layer bits
+    have.  It is part of debug rendering, so it never perturbs perf-stats or counts (same
+    GUI_WIN_DEBUG_BAND exemption as the overlays).
 
     Letter and numpad keys are fenced by want_capture_keyboard so typing in a text field never
     toggles them (numpad digits are text input with Num Lock on).
@@ -503,6 +513,42 @@ static bool s_any_redraw;
 /* Programmatic idle-skip control, for hosts that want it on without the hotkey. */
 void gui_set_idle_skip( bool on ) { s_idle_skip = on; }
 bool gui_idle_skip( void )        { return s_idle_skip; }
+
+/*==============================================================================================
+    Key tables -- the bindings AND their display names in one list
+
+    Read by both consumers below: debug_hotkeys() polls the keys, and the selector panel's key
+    legend (debug_selector_menu) prints them with their live state.  One row per setting, so a new
+    layer or tier lands in the hotkey, the legend, and the slider range from a single edit -- the
+    array LENGTHS are the tier cycles' moduli and the sliders' ranges for exactly that reason.
+==============================================================================================*/
+
+/* NP1-NP7 -- the debug layer bits. */
+static const struct
+{
+    app_key_t   key;        // numpad key that toggles the bit
+    const char* key_name;   // how the key reads in the legend
+    const char* name;       // what the layer draws
+    u32         layer;      // GUI_DBG_* bit
+
+} k_dbg_layer[] = {
+    { APP_KEY_NP_1, "NP1", "window",   GUI_DBG_WINDOW   },
+    { APP_KEY_NP_2, "NP2", "interact", GUI_DBG_INTERACT },
+    { APP_KEY_NP_3, "NP3", "resize",   GUI_DBG_RESIZE   },
+    { APP_KEY_NP_4, "NP4", "layout",   GUI_DBG_LAYOUT   },
+    { APP_KEY_NP_5, "NP5", "clip",     GUI_DBG_CLIP     },
+    { APP_KEY_NP_6, "NP6", "content",  GUI_DBG_CONTENT  },
+    { APP_KEY_NP_7, "NP7", "region",   GUI_DBG_REGION   },
+};
+
+/* NP+ / NP- tiers and the F9 render mode, spelled out -- what the sliders' bare numbers mean. */
+static const char* const k_perf_tier   [] = { "off", "fps", "+timings", "+counts", "+retained" };
+static const char* const k_state_tier  [] = { "off", "ids", "+focus", "+popups" };
+static const char* const k_render_mode [] = { "normal", "wireframe", "batch" };
+
+#define DBG_LAYER_COUNT  ( (u32)( sizeof( k_dbg_layer   ) / sizeof( k_dbg_layer  [ 0 ] ) ) )
+#define DBG_PERF_TIERS   ( (int)( sizeof( k_perf_tier   ) / sizeof( k_perf_tier  [ 0 ] ) ) )
+#define DBG_STATE_TIERS  ( (int)( sizeof( k_state_tier  ) / sizeof( k_state_tier [ 0 ] ) ) )
 
 /* Poll the debug hotkeys from this frame's IO snapshot.  Called from frame_end (after nav_new_frame
    and all widget emission, so nav/widgets have already consumed any key they use -- see
@@ -586,8 +632,7 @@ debug_hotkeys( void )
     {
         gui_render_mode_t m = ( gui_render_get_mode() + 1 ) % GUI_RENDER_MODE_COUNT;
         gui_render_set_mode( m );
-        static const char* names[] = { "normal", "wireframe", "batch" };
-        gui_log( GUI_LOG_INFO, "render mode: %s", names[ m ] );
+        gui_log( GUI_LOG_INFO, "render mode: %s", k_render_mode[ m ] );
         redraw_request();
     }
     if ( gui_is_key_pressed( APP_KEY_F10 ) )
@@ -623,20 +668,12 @@ debug_hotkeys( void )
        rest in where it draws -- the MAIN list at region pop (gui_scroll.c), not the overlay list,
        so that toggle changes every scrollable window's emitted commands; the shared wants_redraw
        below makes the flip land instead of sitting behind the clean-frame emit skip. */
-    {
-        static const struct { app_key_t key; u32 layer; } k_dbg_layer[] = {
-            { APP_KEY_NP_1, GUI_DBG_WINDOW   }, { APP_KEY_NP_2, GUI_DBG_INTERACT },
-            { APP_KEY_NP_3, GUI_DBG_RESIZE   }, { APP_KEY_NP_4, GUI_DBG_LAYOUT   },
-            { APP_KEY_NP_5, GUI_DBG_CLIP     }, { APP_KEY_NP_6, GUI_DBG_CONTENT  },
-            { APP_KEY_NP_7, GUI_DBG_REGION   },
-        };
-        for ( u32 i = 0; i < sizeof( k_dbg_layer ) / sizeof( k_dbg_layer[ 0 ] ); ++i )
-            if ( gui_is_key_pressed( k_dbg_layer[ i ].key ) )
-            {
-                gui_debug_set_layers( gui_debug_get_layers() ^ k_dbg_layer[ i ].layer );
-                redraw_request();
-            }
-    }
+    for ( u32 i = 0; i < DBG_LAYER_COUNT; ++i )
+        if ( gui_is_key_pressed( k_dbg_layer[ i ].key ) )
+        {
+            gui_debug_set_layers( gui_debug_get_layers() ^ k_dbg_layer[ i ].layer );
+            redraw_request();
+        }
 
     /* Perf / state overlay tiers keep a quick keyboard cycle (numpad +/-, away from the letter
        row so they read as a pair) alongside their checkbox-list slider (debug_selector_menu
@@ -645,13 +682,13 @@ debug_hotkeys( void )
        checkboxes than memorized as hotkeys. */
     if ( gui_is_key_pressed( APP_KEY_NP_ADD ) )
     {
-        s_dbg_perf_mode = ( s_dbg_perf_mode + 1 ) % 5;
+        s_dbg_perf_mode = ( s_dbg_perf_mode + 1 ) % DBG_PERF_TIERS;
         redraw_request();
     }
 
     if ( gui_is_key_pressed( APP_KEY_NP_SUB ) )
     {
-        s_dbg_state_mode = ( s_dbg_state_mode + 1 ) % 4;
+        s_dbg_state_mode = ( s_dbg_state_mode + 1 ) % DBG_STATE_TIERS;
         redraw_request();
     }
 
@@ -681,47 +718,182 @@ debug_hotkeys( void )
 }
 
 /*==============================================================================================
-    Debug selector menu -- dense checkbox/slider list, right edge of the viewport
+    Debug selector menu -- dense lever panel + key legend, right edge of the viewport
 
     Where C/F/I/P/O used to be single letters read out of the raw key stream, this is an actual
-    UI: three checkboxes (retained skip, force redraw, idle skip) and the perf/state overlay tier
-    sliders, all dense-packed in one panel.  Shown exactly while the master arm is on (NP_DOT),
-    same as every other debug lever in this file -- press it again and debug_reset() clears the
-    levers back to default the same frame this panel disappears.
+    UI: three checkboxes (retained skip, force redraw, idle skip), the perf/state overlay tier
+    sliders, and -- at the bottom -- the KEY LEGEND: every key-driven debug setting with the key
+    that toggles it, its name, and its live value, lit when on and dim when off.  The legend is
+    what makes the numpad keys usable without the source: a tier slider reading "3" says nothing,
+    "NP+ perf +counts" says what is on screen, and the seven layer bits (NP1-NP7) have no other
+    readout at all.  Both halves walk the same k_dbg_layer / k_*_tier tables the hotkeys do.
+
+    Whole panel at GUI_SCALE_DENSE (a HUD row pitch, like the two overlays), so the added legend
+    costs less height than the old five rows did.
+
+    Shown exactly while the master arm is on (NP_DOT), same as every other debug lever in this
+    file -- press it again and debug_reset() clears the levers back to default the same frame this
+    panel disappears.
 
     GUI_WIN_DEBUG_BAND (not GUI_WIN_NO_INPUT, unlike the read-only overlays above): this panel
     must be clickable, but its own geometry still has to stay out of the very stats/counts it is
     used to tweak -- the same arena-band exemption the perf/state overlays get. */
+
+/* The panel's own strings, named once so the width measure below and the emit further down speak
+   the same text -- a measure of a string the panel does not actually print is how a "fits" panel
+   quietly stops fitting. */
+#define SEL_HINT    "debug -- '.' to close"
+#define SEL_FORCE   "Force redraw"
+#define SEL_TESS    "Tess cache"
+#define SEL_IDLE    "Idle skip"
+#define SEL_PERF    "NP+ perf"
+#define SEL_STATE   "NP- state"
+
+/* One legend line: "<key> <name>" plus the setting's value where it has one (a tier / mode; NULL
+   for the layer bits, which are just on or off).  Formatted through this one helper so the measure
+   pass and the paint can never disagree about how wide a row is. */
+static const char*
+legend_line( char* buf, u32 cap, const char* key_name, const char* name, const char* value )
+{
+    fmt_snprintf( buf, cap, "%s %s%s%s", key_name, name, value ? " " : "", value ? value : "" );
+    return buf;
+}
+
+/* Paint one legend row, lit (MARK) while the setting is on and dim while it is off -- so the block
+   reads as "what is toggled on right now" at a glance yet still names every key for discovery.
+   One entry per row, whole line in one colour: the list stays a narrow vertical column, which is
+   what keeps the panel thin. */
+static void
+legend_row( const char* key_name, const char* name, const char* value, bool on )
+{
+    char line[ 48 ];
+    gui_text_colored( on ? COL_MARK_IDLE : COL_TEXT_DIM,
+                      legend_line( line, sizeof( line ), key_name, name, value ) );
+}
+
+/* The widest row this panel can EVER print, in px of the live font -- the content width it needs.
+   MEASURED, not a constant: every row here is text in a font that moves with the DPI / ui_scale
+   response (frame/gui_frame_dpi.c), so one hardcoded width fits at one scale and clips the slider
+   labels or the legend at every other.  Every legend row is measured at every VALUE it can take
+   (not just today's), so the panel keeps one width as the tiers cycle instead of breathing --
+   the same fixed-footprint rule the overlay's status rows follow.  ~20 short measures a frame, on
+   a panel that only exists while the debug arm is on.  Call inside the scale scope the panel
+   emits in: WIDGET_PAD / CHECKBOX_SZ are style reads. */
+static f32
+selector_content_w( f32 label_w )
+{
+    char buf[ 48 ];
+    f32  w = font_text_w( SEL_HINT );
+
+    /* Checkbox rows: indicator box + gap + label. */
+    static const char* const k_lever[] = { SEL_FORCE, SEL_TESS, SEL_IDLE };
+    for ( u32 i = 0; i < sizeof( k_lever ) / sizeof( k_lever[ 0 ] ); ++i )
+    {
+        f32 row = CHECKBOX_SZ + WIDGET_PAD + font_text_w( k_lever[ i ] );
+        if ( row > w ) w = row;
+    }
+
+    /* Slider rows: the label column plus a track wide enough to read a knob and its value. */
+    f32 slider_row = label_w + WIDGET_PAD + font_text_w( "0" ) * 8.0f;
+    if ( slider_row > w ) w = slider_row;
+
+    /* Legend rows, each at its longest possible value. */
+    for ( int i = 0; i < DBG_PERF_TIERS; ++i )
+    {
+        f32 row = font_text_w( legend_line( buf, sizeof( buf ), "NP+", "perf", k_perf_tier[ i ] ) );
+        if ( row > w ) w = row;
+    }
+    for ( int i = 0; i < DBG_STATE_TIERS; ++i )
+    {
+        f32 row = font_text_w( legend_line( buf, sizeof( buf ), "NP-", "state", k_state_tier[ i ] ) );
+        if ( row > w ) w = row;
+    }
+    for ( int i = 0; i < GUI_RENDER_MODE_COUNT; ++i )
+    {
+        f32 row = font_text_w( legend_line( buf, sizeof( buf ), "F9", "render", k_render_mode[ i ] ) );
+        if ( row > w ) w = row;
+    }
+    for ( u32 i = 0; i < DBG_LAYER_COUNT; ++i )
+    {
+        f32 row = font_text_w( legend_line( buf, sizeof( buf ), k_dbg_layer[ i ].key_name,
+                                            k_dbg_layer[ i ].name, NULL ) );
+        if ( row > w ) w = row;
+    }
+    return w;
+}
+
 static void
 debug_selector_menu( void )
 {
+    /* Dense HUD pitch, pushed BEFORE the region opens: region_begin bakes REGION_PAD_DEFAULT (a
+       WIDGET_PAD / WIDGET_GAP read) into the frame at push time, so pushing inside would leave the
+       panel's own inset at the STD step while every row inside it ran dense -- and would measure
+       the width below against the wrong pad. */
+    gui_scale_push( GUI_SCALE_DENSE );
+
     /* Work top (caption band + menu bar) + this panel's own margin -- see perf_overlay. */
     f32 top_y = gui_viewport_content_y( 0 ) + 8.0f;
 
-    f32 w = 190.0f;
-    f32 x = (f32)s_io.display_w - w - 8.0f;
+    /* Thin by design: the legend runs straight down (one key per row), so the widest row is a
+       single "<key> <name> <value>" run ("NP- state +retained") rather than two columns of them.
+       The label column holds the longest slider label; the panel then fits the widest row it can
+       print plus the region's own left/right inset (REGION_PAD_DEFAULT = WIDGET_PAD each side). */
+    f32 label_w = font_text_w( SEL_STATE ) + WIDGET_PAD;
+    f32 w       = selector_content_w( label_w ) + 2.0f * WIDGET_PAD;
+    f32 x       = (f32)s_io.display_w - w - 8.0f;
 
     gui_region_begin( "debug_selector", x, top_y, w, 0.0f, GUI_REGION_FG,
                       GUI_WIN_NOSCROLL | GUI_WIN_DEBUG_BAND );
     {
-        overlay_backdrop( id_hash( "debug_selector" ), x, top_y );
+        /* Explicit width -- the measure would stop at the widest checkbox label (see the
+           fill-vs-shrink note on overlay_backdrop). */
+        overlay_backdrop( id_hash( "debug_selector" ), x, top_y, w );
         gui_stack();
 
+        /* The ambient field is a set-once global (gui_field_set): whatever the last host window
+           declared is still installed here, and this panel declares its own splits below.  Snapshot
+           and restore so neither direction leaks across the seam. */
+        gui_field_t saved_field = *gui_field_get();
+        gui_field_set( NULL );                  /* default: box on the left, label trailing */
+
+        gui_text_disabled( SEL_HINT );
+
         bool force = gui_force_redraw();
-        if ( gui_checkbox( "Force redraw", &force ) )
+        if ( gui_checkbox( SEL_FORCE, &force ) )
             gui_set_force_redraw( force );
 
         bool cached = build_retained_skip();
-        if ( gui_checkbox( "Tess cache", &cached ) )
+        if ( gui_checkbox( SEL_TESS, &cached ) )
             build_set_retained_skip( cached );
 
-        gui_checkbox( "Idle skip", &s_idle_skip );
+        gui_checkbox( SEL_IDLE, &s_idle_skip );
 
-        gui_new_line( 2.0f );
-        gui_slider_int( "Perf tier", &s_dbg_perf_mode,  0, 4 );
-        gui_slider_int( "IO tier",   &s_dbg_state_mode, 0, 3 );
+        /* Tier sliders under a left label column, so the two labels align and the tracks line up
+           with each other instead of each starting after its own label's width. */
+        gui_field_label_left( label_w );
+        gui_slider_int( SEL_PERF,  &s_dbg_perf_mode,  0, DBG_PERF_TIERS  - 1 );
+        gui_slider_int( SEL_STATE, &s_dbg_state_mode, 0, DBG_STATE_TIERS - 1 );
+        gui_field_set( NULL );
+
+        /* Key legend: one row per key, straight down -- the tier rows spelling out the number
+           their slider shows, the layer rows carrying the only state readout NP1-NP7 have. */
+        gui_separator_text( "keys" );
+
+        legend_row( "NP+", "perf",  k_perf_tier [ s_dbg_perf_mode  ], s_dbg_perf_mode  > 0 );
+        legend_row( "NP-", "state", k_state_tier[ s_dbg_state_mode ], s_dbg_state_mode > 0 );
+
+        gui_render_mode_t rmode = gui_render_get_mode();
+        legend_row( "F9", "render", k_render_mode[ rmode ], rmode != GUI_RENDER_NORMAL );
+
+        u32 layers = gui_debug_get_layers();
+        for ( u32 i = 0; i < DBG_LAYER_COUNT; ++i )
+            legend_row( k_dbg_layer[ i ].key_name, k_dbg_layer[ i ].name, NULL,
+                        ( layers & k_dbg_layer[ i ].layer ) != 0u );
+
+        gui_field_set( &saved_field );
     }
     gui_region_end();
+    gui_scale_pop();
 }
 
 /* Emit the debug overlays into the currently bound (default) context -- called from ctx_end

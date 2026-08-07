@@ -216,12 +216,11 @@ typedef struct gui_api_s
 
        frame_pace( spin_sleep_ms, anim_sleep_ms )
                    -- end-of-loop frame pacing; call once at the very bottom of the main loop.
-                      Default path: sleep spin_sleep_ms between frames (4 ~= 250 Hz).  With idle
-                      skip on (set_idle_skip, or the I hotkey under debug_enable): block on OS
-                      input so a static UI burns no frames, sleeping anim_sleep_ms (16 ~= 60 Hz)
-                      only while a widget animation settles.  0 opts that sleep out (no call),
-                      even while the feature is on -- free-run for that path.  A no-op until
-                      frame_set_hooks provides the sleep / wait callbacks. */
+                      Default path: sleep spin_sleep_ms between frames (4 ~= 250 Hz). 
+                      With idle skip on (set_idle_skip): block on OS input so a static UI burns no frames, 
+                      sleeping anim_sleep_ms (16 ~= 60 Hz) only while a widget animation settles. 
+                      0 opts that sleep out (no call), even while the feature is on -- free-run for that path. 
+                      A no-op until frame_set_hooks provides the sleep / wait callbacks. */
 
     bool ( *frame_begin )( f32 dt );
     void ( *frame_end   )( void );

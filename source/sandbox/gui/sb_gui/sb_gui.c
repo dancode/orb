@@ -339,10 +339,11 @@ main( int argc, char** argv )
            (cleared to the boot color) -- its bool gates host render passes, none here (see
            sb_gui_editor for that use); boot_present_end draws the gui, presents, and renders every
            owned floater.  Both minimized-safe. */
+
         gui()->boot_present_begin( NULL );
         gui()->boot_present_end();
 
-        /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
+        /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on block
            on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */
         gui()->frame_pace( 4, 16 );
     }

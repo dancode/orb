@@ -80,8 +80,10 @@ main( int argc, char** argv )
     }
 
    gui()->debug_enable( true );
+
     /* Main loop -- boot_poll pumps the OS and routes events (rhi swapchain resize, gui input
        + floater lifecycle); false on quit or main-window close. */
+
     f32 dt = 0.0f;
     while ( gui()->boot_poll( &dt ) )
     {
@@ -104,7 +106,7 @@ main( int argc, char** argv )
         gui()->boot_present_begin( NULL );
         gui()->boot_present_end();
 
-        /* Frame pacing: spin at 4 ms (~250 Hz); with idle skip on (I) block on OS input while
+        /* Frame pacing: spin at 4 ms (~250 Hz); with idle skip on block on OS input while
            the UI is static, 16 ms (~60 Hz) while a widget animation settles. */
         gui()->frame_pace( 4, 16 );
     }
