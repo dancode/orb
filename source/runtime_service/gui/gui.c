@@ -2,11 +2,13 @@
 
     runtime_service/gui/gui.c -- THE GUI MODULE FACE: vtable + descriptor + DLL exports.
 
-    The gui module's public identity and nothing else.  It carries no logic: the frame
-    orchestration lives in the SEPARATE gui_frame.c unit, and every widget / layout / render
-    path lives in its own carved unit (GUI_ARCHITECTURE.md).  This unit's whole job is to
-    assemble the module vtable (g_gui_api_struct) that the module system hands out through the
-    gui() accessor, and the mod_desc_t that registers it.
+    The gui module's public API exporting identity and nothing else.  
+    
+    It carries no logic: the frame orchestration lives in the SEPARATE gui_frame.c unit, 
+    and every widget / layout / render path lives in its own carved unit (GUI_ARCHITECTURE.md).
+    
+    This unit's whole job is to assemble the module vtable (g_gui_api_struct) that the module 
+    system hands out through the gui() accessor, and the mod_desc_t that registers it.
 
     Why it includes every unit header: the vtable binds a function pointer to every unit's
     implementation, and those functions are declared across the internal unit headers -- so the

@@ -672,7 +672,7 @@ target sb_gui
     folder      09_SANDBOX/GUI
     unit        sb_gui.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         rhi draw gui dev_font base
+    dep         rhi draw gui base
     mono_dep    render
 
 target sb_gui_base						# minimal gui frame loop: boot + empty ctx begin/end + present
@@ -787,12 +787,12 @@ target sb_gui_timeline					# prof timeline overlay (flame graph) + synthetic wor
     dep         mod sys ref prof job app core
     dep         rhi gui base
 
-target sb_gui_font						# font find/bake/preview/export bench (stb + font_tool)
+target sb_gui_style						# style + look bench: editor, gallery, C exporter, font tool
 
     type        exe
-    root        source/sandbox/gui/sb_gui_font
+    root        source/sandbox/gui/sb_gui_style
     folder      09_SANDBOX/GUI
-    unit        sb_gui_font.c
+    unit        sb_gui_style.c
     dep         mod sys ref prof pack fs job net app core run
     dep         rhi draw gui dev_font base
     mono_dep    render
@@ -1141,7 +1141,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     add         sb_gui_diablo   	# rect-first ui layer proof
     add         sb_gui_timeline   	# prof timeline overlay + workload
     add         sb_gui_editor   	# game-engine editor shell
-    add         sb_gui_font   		# font find/bake/preview/export bench
+    add         sb_gui_style  		# style + look customization bench
 	add 		sb_gui_utf			# utf rendering test
 	
 	add 		gui_stress			# ensure compiled in build.

@@ -1,9 +1,9 @@
 /*==============================================================================================
 
-    sandbox/gui/sb_gui_font/sb_gui_font.c -- Font testing sandbox.
+    sandbox/gui/sb_gui_style/st_font.c -- Font Tool window: find / bake / preview / export a face.
 
-    A dedicated bench for finding, baking, previewing, and exporting fonts -- split out of
-    sb_gui so font work has a home of its own.
+    The FACE half of a look (the Style Editor next door owns the other half).  Unity-included by
+    sb_gui_style.c; see st.h for the window contract.
 
     Two bakers are exercised side by side (the engine ships both):
       * quick stb bake  -- dev_font_get(): rasterized at runtime with stb_truetype into
@@ -16,29 +16,7 @@
 
 ==============================================================================================*/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-
-#include "orb.h"
-#include "engine/mod/mod_host.h"
-#include "engine/ref/ref_host.h"
-#include "engine/sys/sys_host.h"
-#include "engine/app/app_host.h"
-#include "engine/core/core_host.h"
-#include "runtime_service/rhi/rhi_host.h"
-#include "runtime_service/draw/draw_host.h"
-#include "runtime_service/gui/gui_host.h"
-#include "developer/dev_font/dev_font.h"
-
 // clang-format off
-
-#if OS_WINDOWS
-    #define PATH_SEP "\\"
-#else
-    #define PATH_SEP "/"
-#endif
 
 /*============================================================================================*/
 /* Font tool state                                                                             */
@@ -79,7 +57,7 @@ typedef struct
     bool export_ok;
     char export_path  [ 512 ];   /* just the .orb_font path parsed out of export_status, for copy-to-clipboard */
 
-    /* Atlas preview toggle (see sb_gui.c's Font Browser -- same pattern). */
+    /* Atlas preview toggle. */
     bool show_atlas;
     bool atlas_2x;
 
@@ -332,7 +310,7 @@ ft_export_final( void )
 /*============================================================================================*/
 
 static void
-show_font_tool( void )
+st_font_window( void )
 {
     /* Lazy init on first show. */
     if ( !s_ft.scanned )
@@ -347,8 +325,7 @@ show_font_tool( void )
             snprintf( s_ft.request, sizeof( s_ft.request ), "%s", s_ft.names[ 0 ] );
     }
 
-    gui()->window_set_next_size( 560.0f, 560.0f, GUI_COND_ONCE );
-    if ( !gui()->window_begin( "Font Tool", GUI_WIN_NONE ) )
+    if ( !st_begin( "Font Tool", 560.0f, 560.0f ) )
     {
         gui()->window_end();
         return;
@@ -508,98 +485,6 @@ show_font_tool( void )
     }
 
     gui()->window_end();
-}
-
-/*==============================================================================================
-    main
-==============================================================================================*/
-
-int
-main( int argc, char** argv )
-{
-    UNUSED( argc );
-    UNUSED( argv );
-
-    /* Load modules. */
-    mod_system_init();
-    mod_static( sys );
-    mod_static( ref );
-    mod_static( app );
-    mod_static( core );
-    mod_static( rhi );
-    mod_static( draw );
-    mod_static( gui );
-
-    if ( !mod_init_all() )
-    {
-        fprintf( stderr, "[sb_gui_font] mod_init_all failed: %s\n", mod_last_error() );
-        mod_system_exit();
-        return 1;
-    }
-
-    mod_set_log_fn( core_log_fn );
-    app_set_log_fn( core_log_fn );
-    core()->log_set_min_level( LOG_LEVEL_INFO );
-
-    int  ret_code    = 1;
-    bool draw_inited = false;
-
-    /* gui owns the main window + render context (boot path); see sb_gui for the full rationale. */
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
-        .title     = "sb_gui_font",
-        .w         = 1100, .h = 720,
-        .os_chrome = true,
-        .font      = GUI_FONT_CASCADIA_MONO_16, // GUI_FONT_CASCADIA_MONO_16
-        .clock     = sys_tick_seconds,
-        .sleep     = sys_sleep_milliseconds,
-        .wait      = sys_wait_for_os_events_ms,
-        .clear     = { 0.15f, 0.15f, 0.20f, 1.00f },
-        .debug     = true,
-    } );
-    if ( vp0 == GUI_VP_INVALID )
-    {
-        fprintf( stderr, "[sb_gui_font] gui->boot failed\n" );
-        goto shutdown;
-    }
-
-    if ( !draw()->init() )
-    {
-        fprintf( stderr, "[sb_gui_font] draw->init failed\n" );
-        goto shutdown;
-    }
-    draw_inited = true;
-
-    /* dev_font drives the local scan + quick stb bake; font_tool.exe (spawned) drives the final one. */
-    dev_font_init( NULL );
-
-    gui()->set_retained_skip( true );
-
-    f32 dt = 0.0f;
-    while ( gui()->boot_poll( &dt ) )
-    {
-        if ( gui()->frame_begin( dt ) )
-        {
-            gui()->ctx_begin( GUI_CTX_DEFAULT );
-            show_font_tool();
-            gui()->ctx_end();
-        }
-        gui()->frame_end();
-
-        gui()->boot_present_begin( NULL );
-        gui()->boot_present_end();
-
-        gui()->frame_pace( 4, 16 );
-    }
-
-    ret_code = 0;
-
-shutdown:
-    if ( vp0 != GUI_VP_INVALID ) gui()->shutdown();
-    if ( draw_inited ) draw()->shutdown();
-    rhi()->shutdown();
-    dev_font_shutdown();
-    mod_system_exit();
-    return ret_code;
 }
 
 // clang-format on

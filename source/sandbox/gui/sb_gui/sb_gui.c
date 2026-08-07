@@ -19,7 +19,6 @@
 #include "runtime_service/rhi/rhi_host.h"
 #include "runtime_service/draw/draw_host.h"
 #include "runtime_service/gui/gui_host.h"
-#include "developer/dev_font/dev_font.h"
 
 // clang-format off
 
@@ -30,252 +29,6 @@ struct
     bool show_main_menubar;
 
 } demo_data;
-
-/*============================================================================================*/
-/* Font browser state                                                                          */
-/*============================================================================================*/
-
-#define FB_FONT_MAX 32
-#define FB_NAME_MAX 128
-
-typedef struct
-{
-    char names[ FB_FONT_MAX ][ FB_NAME_MAX ];
-    int  count;
-    int  sel;
-    bool scanned;
-    i32  size_px;
-    u32  preview_id;
-    bool preview_ready;
-    char preview_ttf [ FB_NAME_MAX ];
-    i32  preview_size;
-    char custom_text [ 256 ];
-    char status      [ 256 ];
-    bool status_ok;
-    bool show_atlas;   /* independent of preview_ready -- shows the active font's atlas as-is */
-    bool atlas_2x;     /* draw the atlas at 2x native pixel size instead of 1x */
-
-} font_browser_t;
-
-static font_browser_t s_fb;
-
-static bool
-fb_scan_cb( const char* filename, const char* full_path, void* userdata )
-{
-    UNUSED( full_path );
-    UNUSED( userdata );
-    if ( s_fb.count < FB_FONT_MAX )
-        snprintf( s_fb.names[ s_fb.count++ ], FB_NAME_MAX, "%s", filename );
-    return true;
-}
-
-static void
-fb_scan( void )
-{
-    s_fb.count = 0;
-    char src[ 512 ];
-    if ( dev_font_source_dir( src, sizeof( src ) ) )
-    {
-        sys_file_glob( src, "*.ttf", fb_scan_cb, NULL );
-        sys_file_glob( src, "*.otf", fb_scan_cb, NULL );
-    }
-    s_fb.scanned = true;
-    snprintf( s_fb.status, sizeof( s_fb.status ), "Found %d font(s) in font_source/", s_fb.count );
-    s_fb.status_ok = true;
-}
-
-static void
-show_font_browser( bool* p_open )
-{
-    /* Lazy init on first open. */
-    if ( !s_fb.scanned )
-    {
-        s_fb.size_px = 16;
-        snprintf( s_fb.custom_text, sizeof( s_fb.custom_text ),
-                  "The quick brown fox jumps over the lazy dog." );
-        fb_scan();
-    }
-
-
-    // gui()->window_set_next_pos( 320.0f, 60.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 640.0f, 640.0f, GUI_COND_ONCE );
-    if ( !gui()->window_begin( "Font Browser", GUI_WIN_CLOSEABLE | GUI_WIN_CAN_AUTOSIZE ))
-    {
-        /* window_begin returns false for both collapsed and X-closed windows.
-           Only clear p_open when the window was actually closed (X clicked). */
-        if ( p_open && !gui()->window_is_open( "Font Browser" ) )
-            *p_open = false;
-        gui()->window_end();
-        return;
-    }
-
-    bool skip_body =  false;
-    if ( skip_body )
-    {
-        gui()->window_end();
-        return;
-    }
-
-    gui()->stack();
-
-    /* --- Source ---------------------------------------------------------------- */
-    gui()->separator_text( "Source" );
-
-    /* Left panel: combo + slider stacked.  Right panel: tall "Bake & Preview" button. */
-    static const char* bake_label = "Bake & Preview";
-    gui()->split_begin( "##src", gui()->button_width( bake_label ) );
-
-        gui()->stack();
-        const char* combo_label = ( s_fb.count > 0 ) ? s_fb.names[ s_fb.sel ] : "(no fonts)";
-        if ( gui()->combo_begin( "##ttf", combo_label, GUI_COMBO_NONE ) )
-        {
-            for ( int i = 0; i < s_fb.count; i++ )
-            {
-                bool sel = ( i == s_fb.sel );
-                if ( gui()->selectable( s_fb.names[ i ], &sel ) )
-                    s_fb.sel = i;
-            }
-            gui()->combo_end();
-        }
-        gui()->slider_int( "##size", &s_fb.size_px, 6, 64 );
-
-    gui()->split_next();
-
-        gui()->stack();
-        gui()->disabled_begin( s_fb.count == 0 );
-        bool bake = gui()->button_fill( bake_label );
-        gui()->disabled_end();
-
-    gui()->split_end();
-
-    /* Refresh + status below the source row. */
-    gui()->stack();
-    if ( gui()->small_button( "Refresh List" ) )
-        fb_scan();
-
-    if ( s_fb.status[ 0 ] )
-    {
-        if ( s_fb.status_ok )
-            gui()->text_disabled( s_fb.status );
-        else
-            gui()->text_colored( GUI_COLOR( 0xFF, 0x60, 0x60, 0xFF ), s_fb.status );
-    }
-
-    /* --- Bake ------------------------------------------------------------------ */
-    if ( bake && s_fb.count > 0 )
-    {
-        /* Re-baking the same font at the same size re-uploads an identical atlas and forces a
-           GPU drain in the reload path (see font_slot_load) for nothing.  If the requested
-           font+size is already the live preview, skip it. */
-        bool same = s_fb.preview_ready
-                 && s_fb.size_px == s_fb.preview_size
-                 && strcmp( s_fb.names[ s_fb.sel ], s_fb.preview_ttf ) == 0;
-
-        char path[ 512 ];
-        if ( same )
-        {
-            snprintf( s_fb.status, sizeof( s_fb.status ), "Already loaded: %s at %d px",
-                      s_fb.preview_ttf, s_fb.preview_size );
-            s_fb.status_ok = true;
-        }
-        else if ( dev_font_get( s_fb.names[ s_fb.sel ], s_fb.size_px, path, sizeof( path ) ) )
-        {
-            if ( !s_fb.preview_ready )
-            {
-                u32 id = gui()->font_load( path );
-                if ( id )
-                {
-                    s_fb.preview_id    = id;
-                    s_fb.preview_ready = true;
-                }
-            }
-            else
-            {
-                gui()->font_load_into( s_fb.preview_id, path );
-            }
-            snprintf( s_fb.preview_ttf, sizeof( s_fb.preview_ttf ), "%s",
-                      s_fb.names[ s_fb.sel ] );
-            s_fb.preview_size = s_fb.size_px;
-            snprintf( s_fb.status, sizeof( s_fb.status ), "Loaded: %s at %d px",
-                      s_fb.preview_ttf, s_fb.preview_size );
-            s_fb.status_ok = true;
-        }
-        else
-        {
-            snprintf( s_fb.status, sizeof( s_fb.status ), "Error: %s", dev_font_last_error() );
-            s_fb.status_ok = false;
-        }
-    }
-
-    /* --- Preview --------------------------------------------------------------- */
-    if ( s_fb.preview_ready )
-    {
-        gui()->separator_text( "Preview" );
-
-        gui()->input_text_with_hint( "##custom", "Custom preview text...",
-                                     s_fb.custom_text, sizeof( s_fb.custom_text ) );
-        gui()->new_line( -1.0f );
-
-        /* NOTE -- this preview is NOT isolated to these lines.  The renderer has no per-run font:
-           text commands store only position/colour/clip (see GUI_CMD_TEXT in gui_emit_draw.c), and the
-           glyph atlas + UVs are resolved at DEFERRED tessellation time from one global active font
-           (tess_text_n / font_atlas_idx in gui_build_tess.c).  So whichever font is active when the
-           frame tessellates draws the ENTIRE frame -- push_font/pop_font here cannot scope a second
-           font onto just the preview.  A true side-by-side preview would need the preview glyphs
-           rendered through a separate texture/path decoupled from the global font state; that is not
-           possible with the current single-global-font model. */
-        gui()->push_font( s_fb.preview_id );
-        gui()->stack();
-        if ( s_fb.custom_text[ 0 ] )
-            gui()->text( s_fb.custom_text );
-        gui()->text( "ABCDEFGHIJKLMNOPQRSTUVWXYZ" );
-        gui()->text( "abcdefghijklmnopqrstuvwxyz" );
-        gui()->text( "0123456789  !@#$%^&*()-+=[]{};" );
-        gui()->pop_font();
-
-        /* --- Apply ------------------------------------------------------------- */
-        gui()->separator_text( "Apply" );
-        gui()->textf( "Preview: %s  %d px", s_fb.preview_ttf, s_fb.preview_size );
-        if ( gui()->button( "Use Font" ) )
-            gui()->font_use( s_fb.preview_id );
-    }
-
-    /* --- Atlas ------------------------------------------------------------------ */
-    /* Independent of the bake/preview flow above -- shows the CURRENTLY ACTIVE font's atlas
-       (whatever the app booted with, or last font_use'd), so checking packing/coverage doesn't
-       require baking anything through this window first. */
-    gui()->separator_text( "Atlas" );
-    if ( gui()->button( "Show Atlas" ) )
-        s_fb.show_atlas = !s_fb.show_atlas;
-    gui()->same_line( -1 );
-    gui()->checkbox( "2x", &s_fb.atlas_2x );
-
-    if ( s_fb.show_atlas )
-    {
-        u32 active_id = gui()->font_active_id();
-        u32 atlas_idx = gui()->font_atlas_idx( active_id );
-        if ( atlas_idx )
-        {
-            gui_vec2_t asz = gui()->font_atlas_size( active_id );
-
-            gui()->textf( "Active font #%u -- %.0f x %.0f px  (bindless #%u)",
-                          active_id, asz.x, asz.y, atlas_idx );
-
-            /* Native resolution (or 2x via the checkbox) -- no fit-to-window scaling, so packing/
-               coverage reads exactly as baked.  Same red-channel-only nuance as before: the atlas
-               is R8_UNORM coverage, sampled here through the RGBA path, so glyph ink renders red,
-               not white. */
-            f32 scale = s_fb.atlas_2x ? 2.0f : 1.0f;
-            gui()->image_texture( atlas_idx, asz.x * scale, asz.y * scale, 0 );
-        }
-        else
-        {
-            gui()->text_disabled( "No active font atlas." );
-        }
-    }
-
-    gui()->window_end();
-}
 
 /*============================================================================================*/
 /* Split-panel helper demo                                                                     */
@@ -718,246 +471,6 @@ show_tabgroup_demo( bool* p_open )
 }
 
 /*============================================================================================*/
-/* Style / theme editor                                                                        */
-/*                                                                                             */
-/* Pick a built-in theme, then tune every SKIN + METRIC knob live.  The flow is the one the    */
-/* gui style API is built around: theme_list/theme_set switch named presets; style_peek reads   */
-/* the base style WITHOUT marking it anonymous (so the theme combo keeps naming the active      */
-/* theme until an edit lands); style_get commits an edit (theme goes "(custom)"); style_apply   */
-/* rescales the active metrics.  Widgets edit a local copy of the base style and the whole copy */
-/* is committed once per frame only when something actually changed -- so merely opening the    */
-/* window never disturbs the theme.                                                             */
-/*============================================================================================*/
-
-/* One color slot -> a color_edit4 bound to the packed u32 field.  Returns true on edit. */
-static bool
-se_color( const char* label, u32* field )
-{
-    f32 c[ 4 ] = {
-        (f32)(   *field         & 0xFF ) / 255.0f,
-        (f32)( ( *field >> 8  ) & 0xFF ) / 255.0f,
-        (f32)( ( *field >> 16 ) & 0xFF ) / 255.0f,
-        (f32)( ( *field >> 24 ) & 0xFF ) / 255.0f,
-    };
-    if ( gui()->color_edit4( label, c, GUI_COLOR_EDIT_NONE ) )
-    {
-        u8 r = (u8)( c[ 0 ] * 255.0f + 0.5f ), g = (u8)( c[ 1 ] * 255.0f + 0.5f );
-        u8 b = (u8)( c[ 2 ] * 255.0f + 0.5f ), a = (u8)( c[ 3 ] * 255.0f + 0.5f );
-        *field = GUI_COLOR( r, g, b, a );
-        return true;
-    }
-    return false;
-}
-
-/* One u8 metric/skin scalar -> an integer slider over [lo,hi].  Returns true on edit. */
-static bool
-se_f32( const char* label, f32* field, f32 lo, f32 hi )
-{
-    return gui()->slider_float( label, field, lo, hi );
-}
-
-/* One enum-valued u8 knob -> a combo of named variants.  Returns true on selection change. */
-static bool
-se_shape( gui_style_var_t var, f32* vars, const char* const* names, i32 count )
-{
-    i32  cur     = (i32)vars[ var ];
-    bool changed = false;
-    if ( cur < 0 || cur >= count ) cur = 0;
-
-    if ( gui()->combo_begin( gui()->style_var_name( var ), names[ cur ], GUI_COMBO_NONE ) )
-    {
-        for ( i32 i = 0; i < count; ++i )
-        {
-            bool sel = ( i == cur );
-            if ( gui()->selectable( names[ i ], &sel ) )
-            {
-                vars[ var ] = (f32)i;
-                changed     = true;
-            }
-        }
-        gui()->combo_end();
-    }
-    return changed;
-}
-
-static void
-show_style_editor( bool* p_open )
-{
-    static const char* WIN = "Style Editor";
-    gui()->window_set_next_size( 340.0f, 620.0f, GUI_COND_ONCE );
-    if ( !gui()->window_begin( WIN, GUI_WIN_CLOSEABLE ) )
-    {
-        if ( p_open && !gui()->window_is_open( WIN ) )
-            *p_open = false;
-        gui()->window_end();
-        return;
-    }
-
-    gui()->stack();
-
-    /* --- Theme -----------------------------------------------------------------------------
-       Theme controls go FIRST so a preset switch happens before we snapshot the base style
-       below -- the tuning widgets then reflect the newly selected theme the same frame. */
-    gui()->separator_text( "Theme" );
-
-    const char* active = gui()->theme_get();            /* NULL after an anonymous edit */
-    u32         n_themes;
-    const gui_theme_t* themes = gui()->theme_list( &n_themes );
-
-    /* [ combo (fill) | Reset (fixed) ] as an explicit two-track row, NOT combo + same_line(button):
-       a fill widget leaves the pen at the region's right edge, so a same_line natural-width button
-       reaches past content_w and (content_w chasing that) the row grows without bound each frame.
-       A fixed second track parks the button in a content_w-independent cell instead.  The combo hides
-       its own label ("##") since the separator above already titles the section. */
-    f32 reset_w = gui()->button_width( "Reset" );
-    gui()->row_cols( 0.0f, (f32[]){ 1.0f, reset_w, GUI_END } );
-
-    if ( gui()->combo_begin( "##Theme", active ? active : "(custom)", GUI_COMBO_NONE ) )
-    {
-        for ( u32 i = 0; i < n_themes; ++i )
-        {
-            bool sel = ( active && strcmp( active, themes[ i ].name ) == 0 );
-            if ( gui()->selectable( themes[ i ].name, &sel ) )
-                gui()->theme_set( themes[ i ].name );
-        }
-        gui()->combo_end();
-    }
-
-    if ( gui()->button( "Reset" ) )
-        gui()->theme_reset();   /* revert to the active theme's authored values, clear stacks */
-
-    gui()->stack();   /* back to a single full-width column for the rest of the panel */
-
-    if ( !active )
-        gui()->text_disabled( "Edited -- pick a theme above to revert." );
-
-    /* --- Snapshot --------------------------------------------------------------------------
-       Read the base through style_peek (does not disturb the theme name).  Widgets edit this
-       local copy; the whole copy is committed once at the end only if something changed. */
-    gui_style_t work    = *gui()->style_peek();
-    bool        changed = false;
-
-    f32 label_width = gui()->text_size( "Separator Shape" ).x;
-    gui()->form( GUI_LABEL_RIGHT, label_width );
-
-    /* --- Palette: the AUTHORED colour, and the fastest knob in the panel --------------------
-       Twelve numbers that drive all 32 cells below.  Drag one ramp slider and the entire grid
-       re-derives in the same frame -- which is the whole argument for the bake, made visible:
-       the cells are a projection of this, not a parallel thing to keep in step with it.
-
-       The re-bake is gated on the PALETTE changing rather than on `changed`, and the ordering
-       matters both ways: it runs before the grid section so the swatches show freshly derived
-       values this frame, and it does not run when only a cell changed, so a hand-edit below
-       survives instead of being eaten on the next keystroke. */
-    bool palette_changed = false;
-
-    gui()->separator_text( "Palette -- seeds" );
-    for ( u32 i = 0; i < GUI_SEED_COUNT; ++i )
-        palette_changed |= se_color( gui()->style_seed_name( ( gui_style_seed_t )i ),
-                                     &work.palette.seed[ i ] );
-
-    gui()->separator_text( "Palette -- ramp" );
-    for ( u32 i = 0; i < GUI_RAMP_COUNT; ++i )
-        palette_changed |= se_f32( gui()->style_ramp_name( ( gui_style_ramp_t )i ),
-                                   &work.palette.ramp[ i ], 0.0f, 1.0f );
-
-    if ( palette_changed )
-    {
-        gui()->style_bake( &work );
-        changed = true;
-    }
-
-    /* --- Colors: the DERIVED grid, a section per role ---------------------------------------
-       Nothing here names an individual color.  The editor walks roles x states and asks the
-       engine for the labels, so a new role or state shows up with no edit to this file -- which
-       is the whole reason the flat palette and its parallel name table went away.
-
-       Editing a cell here is still legitimate and still sticks: it is the "bake, then disagree"
-       shape a kit uses, just spelled interactively.  Touch a seed or a ramp value above and the
-       disagreement is overwritten, because that is what re-deriving means. */
-    for ( u32 l = 0; l < GUI_LOOK_COUNT; ++l )
-    {
-        gui()->push_id( gui()->style_look_name( ( gui_style_look_t )l ) );
-        for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
-        {
-            char head[ 64 ];
-            snprintf( head, sizeof head, "%s / %s",
-                      gui()->style_look_name( ( gui_style_look_t )l ),
-                      gui()->style_role_name( ( gui_style_role_t )r ) );
-
-            gui()->separator_text( head );
-            gui()->push_id( gui()->style_role_name( ( gui_style_role_t )r ) );
-            for ( u32 s = 0; s < GUI_PHASE_COUNT; ++s )
-                changed |= se_color( gui()->style_phase_name( ( gui_style_phase_t )s ),
-                                     &work.col[ l ][ r ][ s ] );
-            gui()->pop_id();
-        }
-        gui()->pop_id();
-    }
-
-    /* --- Scalars: a section per var CLASS, both walked from the engine -----------------------
-       Nothing here names a var or knows which ones scale.  Asking each var for its class is what
-       replaced two hardcoded enum ranges, so a new var appears in the right section on its own.
-       Shapes are skipped: a pick wants a combo over its value names, which the engine does not
-       own -- that is the one thing still authored per var, below. */
-    for ( u32 c = 0; c < GUI_CLASS_COUNT; ++c )
-    {
-        if ( c == GUI_CLASS_SHAPE ) continue;
-
-        /* Range comes off the CLASS too -- a ratio is 0..1, a pixel value 0..64.  One more thing
-           the editor asks the engine rather than tabulating per var. */
-        f32 hi = ( c == GUI_CLASS_RATIO ) ? 1.0f : 64.0f;
-
-        gui()->separator_text( gui()->style_class_name( ( gui_style_class_t )c ) );
-        for ( u32 v = 0; v < GUI_VAR_COUNT; ++v )
-            if ( gui()->style_var_class( ( gui_style_var_t )v ) == ( gui_style_class_t )c )
-                changed |= se_f32( gui()->style_var_name( ( gui_style_var_t )v ),
-                                   &work.var[ v ], 0.0f, hi );
-    }
-
-    gui()->separator_text( gui()->style_class_name( GUI_CLASS_SHAPE ) );
-    static const char* const nm_check   [] = { "Tick", "Disc", "Cross" };
-    static const char* const nm_bullet  [] = { "Disc", "Square" };
-    static const char* const nm_arrow   [] = { "Filled", "Chevron" };
-    static const char* const nm_sep     [] = { "Solid", "Dashed" };
-    static const char* const nm_progress[] = { "Solid", "Gradient" };
-    static const char* const nm_knob    [] = { "Bar", "Circle" };
-    static const char* const nm_menu    [] = { "Plain", "Box" };
-    changed |= se_shape( GUI_VAR_CHECK_SHAPE,     work.var, nm_check,    3 );
-    changed |= se_shape( GUI_VAR_BULLET_SHAPE,    work.var, nm_bullet,   2 );
-    changed |= se_shape( GUI_VAR_ARROW_SHAPE,     work.var, nm_arrow,    2 );
-    changed |= se_shape( GUI_VAR_SEPARATOR_SHAPE, work.var, nm_sep,      2 );
-    changed |= se_shape( GUI_VAR_PROGRESS_SHAPE,  work.var, nm_progress, 2 );
-    changed |= se_shape( GUI_VAR_KNOB_SHAPE,      work.var, nm_knob,     2 );
-    changed |= se_shape( GUI_VAR_MENU_CHECK,      work.var, nm_menu,     2 );
-    
-    gui()->form( GUI_LABEL_RIGHT, 0.0 );
-
-    /* --- Live sample of what the knobs above affect ---------------------------------------- */
-    gui()->separator_text( "Preview" );
-    static bool  sample_check = true;
-    static f32   sample_val   = 0.4f;
-    static i32   sample_int   = 3;
-    gui()->checkbox( "Checkbox", &sample_check );
-    gui()->button( "Button" );
-
-    gui()->form( GUI_LABEL_RIGHT, label_width );
-    gui()->slider_float( "Slider", &sample_val, 0.0f, 1.0f );
-    gui()->slider_int( "Steps", &sample_int, 0, 10 );
-    gui()->progress_bar( sample_val, NULL );
-
-    /* Commit once: writing through style_get marks the theme anonymous (an intentional edit),
-       then style_apply rescales the active metrics from the new base. */
-    if ( changed )
-    {
-        *gui()->style_get() = work;
-        gui()->style_apply();
-    }
-
-    gui()->window_end();
-}
-
-/*============================================================================================*/
 /* Toolbar icon strip demo                                                                     */
 /*                                                                                              */
 /* Exercises gui_toolbar.c end to end: toolbar_begin/end (id scope + bar(), caller-scaled via    */
@@ -1171,13 +684,11 @@ demo_volatile_pulse_cb( gui_id_t id, bool is_replay )
 // - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
 
 static bool show_demo             = false;
-static bool show_font_browser_win = false;
 static bool show_split_win        = false;
 static bool show_hud_win          = false;
 static bool show_region_win       = false;
 static bool show_dragdrop_win     = false;
 static bool show_tabgroup_win     = false;
-static bool show_style_win        = false;
 static bool show_toolbar_win      = false;
 
 static void show_example_main_menu_bar()
@@ -1187,13 +698,11 @@ static void show_example_main_menu_bar()
         if ( gui()->menu_begin( "Examples" ) )
         {
             gui()->menu_item( "Demo Window",    NULL, &show_demo );
-            gui()->menu_item( "Font Browser",   NULL, &show_font_browser_win );
             gui()->menu_item( "Split Panels",   NULL, &show_split_win );
             gui()->menu_item( "HUD Overlay",    NULL, &show_hud_win );
             gui()->menu_item( "Region Demo",    NULL, &show_region_win );
             gui()->menu_item( "Drag and Drop",  NULL, &show_dragdrop_win );
             gui()->menu_item( "Tab Groups",     NULL, &show_tabgroup_win );
-            gui()->menu_item( "Style Editor",   NULL, &show_style_win );
             gui()->menu_item( "Toolbar Icons",  NULL, &show_toolbar_win );
             gui()->menu_end();
         }
@@ -1365,10 +874,8 @@ main( int argc, char** argv )
     }
     draw_inited = true;
 
-    /* gui()->init already loaded the built-in preset font above; dev_font_init is still needed
-       here for the Font Browser demo (show_font_browser), which scans/bakes fonts from disk
-       independent of whatever font the GUI itself started with. */
-    dev_font_init( NULL );
+    /* Font work moved out to sb_gui_style (Font Tool window) -- nothing here scans or bakes
+       fonts from disk any more, so dev_font is not initialized. */
 
     gui()->set_retained_skip( true );
 
@@ -1433,13 +940,6 @@ main( int argc, char** argv )
 
             /* Force-open on transition (first show or menu re-open); not every frame or the X
                button close gets overridden before window_begin sees it. */
-            static bool s_font_browser_prev = false;
-            if ( show_font_browser_win && !s_font_browser_prev )
-                gui()->window_set_open( "Font Browser", true );
-            s_font_browser_prev = show_font_browser_win;
-            if ( show_font_browser_win )
-                show_font_browser( &show_font_browser_win );
-
             static bool s_split_prev = false;
             if ( show_split_win && !s_split_prev )
                 gui()->window_set_open( "Split Panels", true );
@@ -1470,13 +970,6 @@ main( int argc, char** argv )
             s_tabgroup_prev = show_tabgroup_win;
             if ( show_tabgroup_win )
                 show_tabgroup_demo( &show_tabgroup_win );
-
-            static bool s_style_prev = false;
-            if ( show_style_win && !s_style_prev )
-                gui()->window_set_open( "Style Editor", true );
-            s_style_prev = show_style_win;
-            if ( show_style_win )
-                show_style_editor( &show_style_win );
 
             static bool s_toolbar_prev = false;
             if ( show_toolbar_win && !s_toolbar_prev )
@@ -1511,7 +1004,6 @@ shutdown:
     if ( vp0 != GUI_VP_INVALID ) gui()->shutdown();  /* also tears down the boot window + context */
     if ( draw_inited ) draw()->shutdown();
     rhi()->shutdown();                               /* no-op if boot never initialized it */
-    dev_font_shutdown();
     mod_system_exit();
     return ret_code;
 }
