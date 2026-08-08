@@ -51,6 +51,7 @@ demo_volatile_pulse_cb( gui_id_t id, bool is_replay )
 {
     (void)id;
     (void)is_replay;
+
     gui()->volatile_begin();
     f32 t = (f32)sys_tick_seconds();
     f32 s = 0.5f + 0.5f * sinf( t * 3.0f );
@@ -115,16 +116,16 @@ show_demo_window(bool* p_open)
     gui_win_flags_t window_flags = 0;
     
     window_flags |= GUI_WIN_CAN_AUTOSIZE;  // Add a menu bar to the window
+    
     // We demonstrate using the full window_begin() API
     gui()->window_set_next_size( 640.0f, 640.0f, GUI_COND_ONCE );
-    if (!gui()->window_begin("Dear ImGui Demo", window_flags))
-    {
-        // Early out if the window is collapsed, as a optimization.
-        gui()->window_end();
+    if (gui()->window_begin("Basic Gui Demo", window_flags) == false ) {        
+        gui()->window_end(); // Early out if the window is collapsed, as a optimization.
         return;
     }
 
-    bool skip_body =  false;
+    // Just for testing.
+    bool skip_body = false;
     if ( skip_body )
     {
         gui()->window_end();
@@ -167,7 +168,6 @@ show_demo_window(bool* p_open)
     // gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 6.061f, 165.0f);
 
     gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );
-    // gui()->same_line( 0 );
     gui()->text( "<- volatile widget: keeps pulsing on idle frames, no full rebuild" );
     
     for ( int i = 0; i < 40; i++ )
@@ -208,8 +208,9 @@ main( int argc, char** argv )
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
-    mod_static( draw );
     mod_static( gui );
+
+    // mod_static( draw );
 
     if ( !mod_init_all() )
     {
@@ -238,7 +239,7 @@ main( int argc, char** argv )
         .title     = "sb_gui",
         .w         = 1280, .h = 720,
         .os_chrome = true,
-        .font      = GUI_FONT_CASCADIA_MONO_16,   // GUI_FONT_JETBRAINS_16
+        .font      = GUI_FONT_CASCADIA_MONO_16,
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
         .wait      = sys_wait_for_os_events_ms,
@@ -256,22 +257,17 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup Resources */
 
-    if ( !draw()->init() )
-    {
-        fprintf( stderr, "[sb_gui] draw->init failed\n" );
-        goto shutdown;
-    }
-    draw_inited = true;
-
-    /* Font work moved out to sb_gui_style (Font Tool window) -- nothing here scans or bakes
-       fonts from disk any more, so dev_font is not initialized. */
-
-    gui()->set_retained_skip( true );
+    // if ( !draw()->init() )
+    // {
+    //     fprintf( stderr, "[sb_gui] draw->init failed\n" );
+    //     goto shutdown;
+    // }
+    // draw_inited = true;
 
     /* ------------------------------------------------------------------------------ */
     /* GUI Style */
 
-    bool modify_style = false;
+    bool modify_style = true;
     if ( modify_style )
     {
         gui_style_t* style = gui()->style_get();
