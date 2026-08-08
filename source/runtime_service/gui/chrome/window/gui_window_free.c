@@ -347,18 +347,33 @@ static f32 window_snap( f32 v ) { return lat_round( v, GRID_Q ); }
 
     max_w / max_h cap the fit against the viewport (position held fixed, so this is just the space
     remaining from win->x/y to the far edge): a long list should scroll inside the window rather
-    than growing it past the screen.  The min clamp runs last so a viewport smaller than the
-    minimum size never shrinks the chrome below legibility.
+    than growing it past the screen.  A fit that gets capped is exactly the fit that ends up with
+    a scrollbar, so the gutter add-back below is not an edge case -- it is THE case.  The min
+    clamp runs last so a viewport smaller than the minimum size never shrinks the chrome below
+    legibility.
 ==============================================================================================*/
 
+/* The scroll policy the BODY region opens under, which is not always the window's own: an
+   ALWAYS_AUTOSIZE window hugs its content every frame, so its body never scrolls and never
+   reserves a gutter.  window_open_body pushes the region with this, and the auto-fit paths below
+   ask region_gutters with it -- one answer, so a fit can never disagree with the region it sizes. */
+static gui_win_flags_t
+window_body_flags( gui_win_flags_t flags )
+{
+    return ( flags & GUI_WIN_ALWAYS_AUTOSIZE ) ? ( flags | GUI_WIN_NOSCROLL ) : flags;
+}
+
 static void
-window_fit_size( const char* title, f32 title_h, f32 mb_h, bool collapsible,
+window_fit_size( const char* title, f32 title_h, f32 mb_h, bool collapsible, gui_win_flags_t flags,
                  f32 content_w, f32 content_h, f32 max_w, f32 max_h, f32* out_w, f32* out_h )
 {
     /* The measured content is the full canvas -- items plus the region pads on both ends of each
-       axis -- so the body just wraps it: width is the canvas, height adds the chrome above it and
-       the bottom border (the only body inset the canvas does not carry). */
-    f32 want_w = content_w;
+       axis -- so the window just wraps it in the chrome the body region insets for: the two side
+       borders on width, the title / menu bar and the bottom border on height.  These are the
+       exact terms layout_push_region takes back out (view_w = outer.w - 2*WIN_BORDER,
+       view_h = outer.h - WIN_BORDER over a body starting below the bars), so the body view lands
+       on the content extent to the pixel. */
+    f32 want_w = content_w + 2.0f * WIN_BORDER;
     f32 want_h = title_h + mb_h + content_h + WIN_BORDER;
 
     /* Stay wide enough for the title bar: the collapse-arrow lead (or the left pad) + the title
@@ -373,13 +388,28 @@ window_fit_size( const char* title, f32 title_h, f32 mb_h, bool collapsible,
     if ( want_w > max_w ) want_w = max_w;
     if ( want_h > max_h ) want_h = max_h;
 
+    /* Give back what the body region will carve for its scrollbars (region_gutters, THE gutter
+       rule -- flow/gui_scroll.c).  The fit above sizes the body view to the content exactly, which
+       is only the whole answer while nothing is capped: once max_h clips the hug, the content is
+       taller than the view it got, so the region reserves a vertical gutter out of the very width
+       the content was measured against and the trailing column ellipsizes under the bar the fit
+       itself caused.  Re-capped after -- hard against the viewport there is no room to give back,
+       and the ellipsize is then honest. */
+    f32 sb_w, sb_h;
+    region_gutters( flags, content_w, content_h, want_w - 2.0f * WIN_BORDER,
+                    want_h - title_h - mb_h - WIN_BORDER, &sb_w, &sb_h );
+    want_w += sb_w;
+    want_h += sb_h;
+    if ( want_w > max_w ) want_w = max_w;
+    if ( want_h > max_h ) want_h = max_h;
+
     f32 min_w = window_min_w();
     if ( want_w < min_w ) want_w = min_w;
 
     /* Rest the autosized window on the lattice too, so its edges align with the manually-resized
        case.  Ceil (not round) so the hug never crops the content it was measured to hold; the
-       content extent is already lattice-ceiled, so this only absorbs the sub-quantum chrome slack
-       (the free-pixel border). */
+       content extent is already lattice-ceiled, so this only rounds up the chrome the window
+       wrapped around it. */
     u32 q = GRID_Q;
     *out_w = lat_ceil( want_w, q );
     *out_h = lat_ceil( want_h, q );
@@ -653,7 +683,7 @@ window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 tit
                   bool collapsed )
 {
     bool            frame_only = ( flags & GUI_WIN_NATIVE ) != 0;
-    gui_win_flags_t body_flags = ( flags & GUI_WIN_ALWAYS_AUTOSIZE ) ? ( flags | GUI_WIN_NOSCROLL ) : flags;
+    gui_win_flags_t body_flags = window_body_flags( flags );
 
     if ( !collapsed )
     {
@@ -928,7 +958,8 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     {
         f32 max_w, max_h;
         window_fit_bounds( win, &max_w, &max_h );
-        window_fit_size( title, title_h, fit_mb_h, can_collapse, win->scroll.content_w, win->scroll.content_h,
+        window_fit_size( title, title_h, fit_mb_h, can_collapse, window_body_flags( flags ),
+                         win->scroll.content_w, win->scroll.content_h,
                          max_w, max_h, &win->w, &win->h );
     }
 

@@ -284,6 +284,13 @@ void layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad,
                          gui_win_flags_t flags, gui_scroll_link_t* scroll, bool own_clip );
 void layout_pop_region ( void );
 
+/* THE gutter rule: what a region with `flags` carves out of a candidate view_w x view_h to seat
+   its scrollbars, given the content it must hold.  layout_push_region SUBTRACTS this from the
+   view; any path that sizes a BOX from measured content (window auto-fit, child auto-height)
+   must ADD it back, or the content ends up a knob short of the view it was fit to. */
+void region_gutters( gui_win_flags_t flags, f32 content_w, f32 content_h, f32 view_w, f32 view_h,
+                     f32* out_sb_w, f32* out_sb_h );
+
 /* Default region padding (the inset every window body / child opens with) -- the window
    chrome opens its body region with it. */
 #define REGION_PAD_DEFAULT ( ( gui_pad_t ){ WIDGET_PAD, WIDGET_PAD, WIDGET_GAP, WIDGET_GAP } )

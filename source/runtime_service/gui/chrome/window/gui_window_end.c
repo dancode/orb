@@ -323,6 +323,7 @@ window_end_size_grip( gui_window_t* win, bool native, u8 hot_edges )
                 f32  max_w, max_h;
                 window_fit_bounds( win, &max_w, &max_h );
                 window_fit_size( s_build.win.title, s_build.win.title_h, grip_mb_h, collapsible,
+                                 window_body_flags( s_build.win.flags ),
                                  win->scroll.content_w, win->scroll.content_h, max_w, max_h, &win->w, &win->h );
                 /* Native floater: forward the fit size to the OS window. */
                 if ( native && win->viewport != 0 )

@@ -8,6 +8,7 @@
         region_get          persistent scroll + content-size state, keyed by id
         region_spill_tol /
         scroll_clamp        the scroll range: [0, content - view], with the sub-quantum tolerance
+        region_gutters      THE gutter rule: which bars show, and what they cost the view
         layout_push_region  open a region: reserve gutters, clamp scroll, seed a layout frame
         layout_pop_region   close a region: measure content, emit the bars, claim the wheel
         nav_scroll_chase    the keyboard analogue of the wheel, over the open region stack
@@ -74,6 +75,47 @@ scroll_clamp( f32* scroll, f32 content, f32 view )
 }
 
 /*==============================================================================================
+    region_gutters -- the scrollbar gutters a region would carve out of a candidate view.
+
+    THE one rule for "does a bar show, and what does it cost", so the two sides of that question
+    can never drift: layout_push_region SUBTRACTS the answer from the view it hands the content,
+    and the auto-fit paths (window_fit_size, child_begin's auto height) ADD it back to the box
+    they size from that content.  A fit that skips the add-back measures content against a view
+    a knob wider than the one it will get -- the trailing column then ellipsizes under the very
+    bar the fit caused.
+
+    Two passes, since each gutter shrinks the CROSS view and can tip the other axis into
+    overflow.  Overflow within the spill tolerance reads as fitting, matching the scroll range
+    scroll_clamp allows -- a bar never appears for a range the clamp would zero out.
+==============================================================================================*/
+
+void
+region_gutters( gui_win_flags_t flags, f32 content_w, f32 content_h, f32 view_w, f32 view_h,
+                f32* out_sb_w, f32* out_sb_h )
+{
+    /* Policy: ALWAYS_* force a static bar; NOSCROLL hides every bar (wheel still works);
+       otherwise dynamic -- vertical defaults on, horizontal only when HSCROLL is requested. */
+    bool no_bars  = ( flags & GUI_WIN_NOSCROLL )       != 0;
+    bool v_static = ( flags & GUI_WIN_ALWAYS_VSCROLL ) != 0;
+    bool h_static = ( flags & GUI_WIN_ALWAYS_HSCROLL ) != 0;
+    bool v_dyn    = !no_bars && !v_static;
+    bool h_dyn    = !no_bars && !h_static && ( ( flags & GUI_WIN_HSCROLL ) != 0 );
+
+    const f32 knob = SLIDER_KNOB_W;
+    const f32 tol  = region_spill_tol();
+
+    bool show_v = v_static || ( v_dyn && content_h > view_h + tol );
+    bool show_h = h_static || ( h_dyn && content_w > view_w + tol );
+    if ( show_v ) view_w -= knob;
+    if ( show_h ) view_h -= knob;
+    if ( !show_v && v_dyn && content_h > view_h + tol ) { show_v = true; view_w -= knob; }
+    if ( !show_h && h_dyn && content_w > view_w + tol ) { show_h = true; view_h -= knob; }
+
+    *out_sb_w = show_v ? knob : 0.0f;
+    *out_sb_h = show_h ? knob : 0.0f;
+}
+
+/*==============================================================================================
     layout_push_region -- open a scrollable region.
 
     `outer` is the region box in screen space; `pad` insets the content column from its left
@@ -124,36 +166,19 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
        which is what lets a kit bracket a whole window from outside it. */
     f->set_restore = style_set_depth();
 
-    const f32 knob = SLIDER_KNOB_W;
-
-    /* Policy: ALWAYS_* force a static bar; NOSCROLL hides every bar (wheel still works);
-       otherwise dynamic -- vertical defaults on, horizontal only when HSCROLL is requested. */
-    bool no_bars  = ( flags & GUI_WIN_NOSCROLL )       != 0;
-    bool v_static = ( flags & GUI_WIN_ALWAYS_VSCROLL ) != 0;
-    bool h_static = ( flags & GUI_WIN_ALWAYS_HSCROLL ) != 0;
-    bool v_dyn    = !no_bars && !v_static;
-    bool h_dyn    = !no_bars && !h_static && ( ( flags & GUI_WIN_HSCROLL ) != 0 );
-
     /* View extents inside the border, before reserving any gutter. */
     f32 view_h = outer.h - WIN_BORDER;
     f32 view_w = outer.w - 2.0f * WIN_BORDER;
 
-    /* Two-pass gutter reservation from last frame's content.  Overflow within the spill
-       tolerance reads as fitting, matching the scroll range scroll_clamp allows -- a bar never
-       appears for a range the clamp would zero out. */
-    f32 tol    = region_spill_tol();
+    /* Reserve the gutters from last frame's measured content (region_gutters above -- the same
+       rule the auto-fit paths add back), then take them out of the view. */
     f32 last_h = scroll->content_h, last_w = scroll->content_w;
-    bool show_v = v_static || ( v_dyn && last_h > view_h + tol );
-    bool show_h = h_static || ( h_dyn && last_w > view_w + tol );
-    if ( show_v ) view_w -= knob;
-    if ( show_h ) view_h -= knob;
-    if ( !show_v && v_dyn && last_h > view_h + tol ) { show_v = true; view_w -= knob; }
-    if ( !show_h && h_dyn && last_w > view_w + tol ) { show_h = true; view_h -= knob; }
+    region_gutters( flags, last_w, last_h, view_w, view_h, &f->sb_w, &f->sb_h );
+    view_w -= f->sb_w;
+    view_h -= f->sb_h;
 
-    f->sb_w   = show_v ? knob : 0.0f;
-    f->sb_h   = show_h ? knob : 0.0f;
-    f->show_v = show_v;
-    f->show_h = show_h;
+    f->show_v = f->sb_w > 0.0f;
+    f->show_h = f->sb_h > 0.0f;
 
     /* THE view rect (see layout_frame_t): the one screen-space "visible" answer every consumer
        below reads -- clips, content track, bars, scroll chase.  Sized here and only here. */

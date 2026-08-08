@@ -122,6 +122,10 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
             if ( w > vis ) w = vis;
         }
 
+        /* Latched before the size resolution below overwrites h: the auto-height case owes the
+           gutter add-back after the constraint clamps. */
+        bool auto_h = !resize_y && ( h <= 0.0f );
+
         /* A resizeable axis takes its size from the persisted user value, seeded once from the
            incoming w/h (a sensible 8-row default when h <= 0 -- RESIZE_Y supersedes auto-size). */
         if ( resize_x )
@@ -138,7 +142,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
            AutoResizeY case): the box hugs its widgets, like an ALWAYS_AUTOSIZE window on the
            vertical axis.  Before any content is measured (first frame) it opens one widget-row
            tall and settles next frame.  An auto-sized child has nothing to scroll. */
-        else if ( h <= 0.0f )
+        else if ( auto_h )
             h = size_animate( ( rg->scroll.content_h > 0.0f ) ? rg->scroll.content_h + WIN_BORDER : WIDGET_H,
                               GUI_ID_NONE, 0.0f );
 
@@ -146,6 +150,22 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
            to max_h then the default vertical scrollbar takes over, and never shrinks below min_h. */
         w = child_con_clamp( w, con_min_w, con_max_w );
         h = child_con_clamp( h, con_min_h, con_max_h );
+
+        /* The hug above sizes the view to the content EXACTLY, which leaves nothing for a
+           horizontal bar: once one shows, layout_push_region carves its gutter out of that same
+           view and the last row clips under it.  Add back what the region will take (THE gutter
+           rule -- region_gutters, flow/gui_scroll.c), re-clamped, so a box already at max_h just
+           scrolls instead.  The vertical gutter is deliberately NOT added back: the width here is
+           the caller's or the parent's visible track, not a fit to content, so growing it would
+           push the box past the column it was told to fill. */
+        if ( auto_h )
+        {
+            f32 sb_w, sb_h;
+            region_gutters( flags, rg->scroll.content_w, rg->scroll.content_h,
+                            w - 2.0f * WIN_BORDER, h - WIN_BORDER, &sb_w, &sb_h );
+            if ( sb_h > 0.0f )
+                h = child_con_clamp( h + sb_h, con_min_h, con_max_h );
+        }
 
         box = ( gui_rect_t ){ parent->content_x, layout_next_y( parent ), w, h };
     }
