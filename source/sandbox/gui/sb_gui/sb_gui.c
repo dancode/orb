@@ -83,7 +83,7 @@ demo_volatile_pulse_cb( gui_id_t id, bool is_replay )
 // - BeginMenuBar() = menu-bar inside current window (which needs the ImGuiWindowFlags_MenuBar flag!)
 // - BeginMainMenuBar() = helper to create menu-bar-sized window at the top of the main viewport + call BeginMenuBar() into it.
 
-static bool show_demo = false;
+static bool show_demo = true;
 
 static void show_example_main_menu_bar()
 {
@@ -237,7 +237,7 @@ main( int argc, char** argv )
 
     gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui",
-        .w         = 1280, .h = 720,
+        .w         = 1280, .h = 960,
         .os_chrome = true,
         .font      = GUI_FONT_CASCADIA_MONO_16,
         .clock     = sys_tick_seconds,

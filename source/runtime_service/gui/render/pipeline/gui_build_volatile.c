@@ -296,12 +296,38 @@ volatile_footprint_reflow( gui_volatile_slot_t* row, f32 w, f32 h )
 
 /* Called by gui_volatile_cb right after the callback returns during real emit -- closes the
    command-range bracket, tags every command in it with `id` (cmd_volatile_id is a range tag, not
-   a single-command tag), and stores the callback pointer.  Also computes `hidden`: a range whose
-   every command sits in an empty clip (scrolled out of a container) produces no geometry when the
-   window tessellates, so there is nothing to capture or patch until it becomes visible again --
-   which takes a scroll, which is input, which is a real frame. */
+   a single-command tag), stores the callback pointer, and CONFINES the range to `cell`: the
+   block's own layout cell, already intersected with its region's view by the caller.  NULL when
+   the callback never opened the footprint probe (no gui_volatile_begin), which is the same
+   condition that leaves the row unreplayable -- nothing to confine.
+
+   The confinement is stamped here rather than pushed before the callback because the cell is not
+   KNOWN until the callback returns and its footprint is measured; the commands are still plain
+   unconsumed data in the emit pool at this point, so re-pointing their clip index is free.
+
+   Two things come of it, and the second is why this exists at all:
+
+     - A block can no longer paint outside its own cell.  It never should have -- gui.h's
+       fixed-footprint contract says so and volatile_footprint asserts on it -- but until now the
+       only thing stopping a block scrolled under a title bar from covering it was the chrome
+       being drawn afterwards (window_open_body: one clip for the whole window, scroll-out
+       resolved by OVERPAINT rather than by scissor).  Now it is scissored, which is also strictly
+       cheaper than shading pixels that get painted over.
+     - That new clip rect is a distinct CLIP GROUP, and cache_tess_window lays groups out in
+       first-seen order with each one contiguous.  The window's own clip is group 0 (first seen at
+       the background), so the block sorts into a later group and lands after ALL of it -- chrome
+       included, safely, per the point above -- while the content that used to sit on either side
+       of the block merges into ONE draw call instead of being cut in two by it.  The block was
+       always going to be its own command (a patch must be able to rewrite its elem_counts); what
+       it no longer costs is a second command for everything that follows it.
+
+   Also computes `hidden`: a range whose every command sits in an empty clip (scrolled out of a
+   container) produces no geometry when the window tessellates, so there is nothing to capture or
+   patch until it becomes visible again -- which takes a scroll, which is input, which is a real
+   frame.  Measured AFTER the confinement, so a block scrolled out of its region's view is now
+   recognized as hidden by the same test. */
 void
-volatile_cb_close( gui_volatile_fn fn )
+volatile_cb_close( gui_volatile_fn fn, const gui_rect_t* cell )
 {
     if ( s_open_id == GUI_ID_NONE ) return;
     gui_volatile_slot_t* row = volatile_find( s_open_id );
@@ -309,12 +335,38 @@ volatile_cb_close( gui_volatile_fn fn )
     {
         u32  lo = s_open_cmd_lo, hi = s_draw.cmd_count;
         bool any_visible = false;
+
+        /* One-entry memo over the source clip: a block's commands almost always share the ambient
+           clip, so this resolves the intersection once.  Nested pushes inside the callback are
+           still honoured -- each distinct source clip gets its own confined rect. */
+        u8 memo_src = 0xFFu, memo_dst = 0u;
+
         for ( u32 i = lo; i < hi; ++i )
         {
             s_draw.cmd_volatile_id[ i ] = s_open_id;
+
+            if ( cell )
+            {
+                u8 src = s_draw.cmds[ i ].clip_idx;
+                if ( src != memo_src )
+                {
+                    memo_src = src;
+                    memo_dst = clip_append( rect_intersect( *cell, s_draw.clip_table[ src ] ) );
+                }
+                s_draw.cmds[ i ].clip_idx = memo_dst;
+            }
+
             if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
                 any_visible = true;
         }
+
+        /* Re-point the replay scope at the confined clip.  volatile_stamp recorded the AMBIENT one
+           from inside the callback, before the cell was known; volatile_update reinstalls
+           row->clip_idx as both cur_clip_idx and the one-deep clip stack, so leaving it stale
+           would replay the block under a looser clip than the real emit drew with. */
+        if ( cell && hi > lo )
+            row->clip_idx = s_draw.cmds[ lo ].clip_idx;
+
         row->cmd_lo = (u16)lo;
         row->cmd_hi = (u16)hi;
         row->fn     = fn;

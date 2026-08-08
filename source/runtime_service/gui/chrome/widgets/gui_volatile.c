@@ -54,6 +54,11 @@ static f32  s_foot_x, s_foot_y;             // cell origin the open block was st
 static f32  s_foot_high_x, s_foot_high_y;   // caller's highwater, parked for the block's duration
 static bool s_foot_open;                    // gui_volatile_begin ran for the block now emitting
 
+/* Margin the measured cell is grown by before it becomes the block's clip -- see gui_volatile_cb.
+   Ink can exceed layout by a fraction of a pixel where an advance does not cover a glyph's
+   bitmap; nothing DRAWS into the margin, so it relaxes the cut without loosening the cell. */
+#define VOL_CELL_INK  2.0f
+
 /* gui_volatile_cb wraps one real-emit invocation of `fn` so the backend can bracket the exact
    command range it produces (volatile_cb_open/_close, gui_render.h); the callback itself
    calls gui_volatile_begin/end from inside its own body, per the caller's own code -- begin
@@ -74,15 +79,44 @@ gui_volatile_cb( const char* label, gui_volatile_fn fn )
        caller's parked highwater back as a max, leaving the region measuring exactly what it would
        have without the probe.  A callback that never called gui_volatile_begin leaves the probe
        closed and reports nothing; the row has no cursor stamp either, so it never replays. */
+    gui_rect_t  cell;
+    gui_rect_t* cellp = NULL;
+
     if ( s_foot_open )
     {
-        layout_frame_t* f = lf();
-        volatile_footprint( f->high_x - s_foot_x, f->high_y - s_foot_y );
+        layout_frame_t* f  = lf();
+        f32             fw = f->high_x - s_foot_x;
+        f32             fh = f->high_y - s_foot_y;
+
+        volatile_footprint( fw, fh );
         if ( s_foot_high_x > f->high_x ) f->high_x = s_foot_high_x;
         if ( s_foot_high_y > f->high_y ) f->high_y = s_foot_high_y;
         s_foot_open = false;
+
+        /* The cell the block just claimed, cut to the region's VIEW -- the clip the block hands
+           the backend to confine its command range with (volatile_cb_close explains what that
+           buys).  The view is what makes it scroll-safe: a window body shares one clip rect with
+           its title bar and border and resolves scroll-out by overpainting (window_open_body), so
+           the cell ALONE would still reach the chrome once the block scrolls under it.  f->view is
+           that region's visible box, already inset by the border and by any reserved scrollbar
+           gutter, and every frame a real emit can run in sets it (layout_push_region,
+           sublayout_open).
+             The footprint measured above is the extent the block CLAIMED, which is exactly what
+           the fixed-footprint contract entitles it to paint in -- so confining it here enforces
+           that contract rather than narrowing it.  VOL_CELL_INK of margin absorbs the one honest
+           way ink exceeds layout: a glyph whose bitmap overhangs its advance (italics, heavy side
+           bearings) would otherwise lose a column at the cell's right edge.  Widening the clip
+           cannot widen what the block DRAWS, so the margin costs the confinement argument nothing
+           -- the block's geometry still lands in its own cell, which is what makes drawing it
+           after its neighbours safe. */
+        cell  = rect_intersect( ( gui_rect_t ){ s_foot_x - VOL_CELL_INK, s_foot_y - VOL_CELL_INK,
+                                                fw + 2.0f * VOL_CELL_INK,
+                                                fh + 2.0f * VOL_CELL_INK },
+                                f->view );
+        cellp = &cell;
     }
-    volatile_cb_close( fn );
+
+    volatile_cb_close( fn, cellp );
 }
 
 void

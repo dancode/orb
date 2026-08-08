@@ -260,33 +260,37 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
             gui_draw_rect( x0, bar.y, xa - x0, bar.h, col );   /* whole reservation as one flat fill */
         }
 
-        /* Volatile sub-slots: brighter strips over the full height of their owner's extent. */
-        if ( vb_axis )
+        /* Volatile sub-slots: brighter strips over the full height of their owner's extent.  Axis-
+           switched like every other figure in this shared body -- a block reserves headroom in BOTH
+           arenas (VOL_VERT_PAD / VOL_IDX_PAD), and the index reservation is what leaves the gaps
+           that make each GPU command carry its own first_index. */
+        for ( u32 v = 0; v < sn->vol_count; ++v )
         {
-            for ( u32 v = 0; v < sn->vol_count; ++v )
-            {
-                const dash_vol_t* vo = &sn->vols[ v ];
-                if ( !vo->active || vo->win != sl->win ) continue;
-                f32 vx0 = bar.x + (f32)( base + vo->lvert_base ) * px_per;
-                f32 vx1 = bar.x + (f32)( base + vo->lvert_base + vo->vert_alloc ) * px_per;
-                gui_rect_t vr = { vx0, bar.y + 1.0f, vx1 - vx0, bar.h - 2.0f };
-                gui_draw_rect( vr.x, vr.y, vr.w, vr.h, DASH_COL_VOLATILE );
+            const dash_vol_t* vo = &sn->vols[ v ];
+            if ( !vo->active || vo->win != sl->win ) continue;
 
-                if ( dash_tip_at( vr ) )
+            u32 vbase  = vb_axis ? vo->lvert_base : vo->lidx_base;
+            u32 valloc = vb_axis ? vo->vert_alloc : vo->idx_alloc;
+
+            f32 vx0 = bar.x + (f32)( base + vbase ) * px_per;
+            f32 vx1 = bar.x + (f32)( base + vbase + valloc ) * px_per;
+            gui_rect_t vr = { vx0, bar.y + 1.0f, vx1 - vx0, bar.h - 2.0f };
+            gui_draw_rect( vr.x, vr.y, vr.w, vr.h, DASH_COL_VOLATILE );
+
+            if ( dash_tip_at( vr ) )
+            {
+                char nb[ 12 ], wb[ 12 ];
+                if ( gui_tooltip_begin() )
                 {
-                    char nb[ 12 ], wb[ 12 ];
-                    if ( gui_tooltip_begin() )
-                    {
-                        gui_stack();
-                        gui_textf( "volatile %s  in %s", dash_name( vo->id, nb, sizeof( nb ) ),
-                                   dash_name( vo->win, wb, sizeof( wb ) ) );
-                        gui_textf( "verts +%u  %u / %u reserved", vo->lvert_base, vo->vert_count,
-                                   vo->vert_alloc );
-                        gui_textf( "idx   +%u  %u / %u reserved", vo->lidx_base, vo->idx_count,
-                                   vo->idx_alloc );
-                    }
-                    gui_tooltip_end();
+                    gui_stack();
+                    gui_textf( "volatile %s  in %s", dash_name( vo->id, nb, sizeof( nb ) ),
+                               dash_name( vo->win, wb, sizeof( wb ) ) );
+                    gui_textf( "verts +%u  %u / %u reserved", vo->lvert_base, vo->vert_count,
+                               vo->vert_alloc );
+                    gui_textf( "idx   +%u  %u / %u reserved", vo->lidx_base, vo->idx_count,
+                               vo->idx_alloc );
                 }
+                gui_tooltip_end();
             }
         }
 

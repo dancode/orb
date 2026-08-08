@@ -1913,6 +1913,11 @@ gui_vert_fxc( f32 x, f32 y, f32 u, f32 v, u32 abgr, f32 ex, f32 ey )
     the check latches off for it (Debug asserts).  Still prefer fixed-size formatting ("%8.3f" with
     a mono font), a fixed canvas(), or padding: a footprint that changes every frame gives up the
     idle skip entirely, which is the whole point of the widget.
+      The footprint is also the block's CLIP: the range is scissored to the cell it measured, cut
+    to its region's view (volatile_cb_close).  So the contract bounds where a block can paint, not
+    only where it lays out -- ink past the cell is cut rather than landing on a neighbour or on the
+    window chrome, and the block's geometry batches apart from the rest of the window instead of
+    splitting it in two.
 
     CONTRACT -- flow layouts only: the replay scope is a minimal single-column stack at the cell
     the block occupied, so stack and columns call sites replay exactly (a block in a multi-track

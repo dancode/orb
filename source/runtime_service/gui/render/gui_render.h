@@ -375,7 +375,9 @@ void                build_dump_geometry     ( void );
     (chrome/widgets/gui_volatile.c) wraps one real-emit invocation of a callback with these three calls --
     volatile_cb_open records where its commands start, volatile_stamp (called from inside
     the callback body, by gui_volatile_begin) records the window/z/vp/font/clip context and the
-    layout cursor position, and volatile_cb_close records where they end and tags the range.
+    layout cursor position, and volatile_cb_close records where they end, tags the range, and
+    CONFINES it to the cell the block just measured (see there -- the clip the block should always
+    have had, and the reason its geometry can batch apart from the rest of the window).
     tess_dispatch (gui_build_tess.c) then reserves the block a padded region of its window's slot
     (vertices, indices, and its own GPU commands, each with headroom past the live geometry).
     volatile_update is called internally by gui_frame_end on frames where
@@ -400,7 +402,7 @@ void                build_dump_geometry     ( void );
 void     volatile_cb_open   ( gui_id_t id );                    // (re)open row `id`; cmd_lo = current cmd_count
 void     volatile_stamp     ( f32 x, f32 y, f32 w );            // fill win/z/vp/font/clip + cursor stamp for the open row
 void     volatile_footprint ( f32 w, f32 h );                   // layout extent this real emit claimed, for the reflow check
-void     volatile_cb_close  ( gui_volatile_fn fn );             // cmd_hi + fn for the open row; tags the command range
+void     volatile_cb_close  ( gui_volatile_fn fn, const gui_rect_t* cell );   // cmd_hi + fn; tags + confines the range
 void     volatile_update    ( void );
 u32      volatile_row_count ( void );                           // registered registry rows (perf overlay, vs GUI_MAX_VOLATILE)
 bool     gui_volatile_live  ( void );                           // any row patchable RIGHT NOW -- gui_frame_pace must keep
