@@ -264,8 +264,8 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
     --- Run Compile Command ---
 
     Shared tail for both compile entry points: print sections, assemble, echo
-    raw command if requested, then run. includes_path is forwarded to
-    build_run_cmd_capture_includes; NULL means no includes file is written.
+    raw command if requested, then run. includes_path is non-NULL only when the
+    compiler streams its dependency list on stdout for us to peel off.
 ==============================================================================================*/
 
 static bool
@@ -285,16 +285,16 @@ cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config
     log_close( log_out );
 
     if ( !ok ) return false;
-    return build_run_cmd_capture_includes( cmd.buf, includes_path ) == 0;
+    return build_run_cmd_capture( cmd.buf, includes_path ) == 0;
 }
 
 /*==============================================================================================
 
     build_target_compile()
 
-    Full unity compile: all target units + generated reflect file. Adds /showIncludes
-    when include tracking is active so the captured output feeds _includes.txt for
-    the next incremental up-to-date check.
+    Full unity compile: all target units + generated reflect file. When include tracking
+    is active the compiler is asked for per-unit dependency files, which are collected
+    into _includes.txt for the next incremental up-to-date check.
 
 ==============================================================================================*/
 
@@ -307,8 +307,18 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
 
     cc_fill_compile_cmd( ctx, target, obj_dir, gen_dir, &cc_base );
 
-    // Dep-tracking flag: /showIncludes (MSVC inline stream) or -MMD (GCC .d file).
-    if ( g_include_track ) CC_APPEND( cc_base.flags, " %s", platform_cc_dep_flag() );
+    // Dep-tracking flag. Most toolchains write per-unit dep files that
+    // platform_cc_collect_dep_files reads once the compile lands (/sourceDependencies
+    // JSON on MSVC, -MMD makefile fragments on GCC/Clang); clang-cl instead streams
+    // /showIncludes on stdout, peeled off line-by-line as the child runs.
+    bool dep_inline = g_include_track && platform_cc_dep_is_inline( ctx->compiler );
+
+    if ( g_include_track )
+    {
+        char dep_flag[ PATH_MAX + 32 ];
+        platform_cc_dep_flag( ctx->compiler, obj_dir, dep_flag, sizeof( dep_flag ) );
+        CC_APPEND( cc_base.flags, " %s", dep_flag );
+    }
 
     // Collect all source paths first -- common to both the per-unit and batch paths.
     // Use '/' as separator: accepted by cl.exe, link.exe, gcc, and clang on all platforms.
@@ -360,11 +370,23 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     }
     else
     {
-        // Win32: batch all sources into one cl.exe invocation.
+        // Win32: batch all sources into one cl.exe invocation, split across child
+        // compilers by /MP<n> when the target has enough units to be worth it.
+        char mp_flag[ 16 ];
+        platform_cc_mp_flag( ctx->compiler, n_sources, mp_flag, sizeof( mp_flag ) );
+        if ( mp_flag[ 0 ] ) CC_APPEND( cc_base.flags, " %s", mp_flag );
+
         platform_cc_output_flags( obj_dir, NULL, cc_base.output, sizeof( cc_base.output ) );
         for ( int i = 0; i < n_sources; ++i )
             CC_APPEND( cc_base.sources, "%s%s", cc_base.sources[ 0 ] ? " " : "", sources[ i ] );
-        return cc_run_compile_cmd( &cc_base, target, config, obj_dir, "cl.rsp", includes_out );
+
+        // Inline capture writes _includes.txt as the child runs; the file-based path
+        // gathers the compiler's dep files once it has exited.
+        if ( !cc_run_compile_cmd( &cc_base, target, config, obj_dir, "cl.rsp",
+                                  dep_inline ? includes_out : NULL ) )
+            return false;
+        if ( g_include_track && !dep_inline ) platform_cc_collect_dep_files( obj_dir, includes_out );
+        return true;
     }
 }
 
@@ -373,7 +395,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
     build_target_compile_single()
 
     Compiles one source file with the target's full flag/define/include set.
-    Used by the -file flag. No /showIncludes, no includes file -- single-file
+    Used by the -file flag. No dep files, no includes file -- single-file
     compiles are not tracked incrementally.
 
 ==============================================================================================*/

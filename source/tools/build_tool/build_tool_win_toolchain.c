@@ -11,7 +11,8 @@
         platform_cc_append_include() -- "-I <path>"
         platform_cc_append_define()  -- "-D<name>"
         platform_cc_output_flags()   -- "-o <obj_dir>/<unit_stem>.o"  (per-file, not per-dir)
-        platform_cc_dep_flag()       -- "-MMD -MF <depfile>"  (post-compile .d file, not inline stream)
+        platform_cc_dep_flag()       -- "-MMD"  (.d file next to the object, not a dep dir)
+        platform_cc_mp_flag()        -- (empty on POSIX; per-unit compiles are not batched)
 
         platform_lk_fill_static()    -- "ar rcs bin/lib<name>.a ..."
         platform_lk_fill_dynamic()   -- "gcc -shared -o bin/lib<name>.so ..." /
@@ -27,7 +28,8 @@
         platform_cc_append_include()    -- append "/I <path>" to an includes field
         platform_cc_append_define()     -- append "/D<name>" to a defines field
         platform_cc_output_flags()      -- output-dir flags (/Fo /Fd)
-        platform_cc_dep_flag()          -- dependency-tracking flag string (/showIncludes)
+        platform_cc_dep_flag()          -- dependency-tracking flags (/sourceDependencies <dir>/)
+        platform_cc_mp_flag()           -- multi-process batch flag (/MP<n>), width-gated
 
     Linker / archiver functions:
         platform_lk_fill_static()       -- fill link_cmd_t for a static lib (lib.exe)
@@ -127,9 +129,9 @@ platform_cc_output_flags( const char* obj_dir, const char* unit_path, char* buf,
     .obj files into the /Fo<dir>/ directory -- platform_cc_per_unit returns false.
     POSIX: GCC/Clang require a separate -o <dir>/<stem>.o per source file and return true.
 
-    Dep file collection is also model-dependent: MSVC streams /showIncludes inline (handled
-    by build_run_cmd_capture_includes), so platform_cc_collect_dep_files is a no-op here.
-    POSIX writes per-unit .d files after compilation that must be read and merged.
+    Both models write per-unit dependency files that platform_cc_collect_dep_files reads
+    into _includes.txt after the compile: MSVC emits <unit>.c.json (/sourceDependencies),
+    GCC/Clang emit <unit>.d (-MMD).
 ==============================================================================================*/
 
 static bool
@@ -138,29 +140,98 @@ platform_cc_per_unit( void )
     return false;
 }
 
+/*  Delegates to win_collect_dep_files() in build_tool_win_spawn.c. Never called for
+    clang-cl -- that path streams its includes inline and 06_spawn.c has already
+    written the file by the time the compile returns. */
+
 static void
 platform_cc_collect_dep_files( const char* obj_dir, const char* includes_path )
 {
-    ( void )obj_dir;
-    ( void )includes_path;
+    win_collect_dep_files( obj_dir, includes_path );
 }
 
 /*==============================================================================================
     --- Compiler: Dependency Tracking Flag ---
 
-    MSVC: /showIncludes emits "Note: including file: <path>" on stdout for every
-    header visited. build_run_cmd_capture_includes() streams and parses this output
+    MSVC: /sourceDependencies <dir>/ writes one <unit>.c.json per translation unit listing
+    every header it visited. win_parse_dep_json() in build_tool_win_spawn.c flattens those
     into _includes.txt for the incremental header-change check.
 
-    GCC/Clang: -MMD writes a Makefile .d file after compilation.
-    The posix toolchain returns "-MMD"; build_collect_dep_files() in 05_spawn.c
-    reads those .d files into _includes.txt after the per-unit compile loop.
+    The older /showIncludes streamed the same information inline on stdout, but cl.exe
+    refuses to combine it with multi-process compilation:
+
+        cl : Command line warning D9030 : '/showIncludes' is incompatible with
+             multiprocessing; ignoring /MP switch
+
+    That warning does not fail the build -- it silently drops /MP -- so moving to
+    /sourceDependencies is what makes platform_cc_mp_flag() below actually take effect.
+
+    clang-cl: stays on /showIncludes. It parses /sourceDependencies but does nothing with
+    it ("argument unused during compilation") and writes no .json, which would leave
+    _includes.txt empty and silently disable header tracking. Its -MD equivalent writes
+    dep files into the working directory rather than /Fo, which would litter the repo
+    root. Nothing is lost: clang-cl ignores /MP too, so there is no batch split to protect
+    and the inline stream costs nothing extra.
 ==============================================================================================*/
 
-static const char*
-platform_cc_dep_flag( void )
+static bool
+platform_cc_dep_is_inline( compiler_t compiler )
 {
-    return "/showIncludes";
+    return compiler == COMPILE_CLANG;
+}
+
+static void
+platform_cc_dep_flag( compiler_t compiler, const char* obj_dir, char* buf, size_t size )
+{
+    if ( platform_cc_dep_is_inline( compiler ) )
+    {
+        snprintf( buf, size, "/showIncludes" );
+        return;
+    }
+
+    // Trailing slash marks the argument as a directory; without it cl.exe treats
+    // the path as a single output filename and every unit overwrites the last.
+    snprintf( buf, size, "/sourceDependencies %s/", obj_dir );
+}
+
+/*==============================================================================================
+    --- Compiler: Multi-Process Compilation ---
+
+    /MP<n> splits one batch compile across n cl.exe child processes. It only pays on a
+    target wide enough to fill them -- below MP_MIN_UNITS the spawn cost dominates, and
+    most targets in the tree are a single unity unit where /MP has nothing to divide.
+
+    The share is scaled against the scheduler's worker count. Those workers are already
+    building independent targets in parallel, so the box is shared: n = cpu / workers is
+    each worker's slice of it. When that slice comes out below 2 the scheduler is already
+    saturating every core and /MP is left off entirely rather than oversubscribing.
+
+    That makes the single-target case the big winner, which is the point -- `-target gui`
+    and build_hot.bat run one job while every other core sits idle. Measured end to end on
+    gui (15 units, Debug, 32 logical CPUs): 0.95s -> 0.37s.
+
+    clang-cl accepts /MP and ignores it, so the flag is left off there rather than emitting
+    an argument the compiler will only warn about.
+==============================================================================================*/
+
+#define MP_MIN_UNITS   4    // Fewest units in a batch that justify multi-process compilation.
+#define MP_MAX_SHARE   8    // Past this the batch is I/O bound and extra children add nothing.
+
+static void
+platform_cc_mp_flag( compiler_t compiler, int unit_count, char* buf, size_t size )
+{
+    buf[ 0 ] = '\0';
+    if ( compiler == COMPILE_CLANG ) return;
+    if ( unit_count < MP_MIN_UNITS ) return;
+
+    int workers = ( g_job_threads > 0 ) ? g_job_threads : 1;
+    int share   = platform_cpu_count() / workers;
+
+    if ( share < 2 ) return;   // scheduler already owns every core; do not oversubscribe
+    if ( share > MP_MAX_SHARE ) share = MP_MAX_SHARE;
+    if ( share > unit_count   ) share = unit_count;
+
+    snprintf( buf, size, "/MP%d", share );
 }
 
 /*==============================================================================================

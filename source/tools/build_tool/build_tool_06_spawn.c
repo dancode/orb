@@ -4,8 +4,8 @@
 
     All child-process invocations route through one of two helpers:
 
-        build_run_cmd()                     -- run + wait, output to log or stdout.
-        build_run_cmd_capture_includes()    -- run + wait, parse /showIncludes lines.
+        build_run_cmd()             -- run + wait, output to log or stdout.
+        build_run_cmd_capture()     -- run + wait, route each output line through a filter.
 
     Both delegate to the platform layer (build_tool_win_spawn.c / build_tool_posix_spawn.c)
     rather than calling system() / _popen / _pclose directly. The platform layer uses
@@ -55,103 +55,105 @@ build_run_cmd_quiet( const char* cmd )
 #endif
 
 /*==============================================================================================
-    --- Include Line Classification ---
+    --- Output Line Filtering ---
 
-    Classify one line of cl.exe stdout/stderr:
+    Route one line of compiler / linker stdout/stderr to the build sink (worker log or
+    stdout). Diagnostics always pass; everything else is gated on ORB_OUT_MSVC_OUTPUT.
 
-      "Note: including file: <path>" -- extract the header path, filter out VC
-        toolchain and Windows SDK paths (project source can't invalidate those),
-        and write what remains to the per-target _includes.txt file.
+    When includes is non-NULL the caller has asked for inline dependency capture, and
+    "Note: including file: <path>" lines are peeled off into that file instead of being
+    forwarded. Only clang-cl takes this path -- see platform_cc_dep_is_inline(). MSVC and
+    GCC/Clang write per-unit dep files that platform_cc_collect_dep_files reads afterwards,
+    and pass NULL here.
 
-      Everything else -- forward to the build sink (worker log or stdout) so
-        compile warnings, errors, and source banners are still visible.
-
-    NOTE: The "Note: including file:" prefix is English-only. For other locales,
-    set VSLANG=1033 in the environment before launching the build.
+    NOTE: the "Note: including file:" prefix is English-only. For other locales, set
+    VSLANG=1033 in the environment before launching the build.
 ==============================================================================================*/
 
 static void
-process_includes_line( char* line, FILE* includes, FILE* out )
+process_output_line( char* line, FILE* includes, FILE* out )
 {
-    static const char   k_prefix[] = "Note: including file:";
-    static const size_t k_prefix_n = sizeof( k_prefix ) - 1;
-
-    // Skip leading whitespace -- cl.exe indents indirect includes.
-    char* p = line;
-    while ( *p == ' ' || *p == '\t' ) ++p;
-
-    if ( strncmp( p, k_prefix, k_prefix_n ) == 0 )
+    if ( includes )
     {
-        // --- Header path branch ---
-        char* path = p + k_prefix_n;
-        while ( *path == ' ' || *path == '\t' ) ++path;
+        static const char   k_prefix[] = "Note: including file:";
+        static const size_t k_prefix_n = sizeof( k_prefix ) - 1;
 
-        size_t l = strlen( path );
-        while ( l > 0 && ( path[ l - 1 ] == '\r' || path[ l - 1 ] == '\n' ) ) path[ --l ] = '\0';
-        if ( l == 0 ) return;
+        // Skip leading whitespace -- cl.exe indents indirect includes by depth.
+        char* p = line;
+        while ( *p == ' ' || *p == '\t' ) ++p;
 
-        // Filter out VC toolchain and Windows SDK headers -- those are never
-        // invalidated by project source edits, so tracking them wastes I/O.
-        bool is_system =    strstr( path, "\\VC\\Tools\\" )    != NULL
-                         || strstr( path, "\\Windows Kits\\" ) != NULL
-                         || strstr( path, "/VC/Tools/" )       != NULL
-                         || strstr( path, "/Windows Kits/" )   != NULL;
-        if ( includes && !is_system ) fprintf( includes, "%s\n", path );
-    }
-    else
-    {
-        // --- Diagnostic / banner branch ---
-        // Diagnostics always reach the user even in quiet mode; losing an error
-        // is far worse than printing an extra line.
-        bool is_diagnostic = ( strstr( line, ": error"       ) != NULL )
-                          || ( strstr( line, ": warning"     ) != NULL )
-                          || ( strstr( line, ": note"        ) != NULL )
-                          || ( strstr( line, ": fatal error" ) != NULL );
-
-        if ( is_diagnostic || ( g_out_flags & ORB_OUT_MSVC_OUTPUT ) )
+        if ( strncmp( p, k_prefix, k_prefix_n ) == 0 )
         {
-            // Drop bare source-file echoes ("foo.c"); the orb log already
-            // shows the source list, so cl's echo adds duplicate noise.
-            //
-            // No leading blank-line on first diagnostic: a previous attempt
-            // used a process-wide static int counter, but the scheduler runs
-            // workers concurrently against per-target log sinks -- the static
-            // was shared across all of them and only ever fired once per
-            // process. The per-target log dump in 10_sched.c already handles
-            // its own framing.
-            if ( !is_msvc_source_echo( line ) )
-                fprintf( out, ORB_INDENT "%s\n", line );
+            char* path = p + k_prefix_n;
+            while ( *path == ' ' || *path == '\t' ) ++path;
+
+            size_t l = strlen( path );
+            while ( l > 0 && ( path[ l - 1 ] == '\r' || path[ l - 1 ] == '\n' ) ) path[ --l ] = '\0';
+            if ( l == 0 ) return;
+
+            // Toolchain headers are never invalidated by project edits -- tracking
+            // them wastes I/O on every up-to-date check.
+            bool is_system =    strstr( path, "\\VC\\Tools\\" )    != NULL
+                             || strstr( path, "\\Windows Kits\\" ) != NULL
+                             || strstr( path, "/VC/Tools/" )       != NULL
+                             || strstr( path, "/Windows Kits/" )   != NULL;
+            if ( !is_system ) fprintf( includes, "%s\n", path );
+            return;
         }
+    }
+
+    // Diagnostics always reach the user even in quiet mode; losing an error
+    // is far worse than printing an extra line.
+    bool is_diagnostic = ( strstr( line, ": error"       ) != NULL )
+                      || ( strstr( line, ": warning"     ) != NULL )
+                      || ( strstr( line, ": note"        ) != NULL )
+                      || ( strstr( line, ": fatal error" ) != NULL );
+
+    if ( is_diagnostic || ( g_out_flags & ORB_OUT_MSVC_OUTPUT ) )
+    {
+        // Drop bare source-file echoes ("foo.c"); the orb log already
+        // shows the source list, so cl's echo adds duplicate noise.
+        //
+        // No leading blank-line on first diagnostic: a previous attempt
+        // used a process-wide static int counter, but the scheduler runs
+        // workers concurrently against per-target log sinks -- the static
+        // was shared across all of them and only ever fired once per
+        // process. The per-target log dump in 10_sched.c already handles
+        // its own framing.
+        if ( !is_msvc_source_echo( line ) )
+            fprintf( out, ORB_INDENT "%s\n", line );
     }
 }
 
 /*==============================================================================================
-    --- Capture Includes ---
+    --- Capture Output ---
 
-    Run a compile command and route each output line through process_includes_line().
-    Used exclusively by the compile step. Also serves as the general-purpose line-capture
-    path for link/lib where includes_path is NULL (no /showIncludes parsing needed, but
-    we still want per-line routing so [MSVC] prefixing and ORB_OUT_MSVC_OUTPUT gating apply).
+    Run a command and route each output line through process_output_line(). Used by the
+    compile and link/lib steps alike so [MSVC] prefixing and ORB_OUT_MSVC_OUTPUT gating
+    apply uniformly to every child of the toolchain.
+
+    includes_path is non-NULL only for compilers that stream their dependency list on
+    stdout; everything else passes NULL and collects dep files after the compile.
 
     Delegates to platform_spawn_capture() which owns the pipe and line assembly.
 ==============================================================================================*/
 
 typedef struct
 {
-    FILE* includes;
-    FILE* out;
+    FILE* includes;   // inline dep capture sink, or NULL
+    FILE* out;        // build sink: worker log or stdout
 
-} includes_ctx_t;
+} capture_ctx_t;
 
 static void
-on_includes_line( char* line, void* userdata )
+on_output_line( char* line, void* userdata )
 {
-    includes_ctx_t* ctx = ( includes_ctx_t* )userdata;
-    process_includes_line( line, ctx->includes, ctx->out );
+    capture_ctx_t* ctx = ( capture_ctx_t* )userdata;
+    process_output_line( line, ctx->includes, ctx->out );
 }
 
 int
-build_run_cmd_capture_includes( const char* cmd, const char* includes_path )
+build_run_cmd_capture( const char* cmd, const char* includes_path )
 {
     // Output sink: per-worker log if active, otherwise stdout.
     FILE* owned_log = NULL;
@@ -166,8 +168,8 @@ build_run_cmd_capture_includes( const char* cmd, const char* includes_path )
 
     FILE* includes = includes_path ? fopen( includes_path, "w" ) : NULL;
 
-    includes_ctx_t ctx = { includes, out };
-    int rc = platform_spawn_capture( cmd, on_includes_line, &ctx );
+    capture_ctx_t ctx = { includes, out };
+    int rc = platform_spawn_capture( cmd, on_output_line, &ctx );
 
     if ( includes  ) fclose( includes );
     if ( owned_log ) fclose( owned_log );

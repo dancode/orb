@@ -659,9 +659,9 @@ typedef struct
     Everything below is the public surface for the unity-built build_tool.exe.
 ==============================================================================================*/
 
-/*  Compiles all translation units for a target. Emits the cl.exe command line
-    with /showIncludes so build_run_cmd_capture_includes can record the header set
-    into <obj_dir>/_includes.txt for the next incremental check. */
+/*  Compiles all translation units for a target. Emits the cl.exe command line with
+    /sourceDependencies so the per-unit dep files can be flattened into
+    <obj_dir>/_includes.txt for the next incremental check. */
 
 bool build_target_compile( build_context_t* ctx, target_info_t* target, const char* obj_dir, const char* gen_dir );
 
@@ -748,14 +748,16 @@ int build_run_cmd( const char* cmd );
 int build_run_cmd_quiet( const char* cmd );
 #endif
 
-/*  Pipes the child's stdout+stderr back line-by-line through us. When
-    includes_path is non-NULL, /showIncludes lines are parsed out and written
-    there (system headers filtered); used for compile steps. When NULL, no
-    includes file is written; used for link/lib steps. All non-include lines are
-    forwarded to the active sink (worker log or stdout) prefixed with [MSVC]
-    when ORB_OUT_MSVC_OUTPUT is set, or silently dropped when not. */
+/*  Pipes the child's stdout+stderr back line-by-line through us. Used for compile and
+    link/lib steps alike. Lines are forwarded to the active sink (worker log or stdout)
+    prefixed with [MSVC] when ORB_OUT_MSVC_OUTPUT is set, or silently dropped when not;
+    diagnostics always pass regardless of verbosity.
 
-int build_run_cmd_capture_includes( const char* cmd, const char* includes_path );
+    includes_path is non-NULL only for compilers that stream their dependency list on
+    stdout (clang-cl /showIncludes); those lines are peeled off into that file instead
+    of being forwarded. Pass NULL everywhere else. */
+
+int build_run_cmd_capture( const char* cmd, const char* includes_path );
 
 /*  The core worker function. Handles recursive dependency resolution
     (unless ctx->skip_deps), per-target locking, the incremental-build

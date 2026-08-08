@@ -17,7 +17,7 @@
 
     Output handling:
       Each worker writes a per-target log file under the obj dir. While the
-      worker is active, every build_run_cmd / build_run_cmd_capture_includes call
+      worker is active, every build_run_cmd / build_run_cmd_capture call
       redirects to that file (via a TLS-stored path read by sched_log_path()).
       When the target finishes, the worker dumps its log to stdout in one atomic
       block under a global print lock -- no interleaving.
@@ -485,6 +485,12 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
 
     if ( thread_count < 1 ) thread_count = 1;
     if ( thread_count > MAX_THREADS ) thread_count = MAX_THREADS;
+
+    // Publish the effective worker count for platform_cc_mp_flag(). Bounded by job_count:
+    // spare workers park on the condvar, so a 3-target build leaves the rest of the box
+    // free for /MP no matter how many threads were requested.
+    g_job_threads = ( thread_count < g_sched.job_count ) ? thread_count : g_sched.job_count;
+    if ( g_job_threads < 1 ) g_job_threads = 1;
 
     if ( g_out_flags & ORB_OUT_SCHEDULER )
         printf( ORB_INDENT "[orb parallel] %d targets, %d worker threads\n",

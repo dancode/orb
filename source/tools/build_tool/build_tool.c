@@ -26,7 +26,7 @@
         03_registry.c     -- "orb.targets" text-file parser; appends to 02_data pools
         04_env.c          -- VS environment discovery and vcvars import
         05_log.c          -- stateless output formatters (print_section, etc.)
-        06_spawn.c        -- child process spawning, /showIncludes capture
+        06_spawn.c        -- child process spawning, output line capture
         07_compile.c      -- cl.exe command assembly and execution
         08_link.c         -- link.exe / lib.exe command assembly and execution
         09_exec.c         -- build_target() orchestration
@@ -131,6 +131,10 @@ static bool        g_include_track  = true;         // Use up-to-date tracking v
 static bool        g_use_rsp        = true;         // Use overflow prevention.
 static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 + stdc11 (for nmake).
                                                     // (suppress designated-initializer squiggles)
+static int         g_job_threads    = 1;            // Effective scheduler worker count. Divides
+                                                    // the /MP share so N workers each running M
+                                                    // child compilers stay near the core count.
+                                                    // Stays 1 on the serial -no-deps path.
 int                g_vs_major_version = 0;          // 0 = auto-detect; set by -vs-version <year>.
 
 /*==============================================================================================

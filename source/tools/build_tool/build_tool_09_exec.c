@@ -226,9 +226,9 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     }
 
     // D. Header include check. The previous compile wrote every #included header
-    //    path into <obj_dir>/_includes.txt (from cl.exe's /showIncludes output).
-    //    Replay that list and rebuild if any header is newer than the artifact.
-    //    Skipped when -no-include-track is set.
+    //    path into <obj_dir>/_includes.txt (flattened from the compiler's per-unit
+    //    dep files). Replay that list and rebuild if any header is newer than the
+    //    artifact. Skipped when -no-include-track is set.
     if ( up_to_date && g_include_track )
     {
         char includes_path[ PATH_MAX ];

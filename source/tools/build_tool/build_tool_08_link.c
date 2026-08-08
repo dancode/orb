@@ -178,7 +178,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
 
     // NULL includes_path: no dep-tracking parse for link/lib, but line-by-line
     // capture still applies so compiler-output prefixing and gating work.
-    return build_run_cmd_capture_includes( cmd.buf, NULL ) == 0;
+    return build_run_cmd_capture( cmd.buf, NULL ) == 0;
 }
 
 // clang-format on

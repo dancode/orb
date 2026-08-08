@@ -14,6 +14,7 @@
         platform_cc_append_define()     -- append "-D<name>" to a defines field
         platform_cc_output_flags()      -- output directory flags (see note below)
         platform_cc_dep_flag()          -- dependency-tracking flag string
+        platform_cc_mp_flag()           -- multi-process batch flag (no-op; see note below)
 
     Linker / archiver functions:
         platform_lk_fill_static()       -- fill link_cmd_t for a static lib (ar rcs)
@@ -34,12 +35,16 @@
         Until then, GCC outputs .o files into the current working directory.
 
     Dependency tracking (platform_cc_dep_flag):
-        MSVC emits "Note: including file: <path>" inline on stdout (/showIncludes).
-        GCC / Clang write a Makefile .d file after compilation (-MMD).
-        The inline-stream parser in 05_spawn.c process_includes_line() is MSVC-specific;
-        on POSIX the includes file is left empty and incremental header tracking is
-        skipped. This means header edits always trigger a full recompile (safe but
-        slower than necessary). A future POSIX dep-file parser will fix this.
+        Both toolchains write per-unit dependency files that are collected after the
+        compile: MSVC emits <unit>.c.json (/sourceDependencies <dir>/), GCC / Clang emit
+        <unit>.d (-MMD). Only the file format differs -- the parsers converge on the same
+        flat _includes.txt that the incremental header check in 09_exec.c replays.
+
+    Multi-process compilation (platform_cc_mp_flag):
+        MSVC batches every source into one cl.exe call, so /MP<n> is what splits that
+        batch across child compilers. GCC / Clang have no batch to split -- POSIX already
+        compiles per-unit -- so the hook returns empty here. Driving those per-unit calls
+        concurrently is a job for the scheduler in 10_sched.c, not a compiler flag.
 
 ==============================================================================================*/
 // clang-format off
@@ -153,14 +158,41 @@ platform_cc_collect_dep_files( const char* obj_dir, const char* includes_path )
     --- Compiler: Dependency Tracking Flag ---
 
     GCC/Clang: -MMD writes a Makefile .d file alongside each .o after compilation.
-    build_collect_dep_files() in 05_spawn.c reads those .d files into _includes.txt
-    after the per-unit compile loop for the next incremental header-change check.
+    posix_collect_dep_files() in build_tool_posix_spawn.c reads those .d files into
+    _includes.txt after the per-unit compile loop for the next incremental check.
 ==============================================================================================*/
 
-static const char*
-platform_cc_dep_flag( void )
+/*  GCC and Clang both write dep files; neither streams the list on stdout. */
+
+static bool
+platform_cc_dep_is_inline( compiler_t compiler )
 {
-    return "-MMD";
+    ( void )compiler;
+    return false;
+}
+
+static void
+platform_cc_dep_flag( compiler_t compiler, const char* obj_dir, char* buf, size_t size )
+{
+    ( void )compiler;
+    ( void )obj_dir;   // -MMD writes the .d next to the -o object; no directory argument.
+    snprintf( buf, size, "-MMD" );
+}
+
+/*==============================================================================================
+    --- Compiler: Multi-Process Compilation ---
+
+    No equivalent on GCC / Clang: they take one source per invocation, so there is no
+    batch for a flag to split. Concurrency on POSIX comes from the target scheduler.
+==============================================================================================*/
+
+static void
+platform_cc_mp_flag( compiler_t compiler, int unit_count, char* buf, size_t size )
+{
+    ( void )compiler;
+    ( void )unit_count;
+    ( void )size;
+    buf[ 0 ] = '\0';
 }
 
 /*==============================================================================================

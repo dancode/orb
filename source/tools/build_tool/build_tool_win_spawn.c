@@ -23,6 +23,7 @@
     Functions implemented:
         platform_spawn()         -- run cmd, redirect output to log file or inherit console
         platform_spawn_capture() -- run cmd, deliver each output line to a callback
+        win_collect_dep_files()  -- flatten /sourceDependencies .json files into _includes.txt
 
 ==============================================================================================*/
 // clang-format off
@@ -181,6 +182,177 @@ platform_spawn_capture( const char* cmd, platform_line_fn_t fn, void* userdata )
     CloseHandle( pi.hThread );
 
     return ( int )exit_code;
+}
+
+/*==============================================================================================
+    --- win_stristr ---
+
+    ASCII case-insensitive strstr. Local to this file: the shared str_* helpers in
+    01_prim.c are unity-included after the platform layer and are not visible here.
+==============================================================================================*/
+
+static const char*
+win_stristr( const char* hay, const char* needle )
+{
+    for ( ; *hay; ++hay )
+    {
+        const char* h = hay;
+        const char* n = needle;
+        for ( ;; )
+        {
+            if ( !*n ) return hay;
+            char ch = *h++;
+            char cn = *n++;
+            if ( ch >= 'A' && ch <= 'Z' ) ch = ( char )( ch + 32 );
+            if ( cn >= 'A' && cn <= 'Z' ) cn = ( char )( cn + 32 );
+            if ( ch != cn ) break;
+        }
+    }
+    return NULL;
+}
+
+/*  Toolchain headers are dropped from the tracked set: project source can never
+    invalidate them, and they are the bulk of every dependency list.
+
+    The match is case-insensitive because /sourceDependencies lower-cases its output
+    where /showIncludes preserved the on-disk casing. */
+
+static bool
+win_is_system_header( const char* path )
+{
+    return win_stristr( path, "\\vc\\tools\\"    ) != NULL
+        || win_stristr( path, "\\windows kits\\" ) != NULL;
+}
+
+/*  Bounded literal search over a mapped file. The mapping is not null-terminated,
+    so every scan carries its own end pointer rather than relying on strstr. */
+
+static const char*
+win_json_find( const char* p, const char* end, const char* lit )
+{
+    size_t n = strlen( lit );
+    if ( n == 0 || ( size_t )( end - p ) < n ) return NULL;
+
+    for ( const char* q = p; q <= end - n; ++q )
+        if ( memcmp( q, lit, n ) == 0 ) return q;
+
+    return NULL;
+}
+
+/*==============================================================================================
+    --- win_parse_dep_json ---
+
+    Reads one .json file emitted by /sourceDependencies and writes each project header
+    path (one per line) to out. cl.exe generates these with a fixed shape, so a targeted
+    scan covers it -- no general JSON parser:
+
+        {
+            "Version": "1.2",
+            "Data": {
+                "Source": "f:\\orb\\source\\runtime_service\\gui\\gui_log.c",
+                "ProvidedModule": "",
+                "Includes": [
+                    "f:\\orb\\source\\orb.h",
+                    "c:\\program files\\...\\vc\\tools\\msvc\\14.44.35207\\include\\stdio.h"
+                ]
+            }
+        }
+
+    Seek the "Includes" key, then take every quoted string up to the closing bracket.
+    Nothing else in the document is read. Escapes are undone as the path is copied out;
+    the only ones cl emits are "\\" for a path separator and "\"" inside a name.
+==============================================================================================*/
+
+static void
+win_parse_dep_json( const char* json_path, FILE* out )
+{
+    platform_mapped_file_t map;
+    if ( !platform_map_file( json_path, &map ) ) return;
+
+    if ( map.size == 0 )
+    {
+        platform_unmap_file( &map );
+        return;
+    }
+
+    const char* data = ( const char* )map.data;
+    const char* end  = data + map.size;
+
+    const char* p = win_json_find( data, end, "\"Includes\"" );
+    if ( p ) p = win_json_find( p, end, "[" );
+    if ( p ) ++p;
+
+    char path[ PATH_MAX ];
+    while ( p && p < end )
+    {
+        // Next token: '"' opens a path, ']' closes the array. Everything between is
+        // structural -- whitespace, newlines, and element commas.
+        while ( p < end && *p != '"' && *p != ']' ) ++p;
+        if ( p >= end || *p == ']' ) break;
+        ++p;
+
+        size_t n         = 0;
+        bool   overflown = false;
+        while ( p < end && *p != '"' )
+        {
+            char c = *p++;
+            if ( c == '\\' && p < end ) c = *p++;
+            if ( n < sizeof( path ) - 1 ) path[ n++ ] = c;
+            else                          overflown = true;
+        }
+        if ( p < end ) ++p;   // consume the closing quote
+        path[ n ] = '\0';
+
+        // A truncated path would stat as missing and force a rebuild forever, so drop
+        // it instead. PATH_MAX is 512 -- no header in the tree comes close.
+        if ( n > 0 && !overflown && !win_is_system_header( path ) )
+            fprintf( out, "%s\n", path );
+    }
+
+    platform_unmap_file( &map );
+}
+
+/*==============================================================================================
+    --- win_collect_dep_files ---
+
+    Scans obj_dir for the per-unit .json files /sourceDependencies wrote during the batch
+    compile and flattens them into includes_path (_includes.txt) -- the flat one-path-per-line
+    file that the incremental header check in 09_exec.c replays.
+
+    Called after the batch compile succeeds. Every unit is recompiled on every batch, so
+    the whole set is rewritten each time and the file never carries partial state.
+
+    Note: a .json for a unit later dropped from the target lingers in obj_dir and keeps
+    contributing its headers until the next -clean. Harmless (it can only over-report and
+    force an extra rebuild) and the same property already holds for stale .obj files, which
+    the linker picks up through its *.obj glob.
+==============================================================================================*/
+
+static void
+win_collect_dep_files( const char* obj_dir, const char* includes_path )
+{
+    FILE* out = fopen( includes_path, "w" );
+    if ( !out ) return;
+
+    char pattern[ PATH_MAX ];
+    snprintf( pattern, sizeof( pattern ), "%s/*.c.json", obj_dir );
+
+    platform_find_data_t fd;
+    platform_find_t      h = platform_find_first( pattern, &fd );
+    if ( h != PLATFORM_FIND_INVALID )
+    {
+        do
+        {
+            if ( fd.is_dir ) continue;
+            char json_path[ PATH_MAX ];
+            snprintf( json_path, sizeof( json_path ), "%s/%s", obj_dir, fd.name );
+            win_parse_dep_json( json_path, out );
+        }
+        while ( platform_find_next( h, &fd ) );
+        platform_find_close( h );
+    }
+
+    fclose( out );
 }
 
 // clang-format on
