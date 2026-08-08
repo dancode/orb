@@ -249,16 +249,6 @@ win_cache_take( gui_id_t win )
     return free_c;
 }
 
-/* Find without claiming -- the reuse path's read-side lookup.  ~0u when absent. */
-static u32
-win_cache_find( gui_id_t win )
-{
-    for ( u32 c = 0; c < RENDER_MAX_WIN; ++c )
-        if ( s_win_cached_live[ c ] && s_win_cached_win[ c ] == win )
-            return c;
-    return ~0u;
-}
-
 static u32              s_slot_count, s_slot_prev_count;
 static win_geo_slot_t   s_slots_a  [ RENDER_MAX_WIN ];
 static win_geo_slot_t   s_slots_b  [ RENDER_MAX_WIN ];
@@ -310,7 +300,10 @@ cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base, u
    reused window not yet reprocessed still has its geometry sitting at LAST frame's position
    (s_slots_prev) -- exactly where the buggy inline patch scribbled over the tooltip.  Taking the
    max over both makes the guard see that still-live geometry the current table hasn't caught up to
-   yet.  On idle frames both tables are last frame's, so the max is simply the true tail. */
+   yet.  On idle frames both tables are last frame's, so the max is simply the true tail.
+
+   !RELEASE only, matching the sole call site (that assert). */
+#if !RELEASE
 static void
 cache_slots_extent( u32* out_vert_end, u32* out_idx_end )
 {
@@ -336,6 +329,7 @@ cache_slots_extent( u32* out_vert_end, u32* out_idx_end )
     *out_vert_end = ve;
     *out_idx_end  = ie;
 }
+#endif
 
 /* cache_invalidate_window lives below, after s_cache is declared. */
 

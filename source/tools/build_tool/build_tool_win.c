@@ -97,8 +97,12 @@ platform_expand_env( const char* in, char* out, size_t size )
 
 /*==============================================================================================
     --- Pipe ---
+
+    Both call sites (vswhere probe + vcvars import, build_tool_04_env.c) are compiled out
+    under BUILD_SAFE_MODE, which forbids sub-shells; the definitions follow suit.
 ==============================================================================================*/
 
+#if !defined( BUILD_SAFE_MODE )
 static FILE*
 platform_popen( const char* cmd, const char* mode )
 {
@@ -110,6 +114,7 @@ platform_pclose( FILE* pipe )
 {
     return _pclose( pipe );
 }
+#endif
 
 /*==============================================================================================
     --- Monotonic Timer ---

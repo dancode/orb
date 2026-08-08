@@ -28,10 +28,14 @@ static void
 geo_rect( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
           f32 cx, f32 cy, f32 hw, f32 hh, const f32 rgba[ 4 ] )
 {
-    verts[ 0 ] = ( draw_vertex_t ){ cx - hw, cy - hh, 0.0f, rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ] };
-    verts[ 1 ] = ( draw_vertex_t ){ cx + hw, cy - hh, 0.0f, rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ] };
-    verts[ 2 ] = ( draw_vertex_t ){ cx + hw, cy + hh, 0.0f, rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ] };
-    verts[ 3 ] = ( draw_vertex_t ){ cx - hw, cy + hh, 0.0f, rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ] };
+    verts[ 0 ] = ( draw_vertex_t ){ cx - hw, cy - hh, 0.0f,
+                                    rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ], 0.0f, 0.0f };
+    verts[ 1 ] = ( draw_vertex_t ){ cx + hw, cy - hh, 0.0f,
+                                    rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ], 0.0f, 0.0f };
+    verts[ 2 ] = ( draw_vertex_t ){ cx + hw, cy + hh, 0.0f,
+                                    rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ], 0.0f, 0.0f };
+    verts[ 3 ] = ( draw_vertex_t ){ cx - hw, cy + hh, 0.0f,
+                                    rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ], 0.0f, 0.0f };
 
     indices[ 0 ] = 0; indices[ 1 ] = 1; indices[ 2 ] = 2;
     indices[ 3 ] = 0; indices[ 4 ] = 2; indices[ 5 ] = 3;
@@ -91,7 +95,7 @@ geo_box( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
             ( i & 1 ) ? x1 : x0,
             ( i & 2 ) ? y1 : y0,
             ( i & 4 ) ? z1 : z0,
-            rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ],
+            rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ], 0.0f, 0.0f,
         };
     }
 
@@ -132,7 +136,7 @@ geo_circle( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
     if ( segs > DRAW_CIRCLE_MAX_SEGS ) segs = DRAW_CIRCLE_MAX_SEGS;
 
     /* Centre vertex at index 0. */
-    verts[ 0 ] = ( draw_vertex_t ){ cx, cy, 0.0f, rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ] };
+    verts[ 0 ] = ( draw_vertex_t ){ cx, cy, 0.0f, rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ], 0.0f, 0.0f };
 
     /* Perimeter vertices at indices 1..segs. */
     f32 step = 2.0f * DRAW_PI / (f32)segs;
@@ -141,7 +145,7 @@ geo_circle( draw_vertex_t* verts, u16* indices, u32* nv, u32* ni,
         f32 a = (f32)i * step;
         verts[ 1 + i ] = ( draw_vertex_t ){
             cx + r * cosf( a ), cy + r * sinf( a ), 0.0f,
-            rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ],
+            rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ], 0.0f, 0.0f,
         };
     }
 

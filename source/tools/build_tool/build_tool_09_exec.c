@@ -43,9 +43,12 @@
     Both are non-fatal: a warning is printed on failure and the binary is still
     usable, just without the metadata that reduces AV heuristic false-positives.
 
+    Guarded by BUILD_TOOL_EMBED_MANIFEST to match the call site in step 7 -- without
+    it the whole feature is dormant and the helpers would compile as dead code.
+
 ==============================================================================================*/
 
-#if defined( _WIN32 )
+#if defined( _WIN32 ) && defined( BUILD_TOOL_EMBED_MANIFEST )
 static bool
 platform_compile_rc( const char* rc_src, const char* res_out )
 {

@@ -164,10 +164,14 @@ font_pixel( f32 px, f32 py, f32 scale, const f32 rgba[ 4 ] )
     f32 cy = py + hw;
 
     u16 base = ( u16 )s_font_nv;
-    s_font_verts[ s_font_nv + 0 ] = ( draw_vertex_t ){ cx - hw, cy - hw, 0.0f, rgba[0], rgba[1], rgba[2], rgba[3] };
-    s_font_verts[ s_font_nv + 1 ] = ( draw_vertex_t ){ cx + hw, cy - hw, 0.0f, rgba[0], rgba[1], rgba[2], rgba[3] };
-    s_font_verts[ s_font_nv + 2 ] = ( draw_vertex_t ){ cx + hw, cy + hw, 0.0f, rgba[0], rgba[1], rgba[2], rgba[3] };
-    s_font_verts[ s_font_nv + 3 ] = ( draw_vertex_t ){ cx - hw, cy + hw, 0.0f, rgba[0], rgba[1], rgba[2], rgba[3] };
+    s_font_verts[ s_font_nv + 0 ] = ( draw_vertex_t ){ cx - hw, cy - hw, 0.0f,
+                                                       rgba[0], rgba[1], rgba[2], rgba[3], 0.0f, 0.0f };
+    s_font_verts[ s_font_nv + 1 ] = ( draw_vertex_t ){ cx + hw, cy - hw, 0.0f,
+                                                       rgba[0], rgba[1], rgba[2], rgba[3], 0.0f, 0.0f };
+    s_font_verts[ s_font_nv + 2 ] = ( draw_vertex_t ){ cx + hw, cy + hw, 0.0f,
+                                                       rgba[0], rgba[1], rgba[2], rgba[3], 0.0f, 0.0f };
+    s_font_verts[ s_font_nv + 3 ] = ( draw_vertex_t ){ cx - hw, cy + hw, 0.0f,
+                                                       rgba[0], rgba[1], rgba[2], rgba[3], 0.0f, 0.0f };
     s_font_nv += 4;
 
     s_font_idxs[ s_font_ni + 0 ] = base + 0;

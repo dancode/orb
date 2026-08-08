@@ -471,7 +471,9 @@ stress_layout_roulette( i32 rows )
                 case 0: gui()->checkbox( "##c", &s_mut_check[ i ] );                    break;
                 case 1: gui()->slider_float( "##s", &s_mut_value[ i ], 0.0f, 1.0f );    break;
                 case 2: if ( gui()->small_button( "poke" ) )
-                            s_mut_value[ i ] = 1.0f;                                     break;
+                        {
+                            s_mut_value[ i ] = 1.0f;
+                        }                                                                break;
                 case 3: gui()->textf( "item %04u", h & 0xFFF );                          break;
                 case 4: gui()->progress_bar( ( f32 )( h % 100 ) * 0.01f, NULL );         break;
                 case 5: if ( gui()->collapsing_header( "header" ) )

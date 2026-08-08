@@ -232,6 +232,13 @@ step_cmd_detail( const step_cmd_info_t* ci )
                           (u32)gui_tex_mode( c->image_xf.tex_idx ) );
             row2 = b2;
             break;
+        case GUI_CMD_SPRITE:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f   scale %.2f", c->sprite.x, c->sprite.y,
+                       c->sprite.w, c->sprite.h, c->sprite.scale );
+            fmt_snprintf( b2, sizeof( b2 ), "sprite %u   flags 0x%04X   nine %u",
+                          c->sprite.sprite, (u32)c->sprite.flags, (u32)c->sprite.nine );
+            row2 = b2;
+            break;
         case GUI_CMD_CHECKER:
             gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->checker.x, c->checker.y,
                        c->checker.w, c->checker.h );

@@ -505,9 +505,10 @@ extern u32            s_vp_count;                   /* used count; iterate [0, c
 
 /* The mouse-input path (core/gui_io.c) resolves an event's app win_id to the viewport hosting it
    by searching s_vp_pool -- context-independent, since the table is global.  Static: both ends
-   live in this unit. */
+   live in this unit.  ORB_UNUSED_FN: this header is also pulled into the backend TU, which
+   neither defines nor calls it. */
 
-static u32 viewport_index_for_window( i32 win_id );
+static u32 ORB_UNUSED_FN viewport_index_for_window( i32 win_id );
 
 /*==============================================================================================
     gui_context_t -- the bound per-context retained state ("bind and use").

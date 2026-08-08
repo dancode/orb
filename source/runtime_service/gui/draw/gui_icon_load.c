@@ -31,10 +31,12 @@
 
 /* stb_image: memory-only decode (no fopen path of its own); STATIC so the symbols do not clash
    with the asset service's external copy when a host links both libraries. */
+PUSH_WARNINGS
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_STDIO
 #include "vendor/stb_image.h"
+POP_WARNINGS
 
 /*==============================================================================================
     icon_read_file -- slurp an entire file into a fresh malloc'd buffer (caller frees).  Raw stdio,

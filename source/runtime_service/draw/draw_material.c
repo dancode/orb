@@ -1,7 +1,7 @@
 /*==============================================================================================
 
     runtime_service/draw/draw_material.c -- Pipeline creation.  SPIR-V lives in the generated
-    draw_shader.h (compiled from shaders/*.{vert,frag}); this file only builds the pipelines.
+    draw_shader.h (compiled from shaders/ *.{vert,frag}); this file only builds the pipelines.
 
     One material = one compiled rhi_pipeline_t.  All materials share one vertex buffer and
     stride (draw_vertex_t, 36 bytes):
@@ -24,7 +24,7 @@ typedef struct
 
 /*==============================================================================================
     Embedded SPIR-V for all draw pipelines (solid + textured), generated from
-    shaders/*.{vert,frag}.  See draw_shader.h for the glslc recipe and the exact GLSL.
+    shaders/ *.{vert,frag}.  See draw_shader.h for the glslc recipe and the exact GLSL.
 ==============================================================================================*/
 
 #include <stdio.h>                         /* snprintf / fopen -- cooked-shader probe */

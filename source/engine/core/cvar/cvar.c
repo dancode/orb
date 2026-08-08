@@ -516,8 +516,9 @@ cvar_set_value_internal( cvar_t* cv, const char* value, cvar_priority_t priority
             break;
         }
         case CVAR_REF:
+        case CVAR_NONE:
         {
-            /* read-only reference - cannot set */
+            /* read-only reference / untyped - cannot set */
             success = false;
             break;
         }
@@ -660,6 +661,7 @@ cvar_print_value( const cvar_t* cv )
         case CVAR_BUF: con_printf( " [string]" ); break;
         case CVAR_REF: con_printf( " [readonly]" ); break;
         case CVAR_USR: con_printf( " [user]" ); break;
+        case CVAR_NONE: break;
     }
 
     con_printf( "\n" );

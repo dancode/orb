@@ -163,24 +163,15 @@ content_extent_y( const layout_frame_t* f )
 
     The snapping arithmetic itself lives in the lat_* primitives (gui_theme.c, behind the
     GUI_GRID_LATTICE compile switch).  The wrappers below just bind the pitch to the live
-    grid_quantum so call sites stay terse (quant_floor_min( v ) not lat_floor( v, q )).
+    grid_quantum so call sites stay terse (quant_floor( v ) not lat_floor( v, q )).
 
 ==============================================================================================*/
-
-/* Content size floored onto the live style's lattice, never below one quantum so a live size
-   never collapses.  Thin wrapper over the lat_* primitives (gui_theme.c) that binds the pitch to
-   the active grid_quantum -- the lattice arithmetic and the GUI_GRID_LATTICE gate live there. */
-static f32
-quant_floor_min( f32 v )
-{
-    return lat_floor_min( v, GRID_Q );
-}
 
 /* Largest lattice multiple <= v (0 allowed -- no one-quantum floor).  For snapping a CUMULATIVE
    track edge onto the grid: sizes are taken as the difference of consecutive snapped edges, so the
    per-edge value must be free to be exactly the running total's lattice point (including 0 for the
-   first edge) or the differences drift.  quant_floor_min's collapse guard belongs on a standalone size,
-   not on an edge. */
+   first edge) or the differences drift.  A collapse guard (lat_floor_min) belongs on a standalone
+   size, not on an edge. */
 static f32
 quant_floor( f32 v )
 {

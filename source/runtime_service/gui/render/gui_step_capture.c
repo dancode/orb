@@ -427,6 +427,9 @@ step_cmd_bounds( const gui_cmd_t* c )
             return ( gui_rect_t ){ c->checker.x, c->checker.y, c->checker.w, c->checker.h };
         case GUI_CMD_GRID:
             return ( gui_rect_t ){ c->grid.x, c->grid.y, c->grid.w, c->grid.h };
+        /* Sprite / nine-slice paints exactly its box -- the slice expansion happens inside it. */
+        case GUI_CMD_SPRITE:
+            return ( gui_rect_t ){ c->sprite.x, c->sprite.y, c->sprite.w, c->sprite.h };
         /* The rotated AABB, exactly as the emit-side cull computes it. */
         case GUI_CMD_IMAGE_XF:
         {

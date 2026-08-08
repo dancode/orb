@@ -5,7 +5,7 @@
     runtime_service/draw/draw_shader.h -- Embedded SPIR-V for the draw pipelines.
 
     FROZEN FALLBACK.  These arrays are the zero-cook-step path: draw_material_init prefers
-    the cooked bin/shaders/draw_{solid,tex}.{vs,ps}.oshd pairs (from shaders/*.hlsl via
+    the cooked bin/shaders/draw_{solid,tex}.{vs,ps}.oshd pairs (from shaders/ *.hlsl via
     cook_shaders.bat) and uses these arrays only when a pair is absent.  New shader work
     happens in the HLSL twins; keep the GLSL and HLSL byte-identical in their push constant
     blocks and vertex inputs.

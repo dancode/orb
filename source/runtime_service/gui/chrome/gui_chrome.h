@@ -173,11 +173,15 @@ typedef struct
 
 } gui_win_route_t;
 
-static gui_win_route_t window_route_resolve( gui_id_t id, const char* title, gui_window_t* win );
-static void            window_route_drag   ( gui_id_t id, gui_window_t* win );
-static void            window_route_commit ( gui_id_t id, const char* title );
-static void            window_route_chrome ( gui_dock_node_t* node );
-static bool            window_route_raise  ( gui_id_t id );
+// ORB_UNUSED_FN: this header is also pulled into the backend TU, which neither defines nor
+// calls these; a bare static declaration would read as dead code there.
+
+static gui_win_route_t ORB_UNUSED_FN window_route_resolve( gui_id_t id, const char* title,
+                                                           gui_window_t* win );
+static void            ORB_UNUSED_FN window_route_drag   ( gui_id_t id, gui_window_t* win );
+static void            ORB_UNUSED_FN window_route_commit ( gui_id_t id, const char* title );
+static void            ORB_UNUSED_FN window_route_chrome ( gui_dock_node_t* node );
+static bool            ORB_UNUSED_FN window_route_raise  ( gui_id_t id );
 
 // clang-format on
 /*============================================================================================*/

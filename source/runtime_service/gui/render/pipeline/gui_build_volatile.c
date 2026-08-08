@@ -152,12 +152,14 @@ static u32                 s_volatile_count;
      cache_invalidate_window    -- corrupt the window's stored hash + raise any_changed so the
                                    next frame re-tessellates it (a failed patch's recovery path).
      cache_slots_extent         -- far edge of every slot's reservation; the debug guard below
-                                   asserts scratch is written past it. */
+                                   asserts scratch is written past it (!RELEASE only). */
 static void cache_count_volatile_patch( u32 n );
 static bool cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base,
                                u32* tess_gen );
 static void cache_invalidate_window( gui_id_t win );
+#if !RELEASE
 static void cache_slots_extent( u32* out_vert_end, u32* out_idx_end );
+#endif
 
 /* The row currently mid-callback during real emit (between volatile_cb_open and _close).
    Only one gui_volatile_cb invocation is ever in flight at a time -- nesting is not supported. */

@@ -243,8 +243,12 @@ vcvars_cache_save_current_env( const char* cache_path )
     The double-quote idiom `cmd /c "" "<path>" args ""` is required because
     vcvarsall.bat always lives under "Program Files" (a path with spaces). The outer
     empty-string pair prevents cmd from stripping the inner quotes around the path.
+
+    Compiled out under BUILD_SAFE_MODE: the only call site is in the non-safe-mode
+    branch of build_setup_vc_env(), and _popen is unavailable there anyway.
 ==============================================================================================*/
 
+#if !defined( BUILD_SAFE_MODE )
 static int
 import_vcvars_env( const char* vcvars_path, const char* cache_path )
 {
@@ -298,6 +302,7 @@ import_vcvars_env( const char* vcvars_path, const char* cache_path )
     platform_pclose( pipe );
     return imported;
 }
+#endif
 
 /*==============================================================================================
     build_setup_vc_env()

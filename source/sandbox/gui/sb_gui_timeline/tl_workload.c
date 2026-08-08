@@ -4,7 +4,7 @@
 
     Every scenario targets a specific thing the timeline must render well:
 
-      nested tree    -- a depth-sliding chain of sim/* zones with breathing durations: bar
+      nested tree    -- a depth-sliding chain of sim/<name> zones with breathing durations: bar
                         nesting, per-name colors, labels appearing as bars widen under zoom
       workers        -- a fixed pool of threads claimed up front (one prof ring each); the
                         slider sets how many are BUSY, the rest idle -- multi-track drawing

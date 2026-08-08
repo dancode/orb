@@ -158,22 +158,5 @@ font_init( void )
     return true;
 }
 
-/*==============================================================================================
-    BACKEND-INTERNAL -- shared-atlas redirects consumed within this unit (canvas texture preview)
-    and named font_* so the tessellation hot path reads one shared atlas for text, fills and icons.
-==============================================================================================*/
-
-static u32  font_atlas_idx  ( void )               { return res_atlas_idx();   }
-static void font_white_uv   ( f32* u, f32* v )     { res_atlas_white_uv( u, v ); }
-static f32  font_dash_v     ( f32 duty )           { return res_atlas_dash_v( duty ); }
-
-/* Total GPU bytes held by the shared resource atlas (R8_UNORM, 1 byte/pixel) -- one texture now,
-   not one per font. */
-static u32
-font_atlas_bytes( void )
-{
-    return res_atlas_bytes();
-}
-
 // clang-format on
 /*============================================================================================*/

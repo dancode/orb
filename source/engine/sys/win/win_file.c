@@ -126,7 +126,7 @@ sys_file_read_entire( const char* path )
         return out;
 
     LARGE_INTEGER li;
-    if ( !GetFileSizeEx( h, &li ) || li.QuadPart > 0xFFFFFFFFULL )
+    if ( !GetFileSizeEx( h, &li ) || li.QuadPart > 0xFFFFFFFFLL )
     {
         /* Reject >4 GB: the size field is u32 and asset files never approach that. */
         CloseHandle( h );
