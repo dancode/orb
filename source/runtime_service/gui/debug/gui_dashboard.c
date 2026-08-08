@@ -325,7 +325,7 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
                 gui_textf( "indices [%u..%u)  alloc %u  (pad %u)", sl->idx_base,
                            sl->idx_base + sl->idx_count, sl->idx_alloc,
                            sl->idx_alloc - sl->idx_count );
-                gui_textf( "cmds    [%u..%u)   z %u  vp %u  gen %u", sl->cmd_base,
+                gui_textf( "cmds    [%u..%u)   z %u  vp %d  gen %u", sl->cmd_base,
                            sl->cmd_base + sl->cmd_count, sl->z, sl->vp, sl->tess_gen );
                 gui_textf( "%s this frame", sl->changed ? "re-tessellated" : "retained" );
             }
@@ -352,14 +352,14 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
     const bool frozen = dash_frozen();   /* the active region rotates every frame; call it out
                                                 only when frozen so it never strobes at framerate */
 
-    for ( u32 vp = 0; vp < GUI_MAX_VIEWPORTS; ++vp )
+    for ( gui_vp_t vp = 1; vp < GUI_VP_SLOTS; ++vp )
     {
         if ( !sn->surf[ vp ].live ) continue;
         if ( y + row_h > r.y + r.h ) break;
 
         const dash_surf_t* sf = &sn->surf[ vp ];
 
-        dash_textf( r.x + 2.0f, y + 3.0f, r.x + 40.0f, DASH_COL_TEXT, "vp%u", vp );
+        dash_textf( r.x + 2.0f, y + 3.0f, r.x + 40.0f, DASH_COL_TEXT, "vp%d", vp );
 
         /* Region boxes sit in the band [40 .. 0.55*w]; size box_w so the N boxes + (N-1) gaps fill
            it exactly (the old calc ignored the gaps and overran the band) and center each box
@@ -406,7 +406,7 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
             if ( gui_tooltip_begin() )
             {
                 gui_stack();
-                gui_textf( "surface vp%u  in-flight region %u of %u", vp, sf->frame_index,
+                gui_textf( "surface vp%d  in-flight region %u of %u", vp, sf->frame_index,
                            (u32)RHI_MAX_FRAMES_IN_FLIGHT );
                 if ( sf->vtx_hi > sf->vtx_lo )
                     gui_textf( "uploaded verts [%u..%u)  idx [%u..%u)", sf->vtx_lo, sf->vtx_hi,
@@ -459,7 +459,7 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
         for ( u32 k = 0; k < sl->cmd_count && sl->cmd_base + k < sn->cmd_count; ++k )
         {
             const dash_cmd_t* dc = &sn->cmds[ sl->cmd_base + k ];
-            if ( dc->vp == GUI_VP_INVALID ) continue;   /* dormant volatile pad -- not drawn */
+            if ( dc->elem_count == 0 ) continue;   /* empty, or a dormant volatile pad */
 
             f32 bw = 4.0f;
             for ( u32 e = dc->elem_count; e > 1; e >>= 1 ) bw += 3.0f;   /* ~3px per log2 step */
@@ -510,7 +510,7 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
                 gui_textf( "window  %s", dash_name( sl->win, nb, sizeof( nb ) ) );
                 gui_textf( "%u draw cmds  %u verts  %u tris", sl->cmd_count, sl->vert_count,
                            sl->idx_count / 3u );
-                gui_textf( "z %u  vp %u  gen %u  %s", sl->z, sl->vp, sl->tess_gen,
+                gui_textf( "z %u  vp %d  gen %u  %s", sl->z, sl->vp, sl->tess_gen,
                            sl->changed ? "re-tessellated" : "retained" );
             }
             gui_tooltip_end();

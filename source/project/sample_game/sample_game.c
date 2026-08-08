@@ -120,7 +120,7 @@ sample_game_on_draw( f32 alpha, const run_view_t* view )
        render()->draw_scene replays this behind whatever the host composites on top
        (editor gui, HUD); the surface size comes from the view so the project never
        touches rhi directly. */
-    if ( view->render_ctx >= 0 && view->surface_w > 0 && view->surface_h > 0 )
+    if ( view->render_ctx != RHI_CTX_INVALID && view->surface_w > 0 && view->surface_h > 0 )
     {
         f32 a  = f32_lerp( g_state->angle_prev, g_state->angle, alpha );
         f32 w  = ( f32 )view->surface_w;
@@ -144,7 +144,7 @@ sample_game_on_hud( f32 dt, const run_view_t* view )
 
     if ( !g_state || !g_state->running || !game_ui_ready() )
         return;
-    if ( view->version < 2 || view->gui_vp < 0 )
+    if ( view->version < 2 || view->gui_vp == GUI_VP_INVALID )
         return;
 
     gui_rect_t screen = game_ui_hud_begin( view->gui_vp );

@@ -21,7 +21,7 @@ static i32
 vk_ctx_alloc( i32 win_id )
 {
     /* Slot index == win_id: an open window guarantees this context slot is free. */
-    ORB_ASSERT( win_id >= 0 && win_id < RHI_CTX_MAX );
+    ORB_ASSERT( RHI_CTX_VALID( win_id ) );
     ORB_ASSERT( !( vk.ctx_alloc & ( 1u << win_id ) ) );
     vk.ctx_alloc |= ( 1u << win_id );
     return win_id;
@@ -30,14 +30,14 @@ vk_ctx_alloc( i32 win_id )
 static void
 vk_ctx_free( i32 id )
 {
-    if ( id >= 0 && id < RHI_CTX_MAX )
+    if ( RHI_CTX_VALID( id ) )
         vk.ctx_alloc &= ~( 1u << id );
 }
 
 static vk_context_t*
 vk_ctx_get( i32 id )
 {
-    if ( id < 0 || id >= RHI_CTX_MAX )
+    if ( !RHI_CTX_VALID( id ) )
         return NULL;
     if ( !( vk.ctx_alloc & ( 1u << id ) ) )
         return NULL;
@@ -169,7 +169,7 @@ vk_context_open( i32 win_id )
     i32 w = 0, h = 0;
     app()->window_get_size( win_id, &w, &h );
 
-    if ( win_id < 0 || win_id >= RHI_CTX_MAX ) {
+    if ( !RHI_CTX_VALID( win_id ) ) {
         LOG_ERROR( "win_id %d out of range (max %d)\n", win_id, RHI_CTX_MAX );
         return RHI_CTX_INVALID;
     }
@@ -330,7 +330,7 @@ vk_event( const app_event_t* ev )
     if ( ev->type != APP_EV_WIN_RESIZE )
         return APP_EVENT_PASS;
 
-    for ( i32 i = 0; i < RHI_CTX_MAX; ++i )
+    for ( i32 i = 1; i < RHI_CTX_SLOTS; ++i )
     {
         if ( !( vk.ctx_alloc & ( 1u << i ) ) )
             continue;

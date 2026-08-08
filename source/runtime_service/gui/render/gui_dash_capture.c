@@ -101,8 +101,8 @@ dash_capture_build( void )
 
     /* GPU DRAW commands per band -- what actually dispatches, matching the renderer's draw-call
        count and the perf tracker.  A slot's cmd_count includes dormant volatile-pad commands
-       (vp == GUI_VP_INVALID) and can hold empty commands; both occupy pool slots but never draw,
-       so they are excluded here (as the batch inspector already does).  tess_cmds is the live total
+       and can hold empty commands; both carry elem_count 0 -- they occupy pool slots but never
+       draw, so they are excluded here (as the batch inspector already does).  tess_cmds is the live total
        across both bands; tess_cmds_dbg the debug band's share.  band-0 draws = total - debug. */
     sn->tess_cmds = sn->tess_cmds_dbg = 0;
     for ( u32 i = 0; i < sn->slot_count; ++i )
@@ -113,8 +113,7 @@ dash_capture_build( void )
         for ( u32 k = 0; k < sl->cmd_count && sl->cmd_base + k < s_tess.cmd_count; ++k )
         {
             const tess_gpu_cmd_t* gc = &s_tess.gpu_cmds[ sl->cmd_base + k ];
-            if ( gc->vp == GUI_VP_INVALID )   continue;   /* dormant volatile pad     */
-            if ( gc->cmd.elem_count == 0 )    continue;   /* empty -- never dispatched */
+            if ( gc->cmd.elem_count == 0 )    continue;   /* empty, or a dormant volatile pad */
             ++live;
         }
         sn->tess_cmds += live;
@@ -178,10 +177,10 @@ dash_capture_build( void )
 /* End of one surface's gui_render_flush: what physically hit the GPU for that surface.  Runs
    every frame (real or idle) since cached geometry is replayed regardless. */
 void
-dash_capture_flush( u32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 idx_hi,
+dash_capture_flush( gui_vp_t vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 idx_hi,
                     u32 bytes, u32 batches, u32 draws )
 {
-    if ( !s_dash.enabled || s_dash.freeze || vp >= GUI_MAX_VIEWPORTS )
+    if ( !s_dash.enabled || s_dash.freeze )
         return;
     s_dash.snap.surf[ vp ] = ( dash_surf_t ){
         .live = true, .frame_index = frame,

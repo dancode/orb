@@ -68,7 +68,7 @@ typedef struct
     gui_id_t win;
     u32      z;
     u16      lo, hi;   /* half-open command range into s_draw.cmds[] */
-    u8       vp;
+    i8       vp;
     u8       band;     /* arena band: 0 = main UI, 1 = debug/diagnostic UI (GUI_WIN_DEBUG_BAND) */
 
 } gui_cmd_seg_t;
@@ -104,7 +104,7 @@ static struct
 
     gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */
     u32             cur_z;          /* sort key tracked per-segment (draw_seg_retag; NOT baked per command) */
-    u32             cur_vp;         /* viewport index stamped onto new commands (set by begin/window_end)  */
+    gui_vp_t        cur_vp;         /* viewport index stamped onto new commands (set by begin/window_end)  */
     u32             cur_font;       /* active font id (draw_set_font), stamped ONTO each text command as it
                                        is pushed.  Not a segment axis: it selects glyph metrics and atlas
                                        UVs, which is per-command data, and cuts no batch. */
@@ -419,7 +419,7 @@ draw_set_root_clip( f32 w, f32 h )
    empty spans.  On overflow the open segment is just extended (its tag may then be stale, but only in
    the pathological >1024-segment case, which cache_tess_window already falls back to natural order). */
 static void
-draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 band )
+draw_seg_retag( gui_id_t win, u32 z, gui_vp_t vp, u32 band )
 {
     bool same_tag = win == s_draw.cur_win && z == s_draw.cur_z && vp == s_draw.cur_vp
                     && band == s_draw.cur_band;
@@ -447,14 +447,14 @@ draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 band )
     {
         cur->win  = win;   /* segment empty so far: retag in place rather than splitting */
         cur->z    = z;
-        cur->vp   = (u8)vp;
+        cur->vp   = (i8)vp;
         cur->band = (u8)band;
     }
     else if ( s_draw.seg_count < GUI_MAX_SEGS )
     {
         cur->hi                           = (u16)s_draw.cmd_count;   /* close the span here */
         s_draw.segs[ s_draw.seg_count++ ] =
-            ( gui_cmd_seg_t ){ .win = win, .z = z, .vp = (u8)vp,
+            ( gui_cmd_seg_t ){ .win = win, .z = z, .vp = (i8)vp,
                                .band = (u8)band, .lo = (u16)s_draw.cmd_count,
                                .hi = (u16)s_draw.cmd_count };
     }
@@ -521,7 +521,7 @@ draw_set_sort_key( u32 z )
 ==============================================================================================*/
 
 void
-draw_set_viewport( u32 vp )
+draw_set_viewport( gui_vp_t vp )
 {
     draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp, s_draw.cur_band );
 }
@@ -862,7 +862,7 @@ draw_cmd_claim( u8 type )
     gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type      = type;
     c->clip_idx  = s_draw.cur_clip_idx;
-    c->vp        = (u8)s_draw.cur_vp;
+    c->vp        = (i8)s_draw.cur_vp;
     return c;
 }
 

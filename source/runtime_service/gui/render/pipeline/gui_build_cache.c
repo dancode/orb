@@ -191,7 +191,7 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
 typedef struct
 {
     gui_gpu_cmd_t cmd;     // clip rect, texture slot, element count
-    u32           vp;      // viewport this command targets
+    gui_vp_t      vp;      // viewport this command targets
     u32           lvbase;  // vertex base relative to slot->vert_base (0-relative)
     u32           libase;  // index base relative to slot->idx_base (the cmd's first_index seed)
 
@@ -206,7 +206,7 @@ typedef struct
     u32      idx_base,  idx_count,  idx_alloc;   // IB: absolute position, actual count, padded reservation
     u32      cmd_base,  cmd_count;               // range into s_tess.gpu_cmds[] for this window
     u32      tess_gen;                           // generation of the tess pass that produced the geometry
-    u8       vp;                                 // viewport (GUI_MAX_VIEWPORTS = 4)
+    i8       vp;                                 // viewport (slot index; GUI_MAX_VIEWPORTS = 4)
     u8       band;                               // arena band (0 = main UI, 1 = debug/diagnostic)
     bool     valid;                              // true once geometry has been tessellated at least once
     bool     cmd_cached;                         // command run fit the stable cache; false = the window
@@ -355,7 +355,7 @@ typedef struct
     u16      seg_head;       // this window's segment chain (via s_seg_next); SEG_CHAIN_END = empty.
     u16      seg_tail;       //   Built in pass 1 below so the tess pass walks only ITS segments
                              //   instead of rescanning the whole segment table per window.
-    u8       vp;             // viewport of the last segment this frame (GUI_MAX_VIEWPORTS = 4)
+    i8       vp;             // viewport of the last segment this frame (slot index)
     u8       band;           // arena band: sticky OR across segments (any debug seg = debug window)
     bool     changed;        // hash mismatched, window is new, or force_changed this frame
     bool     force_changed;  // a volatile row in this window needs a (re)capture -- tessellate
@@ -833,7 +833,7 @@ cache_dump_slots( const char* tag )
     {
         const win_geo_slot_t* s = &s_slots[ i ];
         gui_log( GUI_LOG_INFO,
-                 "  [%2u] win=%-11u z=%-4u vp=%u  vert[%u..%u)/%u  idx[%u..%u)/%u  cmd[%u..%u)  gen=%u%s",
+                 "  [%2u] win=%-11u z=%-4u vp=%d  vert[%u..%u)/%u  idx[%u..%u)/%u  cmd[%u..%u)  gen=%u%s",
                  i, s->win, s->z, s->vp,
                  s->vert_base, s->vert_base + s->vert_count, s->vert_alloc,
                  s->idx_base,  s->idx_base  + s->idx_count,  s->idx_alloc,

@@ -120,7 +120,7 @@ game_host_update( f32 dt )
     run_view_t view = {
         .version    = RUN_VIEW_VERSION,
         .render_ctx = run_host_ctx(),
-        .gui_vp     = -1,   /* tick phase: gui emission is illegal here (see on_hud) */
+        .gui_vp     = GUI_VP_INVALID,   /* tick phase: gui emission is illegal here (see on_hud) */
     };
     app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
     game()->tick( dt, &view );
@@ -143,7 +143,7 @@ game_gui( f32 dt )
     run_view_t view = {
         .version    = RUN_VIEW_VERSION,
         .render_ctx = run_host_ctx(),
-        .gui_vp     = ( vp == GUI_VP_INVALID ) ? -1 : ( i32 )vp,
+        .gui_vp     = vp,   /* gui_vp_t is signed; GUI_VP_INVALID is already -1 */
     };
     app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
     game()->hud( dt, &view );

@@ -54,8 +54,15 @@ typedef struct rhi_cmd_s* rhi_cmd_t;
     Render context pool  (one per platform window)
 ==============================================================================================*/
 
-#define RHI_CTX_INVALID  ( -1 )
-#define RHI_CTX_MAX      4        /* must match APP_WIN_MAX */
+/* A context id is a SLOT INDEX numbered from 1; slot 0 is reserved and never allocated, so 0
+   means "no context" and a zeroed field says so by itself.  Ids are shared with the window pool
+   one-for-one: ctx id == win_id == gui viewport (see app.h). */
+
+#define RHI_CTX_INVALID  0        /* no context; slot 0 is reserved so zero-init means this */
+#define RHI_CTX_MAX      4        /* capacity: must match APP_WIN_MAX -- ids are 1..RHI_CTX_MAX */
+#define RHI_CTX_SLOTS    ( RHI_CTX_MAX + 1 )   /* pool extent: arrays and loop bounds use this */
+
+#define RHI_CTX_VALID( id ) ( ( id ) >= 1 && ( id ) < RHI_CTX_SLOTS )
 
 /* Number of frames the CPU may record ahead of the GPU.  Any per-frame dynamic
    resource (e.g. a UI vertex buffer rewritten every frame) must be N-buffered by

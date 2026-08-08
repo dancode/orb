@@ -115,7 +115,7 @@ gui_dpi_base_set( gui_builtin_font_t font )
     dpi_bake_size_check( font );   /* init just loaded + activated the preset into slot 0 */
     for ( u32 i = 0; i < GUI_FONT_BUILTIN_COUNT; ++i )
         s_dpi.loaded_id[ i ] = 0;
-    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+    for ( u32 v = 1; v < GUI_VP_SLOTS; ++v )
         s_vp_pool[ v ].dpi_bake = font;   /* surfaces open post-init inherit via viewport_create */
 }
 
@@ -140,7 +140,7 @@ gui_dpi_mode( void )
 f32
 gui_dpi_scale( void )
 {
-    return dpi_bake_scale( s_vp_pool[ 0 ].dpi_bake );
+    return dpi_bake_scale( s_vp_pool[ GUI_VP_PRIMARY ].dpi_bake );
 }
 
 /* Resolve the bake ONE viewport wants (mode + its own OS window's monitor scale) and stamp it,
@@ -148,7 +148,7 @@ gui_dpi_scale( void )
    Non-static: frame/gui_viewport.c resolves a fresh floater at spawn (before its first poll). */
 
 bool
-gui_dpi_vp_resolve( u32 v )
+gui_dpi_vp_resolve( gui_vp_t v )
 {
     if ( s_dpi.base == GUI_FONT_NONE )
         return false;
@@ -164,7 +164,7 @@ gui_dpi_vp_resolve( u32 v )
 
     f32 want = 1.0f;
     if ( s_dpi.mode == GUI_DPI_AUTO )
-        want = vp->win_id >= 0 ? app()->window_dpi_scale( vp->win_id ) : 1.0f;
+        want = APP_WIN_VALID( vp->win_id ) ? app()->window_dpi_scale( vp->win_id ) : 1.0f;
     else if ( s_dpi.mode == GUI_DPI_MANUAL )
         want = s_dpi.manual;
 
@@ -209,9 +209,9 @@ gui_dpi_vp_resolve( u32 v )
    or two surfaces at different scales would rebuild every frame forever. */
 
 void
-gui_dpi_land( u32 viewport )
+gui_dpi_land( gui_vp_t viewport )
 {
-    if ( s_dpi.base == GUI_FONT_NONE || viewport >= GUI_MAX_VIEWPORTS )
+    if ( s_dpi.base == GUI_FONT_NONE || !vp_live( viewport ) )
         return;
 
     /* A host-driven font is active (font_use / push_font / a custom load): not ours to move. */
@@ -256,7 +256,7 @@ gui_dpi_poll( void )
         return false;
 
     bool changed = false;
-    for ( u32 v = 0; v < s_vp_count; ++v )
+    for ( gui_vp_t v = GUI_VP_PRIMARY; v < s_vp_count; ++v )
     {
         gui_viewport_t* vp = &s_vp_pool[ v ];
         if ( !rhi_handle_valid( vp->vb ) )
@@ -265,7 +265,7 @@ gui_dpi_poll( void )
         /* Snapshot the hosting window's own OS scale to tell an OS-driven change (WM_DPICHANGED
            already resized the window to the new monitor) from a gui-driven one (ui_scale / mode
            flip: gui must resize the owned floater itself, below). */
-        f32  os       = vp->win_id >= 0 ? app()->window_dpi_scale( vp->win_id ) : 1.0f;
+        f32  os       = APP_WIN_VALID( vp->win_id ) ? app()->window_dpi_scale( vp->win_id ) : 1.0f;
         bool os_moved = os != vp->dpi_os_scale;
         vp->dpi_os_scale = os;
 
@@ -282,7 +282,7 @@ gui_dpi_poll( void )
            area so the pinned shell keeps its footprint (the autosize-grip resize primitive).
            An OS-driven change already applied the suggested rect -- resizing again would
            double-scale. */
-        if ( vp->owned && !os_moved && vp->win_id >= 0 )
+        if ( vp->owned && !os_moved && APP_WIN_VALID( vp->win_id ) )
         {
             i32 w = 0, h = 0;
             app()->window_get_size( vp->win_id, &w, &h );

@@ -92,7 +92,7 @@ gui_scope_t s_scope;
    unit) tags each captured rect with the ambient build viewport through this accessor -- declared
    in gui_render.h, Debug builds only. */
 
-u32 dbg_build_viewport( void ) { return s_build.win.viewport; }
+gui_vp_t dbg_build_viewport( void ) { return s_build.win.viewport; }
 
 #endif
 
@@ -243,19 +243,19 @@ ctx_bind( gui_context_t* ctx )
     lifecycle over it is frame/gui_viewport.c's.
 ==============================================================================================*/
 
-gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
-u32            s_vp_count;
+gui_viewport_t s_vp_pool[ APP_WIN_SLOTS ];
+i32            s_vp_count;
 
 /* Resolve an app win_id to its viewport slot: the live slot (one with GPU buffers) whose recorded
    win_id matches, else 0 (the main swapchain).  Context-independent -- there is only one table.
    Forward-declared in core/gui_ctx.h; called by the mouse-input path in core/gui_io.c. */
-static u32
+static gui_vp_t
 viewport_index_for_window( i32 win_id )
 {
-    for ( u32 i = 0; i < APP_WIN_MAX; ++i )
+    for ( u32 i = 1; i < APP_WIN_SLOTS; ++i )
         if ( rhi_handle_valid( s_vp_pool[ i ].vb ) && s_vp_pool[ i ].win_id == win_id )
-            return i;
-    return 0;
+            return ( gui_vp_t )i;
+    return GUI_VP_PRIMARY;   /* no match -- attribute the cursor to the main swapchain */
 }
 
 /* Drawable size of a surface: its own extent once opened, else the s_io snapshot of the primary
@@ -315,7 +315,7 @@ cursor_flush( void )
         /* The OS window the cursor is in: viewport slot index -> its app win_id. */
 
         i32 win = 0;
-        if ( s_io.mouse_viewport < s_vp_count )
+        if ( s_io.mouse_viewport < s_vp_count )   /* resolved from the pool -- never negative */
             win = s_vp_pool[ s_io.mouse_viewport ].win_id;
 
         if ( win != s_flushed_win || s_interaction.mouse_cursor != s_flushed_cur )
@@ -465,7 +465,7 @@ ctx_new_frame( void )
 
     s_id_sp               = 0;       /* fresh id-scope stack; regions/push_id reseed it */
     s_build.wheel_used    = false;   /* the wheel starts unclaimed */
-    s_build.win.viewport  = 0;       /* ambient viewport resets to primary */
+    s_build.win.viewport  = GUI_VP_PRIMARY;   /* ambient viewport resets to primary */
 
     /* Fresh nav-stamp dispensers; nothing is placed until a layout cell is handed out. */
 

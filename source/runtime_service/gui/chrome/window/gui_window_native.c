@@ -25,7 +25,7 @@
    each gets a distinct, stable per-window widget id (see native_caption_buttons below). */
 #define GUI_NATIVE_BTN_SALT 0xCA9710B0u
 
-/* OS window hosting this window's viewport surface (-1 / APP_WIN_INVALID if unassociated). */
+/* OS window hosting this window's viewport surface (0 / APP_WIN_INVALID if unassociated). */
 static win_id_t window_native_id( const gui_window_t* win )
 {
     return ( win_id_t )s_vp_pool[ win->viewport ].win_id;
