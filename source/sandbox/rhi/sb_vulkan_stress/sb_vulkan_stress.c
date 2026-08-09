@@ -61,10 +61,11 @@
 #include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 
-/* F4 sampled mode reuses gui's pre-compiled bindless SPIR-V (self-contained u32 arrays:
-   s_gui_vert_spirv / s_gui_frag_spirv).  This is bytecode only -- no gui library linkage --
-   so the stress test stays independent of gui while still driving a real textured draw. */
-#include "runtime_service/gui/render/pipeline/gui_shader.h"
+/* F4 sampled mode drives a real textured draw through the sandbox's OWN bindless pipeline
+   (self-contained u32 arrays: s_stress_vert_spirv / s_stress_frag_spirv).  It deliberately does
+   not borrow gui's or draw's bytecode -- that coupled an RHI test to another subsystem's vertex
+   format, and broke when gui repacked its own.  See stress_shader.h. */
+#include "sandbox/rhi/sb_vulkan_stress/stress_shader.h"
 
 // clang-format off
 
@@ -520,7 +521,8 @@ ring_pressure_tick( u64 frame )
     that in-flight frames are still sampling defers correctly.
 ==============================================================================================*/
 
-/* Vertex + push layouts must match gui's shaders (stride 20; push 72 bytes). */
+/* Vertex + push layouts for the sandbox's own textured pipeline; these are the authority and
+   shaders/stress_tex.{vert,frag} mirror them (stride 20; push 72 bytes). */
 typedef struct { f32 x, y, u, v; u32 abgr; } f4_vert_t;
 typedef struct { f32 mvp[ 16 ]; u32 tex_idx; u32 samp_idx; } f4_push_t;
 
@@ -543,12 +545,12 @@ static f4_sampled_t   s_f4_sampled[ STRESS_SAMPLED_MAX ];
 static bool
 f4_init( void )
 {
-    rhi_shader_t vert = rhi()->shader_load_memory( s_gui_vert_spirv, sizeof( s_gui_vert_spirv ),
+    rhi_shader_t vert = rhi()->shader_load_memory( s_stress_vert_spirv, sizeof( s_stress_vert_spirv ),
                                                    RHI_SHADER_STAGE_VERTEX, "main", "f4_vert" );
     if ( !rhi_handle_valid( vert ) )
         return false;
 
-    rhi_shader_t frag = rhi()->shader_load_memory( s_gui_frag_spirv, sizeof( s_gui_frag_spirv ),
+    rhi_shader_t frag = rhi()->shader_load_memory( s_stress_frag_spirv, sizeof( s_stress_frag_spirv ),
                                                    RHI_SHADER_STAGE_FRAGMENT, "main", "f4_frag" );
     if ( !rhi_handle_valid( frag ) )
     {
