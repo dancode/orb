@@ -230,11 +230,8 @@ gui_boot_present_begin( rhi_cmd_t* out_cmd )
        that never opened anything. */
 
     GUI_CONTRACT( s_boot.active,
-                  "boot_present_begin() without gui()->boot() -- this pair renders through the "
-                  "boot-owned window + rhi context, so it cannot present a host-owned surface.  "
-                  "Write the explicit block instead: viewport_update() -> rhi()->frame_begin( "
-                  "your ctx ) -> your passes -> render( vp, cmd ) -> rhi()->frame_end() -> "
-                  "viewport_render_floaters().  See BOOT TIER in gui_api.h.\n" );
+                  "boot_present_begin() without gui()->boot() -- this pair only presents the "
+                  "boot-owned window; write the explicit block (BOOT TIER in gui_api.h)." );
 
     if ( !s_boot.active )
         return false;

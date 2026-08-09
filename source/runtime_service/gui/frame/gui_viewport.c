@@ -90,14 +90,13 @@ viewport_destroy( i32 vp )
 i32
 gui_viewport_open( i32 win_id )
 {
-    GUI_CONTRACT( s_gui_ready, "viewport_open() before a successful init() -- gui has no GPU "
-                               "resources to build a surface from yet.\n" );
+    GUI_CONTRACT( s_gui_ready, "viewport_open() before a successful init()." );
     if ( !s_gui_ready )
         return GUI_VP_INVALID;
 
     /* Slot index == win_id; an open window guarantees the slot is free. */
     GUI_CONTRACT( win_id >= 0 && win_id < (i32)GUI_MAX_VIEWPORTS,
-                  "viewport_open( %d ): win_id outside [0, %u).\n", win_id, GUI_MAX_VIEWPORTS );
+                  "viewport_open( %d ): win_id outside [0, %u).", win_id, GUI_MAX_VIEWPORTS );
     if ( win_id < 0 || win_id >= (i32)GUI_MAX_VIEWPORTS )
         return GUI_VP_INVALID;
 
@@ -106,7 +105,7 @@ gui_viewport_open( i32 win_id )
     /* A second open on a live slot would strand the first surface's GPU buffers with no handle
        left to reach them -- refuse instead of leaking. */
     bool slot_free = !rhi_handle_valid( vp->vb );
-    GUI_CONTRACT( slot_free, "viewport_open( %d ): that slot is already open.\n", win_id );
+    GUI_CONTRACT( slot_free, "viewport_open( %d ): that slot is already open.", win_id );
     if ( !slot_free )
         return GUI_VP_INVALID;
 
@@ -115,9 +114,8 @@ gui_viewport_open( i32 win_id )
        viewport is a silent no-op.  The query doubles as the size read below. */
     i32  w = 0, h = 0;
     bool ctx_live = rhi()->context_size( win_id, &w, &h );
-    GUI_CONTRACT( ctx_live, "viewport_open( %d ): no live rhi context for that window -- call "
-                            "rhi()->context_open( win ) before attaching a viewport to it.\n",
-                            win_id );
+    GUI_CONTRACT( ctx_live, "viewport_open( %d ): no rhi context -- rhi()->context_open( win ) "
+                            "first.", win_id );
     if ( !ctx_live )
         return GUI_VP_INVALID;
 
@@ -586,8 +584,8 @@ gui_viewport_update( void )
        after render it is already too late (the frame drew into a surface marked for teardown).
        The one safe window is between frame_end and the first render -- name it when missed. */
     GUI_CONTRACT( s_frame_phase != GUI_FRAME_BUILD,
-                  "viewport_update() inside the build -- it frees surfaces, so it must run "
-                  "after frame_end() and before render().\n" );
+                  "viewport_update() inside the build -- it frees surfaces, so run it between "
+                  "frame_end() and render()." );
 
     /* (1) Tear-off / merge-back: a window whose title was dragged off its host surface (enqueued by
        window_begin_ex) changes which surface hosts it.  Resolved against the REQUEST's owner

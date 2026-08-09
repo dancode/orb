@@ -62,7 +62,7 @@ void gui_log( gui_log_level_t level, const char* fmt, ... );
 void gui_log_set_fn( gui_log_fn fn, void* user );
 
 /*==============================================================================================
-    Loud-overflow reporting (every unit's pools stand on this)
+    Report-once (every unit's pools and the frame lifecycle stand on this)
 
     Every fixed pool in the gui follows the same saturation rule: never fail hard, never be
     silent.  The overflowing site degrades gracefully (drop / share / evict) but reports ONCE
@@ -72,16 +72,18 @@ void gui_log_set_fn( gui_log_fn fn, void* user );
     follow-up ORB_ASSERT_MSG_ONCE can trap.
 ==============================================================================================*/
 
-#define GUI_WARN_ONCE( ... )                              \
+#define GUI_LOG_ONCE( level, ... )                        \
     do                                                    \
     {                                                     \
-        static bool s_gui_warned_once;                    \
-        if ( !s_gui_warned_once )                         \
+        static bool s_gui_logged_once;                    \
+        if ( !s_gui_logged_once )                         \
         {                                                 \
-            gui_log( GUI_LOG_WARN, __VA_ARGS__ );         \
-            s_gui_warned_once = true;                     \
+            s_gui_logged_once = true;                     \
+            gui_log( ( level ), __VA_ARGS__ );            \
         }                                                 \
     } while ( 0 )
+
+#define GUI_WARN_ONCE( ... ) GUI_LOG_ONCE( GUI_LOG_WARN, __VA_ARGS__ )
 
 // clang-format on
 /*============================================================================================*/
