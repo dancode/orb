@@ -26,7 +26,7 @@
 // clang-format off
 
 void
-pane_tag( gui_id_t id, u32 z, u32 vp, u32 band )
+pane_tag( gui_id_t id, u32 z, gui_vp_t vp, u32 band )
 {
     draw_set_window( id );        /* stable retained-cache key: all this pane's spans share it */
     draw_set_sort_key( z );
@@ -61,7 +61,7 @@ gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier, gui_vp
     DBG_NAME( id, id_str );
 
     if ( vp == GUI_VP_INVALID )
-        vp = 0;
+        vp = GUI_VP_PRIMARY;
 
     u32 z = ( tier == GUI_REGION_BG ) ? GUI_REGION_BG_Z
           : ( tier == GUI_REGION_FG ) ? GUI_REGION_FG_Z
@@ -94,7 +94,7 @@ gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier, gui_vp
     s_pane.open    = true;
     s_pane.clipped = !( flags & GUI_WIN_NO_CLIP );
 
-    return ( gui_pane_t ){ .id = id, .rect = r, .z = z, .vp = (u8)vp };
+    return ( gui_pane_t ){ .id = id, .rect = r, .z = z, .vp = (i8)vp };
 }
 
 void

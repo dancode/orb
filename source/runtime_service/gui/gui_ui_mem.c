@@ -99,7 +99,7 @@ gui_mem_stats( void )
        geometry buffers) so the backend can scale the per-surface VB/IB by the true surface count --
        the old report assumed a single surface and undercounted every floater / secondary window. */
     u32 live_viewports = 0;
-    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+    for ( u32 v = 1; v < GUI_VP_SLOTS; ++v )
         if ( rhi_handle_valid( s_vp_pool[ v ].vb ) )
             ++live_viewports;
 

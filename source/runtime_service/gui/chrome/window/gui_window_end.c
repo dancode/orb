@@ -267,7 +267,7 @@ window_end_titlebar( gui_window_t* win, bool native )
                (gui_window_native.c) also paints the floater's caption pop-in button, so the mark
                is identical on both sides of the transition -- and, being an arrow rather than a
                box, is never mistaken for the maximize / restore squares beside it. */
-            bool attached = !win || win->viewport == 0;
+            bool attached = !win || win->viewport == GUI_VP_PRIMARY;
             native_draw_dock_glyph( det_r, attached, col_btn_glyph( det_st ) );
 
             right_limit = det_r.x - WIDGET_PAD;   /* keep the title text clear of the button */

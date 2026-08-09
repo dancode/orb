@@ -1,66 +1,36 @@
 /*==============================================================================================
 
-    runtime_service/gui/frame/gui_boot.c -- THE BOOT PATH: one-call setup and the quick gui loop
-    it belongs to.
+    runtime_service/gui/frame/gui_boot.c -- Easy setup for a quick gui loop.
 
-    TIER NOTE: this is the TEST-BED methodology -- for sandboxes, demos, and quick tools where
-    the UI is the whole application and setup boilerplate is pure friction.  It is the
-    alternative to the engine's idiomatic path, the runtime host (source/runtime, run_host_main),
-    which owns the window, the rhi context, the event drain, the composite and the pacing itself
-    and wires gui as one optional service.  Nothing here is required to use gui.
+    For sandboxes, demos and quick tools where the UI is the whole application.  boot() stands
+    up the main surface end to end (rhi device -> OS window -> render context -> ui init ->
+    viewport 0) by composing the same public calls a host would make itself.  It is a shortcut,
+    not a mode: the engine's idiomatic path is the runtime host (source/runtime), which owns the
+    window, pump, composite and pacing and treats gui as one optional service.
 
-    gui's tear-off floaters already own their OS window + rhi context end to end
-    (viewport_spawn); boot() extends that to the main surface (rhi device -> OS window ->
-    render context -> gui init -> viewport 0).  Everything here composes the same public
-    primitives a host would call itself, so the explicit path keeps working unchanged --
-    boot is composition, not replacement.
+    A runtime-path host calls none of these boot verbs.
 
-    WHAT boot_ MEANS HERE: membership in this loop, not a dependency on s_boot.  The engine has
-    two host methodologies -- the runtime host (source/runtime), which owns the window, context,
-    pump, composite and pacing and treats gui as a service, and THIS path, where gui owns the
-    main surface and the loop's shape.  Every boot_ verb below belongs to the second one; a
-    runtime-path host calls none of them.  How much each actually leans on s_boot varies and is
-    beside the point:
+    Scope: PUBLIC app/rhi/gui primitives only, owning nothing beyond the main surface's lifecycle
+    (window + swapchain + viewport 0 + the frame pair).  Job ticks, hot-reload, simulation clocks
+    and networking belong to the runtime host, never here.
 
-      boot()         -- composition.  Every line of it is a public call, in the order a host
-                        makes them.  A shortcut, not a mode.
-      boot_poll()    -- reads NO s_boot state, and still belongs here: nothing outside this loop
-                        calls it, and a real host needs what it does not offer (its own look at
-                        the event ring, a close policy other than close-means-quit).  It is
-                        boot's pump.  The naming follows the loop, not the state.
-      boot_present_* -- the one true fork.  These reach s_boot's window, context, and viewport,
-                        which a runtime-path host cannot supply, so they are a reported no-op
-                        off this path rather than a partial frame.  That host writes the
-                        explicit render block (spelled out in gui_api.h under BOOT PATH).
+    Included LAST in the gui_frame.c unity (after gui_frame_loop.c), which reaches back through two
+    forward-declared statics -- boot_shutdown() and boot_shell_emit() (the auto chrome shell).
 
-    frame_pace() also lives in this file but is NOT boot_: it paces over the frame hooks alone
-    and sb_vulkan -- an attach-path host with its own window, context and pump -- calls it.
-    Shared verb, shared name; it sits here for company with the loop it usually closes.
+    Ordering contract:
 
-    Scope contract: this tier composes PUBLIC app/rhi/gui primitives only, and owns nothing
-    beyond the main surface's lifecycle (window + swapchain + viewport 0 + the frame pair).
-    Anything that is not window/surface/UI -- job ticks, hot-reload, simulation clocks,
-    networking -- belongs to the runtime host (source/runtime), never here.
-
-    Included LAST in the gui_frame.c unity (after gui_frame_loop.c): it calls straight into the
-    frame lifecycle, the viewport pool, and the window unit.  gui_frame_loop.c reaches back through
-    two forward-declared statics -- boot_shutdown() (teardown from gui_shutdown) and
-    boot_shell_emit() (the auto chrome shell at the default ctx_begin).
-
-    Ordering contract (mirrors the explicit loop the sandboxes ran):
-
-        gui()->boot( &desc );                        -- once, after mod_init_all
-        while ( gui()->boot_poll( &dt ) )           -- pump + route events; false on close
+        gui()->boot( &desc );                           -- once, after mod_init_all
+        while ( gui()->boot_poll( &dt ) )               -- pump + route events; false on close
         {
             if ( gui()->frame_begin( dt ) ) { ctx_begin; ...build...; ctx_end; }
             gui()->frame_end();
             rhi_cmd_t cmd;
-            if ( gui()->boot_present_begin( &cmd ) ) -- open the frame; host render passes
+            if ( gui()->boot_present_begin( &cmd ) )    -- open the frame; host render passes
                 ...record into cmd...
-            gui()->boot_present_end();               -- gui draw + present + floaters
+            gui()->boot_present_end();                  -- gui draw + present + floaters
             gui()->frame_pace( 4, 16 );
         }
-        gui()->shutdown();                           -- also tears down the boot-owned surface
+        gui()->shutdown();                              -- also tears down the boot-owned surface
 
 ==============================================================================================*/
 // clang-format off
@@ -72,12 +42,14 @@
 static struct
 {
     bool     active;          /* boot() ran; shutdown tears the surface down          */
+    bool     shell;           /* borderless boot: auto-emit the chrome shell          */
+
     i32      win_id;          /* boot-owned OS window (also the viewport slot)        */
     i32      rhi_ctx;         /* boot-owned rhi render context (swapchain)            */
     gui_vp_t vp;              /* the primary viewport boot opened                     */
-    bool     shell;           /* borderless boot: auto-emit the chrome shell          */
+    
     f32      clear[ 4 ];      /* boot_present_begin swapchain clear color             */
-    char     title[ 96 ];     /* window title, re-used as the shell caption each frame */
+    char     title[ 64 ];     /* window title, re-used as the shell caption each frame */
 
 } s_boot;
 
@@ -178,6 +150,7 @@ boot_shutdown( void )
    frame), so the shell is the first window in its build and the caption band it publishes is
    live for everything after it.  viewport_shell itself no-ops on an OS-chrome window, so this
    is doubly gated.  Explicit-path hosts (no boot) are untouched: s_boot.shell is false. */
+
 static void
 boot_shell_emit( void )
 {

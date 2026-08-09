@@ -87,7 +87,7 @@ dock_float_group_create( gui_window_t* target, gui_id_t target_id, const char* t
 ==============================================================================================*/
 
 static bool
-dock_float_hit( gui_id_t drag_id, u32 vp, gui_dock_node_t** out_node, gui_id_t* out_win )
+dock_float_hit( gui_id_t drag_id, gui_vp_t vp, gui_dock_node_t** out_node, gui_id_t* out_win )
 {
     *out_node = NULL;
     *out_win  = GUI_ID_NONE;

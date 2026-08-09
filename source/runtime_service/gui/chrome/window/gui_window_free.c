@@ -83,7 +83,7 @@ window_work_top( gui_vp_t vp )
 f32
 gui_viewport_content_y( gui_vp_t vp )
 {
-    if ( vp >= GUI_MAX_VIEWPORTS )
+    if ( !vp_live( vp ) )
         return 0.0f;
     return window_work_top( vp );
 }
@@ -480,7 +480,7 @@ window_apply_drag( gui_window_t* win, gui_id_t id )
     if ( !interact_held( id ) )
         return;
 
-    if ( win->viewport == 0 )
+    if ( win->viewport == GUI_VP_PRIMARY )
     {
         move_track( id, s_io.mouse_x, s_io.mouse_y, &win->x, &win->y );
         window_clamp( win );
@@ -539,10 +539,10 @@ window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title,
         }
 
         bool crossed = false;
-        if ( win->viewport == 0 )
+        if ( win->viewport == GUI_VP_PRIMARY )
         {
-            f32 dw = vp_w( 0 ); if ( dw < 1.0f ) dw = 1.0f;
-            f32 dh = vp_h( 0 ); if ( dh < 1.0f ) dh = 1.0f;
+            f32 dw = vp_w( GUI_VP_PRIMARY ); if ( dw < 1.0f ) dw = 1.0f;
+            f32 dh = vp_h( GUI_VP_PRIMARY ); if ( dh < 1.0f ) dh = 1.0f;
             crossed = s_io.mouse_x < 0.0f || s_io.mouse_y < 0.0f
                    || s_io.mouse_x >= dw || s_io.mouse_y >= dh;
         }
@@ -554,9 +554,9 @@ window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title,
                every frame.  Re-entering only past the inset breaks that oscillation. */
             i32 cx = 0, cy = 0, mx = 0, my = 0;
             app()->mouse_position_screen( &cx, &cy );
-            app()->window_get_pos( s_vp_pool[ 0 ].win_id, &mx, &my );
-            i32 mw = (i32)vp_w( 0 );
-            i32 mh = (i32)vp_h( 0 );
+            app()->window_get_pos( s_vp_pool[ GUI_VP_PRIMARY ].win_id, &mx, &my );
+            i32 mw = (i32)vp_w( GUI_VP_PRIMARY );
+            i32 mh = (i32)vp_h( GUI_VP_PRIMARY );
             i32 inset = (i32)WIN_TITLE_H;
             bool inside = cx >= mx + inset && cy >= my + inset
                        && cx < mx + mw - inset && cy < my + mh - inset;
@@ -788,7 +788,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        the tear-off request -- the title is in hand here, which viewport_update needs to label
        the OS window.  Stay hidden this one frame until the surface exists so it never flashes on the
        main surface at (0,0); last_frame IS stamped so the fresh floater is not read as abandoned. */
-    if ( win->reopen.floater && win->viewport == 0 && !s_vp_request.active )
+    if ( win->reopen.floater && win->viewport == GUI_VP_PRIMARY && !s_vp_request.active )
     {
         win->reopen.floater   = false;
         s_vp_request.active   = true;
@@ -811,8 +811,8 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         win->reopen.floater = false;
 
     /* Closed-viewport fallback: if this window's surface was destroyed, revert to primary. */
-    if ( win->viewport > 0 && !rhi_handle_valid( s_vp_pool[ win->viewport ].vb ) )
-        win->viewport = 0;
+    if ( win->viewport != GUI_VP_PRIMARY && !rhi_handle_valid( s_vp_pool[ win->viewport ].vb ) )
+        win->viewport = GUI_VP_PRIMARY;
 
     /* Ask the dock who places this window (the route seam, chrome/dock/gui_dock_route.c): any pending
        tab-onto-window group forms now, while the title (its tab name) is in hand, and a window
@@ -1068,7 +1068,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
    viewport work area (caption band + main menu bar, window_work_top) and wraps back to that
    first slot once the next position would cross half the viewport extent on either axis. */
 static void
-window_default_spawn( u32 viewport, f32* out_x, f32* out_y )
+window_default_spawn( gui_vp_t viewport, f32* out_x, f32* out_y )
 {
     gui_vp_t vp = viewport;
     const f32 inset = 60.0f;
@@ -1105,7 +1105,8 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
         /* The pool-full guard keeps a scratch-hosted overflow window (window_find never sees it,
            so it reads as appearing EVERY frame) from advancing the cascade and walking across
            the screen; it takes the fixed fallback above instead. */
-        u32 vp = s_next_win.has_viewport ? s_next_win.viewport : s_build.win.viewport;
+        gui_vp_t vp = ( s_next_win.viewport != GUI_VP_INVALID ) ? s_next_win.viewport
+                                                                 : s_build.win.viewport;
         window_default_spawn( vp, &x, &y );
     }
 
@@ -1127,7 +1128,7 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
 f32
 gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
 {
-    if ( vp >= GUI_MAX_VIEWPORTS )
+    if ( !vp_live( vp ) )
         return 0.0f;
 
     if ( !app()->window_is_borderless( s_vp_pool[ vp ].win_id ) )
@@ -1166,11 +1167,11 @@ gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
 ==============================================================================================*/
 
 void
-windows_dpi_rescale( u32 vp, f32 ratio )
+windows_dpi_rescale( gui_vp_t vp, f32 ratio )
 {
     if ( !( ratio > 0.0f ) || ratio == 1.0f )
         return;
-    if ( vp >= GUI_MAX_VIEWPORTS || s_vp_pool[ vp ].owned )
+    if ( s_vp_pool[ vp ].owned )
         return;
 
     for ( u32 c = 0; c < s_ctx_pool_count; ++c )

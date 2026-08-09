@@ -46,7 +46,15 @@
 /* Render-surface ceiling: one gui viewport rides one OS window + one rhi context, so the
    per-surface capture tables here and the viewport pool default (frame/gui_context.c) are
    sized by the platform pair -- derived, not repeated. */
-#define GUI_MAX_VIEWPORTS APP_WIN_MAX       // one surface per OS window / rhi context
+#define GUI_MAX_VIEWPORTS APP_WIN_MAX       // capacity: one surface per OS window / rhi context
+#define GUI_VP_SLOTS      APP_WIN_SLOTS     // pool extent (+1 for reserved slot 0)
+
+/* Which of the two to size a table with: if it is indexed DIRECTLY by a gui_vp_t (the pool, the
+   per-surface capture below), use GUI_VP_SLOTS and let entry 0 sit dead -- a struct is cheap and
+   direct indexing is worth it.  If it is storage merely KEYED by a live viewport (GPU regions,
+   anything measured in KB per entry), size it by GUI_MAX_VIEWPORTS and bias `vp - 1` at the one
+   place that computes the index: reserving a slot there buys nothing and costs real memory --
+   the debug overlay's VB/IB would burn ~1 MB on a region no viewport can ever write. */
 
 ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
                    "a gui viewport pairs an OS window with an rhi context; the maxes must agree" );
@@ -134,7 +142,7 @@ void draw_set_text_edge_raw     ( u32 edge );       // ...restore one verbatim (
 void draw_set_text_clip_x       ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run
 void draw_clear_text_clip       ( void );           // restore the no-clip sentinel (unbounded text)
 void draw_set_sort_key          ( u32 z );          // paint order stamped on new commands (window z)
-void draw_set_viewport          ( u32 vp );         // viewport index stamped on new commands (surface routing)
+void draw_set_viewport          ( gui_vp_t vp );    // viewport index stamped on new commands (surface routing)
 void draw_set_band              ( u32 band );       // arena band: 0 = main UI, 1 = debug (GUI_WIN_DEBUG_BAND)
 u32  draw_band                  ( void );           // current band (sampled for popup band inheritance)
 void draw_set_window            ( gui_id_t win );   // stable window id stamped on new commands (cache key)
@@ -149,7 +157,7 @@ typedef struct
 {
     gui_id_t window;         // s_draw.cur_win (retained-cache key)
     u32      sort_key;       // s_draw.cur_z (paint order)
-    u32      viewport;       // s_draw.cur_vp (target surface routing)
+    gui_vp_t viewport;       // s_draw.cur_vp (target surface routing)
     u32      band;           // s_draw.cur_band (arena band: debug UI isolation)
     f32      text_clip_x0;   // ambient glyph-clip window
     f32      text_clip_x1;
@@ -296,7 +304,7 @@ bool draw_cull_box              ( f32 x, f32 y, f32 w, f32 h );
 typedef struct
 {
     gui_id_t   win;      /* owning window (segment tag) */
-    u32        vp;       /* viewport the run renders on */
+    gui_vp_t   vp;       /* viewport the run renders on */
     u32        font;     /* the run's own font id (measure with THIS font) */
     f32        x, y;     /* glyph-run origin (top-left of the glyph box) */
     u32        off, len; /* byte range into the capture text pool (select_run_text) */
@@ -421,7 +429,7 @@ void     replay_scope_exit   ( bool force_redraw );
 ==============================================================================================*/
 
 void                gui_render_flush        ( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
-                                              u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+                                              gui_vp_t vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
 /* Fill the backend-owned buckets of the memory breakdown: GPU device memory (geometry buffers
    scaled by the caller-supplied live-surface count, atlas textures, debug-overlay buffers) and
@@ -516,7 +524,9 @@ extern gui_id_t g_dash_window_id;
     typedef struct                       /* win_geo_slot_t + this frame's diff verdict */
     {
         gui_id_t win;
-        u32      z, vp, band;
+        u32      z;
+        gui_vp_t vp;
+        u32      band;
         u32      vert_base, vert_count, vert_alloc;
         u32      idx_base,  idx_count,  idx_alloc;
         u32      cmd_base,  cmd_count;
@@ -527,7 +537,9 @@ extern gui_id_t g_dash_window_id;
 
     typedef struct                       /* gui_gpu_cmd_t + its parallel arrays, flattened */
     {
-        u32        elem_count, tex_idx, vp, vbase, ibase;
+        u32        elem_count, tex_idx;
+        gui_vp_t   vp;            /* target surface (a dormant pad reads elem_count 0) */
+        u32        vbase, ibase;
         gui_rect_t clip;
 
     } dash_cmd_t;
@@ -581,7 +593,7 @@ extern gui_id_t g_dash_window_id;
         u32  draw_call_hwm;
 
         /* FLUSH capture -- end of gui_render_flush, per surface. */
-        dash_surf_t surf[ GUI_MAX_VIEWPORTS ];
+        dash_surf_t surf[ GUI_VP_SLOTS ];
 
     } dash_snapshot_t;
 
@@ -601,7 +613,7 @@ extern gui_id_t g_dash_window_id;
          dash_capture_flush -- end of gui_render_flush: one surface's frame index, upload spans,
                                upload bytes/batches and draw calls. */
     void dash_capture_build( void );
-    void dash_capture_flush( u32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 idx_hi,
+    void dash_capture_flush( gui_vp_t vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 idx_hi,
                              u32 bytes, u32 batches, u32 draws );
 
     #define DASH_CAPTURE_BUILD()        dash_capture_build()
@@ -672,7 +684,8 @@ extern gui_id_t g_dash_window_id;
         const char* text;     /* TEXT: frozen pool string; NULL for every other type */
         gui_id_t    win;      /* owning segment tag (the retained-cache window key) */
         gui_id_t    owner;    /* emitting widget id (0 = chrome/background) */
-        u32         z, vp;    /* owning segment's tag */
+        u32         z;        /* owning segment's tag (paint order) */
+        gui_vp_t    vp;       /* ...and its target surface */
         u32         font;     /* TEXT / TEXT_XF: the run's own font id; 0 for every other type */
 
     } step_cmd_info_t;
@@ -680,7 +693,8 @@ extern gui_id_t g_dash_window_id;
     typedef struct
     {
         gui_id_t   win;
-        u32        z, vp;     /* the segment key -- no font: it is per COMMAND now (gui.h) */
+        u32        z;         /* the segment key -- no font: it is per COMMAND now (gui.h) */
+        gui_vp_t   vp;
         u32        lo, hi;    /* frozen command range [lo, hi) -- seek targets */
         gui_rect_t bounds;    /* union of the member commands' bboxes */
 
@@ -696,7 +710,7 @@ extern gui_id_t g_dash_window_id;
        A topmost hit that is unattributed chrome/background (owner 0) refuses the pick -- a
        missed click is a no-op, never a seek onto a window's body fill.  False while live, on
        a miss, or on a chrome hit. */
-    bool step_pick( f32 x, f32 y, u32 vp, u32* out_index );
+    bool step_pick( f32 x, f32 y, gui_vp_t vp, u32* out_index );
 
     /* The attribution stamp (draw_set_cmd_owner / STEP_SET_OWNER) is declared in
        debug/gui_debug.h -- the interact server calls it; the definition stays in

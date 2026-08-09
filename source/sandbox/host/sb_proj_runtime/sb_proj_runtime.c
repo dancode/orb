@@ -90,7 +90,7 @@ sb_proj_runtime_on_draw( f32 alpha, const run_view_t* view )
     if ( !g_state || !g_state->running )
         return;
 
-    if ( view->render_ctx >= 0 && view->surface_w > 0 && view->surface_h > 0 )
+    if ( view->render_ctx != RHI_CTX_INVALID && view->surface_w > 0 && view->surface_h > 0 )
     {
         f32 p      = f32_lerp( g_state->pos_prev, g_state->pos, alpha );
         f32 w      = ( f32 )view->surface_w;

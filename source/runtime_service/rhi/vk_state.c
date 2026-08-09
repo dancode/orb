@@ -347,7 +347,7 @@ typedef struct vk_state_s
 
     /* Context pool */
 
-    vk_context_t            contexts    [ RHI_CTX_MAX ];
+    vk_context_t            contexts    [ RHI_CTX_SLOTS ];
     u32                     ctx_alloc;          // bitmask: bit i set = slot i is live
 
 } vk_state_t;

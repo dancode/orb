@@ -76,7 +76,7 @@ typedef struct
     gui_rect_t  r;             /* rect geometry in pixels (x0,y0 = top-left) */
     u32          abgr;         /* rect color, packed like GUI_COLOR macro */
     f32          thickness;    /* outline thickness in pixels; 0.0f = filled */
-    u8           vp;           /* target viewport index (GUI_MAX_VIEWPORTS <= 255) */
+    i8           vp;           /* target viewport index (GUI_MAX_VIEWPORTS <= 255) */
 } dbg_cmd_t;
 
 /*==============================================================================================
@@ -178,19 +178,19 @@ gui_debug_name( gui_id_t id )
 ==============================================================================================*/
 
 static void
-dbg_push_fill( u32 vp, gui_rect_t r, u32 abgr )
+dbg_push_fill( gui_vp_t vp, gui_rect_t r, u32 abgr )
 {
     if ( s_dbg.cmd_count >= GUI_DBG_MAX_CMDS ) { s_dbg.overflow = true; return; }
     if ( r.w <= 0.0f || r.h <= 0.0f ) return;
-    s_dbg.cmds[ s_dbg.cmd_count++ ] = ( dbg_cmd_t ){ r, abgr, 0.0f, (u8)vp };
+    s_dbg.cmds[ s_dbg.cmd_count++ ] = ( dbg_cmd_t ){ r, abgr, 0.0f, (i8)vp };
 }
 
 static void
-dbg_push_outline( u32 vp, gui_rect_t r, f32 thickness, u32 abgr )
+dbg_push_outline( gui_vp_t vp, gui_rect_t r, f32 thickness, u32 abgr )
 {
     if ( s_dbg.cmd_count >= GUI_DBG_MAX_CMDS ) { s_dbg.overflow = true; return; }
     if ( r.w <= 0.0f || r.h <= 0.0f ) return;
-    s_dbg.cmds[ s_dbg.cmd_count++ ] = ( dbg_cmd_t ){ r, abgr, thickness, (u8)vp };
+    s_dbg.cmds[ s_dbg.cmd_count++ ] = ( dbg_cmd_t ){ r, abgr, thickness, (i8)vp };
 }
 
 /*==============================================================================================
@@ -226,7 +226,7 @@ dbg_capture_clip( gui_rect_t r, u32 depth )
         GUI_COLOR( 0xC0, 0x60, 0xF0, 0xFF ),
         GUI_COLOR( 0x60, 0xF0, 0x90, 0xFF ),
     };
-    u32 vp   = dbg_build_viewport();
+    gui_vp_t vp   = dbg_build_viewport();
     u32 lvl  = depth ? depth - 1u : 0u;       /* 0 = outermost (root/window) clip */
     u32 c    = depth_rgb[ lvl & 3u ];
 
@@ -251,7 +251,7 @@ void
 dbg_capture_region( gui_rect_t view, gui_rect_t hit_clip, f32 sb_w, f32 sb_h )
 {
     if ( !( s_dbg.layers & GUI_DBG_REGION ) ) return;
-    u32 vp = dbg_build_viewport();
+    gui_vp_t vp = dbg_build_viewport();
 
     dbg_push_fill( vp, hit_clip, DBG_COL_HITCLIP );
     if ( sb_w > 0.0f )
@@ -361,10 +361,9 @@ dbg_expand_quad( f32 wu, f32 wv, f32 x, f32 y, f32 w, f32 h, u32 abgr,
 void
 dbg_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
-    if ( vp >= GUI_MAX_VIEWPORTS ) return;
     if ( s_dbg.cmd_count == 0 || !rhi_cmd_valid( cmd ) ) return;
 
-    u8  v  = (u8)vp;
+    i8  v  = (i8)vp;
     u32 vc = 0, ic = 0;
 
     f32 wu, wv_uv;
@@ -404,8 +403,13 @@ dbg_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
                        GUI_DBG_MAX_CMDS );
 
     u32 frame  = rhi()->cmd_frame_index( cmd );
-    u32 vb_off = ( frame * GUI_MAX_VIEWPORTS + vp ) * (u32)GUI_DBG_VB_REGION_BYTES;
-    u32 ib_off = ( frame * GUI_MAX_VIEWPORTS + vp ) * (u32)GUI_DBG_IB_REGION_BYTES;
+    /* Region index, not a pool index: this buffer holds one region per LIVE viewport, so it is
+       sized by the capacity (GUI_MAX_VIEWPORTS) and the 1-based vp is biased down here -- the one
+       decode site.  Reserving a region for slot 0 the way the pools reserve a struct would cost
+       ~1 MB of GPU memory that nothing can ever write. */
+    u32 region = frame * GUI_MAX_VIEWPORTS + ( (u32)vp - 1u );
+    u32 vb_off = region * (u32)GUI_DBG_VB_REGION_BYTES;
+    u32 ib_off = region * (u32)GUI_DBG_IB_REGION_BYTES;
 
     rhi()->buffer_write( s_dbg.vb, s_dbg.scratch_verts, vc * sizeof( gui_draw_vert_t ), vb_off );
     rhi()->buffer_write( s_dbg.ib, s_dbg.scratch_idx,   ic * sizeof( u16 ),               ib_off );

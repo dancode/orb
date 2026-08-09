@@ -31,7 +31,7 @@
 void
 gui_dockspace_inset( gui_vp_t vp, f32 top )
 {
-    if ( vp >= GUI_MAX_VIEWPORTS )
+    if ( !vp_live( vp ) )
         return;
     f32 inset = ( top > 0.0f ) ? top : 0.0f;
     if ( s_vp_pool[ vp ].dock_inset == inset )
@@ -49,7 +49,7 @@ gui_dock_id_t
 gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
 {
     if ( !g_ctx->dock.pool ) return GUI_DOCK_NONE;   /* pool disabled for this context (max_dock_nodes == 0) */
-    if ( vp >= GUI_MAX_VIEWPORTS )
+    if ( !vp_live( vp ) )
         return GUI_DOCK_NONE;
 
     /* Mixed DPI: the tree's node rects (strip heights, splitter thickness) resolve from s_style,
@@ -211,7 +211,7 @@ gui_dock_id_t
 gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio )
 {
     if ( !g_ctx->dock.pool ) return GUI_DOCK_NONE;
-    if ( vp >= GUI_MAX_VIEWPORTS )
+    if ( !vp_live( vp ) )
         return GUI_DOCK_NONE;
 
     gui_viewport_t*  v    = &s_vp_pool[ vp ];
