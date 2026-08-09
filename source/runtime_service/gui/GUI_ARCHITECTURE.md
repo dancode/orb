@@ -97,7 +97,7 @@ Upward calls stay explicit and few, and each is DECLARED in its lowest consumer'
 
 Every unit ends with a `<unit>_unit_mem_bytes()` seam; `gui_ui_mem.c` (frame) aggregates.
 
-## Widget tiers -- component / stock / chrome (the point of the whole stack)
+## Widget tiers -- component / stock / chrome
 
 The stack has zero one-size-fits-all widgets on purpose. A widget's presentation is USER-driven;
 only its logic is shared. Four rungs, each a client of the one below:
@@ -116,16 +116,15 @@ only its logic is shared. Four rungs, each a client of the one below:
 - **chrome** (`chrome/`): the product -- the editor's window/dock/popup/table framework and
   its default-look widgets.
 - **user widget** (app-side, e.g. `my_game_slider`): a component + the game's own art. It is a
-  SIBLING of the matching stock widget -- same logic, different presentation. This is the whole
-  payoff: the same slider logic drives the editor's flat handle and a game's diamond-and-art
-  handle, and neither is favored.
+  SIBLING of the matching stock widget -- same logic, different presentation: the same slider
+  logic drives the editor's flat handle and a game's diamond-and-art handle, and neither is
+  favored.
 
-Status: the widget set is `stock_*` throughout and the `el_` prefix is gone entirely -- the
-elements became the components, and the style axis it briefly named is now just `style_`
-(`style_col` inside, `gui()->style_color` outside, over `GUI_ROLE_*` x `GUI_PHASE_*`). ONE
-vocabulary: chrome, stock, and a user widget all name a color the same way. Each `gui_stock_*`
-render sits over a `gui_comp_*` logic core; all are public (`gui_host.h` / the vtable), and a
-user widget is the stock render's sibling over the same `comp_*` call.
+One naming vocabulary covers all three tiers: chrome, stock, and a user widget name a color the
+same way, through `style_col` inside the library and `gui()->style_color` outside it, over
+`GUI_ROLE_*` x `GUI_PHASE_*`. Each `gui_stock_*` render sits over a `gui_comp_*` logic core; both
+are public (`gui_host.h` / the vtable), and a user widget is the stock render's sibling over the
+same `comp_*` call.
 
 CALL shape: every component opens `(id, rect, ...)` -- logic first, so the identity that keyed the
 state leads. A parameter-rich one ADDS an `_ex` desc twin, never replaces the positional form
@@ -147,8 +146,8 @@ geometry, then only the outcomes `state` does not already carry -- never a secon
 
 - `comp_slider` -- `(id, rect, v, lo, hi)` -> `{state, frac, fill, handle, changed}`;
   `comp_slider_ex` takes `gui_comp_slider_desc_t` (snap step, handle width, nav step).
-- `comp_button` -- the simplest; settled the shared shape. `(id, rect)` -> `{state}`; the outcome
-  IS `state.clicked`, so it adds no field.
+- `comp_button` -- the simplest. `(id, rect)` -> `{state}`; the outcome IS `state.clicked`, so it
+  adds no field.
 - `comp_check` -- `(id, rect, bool* v)` -> `{state, box, changed}` (inscribed box).
 - `comp_cycle` -- COMPOSES `comp_button` for each cap -> `{state, prev, next, prev_box, next_box,
   label, changed}`; `state` is the whole stepper, `prev`/`next` the per-cap faces. Takes `count`
@@ -164,13 +163,12 @@ distils an interact state into a style PHASE (ACTIVE / HOT / IDLE, nav counting 
 and chrome's `COL_*` macros use, so `push_style_color` reaches a user widget exactly as it
 reaches a stock one. Reading `style_edit()->col[][]` at paint time instead bypasses the stack.
 
-No component (deliberately): `stock_panel` / `stock_label` / `stock_meter` are inert paint -- no
-interaction, no logic to extract -- so they stay render-only. Not every widget needs one. Proven
-in `sb_gui_base` tier 3 (the slider and button each show a stock render beside a custom render
-over one `comp_*` call). `chrome/` keeps its bespoke widgets for now -- it makes NO `comp_*` calls
-today -- and may migrate onto these components later (the migrate-down direction), which would
-first need the components chrome is missing (`comp_drag` for the relative-drag family,
-`comp_scrollbar`, `comp_tab`).
+No component: `stock_panel` / `stock_label` / `stock_meter` are inert paint -- no interaction, no
+logic to extract -- so they stay render-only. Not every widget needs one. `sb_gui_base` tier 3
+shows the slider and button each with a stock render beside a custom render over one `comp_*`
+call. `chrome/` has its own bespoke widgets and makes no `comp_*` calls; the components its
+widgets would need do not exist yet (`comp_drag` for the relative-drag family, `comp_scrollbar`,
+`comp_tab`).
 
 ## The composer / behavior / presentation split
 
@@ -233,21 +231,20 @@ Three roles, one contract (the units carry the same names):
   draw it. Each painter mirrors one colour projection (`col_item_bg` -> `draw_face_item`, and so
   on) so a site converts by changing one call.
 
-  WHEN a widget's surface changes is the MIX (`gui_style_mix_t`, `style_mix`). Phase and look are
-  enumerations, and an enumeration cannot say "most of the way to hovered" -- which is why widgets
-  used to snap, and why an "animated" twin of each projection would only have spread the same snap
-  over twice the surface. The mix is the CONTINUOUS coordinate over the same grid: three weights
-  (toward HOT, toward ACTIVE, toward SELECT) damped in one `gui_anim4` slot. The read is split
-  from the spend, and that split is what makes motion affordable everywhere: `style_mix` is the
-  one call that touches storage, and a widget reads it ONCE and spends it on every row it paints
-  (`style_col_mix` for the surface, the border, the ink), so a three-part widget costs one probe
-  and its parts arrive together. Storage stays proportional to items IN MOTION -- the weights rest
-  at zero, so a settled widget's slot evicts and an idle UI holds nothing. `GUI_ID_NONE` opts out
-  with no probe at all. The three rates are style vars (`GUI_VAR_ANIM_HOT` / `_ACTIVE` /
-  `_SELECT`, class `GUI_CLASS_RATE`), so a theme owns the feel of the entire widget set and
-  setting them to 0 makes the library snap down the same code path -- there is no animation
-  branch. Faces CROSS-FADE rather than blend, since art does not interpolate: `face_span`
-  collapses the mix onto the two cells the item lies between and alpha-composites them.
+  WHEN a widget's surface changes is the MIX (`gui_style_mix_t`, `style_mix`): a CONTINUOUS
+  coordinate over the same color grid, since phase and look are enumerations and cannot express
+  "most of the way to hovered" on their own. Three weights (toward HOT, toward ACTIVE, toward
+  SELECT) are damped in one `gui_anim4` slot. The read is split from the spend, and that split is
+  what makes motion affordable everywhere: `style_mix` is the one call that touches storage, and
+  a widget reads it ONCE and spends it on every row it paints (`style_col_mix` for the surface,
+  the border, the ink), so a three-part widget costs one probe and its parts arrive together.
+  Storage stays proportional to items IN MOTION -- the weights rest at zero, so a settled
+  widget's slot evicts and an idle UI holds nothing. `GUI_ID_NONE` opts out with no probe at all.
+  The three rates are style vars (`GUI_VAR_ANIM_HOT` / `_ACTIVE` / `_SELECT`, class
+  `GUI_CLASS_RATE`), so a theme owns the feel of the entire widget set; setting them to 0 makes
+  the library snap, with no separate animation code path. Faces CROSS-FADE rather than blend,
+  since art does not interpolate: `face_span` collapses the mix onto the two cells the item lies
+  between and alpha-composites them.
 - MEASURED extents are a different shape of motion and use a different damper. A natural column
   width or a box height is resolved from LAST frame's measure (the engine is single-pass), so a
   change is one wrong frame followed by a snap -- which reads as a glitch, not as motion.

@@ -2,67 +2,57 @@
 #define GUI_CTX_H
 /*==============================================================================================
 
-    runtime_service/gui/core/gui_ctx.h -- the interact server's retained-mode storage.
+    runtime_service/gui/core/gui_ctx.h -- retained-mode storage for the interact server.
 
-    THE RECORDS: the model says the interact server owns "dedicated retained-mode storage 
-    -- the id namespace, the keyed state pool, retained rect records, the hover/z contest".
-    
-    This header is that storage: every retained record the server dereferences 
-    (window, nav cursor, surface, scroll link, the build scratch) is DEFINED here, and 
-    the context aggregate that pools them closes the file.  
-    
-    The POLICY over each record stays where it always was -- window/nav/popup/dock behavior in chrome, 
-    surface orchestration in frame.  Records whose shape the server never reads (the popup stack,
-    the dock-tree node) stay in chrome/gui_chrome.h behind the forward declarations below:
-    the server allocates nothing (allocation is frame's) and treats them as opaque.
+    Defines every record the interact server keeps between frames: windows, the nav cursor,
+    viewports, scroll offsets, and the gui_context_t that groups them. The behavior that reads
+    and updates these records (window dragging, docking, popups) lives elsewhere in chrome/ and
+    frame/ -- this header only defines the storage shape.
 
-    Include order: after core/gui_core.h (the aggregate embeds gui_retained_t).
+    Two record types (the popup stack, dock-tree nodes) appear here only as pointers; their full
+    definitions live in chrome/gui_chrome.h, which also allocates them.
+
+    Include order: after core/gui_core.h (gui_context_t embeds gui_retained_t).
 
 ==============================================================================================*/
 // clang-format off
 
-/* Chrome-owned retained records the server stores but never reads: pooled behind pointers in
-   gui_context_t, shaped in chrome/gui_chrome.h, sized by the allocator in frame/gui_context.c. */
+/* Defined in chrome/gui_chrome.h. gui_context_t stores pointers to these but never reads
+   their fields. */
 
 typedef struct gui_popup_t     gui_popup_t;
 typedef struct gui_dock_node_t gui_dock_node_t;
 
-/* Forward declaration only -- the full gui_context_t aggregate closes this file.  Named here so
-   earlier records that merely reference a context (a pointer, never a member access) -- the
-   window record door's window_find_in, s_vp_request's owner -- can do so without MSVC treating
-   the struct tag's first mention as a "named type definition in parentheses" (C4115) when it
-   happens to fall inside a parameter list. */
+/* Forward declaration so earlier records can hold a gui_context_t* before the real struct
+   is defined below (avoids MSVC C4115 when the tag first appears inside a parameter list). */
 struct gui_context_t;
 
 /*==============================================================================================
-    Scroll link (machinery in flow/gui_scroll.c)
+    Scroll link -- persisted scroll state for one scrollable region (flow/gui_scroll.c)
 
-    Persistent scroll offset + last-measured content extent for one scrollable region.
-    layout_push_region biases the pen by -scroll and writes content_w/content_h back at pop; the
-    owner (gui_window_t, gui_region_t, gui_table_persist_t) holds one by value so layout_frame_t
-    can reach it through a single pointer instead of four.
+    Holds the scroll offset and the content size measured last frame. Owners (gui_window_t,
+    gui_region_t, gui_table_persist_t) embed one by value.
 ==============================================================================================*/
 
 typedef struct
 {
-    f32 scroll_x, scroll_y;    // persisted scroll offset; 0 = top-left
-    f32 content_w, content_h;  // content extent measured last frame
+    f32 scroll_x, scroll_y;    // current scroll offset; 0,0 = top-left
+    f32 content_w, content_h;  // content size measured last frame
 
-    /* Bottom-anchor tail-follow (GUI_WIN_ANCHOR_BOTTOM only): pinned_y is the scroll_y layout_push_region
-       last left the region at, so a later external move (wheel / bar / scroll_by) is detectable; unstick
-       latches once the user scrolls off the bottom and clears when they return to it.  Zero on both = the
-       default "follow the tail" state a fresh region opens in. */
+    /* Used only when GUI_WIN_ANCHOR_BOTTOM is set (e.g. a log window that should auto-scroll as
+       new content arrives). pinned_y is the scroll position layout last set; if scroll_y differs,
+       the user scrolled it manually. unstick is true once they scroll away from the bottom, and
+       clears once they scroll back down. */
     f32  pinned_y;
     bool unstick;
 
 } gui_scroll_link_t;
 
 /*==============================================================================================
-    Persisted window record (policy in chrome/window/)
+    Persisted window record -- one window's saved state (behavior in chrome/window/)
 
-    One persisted window.  Geometry is owned here after the first appearance; the window pool that
-    holds these lives in the bound context (gui_context_t), and the record door below is the
-    surface service's (core/gui_surface.c).
+    Position, size, and other state that must survive across frames for one window. The pool of
+    these records lives in gui_context_t; the accessors below are in core/gui_surface.c.
 ==============================================================================================*/
 
 typedef struct gui_window_t
@@ -76,40 +66,17 @@ typedef struct gui_window_t
     u8         set_pos_allow;    // conds still permitted to set position (gui_cond_t bits)
     u8         set_size_allow;   // conds still permitted to set size (gui_cond_t bits)
 
-    /* Packed transient state -- one byte instead of five.  win->bits = 0 clears all; the named
-       bits stay directly accessible (win->overlay, win->maximized, ...) via the anonymous
-       struct/union, so no call site changes.
-
-       overlay -- anchored popup/tooltip overlay on its surface, never the OS-window frame
-       (window_is_native), never a nav or tab-drop target.  Stamped by the popup layer each begin,
-       alongside a z in the reserved overlay band (see the z band map in core/gui_surface.c) --
-       the flag carries the TYPE fact so z stays pure paint order.
-
-       collapsed -- title-bar-only when set; toggled by the arrow.
-       closed -- CLOSEABLE: hidden by the X until re-opened.
-
-       maximized / minimized -- for a regular (non-native, non-docked) floater; state transitions
-       in gui_window_free.c (window_maximize_set / window_minimize_set), chrome in
-       gui_window_end.c.  Maximized pins the window to its surface work area every frame;
-       minimized parks it as a title-bar chip on a shelf along the surface's bottom edge.  norm
-       (below) is the saved normal rect both states restore to; shelf_slot orders the chips
-       (rebased to a dense 0..live-count ranking at minimize time, so it stays small instead of
-       climbing forever; the per-frame paint position in window_shelf_order re-derives from it
-       as neighbours restore).
-       These are the POLICY -- the rect tween between the states (and the norm save / restore),
-       and the collapse height tween off `collapsed`, are the feat kit's mechanisms (feat_pin /
-       gui_feat_collapse, interact/gui_feature.c), keyed off the window id: their edge latches and
-       from-values live in the keyed state pool, not on this record. */
-
+    /* Packed into one byte so win->bits = 0 clears every flag at once. The union lets call
+       sites keep using win->overlay, win->maximized, etc. directly. */
     union
     {
         struct
         {
-            u8 overlay   : 1;
-            u8 collapsed : 1;
-            u8 closed    : 1;
-            u8 maximized : 1;
-            u8 minimized : 1;
+            u8 overlay   : 1;  // popup/tooltip overlay, not a real OS window or nav target
+            u8 collapsed : 1;  // title-bar only; toggled by the collapse arrow
+            u8 closed    : 1;  // CLOSEABLE window hidden by its close button
+            u8 maximized : 1;  // filling its surface's work area (non-native, non-docked only)
+            u8 minimized : 1;  // reduced to a title-bar chip on the bottom shelf
         };
         u8 bits;
     };
@@ -122,56 +89,54 @@ typedef struct gui_window_t
     gui_rect_t          norm;           // maximized / minimized: the saved normal rect to restore to
     gui_scroll_link_t   scroll;         // persisted scroll offset + last-measured content extent
 
-    /* NOTE: for native windows only */
-    /* Re-open of a CLOSEABLE floater: closing it lets the abandoned-teardown free its OS window,
-       reverting this record to viewport 0.  `floater` remembers it was one so the next begin
-       re-spawns it.  The geometry is the floater's RESTORE (normal) state, sampled every frame it
-       is not maximized -- so a floater closed while maximized re-opens maximized yet still
-       restores to its previous normal size. */
+    /* Native windows only. When a floater window is closed, its OS window is destroyed and this
+       record falls back to viewport 0. These fields remember enough to re-spawn it as a floater
+       the next time it is opened. */
     struct
     {
-        bool floater;          // re-spawn as a floater on the next begin
-        bool maximized;        // floater was maximized -- re-maximize after re-spawn
-        i32  home_x, home_y;   // saved restore (normal) client-corner screen pos
-        f32  w, h;             // saved restore (normal) size
+        bool floater;          // was a floater; re-spawn as one on next open
+        bool maximized;        // was maximized; re-maximize after re-spawn
+        i32  home_x, home_y;   // restore (non-maximized) position to spawn at
+        f32  w, h;             // restore (non-maximized) size to spawn at
     } reopen;
 
 } gui_window_t;
 
-/* The window record door (core/gui_surface.c -- the server owns the pool; chrome is the policy
-   that fills it) + the next-window channel records its verbs queue into. */
+/* Accessors for the window pool (core/gui_surface.c). */
 
-gui_window_t* window_get ( gui_id_t id, f32 x, f32 y, f32 w, f32 h );
-gui_window_t* window_find( gui_id_t id );                                // record by id / NULL, in the BOUND context
-gui_window_t* window_find_in( struct gui_context_t* ctx, gui_id_t id );  // record by id / NULL, in an EXPLICIT context
+gui_window_t* window_get ( gui_id_t id, f32 x, f32 y, f32 w, f32 h );     // find or create
+gui_window_t* window_find( gui_id_t id );                                // find in the bound context, or NULL
+gui_window_t* window_find_in( struct gui_context_t* ctx, gui_id_t id );  // find in a specific context, or NULL
 void          window_apply_next( gui_window_t* win, bool appearing );
 
+/* Position/size/viewport queued by gui_set_next_window_* for the next window_begin call. */
 typedef struct
 {
-    bool        has_pos, has_size;     // a value is queued on this axis
-    gui_cond_t  pos_cond, size_cond;   // when to apply it
+    bool        has_pos, has_size;     // true if a value is queued for that axis
+    gui_cond_t  pos_cond, size_cond;   // condition under which to apply it
     f32         pos_x, pos_y;
     f32         size_w, size_h;
 
-    bool        has_viewport;          // a viewport reassignment is queued for the next window
-    i32         viewport;              // its target surface
+    bool        has_viewport;          // true if a viewport reassignment is queued
+    i32         viewport;              // target surface
 
 } gui_next_win_t;
 
+/* A queued request to move a window to a different viewport -- either tearing a docked window
+   off into its own floating OS window, or merging a floater back in. Resolved once per frame by
+   gui_viewport_update. */
 typedef struct
 {
     bool        active;     // a request is queued this frame
-    bool        by_drag;    // true = seamless title-bar drag; false = detach-button click
-    gui_id_t    win_id;     // the dragged window record
-    u32         from_vp;    // surface it was on (0 = main -> tear off; else floater -> merge)
-    const char* title;      // window title, to label the spawned floater's OS window
-    bool        has_home;   // re-open of a closed floater: spawn reads the record's restore
+    bool        by_drag;    // true = dragged off the title bar; false = detach button
+    gui_id_t    win_id;     // the window being moved
+    u32         from_vp;    // its current surface (0 = main -> tear off; else -> merge back)
+    const char* title;      // window title, for the new floater's OS window
+    bool        has_home;   // re-opening a closed floater: use its saved restore rect
 
-    /* The context whose win.pool holds win_id, stamped at enqueue time (window_begin_ex /
-       native_popin_request run with that context bound).  gui_viewport_update resolves the
-       window through THIS context, not whichever one happens to be bound when the reconcile
-       runs later in the frame -- a secondary context's tear-off must not silently resolve
-       against the primary's window pool (or find nothing at all). */
+    /* The context win_id belongs to, captured when the request is queued. The context bound
+       when it is later resolved may be different, so this must be saved rather than looked up
+       again. */
     struct gui_context_t* owner;
 
 } gui_vp_request_t;
@@ -180,42 +145,36 @@ extern gui_next_win_t   s_next_win;    // core/gui_surface.c
 extern gui_vp_request_t s_vp_request;  // core/gui_surface.c
 
 /*==============================================================================================
-    Keyboard navigation state (driver in chrome/nav/gui_nav.c)
+    Keyboard navigation state (behavior in chrome/nav/gui_nav.c)
 
-    The nav cursor -- the persistent analogue of hover_id, moved by the arrow keys / Tab rather
-    than the mouse -- plus the menu-bar state machine layered on top of it.  The instance is the
-    bound context's nav member (g_ctx->nav), so each context keeps its own cursor.  The record
-    is server storage (the item protocol registers every emitted item into it); the resolvers
-    that MOVE the cursor are chrome policy.
+    Tracks which widget the keyboard cursor is on -- the keyboard equivalent of mouse hover,
+    moved by arrow keys and Tab instead of the mouse -- plus the menu-bar state machine built on
+    top of it. Each gui_context_t has its own copy (g_ctx->nav).
 ==============================================================================================*/
 
-/* One entry of the per-frame nav item list.  Every item of the nav window records itself here
-   (emission order) as it passes through item_state; the resolvers in gui_nav.c consume the
-   list at the NEXT nav_new_frame, so a move steps over last frame's items -- the same one-frame
-   deferral hover_win uses.  region/line are the structural coordinate the layout engine stamped
-   when it placed the item (cell_next_w), so moves are index math over real rows, not a
-   spatial guess over rects; the rect remains only for the goal-column pick. */
+/* One navigable widget, recorded in emission order as it is drawn each frame. Arrow-key and Tab
+   moves are resolved against LAST frame's list (one frame of lag, like mouse hover), stepping
+   through region/line -- the row/column position layout assigned it -- rather than guessing from
+   screen coordinates. The rect is only used to pick a starting column when a vertical move
+   begins. */
 
 typedef struct
 {
-    gui_id_t   id;       // widget id
-    gui_rect_t rect;     // screen rect as emitted (goal-column pick + ring)
-    u32        region;   // region sequence that placed it (a window body / child / strip region)
-    u32        line;     // line sequence within the frame -- monotonic, so order == reading order
-    bool       chrome;   // not layout-placed (title button, dock tab): the F6 chrome lane
-    bool       drag_kind; // ITEM_DRAG (slider / drag box): eligible for row-solo auto-adjust
+    gui_id_t   id;        // widget id
+    gui_rect_t rect;      // screen rect when emitted (used for the goal-column pick)
+    u32        region;    // the region (window body / child / strip) that placed it
+    u32        line;      // row index within the frame; increases in reading order
+    bool       chrome;    // title bar button, dock tab, etc: reachable only via F6, not Tab
+    bool       drag_kind; // a slider/drag box: Left/Right can adjust it directly if it has no row neighbor
 
-    /* Type-ahead label (gui_nav.c): lowercased, truncated, stamped by an opt-in widget right after
-       it registers (gui_selectable) -- empty ("") means this item does not participate.  Kept on
-       the nav item itself rather than a side table so type-ahead reuses the exact same one-frame-
-       lagged list every other resolver (Up/Down, Tab, Home/End) already consumes. */
+    // lowercased type-ahead label (gui_selectable); "" means this item is skipped by type-ahead
     char       label[ 16 ];
 
 } gui_nav_item_t;
 
-/* List capacity.  Every emitted item of the nav window registers -- including rows scrolled out
-   of view (they still emit; only their draw is clipped) -- so this bounds the navigable item
-   count of one window; overflow items simply drop off the keyboard map for that frame. */
+/* Max navigable items per window per frame (includes rows scrolled out of view -- they still
+   register, only their draw is clipped). Items past this limit are simply not keyboard-reachable
+   that frame. */
 #ifdef GUI_STRESS_TEST
 #define GUI_NAV_ITEMS_MAX 4096   /* stress-bench build: 4x */
 #else
@@ -224,25 +183,22 @@ typedef struct
 
 typedef struct
 {
-    gui_id_t    id;            // the highlighted item (keyboard cursor); persists across frames
-    gui_id_t    win;           // window/popup nav is scoped to (the hover_win analogue)
+    gui_id_t    id;            // widget the keyboard cursor is on; persists across frames
+    gui_id_t    win;           // window/popup the cursor is scoped to (like hover_win, for keyboard)
 
-    /* Keyboard-focused window (click / gui_window_set_nav / Ctrl+Tab / Alt-mnemonic), the SOLE
-       authority for where the keyboard goes.  NONE means no window has focus -- a background/viewport
-       click clears it -- and the keyboard then falls through to the app; there is no front-most
-       fallback, so a defocused window does not silently keep the keyboard.  A tool that wants a window
-       focused on first appearance sets it via gui_window_set_nav on its own GUI_COND_APPEARING edge. */
+    /* Window that currently has keyboard focus, set by a click, gui_window_set_nav, Ctrl+Tab, or
+       an Alt mnemonic. 0 means no window is focused, and keyboard input falls through to the app
+       -- there is no "front-most window" fallback. A window that wants focus on first appearance
+       calls gui_window_set_nav on its GUI_COND_APPEARING edge. */
     gui_id_t    focused_win;
 
-    /* Two visual states, the Dear ImGui NavDisableHighlight split.  active means a nav cursor
-       position exists -> the outline ring is drawn at id (and follows clicks), persisting even in
-       mouse mode so it keeps its location.  highlight means the keyboard is the *active* instrument
-       right now -> the nav item also takes the fill (like a hovered button), mouse hover is
-       suppressed (so the two never double-fill), and the keyboard is captured.  A nav key sets both;
-       a mouse move or click drops highlight (back to ring-only), leaving active. */
-
-    bool        active;        // a nav cursor exists -> draw the ring (cleared rarely)
-    bool        highlight;     // keyboard is the active instrument -> fill + hover-suppress
+    /* active: a keyboard cursor position exists, so its outline ring is drawn (this persists
+       even while using the mouse, so the cursor keeps its place).
+       highlight: the keyboard is what the user is actively using right now, so the cursor item
+       also gets the hover fill and mouse hover is suppressed. A nav key sets both; moving or
+       clicking the mouse clears highlight but leaves active. */
+    bool        active;
+    bool        highlight;
 
     i32         move_dir;      // directional request this frame (gui_dir_t, or -1 for none)
     i32         tab;           // Tab linear move: +1 forward, -1 back, 0 none
@@ -251,87 +207,70 @@ typedef struct
     bool        activate;      // Enter/Space -> fire id like a click this frame
     bool        lane;          // F6 -> hop between the body and the chrome strip this frame
 
-    /* Keyboard value edit: activating a DRAG widget (slider, drag box) captures it -- the drag
-       twin of focused_id text capture.  While captured, Left/Right step the value through
-       gui_item_state_t.nav_adjust and Enter/Space/Esc (or a mouse press) release. */
-    gui_id_t    edit_id;       // DRAG widget captured for keyboard value edit; 0 = none
-    i32         edit_dir;      // value-edit arrow step this frame: -1 / +1 / 0
+    /* Activating a drag widget (slider, drag box) with Enter/Space captures the keyboard for it
+       -- Left/Right then step its value, and Enter/Space/Esc or a mouse click release it. */
+    gui_id_t    edit_id;       // drag widget currently captured; 0 = none
+    i32         edit_dir;      // value-edit step this frame: -1 / +1 / 0
 
-    /* Row-solo auto-adjust: a DRAG widget with no row neighbor on either side has nothing for
-       Left/Right to navigate to, so those keys step its value directly instead of doing nothing --
-       no Enter/Space capture required.  Up/Down are untouched (never fenced), unlike edit_id
-       capture.  Resolved once per frame in nav_finish (last frame's list, before it resets) and
-       consumed by nav_item_register during this frame's emission to mirror edit_id's captured
-       presentation (st->focused, the COL_MARK_ACTIVE ring) and to gate st->nav_adjust. */
+    /* A drag widget with no left/right neighbor to move to instead has Left/Right adjust its
+       value directly, without needing Enter/Space to capture it first. */
     gui_id_t    solo_drag_id;
 
     bool        id_seen;       // id was emitted in win this frame (else it went stale)
     gui_id_t    first_item;    // first layout-placed item this frame (first-focus / recovery)
     gui_id_t    body_id;       // body cursor to land back on when F6 leaves the chrome lane
 
-    /* Goal column: the remembered x a run of Up/Down steers by, so vertical travel through rows
-       of differing shapes does not drift sideways (the text-editor goal-column behavior).  Set
-       lazily from the cursor item when a vertical run starts; any other adoption (horizontal
-       move, Tab, click) clears it so the next run re-anchors. */
+    /* Remembered x position for a run of Up/Down moves, so moving through rows of different
+       widths doesn't drift sideways (like a text editor's column memory). Set on the first
+       vertical move of a run; any other kind of move clears it. */
     f32         goal_x;
     bool        goal_set;
 
-    /* Scroll-to-view request: set when a resolver adopts a new cursor item, consumed by
-       nav_item_register when that item registers -- if its rect sits outside its region's view,
-       the region (and its ancestors) scroll it into view (nav_scroll_chase, flow/gui_scroll.c).
-       One-shot per adoption so the chase never fights the wheel or a scrollbar drag. */
+    /* Set when the cursor moves to a new item; scrolls that item into view if it is outside its
+       region (nav_scroll_chase, flow/gui_scroll.c). Cleared after one use. */
     bool        scroll_chase;
 
-    /* Type-ahead query (gui_nav.c): A-Z / 0-9 keys accumulate here while nav owns the keyboard,
-       timed out and restarted after GUI_TYPEAHEAD_TIMEOUT of no typing.  A repeated single key is
-       the Explorer-style cycle case (buf stays length 1; the resolver scans past the current
-       cursor instead of from the top) rather than a two-letter prefix.  type_dirty marks a fresh
-       keystroke this frame so nav_finish resolves it at most once. */
+    /* Type-ahead: typing A-Z/0-9 jumps the cursor to a matching item, like Windows Explorer.
+       Keys accumulate here and reset after GUI_TYPEAHEAD_TIMEOUT of no typing. Repeating the
+       same single key cycles through matches instead of typing a two-letter prefix. */
     char        type_buf[ 16 ];
     u32         type_len;
     f64         type_last_t;
-    bool        type_dirty;
+    bool        type_dirty;    // a key was typed this frame, not yet resolved
 
     /* The nav item list -- built during emission, resolved at the next nav_new_frame. */
     gui_nav_item_t items[ GUI_NAV_ITEMS_MAX ];
     u32            item_count;
 
-    /* Registration gate (decided per frame in nav_finish for the emission about to run).  While
-       the keyboard is fully disengaged (no cursor, not active, no menu bar, no value edit) plain
-       widgets skip the per-item list append -- pure bookkeeping waste in a mouse-only session.
-       Type-ahead candidates (labeled selectables) still enter via nav_item_stamp_label, so a
-       typed letter engages exactly as before; the first Tab/arrow engages and lands through the
-       first-focus recovery one frame later.  list_full records whether the list the RESOLVERS
-       see (last frame's) was built ungated -- a partial (labels-only) list must never be used
-       for structural moves. */
-    bool        reg_all;    // emission side: register every item this frame
-    bool        list_full;  // resolve side: last frame's list was complete
+    /* While the keyboard is idle (mouse-only session), most widgets skip registering into the
+       item list to avoid the bookkeeping cost -- only type-ahead candidates still register.
+       reg_all turns full registration on for this frame's emission. list_full records whether
+       LAST frame's list was built with reg_all on; a partial list must never be used for a
+       structural move like Tab or an arrow key. */
+    bool        reg_all;    // register every item this frame, not just type-ahead ones
+    bool        list_full;  // true if last frame's item list was built with reg_all on
 
-    /* Menu-bar navigation -- a small state machine layered on the nav cursor + popup stack, entered
-       by Alt (toggle) or an Alt+letter mnemonic.  While active, nav lives either on the bar entries
-       (in_menus false: win is the bar window, a highlighted entry drops its menu) or inside the open
-       menu popups (in_menus true: win is the top popup).  Down/Enter descend, Up at a top item and
-       Left/Esc ascend -- always landing back on menu_owner so closing a menu returns to the bar
-       entry that opened it (not the first entry).  See gui_nav.c + menu_begin. */
+    /* Menu-bar navigation: Alt (or an Alt+letter mnemonic) hands the keyboard to the menu bar.
+       While active, the cursor is either on a bar entry (in_menus false) or inside that entry's
+       open menu (in_menus true). Down/Enter opens a menu; Up/Left/Esc closes back to menu_owner,
+       the bar entry that opened it. See gui_nav.c and menu_begin. */
 
-    gui_id_t    bar_win;       // menu-bar window nav is driving; 0 = not in menu-bar mode
-    bool        in_menus;      // menu mode: false = on the bar entries, true = inside the popups
-    gui_id_t    menu_owner;    // bar entry whose menu is open -- the ascend / close return target
-    gui_id_t    prev_win;      // nav target to restore when Alt toggles out of the menu bar
-    gui_id_t    prev_id;       // nav cursor to restore on Alt toggle-out (the last focus location)
+    gui_id_t    bar_win;       // menu bar window being navigated; 0 = not in menu-bar mode
+    bool        in_menus;      // false = cursor on a bar entry, true = cursor inside its menu
+    gui_id_t    menu_owner;    // bar entry whose menu is open; where Esc/close returns to
+    gui_id_t    prev_win;      // nav window to restore when Alt exits menu-bar mode
+    gui_id_t    prev_id;       // nav cursor to restore when Alt exits menu-bar mode
     u8          mnemonic;      // pending Alt+letter mnemonic (uppercase ASCII); 0 = none
 
 } gui_nav_state_t;
 
 /*==============================================================================================
-    Window context (the `win` member of s_build below; stamped in chrome/window/)
+    Window context -- state for the window currently open between window_begin/window_end
+    (the `win` member of s_build below; filled in chrome/window/)
 
-    The flat "window currently between window_begin / window_end" record -- everything begin
-    stamps and end consumes.  One named struct so the overlay seam (gui_overlay_save_t,
-    chrome/gui_chrome.h) saves and restores the whole window context as a single assignment: a
-    field added here is carried across the popup seam automatically.  The frame-global scratch
-    that must SURVIVE that seam (wheel_used, the nav dispensers, the combo channel) lives beside
-    it in s_build, outside this record.
+    Kept as one struct (rather than loose globals) so opening a popup on top of a window can
+    save and restore the whole thing with a single assignment (gui_overlay_save_t,
+    chrome/gui_chrome.h) -- any field added here is included automatically.
 ==============================================================================================*/
 
 typedef struct
@@ -345,10 +284,10 @@ typedef struct
     f32                 title_h;        // title bar height (0 if NOTITLEBAR)
     struct gui_window_t* rec;           // persisted window record; scroll write-back target
 
-    /* Docking (gui_dock.c): the node hosting the current window, or NULL when it is
-       free-floating.  When set, the window's geometry is owned by the node and its title bar is
-       replaced by the node's tab strip; dock_active distinguishes the visible tab (draws a body)
-       from a window docked behind another tab (window_begin returns false, draws nothing). */
+    /* Docking (gui_dock.c): the dock node hosting this window, or NULL if free-floating. A
+       docked window's geometry and title bar are owned by the node's tab strip. dock_active is
+       true for the visible tab; a window docked behind another tab has window_begin return
+       false and draw nothing. */
     struct gui_dock_node_t*     dock_node;
     bool                        dock_active;
 
@@ -361,24 +300,21 @@ typedef struct
 
 } gui_win_ctx_t;
 
-/* Pool index of a dock node (into gui_context_t dock.pool), not to be confused with gui_dock_id_t
-   (the stable id_hash-style handle exposed to callers).  The pool is fixed-size and never compacts,
-   so an index stays valid across frames exactly like the pointer it replaces -- but at 2 bytes
-   instead of 8.  dock_ref()/dock_at() (gui_dock_core.c) convert to/from a live pointer.  Declared
-   here because the viewport record below holds each surface's dock-tree root by ref. */
+/* Index into gui_context_t's dock-node pool (not the same as gui_dock_id_t, the stable handle
+   callers use). The pool never compacts, so an index stays valid across frames just like a
+   pointer would, but takes 2 bytes instead of 8. dock_ref()/dock_at() (gui_dock_core.c) convert
+   between this and a live pointer. */
 
 typedef u16 gui_dock_ref_t;
 #define GUI_DOCK_REF_NONE ( (gui_dock_ref_t)0xFFFFu )
 
 /*==============================================================================================
-    Render viewport (orchestration in frame/gui_viewport.c; the GPU flush takes its buffer fields
-    as parameters -- the render server never sees this record)
+    Viewport -- one render surface (managed in frame/gui_viewport.c)
 
-    One render surface: GPU buffers + a color target, the OS window hosting it, the drawable
-    extent and reserved top bands, the dock tree tiling it, and the routing / ownership
-    bookkeeping that separates host-provided surfaces from gui-owned (torn-off floater) ones.
-    [0] is the main swapchain; the rest are floaters.  Held by value in the global s_vp_pool
-    below -- viewports are NOT per-context.
+    Everything for one surface gui can draw to: GPU buffers, a color target, the OS window
+    hosting it, its drawable size and reserved chrome bands, and its dock tree. Slot [0] is the
+    main swapchain; the rest are floating windows torn off from it. Viewports are global
+    (s_vp_pool below), not per-context -- every gui_context_t shares the same table.
 ==============================================================================================*/
 
 typedef struct
@@ -386,99 +322,90 @@ typedef struct
     rhi_buffer_t  vb;           // CPU_TO_GPU vertex buffer, one region per frame-in-flight
     rhi_buffer_t  ib;           // CPU_TO_GPU index buffer (u16), one region per frame-in-flight
 
-    /* Color target flush paints into: RHI_SWAPCHAIN_COLOR for the main viewport, a floater's own
-       swapchain image otherwise.  Held per viewport so flush is target-agnostic. */
+    /* Color target that flush draws into -- the main swapchain for viewport 0, or a floater's
+       own swapchain image. */
     rhi_texture_t target;
 
-    /* OS window this surface is hosted by (app win_id_t), or -1 (APP_WIN_INVALID) if unassociated.
-       Input routing maps a mouse event's win_id to this surface so the cursor's host viewport is
-       known -- a window only hover-tests when the cursor is in the OS window hosting its viewport. */
+    /* OS window hosting this surface, or APP_WIN_INVALID if none. Mouse events carry a win_id,
+       which is matched against this to find which viewport the cursor is over -- a window only
+       hover-tests while the cursor is over its own viewport. */
     i32 win_id;
 
-    /* rhi context driving this surface's swapchain (RHI_CTX_INVALID if none).  Only set for an
-       gui-OWNED surface (a torn-off floater gui spawned): flush of a host-provided surface
-       resolves RHI_SWAPCHAIN_COLOR from the host's cmd, so the host viewport leaves this invalid.
-       An owned surface has no host driving it -- gui runs frame_begin/end on this ctx itself. */
+    /* RHI context driving this surface's swapchain, or RHI_CTX_INVALID. Only set for surfaces
+       gui owns (a torn-off floater) -- the host's main viewport gets its swapchain target from
+       the host's own command buffer instead, and runs its own frame_begin/end, so this stays
+       unset there. */
     i32 rhi_ctx;
 
-    /* true when gui created this surface's OS window + rhi context (tear-off floater) and must
-       therefore destroy them.  false for the host-provided main surface (index 0) and any surface
-       the host opened via viewport_open -- gui frees only the GPU buffers for those, never the
-       window/context it does not own. */
+    /* True if gui created this surface's OS window and RHI context (a torn-off floater), and so
+       must destroy them too. False for the main surface and any surface the host opened itself
+       -- gui frees only the GPU buffers for those. */
     bool owned;
 
-    /* Set when the user closes an owned floater's OS window (APP_EV_WIN_CLOSE): the surface is torn
-       down at the next viewport_update, a safe point between the build and the present, so
-       no in-flight draw list references a surface being freed.  Ignored for non-owned surfaces. */
+    /* Set when the user closes an owned floater's OS window. The surface is actually torn down
+       at the next viewport_update (a safe point between building and presenting the frame), not
+       immediately, so nothing still drawing to it gets freed out from under it. Ignored for
+       surfaces gui does not own. */
     bool pending_close;
 
-    /* Drawable size of this surface in pixels.  Set by the host (viewport 0 from frame_begin, floaters
-       via viewport_resize) BEFORE the build so window_begin clips its windows against THIS surface's
-       extent, not the main window's.  0 = unset -> window_begin falls back to the main display size
-       (single-window behavior).  Distinct from the win_w/win_h passed to flush, which only sets the
-       GPU viewport/scissor clamp at submit time; the clip baked into each draw command is built here. */
+    /* Drawable size of this surface in pixels, set before the frame's windows are built
+       (viewport 0 by frame_begin, floaters by viewport_resize) so window_begin clips windows to
+       THIS surface, not the main one. 0 means unset, and gui falls back to the main display
+       size. Separate from the win_w/win_h passed to flush, which only sets the GPU scissor at
+       submit time -- the per-draw clip rects are built from this field instead. */
     i32 disp_w, disp_h;
 
-    /* Per-surface DPI response (mixed-DPI monitors; orchestration in frame/gui_frame_font.c).
-       dpi_bake is the managed-family bake THIS surface's windows lay out and draw with, resolved
-       from its own OS window's monitor scale by gui_dpi_poll and activated per window by
-       gui_dpi_land -- surfaces on differently-scaled monitors carry different bakes through one
-       sequential frame.  dpi_os_scale is last frame's app()->window_dpi_scale snapshot, kept to
-       tell an OS-driven change (WM_DPICHANGED already resized the window) from a gui-driven one
-       (ui_scale / mode flip: gui must resize the owned floater itself). */
-    gui_builtin_font_t dpi_bake;      // bake in effect on this surface (GUI_FONT_NONE = unmanaged)
-    f32                dpi_os_scale;  // last polled OS scale of the hosting window (1.0 = 100%)
+    /* Per-surface DPI state, for mixed-DPI multi-monitor setups (frame/gui_frame_font.c).
+       dpi_bake is the font atlas size this surface's windows use, resolved from its own
+       monitor's scale -- so surfaces on differently-scaled monitors can use different bakes in
+       the same frame. dpi_os_scale is last frame's OS-reported scale, kept so gui can tell an
+       OS-driven DPI change (which already resized the window) apart from a gui-driven one (a
+       ui_scale change, where gui must resize the window itself). */
+    gui_builtin_font_t dpi_bake;      // font bake this surface uses; GUI_FONT_NONE = unmanaged
+    f32                dpi_os_scale;  // OS scale last reported for this surface's window (1.0 = 100%)
 
-    /* Top band (pixels) drawn by this surface's native host caption (the GUI_WIN_NATIVE shell
-       window's title bar height), published each frame by that shell.  window_clamp keeps non-native
-       windows' top edge at or below this inset so their title bars stay grabbable above the drawn
-       chrome band.  0 until first published (no native shell or default OS-chrome main window).
-       Sticky: NOT cleared each frame -- persists from the last frame the native shell was active so
-       viewport_update always has a valid top bound regardless of build ordering. */
+    /* Height in pixels of the native title bar drawn by a GUI_WIN_NATIVE shell window on this
+       surface, published each frame by that shell. window_clamp keeps other windows below this
+       so their own title bars stay clickable above it. 0 if no native shell is present. Not
+       cleared each frame -- stays at its last value so this is always valid even if the shell
+       hasn't run yet this frame. */
     f32 caption_inset;
 
-    /* Main-menu-bar band on this surface: its height plus the frame it last emitted.  Emit-gated
-       like a dockspace (bar_seen_frame against the current frame, one-frame tolerance) so a host
-       code path that stops emitting the bar releases the band; window_work_top
-       (gui_window_free.c) adds it to caption_inset to bound a maximized window's work area. */
+    /* Height of the main menu bar on this surface, and the frame it was last drawn. If the host
+       stops calling the menu-bar function, bar_seen_frame falls behind and the band is
+       released. window_work_top adds this to caption_inset to size a maximized window's work
+       area. */
     f32 bar_inset;
     u32 bar_seen_frame;
 
-    /* Additional top band (pixels) the host reserves above the dock area -- a main menu bar, a
-       toolbar strip -- published via gui()->dockspace_inset() before dockspace_over_viewport.
-       Adds to caption_inset when the dock tree lays out.  Sticky like caption_inset: persists
-       until the host publishes a new value (0 to reclaim).  Free-floating windows are
-       unaffected -- only the dock tree's layout area shrinks. */
+    /* Extra top band the host reserves above the dock area (e.g. a toolbar strip), set via
+       gui()->dockspace_inset() before dockspace_over_viewport. Shrinks the dock tree's layout
+       area; free-floating windows are unaffected. Persists until the host sets a new value (0
+       to clear it). */
     f32 dock_inset;
 
-    /* Per-surface dock tree root.  GUI_DOCK_REF_NONE = free-float placement (overlapping windows,
-       including the main viewport); otherwise a ref into the context dock-node pool that tiles/tabs
-       the windows on this surface.  Driven by dock/ (dock.c builds it, dock_drag.c re-tiles on drag,
-       dock_serialize.c saves/loads it). */
+    /* Root of this surface's dock tree. GUI_DOCK_REF_NONE means windows here are free-floating
+       instead of docked. Built by dock/dock.c, re-tiled on drag by dock_drag.c, saved/loaded by
+       dock_serialize.c. */
     gui_dock_ref_t dock_root;
 
-    /* Dockspace policy bits (gui_dockspace_flags_t), re-published by every dockspace_over_viewport
-       call.  NO_SPLIT restricts the tree to tab docking: no split drop chips, split verbs refuse. */
+    /* Dockspace policy flags, re-published on every dockspace_over_viewport call. NO_SPLIT
+       restricts docking to tabs only -- no split drop zones. */
     gui_dockspace_flags_t dock_flags;
 
-    /* Frame stamp (g_ctx->retained.frame) of this viewport's last dockspace_over_viewport call.
-       A dockspace is emit-gated like every immediate-mode element: the tree is ACTIVE only on
-       frames the host emits it; on other frames it is DORMANT -- retained but inert.  Windows
-       tabbed in a dormant tree suppress (inactive-tab semantics) instead of rendering into rects
-       that no longer lay out, and drag-to-dock offers no chips (dock_vp_emitted, gui_dock_core.c).
-       A host code path that stops running its dockspace thus parks the layout instead of
-       corrupting it; only dock_clear destroys it. */
+    /* Frame this viewport's dockspace was last emitted. Like any immediate-mode element, a
+       dockspace is only active on frames the host calls dockspace_over_viewport; on other
+       frames it goes dormant -- its tree is kept but its windows stop rendering and it stops
+       accepting drag-to-dock. Only dock_clear actually destroys the tree. */
     u32 dock_seen_frame;
 
-    /* Dockspace maximize: one LEAF pinned over the whole dock area (dock_max_id; 0 = none), fully
-       obscuring the other tree nodes.  dock_max_on is the logical state -- false while the restore
-       tween eases the node back to its tree rect, after which the id clears.  dock_max_settled is
-       stamped by dockspace_over_viewport's tween step each emitted frame: only once the cover has
-       SETTLED do the obscured nodes' windows suppress (inactive-tab semantics via the route seam)
-       and the splitter / placeholder chrome stop emitting -- during the tween the siblings are
-       still partially visible and keep drawing.  dock_max_from is the rect tween's FROM (captured
-       at toggle); the target re-aims every frame, so a live surface resize is tracked mid-flight.
-       Driven by dock_max_set / dock_max_node (gui_dock_core.c). */
+    /* Dockspace maximize: dock_max_id names one leaf pinned over the whole dock area, covering
+       its siblings (0 = none maximized). Un-maximizing eases the leaf back to its normal rect;
+       dock_max_on goes false as soon as that tween starts, and dock_max_id clears once it
+       finishes. dock_max_settled is true only once the maximize (not un-maximize) tween has
+       finished -- until then covered siblings keep drawing, since they are still partly
+       visible. dock_max_from is the rect the tween eases from, captured when maximize/
+       un-maximize is toggled. See dock_max_set / dock_max_node in gui_dock_core.c. */
     gui_dock_id_t dock_max_id;
     bool          dock_max_on;
     bool          dock_max_settled;
@@ -486,45 +413,42 @@ typedef struct
 
 } gui_viewport_t;
 
-/* viewport drawable size with the s_io fallback (core/gui_ctx.c).  Take the slot index, not a
-   pointer -- s_vp_pool is one small fixed-size global table now, so an index is the stable,
-   context-independent way to name a slot across a call boundary. */
+/* Drawable width/height of viewport vp, falling back to s_io's display size if unset
+   (core/gui_ctx.c). Takes a slot index rather than a pointer since s_vp_pool is a fixed global
+   table and an index stays valid across calls. */
 f32 vp_w( i32 vp );
 f32 vp_h( i32 vp );
 
 /*==============================================================================================
-    The one real viewport table (frame/gui_viewport.c owns the lifecycle; storage is here next
-    to gui_viewport_t).  OS windows and RHI contexts are a genuinely global, small, fixed-size
-    resource (APP_WIN_MAX == RHI_CTX_MAX; the render tier calls this GUI_MAX_VIEWPORTS, but this
-    file sizes off APP_WIN_MAX directly -- the interact server never includes render/gui_render.h)
-    -- every gui_context_t that ever existed shares this SAME table rather than owning a copy.
-    [0] is the main swapchain; a context differs from another only in which of ITS windows
-    (win.pool) assign into which slot.  Defined in core/gui_ctx.c, next to s_ctx_pool.
+    The global viewport table (lifecycle owned by frame/gui_viewport.c; defined in
+    core/gui_ctx.c next to s_ctx_pool)
+
+    Every gui_context_t shares this one table rather than keeping its own -- OS windows and RHI
+    contexts are a small, genuinely global resource (sized to APP_WIN_MAX). A context only
+    differs in which of its own windows assign into which slot. [0] is always the main
+    swapchain.
 ==============================================================================================*/
 
 extern gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
 extern i32            s_vp_count;                   /* used count; iterate [0, count) */
 
-/* The mouse-input path (core/gui_io.c) resolves an event's app win_id to the viewport hosting it
-   by searching s_vp_pool -- context-independent, since the table is global.  Static: both ends
-   live in this unit.  ORB_UNUSED_FN: this header is also pulled into the backend TU, which
-   neither defines nor calls it. */
+/* Finds which viewport slot is hosting the given OS window, by searching s_vp_pool. Used by the
+   mouse-input path (core/gui_io.c) to map an event's win_id to a viewport. ORB_UNUSED_FN
+   because this header is also included by the backend TU, which does not use it. */
 
 static i32 ORB_UNUSED_FN viewport_index_for_window( i32 win_id );
 
 /*==============================================================================================
-    gui_context_t -- the bound per-context retained state ("bind and use").
+    gui_context_t -- one UI's persistent state ("bind it, then emit into it")
 
-    A context is the emission session the code binds once and emits ALL its windows into; it owns
-    the state that must persist between frames for that UI.  Every retained access resolves through
-    g_ctx via the aliases in gui_ctx.c -- g_ctx->retained, g_ctx->nav, the popup open-set -- so switching
-    contexts is a single pointer assignment (ctx_bind): no copy, no backup/restore.
+    Code binds one context (ctx_bind) and emits all of that UI's windows into it; the context
+    holds everything that must survive between frames for that UI. Switching contexts is just
+    reassigning the g_ctx pointer -- no copying.
 
-    Ambient state (s_interaction) and frame scratch (s_build, the stacks, s_draw) stay global by
-    design -- one physical user, and scratch that every context reuses in turn each frame.  s_io
-    (the hardware input snapshot) is always shared.  The `listening` flag gates whether a bound
-    context receives hover / click / nav updates -- a deaf context renders but returns inert
-    widget state.
+    Some state stays global instead of living here: input (s_io), since there is one physical
+    mouse/keyboard, and per-frame build scratch (s_build), reused by whichever context is
+    building. `listening` controls whether a bound context responds to input this frame; when
+    false it still renders, but hover/click/nav are inert.
 ==============================================================================================*/
 
 typedef struct gui_context_t
@@ -532,67 +456,66 @@ typedef struct gui_context_t
     gui_retained_t   retained;      // id salt, frame clock, keyed state pool (ptr into alloc)
     gui_nav_state_t  nav;           // nav cursor location + menu-bar mode
 
-    struct                          /* popup/ -- the open-popup stack */
+    struct                          /* the open-popup stack */
     {
         gui_popup_t* open;          // open popup set, ordered parent -> child; ptr into alloc
         u32          open_count;    // live open count
         u32          depth;         // capacity (max nesting depth)
     } popup;
 
-    struct                          /* window/ -- GUI_WIN_MODAL fence (window_modal_apply) */
+    struct                          /* GUI_WIN_MODAL fence (window_modal_apply) */
     {
         gui_id_t     win_id;        // id of the modal overlay window; 0 = none
-        u32          seen_frame;    // frame it last emitted -- fence lapses when it stops
+        u32          seen_frame;    // frame it last emitted; fence releases when it stops
     } modal;
 
-    struct                          /* surface/ + window/ -- the persisted window records */
+    struct                          /* persisted window records (core/gui_surface.c) */
     {
         gui_window_t* pool;         // persisted window records; ptr into alloc
         u32           count;        // live records in the pool
         u32           max;          // capacity
-        gui_window_t  scratch;      // transient fallback when the pool is full; stays embedded
-        u32           z_counter;    // monotonic paint-order dispenser
-        u32           cascade;      // default-spawn cascade slot (window_default_spawn)
+        gui_window_t  scratch;      // fallback used when the pool is full
+        u32           z_counter;    // paint-order counter; each raise takes the next value
+        u32           cascade;      // next cascade offset for a window with no saved position
     } win;
 
-    /* Render surfaces are NOT here -- see s_vp_pool above.  A viewport is a genuinely global
-       resource (one real OS window / RHI context each); this context differs from another only
-       in which of its own windows (win.pool below) assign into which global slot. */
+    /* Render surfaces live in s_vp_pool, not here -- see above. A viewport is a real OS window /
+       RHI context, a genuinely global resource; contexts only differ in which of their own
+       windows (win.pool) assign into which global slot. */
 
-    struct                          /* dock/ -- the dock-tree node pool */
+    struct                          /* dock-tree node pool (dock/) */
     {
-        gui_dock_node_t* pool;      // dock-tree node pool; NULL when max == 0
-        u32              count;     // high-water slot count in the pool
-        u32              id_seq;    // monotonic node-id dispenser (0 = none)
+        gui_dock_node_t* pool;      // dock-tree nodes; NULL when max == 0
+        u32              count;     // high-water slot count used
+        u32              id_seq;    // next node id to hand out; 0 = none yet
         u32              max;       // capacity; 0 = docking disabled
     } dock;
 
-    bool  listening;    // true: context receives hover/click/nav input this frame
-    void* _alloc;       // the single ctx_alloc_slot malloc backing this header + all
-                        // pool arrays; freed at teardown. Non-NULL for every context,
-                        // slot 0 included (freed at shutdown; secondaries at ctx_destroy)
-    u32   _alloc_size;  // byte size of the _alloc block; reported by gui_mem_stats()
+    bool  listening;    // true: this context receives hover/click/nav input this frame
+    void* _alloc;       // single allocation backing this struct + all pool arrays above;
+                         // freed at teardown (shutdown for slot 0, ctx_destroy for others)
+    u32   _alloc_size;  // size of _alloc, for gui_mem_stats()
 
 } gui_context_t;
 
-/* Frame-build scratch -- the "where am I emitting right now" context, rebuilt every frame as
-   the widget tree is walked.  Nothing survives begin_frame; contexts build sequentially on one
-   thread, so it stays a single global builder.  Field story at the definition (core/gui_ctx.c). */
+/* Scratch for "what is being emitted right now", reset every frame as the widget tree is
+   walked. One global instance is enough because contexts build one at a time on a single
+   thread. */
 typedef struct
 {
     gui_win_ctx_t win;                  // the window currently between window_begin / window_end
 
-    bool          wheel_used;           // a region consumed the wheel this frame (innermost wins)
+    bool          wheel_used;           // true once some region has consumed the mouse wheel this frame
 
-    u32           nav_region_seq;       // per-frame region dispenser (layout_seed_content)
-    u32           nav_line_seq;         // per-frame line dispenser (a line-open takes the next)
+    u32           nav_region_seq;       // next region id to hand out this frame
+    u32           nav_line_seq;         // next line id to hand out this frame
 
-    gui_item_flags_t item_flags;        // merged top-of-stack item flags
-    gui_item_flags_t next_set;          // bits the next-item override controls
-    gui_item_flags_t next_val;          // their values
+    gui_item_flags_t item_flags;        // merged flags from the item-flag stack
+    gui_item_flags_t next_set;          // which flags the next-item override changes
+    gui_item_flags_t next_val;          // their overridden values
 
-    bool          combo_open;           // a combo dropdown body is currently being emitted
-    bool          combo_item_clicked;   // a selectable in that body was clicked this frame
+    bool          combo_open;           // a combo dropdown's body is being emitted right now
+    bool          combo_item_clicked;   // a selectable inside it was clicked this frame
 
 } gui_build_t;
 
@@ -603,9 +526,8 @@ extern gui_context_t* g_ctx;            // core/gui_ctx.c -- the bound context
 extern gui_build_t    s_build;          // core/gui_ctx.c -- frame-build scratch
 
 /*==============================================================================================
-    Context pool + lifecycle seams (core/gui_ctx.c) -- the storage stays with the interact
-    server; the PUBLIC lifecycle over it AND the block allocation (which sizes chrome's records,
-    so it needs whole-stack type visibility) live in frame/gui_context.c.
+    Context pool + lifecycle (storage here in core/gui_ctx.c; the public create/destroy API
+    lives in frame/gui_context.c, since sizing the allocation needs chrome's record types too)
 ==============================================================================================*/
 
 #define GUI_CTX_POOL_MAX  8             /* slot 0 = default + up to 7 secondary contexts */

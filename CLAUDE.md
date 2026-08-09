@@ -190,3 +190,22 @@ Include `ref.h` in DLL modules; `ref_host.h` in hosts, unity entries, sandboxes.
 - Comments show intent concisely at each block.
 - Struct fields ALWAYS use `//` trailing comments, never `/* */`. Larger blocks (file headers,
   function/section comments) use C style `/* */`.
+
+### Comment voice
+
+Write comments for a reader seeing the file for the first time, with no memory of how it got
+this way -- not as a reply to whatever task produced the code. State what a thing is and does,
+plainly and confidently, the way you'd explain it to a competent teammate who just joined.
+
+- Say what the code IS/DOES, not the story of how it got here. No "the model says", no
+  "unlike before", no "this fixes/adds/changes X" -- that belongs in a commit message, not a
+  comment that will outlive it.
+- Don't re-litigate the design. A comment can state an invariant or a gotcha; it shouldn't argue
+  for why the design is right, contrast it with alternatives, or restate architecture doc prose.
+  If it reads like a persuasive essay, cut it down to the fact.
+- Reserve real prose for the non-obvious: a hidden constraint, a lifetime/ownership rule, a unit
+  quirk, a workaround for a specific bug. If a reader wouldn't be surprised, they don't need a
+  paragraph.
+- A one-line trailing `//` beats a multi-line `/* */` block whenever the fact fits on one line.
+- Avoid in-house shorthand a newcomer wouldn't know from context ("the seam", "the door", "THE
+  X") -- name the file, function, or mechanism directly instead.
