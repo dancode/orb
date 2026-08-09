@@ -585,7 +585,7 @@ render_contract_check( gui_vp_t vp, const gui_viewport_t* v )
     if ( s_frame_phase != GUI_FRAME_SYNCED )
     {
         bool pending = false;
-        for ( u32 i = 1; i < s_vp_count; ++i )
+        for ( gui_vp_t i = 1; i < s_vp_count; ++i )
             pending = pending || ( s_vp_pool[ i ].owned && s_vp_pool[ i ].pending_close );
 
         GUI_CONTRACT( !pending,
@@ -602,9 +602,9 @@ render_contract_check( gui_vp_t vp, const gui_viewport_t* v )
          && sw > 0 && sh > 0 && v->disp_w > 0 && v->disp_h > 0 )
     {
         GUI_CONTRACT( sw == v->disp_w && sh == v->disp_h,
-                      "viewport %u is laid out for %d x %d but its swapchain is %d x %d -- route "
+                      "viewport %d is laid out for %d x %d but its swapchain is %d x %d -- route "
                       "rhi()->event() before (or alongside) gui()->event() so one resize reaches "
-                      "both.\n", (u32)vp, v->disp_w, v->disp_h, sw, sh );
+                      "both.\n", vp, v->disp_w, v->disp_h, sw, sh );
     }
 }
 
@@ -613,7 +613,7 @@ render_contract_check( gui_vp_t vp, const gui_viewport_t* v )
 void
 gui_render( gui_vp_t vp, rhi_cmd_t cmd )
 {
-    if ( vp >= GUI_MAX_VIEWPORTS )
+    if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
     gui_viewport_t* v = &s_vp_pool[ vp ];
 

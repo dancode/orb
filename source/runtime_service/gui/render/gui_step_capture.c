@@ -638,7 +638,7 @@ step_seg_info( u32 index, step_seg_info_t* out )
 ==============================================================================================*/
 
 bool
-step_pick( f32 x, f32 y, u32 vp, u32* out_index )
+step_pick( f32 x, f32 y, gui_vp_t vp, u32* out_index )
 {
     if ( !g_step_frozen )
         return false;

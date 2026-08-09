@@ -178,7 +178,7 @@ gui_debug_name( gui_id_t id )
 ==============================================================================================*/
 
 static void
-dbg_push_fill( u32 vp, gui_rect_t r, u32 abgr )
+dbg_push_fill( gui_vp_t vp, gui_rect_t r, u32 abgr )
 {
     if ( s_dbg.cmd_count >= GUI_DBG_MAX_CMDS ) { s_dbg.overflow = true; return; }
     if ( r.w <= 0.0f || r.h <= 0.0f ) return;
@@ -186,7 +186,7 @@ dbg_push_fill( u32 vp, gui_rect_t r, u32 abgr )
 }
 
 static void
-dbg_push_outline( u32 vp, gui_rect_t r, f32 thickness, u32 abgr )
+dbg_push_outline( gui_vp_t vp, gui_rect_t r, f32 thickness, u32 abgr )
 {
     if ( s_dbg.cmd_count >= GUI_DBG_MAX_CMDS ) { s_dbg.overflow = true; return; }
     if ( r.w <= 0.0f || r.h <= 0.0f ) return;
@@ -226,7 +226,7 @@ dbg_capture_clip( gui_rect_t r, u32 depth )
         GUI_COLOR( 0xC0, 0x60, 0xF0, 0xFF ),
         GUI_COLOR( 0x60, 0xF0, 0x90, 0xFF ),
     };
-    u32 vp   = dbg_build_viewport();
+    gui_vp_t vp = dbg_build_viewport();
     u32 lvl  = depth ? depth - 1u : 0u;       /* 0 = outermost (root/window) clip */
     u32 c    = depth_rgb[ lvl & 3u ];
 
@@ -251,7 +251,7 @@ void
 dbg_capture_region( gui_rect_t view, gui_rect_t hit_clip, f32 sb_w, f32 sb_h )
 {
     if ( !( s_dbg.layers & GUI_DBG_REGION ) ) return;
-    u32 vp = dbg_build_viewport();
+    gui_vp_t vp = dbg_build_viewport();
 
     dbg_push_fill( vp, hit_clip, DBG_COL_HITCLIP );
     if ( sb_w > 0.0f )
@@ -361,7 +361,7 @@ dbg_expand_quad( f32 wu, f32 wv, f32 x, f32 y, f32 w, f32 h, u32 abgr,
 void
 dbg_flush( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
-    if ( vp >= GUI_MAX_VIEWPORTS ) return;
+    if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS ) return;
     if ( s_dbg.cmd_count == 0 || !rhi_cmd_valid( cmd ) ) return;
 
     u8  v  = (u8)vp;

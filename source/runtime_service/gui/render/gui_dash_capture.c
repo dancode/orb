@@ -178,10 +178,10 @@ dash_capture_build( void )
 /* End of one surface's gui_render_flush: what physically hit the GPU for that surface.  Runs
    every frame (real or idle) since cached geometry is replayed regardless. */
 void
-dash_capture_flush( u32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 idx_hi,
+dash_capture_flush( gui_vp_t vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 idx_hi,
                     u32 bytes, u32 batches, u32 draws )
 {
-    if ( !s_dash.enabled || s_dash.freeze || vp >= GUI_MAX_VIEWPORTS )
+    if ( !s_dash.enabled || s_dash.freeze || vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
     s_dash.snap.surf[ vp ] = ( dash_surf_t ){
         .live = true, .frame_index = frame,

@@ -85,10 +85,11 @@ typedef u32 gui_sprite_id_t;
 
 /* Opaque viewport handle -- a render surface backed by an OS window.  Returned by
    viewport_open; passed to render, viewport_resize, viewport_close, and
-   window_set_next_viewport.  GUI_VP_INVALID (UINT32_MAX) signals failure or no assignment. */
+   window_set_next_viewport.  A valid handle is non-negative; GUI_VP_INVALID (-1) signals
+   failure or no assignment, matching win_id_t / rhi context / gui_ctx_id_t. */
 
-typedef u32 gui_vp_t;
-#define GUI_VP_INVALID (~0u)
+typedef i32 gui_vp_t;
+#define GUI_VP_INVALID (-1)
 
 /* Opaque dock-node handle -- one region of a viewport's dock tree.  Returned by dockspace_over_viewport
    (the tree root) and dock_split (the new sibling), and passed to dock_split / dock_window to name a
@@ -832,7 +833,7 @@ void         gui_style_apply( void );
    differently-scaled monitors emit with their own bake in one sequential frame.  A no-op when
    that bake is already landed, when DPI is unmanaged, or while a host-driven font is active. */
 
-void         gui_dpi_land( u32 viewport );
+void         gui_dpi_land( gui_vp_t viewport );
 
 /* gui_style_bake() -- derive the 96-cell colour grid from s->palette, in place.  The one step
    between what a theme AUTHORS and what a render READS, and the only writer of col[][][] the

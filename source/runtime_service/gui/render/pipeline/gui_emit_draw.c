@@ -104,7 +104,7 @@ static struct
 
     gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */
     u32             cur_z;          /* sort key tracked per-segment (draw_seg_retag; NOT baked per command) */
-    u32             cur_vp;         /* viewport index stamped onto new commands (set by begin/window_end)  */
+    gui_vp_t        cur_vp;         /* viewport stamped onto new commands (set by begin/window_end)        */
     u32             cur_font;       /* active font id (draw_set_font), stamped ONTO each text command as it
                                        is pushed.  Not a segment axis: it selects glyph metrics and atlas
                                        UVs, which is per-command data, and cuts no batch. */
@@ -419,7 +419,7 @@ draw_set_root_clip( f32 w, f32 h )
    empty spans.  On overflow the open segment is just extended (its tag may then be stale, but only in
    the pathological >1024-segment case, which cache_tess_window already falls back to natural order). */
 static void
-draw_seg_retag( gui_id_t win, u32 z, u32 vp, u32 band )
+draw_seg_retag( gui_id_t win, u32 z, gui_vp_t vp, u32 band )
 {
     bool same_tag = win == s_draw.cur_win && z == s_draw.cur_z && vp == s_draw.cur_vp
                     && band == s_draw.cur_band;
@@ -521,7 +521,7 @@ draw_set_sort_key( u32 z )
 ==============================================================================================*/
 
 void
-draw_set_viewport( u32 vp )
+draw_set_viewport( gui_vp_t vp )
 {
     draw_seg_retag( s_draw.cur_win, s_draw.cur_z, vp, s_draw.cur_band );
 }

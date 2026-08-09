@@ -72,7 +72,7 @@ u32
 gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz )
 {
     dock_writer_t w = { buf, bufsz, 0u };
-    if ( vp >= GUI_MAX_VIEWPORTS )
+    if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
     {
         if ( bufsz ) buf[ 0 ] = '\0';
         return 0u;
@@ -88,7 +88,7 @@ gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz )
    slate.  Floating tab groups (gui_dock_float.c) share the pool but are not part of the tree the
    blob describes, so a load must leave them standing. */
 static void
-dock_free_viewport_tree( u32 vp )
+dock_free_viewport_tree( gui_vp_t vp )
 {
     for ( u32 i = 0; i < g_ctx->dock.count; ++i )
         if ( g_ctx->dock.pool[ i ].id != 0 && g_ctx->dock.pool[ i ].viewport == vp
@@ -112,7 +112,7 @@ dock_free_viewport_tree( u32 vp )
 void
 gui_dock_clear( gui_vp_t vp )
 {
-    if ( !g_ctx->dock.pool || vp >= GUI_MAX_VIEWPORTS )
+    if ( !g_ctx->dock.pool || vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
     dock_free_viewport_tree( vp );
     redraw_request();   /* wholesale layout discard, typically driven from between frames */
@@ -140,7 +140,7 @@ dr_line( dock_reader_t* r, char* out, u32 cap )
 
 /* Recursively parse one node (and, for a split, its two children) for viewport vp. */
 static gui_dock_node_t*
-dock_parse_node( dock_reader_t* r, u32 vp )
+dock_parse_node( dock_reader_t* r, gui_vp_t vp )
 {
     char line[ 128 ];
     if ( !dr_line( r, line, sizeof line ) )
@@ -215,7 +215,7 @@ dock_parse_node( dock_reader_t* r, u32 vp )
 bool
 gui_dock_load( gui_vp_t vp, const char* text )
 {
-    if ( vp >= GUI_MAX_VIEWPORTS || !text )
+    if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS || !text )
         return false;
 
     dock_reader_t r = { text };

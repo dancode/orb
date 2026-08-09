@@ -83,7 +83,7 @@ window_work_top( gui_vp_t vp )
 f32
 gui_viewport_content_y( gui_vp_t vp )
 {
-    if ( vp >= GUI_MAX_VIEWPORTS )
+    if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return 0.0f;
     return window_work_top( vp );
 }
@@ -1068,7 +1068,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
    viewport work area (caption band + main menu bar, window_work_top) and wraps back to that
    first slot once the next position would cross half the viewport extent on either axis. */
 static void
-window_default_spawn( u32 viewport, f32* out_x, f32* out_y )
+window_default_spawn( gui_vp_t viewport, f32* out_x, f32* out_y )
 {
     gui_vp_t vp = viewport;
     const f32 inset = 60.0f;
@@ -1105,7 +1105,7 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
         /* The pool-full guard keeps a scratch-hosted overflow window (window_find never sees it,
            so it reads as appearing EVERY frame) from advancing the cascade and walking across
            the screen; it takes the fixed fallback above instead. */
-        u32 vp = s_next_win.has_viewport ? s_next_win.viewport : s_build.win.viewport;
+        gui_vp_t vp = s_next_win.has_viewport ? s_next_win.viewport : s_build.win.viewport;
         window_default_spawn( vp, &x, &y );
     }
 
@@ -1127,7 +1127,7 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
 f32
 gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
 {
-    if ( vp >= GUI_MAX_VIEWPORTS )
+    if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return 0.0f;
 
     if ( !app()->window_is_borderless( s_vp_pool[ vp ].win_id ) )
@@ -1166,11 +1166,11 @@ gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
 ==============================================================================================*/
 
 void
-windows_dpi_rescale( u32 vp, f32 ratio )
+windows_dpi_rescale( gui_vp_t vp, f32 ratio )
 {
     if ( !( ratio > 0.0f ) || ratio == 1.0f )
         return;
-    if ( vp >= GUI_MAX_VIEWPORTS || s_vp_pool[ vp ].owned )
+    if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS || s_vp_pool[ vp ].owned )
         return;
 
     for ( u32 c = 0; c < s_ctx_pool_count; ++c )

@@ -179,7 +179,7 @@ void
 gui_window_set_next_viewport( gui_vp_t vp )
 {
     s_next_win.has_viewport = true;
-    s_next_win.viewport     = ( vp != GUI_VP_INVALID ) ? vp : 0u;
+    s_next_win.viewport     = ( vp != GUI_VP_INVALID ) ? vp : 0;
 }
 
 /* Resolve one queued axis against the window's remaining permissions.  Returns whether to apply
@@ -287,7 +287,7 @@ surface_z_overlay( u32 depth )
 ==============================================================================================*/
 
 void
-surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
+surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, gui_vp_t viewport )
 {
     /* Deaf context: not listening for input this frame, skip hover nomination. */
     if ( !g_ctx->listening )

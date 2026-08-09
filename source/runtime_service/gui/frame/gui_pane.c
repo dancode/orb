@@ -26,7 +26,7 @@
 // clang-format off
 
 void
-pane_tag( gui_id_t id, u32 z, u32 vp, u32 band )
+pane_tag( gui_id_t id, u32 z, gui_vp_t vp, u32 band )
 {
     draw_set_window( id );        /* stable retained-cache key: all this pane's spans share it */
     draw_set_sort_key( z );

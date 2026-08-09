@@ -531,7 +531,7 @@ render_batch_debug_color( u32 i )
 
 void
 gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
-                  u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
+                  gui_vp_t vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
         return;

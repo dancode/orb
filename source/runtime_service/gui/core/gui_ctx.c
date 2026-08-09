@@ -92,7 +92,7 @@ gui_scope_t s_scope;
    unit) tags each captured rect with the ambient build viewport through this accessor -- declared
    in gui_render.h, Debug builds only. */
 
-u32 dbg_build_viewport( void ) { return s_build.win.viewport; }
+gui_vp_t dbg_build_viewport( void ) { return s_build.win.viewport; }
 
 #endif
 
@@ -244,15 +244,15 @@ ctx_bind( gui_context_t* ctx )
 ==============================================================================================*/
 
 gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
-u32            s_vp_count;
+i32            s_vp_count;
 
 /* Resolve an app win_id to its viewport slot: the live slot (one with GPU buffers) whose recorded
    win_id matches, else 0 (the main swapchain).  Context-independent -- there is only one table.
    Forward-declared in core/gui_ctx.h; called by the mouse-input path in core/gui_io.c. */
-static u32
+static gui_vp_t
 viewport_index_for_window( i32 win_id )
 {
-    for ( u32 i = 0; i < APP_WIN_MAX; ++i )
+    for ( gui_vp_t i = 0; i < APP_WIN_MAX; ++i )
         if ( rhi_handle_valid( s_vp_pool[ i ].vb ) && s_vp_pool[ i ].win_id == win_id )
             return i;
     return 0;

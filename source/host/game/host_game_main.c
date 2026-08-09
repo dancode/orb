@@ -138,12 +138,10 @@ game_host_update( f32 dt )
 static void
 game_gui( f32 dt )
 {
-    gui_vp_t vp = run_host_vp();
-
     run_view_t view = {
         .version    = RUN_VIEW_VERSION,
         .render_ctx = run_host_ctx(),
-        .gui_vp     = ( vp == GUI_VP_INVALID ) ? -1 : ( i32 )vp,
+        .gui_vp     = run_host_vp(),
     };
     app()->window_get_size( run_host_window(), &view.surface_w, &view.surface_h );
     game()->hud( dt, &view );

@@ -69,7 +69,7 @@ typedef struct gui_window_t
     f32         x, y;            // persisted top-left (updated by dragging)
     f32         w, h;            // persisted dimensions
     u32         z;               // paint order: higher = more recently raised = in front
-    u32         viewport;        // target surface index (0 = main swapchain); set via window_set_next_viewport
+    gui_vp_t    viewport;        // target surface (0 = main swapchain); set via window_set_next_viewport
 
     u8         set_pos_allow;    // conds still permitted to set position (gui_cond_t bits)
     u8         set_size_allow;   // conds still permitted to set size (gui_cond_t bits)
@@ -152,7 +152,7 @@ typedef struct
     f32         size_w, size_h;
 
     bool        has_viewport;          // a viewport reassignment is queued for the next window
-    u32         viewport;              // its target surface index
+    gui_vp_t    viewport;              // its target surface
 
 } gui_next_win_t;
 
@@ -355,7 +355,7 @@ typedef struct
 
     gui_rect_t  menubar_rect;  // reserved strip (WIN_MENUBAR); menu_bar_begin fills it
 
-    u32         viewport;      // ambient viewport for new-window inheritance (stamped per window)
+    gui_vp_t    viewport;      // ambient viewport for new-window inheritance (stamped per window)
 
 } gui_win_ctx_t;
 
@@ -501,14 +501,14 @@ f32 vp_h( gui_vp_t vp );
 ==============================================================================================*/
 
 extern gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
-extern u32            s_vp_count;                   /* used count; iterate [0, count) */
+extern i32            s_vp_count;                   /* used count; iterate [0, count) */
 
 /* The mouse-input path (core/gui_io.c) resolves an event's app win_id to the viewport hosting it
    by searching s_vp_pool -- context-independent, since the table is global.  Static: both ends
    live in this unit.  ORB_UNUSED_FN: this header is also pulled into the backend TU, which
    neither defines nor calls it. */
 
-static u32 ORB_UNUSED_FN viewport_index_for_window( i32 win_id );
+static gui_vp_t ORB_UNUSED_FN viewport_index_for_window( i32 win_id );
 
 /*==============================================================================================
     gui_context_t -- the bound per-context retained state ("bind and use").

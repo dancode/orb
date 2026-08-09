@@ -191,7 +191,7 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
 typedef struct
 {
     gui_gpu_cmd_t cmd;     // clip rect, texture slot, element count
-    u32           vp;      // viewport this command targets
+    gui_vp_t      vp;      // viewport this command targets (GUI_VP_INVALID = dormant volatile pad)
     u32           lvbase;  // vertex base relative to slot->vert_base (0-relative)
     u32           libase;  // index base relative to slot->idx_base (the cmd's first_index seed)
 
@@ -833,7 +833,7 @@ cache_dump_slots( const char* tag )
     {
         const win_geo_slot_t* s = &s_slots[ i ];
         gui_log( GUI_LOG_INFO,
-                 "  [%2u] win=%-11u z=%-4u vp=%u  vert[%u..%u)/%u  idx[%u..%u)/%u  cmd[%u..%u)  gen=%u%s",
+                 "  [%2u] win=%-11u z=%-4u vp=%d  vert[%u..%u)/%u  idx[%u..%u)/%u  cmd[%u..%u)  gen=%u%s",
                  i, s->win, s->z, s->vp,
                  s->vert_base, s->vert_base + s->vert_count, s->vert_alloc,
                  s->idx_base,  s->idx_base  + s->idx_count,  s->idx_alloc,

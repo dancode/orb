@@ -29,7 +29,7 @@
 typedef struct
 {
     gui_gpu_cmd_t cmd;      // elem_count, tex_idx, clip_rect -- the GPU draw-call unit
-    u32           vp;       // viewport index for this command
+    gui_vp_t      vp;       // viewport for this command (GUI_VP_INVALID = dormant volatile pad)
     u32           vbase;    // vtx slot -- first vertex of command
     u32           ibase;    // idx slot -- first index of command (its draw call's first_index)
 
@@ -57,7 +57,7 @@ static struct
     u32 vert_count, idx_count, cmd_count;           // write head cursors
 
     gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
-    u32         cur_vp;     /* viewport baked from the current semantic command                    */
+    gui_vp_t    cur_vp;     /* viewport baked from the current semantic command                    */
     u32         cur_tex;    /* GUI_TEX_MODE | bindless slot stamped into every vertex committed --
                                set by tess_set_tex, applied by tess_verts_commit.  NOT a batch key */
     u32         cur_fx;     /* packed effect word stamped into every vertex committed.  CLEARED at

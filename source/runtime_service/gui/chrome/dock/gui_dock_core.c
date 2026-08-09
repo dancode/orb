@@ -60,7 +60,7 @@ dock_at( gui_dock_ref_t ref )
 }
 
 static gui_dock_node_t*
-dock_node_alloc( u32 viewport )
+dock_node_alloc( gui_vp_t viewport )
 {
     if ( !g_ctx->dock.pool ) return NULL;   /* docking disabled for this context */
     gui_dock_node_t* n = NULL;
@@ -105,7 +105,7 @@ dock_node_find( gui_dock_id_t id )
    current build").  A live tree without emission is DORMANT: retained, but it places no windows
    and offers no drops (see dock_seen_frame in core/gui_ctx.h). */
 static bool
-dock_vp_emitted( u32 vp )
+dock_vp_emitted( gui_vp_t vp )
 {
     const gui_viewport_t* v = &s_vp_pool[ vp ];
     return v->dock_root != GUI_DOCK_REF_NONE && v->dock_seen_frame == gui_frame_index();
@@ -209,7 +209,7 @@ dock_hidden_refresh( void )
 {
     if ( !g_ctx->dock.pool )
         return;
-    for ( u32 vp = 0; vp < s_vp_count; ++vp )
+    for ( gui_vp_t vp = 0; vp < s_vp_count; ++vp )
         dock_hidden_refresh_node( dock_at( s_vp_pool[ vp ].dock_root ) );
 }
 
@@ -595,7 +595,7 @@ dock_absorb_delta( gui_dock_node_t* n, u8 axis, u32 side, f32 delta )
 ==============================================================================================*/
 
 static void
-dock_splitter( gui_dock_node_t* n, u32 vp )
+dock_splitter( gui_dock_node_t* n, gui_vp_t vp )
 {
     gui_rect_t r     = n->rect;
     f32          thick = DOCK_SPLITTER;
@@ -650,7 +650,7 @@ dock_splitter( gui_dock_node_t* n, u32 vp )
 /* Post-order walk: lay splitters of the children before this node's own, so a parent gutter paints
    over the child borders it abuts. */
 static void
-dock_tree_splitters( gui_dock_node_t* n, u32 vp )
+dock_tree_splitters( gui_dock_node_t* n, gui_vp_t vp )
 {
     if ( !n || n->split == GUI_DOCK_SPLIT_NONE || n->hidden )
         return;

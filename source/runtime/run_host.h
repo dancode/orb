@@ -193,7 +193,7 @@ int run_host_main( const run_host_desc_t* desc, int argc, char** argv );
 void run_host_shutdown( void );
 
 /* Host-owned handles, valid after run_host_main's init (on_ready onward).  Sentinels
-   when the owning service is absent: APP_WIN_INVALID / RHI_CTX_INVALID (-1) /
+   when the owning service is absent, all -1: APP_WIN_INVALID / RHI_CTX_INVALID /
    GUI_VP_INVALID.  Use these instead of hardcoding context 0 / viewport 0. */
 win_id_t run_host_window( void ); /* main platform window          */
 i32      run_host_ctx( void );    /* main rhi context id           */
