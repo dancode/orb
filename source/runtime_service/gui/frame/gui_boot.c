@@ -1,53 +1,36 @@
 /*==============================================================================================
 
-    runtime_service/gui/frame/gui_boot.c -- THE BOOT PATH: one-call setup and the quick gui loop
-    it belongs to.
+    runtime_service/gui/frame/gui_boot.c -- one-call setup and the quick-gui loop.
 
-    TIER NOTE: this is the TEST-BED methodology -- for sandboxes, demos, and quick tools where
-    the UI is the whole application and setup boilerplate is pure friction.  It is the
-    alternative to the engine's idiomatic path, the runtime host (source/runtime, run_host_main),
-    which owns the window, the rhi context, the event drain, the composite and the pacing itself
-    and wires gui as one optional service.  Nothing here is required to use gui.
+    TIER: test-bed / sandbox path.  gui owns the main surface (window + rhi context + viewport 0)
+    and drives the loop.  The runtime host (source/runtime, run_host_main) is the alternative:
+    it owns all of that itself and treats gui as an optional service. Nothing here is required to 
+    use gui.
 
-    gui's tear-off floaters already own their OS window + rhi context end to end
-    (viewport_spawn); boot() extends that to the main surface (rhi device -> OS window ->
-    render context -> gui init -> viewport 0).  Everything here composes the same public
-    primitives a host would call itself, so the explicit path keeps working unchanged --
-    boot is composition, not replacement.
+    boot() is pure composition -- every line is an ordered public call a host would make itself.
+    A runtime-path host calls none of the boot_ functions.
 
-    WHAT boot_ MEANS HERE: membership in this loop, not a dependency on s_boot.  The engine has
-    two host methodologies -- the runtime host (source/runtime), which owns the window, context,
-    pump, composite and pacing and treats gui as a service, and THIS path, where gui owns the
-    main surface and the loop's shape.  Every boot_ verb below belongs to the second one; a
-    runtime-path host calls none of them.  How much each actually leans on s_boot varies and is
-    beside the point:
+    WHAT boot_ MEANS: membership in this loop, not a dependency on s_boot.
 
-      boot()         -- composition.  Every line of it is a public call, in the order a host
-                        makes them.  A shortcut, not a mode.
-      boot_poll()    -- reads NO s_boot state, and still belongs here: nothing outside this loop
-                        calls it, and a real host needs what it does not offer (its own look at
-                        the event ring, a close policy other than close-means-quit).  It is
-                        boot's pump.  The naming follows the loop, not the state.
-      boot_present_* -- the one true fork.  These reach s_boot's window, context, and viewport,
-                        which a runtime-path host cannot supply, so they are a reported no-op
-                        off this path rather than a partial frame.  That host writes the
-                        explicit render block (spelled out in gui_api.h under BOOT PATH).
+      boot()         -- composes the public setup sequence.  A shortcut, not a mode.
+      boot_poll()    -- the loop's event pump.  Reads no s_boot state; belongs here because
+                        nothing outside this loop calls it.
+      boot_present_* -- reaches s_boot's window, context, and viewport, which a runtime-path
+                        host cannot supply, so it no-ops (with a contract message) off this path.
 
-    frame_pace() also lives in this file but is NOT boot_: it paces over the frame hooks alone
-    and sb_vulkan -- an attach-path host with its own window, context and pump -- calls it.
-    Shared verb, shared name; it sits here for company with the loop it usually closes.
+    frame_pace() also lives here but is NOT boot_: sb_vulkan (own window, own context, own pump)
+    also calls it.  Lives here for proximity to the boot loop.
 
-    Scope contract: this tier composes PUBLIC app/rhi/gui primitives only, and owns nothing
-    beyond the main surface's lifecycle (window + swapchain + viewport 0 + the frame pair).
-    Anything that is not window/surface/UI -- job ticks, hot-reload, simulation clocks,
-    networking -- belongs to the runtime host (source/runtime), never here.
+    Scope: composes public app/rhi/gui primitives only.  Owns nothing beyond the main surface
+    lifecycle (window + swapchain + viewport 0 + the frame pair).  Job ticks, hot-reload,
+    simulation clocks, networking -- all belong to the runtime host.
 
-    Included LAST in the gui_frame.c unity (after gui_frame_loop.c): it calls straight into the
-    frame lifecycle, the viewport pool, and the window unit.  gui_frame_loop.c reaches back through
-    two forward-declared statics -- boot_shutdown() (teardown from gui_shutdown) and
-    boot_shell_emit() (the auto chrome shell at the default ctx_begin).
+    Included LAST in the gui_frame.c unity (after gui_frame_loop.c).
+    gui_frame_loop.c reaches back through two forward-declared statics:
+      boot_shutdown()    -- teardown called from gui_shutdown
+      boot_shell_emit()  -- auto chrome shell emitted at the default ctx_begin
 
-    Ordering contract (mirrors the explicit loop the sandboxes ran):
+    Ordering contract:
 
         gui()->boot( &desc );                        -- once, after mod_init_all
         while ( gui()->boot_poll( &dt ) )           -- pump + route events; false on close
@@ -62,38 +45,40 @@
         }
         gui()->shutdown();                           -- also tears down the boot-owned surface
 
-==============================================================================================*/
+============================================================================================*/
 // clang-format off
 
 /*==============================================================================================
-    Boot state -- the handles boot() created and shutdown must destroy
-==============================================================================================*/
+    boot state -- handles created by boot() that shutdown must destroy
+============================================================================================*/
 
 static struct
 {
-    bool     active;          /* boot() ran; shutdown tears the surface down          */
-    i32      win_id;          /* boot-owned OS window (also the viewport slot)        */
-    i32      rhi_ctx;         /* boot-owned rhi render context (swapchain)            */
-    gui_vp_t vp;              /* the primary viewport boot opened                     */
-    bool     shell;           /* borderless boot: auto-emit the chrome shell          */
-    f32      clear[ 4 ];      /* boot_present_begin swapchain clear color             */
-    char     title[ 96 ];     /* window title, re-used as the shell caption each frame */
+    bool     active;          // boot() ran; shutdown tears the surface down          
+    bool     shell;           // borderless boot: auto-emit the chrome shell 
+
+    i32      win_id;          // boot-owned OS window (also the viewport slot)
+    i32      rhi_ctx;         // boot-owned rhi render context (swapchain)
+    i32      vp_id;           // the primary viewport boot opened
+
+    f32      clear[ 4 ];      // boot_present_begin swapchain clear color
+    char     title[ 64 ];     // window title, re-used as the shell caption each frame
 
 } s_boot;
 
-static f64 s_poll_last;       /* boot_poll dt clock (0 = first frame)                */
+static f64 s_poll_last;       // boot_poll dt clock (0 = first frame)                
 
 static struct
 {
-    bool      begun;          /* boot_present_begin opened this frame (end resets)    */
-    bool      cmd_live;       /* rhi frame is open; present must render + end it      */
+    bool      begun;          // boot_present_begin opened this frame (end resets)    
+    bool      cmd_live;       // rhi frame is open; present must render + end it      
     rhi_cmd_t cmd;
 
 } s_present;
 
 /*==============================================================================================
     boot -- stand up the main surface end to end
-==============================================================================================*/
+============================================================================================*/
 
 gui_vp_t
 gui_boot( const gui_boot_desc_t* desc )
@@ -101,8 +86,7 @@ gui_boot( const gui_boot_desc_t* desc )
     if ( !desc || s_boot.active )
         return GUI_VP_INVALID;
 
-    /* Device first.  rhi()->init() is idempotent, so a host that already initialized rhi (or
-       will also init draw()) loses nothing -- this only guarantees the device is live. */
+    /* rhi()->init() is idempotent -- safe if the host already initialized rhi or draw(). */
     if ( !rhi()->init() )
         return GUI_VP_INVALID;
 
@@ -142,10 +126,10 @@ gui_boot( const gui_boot_desc_t* desc )
     s_boot.active  = true;
     s_boot.win_id  = win;
     s_boot.rhi_ctx = rctx;
-    s_boot.vp      = vp;
+    s_boot.vp_id   = vp;
     s_boot.shell   = !desc->os_chrome;
 
-    /* Alpha 0 reads as "unset" (a cleared swapchain is always opaque): default dark. */
+    /* Alpha 0 means unset (cleared swapchain is always opaque): fall back to default dark. */
     if ( desc->clear[ 3 ] > 0.0f )
         memcpy( s_boot.clear, desc->clear, sizeof( s_boot.clear ) );
     else
@@ -159,9 +143,10 @@ gui_boot( const gui_boot_desc_t* desc )
 }
 
 /* Teardown for the boot-owned surface, called at the END of gui_shutdown (forward-declared
-   there): the viewport's GPU buffers are already gone, so release the swapchain context and
-   the OS window -- the two handles the host used to own.  rhi()->shutdown() stays host-side:
-   boot cannot know what else (draw(), host passes) still needs the device. */
+   there).  The viewport's GPU buffers are already gone; release the swapchain context and
+   OS window.  rhi()->shutdown() stays host-side -- boot cannot know what else still needs
+   the device. */
+
 static void
 boot_shutdown( void )
 {
@@ -175,28 +160,27 @@ boot_shutdown( void )
 }
 
 /* Auto chrome shell -- called from gui_ctx_begin when the DEFAULT context binds (once per
-   frame), so the shell is the first window in its build and the caption band it publishes is
-   live for everything after it.  viewport_shell itself no-ops on an OS-chrome window, so this
-   is doubly gated.  Explicit-path hosts (no boot) are untouched: s_boot.shell is false. */
+   frame).  viewport_shell no-ops on an OS-chrome window, so this is doubly gated.
+   Explicit-path hosts (no boot) are untouched: s_boot.shell is false. */
+
 static void
 boot_shell_emit( void )
 {
     if ( !s_boot.active || !s_boot.shell )
         return;
-    gui_viewport_shell( s_boot.vp, s_boot.title, GUI_WIN_NONE );
+    gui_viewport_shell( s_boot.vp_id, s_boot.title, GUI_WIN_NONE );
 }
 
 /*==============================================================================================
-    boot_poll -- the loop's event pump (boot_ by membership: it reads no s_boot, but nothing
-    outside this loop calls it -- see WHAT boot_ MEANS HERE at the top)
-==============================================================================================*/
+    boot_poll -- the loop's event pump
+============================================================================================*/
 
-/* Pump the OS, route every event through rhi (swapchain resize) and gui (input, floater
-   lifecycle), and hand back the frame dt from the boot clock hook.  Returns false when the
-   app should exit: pump_events said quit, or the main window was closed (gui_event consumes
-   owned-floater closes, so any WIN_CLOSE that reaches here is the main window's).  dt is
-   clamped to 100 ms so a debugger stall or window drag does not step the UI by seconds;
-   without a clock hook it reads a nominal 60 Hz frame. */
+/* Pump the OS, route events through rhi (swapchain resize) and gui (input, floater lifecycle),
+   and return the frame dt.  Returns false when the app should exit: pump_events said quit, or
+   the main window was closed (gui_event consumes owned-floater closes, so any WIN_CLOSE that
+   reaches here is the main window's).  dt is clamped to 100 ms to prevent large steps after a
+   debugger stall or window drag.  Without a clock hook, defaults to a nominal 60 Hz frame. */
+
 bool
 gui_boot_poll( f32* out_dt )
 {
@@ -235,28 +219,25 @@ gui_boot_poll( f32* out_dt )
 }
 
 /*==============================================================================================
-    boot_present_begin / boot_present_end -- the render + present pair, and THE fork in this
-    file.  Everything else here composes public calls; this pair reaches into the boot-owned
-    window + context + viewport, which an attach-path host cannot supply.  Hence the boot_
-    prefix: off the boot path there is no half-measure to offer, only the explicit block (named
-    in the contract message below, and written out in gui_api.h under BOOT TIER).
-==============================================================================================*/
+    boot_present_begin / boot_present_end -- render + present pair.
 
-/* Open the main surface's frame: reconcile floaters (the safe point between build and
-   present), guard minimized, begin the rhi frame, and clear the swapchain.  Returns true with
-   the live command buffer so the host can record its own passes (offscreen scene renders,
-   custom draws) before boot_present_end() draws the gui; false means skip them (minimized,
-   swapchain rebuild, or no boot) -- still call boot_present_end() unconditionally, it presents
-   the floaters and resets this state either way.  A balanced pair like every other begin/end. */
+    These reach the boot-owned window + context + viewport, which a runtime-path host cannot
+    supply.  Off the boot path the begin fires a contract message and returns false; there is
+    no half-measure -- use the explicit block from gui_api.h (BOOT TIER) instead.
+============================================================================================*/
+
+/* Open the main surface's frame: reconcile floaters, guard minimized, begin the rhi frame,
+   and clear the swapchain.  Returns true with the live command buffer so the host can record
+   its own passes before boot_present_end() draws the gui.  Returns false on minimized,
+   swapchain rebuild, or no boot -- still call boot_present_end() unconditionally. */
 
 bool
 gui_boot_present_begin( rhi_cmd_t* out_cmd )
 {
-    /* The fork gate, FIRST -- before the perf clock, before viewport_update, before `begun`.
-       Off the boot path this is not a frame that came out empty, it is a call that does not
-       apply, so it must leave NOTHING behind: a viewport_update from here would silently double
-       the reconcile such a host already runs, and a latched `begun` would hand the floater
-       present to a pair that never opened anything. */
+    /* Fork gate FIRST -- before perf clock, viewport_update, or `begun`.  Off the boot path
+       this call does not apply at all: a viewport_update here would double-reconcile a host
+       that already runs it, and a latched `begun` would hand the floater present to a pair
+       that never opened anything. */
     GUI_CONTRACT( s_boot.active,
                   "boot_present_begin() without gui()->boot() -- this pair renders through the "
                   "boot-owned window + rhi context, so it cannot present a host-owned surface.  "
@@ -294,10 +275,9 @@ gui_boot_present_begin( rhi_cmd_t* out_cmd )
     return true;
 }
 
-/* Close the frame: draw the gui over whatever the host recorded, present the main surface,
-   then present every owned floater.  No-op without a matching boot_present_begin -- the pair is
-   balanced by contract; there is no hidden self-begin.  Off the boot path `begun` never latches,
-   so this is a complete no-op and the begin above has already named the rule. */
+/* Draw the gui over whatever the host recorded, present the main surface, then present every
+   owned floater.  No-ops without a matching boot_present_begin; off the boot path `begun`
+   never latches so this is a complete no-op. */
 void
 gui_boot_present_end( void )
 {
@@ -306,7 +286,7 @@ gui_boot_present_end( void )
 
     if ( s_present.cmd_live )
     {
-        gui_render( s_boot.vp, s_present.cmd );
+        gui_render( s_boot.vp_id, s_present.cmd );
         rhi()->frame_end( s_boot.rhi_ctx );
     }
 
@@ -319,30 +299,28 @@ gui_boot_present_end( void )
 }
 
 /*==============================================================================================
-    frame_pace -- the end-of-loop idle sleep.  NOT boot_: it paces over the frame hooks alone,
-    and sb_vulkan (own window, own context, own pump) calls it -- a shared verb that happens to
-    live in this file because the boot loop is where it usually appears.
+    frame_pace -- end-of-loop idle sleep.  NOT boot_: sb_vulkan (own window, own context,
+    own pump) also calls this.  Lives here for proximity to the boot loop.
 
     Call once at the bottom of the main loop, after the present.  The two parameters set the
-    host's cadence; 0 opts that sleep out entirely (no call), even while the feature is on:
+    host's cadence; passing 0 opts that branch out entirely:
 
-        spin_sleep_ms -- the default sleep between frames when idle skip is off (or unavailable).
-                         4 ~= 250 Hz game cadence; 0 = free-run at full speed.
-        anim_sleep_ms -- the sleep while idle skip is ON but the UI is still SETTLING: an animation
-                         is mid-transition (s_any_redraw) OR this frame still emitted widgets
-                         (gui_frame_dirty()).  Frames keep pumping until a genuinely clean frame is
-                         produced, so a collapsed window, a snapping popup, or a click's next-frame
-                         structural change lands instead of stalling.  16 ~= 60 Hz; 0 = free-run.
+        spin_sleep_ms -- sleep between frames when idle skip is off (or unavailable).
+                         4 ~= 250 Hz; 0 = free-run.
+        anim_sleep_ms -- sleep while idle skip is ON but the UI is still settling: an animation
+                         is mid-transition (s_any_redraw) OR this frame emitted widgets
+                         (gui_frame_dirty()).  Frames keep pumping until a clean frame lands.
+                         16 ~= 60 Hz; 0 = free-run.
 
-    With idle skip on (I, or set_idle_skip) and the UI settled, the loop blocks on OS input instead
-    (500 ms safety cap), so a static UI burns no frames -- unless live volatile blocks are on
-    screen (gui_volatile_live), which keep the anim_sleep_ms cadence so their idle-frame patches
-    actually present.  Requires the sleep / wait hooks from frame_set_hooks; without them this is
-    a no-op (the host loop just spins).
+    With idle skip on and the UI settled, the loop blocks on OS input (500 ms safety cap),
+    burning no frames -- unless gui_volatile_live() blocks are on screen, which keep the
+    anim_sleep_ms cadence so their idle-frame patches present without stutter.
 
-    The hooks (s_hook_sleep / s_hook_wait), s_idle_skip, and s_any_redraw live in
-    gui_frame_overlay.c / gui_frame_loop.c -- both included before this unit, so they are in scope here.
-==============================================================================================*/
+    Requires sleep / wait hooks from frame_set_hooks; without them this is a no-op.
+
+    s_hook_sleep, s_hook_wait, s_idle_skip, and s_any_redraw live in
+    gui_frame_overlay.c / gui_frame_loop.c -- both included before this unit.
+============================================================================================*/
 
 void
 gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
