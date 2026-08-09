@@ -33,6 +33,7 @@ mod_desc_t* gui_get_mod_desc( void );
 /* diagnostics sink -- install before gui_init() to capture the init-path messages; NULL
    restores the default printf sink.  Declared in log/gui_log.h; repeated here because this
    header is the host's index of the direct-call surface.  See gui_api.h for the contract. */
+
 void gui_log_set_fn( gui_log_fn fn, void* user );
 
 bool gui_init( gui_builtin_font_t font );
@@ -42,21 +43,26 @@ gui_mem_stats_t gui_mem_stats( void );
 void gui_print_mem_stats( void );
 
 /* per-frame geometry / batch counts for the LAST completed frame (one-frame lag) */
+
 gui_render_stats_t gui_render_stats( void );
 
 /* NOTE: the built-in perf/state overlays and the pipeline dashboard are internal now -- armed by
    gui_debug_enable( true ) and emitted behind hotkeys (P / O / F10); hosts no longer call them. */
 
+
 /* font lifecycle (load-into-registry half lives with GUI_DRAW below) */
+
 u32  gui_font_load( const char* path );
 u32  gui_font_load_builtin( gui_builtin_font_t font );
 
 /* DPI response -- monitor-scale font retargeting (see dpi_set in gui_api.h) */
+
 void           gui_dpi_set  ( gui_dpi_mode_t mode, f32 scale );
 gui_dpi_mode_t gui_dpi_mode ( void );
 f32            gui_dpi_scale( void );
 
 /* asset_path -- resolve a path relative to the engine's assets/ root (see gui_api.h) */
+
 void gui_asset_path( const char* relative, char* out, int out_size );
 
 /* frame -- frame_begin returns frame_dirty: emit the UI build only when true.  frame_set_hooks
@@ -64,6 +70,7 @@ void gui_asset_path( const char* relative, char* out, int out_size );
    sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms), which power the perf
    clocks and boot_pace's sleeps.  End-of-loop pacing is host policy -- see boot_pace below and
    the FRAME CONTRACT in gui_api.h. */
+
 void gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
 bool gui_frame_begin( f32 dt );
 void gui_frame_end( void );
@@ -72,6 +79,7 @@ bool gui_idle_skip( void );
 void gui_render( gui_vp_t vp, rhi_cmd_t cmd );
 
 /* multi-context */
+
 gui_ctx_id_t gui_ctx_create       ( const gui_ctx_config_t* cfg );
 void         gui_ctx_destroy      ( gui_ctx_id_t ctx );
 void         gui_ctx_bind         ( gui_ctx_id_t ctx );
@@ -80,6 +88,7 @@ void         gui_ctx_begin        ( gui_ctx_id_t ctx );
 void         gui_ctx_end          ( void );
 
 /* viewport management */
+
 gui_vp_t    gui_viewport_open       ( i32 win_id );
 void        gui_viewport_close      ( gui_vp_t vp );
 void        gui_viewport_resize     ( gui_vp_t vp, i32 w, i32 h );
@@ -91,6 +100,7 @@ f32         gui_viewport_content_y  ( gui_vp_t vp );
 /* boot path (gui_boot.c) -- the alternative to the runtime host: gui owns the main surface AND
    the loop shape.  A host on the runtime path (run_host_main) calls none of these; it calls the
    frame verbs above and drives its own window, pump, and present.  See BOOT PATH in gui_api.h. */
+
 gui_vp_t    gui_boot                ( const gui_boot_desc_t* desc );
 bool        gui_boot_poll           ( f32* out_dt );
 bool        gui_boot_present_begin  ( rhi_cmd_t* out_cmd );
@@ -98,6 +108,7 @@ void        gui_boot_present_end    ( void );
 void        gui_boot_pace           ( i32 spin_sleep_ms, i32 anim_sleep_ms );  /* 0 opts that sleep out */
 
 /* gui-owned floater surfaces (window + context owned by gui) */
+
 gui_vp_t    gui_viewport_spawn          ( const char* title, i32 x, i32 y, i32 w, i32 h );
 void        gui_viewport_update         ( void );
 void        gui_viewport_render_floaters( void );

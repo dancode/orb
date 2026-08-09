@@ -235,7 +235,7 @@ main( int argc, char** argv )
     int      ret_code    = 1;
     bool     draw_inited = false;
 
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    gui_vp_t vp = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui",
         .w         = 1280, .h = 960,
         .os_chrome = true,
@@ -243,10 +243,10 @@ main( int argc, char** argv )
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
         .wait      = sys_wait_for_os_events_ms,
-        .clear     = { 0.15f, 0.15f, 0.20f, 1.00f },
+        .clear     = { 0.15f, 0.15f, 0.15f, 1.00f },
         .debug     = true,
     } );
-    if ( vp0 == GUI_VP_INVALID )
+    if ( vp == GUI_VP_INVALID )
     {
         fprintf( stderr, "[sb_gui] gui->boot failed\n" );
         goto shutdown;
@@ -299,7 +299,6 @@ main( int argc, char** argv )
 
     while ( gui()->boot_poll( &dt ) )
     {
-
         /* ------------------------------------------------------------------------------ */
         /* Host-side debug keys.  The gui debug hotkeys (F1-F4 layers, F9 render view, F10
            dashboard, P/O overlays, C retained skip, F force redraw, I idle skip) are handled
@@ -326,6 +325,7 @@ main( int argc, char** argv )
             /* Closing the default context also auto-emits the debug overlays (perf/state/dashboard)
                last in its build.  Clean frames skip this whole scope; frame_end below replays the
                registered volatile_cb callbacks (see demo_volatile_pulse_cb above) internally. */
+
             gui()->ctx_end();
         }
 
@@ -341,13 +341,15 @@ main( int argc, char** argv )
 
         /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on block
            on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */
+
         gui()->boot_pace ( 4, 16 );
     }
     
     ret_code = 0;
 
 shutdown:
-    if ( vp0 != GUI_VP_INVALID ) gui()->shutdown();  /* also tears down the boot window + context */
+
+    if ( vp != GUI_VP_INVALID ) gui()->shutdown();  /* also tears down the boot window + context */
     if ( draw_inited ) draw()->shutdown();
     rhi()->shutdown();                               /* no-op if boot never initialized it */
     mod_system_exit();

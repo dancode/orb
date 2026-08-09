@@ -2754,18 +2754,21 @@ typedef enum
 
 typedef struct
 {
-    const char*        title;      // OS window title; doubles as the chrome shell caption
-    i32                x, y;       // window position; 0,0 = OS centers
-    i32                w, h;       // client size; 0,0 = 50% of the desktop work area
-    bool               os_chrome;  // true = stock OS frame; false (default) = borderless window
-                                   //   with the gui chrome shell auto-emitted
-    gui_builtin_font_t font;       // built-in preset; GUI_FONT_NONE = caller font_load()s
-    gui_clock_fn       clock;      // frame hooks (gui links no sys) -- see frame_set_hooks
-    gui_sleep_fn       sleep;
-    gui_wait_events_fn wait;
-    f32                clear[ 4 ]; // boot_present_begin clear color; alpha 0 = dark
-    bool               debug;      // arm the debug hotkey driver (debug_enable)
+    const char*        title;       // OS window title; doubles as the chrome shell caption
+    i32                x, y;        // window position; 0,0 = OS centers
+    i32                w, h;        // client size; 0,0 = 50% of the desktop work area
+    bool               os_chrome;   // true = stock OS frame; false (default) = borderless window
+                                    // with the gui chrome shell auto-emitted
 
+    bool               debug;       // arm the debug hotkey driver (debug_enable)
+    gui_builtin_font_t font;        // built-in preset; GUI_FONT_NONE = caller font_load()s
+
+    gui_clock_fn       clock;       // system clock function callback
+    gui_sleep_fn       sleep;       // system sleep function callback
+    gui_wait_events_fn wait;        // system wait-for-events function callback
+
+    f32                clear[ 4 ];  // boot_present_begin clear color; alpha 0 = dark
+    
 } gui_boot_desc_t;
 
 /*==============================================================================================

@@ -4,42 +4,34 @@
 
     We use this for our sandbox and testbed applications that isolate themselves from the full
     runtime. Gui owns the main surface (window + rhi context + viewport 0) and drives the loop. 
-        
+
     The runtime host (source/runtime, run_host_main) is the alternative: It owns all of that 
     itself and treats gui as an optional service. Nothing here is required to use gui.
 
     boot() is pure composition -- every line is an ordered public call a host would make itself.
     A true runtime-path host calls none of the boot_ functions.
 
-    boot()          : composes the public setup sequence.
-    boot_poll()     : gui loop event pump. 
-    boot_present_*  : dispatch to rhi()
-
-    boot_pace()     : this loop's end-of-frame sleep (spin / settle / block-on-input).
-
-    boot_ means membership in THIS loop, not a dependency on s_boot.  boot_pace touches no s_boot
-    state, but the ladder it runs is this loop's pacing policy: a runtime host schedules against a
-    frame deadline instead and reads gui's settle state through the public queries (wants_redraw,
-    frame_dirty, volatile_live) -- see run_host.c's editor_sleep.  Those queries are the shared
-    part; the sleep is not.
-
-    boot_shutdown()    -- teardown called from gui_shutdown
-    boot_shell_emit()  -- auto chrome shell emitted at the default ctx_begin
+    boot()              : composes the public setup sequence.
+    boot_poll()         : gui loop event pump. 
+    boot_present_*      : dispatch to rhi()
+    boot_pace()         : loop's end-of-frame sleep (spin / settle / block-on-input).
+    boot_shutdown()     : teardown called from gui_shutdown
+    boot_shell_emit()   : auto chrome shell emitted at the default ctx_begin
 
     Ordering contract:
 
-        gui()->boot( &desc );                        -- once, after mod_init_all
-        while ( gui()->boot_poll( &dt ) )           -- pump + route events; false on close
+        gui()->boot( &desc );                           -- once, after mod_init_all
+        while ( gui()->boot_poll( &dt ) )               -- pump + route events; false on close
         {
             if ( gui()->frame_begin( dt ) ) { ctx_begin; ...build...; ctx_end; }
             gui()->frame_end();
             rhi_cmd_t cmd;
-            if ( gui()->boot_present_begin( &cmd ) ) -- open the frame; host render passes
+            if ( gui()->boot_present_begin( &cmd ) )    -- open the frame; host render passes
                 ...record into cmd...
-            gui()->boot_present_end();               -- gui draw + present + floaters
+            gui()->boot_present_end();                  -- gui draw + present + floaters
             gui()->boot_pace ( 4, 16 );
         }
-        gui()->shutdown();                           -- also tears down the boot-owned surface
+        gui()->shutdown();                              -- also tears down the boot-owned surface
 
 ==============================================================================================*/
 // clang-format off
@@ -50,25 +42,25 @@
 
 static struct
 {
-    bool     active;          // boot() ran; shutdown tears the surface down          
-    bool     shell;           // borderless boot: auto-emit the chrome shell 
+    bool     active;            // boot() ran; shutdown tears the surface down          
+    bool     shell;             // borderless boot: auto-emit the chrome shell 
 
-    i32      win_id;          // boot-owned OS window (also the viewport slot)
-    i32      rhi_ctx;         // boot-owned rhi render context (swapchain)
-    i32      vp_id;           // the primary viewport boot opened
+    i32      win_id;            // boot-owned OS window (also the viewport slot)
+    i32      rhi_ctx;           // boot-owned rhi render context (swapchain)
+    i32      vp_id;             // the primary viewport boot opened
 
-    f32      clear[ 4 ];      // boot_present_begin swapchain clear color
-    char     title[ 64 ];     // window title, re-used as the shell caption each frame
+    f32      clear[ 4 ];        // boot_present_begin swapchain clear color
+    char     title[ 64 ];       // window title, re-used as the shell caption each frame
 
 } s_boot;
 
-static f64 s_poll_last;       // boot_poll dt clock (0 = first frame)                
+static f64 s_poll_last;         // boot_poll dt clock (0 = first frame)
 
 static struct
 {
-    bool      begun;          // boot_present_begin opened this frame (end resets)    
-    bool      cmd_live;       // rhi frame is open; present must render + end it      
-    rhi_cmd_t cmd;
+    bool      begun;            // boot_present_begin opened this frame (end resets)    
+    bool      cmd_live;         // rhi frame is open; present must render + end it      
+    rhi_cmd_t cmd;              // boot_present_begin's rhi frame command list.
 
 } s_present;
 
@@ -82,7 +74,7 @@ gui_boot( const gui_boot_desc_t* desc )
     if ( !desc || s_boot.active )
         return GUI_VP_INVALID;
 
-    /* rhi()->init() is idempotent -- safe if the host already initialized rhi or draw(). */
+    /* rhi()->init() is safe to call again if already initialized */
 
     if ( !rhi()->init() )
         return GUI_VP_INVALID;
@@ -332,7 +324,9 @@ gui_boot_present_end( void )
 void
 gui_boot_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
 {
-    f64 t_wait = perf_span_open();   /* time the whole pace phase: this IS the loop's "wait time" */
+    /* time the whole pace phase: this IS the loop's "wait time" */
+
+    f64 t_wait = perf_span_open();   
 
     if ( s_idle_skip && s_hook_wait )
     {
