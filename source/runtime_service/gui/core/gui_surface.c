@@ -174,11 +174,12 @@ gui_window_set_next_size( f32 w, f32 h, gui_cond_t cond )
 
 /* Queue the surface the NEXT window_begin paints into.  Sticky: it lands on the window record and
    persists across frames until reassigned.  Omit to use the ambient viewport (most recently emitted).
-   GUI_VP_INVALID (0) queues the primary. */
+   GUI_VP_INVALID is treated as the primary (0). */
 void
 gui_window_set_next_viewport( gui_vp_t vp )
 {
-    s_next_win.viewport = ( vp != GUI_VP_INVALID ) ? vp : GUI_VP_PRIMARY;
+    s_next_win.has_viewport = true;
+    s_next_win.viewport     = ( vp != GUI_VP_INVALID ) ? vp : 0u;
 }
 
 /* Resolve one queued axis against the window's remaining permissions.  Returns whether to apply
@@ -222,11 +223,10 @@ window_apply_next( gui_window_t* win, bool appearing )
 
     /* Viewport reassignment is unconditional (no ONCE/ALWAYS/APPEARING) -- it simply lands and
        sticks until the next window_set_next_viewport on this window. */
-    if ( s_next_win.viewport != GUI_VP_INVALID )
+    if ( s_next_win.has_viewport )
         win->viewport = s_next_win.viewport;
 
-    s_next_win.has_pos = s_next_win.has_size = false;   /* the queue targets only the next window */
-    s_next_win.viewport = GUI_VP_INVALID;
+    s_next_win.has_pos = s_next_win.has_size = s_next_win.has_viewport = false;   /* the queue targets only the next window */
 }
 
 /*==============================================================================================
@@ -287,7 +287,7 @@ surface_z_overlay( u32 depth )
 ==============================================================================================*/
 
 void
-surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, gui_vp_t viewport )
+surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport )
 {
     /* Deaf context: not listening for input this frame, skip hover nomination. */
     if ( !g_ctx->listening )

@@ -72,7 +72,7 @@ u32  debug_unit_mem_bytes ( void );         /* debug unit: its fixed statics, fo
 
     /* Ambient build viewport (s_build.win.viewport, core/gui_ctx.c) -- the capture functions
        live in the render unit, so they read it through this accessor rather than the static. */
-    gui_vp_t dbg_build_viewport( void );
+    u32 dbg_build_viewport( void );
 
 #else
     #define DBG_WIDGET( id, r, hov, act ) ( (void)0 )

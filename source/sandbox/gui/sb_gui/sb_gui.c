@@ -267,7 +267,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* GUI Style */
 
-    bool modify_style = false;
+    bool modify_style = true;
     if ( modify_style )
     {
         gui_style_t* style = gui()->style_get();
@@ -285,12 +285,11 @@ main( int argc, char** argv )
         // Modify any skin (STYLE) knob -- metrics are authored for a baseline em=12
         style->var[GUI_VAR_PANEL_ROUND] = 0;    // Square windows
         style->var[GUI_VAR_ROUND]       = 0;    // No bevel on buttons
-        // style->var[GUI_VAR_GAP]         = 4;   // More breathing room
+        // style->var[GUI_VAR_GAP]      = 12;   // More breathing room
 
         // Re-scale and apply the changes across the UI
         gui()->style_apply();
     }
-
     /* ------------------------------------------------------------------------------ */
     /* Start render loop.  boot_poll pumps the OS and routes every event (rhi swapchain
        resize, gui input + floater lifecycle); false = quit or main-window close.  Frame
@@ -300,6 +299,7 @@ main( int argc, char** argv )
 
     while ( gui()->boot_poll( &dt ) )
     {
+
         /* ------------------------------------------------------------------------------ */
         /* Host-side debug keys.  The gui debug hotkeys (F1-F4 layers, F9 render view, F10
            dashboard, P/O overlays, C retained skip, F force redraw, I idle skip) are handled

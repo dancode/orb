@@ -531,7 +531,7 @@ render_batch_debug_color( u32 i )
 
 void
 gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
-                  gui_vp_t vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
+                  u32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
         return;
@@ -685,8 +685,8 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
     /* Walk s_dispatch[] (z-sorted slot pointers) back-to-front.  Each slot owns a contiguous region
        of s_tess.verts[]/indices[]; its GPU commands reference those via 0-relative indices +
        vertex_offset = slot->vert_base.  Slots for other viewports are skipped entirely, as are
-       commands with a mismatched vp and empty ones (a volatile block's dormant reserved commands
-       carry elem_count 0).  first_index comes straight off each command's own ibase --
+       commands with a mismatched vp (including a volatile block's dormant reserved commands,
+       tagged GUI_VP_INVALID).  first_index comes straight off each command's own ibase --
        explicit rather than accumulated, since the index buffer may contain reserved headroom gaps
        between a volatile block's live indices and the commands that follow it. */
     for ( u32 d = 0; d < s_dispatch_count; ++d )

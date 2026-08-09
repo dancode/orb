@@ -83,32 +83,12 @@ typedef u32 gui_icon_id_t;
 typedef u32 gui_sprite_id_t;
 #define GUI_SPRITE_NONE 0u
 
-/* Viewport handle -- a render surface backed by an OS window.  Returned by viewport_open;
-   passed to render, viewport_resize, viewport_close, and window_set_next_viewport.
+/* Opaque viewport handle -- a render surface backed by an OS window.  Returned by
+   viewport_open; passed to render, viewport_resize, viewport_close, and
+   window_set_next_viewport.  GUI_VP_INVALID (UINT32_MAX) signals failure or no assignment. */
 
-   A handle is a SLOT INDEX, and inside gui it is always a valid one.  Nothing computes a
-   viewport: a handle only ever comes from viewport_open (which returns the slot it filled) or
-   from a stored field, and when a surface is destroyed every window on it is migrated back to
-   0.  So there is no "invalid viewport" state to test for internally, and 0 -- the primary
-   surface, which exists for as long as gui is initialized -- is what "unassigned" means.
-
-   Slots are numbered from 1 and slot 0 is reserved, so GUI_VP_INVALID is 0 and "no viewport"
-   is what a zero-initialized field already says -- no explicit reset, and no way for a memset to
-   quietly name a real surface.  0 is also the only sentinel that holds at every width AND either
-   signedness, so a handle narrows into a packed struct (i8 here) with nothing to carry along.
-
-   GUI_VP_PRIMARY (1) is the main window's surface.  It exists for as long as gui is initialized
-   and is what "unassigned" falls back to -- but it is now a DISTINCT value from "none", which is
-   what lets a window record say which of the two it means.
-
-   The question worth asking about a handle held ACROSS frames is not its range but whether its
-   surface is still alive -- an owned floater is destroyed when its last window stops being
-   emitted.  Gui's public entry points answer that themselves (see vp_live, core/gui_ctx.h) and
-   no-op on a dead handle. */
-
-typedef i32 gui_vp_t;
-#define GUI_VP_INVALID 0
-#define GUI_VP_PRIMARY 1
+typedef u32 gui_vp_t;
+#define GUI_VP_INVALID (~0u)
 
 /* Opaque dock-node handle -- one region of a viewport's dock tree.  Returned by dockspace_over_viewport
    (the tree root) and dock_split (the new sibling), and passed to dock_split / dock_window to name a
@@ -852,7 +832,7 @@ void         gui_style_apply( void );
    differently-scaled monitors emit with their own bake in one sequential frame.  A no-op when
    that bake is already landed, when DPI is unmanaged, or while a host-driven font is active. */
 
-void         gui_dpi_land( gui_vp_t viewport );
+void         gui_dpi_land( u32 viewport );
 
 /* gui_style_bake() -- derive the 96-cell colour grid from s->palette, in place.  The one step
    between what a theme AUTHORS and what a render READS, and the only writer of col[][][] the
@@ -2070,7 +2050,7 @@ typedef struct
 {
     u8 type;       // gui_cmd_type_t, fits u8 (20 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
-    i8 vp;         // target viewport (slot index; GUI_MAX_VIEWPORTS = 4)
+    u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
     union
     {
@@ -2537,7 +2517,7 @@ typedef struct gui_pane_t
     gui_id_t   id;      // identity: hover attribution, state pool key, draw segment tag
     gui_rect_t rect;    // where it is; hit test + base clip derive from it
     u32        z;       // one number, two consumers: occlusion contest + paint order
-    i8         vp;      // hosting OS surface (viewport slot index)
+    u8         vp;      // hosting OS surface (viewport index)
 
 } gui_pane_t;
 

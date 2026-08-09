@@ -269,13 +269,13 @@ gui_main_menu_bar_begin( void )
        borderless shell owns the caption strip for the OS move/resize gesture, and a bar painted
        over it would swallow the clicks that drag the window.  Inset is 0 with no native shell, so
        the bar stays pinned to the top edge as before. */
-    f32 top = s_vp_pool[ GUI_VP_PRIMARY ].caption_inset;
+    f32 top = s_vp_pool[ 0 ].caption_inset;
 
     /* Publish the bar band to the surface, frame-stamped (emit-gated like a dockspace): the
        work area for maximized windows and the drag clamp starts below it -- window_work_top,
        gui_window_free.c. */
-    s_vp_pool[ GUI_VP_PRIMARY ].bar_inset      = h;
-    s_vp_pool[ GUI_VP_PRIMARY ].bar_seen_frame = gui_frame_index();
+    s_vp_pool[ 0 ].bar_inset      = h;
+    s_vp_pool[ 0 ].bar_seen_frame = gui_frame_index();
 
     /* Chrome band: the bar paints with the root regions -- above every normal window, below its
        own dropdown popups -- so a window that still overlaps it (NO_BOUNDARY_CLAMP, a gesture

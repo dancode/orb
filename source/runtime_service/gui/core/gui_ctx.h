@@ -69,7 +69,7 @@ typedef struct gui_window_t
     f32         x, y;            // persisted top-left (updated by dragging)
     f32         w, h;            // persisted dimensions
     u32         z;               // paint order: higher = more recently raised = in front
-    gui_vp_t    viewport;        // target surface index (0 = main swapchain); set via window_set_next_viewport
+    u32         viewport;        // target surface index (0 = main swapchain); set via window_set_next_viewport
 
     u8         set_pos_allow;    // conds still permitted to set position (gui_cond_t bits)
     u8         set_size_allow;   // conds still permitted to set size (gui_cond_t bits)
@@ -151,7 +151,8 @@ typedef struct
     f32         pos_x, pos_y;
     f32         size_w, size_h;
 
-    gui_vp_t    viewport;              // queued target surface (GUI_VP_INVALID = none queued)
+    bool        has_viewport;          // a viewport reassignment is queued for the next window
+    u32         viewport;              // its target surface index
 
 } gui_next_win_t;
 
@@ -160,7 +161,7 @@ typedef struct
     bool        active;     // a request is queued this frame
     bool        by_drag;    // true = seamless title-bar drag; false = detach-button click
     gui_id_t    win_id;     // the dragged window record
-    gui_vp_t    from_vp;    // surface it was on (0 = main -> tear off; else floater -> merge)
+    u32         from_vp;    // surface it was on (0 = main -> tear off; else floater -> merge)
     const char* title;      // window title, to label the spawned floater's OS window
     bool        has_home;   // re-open of a closed floater: spawn reads the record's restore
 
@@ -354,7 +355,7 @@ typedef struct
 
     gui_rect_t  menubar_rect;  // reserved strip (WIN_MENUBAR); menu_bar_begin fills it
 
-    gui_vp_t    viewport;      // ambient viewport for new-window inheritance (stamped per window)
+    u32         viewport;      // ambient viewport for new-window inheritance (stamped per window)
 
 } gui_win_ctx_t;
 
@@ -387,7 +388,7 @@ typedef struct
        swapchain image otherwise.  Held per viewport so flush is target-agnostic. */
     rhi_texture_t target;
 
-    /* OS window this surface is hosted by (app win_id_t), or 0 (APP_WIN_INVALID) if unassociated.
+    /* OS window this surface is hosted by (app win_id_t), or -1 (APP_WIN_INVALID) if unassociated.
        Input routing maps a mouse event's win_id to this surface so the cursor's host viewport is
        known -- a window only hover-tests when the cursor is in the OS window hosting its viewport. */
     i32 win_id;
@@ -499,29 +500,15 @@ f32 vp_h( gui_vp_t vp );
     (win.pool) assign into which slot.  Defined in core/gui_ctx.c, next to s_ctx_pool.
 ==============================================================================================*/
 
-extern gui_viewport_t s_vp_pool[ APP_WIN_SLOTS ];   /* slot 0 reserved (GUI_VP_INVALID) */
-
-/* The one question worth asking about a viewport handle.  A handle IS a slot index and is in
-   range by construction -- viewport_open returns the slot it filled, and teardown migrates every
-   window back to 0 -- so internal code indexes s_vp_pool directly and needs no test.  What a
-   caller outside gui CAN hold is a STALE handle: an owned floater surface is destroyed once its
-   last window stops being emitted, and a host that kept the value across that frame now names a
-   dead slot.  That is the real failure, and a range test cannot see it.  Range is folded in so a
-   handle arriving from outside is safe to pass here at all. */
-static inline bool
-vp_live( gui_vp_t vp )
-{
-    return APP_WIN_VALID( vp ) && rhi_handle_valid( s_vp_pool[ vp ].vb );
-}
-extern i32            s_vp_count;                   /* used count; iterate [0, count) -- signed,
-                                                        so a gui_vp_t loop var bounds against it */
+extern gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
+extern u32            s_vp_count;                   /* used count; iterate [0, count) */
 
 /* The mouse-input path (core/gui_io.c) resolves an event's app win_id to the viewport hosting it
    by searching s_vp_pool -- context-independent, since the table is global.  Static: both ends
    live in this unit.  ORB_UNUSED_FN: this header is also pulled into the backend TU, which
    neither defines nor calls it. */
 
-static gui_vp_t ORB_UNUSED_FN viewport_index_for_window( i32 win_id );
+static u32 ORB_UNUSED_FN viewport_index_for_window( i32 win_id );
 
 /*==============================================================================================
     gui_context_t -- the bound per-context retained state ("bind and use").

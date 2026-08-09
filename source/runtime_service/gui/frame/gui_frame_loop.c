@@ -87,7 +87,7 @@ static gui_frame_phase_t s_frame_phase = GUI_FRAME_IDLE;
 static bool
 rhi_context_any_live( void )
 {
-    for ( i32 i = 1; i < (i32)GUI_VP_SLOTS; ++i )
+    for ( i32 i = 0; i < (i32)GUI_MAX_VIEWPORTS; ++i )
         if ( rhi()->context_size( i, NULL, NULL ) )
             return true;
     return false;
@@ -195,7 +195,7 @@ gui_shutdown( void )
 
     /* Destroy GPU surfaces once -- the one global s_vp_pool (including any gui-owned floaters),
        not per context: a viewport is a real OS window / RHI context, never context-owned. */
-    for ( u32 v = 1; v < GUI_VP_SLOTS; ++v )
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
         viewport_destroy( v );
     gui_draw_shutdown();      /* draw unit resources (fonts + icons) leave the atlas first */
     backend_exit();       /* shared pipeline / sampler / atlas */
@@ -292,8 +292,8 @@ gui_frame_begin( f32 dt )
        The host may resize the OS window at any time, so read the current size from the primary
        (main swapchain) surface, slot 0. */
 
-    i32 disp_w = s_vp_count > GUI_VP_PRIMARY ? s_vp_pool[ GUI_VP_PRIMARY ].disp_w : 0;
-    i32 disp_h = s_vp_count > GUI_VP_PRIMARY ? s_vp_pool[ GUI_VP_PRIMARY ].disp_h : 0;
+    i32 disp_w = s_vp_count > 0 ? s_vp_pool[ 0 ].disp_w : 0;
+    i32 disp_h = s_vp_count > 0 ? s_vp_pool[ 0 ].disp_h : 0;
 
     /* Open the perf overlay's emit clock here -- "start at frame_begin" -- and publish last frame's
        measured cost into the smoothed readouts the overlay shows. */
@@ -585,7 +585,7 @@ render_contract_check( gui_vp_t vp, const gui_viewport_t* v )
     if ( s_frame_phase != GUI_FRAME_SYNCED )
     {
         bool pending = false;
-        for ( gui_vp_t i = GUI_VP_PRIMARY + 1; i < s_vp_count; ++i )   /* floaters only */
+        for ( u32 i = 1; i < s_vp_count; ++i )
             pending = pending || ( s_vp_pool[ i ].owned && s_vp_pool[ i ].pending_close );
 
         GUI_CONTRACT( !pending,
@@ -602,9 +602,9 @@ render_contract_check( gui_vp_t vp, const gui_viewport_t* v )
          && sw > 0 && sh > 0 && v->disp_w > 0 && v->disp_h > 0 )
     {
         GUI_CONTRACT( sw == v->disp_w && sh == v->disp_h,
-                      "viewport %d is laid out for %d x %d but its swapchain is %d x %d -- route "
+                      "viewport %u is laid out for %d x %d but its swapchain is %d x %d -- route "
                       "rhi()->event() before (or alongside) gui()->event() so one resize reaches "
-                      "both.\n", vp, v->disp_w, v->disp_h, sw, sh );
+                      "both.\n", (u32)vp, v->disp_w, v->disp_h, sw, sh );
     }
 }
 
@@ -613,7 +613,7 @@ render_contract_check( gui_vp_t vp, const gui_viewport_t* v )
 void
 gui_render( gui_vp_t vp, rhi_cmd_t cmd )
 {
-    if ( !vp_live( vp ) )
+    if ( vp >= GUI_MAX_VIEWPORTS )
         return;
     gui_viewport_t* v = &s_vp_pool[ vp ];
 

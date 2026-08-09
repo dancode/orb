@@ -5,9 +5,7 @@
     Window pool
     -----------
     Up to APP_WIN_MAX windows are held in a fixed pool. Each slot is identified
-    by a win_id_t (1 ... APP_WIN_MAX) -- slot 0 is reserved and never allocated, so
-    0 (APP_WIN_INVALID) means "no window" and a zeroed field says so by itself.
-    g_pool.alloc is a bitmask -- bit i set
+    by a win_id_t (0 … APP_WIN_MAX-1). g_pool.alloc is a bitmask — bit i set
     means slot i is occupied. The first window opened is recorded as main_id;
     closing it sets g_app_quit so pump_events returns false.
 
@@ -48,7 +46,7 @@
 static win_id_t
 win_alloc_slot( void )
 {
-    for ( int i = 1; i < APP_WIN_SLOTS; ++i )   /* slot 0 is reserved: 0 means "no window" */
+    for ( int i = 0; i < APP_WIN_MAX; ++i )
     {
         if ( !( g_pool.alloc & ( 1u << i ) ) )
         {
@@ -62,14 +60,14 @@ win_alloc_slot( void )
 static void
 win_free_slot( win_id_t id )
 {
-    if ( APP_WIN_VALID( id ) )
+    if ( id >= 0 && id < APP_WIN_MAX )
         g_pool.alloc &= ~( 1u << id );
 }
 
 static app_window_t*
 win_get( win_id_t id )
 {
-    if ( !APP_WIN_VALID( id ) )
+    if ( id < 0 || id >= APP_WIN_MAX )
         return NULL;
     if ( !( g_pool.alloc & ( 1u << id ) ) )
         return NULL;
@@ -473,7 +471,7 @@ app_pump_events( void )
        edges land in the same frame window as this frame's keyboard/mouse messages. */
     win_gamepad_poll();
 
-    for ( int i = 1; i < APP_WIN_SLOTS; ++i )
+    for ( int i = 0; i < APP_WIN_MAX; ++i )
     {
         if ( g_pool.alloc & ( 1u << i ) )
             g_pool.wins[ i ].prev = g_pool.wins[ i ].state;

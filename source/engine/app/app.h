@@ -35,23 +35,10 @@
     Window IDs and pool constants
 ==============================================================================================*/
 
-/* A window id is a SLOT INDEX into the window pool, numbered from 1.  Slot 0 is reserved and
-   never allocated, so 0 -- and therefore any zero-initialized field -- means "no window".  That
-   is the one sentinel value that is correct at every width AND either signedness, so a win_id
-   may be narrowed into a packed struct without carrying a type-specific invalid value with it.
-   The id space is shared with rhi contexts and gui viewports: win_id == rhi ctx id == gui vp. */
-
 typedef i32 win_id_t;
 
-#define APP_WIN_INVALID 0  /* no window; slot 0 is reserved so zero-init means this */
-#define APP_WIN_MAX     4  /* capacity: max simultaneous native windows -- ids are 1..APP_WIN_MAX */
-
-/* Pool EXTENT -- what arrays are declared with and what loops bound against, so the reserved
-   slot 0 is accounted for in exactly one place.  Use APP_WIN_MAX only where the CAPACITY is
-   meant (a "pool full" message, the APP_WIN_MAX == RHI_CTX_MAX pairing). */
-#define APP_WIN_SLOTS   ( APP_WIN_MAX + 1 )
-
-#define APP_WIN_VALID( id ) ( ( id ) >= 1 && ( id ) < APP_WIN_SLOTS )
+#define APP_WIN_INVALID ( -1 )
+#define APP_WIN_MAX     4  /* max simultaneous native windows             */
 #define APP_EVENT_MAX   64 /* ring buffer capacity — must be power of 2   */
 #define APP_EVENT_MASK  ( APP_EVENT_MAX - 1 )
 

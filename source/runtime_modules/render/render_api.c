@@ -62,7 +62,7 @@ typedef struct render_target_s
 
 typedef struct render_state_s
 {
-    render_ctx_slot_t  ctx[ RHI_CTX_SLOTS ];
+    render_ctx_slot_t  ctx[ RHI_CTX_MAX ];
     render_target_t    target[ RENDER_TARGET_MAX ];
     f32                total_time;
 
@@ -77,7 +77,7 @@ static render_state_t* g_state = NULL;
 static void
 render_context_register( i32 ctx_id )
 {
-    if ( !g_state || !RHI_CTX_VALID( ctx_id ) )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
@@ -93,7 +93,7 @@ render_context_register( i32 ctx_id )
 static void
 render_context_unregister( i32 ctx_id )
 {
-    if ( !g_state || !RHI_CTX_VALID( ctx_id ) )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
@@ -341,7 +341,7 @@ render_draw_targets( rhi_cmd_t cmd )
 static bool
 render_begin_frame( i32 ctx_id )
 {
-    if ( !g_state || !RHI_CTX_VALID( ctx_id ) )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return false;
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
@@ -381,7 +381,7 @@ render_submit_rect( i32 ctx_id, f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 
         return;
     }
 
-    if ( !g_state || !RHI_CTX_VALID( ctx_id ) )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
@@ -402,7 +402,7 @@ render_submit_rect( i32 ctx_id, f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 
 static void
 render_draw_scene( i32 ctx_id, f32 dt )
 {
-    if ( !g_state || !RHI_CTX_VALID( ctx_id ) )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
@@ -474,7 +474,7 @@ render_draw_scene( i32 ctx_id, f32 dt )
 static void
 render_end_frame( i32 ctx_id )
 {
-    if ( !g_state || !RHI_CTX_VALID( ctx_id ) )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
@@ -492,7 +492,7 @@ render_end_frame( i32 ctx_id )
 static rhi_cmd_t
 render_frame_cmd( i32 ctx_id )
 {
-    if ( !g_state || !RHI_CTX_VALID( ctx_id ) )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return RHI_CMD_INVALID;
 
     return g_state->ctx[ ctx_id ].cmd;
@@ -501,7 +501,7 @@ render_frame_cmd( i32 ctx_id )
 static void
 render_set_clear_color( i32 ctx_id, f32 r, f32 g, f32 b, f32 a )
 {
-    if ( !g_state || !RHI_CTX_VALID( ctx_id ) )
+    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
         return;
 
     render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
