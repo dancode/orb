@@ -82,7 +82,7 @@ typedef struct
     f64   time;                     // seconds since the first frame -- dt accumulated; backs get_time()
     f32   dt;                       // seconds since the last frame; backs get_delta_time()
     i32   display_w, display_h;     // OS window client size (pixels); backs get_display_size()
-    gui_vp_t mouse_viewport;        // surface the cursor is in (resolved from mouse-event win_id); persists
+    u32   mouse_viewport;           // surface the cursor is in (resolved from mouse-event win_id); persists
 
     f32   mouse_x, mouse_y;
     f32   mouse_wheel;
@@ -411,10 +411,10 @@ const char* label_id_str( const char* s );
    stamps BOTH servers, which neither server may do itself.  pane_tag is declared here --
    the go-between verb's consumers (chrome's window opens, flow's region opens) all sit on
    this header. */
-void surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, gui_vp_t viewport );
+void surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, u32 viewport );
 u32  surface_z_raise( u32 z );
 u32  surface_z_overlay( u32 depth );
-void pane_tag( gui_id_t id, u32 z, gui_vp_t vp, u32 band );   /* defined frame/gui_pane.c */
+void pane_tag( gui_id_t id, u32 z, u32 vp, u32 band );   /* defined frame/gui_pane.c */
 
 #define GUI_REGION_BG_Z  0x00000000u
 #define GUI_REGION_Z     0x40000000u

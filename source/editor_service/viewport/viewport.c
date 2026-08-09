@@ -139,9 +139,7 @@ ed_viewport_panel( void )
 i32
 ed_viewport_render_ctx( void )
 {
-    /* The view field's "none" is RHI_CTX_INVALID (0); target ids start at RENDER_TARGET_ID_BASE
-       so they never collide with it, but this service's own -1 would read as a live id. */
-    return s_vp.target_id < 0 ? RHI_CTX_INVALID : s_vp.target_id;
+    return s_vp.target_id;
 }
 
 void

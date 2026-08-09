@@ -90,7 +90,7 @@ app_set_log_fn( log_fn_t fn )
 static void
 app_log( int level, const char* fmt, ... )
 {
-    char buf[ 256 ];
+    char    buf[ 256 ];
     va_list ap;
     va_start( ap, fmt );
     vsnprintf( buf, sizeof( buf ), fmt, ap );
@@ -172,7 +172,7 @@ typedef struct app_window_s
 
 typedef struct win_pool_s
 {
-    app_window_t    wins[ APP_WIN_SLOTS ];
+    app_window_t    wins[ APP_WIN_MAX ];
     u32             alloc; /* bitmask: bit i = 1 → slot i is in use */
     win_id_t        main_id;
     ATOM            class_atom;

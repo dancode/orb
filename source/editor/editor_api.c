@@ -90,8 +90,8 @@ editor_update( f32 dt )
            of the hook (future work, GUI_STACK_PLAN inc 6 notes).  Play Standalone shows it. */
         run_view_t view = {
             .version    = RUN_VIEW_VERSION,
-            .render_ctx = s_show_viewport ? ed_viewport_render_ctx() : RHI_CTX_INVALID,
-            .gui_vp     = GUI_VP_INVALID,
+            .render_ctx = s_show_viewport ? ed_viewport_render_ctx() : -1,
+            .gui_vp     = -1,
         };
         ed_viewport_surface( &view.surface_w, &view.surface_h );
         game()->tick( dt, &view );

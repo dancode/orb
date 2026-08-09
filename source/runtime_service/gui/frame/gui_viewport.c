@@ -5,8 +5,7 @@
     Open a viewport: claim the slot at win_id (slot index == win_id), create its GPU geometry
     buffers, and record the OS window and initial drawable size.
 
-    Slot alignment: win_id 1 = primary swapchain, win_id 2..N = secondary surfaces (slot 0 is
-    reserved so 0 == GUI_VP_INVALID).
+    Slot alignment: win_id 0 = primary swapchain, win_id 1..N = secondary surfaces.
     Since each viewport requires a live OS window, the window pool guarantees the matching slot is free.
     RHI_SWAPCHAIN_COLOR resolves per-context at flush time -- which cmd you pass render() selects
     the swapchain.
@@ -43,7 +42,7 @@ viewport_create( gui_vp_t vp, rhi_texture_t target, i32 win_id )
 {
     gui_viewport_t* v = &s_vp_pool[ vp ];
     v->target          = target;
-    v->win_id          = win_id;           // OS window hosting this surface; 0 = unassociated
+    v->win_id          = win_id;           // OS window hosting this surface; -1 = unassociated
     v->rhi_ctx         = RHI_CTX_INVALID;  // set only by viewport_spawn for an gui-owned floater
     v->owned           = false;            // host-provided unless viewport_spawn flips it
     v->pending_close   = false;            // owned floater close request; serviced by viewport_update
@@ -75,10 +74,10 @@ viewport_destroy( gui_vp_t vp )
     surface_geo_destroy( &v->vb, &v->ib );
 
     // Owned floater: close the OS window gui opened, only after the context (and its swapchain) is gone.
-    if ( v->owned && APP_WIN_VALID( v->win_id ) )
+    if ( v->owned && v->win_id >= 0 )
         app()->window_close( v->win_id );
 
-    v->win_id        = APP_WIN_INVALID;   // slot freed -> no window matches it for input routing
+    v->win_id        = -1;            // slot freed -> no window matches it for input routing
     v->rhi_ctx       = RHI_CTX_INVALID;
     v->owned         = false;
     v->pending_close = false;
@@ -97,9 +96,9 @@ gui_viewport_open( i32 win_id )
         return GUI_VP_INVALID;
 
     /* Slot index == win_id; an open window guarantees the slot is free. */
-    GUI_CONTRACT( APP_WIN_VALID( win_id ),
-                  "viewport_open( %d ): win_id outside [1, %u].\n", win_id, GUI_MAX_VIEWPORTS );
-    if ( !APP_WIN_VALID( win_id ) )
+    GUI_CONTRACT( win_id >= 0 && win_id < (i32)GUI_MAX_VIEWPORTS,
+                  "viewport_open( %d ): win_id outside [0, %u).\n", win_id, GUI_MAX_VIEWPORTS );
+    if ( win_id < 0 || win_id >= (i32)GUI_MAX_VIEWPORTS )
         return GUI_VP_INVALID;
 
     gui_viewport_t* vp = &s_vp_pool[ win_id ];
@@ -131,8 +130,8 @@ gui_viewport_open( i32 win_id )
     vp->disp_h = h;
 
     // Update the high-water viewport count so the host can enumerate live viewports.
-    if ( win_id + 1 > s_vp_count )
-        s_vp_count = win_id + 1;
+    if ( (u32)win_id + 1u > s_vp_count )
+        s_vp_count = (u32)win_id + 1u;
 
     redraw_request();   /* a fresh surface has no cached geometry to replay -- the first build
                            after it opens must actually run, whatever the input did. */
@@ -146,7 +145,7 @@ gui_viewport_open( i32 win_id )
 f32
 gui_viewport_caption_h( gui_vp_t vp )
 {
-    if ( !vp_live( vp ) )
+    if ( vp >= GUI_MAX_VIEWPORTS )
         return 0.0f;
     return s_vp_pool[ vp ].caption_inset;
 }
@@ -157,7 +156,7 @@ void
 gui_viewport_size( gui_vp_t vp, i32* out_w, i32* out_h )
 {
     i32 w = 0, h = 0;
-    if ( vp_live( vp ) )
+    if ( vp < GUI_MAX_VIEWPORTS )
     {
         w = s_vp_pool[ vp ].disp_w;
         h = s_vp_pool[ vp ].disp_h;
@@ -171,7 +170,7 @@ gui_viewport_size( gui_vp_t vp, i32* out_w, i32* out_h )
 void
 gui_viewport_resize( gui_vp_t vp, i32 w, i32 h )
 {
-    if ( !vp_live( vp ) )
+    if ( vp >= GUI_MAX_VIEWPORTS )
         return;
     if ( s_vp_pool[ vp ].disp_w == w && s_vp_pool[ vp ].disp_h == h )
         return;                 /* hosts republish size every frame -- raise only on a real change */
@@ -192,7 +191,7 @@ gui_viewport_resize( gui_vp_t vp, i32 w, i32 h )
 void
 gui_viewport_close( gui_vp_t vp )
 {
-    if ( !vp_live( vp ) )
+    if ( vp >= GUI_MAX_VIEWPORTS )
         return;
     viewport_destroy( vp );
 
@@ -202,11 +201,11 @@ gui_viewport_close( gui_vp_t vp )
         if ( !ctx ) continue;
         for ( u32 i = 0; i < ctx->win.count; ++i )
             if ( ctx->win.pool[ i ].viewport == vp )
-                ctx->win.pool[ i ].viewport = GUI_VP_PRIMARY;
+                ctx->win.pool[ i ].viewport = 0;
     }
 
     /* Trim the high-water viewport count when the closed slot was at the top. */
-    while ( s_vp_count > GUI_VP_PRIMARY && !rhi_handle_valid( s_vp_pool[ s_vp_count - 1 ].vb ) )
+    while ( s_vp_count > 0 && !rhi_handle_valid( s_vp_pool[ s_vp_count - 1 ].vb ) )
     {
         --s_vp_count;
     }
@@ -249,7 +248,7 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
     i32 win_id = app()->window_open( title, x, y, w, h, open_flags );
     if ( win_id == APP_WIN_INVALID )
         return GUI_VP_INVALID;
-    if ( !APP_WIN_VALID( win_id ) )
+    if ( win_id < 0 || win_id >= (i32)GUI_MAX_VIEWPORTS )
     {
         app()->window_close( win_id );    /* no viewport slot for this id */
         return GUI_VP_INVALID;
@@ -285,8 +284,8 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
     vp->disp_w  = cw;
     vp->disp_h  = ch;
 
-    if ( win_id + 1 > s_vp_count )
-        s_vp_count = win_id + 1;
+    if ( (u32)win_id + 1u > s_vp_count )
+        s_vp_count = (u32)win_id + 1u;
     return (gui_vp_t)win_id;
 }
 
@@ -315,8 +314,8 @@ gui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
 app_event_result_t              /* non-static: gui_event (core/gui_io.c) delegates across the TU seam */
 gui_owned_window_event( const app_event_t* ev )
 {
-    /* Walk all live viewports (slot 1 = primary, 2+ = gui-owned floaters). */
-    for ( gui_vp_t i = GUI_VP_PRIMARY; i < s_vp_count; ++i )
+    /* Walk all live viewports (index 0 = primary, 1+ = secondary/owned). */
+    for ( u32 i = 0; i < s_vp_count; ++i )
     {
         gui_viewport_t* vp = &s_vp_pool[ i ];
         if ( vp->win_id != ev->win_id )
@@ -368,7 +367,7 @@ viewport_service_tearoff( gui_window_t* win, bool has_home )
     else
     {
         i32 mx = 0, my = 0;
-        app()->window_get_pos( s_vp_pool[ GUI_VP_PRIMARY ].win_id, &mx, &my );
+        app()->window_get_pos( s_vp_pool[ 0 ].win_id, &mx, &my );
         sx = mx + (i32)win->x;
         sy = my + (i32)win->y;
     }
@@ -390,9 +389,9 @@ viewport_service_tearoff( gui_window_t* win, bool has_home )
            frame at the wrong scale -- snapshot its OS scale so the next poll reads no phantom
            change, and match the OS window size so the panel keeps its apparent size (spawned
            with origin-scale sw/sh; the slaved window record follows via window_sync_native). */
-        f32 src = dpi_bake_scale( s_vp_pool[ GUI_VP_PRIMARY ].dpi_bake );
-        gui_dpi_vp_resolve( vp );
-        s_vp_pool[ vp ].dpi_os_scale = APP_WIN_VALID( s_vp_pool[ vp ].win_id )
+        f32 src = dpi_bake_scale( s_vp_pool[ 0 ].dpi_bake );
+        gui_dpi_vp_resolve( (u32)vp );
+        s_vp_pool[ vp ].dpi_os_scale = s_vp_pool[ vp ].win_id >= 0
                                          ? app()->window_dpi_scale( s_vp_pool[ vp ].win_id ) : 1.0f;
         f32 dst = dpi_bake_scale( s_vp_pool[ vp ].dpi_bake );
         if ( dst != src && src > 0.0f )
@@ -418,19 +417,19 @@ viewport_service_tearoff( gui_window_t* win, bool has_home )
 static void
 viewport_service_mergeback( gui_window_t* win )
 {
-    gui_vp_t fvp = s_vp_request.from_vp;
+    u32 fvp = s_vp_request.from_vp;
 
-    win->viewport = GUI_VP_PRIMARY;
+    win->viewport = 0;
 
     /* Coming home from a surface at a different scale (mixed DPI): the record's size -- and, on
        the drag path below, the grab offset -- are in the floater's scale.  Rescale them into the
        host surface's so the panel keeps its apparent size and the cursor keeps its grip point. */
     f32 dpi_r = 1.0f;
-    if ( fvp != GUI_VP_PRIMARY )
+    if ( fvp > 0 && fvp < GUI_MAX_VIEWPORTS )
     {
         f32 from = dpi_bake_scale( s_vp_pool[ fvp ].dpi_bake );
         if ( from > 0.0f )
-            dpi_r = dpi_bake_scale( s_vp_pool[ GUI_VP_PRIMARY ].dpi_bake ) / from;
+            dpi_r = dpi_bake_scale( s_vp_pool[ 0 ].dpi_bake ) / from;
     }
     if ( dpi_r != 1.0f )
     {
@@ -444,9 +443,9 @@ viewport_service_mergeback( gui_window_t* win )
        Skipped for GUI_WIN_NO_BOUNDARY_CLAMP -- placement is externally managed. */
     if ( !( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP ) )
     {
-        f32 dw    = vp_w( GUI_VP_PRIMARY );
-        f32 dh    = vp_h( GUI_VP_PRIMARY );
-        f32 top   = s_vp_pool[ GUI_VP_PRIMARY ].caption_inset;
+        f32 dw    = vp_w( 0 );
+        f32 dh    = vp_h( 0 );
+        f32 top   = s_vp_pool[ 0 ].caption_inset;
         f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
         if ( win->w > dw )    win->w = dw;
         if ( win->h > max_h ) win->h = max_h;
@@ -462,8 +461,9 @@ viewport_service_mergeback( gui_window_t* win )
     else
     {
         i32 fx = 0, fy = 0, mx = 0, my = 0;
-        app()->window_get_pos( s_vp_pool[ fvp ].win_id, &fx, &fy );
-        app()->window_get_pos( s_vp_pool[ GUI_VP_PRIMARY ].win_id, &mx, &my );
+        if ( fvp < GUI_MAX_VIEWPORTS )
+            app()->window_get_pos( s_vp_pool[ fvp ].win_id, &fx, &fy );
+        app()->window_get_pos( s_vp_pool[ 0 ].win_id, &mx, &my );
         win->x = (f32)( fx - mx );
         win->y = (f32)( fy - my );
 
@@ -473,9 +473,9 @@ viewport_service_mergeback( gui_window_t* win )
            Skipped for GUI_WIN_NO_BOUNDARY_CLAMP -- caller is responsible for placement. */
         if ( !( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP ) )
         {
-            f32 dw  = vp_w( GUI_VP_PRIMARY );
-            f32 dh  = vp_h( GUI_VP_PRIMARY );
-            f32 top = s_vp_pool[ GUI_VP_PRIMARY ].caption_inset;
+            f32 dw  = vp_w( 0 );
+            f32 dh  = vp_h( 0 );
+            f32 top = s_vp_pool[ 0 ].caption_inset;
             f32 max_x = dw - win->w;
             f32 max_y = dh - win->h; if ( max_y < top ) max_y = top;
             win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );
@@ -494,7 +494,7 @@ viewport_service_mergeback( gui_window_t* win )
         for ( u32 w = 0; w < ctx->win.count; ++w )
             if ( ctx->win.pool[ w ].viewport == fvp ) { empty = false; break; }
     }
-    if ( empty && fvp != GUI_VP_PRIMARY && s_vp_pool[ fvp ].owned )
+    if ( empty && fvp > 0 && fvp < GUI_MAX_VIEWPORTS && s_vp_pool[ fvp ].owned )
         viewport_destroy( fvp );
 }
 
@@ -520,7 +520,7 @@ viewport_service_mergeback( gui_window_t* win )
 static void
 viewport_teardown_owned( void )
 {
-    for ( gui_vp_t i = GUI_VP_PRIMARY + 1; i < s_vp_count; ++i )   /* floaters only: never the primary */
+    for ( u32 i = 1; i < s_vp_count; ++i )
     {
         gui_viewport_t* vp = &s_vp_pool[ i ];
         if ( !vp->owned )
@@ -561,13 +561,13 @@ viewport_teardown_owned( void )
             if ( !ctx ) continue;
             for ( u32 w = 0; w < ctx->win.count; ++w )
                 if ( ctx->win.pool[ w ].viewport == i )
-                    ctx->win.pool[ w ].viewport = GUI_VP_PRIMARY;
+                    ctx->win.pool[ w ].viewport = 0;
         }
         viewport_destroy( i );
     }
 
     /* Compact the high-water viewport count after any teardowns. */
-    while ( s_vp_count > GUI_VP_PRIMARY
+    while ( s_vp_count > 0
             && !rhi_handle_valid( s_vp_pool[ s_vp_count - 1 ].vb ) )
         --s_vp_count;
 }
@@ -600,7 +600,7 @@ gui_viewport_update( void )
         gui_window_t* win     = window_find_in( s_vp_request.owner, s_vp_request.win_id );
         bool            has_home = s_vp_request.has_home;
         s_vp_request.has_home   = false;   /* one-shot: never leak into a later drag tear-off */
-        if ( win && s_vp_request.from_vp == GUI_VP_PRIMARY )
+        if ( win && s_vp_request.from_vp == 0 )
             viewport_service_tearoff( win, has_home );
         else if ( win )
             viewport_service_mergeback( win );
@@ -623,7 +623,7 @@ gui_viewport_update( void )
 void
 gui_viewport_render_floaters( void )
 {
-    for ( gui_vp_t viewport_id = GUI_VP_PRIMARY + 1; viewport_id < s_vp_count; ++viewport_id )
+    for ( u32 viewport_id = 1; viewport_id < s_vp_count; ++viewport_id )
     {
         gui_viewport_t* vp = &s_vp_pool[ viewport_id ];
 

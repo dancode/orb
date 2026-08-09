@@ -113,8 +113,7 @@ typedef struct
     u16              local_vert_base,  vert_count, vert_alloc;   // relative to slot vert_base
     u16              local_idx_base,   idx_count,  idx_alloc;    // relative to slot idx_base
     u16              local_cmd_base,   cmd_count,  cmd_alloc;    // relative to slot cmd_base
-    u16              z, font;
-    i8               vp;              // the block's surface (slot index)
+    u16              z, vp, font;
     u8               clip_idx;
     bool             active;           // a capture exists (retired on patch failure until recaptured)
     bool             hidden;           // whole range was clip-empty at emit -- nothing on screen
@@ -216,7 +215,7 @@ volatile_stamp( f32 x, f32 y, f32 w )
     if ( !row ) return;
     row->win      = s_draw.cur_win;
     row->z        = (u16)s_draw.cur_z;
-    row->vp       = (i8)s_draw.cur_vp;
+    row->vp       = (u16)s_draw.cur_vp;
     row->font     = (u16)s_draw.cur_font;
     row->clip_idx = s_draw.cur_clip_idx;
     row->x = x; row->y = y; row->w = w;
@@ -401,7 +400,7 @@ volatile_row_needs_capture( gui_id_t id )
    and GPU commands are fully written into the window slot currently being tessellated.  Records
    the block's slot-relative position, then reserves headroom: the write heads advance past the
    live geometry by the (grow-only) allocation, and the slot's GPU command run is padded with
-   dormant commands (elem_count 0 -- skipped by every surface's flush) so a
+   dormant commands (elem_count 0, vp GUI_VP_INVALID -- skipped by every surface's flush) so a
    later patch can use more commands than the original emit without shifting its neighbours.
    Reservations are clamped to the shared buffers -- headroom shrinks before correctness does. */
 static void
@@ -450,7 +449,7 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 cmd_open )
         u32 ci = cmd_open + k;
         s_tess.gpu_cmds[ ci ] = ( tess_gpu_cmd_t ){
             .cmd   = { .elem_count = 0, .tex_idx = 0, .clip_rect = s_tess.cur_clip },
-            .vp    = s_tess.cur_vp,
+            .vp    = GUI_VP_INVALID,
             .vbase = s_tess.vert_count,
             .ibase = s_tess.idx_count,
         };
@@ -563,6 +562,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
             else
             {
                 s_tess.gpu_cmds[ dst ].cmd.elem_count = 0;
+                s_tess.gpu_cmds[ dst ].vp             = GUI_VP_INVALID;
             }
         }
         row->vert_count = (u16)nv;
@@ -683,7 +683,7 @@ volatile_update( void )
 
         gui_id_t   win_ck        = s_draw.cur_win;
         u32        z_ck          = s_draw.cur_z;
-        gui_vp_t   vp_ck         = s_draw.cur_vp;
+        u32        vp_ck         = s_draw.cur_vp;
         u32        font_ck       = s_draw.cur_font;
         u8         clip_ck       = s_draw.cur_clip_idx;
         u32        clip_depth_ck = s_draw.clip_depth;

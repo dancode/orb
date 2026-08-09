@@ -310,7 +310,7 @@ step_cmd_detail( const step_cmd_info_t* ci )
    the command's viewport.  The segment stays in THIS window's slot (debug band), so the outline
    paints above the frozen band-0 content with the window. */
 static void
-step_highlight_rect( gui_rect_t r, gui_vp_t vp, u32 abgr )
+step_highlight_rect( gui_rect_t r, u32 vp, u32 abgr )
 {
     if ( r.w <= 0.0f || r.h <= 0.0f )
         return;
@@ -481,7 +481,7 @@ step_window( bool* open )
                     fmt_snprintf( fb, sizeof( fb ), "%u", ci.font );
                 else
                     fmt_snprintf( fb, sizeof( fb ), "-" );
-                gui_textf( "z %u   vp %d   font %s   clip %.0f,%.0f %.0fx%.0f",
+                gui_textf( "z %u   vp %u   font %s   clip %.0f,%.0f %.0fx%.0f",
                            ci.z, ci.vp, fb, ci.clip.x, ci.clip.y, ci.clip.w, ci.clip.h );
                 step_cmd_detail( &ci );
             }
@@ -507,7 +507,7 @@ step_window( bool* open )
                         break;
                     /* Fields first, name LAST: a "##" inside a window title (an instance suffix)
                        hides the rest of the label, so it may only ever eat the name's tail. */
-                    fmt_snprintf( lbl, sizeof( lbl ), "z%-3u vp%d  [%4u..%4u)  %.24s##seg%u",
+                    fmt_snprintf( lbl, sizeof( lbl ), "z%-3u vp%u  [%4u..%4u)  %.24s##seg%u",
                               sg.z, sg.vp, sg.lo, sg.hi,
                               step_name( sg.win, nb, sizeof( nb ) ), si );
                     bool in_seg = ( cur > sg.lo && cur <= sg.hi );
