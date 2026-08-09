@@ -178,6 +178,7 @@ surface_geo_create( rhi_buffer_t* vb, rhi_buffer_t* ib )
     if ( !rhi_handle_valid( *ib ) )
     {
         rhi()->buffer_destroy( *vb );
+        *vb = ( rhi_buffer_t ){ 0 };
         return false;
     }
 

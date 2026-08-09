@@ -96,6 +96,15 @@ viewport_destroy( i32 vp )
     that walk, and every close/teardown path below goes through them.
 ==============================================================================================*/
 
+/* True if viewport slot vp currently holds a live surface -- created and not yet destroyed.
+   vb is the tell: viewport_create only writes it a valid handle on success, and viewport_destroy
+   always resets it back to invalid, so an untouched or freed slot reads false. */
+static bool
+viewport_slot_live( i32 vp )
+{
+    return rhi_handle_valid( s_vp_pool[ vp ].vb );
+}
+
 static void
 viewport_bump_count( i32 win_id )
 {
@@ -108,7 +117,7 @@ viewport_bump_count( i32 win_id )
 static void
 viewport_trim_count( void )
 {
-    while ( s_vp_count > 0 && !rhi_handle_valid( s_vp_pool[ s_vp_count - 1 ].vb ) )
+    while ( s_vp_count > 0 && !viewport_slot_live( s_vp_count - 1 ) )
         --s_vp_count;
 }
 
@@ -179,7 +188,7 @@ gui_viewport_open( i32 win_id )
     /* A second open on a live slot would strand the first surface's GPU buffers with no handle
        left to reach them -- refuse instead of leaking. */
 
-    bool slot_free = !rhi_handle_valid( vp->vb );
+    bool slot_free = !viewport_slot_live( win_id );
     GUI_CONTRACT( slot_free, "viewport_open( %d ): that slot is already open.", win_id );
     if ( !slot_free )
          return GUI_VP_INVALID;
@@ -308,7 +317,7 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
     }
 
     gui_viewport_t* vp = &s_vp_pool[ win_id ];
-    ORB_ASSERT( !rhi_handle_valid( vp->vb ) );   /* slot must be free (slot == win_id) */
+    ORB_ASSERT( !viewport_slot_live( win_id ) );   /* slot must be free (slot == win_id) */
 
     /* This window's own render context (swapchain) -- context_open queries handle+size from app(). */
     i32 ctx = rhi()->context_open( win_id );
@@ -372,7 +381,7 @@ gui_owned_window_event( const app_event_t* ev )
         gui_viewport_t* vp = &s_vp_pool[ i ];
         if ( vp->win_id != ev->win_id )
             continue;
-        if ( !rhi_handle_valid( vp->vb ) )
+        if ( !viewport_slot_live( i ) )
             continue;   /* slot not live */
 
         if ( ev->type == APP_EV_WIN_RESIZE )
