@@ -33,10 +33,10 @@
 
 ==============================================================================================*/
 
-#include "runtime_service/gui/gui_host.h"   // public gui types: gui_rect_t, gui_id_t, flags, enums
-#include "runtime_service/gui/font/gui_font.h"  // font resource leaf: font_use/active_id/valid/line_h the tessellator reads
-#include "runtime_service/rhi/rhi_api.h"    // rhi buffer/texture/cmd handles the flush speaks
-#include "engine/app/app_api.h"             // APP_WIN_MAX -- the per-surface fan-out bound
+#include "engine/app/app_api.h"                 // APP_WIN_MAX -- the per-surface fan-out bound
+#include "runtime_service/gui/gui_host.h"       // public gui types: gui_rect_t, gui_id_t, flags, enums
+#include "runtime_service/gui/font/gui_font.h"  // font resources
+#include "runtime_service/rhi/rhi_api.h"        //  
 
 /* The debug unit's header leads every unit (severable instrumentation over public types): it
    computes the Debug-build switches (GUI_DEBUG_OVERLAY, GUI_CMD_STEPPER) the capture sections

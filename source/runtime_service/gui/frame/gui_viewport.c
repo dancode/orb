@@ -94,7 +94,8 @@ gui_viewport_open( i32 win_id )
     if ( !s_gui_ready )
         return GUI_VP_INVALID;
 
-    /* Slot index == win_id; an open window guarantees the slot is free. */
+    /* The slot index matches the win_id; An open window guarantees the slot is free. */
+
     GUI_CONTRACT( win_id >= 0 && win_id < (i32)GUI_MAX_VIEWPORTS,
                   "viewport_open( %d ): win_id outside [0, %u).", win_id, GUI_MAX_VIEWPORTS );
     if ( win_id < 0 || win_id >= (i32)GUI_MAX_VIEWPORTS )
@@ -104,6 +105,7 @@ gui_viewport_open( i32 win_id )
 
     /* A second open on a live slot would strand the first surface's GPU buffers with no handle
        left to reach them -- refuse instead of leaking. */
+
     bool slot_free = !rhi_handle_valid( vp->vb );
     GUI_CONTRACT( slot_free, "viewport_open( %d ): that slot is already open.", win_id );
     if ( !slot_free )
@@ -112,6 +114,7 @@ gui_viewport_open( i32 win_id )
     /* The window's rhi context must exist first: gui flushes into ITS swapchain, and the slot
        convention is index == win_id == rhi context id.  Without it every render() on this
        viewport is a silent no-op.  The query doubles as the size read below. */
+
     i32  w = 0, h = 0;
     bool ctx_live = rhi()->context_size( win_id, &w, &h );
     GUI_CONTRACT( ctx_live, "viewport_open( %d ): no rhi context -- rhi()->context_open( win ) "
