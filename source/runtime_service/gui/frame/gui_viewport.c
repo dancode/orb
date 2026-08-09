@@ -302,14 +302,17 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
        tear-off) opens the floater with APP_WIN_NOFOCUS so it does NOT steal foreground from the
        origin window -- on Windows, activating another top-level window releases that window's
        mouse capture, which would sever the in-flight drag the moment the floater appeared. */
+
     /* Owned floaters are native-borderless: a detached panel owns its OS window and acts as that
        window's frame (window_begin treats any window on an owned viewport as GUI_WIN_NATIVE), so
        the OS drives its move / resize / snap.  no_activate (mid-drag tear-off) adds APP_WIN_NOFOCUS
        so spawning does not steal foreground and sever the origin window's mouse capture. */
+
     u32 open_flags = APP_WIN_BORDERLESS | ( no_activate ? APP_WIN_NOFOCUS : 0u );
     i32 win_id = app()->window_open( title, x, y, w, h, open_flags );
     if ( win_id == APP_WIN_INVALID )
-        return GUI_VP_INVALID;
+         return GUI_VP_INVALID;
+
     if ( win_id < 0 || win_id >= (i32)GUI_MAX_VIEWPORTS )
     {
         app()->window_close( win_id );    /* no viewport slot for this id */

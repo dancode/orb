@@ -325,8 +325,9 @@ typedef struct
     rhi_buffer_t  vb;       // CPU_TO_GPU vertex buffer, one region per frame-in-flight
     rhi_buffer_t  ib;       // CPU_TO_GPU index buffer (u16), one region per frame-in-flight
 
-    /* Color target that flush draws into -- the main swapchain for viewport 0, or a floater's
-       own swapchain image. */
+    /* Color target that flush draws into -- main swapchain or a floater's swapchain image 
+       -- mostly RHI_SWAPCHAIN_COLOR sentinel (whatever swapchain image is current)
+       -- Eventually offscreen target to render to (requires create function) */
     rhi_texture_t target;
 
     /* OS window hosting this surface, or APP_WIN_INVALID if none. Mouse events carry a win_id,
