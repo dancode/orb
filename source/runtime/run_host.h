@@ -197,7 +197,7 @@ void run_host_shutdown( void );
    GUI_VP_INVALID.  Use these instead of hardcoding context 0 / viewport 0. */
 win_id_t run_host_window( void ); /* main platform window          */
 i32      run_host_ctx( void );    /* main rhi context id           */
-gui_vp_t run_host_vp( void );     /* gui viewport of the main window */
+i32 run_host_vp( void );     /* gui viewport of the main window */
 
 /* headless quit — sets flag, checked each frame top */
 void run_host_quit( void );

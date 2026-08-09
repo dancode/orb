@@ -82,7 +82,7 @@ main( int argc, char** argv )
     int      ret_code    = 1;
     bool     draw_inited = false;
 
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB Editor -- sb_gui_editor",
         .w     = 1600, .h = 900,
         .font  = GUI_FONT_ROBOTO_16,        // GUI_FONT_JETBRAINS_16

@@ -176,7 +176,7 @@ gui_window_set_next_size( f32 w, f32 h, gui_cond_t cond )
    persists across frames until reassigned.  Omit to use the ambient viewport (most recently emitted).
    GUI_VP_INVALID is treated as the primary (0). */
 void
-gui_window_set_next_viewport( gui_vp_t vp )
+gui_window_set_next_viewport( i32 vp )
 {
     s_next_win.has_viewport = true;
     s_next_win.viewport     = ( vp != GUI_VP_INVALID ) ? vp : 0;
@@ -287,7 +287,7 @@ surface_z_overlay( u32 depth )
 ==============================================================================================*/
 
 void
-surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, gui_vp_t viewport )
+surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, i32 viewport )
 {
     /* Deaf context: not listening for input this frame, skip hover nomination. */
     if ( !g_ctx->listening )

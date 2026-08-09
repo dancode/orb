@@ -59,7 +59,7 @@
     its rect: THE root rect all layout math starts from.  Always pair with ui_screen_end.
 ==============================================================================================*/
 
-gui_rect_t ui_screen_begin( gui_vp_t vp, const char* id );
+gui_rect_t ui_screen_begin( i32 vp, const char* id );
 void       ui_screen_end  ( void );
 
 /*==============================================================================================

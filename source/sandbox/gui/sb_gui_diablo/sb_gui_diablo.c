@@ -58,7 +58,7 @@ static bool     s_quit   = false;
 ==============================================================================================*/
 
 static void
-screen_menu( gui_vp_t vp )
+screen_menu( i32 vp )
 {
     gui_rect_t screen = ui_screen_begin( vp, "menu" );
 
@@ -121,7 +121,7 @@ static bool       s_has_target   = false;
 static f32 clamp01( f32 v ) { return ( v < 0.0f ) ? 0.0f : ( v > 1.0f ) ? 1.0f : v; }
 
 static void
-screen_game( gui_vp_t vp )
+screen_game( i32 vp )
 {
     gui_rect_t screen = ui_screen_begin( vp, "game" );
 
@@ -237,7 +237,7 @@ static i32  s_skill_points = 5;
 static bool s_skill_taken[ 12 ];   /* [branch * 4 + tier] */
 
 static void
-screen_skills( gui_vp_t vp )
+screen_skills( i32 vp )
 {
     static const char* branch[ 3 ] = { "EMBER", "GALE", "BONE" };
     static const char* tier  [ 4 ] = { "I", "II", "III", "IV" };
@@ -328,7 +328,7 @@ static char s_bag[ 48 ]  = { 'G', 0, '!', 0, 0, 'R', 0, 0, '!', 0, 0, 0, 'B' };
 static char s_carry      = 0;
 
 static void
-screen_equip( gui_vp_t vp )
+screen_equip( i32 vp )
 {
     gui_rect_t screen = ui_screen_begin( vp, "equip" );
     ui_title( ui_cut_top( &screen, ui_u( 4.0f ) ), "EQUIPMENT" );
@@ -408,7 +408,7 @@ static i32       s_stat[ 4 ]      = { 24, 18, 30, 12 };
 static const i32 s_stat_base[ 4 ] = { 24, 18, 30, 12 };
 
 static void
-screen_stats( gui_vp_t vp )
+screen_stats( i32 vp )
 {
     static const char* stat_name[ 4 ] = { "STRENGTH", "DEXTERITY", "VITALITY", "ENERGY" };
 
@@ -494,7 +494,7 @@ static i32  s_opt_font   = 0;
 static i32  s_font_req   = -1;    /* queued font choice; applied in main() between frames */
 
 static void
-screen_options( gui_vp_t vp )
+screen_options( i32 vp )
 {
     static const char* res_items [] = { "1280 x 720", "1600 x 900", "1920 x 1080" };
     static const char* diff_items[] = { "NORMAL", "NIGHTMARE", "HELL" };
@@ -579,7 +579,7 @@ screen_options( gui_vp_t vp )
 ==============================================================================================*/
 
 static void
-build_frame( gui_vp_t vp )
+build_frame( i32 vp )
 {
     switch ( s_screen )
     {
@@ -623,7 +623,7 @@ main( int argc, char** argv )
 
     int ret_code = 1;
 
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB -- sb_gui_diablo",
         .w     = 1600, .h = 900,
         .font  = GUI_FONT_ROBOTO_16,

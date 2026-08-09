@@ -310,7 +310,7 @@ step_cmd_detail( const step_cmd_info_t* ci )
    the command's viewport.  The segment stays in THIS window's slot (debug band), so the outline
    paints above the frozen band-0 content with the window. */
 static void
-step_highlight_rect( gui_rect_t r, gui_vp_t vp, u32 abgr )
+step_highlight_rect( gui_rect_t r, i32 vp, u32 abgr )
 {
     if ( r.w <= 0.0f || r.h <= 0.0f )
         return;

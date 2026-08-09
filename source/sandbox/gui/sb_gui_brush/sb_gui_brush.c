@@ -1214,7 +1214,7 @@ main( int argc, char** argv )
 
     int ret_code = 1;
 
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "ORB -- gui brush",
         .w         = 1280, .h = 940,
         .os_chrome = true,

@@ -79,7 +79,7 @@ static struct
     bool            active;     /* a chip is hovered this frame (a valid drop)  */
     bool            outer;      /* the chip is an edge chip -> split the ROOT   */
     gui_id_t      win_id;     /* the dragged window                          */
-    gui_vp_t        viewport;   /* dockspace surface under the cursor          */
+    i32             viewport;   /* dockspace surface under the cursor          */
     gui_dock_id_t target;     /* leaf node the cursor is over                */
     i32             zone;       /* dock_zone_t                                 */
 
@@ -188,7 +188,7 @@ dock_zone_region( gui_rect_t r, dock_zone_t z )
    to the dockspace surface, chips rounded as control surfaces.  Paired with dock_overlay_end,
    which restores the ambient build state for the windows emitted next. */
 static void
-dock_overlay_begin( gui_vp_t vp )
+dock_overlay_begin( i32 vp )
 {
     draw_set_window   ( DOCK_OVERLAY_WIN );
     draw_set_viewport ( vp );
@@ -231,7 +231,7 @@ dock_chip_tab_glyph( gui_rect_t cr )
    them).  When one is hit, arm s_dock_drag for a tab / float-join drop, draw one center chip
    previewing the whole target frame, and return true so the caller skips the dockspace path. */
 static bool
-dock_drag_float_target( gui_id_t win_id, gui_vp_t vp, f32 s )
+dock_drag_float_target( gui_id_t win_id, i32 vp, f32 s )
 {
     gui_dock_node_t* fnode = NULL;
     gui_id_t       fwin  = GUI_ID_NONE;
@@ -279,7 +279,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
     s_dock_drag.float_new  = false;
     s_dock_drag.float_win  = GUI_ID_NONE;
 
-    gui_vp_t vp = win->viewport;
+    i32 vp = win->viewport;
     if ( vp != s_io.mouse_viewport || vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
 
@@ -734,7 +734,7 @@ dock_window_chrome( gui_dock_node_t* node )
                 }
                 else
                 {
-                    gui_vp_t vp = node->viewport;   /* capture before a collapse may free `node` */
+                    i32 vp = node->viewport;   /* capture before a collapse may free `node` */
                     s_dock_tab_drag.pending = false;
 
                     dock_undock_by_id( wid );

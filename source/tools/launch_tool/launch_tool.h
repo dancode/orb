@@ -12,7 +12,6 @@
 ==============================================================================================*/
 
 #include "orb.h"
-#include "runtime_service/gui/gui.h"
 
 /*==============================================================================================
     Limits
@@ -57,7 +56,7 @@ typedef struct launch_state_s
 
 /* launch_ui.c */
 void launch_ui_init( void );
-void launch_ui_frame( gui_vp_t vp );
+void launch_ui_frame( i32 vp );
 
 /* launch_registry.c -- machine-local project index (<engine>/build/.orb_projects) */
 void launch_registry_load( void );

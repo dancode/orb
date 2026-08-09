@@ -69,7 +69,7 @@ typedef struct gui_window_t
     f32         x, y;            // persisted top-left (updated by dragging)
     f32         w, h;            // persisted dimensions
     u32         z;               // paint order: higher = more recently raised = in front
-    gui_vp_t    viewport;        // target surface (0 = main swapchain); set via window_set_next_viewport
+    i32         viewport;        // target surface (0 = main swapchain); set via window_set_next_viewport
 
     u8         set_pos_allow;    // conds still permitted to set position (gui_cond_t bits)
     u8         set_size_allow;   // conds still permitted to set size (gui_cond_t bits)
@@ -152,7 +152,7 @@ typedef struct
     f32         size_w, size_h;
 
     bool        has_viewport;          // a viewport reassignment is queued for the next window
-    gui_vp_t    viewport;              // its target surface
+    i32         viewport;              // its target surface
 
 } gui_next_win_t;
 
@@ -355,7 +355,7 @@ typedef struct
 
     gui_rect_t  menubar_rect;  // reserved strip (WIN_MENUBAR); menu_bar_begin fills it
 
-    gui_vp_t    viewport;      // ambient viewport for new-window inheritance (stamped per window)
+    i32         viewport;      // ambient viewport for new-window inheritance (stamped per window)
 
 } gui_win_ctx_t;
 
@@ -487,8 +487,8 @@ typedef struct
 /* viewport drawable size with the s_io fallback (core/gui_ctx.c).  Take the slot index, not a
    pointer -- s_vp_pool is one small fixed-size global table now, so an index is the stable,
    context-independent way to name a slot across a call boundary. */
-f32 vp_w( gui_vp_t vp );
-f32 vp_h( gui_vp_t vp );
+f32 vp_w( i32 vp );
+f32 vp_h( i32 vp );
 
 /*==============================================================================================
     The one real viewport table (frame/gui_viewport.c owns the lifecycle; storage is here next
@@ -508,7 +508,7 @@ extern i32            s_vp_count;                   /* used count; iterate [0, c
    live in this unit.  ORB_UNUSED_FN: this header is also pulled into the backend TU, which
    neither defines nor calls it. */
 
-static gui_vp_t ORB_UNUSED_FN viewport_index_for_window( i32 win_id );
+static i32 ORB_UNUSED_FN viewport_index_for_window( i32 win_id );
 
 /*==============================================================================================
     gui_context_t -- the bound per-context retained state ("bind and use").

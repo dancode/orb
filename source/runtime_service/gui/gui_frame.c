@@ -78,8 +78,8 @@
 gui_context_t* ctx_alloc_slot ( const gui_ctx_config_t* c, u32 slots, i32 slot );           /* gui_context.c */
 void           ctx_pool_init  ( void );                                                     /* gui_context.c */
 
-bool           viewport_create ( gui_vp_t vp, rhi_texture_t target, i32 win_id );             /* gui_viewport.c */
-void           viewport_destroy( gui_vp_t vp );                                               /* gui_viewport.c */
+bool           viewport_create ( i32 vp, rhi_texture_t target, i32 win_id );             /* gui_viewport.c */
+void           viewport_destroy( i32 vp );                                               /* gui_viewport.c */
 
 void           gui_dpi_base_set( gui_builtin_font_t font );                                   /* gui_frame_dpi.c */
 bool           gui_dpi_poll    ( void );                                                      /* gui_frame_dpi.c */

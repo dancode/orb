@@ -235,7 +235,7 @@ main( int argc, char** argv )
     int      ret_code    = 1;
     bool     draw_inited = false;
 
-    gui_vp_t vp = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui",
         .w         = 1280, .h = 960,
         .os_chrome = true,

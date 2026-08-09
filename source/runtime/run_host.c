@@ -204,7 +204,7 @@ void host_prof_hitch_frame( f64 work_ms );
 
 static win_id_t s_win_id      = APP_WIN_INVALID;
 static i32      s_ctx_id      = RHI_CTX_INVALID;
-static gui_vp_t s_vp0         = GUI_VP_INVALID;
+static i32 s_vp0         = GUI_VP_INVALID;
 static bool     s_rhi_inited  = false;
 static bool     s_draw_inited = false;
 static bool     s_gui_inited  = false;
@@ -256,7 +256,7 @@ run_host_ctx( void )
     return s_ctx_id;
 }
 
-gui_vp_t
+i32
 run_host_vp( void )
 {
     return s_vp0;

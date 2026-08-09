@@ -46,7 +46,7 @@ u32  debug_unit_mem_bytes ( void );         /* debug unit: its fixed statics, fo
     bool dbg_init    ( void );
     void dbg_shutdown( void );
     void dbg_reset   ( void );
-    void dbg_flush   ( gui_vp_t vp, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+    void dbg_flush   ( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h );
 
     /* Capture entry points -- called from every unit via the DBG_* macros below.  Each tags its
        command with the ambient build viewport (dbg_build_viewport, core/gui_ctx.c). */
@@ -72,7 +72,7 @@ u32  debug_unit_mem_bytes ( void );         /* debug unit: its fixed statics, fo
 
     /* Ambient build viewport (s_build.win.viewport, core/gui_ctx.c) -- the capture functions
        live in the render unit, so they read it through this accessor rather than the static. */
-    gui_vp_t dbg_build_viewport( void );
+    i32 dbg_build_viewport( void );
 
 #else
     #define DBG_WIDGET( id, r, hov, act ) ( (void)0 )

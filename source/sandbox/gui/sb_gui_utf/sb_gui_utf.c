@@ -363,7 +363,7 @@ main( int argc, char** argv )
 
     int ret_code = 1;
 
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "ORB -- extended characters",
         .w         = 1100, .h = 900,
         .os_chrome = true,

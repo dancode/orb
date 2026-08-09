@@ -75,7 +75,7 @@ game_ui_install( void )
 gui_rect_t
 game_ui_hud_begin( i32 gui_vp )
 {
-    gui_vp_t vp = ( gui_vp_t )gui_vp;
+    i32 vp = ( i32 )gui_vp;
 
     i32 w = 0, h = 0;
     gui()->viewport_size( vp, &w, &h );

@@ -87,7 +87,7 @@ dock_float_group_create( gui_window_t* target, gui_id_t target_id, const char* t
 ==============================================================================================*/
 
 static bool
-dock_float_hit( gui_id_t drag_id, gui_vp_t vp, gui_dock_node_t** out_node, gui_id_t* out_win )
+dock_float_hit( gui_id_t drag_id, i32 vp, gui_dock_node_t** out_node, gui_id_t* out_win )
 {
     *out_node = NULL;
     *out_win  = GUI_ID_NONE;
@@ -194,7 +194,7 @@ dock_float_service_request( gui_id_t id, const char* title, gui_window_t* win )
 static void
 dock_float_clamp( gui_dock_node_t* node )
 {
-    gui_vp_t vp = node->viewport;
+    i32 vp = node->viewport;
     f32 dw = vp_w( vp );
     f32 dh = vp_h( vp );
     const f32 margin = WIN_TITLE_H;

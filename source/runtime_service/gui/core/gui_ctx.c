@@ -92,7 +92,7 @@ gui_scope_t s_scope;
    unit) tags each captured rect with the ambient build viewport through this accessor -- declared
    in gui_render.h, Debug builds only. */
 
-gui_vp_t dbg_build_viewport( void ) { return s_build.win.viewport; }
+i32 dbg_build_viewport( void ) { return s_build.win.viewport; }
 
 #endif
 
@@ -249,10 +249,10 @@ i32            s_vp_count;
 /* Resolve an app win_id to its viewport slot: the live slot (one with GPU buffers) whose recorded
    win_id matches, else 0 (the main swapchain).  Context-independent -- there is only one table.
    Forward-declared in core/gui_ctx.h; called by the mouse-input path in core/gui_io.c. */
-static gui_vp_t
+static i32
 viewport_index_for_window( i32 win_id )
 {
-    for ( gui_vp_t i = 0; i < APP_WIN_MAX; ++i )
+    for ( i32 i = 0; i < APP_WIN_MAX; ++i )
         if ( rhi_handle_valid( s_vp_pool[ i ].vb ) && s_vp_pool[ i ].win_id == win_id )
             return i;
     return 0;
@@ -262,8 +262,8 @@ viewport_index_for_window( i32 win_id )
    OS window (0 = not yet opened, or closed).  Every window-placement and clip computation goes
    through these rather than spelling the fallback out inline. */
 
-f32 vp_w( gui_vp_t vp ) { i32 w = s_vp_pool[ vp ].disp_w; return w > 0 ? (f32)w : (f32)s_io.display_w; }
-f32 vp_h( gui_vp_t vp ) { i32 h = s_vp_pool[ vp ].disp_h; return h > 0 ? (f32)h : (f32)s_io.display_h; }
+f32 vp_w( i32 vp ) { i32 w = s_vp_pool[ vp ].disp_w; return w > 0 ? (f32)w : (f32)s_io.display_w; }
+f32 vp_h( i32 vp ) { i32 h = s_vp_pool[ vp ].disp_h; return h > 0 ? (f32)h : (f32)s_io.display_h; }
 
 /*==============================================================================================
     Pointer hit test

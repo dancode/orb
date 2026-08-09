@@ -32,7 +32,7 @@ typedef struct console_api_s
     /* Emit the drop-down over viewport vp.  The HOST calls this INSIDE the gui frame build
        (after desc->on_gui, before ctx_end); a no-op while the console is closed.  vp gives
        the drawable width the drop-down spans (typically run_host_vp()). */
-    void ( *emit )( f32 dt, gui_vp_t vp );
+    void ( *emit )( f32 dt, i32 vp );
 
     /* Programmatic open/close + query.  Opening queues input focus and snaps the scrollback
        to the live tail; toggle flips the state; is_open reports it. */

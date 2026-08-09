@@ -69,7 +69,7 @@
    same lag hover_win runs on).  Shared by the maximize pin, window_clamp below, and the
    floating-group clamp (chrome/dock/gui_dock_float.c). */
 static f32
-window_work_top( gui_vp_t vp )
+window_work_top( i32 vp )
 {
     const gui_viewport_t* v = &s_vp_pool[ vp ];
     f32 top = v->caption_inset;
@@ -81,7 +81,7 @@ window_work_top( gui_vp_t vp )
 /* Public query twin of window_work_top (gui_api.h viewport_content_y): where host content
    starts on a viewport -- 0 OS-chrome, + caption band gui-shelled, + menu bar when emitted. */
 f32
-gui_viewport_content_y( gui_vp_t vp )
+gui_viewport_content_y( i32 vp )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return 0.0f;
@@ -100,7 +100,7 @@ window_clamp( gui_window_t* win )
     if ( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP )
         return;
 
-    gui_vp_t vp  = win->viewport;
+    i32 vp  = win->viewport;
     const f32 top = window_work_top( vp );
 
     gui_rect_t r = { win->x, win->y, win->w, win->h };
@@ -115,7 +115,7 @@ window_clamp( gui_window_t* win )
 static void
 window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
 {
-    gui_vp_t vp = win->viewport;
+    i32 vp = win->viewport;
     *out_max_w = vp_w( vp ) - win->x;
     *out_max_h = vp_h( vp ) - win->y;
 }
@@ -919,7 +919,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         if ( appearing )
             win->shelf_slot = window_shelf_take_slot( win );
 
-        gui_vp_t vp = win->viewport;
+        i32 vp = win->viewport;
         f32 chip_w = window_shelf_chip_w();
         pin_state  = 2u;
         pin_target = ( gui_rect_t ){
@@ -928,7 +928,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     }
     else if ( win->maximized )
     {
-        gui_vp_t vp  = win->viewport;
+        i32 vp  = win->viewport;
         f32  top   = window_work_top( vp );
         pin_state  = 1u;
         pin_target = ( gui_rect_t ){ 0.0f, top, vp_w( vp ), vp_h( vp ) - top };
@@ -1068,9 +1068,9 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
    viewport work area (caption band + main menu bar, window_work_top) and wraps back to that
    first slot once the next position would cross half the viewport extent on either axis. */
 static void
-window_default_spawn( gui_vp_t viewport, f32* out_x, f32* out_y )
+window_default_spawn( i32 viewport, f32* out_x, f32* out_y )
 {
-    gui_vp_t vp = viewport;
+    i32 vp = viewport;
     const f32 inset = 60.0f;
     const f32 step  = WIN_TITLE_H;
     const f32 top   = window_work_top( vp );
@@ -1105,7 +1105,7 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
         /* The pool-full guard keeps a scratch-hosted overflow window (window_find never sees it,
            so it reads as appearing EVERY frame) from advancing the cascade and walking across
            the screen; it takes the fixed fallback above instead. */
-        gui_vp_t vp = s_next_win.has_viewport ? s_next_win.viewport : s_build.win.viewport;
+        i32 vp = s_next_win.has_viewport ? s_next_win.viewport : s_build.win.viewport;
         window_default_spawn( vp, &x, &y );
     }
 
@@ -1125,7 +1125,7 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
 ==============================================================================================*/
 
 f32
-gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
+gui_viewport_shell( i32 vp, const char* title, gui_win_flags_t flags )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return 0.0f;
@@ -1166,7 +1166,7 @@ gui_viewport_shell( gui_vp_t vp, const char* title, gui_win_flags_t flags )
 ==============================================================================================*/
 
 void
-windows_dpi_rescale( gui_vp_t vp, f32 ratio )
+windows_dpi_rescale( i32 vp, f32 ratio )
 {
     if ( !( ratio > 0.0f ) || ratio == 1.0f )
         return;

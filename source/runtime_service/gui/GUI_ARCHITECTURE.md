@@ -331,7 +331,7 @@ them. `gui_boot.c` is NOT involved.
 gui()->init( font );                              // or GUI_FONT_NONE
 gui()->frame_set_hooks( clock, sleep, wait );     // OS services gui cannot reach itself
 gui()->debug_enable( true );                      // optional hotkey driver
-gui_vp_t vp0 = gui()->viewport_open( win_id );    // attach gui to the EXISTING window/ctx
+i32 vp0 = gui()->viewport_open( win_id );         // attach gui to the EXISTING window/ctx
 
 // per frame
 while ( app pump )                                // host pumps OS events itself

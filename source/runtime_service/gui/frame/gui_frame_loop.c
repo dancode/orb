@@ -466,7 +466,7 @@ gui_frame_end( void )
    after the call -- it leaves g_ctx bound to ctx_handle -- and close with ctx_end. */
 
 void
-gui_ctx_begin( gui_ctx_id_t ctx_handle )
+gui_ctx_begin( i32 ctx_handle )
 {
     /* Every widget this context emits lays out off the active font's metrics (s_style, scaled by
        gui_style_apply/metrics_compute).  With no loaded font the readers resolve to the internal
@@ -580,12 +580,12 @@ gui_ctx_end( void )
        same drain.  gui laid out for the old surface; the frame renders stretched or clipped. */
 
 static void
-render_contract_check( gui_vp_t vp, const gui_viewport_t* v )
+render_contract_check( i32 vp, const gui_viewport_t* v )
 {
     if ( s_frame_phase != GUI_FRAME_SYNCED )
     {
         bool pending = false;
-        for ( gui_vp_t i = 1; i < s_vp_count; ++i )
+        for ( i32 i = 1; i < s_vp_count; ++i )
             pending = pending || ( s_vp_pool[ i ].owned && s_vp_pool[ i ].pending_close );
 
         GUI_CONTRACT( !pending,
@@ -611,7 +611,7 @@ render_contract_check( gui_vp_t vp, const gui_viewport_t* v )
 /*============================================================================================*/
 
 void
-gui_render( gui_vp_t vp, rhi_cmd_t cmd )
+gui_render( i32 vp, rhi_cmd_t cmd )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;

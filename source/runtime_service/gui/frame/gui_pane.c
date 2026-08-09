@@ -26,7 +26,7 @@
 // clang-format off
 
 void
-pane_tag( gui_id_t id, u32 z, gui_vp_t vp, u32 band )
+pane_tag( gui_id_t id, u32 z, i32 vp, u32 band )
 {
     draw_set_window( id );        /* stable retained-cache key: all this pane's spans share it */
     draw_set_sort_key( z );
@@ -52,7 +52,7 @@ static struct
    cross-frame state (open flags, dragged position) lives with the caller.  Rect-first: flow
    is available inside via flow_begin( pane.rect ) if wanted.  vp GUI_VP_INVALID = primary. */
 gui_pane_t
-gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier, gui_vp_t vp,
+gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier, i32 vp,
                 gui_win_flags_t flags )
 {
     ORB_ASSERT_MSG_ONCE( !s_pane.open, "pane_begin while a pane is open -- panes do not nest" );

@@ -69,7 +69,7 @@ dock_serialize_node( dock_writer_t* w, gui_dock_node_t* n )
 /* Serialize viewport vp's dock tree into buf (NUL-terminated, truncated to bufsz).  Returns the byte
    count a full write needs (excluding the NUL), so a caller can size the buffer like snprintf. */
 u32
-gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz )
+gui_dock_save( i32 vp, char* buf, u32 bufsz )
 {
     dock_writer_t w = { buf, bufsz, 0u };
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
@@ -88,7 +88,7 @@ gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz )
    slate.  Floating tab groups (gui_dock_float.c) share the pool but are not part of the tree the
    blob describes, so a load must leave them standing. */
 static void
-dock_free_viewport_tree( gui_vp_t vp )
+dock_free_viewport_tree( i32 vp )
 {
     for ( u32 i = 0; i < g_ctx->dock.count; ++i )
         if ( g_ctx->dock.pool[ i ].id != 0 && g_ctx->dock.pool[ i ].viewport == vp
@@ -110,7 +110,7 @@ dock_free_viewport_tree( gui_vp_t vp )
    rule as dock_load above: call at the top of the build, never from inside a docked window's body.
    Floating tab groups are not part of the tree and stay standing. */
 void
-gui_dock_clear( gui_vp_t vp )
+gui_dock_clear( i32 vp )
 {
     if ( !g_ctx->dock.pool || vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
@@ -140,7 +140,7 @@ dr_line( dock_reader_t* r, char* out, u32 cap )
 
 /* Recursively parse one node (and, for a split, its two children) for viewport vp. */
 static gui_dock_node_t*
-dock_parse_node( dock_reader_t* r, gui_vp_t vp )
+dock_parse_node( dock_reader_t* r, i32 vp )
 {
     char line[ 128 ];
     if ( !dr_line( r, line, sizeof line ) )
@@ -213,7 +213,7 @@ dock_parse_node( dock_reader_t* r, gui_vp_t vp )
    point -- between frames, or at the top of the build before any docked window is emitted -- never
    from inside a docked window's body (its node would be freed mid-render). */
 bool
-gui_dock_load( gui_vp_t vp, const char* text )
+gui_dock_load( i32 vp, const char* text )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS || !text )
         return false;

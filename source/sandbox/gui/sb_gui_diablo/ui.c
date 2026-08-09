@@ -99,7 +99,7 @@ ui_kit_install( void )
 ==============================================================================================*/
 
 gui_rect_t
-ui_screen_begin( gui_vp_t vp, const char* id )
+ui_screen_begin( i32 vp, const char* id )
 {
     i32 w = 0, h = 0;
     gui()->viewport_size( vp, &w, &h );

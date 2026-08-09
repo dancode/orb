@@ -198,7 +198,7 @@ main( int argc, char** argv )
     bool draw_inited = false;
 
     /* gui owns the main window + render context (boot path); see sb_gui for the full rationale. */
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui_style",
         .w         = 1280, .h = 800,
         .os_chrome = true,

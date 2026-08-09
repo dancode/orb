@@ -357,7 +357,7 @@ editor_build_gui( f32 dt )
         gui()->main_menu_bar_end();
     }
 
-    gui_vp_t vp = run_host_vp();
+    i32 vp = run_host_vp();
     gui()->dockspace_inset( vp, gui()->main_menu_bar_h() );
     gui_dock_id_t root = gui()->dockspace_over_viewport( vp, GUI_DOCKSPACE_NONE );
 

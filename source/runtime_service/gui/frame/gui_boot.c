@@ -65,10 +65,11 @@ static struct
 } s_present;
 
 /*==============================================================================================
-    boot -- stand up the main surface end to end
+    boot -- stand up the main surface end to end 
+    returns: gui viewport (always 0) for the host to use.
 ==============================================================================================*/
 
-gui_vp_t
+i32
 gui_boot( const gui_boot_desc_t* desc )
 {
     if ( !desc || s_boot.active )
@@ -85,7 +86,7 @@ gui_boot( const gui_boot_desc_t* desc )
     if ( win == APP_WIN_INVALID )
         return GUI_VP_INVALID;
 
-    i32 rctx = rhi()->context_open( win );
+    i32  rctx = rhi()->context_open( win );
     if ( rctx == RHI_CTX_INVALID )
     {
         app()->window_close( win );
@@ -99,7 +100,7 @@ gui_boot( const gui_boot_desc_t* desc )
         return GUI_VP_INVALID;
     }
 
-    gui_vp_t vp = gui_viewport_open( win );
+    i32  vp = gui_viewport_open( win );
     if ( vp == GUI_VP_INVALID )
     {
         gui_shutdown();

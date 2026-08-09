@@ -526,7 +526,7 @@ main( int argc, char** argv )
     int ret_code = 1;
 
     /* One-call setup: gui owns the main window + render context end to end. */
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "ORB -- gui base",
         .w         = 1280, .h = 720,
         .os_chrome = true,   /* stock OS-framed window instead of the gui-driven borderless viewport */

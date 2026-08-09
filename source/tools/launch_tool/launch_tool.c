@@ -68,7 +68,7 @@ main( int argc, char** argv )
     int ret_code = 1;
 
     /* One-call setup: gui owns the main window + render context end to end (boot path). */
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB Launcher",
         .w     = 1280, .h = 720,
         .font  = GUI_FONT_JETBRAINS_16,

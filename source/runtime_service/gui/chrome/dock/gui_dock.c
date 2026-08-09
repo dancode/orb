@@ -29,7 +29,7 @@
    bar and/or toolbar strip the host draws itself.  The dock tree lays out below it (in addition
    to any native caption band).  Sticky until re-published; pass 0 to reclaim the space. */
 void
-gui_dockspace_inset( gui_vp_t vp, f32 top )
+gui_dockspace_inset( i32 vp, f32 top )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
@@ -46,7 +46,7 @@ gui_dockspace_inset( gui_vp_t vp, f32 top )
    once per frame at the TOP of the build for each dockspace viewport, before the docked windows'
    window_begin run (they read their node's resolved content rect). */
 gui_dock_id_t
-gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags )
+gui_dockspace_over_viewport( i32 vp, gui_dockspace_flags_t flags )
 {
     if ( !g_ctx->dock.pool ) return GUI_DOCK_NONE;   /* pool disabled for this context (max_dock_nodes == 0) */
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
@@ -208,7 +208,7 @@ gui_dock_split( gui_dock_id_t node_id, gui_dir_t dir, f32 ratio, gui_dock_id_t* 
    leaf's id, or GUI_DOCK_NONE if the viewport has no tree or the pool is full.  A bare empty root leaf
    is just split in place (no wrapper needed). */
 gui_dock_id_t
-gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio )
+gui_dock_split_root( i32 vp, gui_dir_t dir, f32 ratio )
 {
     if ( !g_ctx->dock.pool ) return GUI_DOCK_NONE;
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )

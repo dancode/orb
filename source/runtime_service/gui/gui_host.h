@@ -76,42 +76,42 @@ bool gui_frame_begin( f32 dt );
 void gui_frame_end( void );
 void gui_set_idle_skip( bool on );
 bool gui_idle_skip( void );
-void gui_render( gui_vp_t vp, rhi_cmd_t cmd );
+void gui_render( i32 vp, rhi_cmd_t cmd );
 
 /* multi-context */
 
-gui_ctx_id_t gui_ctx_create       ( const gui_ctx_config_t* cfg );
-void         gui_ctx_destroy      ( gui_ctx_id_t ctx );
-void         gui_ctx_bind         ( gui_ctx_id_t ctx );
-void         gui_ctx_set_listening( gui_ctx_id_t ctx, bool listen );
-void         gui_ctx_begin        ( gui_ctx_id_t ctx );
-void         gui_ctx_end          ( void );
+i32  gui_ctx_create       ( const gui_ctx_config_t* cfg );
+void gui_ctx_destroy      ( i32 ctx );
+void gui_ctx_bind         ( i32 ctx );
+void gui_ctx_set_listening( i32 ctx, bool listen );
+void gui_ctx_begin        ( i32 ctx );
+void gui_ctx_end          ( void );
 
 /* viewport management */
 
-gui_vp_t    gui_viewport_open       ( i32 win_id );
-void        gui_viewport_close      ( gui_vp_t vp );
-void        gui_viewport_resize     ( gui_vp_t vp, i32 w, i32 h );
-f32         gui_viewport_shell      ( gui_vp_t vp, const char* title, gui_win_flags_t flags );
-f32         gui_viewport_caption_h  ( gui_vp_t vp );
-void        gui_viewport_size       ( gui_vp_t vp, i32* out_w, i32* out_h );
-f32         gui_viewport_content_y  ( gui_vp_t vp );
+i32  gui_viewport_open       ( i32 win_id );
+void gui_viewport_close      ( i32 vp );
+void gui_viewport_resize     ( i32 vp, i32 w, i32 h );
+f32  gui_viewport_shell      ( i32 vp, const char* title, gui_win_flags_t flags );
+f32  gui_viewport_caption_h  ( i32 vp );
+void gui_viewport_size       ( i32 vp, i32* out_w, i32* out_h );
+f32  gui_viewport_content_y  ( i32 vp );
 
 /* boot path (gui_boot.c) -- the alternative to the runtime host: gui owns the main surface AND
    the loop shape.  A host on the runtime path (run_host_main) calls none of these; it calls the
    frame verbs above and drives its own window, pump, and present.  See BOOT PATH in gui_api.h. */
 
-gui_vp_t    gui_boot                ( const gui_boot_desc_t* desc );
-bool        gui_boot_poll           ( f32* out_dt );
-bool        gui_boot_present_begin  ( rhi_cmd_t* out_cmd );
-void        gui_boot_present_end    ( void );
-void        gui_boot_pace           ( i32 spin_sleep_ms, i32 anim_sleep_ms );  /* 0 opts that sleep out */
+i32  gui_boot                ( const gui_boot_desc_t* desc );
+bool gui_boot_poll           ( f32* out_dt );
+bool gui_boot_present_begin  ( rhi_cmd_t* out_cmd );
+void gui_boot_present_end    ( void );
+void gui_boot_pace           ( i32 spin_sleep_ms, i32 anim_sleep_ms );  /* 0 opts that sleep out */
 
 /* gui-owned floater surfaces (window + context owned by gui) */
 
-gui_vp_t    gui_viewport_spawn          ( const char* title, i32 x, i32 y, i32 w, i32 h );
-void        gui_viewport_update         ( void );
-void        gui_viewport_render_floaters( void );
+i32  gui_viewport_spawn          ( const char* title, i32 x, i32 y, i32 w, i32 h );
+void gui_viewport_update         ( void );
+void gui_viewport_render_floaters( void );
 
 /* event routing -- the host drains the app event ring and forwards each event */
 app_event_result_t gui_event( const app_event_t* ev );
@@ -326,7 +326,7 @@ bool gui_force_redraw( void );
 
 /* pane -- the minimal top-level surface occupant: identity + hover/z contest + base clip */
 gui_pane_t gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier,
-                           gui_vp_t vp, gui_win_flags_t flags );
+                           i32 vp, gui_win_flags_t flags );
 void       gui_pane_end( void );
 
 /* root region -- a fixed-rect layout primitive with no window chrome */
@@ -532,7 +532,7 @@ void gui_stock_meter( gui_rect_t r, f32 frac, u32 fill_abgr );
 /* window */
 void gui_window_set_next_pos ( f32 x, f32 y, gui_cond_t cond );
 void gui_window_set_next_size( f32 w, f32 h, gui_cond_t cond );
-void gui_window_set_next_viewport( gui_vp_t vp );
+void gui_window_set_next_viewport( i32 vp );
 void gui_window_set_next_size_constraints( f32 min_w, f32 min_h, f32 max_w, f32 max_h );
 bool gui_window_begin( const char* title, gui_win_flags_t flags );
 void gui_window_end( void );
@@ -544,19 +544,19 @@ void gui_window_set_drag( gui_win_drag_t mode );
 void gui_window_set_nav( const char* title );
 
 /* docking */
-void gui_dockspace_inset( gui_vp_t vp, f32 top );
-gui_dock_id_t gui_dockspace_over_viewport( gui_vp_t vp, gui_dockspace_flags_t flags );
+void gui_dockspace_inset( i32 vp, f32 top );
+gui_dock_id_t gui_dockspace_over_viewport( i32 vp, gui_dockspace_flags_t flags );
 gui_dock_id_t gui_dock_split( gui_dock_id_t node, gui_dir_t dir, f32 ratio, gui_dock_id_t* out_remain );
-gui_dock_id_t gui_dock_split_root( gui_vp_t vp, gui_dir_t dir, f32 ratio );
+gui_dock_id_t gui_dock_split_root( i32 vp, gui_dir_t dir, f32 ratio );
 void gui_dock_window( const char* title, gui_dock_id_t node );
 void gui_dock_undock( const char* title );
 bool gui_window_is_docked( const char* title );
 void gui_dock_window_maximize( const char* title, bool on );
 bool gui_window_is_dock_maximized( const char* title );
 void gui_window_tab( const char* title, const char* onto_title );
-u32  gui_dock_save( gui_vp_t vp, char* buf, u32 bufsz );
-bool gui_dock_load( gui_vp_t vp, const char* text );
-void gui_dock_clear( gui_vp_t vp );
+u32  gui_dock_save( i32 vp, char* buf, u32 bufsz );
+bool gui_dock_load( i32 vp, const char* text );
+void gui_dock_clear( i32 vp );
 
 /* popup + tooltip */
 void gui_popup_open( const char* id_str );

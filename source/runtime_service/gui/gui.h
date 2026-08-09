@@ -83,12 +83,12 @@ typedef u32 gui_icon_id_t;
 typedef u32 gui_sprite_id_t;
 #define GUI_SPRITE_NONE 0u
 
-/* Opaque viewport handle -- a render surface backed by an OS window.  Returned by
-   viewport_open; passed to render, viewport_resize, viewport_close, and
-   window_set_next_viewport.  A valid handle is non-negative; GUI_VP_INVALID (-1) signals
-   failure or no assignment, matching win_id_t / rhi context / gui_ctx_id_t. */
+/* Viewport handle -- a plain i32 index into the global viewport pool, naming a render
+   surface backed by an OS window.  Returned by viewport_open; passed to render,
+   viewport_resize, viewport_close, and window_set_next_viewport.  A valid handle is
+   non-negative; GUI_VP_INVALID (-1) signals failure or no assignment, matching the raw
+   i32 window id and rhi context handle. */
 
-typedef i32 gui_vp_t;
 #define GUI_VP_INVALID (-1)
 
 /* Opaque dock-node handle -- one region of a viewport's dock tree.  Returned by dockspace_over_viewport
@@ -98,11 +98,10 @@ typedef i32 gui_vp_t;
 typedef u32 gui_dock_id_t;
 #define GUI_DOCK_NONE  0u
 
-/* Opaque context handle -- integer index into the internal context pool.
+/* Context handle -- a plain i32 index into the internal context pool.
    GUI_CTX_DEFAULT (0) is always valid after init().
    GUI_CTX_INVALID (-1) signals a failed ctx_create or an unset handle. */
 
-typedef i32 gui_ctx_id_t;
 #define GUI_CTX_DEFAULT  0
 #define GUI_CTX_INVALID  (-1)
 
@@ -833,7 +832,7 @@ void         gui_style_apply( void );
    differently-scaled monitors emit with their own bake in one sequential frame.  A no-op when
    that bake is already landed, when DPI is unmanaged, or while a host-driven font is active. */
 
-void         gui_dpi_land( gui_vp_t viewport );
+void         gui_dpi_land( i32 viewport );
 
 /* gui_style_bake() -- derive the 96-cell colour grid from s->palette, in place.  The one step
    between what a theme AUTHORS and what a render READS, and the only writer of col[][][] the
@@ -2745,11 +2744,13 @@ typedef enum
 /*==============================================================================================
     GUI_FRAME -- boot descriptor
 
-    One-call host setup (gui()->boot): gui owns the main OS window and its render context end to
-    end -- the same lifecycle its tear-off floaters already use -- instead of the host assembling
-    window_open / context_open / init / viewport_open by hand.  Everything here is optional in the
-    sense that a field left zero keeps today's default; the struct is designed to be built as a
-    compound literal at the call site.  See boot() in gui_api.h for the full contract.
+    A simple one-call host setup (gui()->boot). The gui owns the main OS window and its render 
+    context end to end -- the same lifecycle its tear-off floaters already use -- instead of the
+    host assembling window_open / context_open / init / viewport_open by hand.  
+    
+    Everything here is optional in the sense that a field left zero keeps today's default; 
+    the struct is designed to be built as a compound literal at the call site.  
+    See boot() in gui_api.h for the full contract.
 ==============================================================================================*/
 
 typedef struct

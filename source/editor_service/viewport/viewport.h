@@ -9,8 +9,8 @@
     the play-in-editor surface -- the host hands the target id to the project as
     run_view_t.render_ctx in place of the main window's swapchain context.
 
-    Naming: "scene viewport" (this) is distinct from gui's window viewport (gui_vp_t, an
-    OS window gui owns for docking/floaters).  Never bare "viewport" in new identifiers.
+    Naming: "scene viewport" (this) is distinct from gui's window viewport (a vp handle,
+    the OS window gui owns for docking/floaters).  Never bare "viewport" in new identifiers.
 
     Plain static lib, direct-call -- no vtable, no module identity.  It talks to static
     service gateways (gui) and the shared render pointer the runtime host populates, so

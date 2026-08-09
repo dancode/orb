@@ -461,7 +461,7 @@ console_frame( f32 dt )
    before ctx_end); a no-op while the console is closed. */
 
 static void
-console_emit( f32 dt, gui_vp_t vp )
+console_emit( f32 dt, i32 vp )
 {
     UNUSED( dt );
 

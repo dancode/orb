@@ -1621,7 +1621,7 @@ main( int argc, char** argv )
 
     int ret_code = 1;
 
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "ORB -- gui sdf explorer",
         .w         = 1240, .h = 1000,
         .os_chrome = true,

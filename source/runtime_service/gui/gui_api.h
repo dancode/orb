@@ -221,7 +221,7 @@ typedef struct gui_api_s
 
     bool ( *frame_begin )( f32 dt );
     void ( *frame_end   )( void );
-    void ( *render      )( gui_vp_t vp, rhi_cmd_t cmd );
+    void ( *render      )( i32 vp, rhi_cmd_t cmd );
 
     /*========================================================================================
         BOOT PATH -- the other way to run gui  (boot_ == this path only)
@@ -278,7 +278,7 @@ typedef struct gui_api_s
 
         The boot loop, end to end:
 
-          gui_vp_t vp0 = gui()->boot( &desc );       -- once, after mod_init_all, before any
+          i32 vp0 = gui()->boot( &desc );            -- once, after mod_init_all, before any
                                                         other window opens
           while ( gui()->boot_poll( &dt ) )
           {
@@ -323,11 +323,11 @@ typedef struct gui_api_s
                       wait callbacks.  A host that wants its own cadence simply does not call it.
     ==========================================================================================*/
 
-    gui_vp_t ( *boot               )( const gui_boot_desc_t* desc );
-    bool     ( *boot_poll          )( f32* out_dt );
-    bool     ( *boot_present_begin )( rhi_cmd_t* out_cmd );
-    void     ( *boot_present_end   )( void );
-    void     ( *boot_pace          )( i32 spin_sleep_ms, i32 anim_sleep_ms );
+    i32  ( *boot               )( const gui_boot_desc_t* desc );
+    bool ( *boot_poll          )( f32* out_dt );
+    bool ( *boot_present_begin )( rhi_cmd_t* out_cmd );
+    void ( *boot_present_end   )( void );
+    void ( *boot_pace          )( i32 spin_sleep_ms, i32 anim_sleep_ms );
 
     /* Idle-skip control -- the programmatic twin of the I hotkey.  When on, boot_pace blocks on
        OS input while the UI is idle instead of spinning.  Off by default. */
@@ -383,13 +383,13 @@ typedef struct gui_api_s
                             free-window clamp use, published so hosts place windows below the
                             viewport chrome without summing the parts themselves. */
 
-    gui_vp_t    ( *viewport_open      )( i32 win_id );
-    void        ( *viewport_close     )( gui_vp_t vp );
-    void        ( *viewport_resize    )( gui_vp_t vp, i32 w, i32 h );
-    f32         ( *viewport_shell     )( gui_vp_t vp, const char* title, gui_win_flags_t flags );
-    f32         ( *viewport_caption_h )( gui_vp_t vp );
-    void        ( *viewport_size      )( gui_vp_t vp, i32* out_w, i32* out_h );
-    f32         ( *viewport_content_y )( gui_vp_t vp );
+    i32  ( *viewport_open      )( i32 win_id );
+    void ( *viewport_close     )( i32 vp );
+    void ( *viewport_resize    )( i32 vp, i32 w, i32 h );
+    f32  ( *viewport_shell     )( i32 vp, const char* title, gui_win_flags_t flags );
+    f32  ( *viewport_caption_h )( i32 vp );
+    void ( *viewport_size      )( i32 vp, i32* out_w, i32* out_h );
+    f32  ( *viewport_content_y )( i32 vp );
 
     /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
        to flush into, these own the OS window + rhi context end to end -- gui creates them on
@@ -407,9 +407,9 @@ typedef struct gui_api_s
                                     its own rhi context (frame_begin/clear/flush/frame_end).  The
                                     host still presents the main surface (index 0) via render(). */
 
-    gui_vp_t   ( *viewport_spawn           )( const char* title, i32 x, i32 y, i32 w, i32 h );
-    void       ( *viewport_update          )( void );
-    void       ( *viewport_render_floaters )( void );
+    i32  ( *viewport_spawn           )( const char* title, i32 x, i32 y, i32 w, i32 h );
+    void ( *viewport_update          )( void );
+    void ( *viewport_render_floaters )( void );
 
     /* Multi-context -- isolated per-context retained state (windows, nav, popups, keyed widget state,
        id namespace).  The primary context (GUI_CTX_DEFAULT / 0) is always live after init().
@@ -445,12 +445,12 @@ typedef struct gui_api_s
          frame_end()                    -- seal the build; volatile replay on clean frames.
        A single-context host runs exactly one ctx_begin(GUI_CTX_DEFAULT)/ctx_end pair. */
 
-    gui_ctx_id_t ( *ctx_create       )( const gui_ctx_config_t* cfg );
-    void        ( *ctx_destroy       )( gui_ctx_id_t ctx );
-    void        ( *ctx_bind          )( gui_ctx_id_t ctx );
-    void        ( *ctx_set_listening )( gui_ctx_id_t ctx, bool listen );
-    void        ( *ctx_begin         )( gui_ctx_id_t ctx );
-    void        ( *ctx_end           )( void );
+    i32  ( *ctx_create        )( const gui_ctx_config_t* cfg );
+    void ( *ctx_destroy       )( i32 ctx );
+    void ( *ctx_bind          )( i32 ctx );
+    void ( *ctx_set_listening )( i32 ctx, bool listen );
+    void ( *ctx_begin         )( i32 ctx );
+    void ( *ctx_end           )( void );
 
     /* Host input -- the host owns the app event ring drain and forwards each event here.
        Answers with the app_event_result_t routing schema (app.h): the host keeps routing until
@@ -1099,7 +1099,7 @@ typedef struct gui_api_s
        region_begin below = this + persisted scroll + a layout; window_begin = this + the
        persisted record + stock chrome. */
     gui_pane_t ( *pane_begin )( const char* id_str, gui_rect_t r, gui_region_tier_t tier,
-                                gui_vp_t vp, gui_win_flags_t flags );
+                                i32 vp, gui_win_flags_t flags );
     void       ( *pane_end   )( void );
 
     /* region_begin / region_end -- a root-level layout region: an explicit screen rect with no
@@ -1855,7 +1855,7 @@ typedef struct gui_api_s
        ambient viewport -- the one most recently emitted into this frame -- so windows created from
        within a viewport's panels naturally land on the same surface without explicit assignment.
        If the assigned viewport is later closed, the window automatically reverts to the primary. */
-    void ( *window_set_next_viewport )( gui_vp_t vp );
+    void ( *window_set_next_viewport )( i32 vp );
 
     /* window_set_next_size_constraints -- queue a one-shot [min,max] size box for the NEXT
        child_begin, then cleared.  The Dear ImGui SetNextWindowSizeConstraints analogue, in its
@@ -1922,14 +1922,14 @@ typedef struct gui_api_s
            gui()->dock_window( "Scene Tree", left );
            gui()->dock_window( "Viewport",   root );   // center; tab more windows here with root */
 
-    gui_dock_id_t ( *dockspace_over_viewport )( gui_vp_t vp, gui_dockspace_flags_t flags );
+    gui_dock_id_t ( *dockspace_over_viewport )( i32 vp, gui_dockspace_flags_t flags );
     gui_dock_id_t ( *dock_split              )( gui_dock_id_t node, gui_dir_t dir, f32 ratio,
                                                 gui_dock_id_t* out_remain );
     /* dock_split_root() -- split the WHOLE viewport tree, carving a new leaf along a full edge (`dir`).
        Unlike dock_split (a single leaf), this wraps the root in a new split so the pane spans the entire
        side -- the way to place a full-height column beside an existing top/bottom stack.  Returns the
        new leaf id (dock windows into it), or GUI_DOCK_NONE.  Also the commit path of an edge drop. */
-    gui_dock_id_t ( *dock_split_root          )( gui_vp_t vp, gui_dir_t dir, f32 ratio );
+    gui_dock_id_t ( *dock_split_root          )( i32 vp, gui_dir_t dir, f32 ratio );
     void          ( *dock_window              )( const char* title, gui_dock_id_t node );
     void          ( *dock_undock              )( const char* title );
     bool          ( *window_is_docked         )( const char* title );
@@ -1955,8 +1955,8 @@ typedef struct gui_api_s
        host owns the file: write the blob on change, read + load it at startup.  CALL dock_load at a
        safe point -- between frames or at the top of the build before any docked window's window_begin
        -- never from inside a docked window (it frees + rebuilds the tree). */
-    u32  ( *dock_save )( gui_vp_t vp, char* buf, u32 bufsz );
-    bool ( *dock_load )( gui_vp_t vp, const char* text );
+    u32  ( *dock_save )( i32 vp, char* buf, u32 bufsz );
+    bool ( *dock_load )( i32 vp, const char* text );
 
     /* dock_clear() -- DESTROY viewport vp's dock tree: free every node and clear the root.  Windows
        lose their tab membership permanently and free-float from their next begin (at the rect their
@@ -1964,14 +1964,14 @@ typedef struct gui_api_s
        not emitted goes DORMANT (see above) and revives intact.  Clear is for discarding a layout
        wholesale, e.g. before hand-building a fresh one.  Same safe-point rule as dock_load: top of
        the build, never from inside a docked window.  Floating tab groups stay standing. */
-    void ( *dock_clear )( gui_vp_t vp );
+    void ( *dock_clear )( i32 vp );
 
 
     /* Host-reserved top band (pixels) above viewport vp's dock area -- the height of a main menu
        bar / toolbar strip the host draws itself; the dock tree lays out below it.  Sticky until
        re-published; pass 0 to reclaim.  Publish before dockspace_over_viewport in the build. */
 
-    void ( *dockspace_inset )( gui_vp_t vp, f32 top );
+    void ( *dockspace_inset )( i32 vp, f32 top );
 
     /*==========================  popup/ -- popups, tooltips, menus, combo + listbox  ===========================*/
 

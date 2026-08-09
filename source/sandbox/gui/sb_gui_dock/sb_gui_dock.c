@@ -186,7 +186,7 @@ show_panels( void )
 ==============================================================================================*/
 
 static void
-show_swap_view( gui_vp_t vp, f32 top )
+show_swap_view( i32 vp, f32 top )
 {
     i32 win_w = 0, win_h = 0;
     app()->window_get_size( ( i32 )vp, &win_w, &win_h );
@@ -273,7 +273,7 @@ show_dock_lab( void )
 ==============================================================================================*/
 
 static void
-build_frame( gui_vp_t vp )
+build_frame( i32 vp )
 {
     /* --- Safe point: top of the build, before the dockspace and any docked window_begin. ---
        Every tree mutation lands here, one frame after its menu click. */
@@ -380,7 +380,7 @@ main( int argc, char** argv )
     int ret_code = 1;
 
     /* One-call setup: gui owns the main window + render context end to end (boot path). */
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB -- gui dock",
         .w     = 1280, .h = 720,
         .font  = GUI_FONT_JETBRAINS_16,

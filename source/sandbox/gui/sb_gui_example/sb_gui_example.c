@@ -62,7 +62,7 @@ main( int argc, char** argv )
        + caption buttons, borders resize) and is auto-emitted each frame; set .os_chrome = true
        to compare against the stock Win32 frame.  Default caps: every feature group compiled
        in -- this is the explorer, it needs them all. */
-    gui_vp_t vp0 = gui()->boot( &( gui_boot_desc_t ){
+    i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB -- gui example",
         .x = 128, .y = 128,
         .w     = 1920, .h = 1080,

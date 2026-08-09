@@ -191,7 +191,7 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
 typedef struct
 {
     gui_gpu_cmd_t cmd;     // clip rect, texture slot, element count
-    gui_vp_t      vp;      // viewport this command targets (GUI_VP_INVALID = dormant volatile pad)
+    i32           vp;      // viewport this command targets (GUI_VP_INVALID = dormant volatile pad)
     u32           lvbase;  // vertex base relative to slot->vert_base (0-relative)
     u32           libase;  // index base relative to slot->idx_base (the cmd's first_index seed)
 

@@ -17,7 +17,7 @@ static bool s_show_engine   = true;
 static bool s_show_projects = true;
 static bool s_show_output   = true;
 
-static gui_vp_t s_main_vp = 0;  /* the main viewport hosting the chrome shell and free windows */
+static i32 s_main_vp = 0;  /* the main viewport hosting the chrome shell and free windows */
 
 #define LAUNCH_CREATE_POPUP "Create Project"   /* shared id: popup_open + popup_modal_begin */
 
@@ -258,7 +258,7 @@ launch_ui_init( void )
 ==============================================================================================*/
 
 static void
-launch_show_menu( gui_vp_t vp )
+launch_show_menu( i32 vp )
 {
     if ( !gui()->main_menu_bar_begin() )
         return;
@@ -585,7 +585,7 @@ launch_show_create_dialog( void )
 ==============================================================================================*/
 
 void
-launch_ui_frame( gui_vp_t vp )
+launch_ui_frame( i32 vp )
 {
     /* Menu first (popup frame-ordering), then place panes below the viewport chrome --
        caption band (gui-shelled native window) + the menu bar just emitted. */

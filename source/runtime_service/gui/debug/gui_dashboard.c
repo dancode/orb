@@ -352,7 +352,7 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
     const bool frozen = dash_frozen();   /* the active region rotates every frame; call it out
                                                 only when frozen so it never strobes at framerate */
 
-    for ( gui_vp_t vp = 0; vp < GUI_MAX_VIEWPORTS; ++vp )
+    for ( i32 vp = 0; vp < GUI_MAX_VIEWPORTS; ++vp )
     {
         if ( !sn->surf[ vp ].live ) continue;
         if ( y + row_h > r.y + r.h ) break;

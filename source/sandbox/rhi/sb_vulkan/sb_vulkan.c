@@ -131,7 +131,7 @@ main( int argc, char** argv )
         return 1;
     }
 
-    gui_vp_t vp0 = gui()->viewport_open( win );
+    i32 vp0 = gui()->viewport_open( win );
     if ( vp0 == GUI_VP_INVALID ) {
         fprintf( stderr, "[sb_vulkan] gui viewport_open (primary) failed\n" );
         gui()->shutdown();

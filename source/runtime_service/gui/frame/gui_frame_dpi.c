@@ -148,7 +148,7 @@ gui_dpi_scale( void )
    Non-static: frame/gui_viewport.c resolves a fresh floater at spawn (before its first poll). */
 
 bool
-gui_dpi_vp_resolve( gui_vp_t v )
+gui_dpi_vp_resolve( i32 v )
 {
     if ( s_dpi.base == GUI_FONT_NONE )
         return false;
@@ -209,7 +209,7 @@ gui_dpi_vp_resolve( gui_vp_t v )
    or two surfaces at different scales would rebuild every frame forever. */
 
 void
-gui_dpi_land( gui_vp_t viewport )
+gui_dpi_land( i32 viewport )
 {
     if ( s_dpi.base == GUI_FONT_NONE || viewport < 0 || viewport >= GUI_MAX_VIEWPORTS )
         return;
@@ -256,7 +256,7 @@ gui_dpi_poll( void )
         return false;
 
     bool changed = false;
-    for ( gui_vp_t v = 0; v < s_vp_count; ++v )
+    for ( i32 v = 0; v < s_vp_count; ++v )
     {
         gui_viewport_t* vp = &s_vp_pool[ v ];
         if ( !rhi_handle_valid( vp->vb ) )

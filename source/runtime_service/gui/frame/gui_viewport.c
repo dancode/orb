@@ -38,7 +38,7 @@
 ==============================================================================================*/
 
 bool
-viewport_create( gui_vp_t vp, rhi_texture_t target, i32 win_id )
+viewport_create( i32 vp, rhi_texture_t target, i32 win_id )
 {
     gui_viewport_t* v = &s_vp_pool[ vp ];
     v->target          = target;
@@ -59,7 +59,7 @@ viewport_create( gui_vp_t vp, rhi_texture_t target, i32 win_id )
 }
 
 void
-viewport_destroy( gui_vp_t vp )
+viewport_destroy( i32 vp )
 {
     gui_viewport_t* v = &s_vp_pool[ vp ];
 
@@ -87,7 +87,7 @@ viewport_destroy( gui_vp_t vp )
     Viewport API
 ==============================================================================================*/
 
-gui_vp_t
+i32
 gui_viewport_open( i32 win_id )
 {
     GUI_CONTRACT( s_gui_ready, "viewport_open() before a successful init() -- gui has no GPU "
@@ -121,7 +121,7 @@ gui_viewport_open( i32 win_id )
     if ( !ctx_live )
         return GUI_VP_INVALID;
 
-    if ( !viewport_create( (gui_vp_t)win_id, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
+    if ( !viewport_create( (i32)win_id, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
         return GUI_VP_INVALID;
 
     /* Size from the rhi context, not app(): the swapchain extent IS what gui flushes into, so
@@ -135,7 +135,7 @@ gui_viewport_open( i32 win_id )
 
     redraw_request();   /* a fresh surface has no cached geometry to replay -- the first build
                            after it opens must actually run, whatever the input did. */
-    return (gui_vp_t)win_id;
+    return (i32)win_id;
 }
 
 /* The caption band height (px) a chrome shell published on this viewport -- 0 for an OS-chrome
@@ -143,7 +143,7 @@ gui_viewport_open( i32 win_id )
    toolbar) below it; the built-in main_menu_bar, window clamping, and the dock tree already
    inset themselves.  Sticky across frames (see gui_viewport_t.caption_inset). */
 f32
-gui_viewport_caption_h( gui_vp_t vp )
+gui_viewport_caption_h( i32 vp )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return 0.0f;
@@ -153,7 +153,7 @@ gui_viewport_caption_h( gui_vp_t vp )
 /* A viewport's current drawable size (disp_w/disp_h) -- the query twin of viewport_resize.
    Either out pointer may be NULL; an invalid viewport reports 0 x 0. */
 void
-gui_viewport_size( gui_vp_t vp, i32* out_w, i32* out_h )
+gui_viewport_size( i32 vp, i32* out_w, i32* out_h )
 {
     i32 w = 0, h = 0;
     if ( vp >= 0 && vp < GUI_MAX_VIEWPORTS )
@@ -168,7 +168,7 @@ gui_viewport_size( gui_vp_t vp, i32* out_w, i32* out_h )
 /* Update a viewport's drawable size.  Call on OS resize BEFORE frame_begin.
    Works identically for the primary (0) and secondary viewports.  GUI_VP_INVALID is a no-op. */
 void
-gui_viewport_resize( gui_vp_t vp, i32 w, i32 h )
+gui_viewport_resize( i32 vp, i32 w, i32 h )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
@@ -189,7 +189,7 @@ gui_viewport_resize( gui_vp_t vp, i32 w, i32 h )
    be migrated back to the primary, not just the bound one, or a secondary context's windows would
    keep pointing at a slot that just gave up its GPU buffers. */
 void
-gui_viewport_close( gui_vp_t vp )
+gui_viewport_close( i32 vp )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
@@ -233,7 +233,7 @@ gui_viewport_close( gui_vp_t vp )
    free) -- preserving the slot == win_id invariant the input router relies on.  Returns the
    viewport index, or GUI_VP_INVALID on any failure (each step unwinds the previous). */
 
-static gui_vp_t
+static i32
 viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate )
 {
     /* OS window first -- its win_id is the viewport slot index.  no_activate (set for a mid-drag
@@ -266,7 +266,7 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
     }
 
     /* Per-surface geometry buffers; RHI_SWAPCHAIN_COLOR resolves to this ctx's image at flush. */
-    if ( !viewport_create( (gui_vp_t)win_id, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
+    if ( !viewport_create( (i32)win_id, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
     {
         rhi()->context_destroy( ctx );
         app()->window_close( win_id );
@@ -286,14 +286,14 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
 
     if ( win_id + 1 > s_vp_count )
         s_vp_count = win_id + 1;
-    return (gui_vp_t)win_id;
+    return (i32)win_id;
 }
 
 /* Public spawn: open an gui-owned floater hosting its own OS window at (x,y) sized w x h.
    Returns the viewport handle to assign windows to (window_set_next_viewport), or
    GUI_VP_INVALID.  Must be called between frames (it creates an OS window + rhi context). */
 
-gui_vp_t
+i32
 gui_viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h )
 {
     return viewport_spawn( title, x, y, w, h, false );
@@ -315,7 +315,7 @@ app_event_result_t              /* non-static: gui_event (core/gui_io.c) delegat
 gui_owned_window_event( const app_event_t* ev )
 {
     /* Walk all live viewports (index 0 = primary, 1+ = secondary/owned). */
-    for ( gui_vp_t i = 0; i < s_vp_count; ++i )
+    for ( i32 i = 0; i < s_vp_count; ++i )
     {
         gui_viewport_t* vp = &s_vp_pool[ i ];
         if ( vp->win_id != ev->win_id )
@@ -377,7 +377,7 @@ viewport_service_tearoff( gui_window_t* win, bool has_home )
     i32 sw = has_home ? (i32)win->reopen.w : (i32)win->w;
     i32 sh = has_home ? (i32)win->reopen.h : (i32)win->h;
 
-    gui_vp_t vp = viewport_spawn( s_vp_request.title ? s_vp_request.title : "panel",
+    i32 vp = viewport_spawn( s_vp_request.title ? s_vp_request.title : "panel",
                                     sx, sy, sw, sh, s_vp_request.by_drag );
     if ( vp != GUI_VP_INVALID )
     {
@@ -417,7 +417,7 @@ viewport_service_tearoff( gui_window_t* win, bool has_home )
 static void
 viewport_service_mergeback( gui_window_t* win )
 {
-    gui_vp_t fvp = s_vp_request.from_vp;
+    i32 fvp = s_vp_request.from_vp;
 
     win->viewport = 0;
 
@@ -520,7 +520,7 @@ viewport_service_mergeback( gui_window_t* win )
 static void
 viewport_teardown_owned( void )
 {
-    for ( gui_vp_t i = 1; i < s_vp_count; ++i )
+    for ( i32 i = 1; i < s_vp_count; ++i )
     {
         gui_viewport_t* vp = &s_vp_pool[ i ];
         if ( !vp->owned )
@@ -623,7 +623,7 @@ gui_viewport_update( void )
 void
 gui_viewport_render_floaters( void )
 {
-    for ( gui_vp_t viewport_id = 1; viewport_id < s_vp_count; ++viewport_id )
+    for ( i32 viewport_id = 1; viewport_id < s_vp_count; ++viewport_id )
     {
         gui_viewport_t* vp = &s_vp_pool[ viewport_id ];
 
