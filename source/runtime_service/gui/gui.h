@@ -200,10 +200,10 @@ typedef u32 gui_style_set_t;
    per-frame emit (build) and render (flush) cost the overlay reports.  See frame_set_hooks(). */
 typedef f64 ( *gui_clock_fn )( void );
 
-/* Host OS services for end-of-frame pacing (see frame_set_hooks / frame_pace).  gui links only
+/* Host OS services for end-of-frame pacing (see frame_set_hooks / boot_pace).  gui links only
    app + rhi, so the sleep and the block-on-input wait are handed in as callbacks -- typically
    sys_sleep_milliseconds and sys_wait_for_os_events_ms.  A NULL member disables the feature that
-   depends on it (no sleep -> frame_pace never sleeps; no wait -> idle skip unavailable). */
+   depends on it (no sleep -> boot_pace never sleeps; no wait -> idle skip unavailable). */
 typedef void ( *gui_sleep_fn )( i32 milliseconds );
 typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 

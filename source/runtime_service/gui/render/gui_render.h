@@ -405,7 +405,7 @@ void     volatile_footprint ( f32 w, f32 h );                   // layout extent
 void     volatile_cb_close  ( gui_volatile_fn fn, const gui_rect_t* cell );   // cmd_hi + fn; tags + confines the range
 void     volatile_update    ( void );
 u32      volatile_row_count ( void );                           // registered registry rows (perf overlay, vs GUI_MAX_VOLATILE)
-bool     gui_volatile_live  ( void );                           // any row patchable RIGHT NOW -- gui_frame_pace must keep
+bool     gui_volatile_live  ( void );                           // any row patchable RIGHT NOW -- gui_boot_pace must keep
                                                                 //   presenting at cadence instead of block-waiting on input
 
 /* Implemented in chrome/widgets/gui_volatile.c; called only from volatile_update. */

@@ -15,7 +15,7 @@
         6  GUI_CHROME  -- one stock window for contrast: the optional policy layer
 
     Also the reference for what gui()->boot sets up: the minimal loop is boot -> boot_poll ->
-    frame_begin -> ctx_begin .. ctx_end -> frame_end -> the boot_present pair -> frame_pace.
+    frame_begin -> ctx_begin .. ctx_end -> frame_end -> the boot_present pair -> boot_pace.
 
 ==============================================================================================*/
 
@@ -559,7 +559,7 @@ main( int argc, char** argv )
         gui()->boot_present_begin( NULL );
         gui()->boot_present_end();
 
-        gui()->frame_pace( 4, 16 );
+        gui()->boot_pace ( 4, 16 );
     }
 
     ret_code = 0;

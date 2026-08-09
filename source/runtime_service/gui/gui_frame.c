@@ -27,8 +27,7 @@
     frame/gui_context.c          -- public multi-context lifecycle + the context block allocation
     frame/gui_viewport.c         -- surface record lifecycle (viewport_create/destroy) + viewport open/resize/
                                       close + gui-owned floater lifecycle (spawn/update/render_floaters)
-    frame/gui_boot.c             -- THE BOOT PATH: boot + boot_poll + the boot_present pair (plus
-                                      frame_pace, shared with the runtime path)
+    frame/gui_boot.c             -- THE BOOT PATH: boot + boot_poll + the boot_present pair + boot_pace
 
     gui_ui_mem.c                 -- frontend memory accounting (gui_ui_memory) + the gui_mem_stats
                                       aggregation; must be the last constituent include so it sees them all

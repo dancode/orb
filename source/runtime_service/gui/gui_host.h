@@ -61,12 +61,12 @@ void gui_asset_path( const char* relative, char* out, int out_size );
 
 /* frame -- frame_begin returns frame_dirty: emit the UI build only when true.  frame_set_hooks
    hands gui the OS clock / sleep / wait callbacks it cannot reach itself (typically
-   sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms); frame_pace is the
-   end-of-loop sleep / idle wait.  See the FRAME CONTRACT in gui_api.h. */
+   sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms), which power the perf
+   clocks and boot_pace's sleeps.  End-of-loop pacing is host policy -- see boot_pace below and
+   the FRAME CONTRACT in gui_api.h. */
 void gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
 bool gui_frame_begin( f32 dt );
 void gui_frame_end( void );
-void gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms );   /* 0 opts that sleep out */
 void gui_set_idle_skip( bool on );
 bool gui_idle_skip( void );
 void gui_render( gui_vp_t vp, rhi_cmd_t cmd );
@@ -95,6 +95,7 @@ gui_vp_t    gui_boot                ( const gui_boot_desc_t* desc );
 bool        gui_boot_poll           ( f32* out_dt );
 bool        gui_boot_present_begin  ( rhi_cmd_t* out_cmd );
 void        gui_boot_present_end    ( void );
+void        gui_boot_pace           ( i32 spin_sleep_ms, i32 anim_sleep_ms );  /* 0 opts that sleep out */
 
 /* gui-owned floater surfaces (window + context owned by gui) */
 gui_vp_t    gui_viewport_spawn          ( const char* title, i32 x, i32 y, i32 w, i32 h );

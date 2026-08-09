@@ -179,9 +179,9 @@ typedef struct gui_api_s
 
          clock       -- monotonic seconds source (sys_tick_seconds); brackets the frame for the
                         perf overlay's emit / render cost readouts.  NULL leaves timing at zero.
-         sleep_ms    -- thread sleep (sys_sleep_milliseconds); frame_pace's spin/animation sleep.
+         sleep_ms    -- thread sleep (sys_sleep_milliseconds); boot_pace's spin/animation sleep.
          wait_events -- block until OS input or timeout (sys_wait_for_os_events_ms); enables the
-                        idle-skip path of frame_pace.  NULL disables idle skip entirely. */
+                        idle-skip path of boot_pace.  NULL disables idle skip entirely. */
 
     void ( *frame_set_hooks )( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
 
@@ -214,18 +214,14 @@ typedef struct gui_api_s
                       paints the debug overlay when vp is the primary (index 0).
                       Call once per live viewport, each with the matching context cmd.
 
-       frame_pace( spin_sleep_ms, anim_sleep_ms )
-                   -- end-of-loop frame pacing; call once at the very bottom of the main loop.
-                      Default path: sleep spin_sleep_ms between frames (4 ~= 250 Hz). 
-                      With idle skip on (set_idle_skip): block on OS input so a static UI burns no frames, 
-                      sleeping anim_sleep_ms (16 ~= 60 Hz) only while a widget animation settles. 
-                      0 opts that sleep out (no call), even while the feature is on -- free-run for that path. 
-                      A no-op until frame_set_hooks provides the sleep / wait callbacks. */
+       End-of-loop pacing is NOT here: it is host policy.  The boot loop's version is boot_pace
+       below; a runtime host schedules against its own frame deadline and reads gui's settle state
+       through wants_redraw / frame_dirty / volatile_live -- the same three signals boot_pace
+       gates on, which is the only part worth sharing. */
 
     bool ( *frame_begin )( f32 dt );
     void ( *frame_end   )( void );
     void ( *render      )( gui_vp_t vp, rhi_cmd_t cmd );
-    void ( *frame_pace  )( i32 spin_sleep_ms, i32 anim_sleep_ms );
 
     /*========================================================================================
         BOOT PATH -- the other way to run gui  (boot_ == this path only)
@@ -247,9 +243,11 @@ typedef struct gui_api_s
         every window gui did not claim.  It is boot's pump.  Judge membership by which loop a
         verb belongs to, not by what it happens to read.
 
-        The counter-example that proves the rule is frame_pace, deliberately left ABOVE: it is
-        end-of-loop pacing over the hooks alone, and sb_vulkan -- an attach-path host with its
-        own window, context, and pump -- calls it.  A shared verb, so it keeps the shared name.
+        boot_pace is the case that shows why membership, not dependency, is the test.  It touches
+        no s_boot state -- only the frame hooks and the settle queries -- so it would technically
+        run anywhere.  It is still boot_, because it is this loop's PACING POLICY: a fixed
+        spin/settle/block ladder.  A runtime host does not want that ladder; it schedules against
+        a frame deadline and reads the same settle queries itself (run_host.c's editor_sleep).
 
         What the boot path does NOT change: the build (frame_begin / ctx / frame_end) and the
         render flush are the same shared verbs on both paths.  boot() itself is pure composition
@@ -291,7 +289,7 @@ typedef struct gui_api_s
                                                         host's own passes (offscreen scenes,
                                                         custom draws under the UI)
               gui()->boot_present_end();             -- gui draw + present + all owned floaters
-              gui()->frame_pace( 4, 16 );            -- shared, see above
+              gui()->boot_pace( 4, 16 );             -- this loop's pacing policy, see below
           }
           gui()->shutdown();                         -- also tears down the boot-owned surface;
                                                         rhi()->shutdown() stays with the host
@@ -315,14 +313,23 @@ typedef struct gui_api_s
                    surface, then present every owned floater.  Call it unconditionally: it is
                    minimized-safe, and a no-op without a matching begin -- there is no hidden
                    self-begin.
+        boot_pace( spin_sleep_ms, anim_sleep_ms )
+                   -- this loop's end-of-frame sleep; call once at the very bottom.
+                      Default path: sleep spin_sleep_ms between frames (4 ~= 250 Hz).
+                      With idle skip on (set_idle_skip): block on OS input so a static UI burns no
+                      frames, sleeping anim_sleep_ms (16 ~= 60 Hz) only while a widget animation
+                      settles.  0 opts that sleep out (no call), even while the feature is on --
+                      free-run for that path.  A no-op until frame_set_hooks provides the sleep /
+                      wait callbacks.  A host that wants its own cadence simply does not call it.
     ==========================================================================================*/
 
     gui_vp_t ( *boot               )( const gui_boot_desc_t* desc );
     bool     ( *boot_poll          )( f32* out_dt );
     bool     ( *boot_present_begin )( rhi_cmd_t* out_cmd );
     void     ( *boot_present_end   )( void );
+    void     ( *boot_pace          )( i32 spin_sleep_ms, i32 anim_sleep_ms );
 
-    /* Idle-skip control -- the programmatic twin of the I hotkey.  When on, frame_pace blocks on
+    /* Idle-skip control -- the programmatic twin of the I hotkey.  When on, boot_pace blocks on
        OS input while the UI is idle instead of spinning.  Off by default. */
     void ( *set_idle_skip )( bool on );
     bool ( *idle_skip     )( void );
@@ -818,7 +825,7 @@ typedef struct gui_api_s
        Two models, both keyed on a caller-owned gui_id_t (compose with id_combine to avoid slot
        collisions); storage is proportional to in-flight animations and self-evicts once settled.
        Every call that steps a value raises wants_redraw, so animations keep frames coming under
-       idle-skip / frame_pace with no caller bookkeeping.
+       idle-skip / boot_pace with no caller bookkeeping.
 
          anim_f32  -- exponential-decay damper: chase a moving `target` at `speed` (Hz-like; 10 ~=
                       250 ms to 95%, 20 ~= 150 ms).  No definite end -- ideal for hover/state blends
@@ -1020,7 +1027,7 @@ typedef struct gui_api_s
     void         ( *set_edit_key_hook )( gui_edit_key_fn fn, void* user );
 
     /* wants_redraw -- true when at least one animated widget has not yet reached its target this
-       frame (the currently bound context's flag).  frame_pace already folds this across every
+       frame (the currently bound context's flag).  boot_pace already folds this across every
        context internally; the query remains for hosts that run their own pacing. */
     bool ( *wants_redraw )( void );
 
@@ -1056,7 +1063,7 @@ typedef struct gui_api_s
        runs its OWN pacing and block-waits on input once wants_redraw/frame_dirty settle must add
        this to the gate: volatile blocks advance only when a frame runs, so a blocking wait
        freezes them until a timeout / spurious wakeup and the animation stutters at the wait
-       interval.  frame_pace folds this in internally, same as wants_redraw. */
+       interval.  boot_pace folds this in internally, same as wants_redraw. */
     bool ( *volatile_live )( void );
 
     /* set_force_redraw -- pins frame_dirty (and so frame_begin's return) true every frame,

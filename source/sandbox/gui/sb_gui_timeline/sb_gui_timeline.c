@@ -115,7 +115,7 @@ main( int argc, char** argv )
         PROF_ZONE_END();    /* host/frame -- pacing wait tracked separately below */
 
         PROF_ZONE_BEGIN( "host/wait" );
-        gui()->frame_pace( 4, 16 );
+        gui()->boot_pace ( 4, 16 );
         PROF_ZONE_END();
     }
 

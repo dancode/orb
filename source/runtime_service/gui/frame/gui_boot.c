@@ -1,34 +1,30 @@
 /*==============================================================================================
 
-    runtime_service/gui/frame/gui_boot.c -- one-call setup and the quick-gui loop.
+    runtime_service/gui/frame/gui_boot.c -- convenience runtime setup and loop for GUI TIER.
 
-    TIER: test-bed / sandbox path.  gui owns the main surface (window + rhi context + viewport 0)
-    and drives the loop.  The runtime host (source/runtime, run_host_main) is the alternative:
-    it owns all of that itself and treats gui as an optional service. Nothing here is required to 
-    use gui.
+    We use this for our sandbox and testbed applications that isolate themselves from the full
+    runtime. Gui owns the main surface (window + rhi context + viewport 0) and drives the loop. 
+        
+    The runtime host (source/runtime, run_host_main) is the alternative: It owns all of that 
+    itself and treats gui as an optional service. Nothing here is required to use gui.
 
     boot() is pure composition -- every line is an ordered public call a host would make itself.
-    A runtime-path host calls none of the boot_ functions.
+    A true runtime-path host calls none of the boot_ functions.
 
-    WHAT boot_ MEANS: membership in this loop, not a dependency on s_boot.
+    boot()          : composes the public setup sequence.
+    boot_poll()     : gui loop event pump. 
+    boot_present_*  : dispatch to rhi()
 
-      boot()         -- composes the public setup sequence.  A shortcut, not a mode.
-      boot_poll()    -- the loop's event pump.  Reads no s_boot state; belongs here because
-                        nothing outside this loop calls it.
-      boot_present_* -- reaches s_boot's window, context, and viewport, which a runtime-path
-                        host cannot supply, so it no-ops (with a contract message) off this path.
+    boot_pace()     : this loop's end-of-frame sleep (spin / settle / block-on-input).
 
-    frame_pace() also lives here but is NOT boot_: sb_vulkan (own window, own context, own pump)
-    also calls it.  Lives here for proximity to the boot loop.
+    boot_ means membership in THIS loop, not a dependency on s_boot.  boot_pace touches no s_boot
+    state, but the ladder it runs is this loop's pacing policy: a runtime host schedules against a
+    frame deadline instead and reads gui's settle state through the public queries (wants_redraw,
+    frame_dirty, volatile_live) -- see run_host.c's editor_sleep.  Those queries are the shared
+    part; the sleep is not.
 
-    Scope: composes public app/rhi/gui primitives only.  Owns nothing beyond the main surface
-    lifecycle (window + swapchain + viewport 0 + the frame pair).  Job ticks, hot-reload,
-    simulation clocks, networking -- all belong to the runtime host.
-
-    Included LAST in the gui_frame.c unity (after gui_frame_loop.c).
-    gui_frame_loop.c reaches back through two forward-declared statics:
-      boot_shutdown()    -- teardown called from gui_shutdown
-      boot_shell_emit()  -- auto chrome shell emitted at the default ctx_begin
+    boot_shutdown()    -- teardown called from gui_shutdown
+    boot_shell_emit()  -- auto chrome shell emitted at the default ctx_begin
 
     Ordering contract:
 
@@ -41,16 +37,16 @@
             if ( gui()->boot_present_begin( &cmd ) ) -- open the frame; host render passes
                 ...record into cmd...
             gui()->boot_present_end();               -- gui draw + present + floaters
-            gui()->frame_pace( 4, 16 );
+            gui()->boot_pace ( 4, 16 );
         }
         gui()->shutdown();                           -- also tears down the boot-owned surface
 
-============================================================================================*/
+==============================================================================================*/
 // clang-format off
 
 /*==============================================================================================
     boot state -- handles created by boot() that shutdown must destroy
-============================================================================================*/
+==============================================================================================*/
 
 static struct
 {
@@ -78,7 +74,7 @@ static struct
 
 /*==============================================================================================
     boot -- stand up the main surface end to end
-============================================================================================*/
+==============================================================================================*/
 
 gui_vp_t
 gui_boot( const gui_boot_desc_t* desc )
@@ -87,6 +83,7 @@ gui_boot( const gui_boot_desc_t* desc )
         return GUI_VP_INVALID;
 
     /* rhi()->init() is idempotent -- safe if the host already initialized rhi or draw(). */
+
     if ( !rhi()->init() )
         return GUI_VP_INVALID;
 
@@ -173,7 +170,7 @@ boot_shell_emit( void )
 
 /*==============================================================================================
     boot_poll -- the loop's event pump
-============================================================================================*/
+==============================================================================================*/
 
 /* Pump the OS, route events through rhi (swapchain resize) and gui (input, floater lifecycle),
    and return the frame dt.  Returns false when the app should exit: pump_events said quit, or
@@ -224,7 +221,7 @@ gui_boot_poll( f32* out_dt )
     These reach the boot-owned window + context + viewport, which a runtime-path host cannot
     supply.  Off the boot path the begin fires a contract message and returns false; there is
     no half-measure -- use the explicit block from gui_api.h (BOOT TIER) instead.
-============================================================================================*/
+==============================================================================================*/
 
 /* Open the main surface's frame: reconcile floaters, guard minimized, begin the rhi frame,
    and clear the swapchain.  Returns true with the live command buffer so the host can record
@@ -238,12 +235,14 @@ gui_boot_present_begin( rhi_cmd_t* out_cmd )
        this call does not apply at all: a viewport_update here would double-reconcile a host
        that already runs it, and a latched `begun` would hand the floater present to a pair
        that never opened anything. */
+
     GUI_CONTRACT( s_boot.active,
                   "boot_present_begin() without gui()->boot() -- this pair renders through the "
                   "boot-owned window + rhi context, so it cannot present a host-owned surface.  "
                   "Write the explicit block instead: viewport_update() -> rhi()->frame_begin( "
                   "your ctx ) -> your passes -> render( vp, cmd ) -> rhi()->frame_end() -> "
                   "viewport_render_floaters().  See BOOT TIER in gui_api.h.\n" );
+
     if ( !s_boot.active )
         return false;
 
@@ -272,12 +271,14 @@ gui_boot_present_begin( rhi_cmd_t* out_cmd )
     s_present.cmd_live = true;
     if ( out_cmd )
         *out_cmd = cmd;
+
     return true;
 }
 
 /* Draw the gui over whatever the host recorded, present the main surface, then present every
    owned floater.  No-ops without a matching boot_present_begin; off the boot path `begun`
    never latches so this is a complete no-op. */
+
 void
 gui_boot_present_end( void )
 {
@@ -295,15 +296,21 @@ gui_boot_present_end( void )
     s_present.begun    = false;
     s_present.cmd_live = false;
 
-    perf_present_end();   /* close the present clock: pair wall - render flush = present overhead */
+    /* close the present clock: pair wall - render flush = present overhead */
+
+    perf_present_end();
 }
 
 /*==============================================================================================
-    frame_pace -- end-of-loop idle sleep.  NOT boot_: sb_vulkan (own window, own context,
-    own pump) also calls this.  Lives here for proximity to the boot loop.
+    boot_pace -- the boot loop's end-of-frame sleep.
 
-    Call once at the bottom of the main loop, after the present.  The two parameters set the
-    host's cadence; passing 0 opts that branch out entirely:
+    Call once at the bottom of the loop, after the present.  This is boot's pacing POLICY, not a
+    service a real host reuses: a runtime host schedules against a frame deadline (budget, catch-up
+    resync, realtime gate) and reads gui's settle state through the public queries -- wants_redraw,
+    frame_dirty, volatile_live -- to make the same decision on its own terms.  That is the shared
+    part, and it is already public.  See run_host.c's editor_sleep for the worked example.
+
+    The two parameters set the cadence; passing 0 opts that branch out entirely:
 
         spin_sleep_ms -- sleep between frames when idle skip is off (or unavailable).
                          4 ~= 250 Hz; 0 = free-run.
@@ -320,10 +327,10 @@ gui_boot_present_end( void )
 
     s_hook_sleep, s_hook_wait, s_idle_skip, and s_any_redraw live in
     gui_frame_overlay.c / gui_frame_loop.c -- both included before this unit.
-============================================================================================*/
+==============================================================================================*/
 
 void
-gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
+gui_boot_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
 {
     f64 t_wait = perf_span_open();   /* time the whole pace phase: this IS the loop's "wait time" */
 
@@ -336,7 +343,7 @@ gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
         if ( s_any_redraw || gui_frame_dirty() )
         {
             if ( s_hook_sleep && anim_sleep_ms > 0 )
-                s_hook_sleep( anim_sleep_ms );   /* settling: pump frames until it goes clean */
+                 s_hook_sleep( anim_sleep_ms );   /* settling: pump frames until it goes clean */
         }
         else if ( gui_volatile_live() )
         {
@@ -345,7 +352,7 @@ gui_frame_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
                stutter at the wait interval.  Keep presenting at the animation cadence instead;
                these frames stay on the cheap path (patch + upload, no emit, no full tess). */
             if ( s_hook_sleep && anim_sleep_ms > 0 )
-                s_hook_sleep( anim_sleep_ms );
+                 s_hook_sleep( anim_sleep_ms );
         }
         else
         {

@@ -219,7 +219,7 @@ main( int argc, char** argv )
 
         /* Frame pacing (built-in): spin at 4 ms (~250 Hz) by default; with idle skip on (I) block
            on OS input while the UI is static, 16 ms (~60 Hz) while a widget animation settles. */
-        gui()->frame_pace( 4, 16 );
+        gui()->boot_pace ( 4, 16 );
     }
 
 quit:

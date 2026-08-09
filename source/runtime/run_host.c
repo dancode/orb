@@ -567,9 +567,11 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             if ( gui() )
             {
                 /* Wire the optional gui service from the descriptor: the frame hooks are the
-                   sys services gui cannot link itself (clock for perf/idle timing, sleep +
-                   event-wait for frame_pace) -- the host supplies them but keeps ownership of
-                   the loop and its pacing. */
+                   sys services gui cannot link itself.  Only the clock matters on this path
+                   (perf / idle timing); the sleep + event-wait hooks feed gui's own boot_pace
+                   ladder, which this host does not call -- it owns the loop and its pacing,
+                   reading gui's settle state through wants_redraw / frame_dirty /
+                   volatile_live in the wait block below. */
 
                 const run_gui_desc_t* gd = desc->gui;
 

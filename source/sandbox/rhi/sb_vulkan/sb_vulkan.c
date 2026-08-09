@@ -144,7 +144,8 @@ main( int argc, char** argv )
         return 1;
     }
 
-    /* The frame_pace clock + sleep hooks (gui links only app + rhi, so the host wires sys). */
+    /* The gui frame hooks (gui links only app + rhi, so the host wires sys).  This host paces
+       itself, so only the clock matters here -- it drives the perf overlay's frame timing. */
     gui()->frame_set_hooks( sys_tick_seconds, sys_sleep_milliseconds, sys_wait_for_os_events_ms );
 
     /* Overlay state: toggling the triangle swaps between the boot pass (its own clear) and a
@@ -237,8 +238,11 @@ main( int argc, char** argv )
             }
         }
 
-        /* Frame pacing: spin at 4 ms (~250 Hz) -- a render test wants continuous redraws. */
-        gui()->frame_pace( 4, 16 );
+        /* Frame pacing is the host's own: this is an attach-path host (own window, context, and
+           pump), so it does not take gui's boot_pace ladder -- and would not want it, since the
+           idle-skip branch there blocks on OS input and a spinning-triangle render test must
+           redraw continuously.  Spin at 4 ms (~250 Hz). */
+        sys_sleep_milliseconds( 4 );
     }
 
 shutdown:

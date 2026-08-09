@@ -532,7 +532,7 @@ gui_ctx_begin( gui_ctx_id_t ctx_handle )
 
    Two internal duties run here, while the closing context is still bound (the exact point a host
    used to hand-place them, last in the context's build):
-     - fold this context's animation state into the frame-wide s_any_redraw for frame_pace
+     - fold this context's animation state into the frame-wide s_any_redraw for boot_pace
      - emit the debug overlays (perf/state/dashboard) into the DEFAULT context when debug is on */
 
 void

@@ -13,7 +13,7 @@
     (debug_hotkeys, run from frame_begin) that cycles the overlay tiers, and the lifecycle emits
     them into the default context at its ctx_end (debug_overlays_emit).  The host's only jobs are
     debug_enable() and a one-time frame_set_hooks() to hand gui the OS clock / sleep / wait
-    callbacks it cannot reach itself; frame_pace() then owns the end-of-loop sleep or idle wait.
+    callbacks it cannot reach itself; boot_pace() then owns the end-of-loop sleep or idle wait.
 
 ==============================================================================================*/
 // clang-format off
@@ -47,7 +47,7 @@ static struct
     f32             s_rend_ms;
     f32             s_pres_ms;
     f32             s_poll_ms;          /* smoothed boot_poll (pump + input) span            */
-    f32             s_wait_ms;          /* smoothed frame_pace sleep / idle wait span         */
+    f32             s_wait_ms;          /* smoothed boot_pace sleep / idle wait span         */
 
 } s_perf;
 
@@ -138,11 +138,11 @@ perf_present_end( void )
     s_perf.pres_ms = span > 0.0 ? span : 0.0;   /* clamp: render flush can't exceed the pair span */
 }
 
-/* Poll + pace brackets (gui_boot_poll / gui_frame_pace, gui_boot.c).  The poll row is boot-path
-   only; the pace row appears for any host that calls frame_pace.  These are the
+/* Poll + pace brackets (gui_boot_poll / gui_boot_pace, gui_boot.c).  Both rows are boot-path
+   only -- a runtime host pumps and paces itself, so they read zero there.  These are the
    last two unmeasured phases of the loop: boot_poll (OS pump + gamepad + input snapshot) and
-   frame_pace (the end-of-loop sleep / idle wait).  The pace span is the "wait time" -- a
-   frame_pace(4,16) sleep otherwise hides ~4 ms from the breakdown, which is exactly what made the
+   boot_pace (the end-of-loop sleep / idle wait).  The pace span is the "wait time" -- a
+   boot_pace(4,16) sleep otherwise hides ~4 ms from the breakdown, which is exactly what made the
    totals not add up.  With these, emit + render + present + poll + wait accounts for the whole
    frame.  Both are single spans per frame (unlike render's accumulator), so they EMA directly at
    close via perf_span_ema -- open() returns the clock, close folds the span into *dst. */
@@ -237,7 +237,7 @@ overlay_perf( int mode )
             gui_textf( "render  %5.2f ms", s_perf.s_rend_ms );
 
             /* Full loop breakdown -- tier 2 ONLY.  present = non-render present overhead (fence
-               wait + acquire + submit + present); poll = OS pump + input; wait = frame_pace sleep /
+               wait + acquire + submit + present); poll = OS pump + input; wait = boot_pace sleep /
                idle (the "wait time" -- a paced loop's sleep shows here instead of hiding).  total
                sums the five phases and should track the FPS ms above (small residual = loop
                arithmetic + self-measurement lag).  Tiers 3+ trade all this for the deep geometry /
@@ -410,7 +410,8 @@ overlay_state( int mode )
 
     gui links only app + rhi (no sys), so the wall clock, the sleep, and the block-on-input wait
     arrive as callbacks, set once after init().  The clock powers the perf overlay's emit/render
-    timing; sleep + wait power frame_pace() below.  Any member may be NULL: the dependent feature
+    timing; sleep + wait power boot_pace() (gui_boot.c) and are inert for a host that paces
+    itself.  Any member may be NULL: the dependent feature
     simply switches off (no clock -> timing reads zero; no wait -> idle skip unavailable).
 ==============================================================================================*/
 
@@ -487,7 +488,7 @@ static int  s_dbg_perf_mode;     /* perf overlay tier, NP_ADD cycles 0..4       
 static int  s_dbg_state_mode;    /* state overlay tier, NP_SUB cycles 0..3                  */
 static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */
 static bool s_dbg_step_open;     /* command stepper window, F8 opens (X button hides)       */
-static bool s_idle_skip;         /* frame_pace: block on OS input when idle, selector menu toggles */
+static bool s_idle_skip;         /* boot_pace: block on OS input when idle, selector menu toggles */
 static bool s_dbg_hotkeys_armed; /* master arm: every hotkey below is inert until NP_DOT arms it */
 
 /* Query for hosts that own a debug lever themselves (e.g. sb_gui_editor's own set_force_redraw
@@ -506,7 +507,7 @@ static bool s_dbg_force_redraw_saved;
 static bool s_dbg_retained_skip_saved = true;   /* default: cached (skip tess when unchanged) */
 
 /* True while any context that closed this frame still had an animation in flight -- the OR of
-   every ctx_end's wants_redraw, reset each frame_begin.  frame_pace reads it to keep pumping
+   every ctx_end's wants_redraw, reset each frame_begin.  boot_pace reads it to keep pumping
    ~60 Hz frames while a transition settles instead of blocking on input mid-animation. */
 static bool s_any_redraw;
 
@@ -912,9 +913,9 @@ debug_overlays_emit( void )
     overlay_state( s_dbg_hotkeys_armed ? s_dbg_state_mode : 0 );
 }
 
-/* NOTE: gui_frame_pace() -- the end-of-loop idle sleep -- lives in gui_boot.c, the boot-tier
-   loop it belongs to.  It still reads the frame hooks (s_hook_sleep/wait) and s_idle_skip set
-   here and s_any_redraw folded in gui_frame_loop.c; the gui_frame.c unity includes gui_boot.c
+/* NOTE: gui_boot_pace() -- the boot loop's end-of-frame sleep -- lives in gui_boot.c with the
+   rest of that loop.  It reads the frame hooks (s_hook_sleep/wait), s_idle_skip, and s_perf set
+   here, plus s_any_redraw folded in gui_frame_loop.c; the gui_frame.c unity includes gui_boot.c
    last, so those statics are all in scope there. */
 
 // clang-format on

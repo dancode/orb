@@ -355,7 +355,8 @@ while ( app pump )                                // host pumps OS events itself
     gui()->render( vp0, cmd );                    // gui draw list over the finished scene
     rhi()->frame_end( ctx_id );                   // present (render path: render->end_frame)
     gui()->viewport_render_floaters();            // tear-off windows, after the main surface
-    // pacing is host policy (host_main has its own; frame_pace() also works standalone)
+    // pacing is host policy: this path writes its own (run_host's editor_sleep schedules
+    // against a deadline, gating on wants_redraw / frame_dirty / volatile_live)
 }
 gui()->shutdown();
 ```
@@ -373,20 +374,21 @@ unchanged without it.
 
 ```
 gui()->boot( &desc )                    // window + rhi ctx + font + hooks + viewport_open
-while ( gui()->frame_poll( &dt ) )      // pumps OS, routes rhi + gui events; false = quit
+while ( gui()->boot_poll( &dt ) )       // pumps OS, routes rhi + gui events; false = quit
 {
     if ( gui()->frame_begin( dt ) ) { gui()->ctx_begin(...); ...emit...; gui()->ctx_end(); }
     gui()->frame_end();
-    gui()->present_begin( NULL );       // opens main surface frame; bool gates host passes
-    gui()->present_end();               // gui()->render + present + render floaters
-    gui()->frame_pace( 4, 16 );         // spin/idle pacing (idle-skip aware)
+    gui()->boot_present_begin( NULL );  // opens main surface frame; bool gates host passes
+    gui()->boot_present_end();          // gui()->render + present + render floaters
+    gui()->boot_pace( 4, 16 );          // this loop's pacing (idle-skip aware)
 }
 gui()->shutdown();                      // also tears down the boot window + context
 ```
 
-Mapping: `boot` = window/ctx creation + init + hooks + `viewport_open`; `frame_poll` = event
-pump + routing; `present_begin/present_end` = `rhi frame_begin` + clear + `gui()->render` +
-present + `viewport_render_floaters`.
+Mapping: `boot` = window/ctx creation + init + hooks + `viewport_open`; `boot_poll` = event
+pump + routing; `boot_present_begin/boot_present_end` = `rhi frame_begin` + clear +
+`gui()->render` + present + `viewport_render_floaters`; `boot_pace` = the sleep this loop
+would otherwise hand-roll. A host that wants a different cadence simply does not call it.
 
 Invariants:
 - THE BEGIN / END RULE, one rule for every pair: the bool gates the BODY, never the end call.

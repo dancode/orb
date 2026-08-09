@@ -628,7 +628,7 @@ volatile_row_count( void )
 
 /* True while at least one row would actually patch on an idle frame -- the same filter
    volatile_update applies (active, on screen, window slot live at the captured generation).
-   gui_frame_pace reads this to keep presenting at the animation cadence instead of blocking on
+   gui_boot_pace reads this to keep presenting at the animation cadence instead of blocking on
    OS input: a volatile block only advances when a frame runs, so a blocking wait freezes it
    until a timeout/spurious wakeup and the animation stutters at the wait interval. */
 bool
