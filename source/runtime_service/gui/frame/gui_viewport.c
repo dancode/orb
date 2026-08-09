@@ -1,6 +1,8 @@
 /*==============================================================================================
 
-    runtime_service/gui/frame/gui_viewport.c -- Viewport lifecycle and gui-owned floater surfaces.
+    runtime_service/gui/frame/gui_viewport.c -- Viewport (render surface) life cycle.
+    
+    GUI owned windows for primary and secondary floater surfaces.
 
     Open a viewport: claim the slot at win_id (slot index == win_id), create its GPU geometry
     buffers, and record the OS window and initial drawable size.
@@ -94,12 +96,14 @@ gui_viewport_open( i32 win_id )
     if ( !s_gui_ready )
         return GUI_VP_INVALID;
 
-    /* The slot index matches the win_id; An open window guarantees the slot is free. */
+    /* The slot index matches the win_id; An open window guarantees the slot is useable. */
 
-    GUI_CONTRACT( win_id >= 0 && win_id < (i32)GUI_MAX_VIEWPORTS,
-                  "viewport_open( %d ): win_id outside [0, %u).", win_id, GUI_MAX_VIEWPORTS );
+    GUI_CONTRACT( win_id >= 0 && win_id < (i32)GUI_MAX_VIEWPORTS, 
+                 "viewport_open( %d ): win_id outside [0, %u).", win_id, GUI_MAX_VIEWPORTS );
     if ( win_id < 0 || win_id >= (i32)GUI_MAX_VIEWPORTS )
-        return GUI_VP_INVALID;
+         return GUI_VP_INVALID;
+
+    /* Get the viewport slot for this window */
 
     gui_viewport_t* vp = &s_vp_pool[ win_id ];
 
@@ -109,24 +113,26 @@ gui_viewport_open( i32 win_id )
     bool slot_free = !rhi_handle_valid( vp->vb );
     GUI_CONTRACT( slot_free, "viewport_open( %d ): that slot is already open.", win_id );
     if ( !slot_free )
-        return GUI_VP_INVALID;
+         return GUI_VP_INVALID;
 
     /* The window's rhi context must exist first: gui flushes into ITS swapchain, and the slot
        convention is index == win_id == rhi context id.  Without it every render() on this
        viewport is a silent no-op.  The query doubles as the size read below. */
 
-    i32  w = 0, h = 0;
+    i32 w = 0, h = 0;
     bool ctx_live = rhi()->context_size( win_id, &w, &h );
     GUI_CONTRACT( ctx_live, "viewport_open( %d ): no rhi context -- rhi()->context_open( win ) "
                             "first.", win_id );
     if ( !ctx_live )
         return GUI_VP_INVALID;
 
+    /* Create the viewport's GPU geometry buffers */
     if ( !viewport_create( (i32)win_id, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
         return GUI_VP_INVALID;
 
     /* Size from the rhi context, not app(): the swapchain extent IS what gui flushes into, so
        the two start the frame in agreement (the render-time size check reads the same pair). */
+
     vp->disp_w = w;
     vp->disp_h = h;
 

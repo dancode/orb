@@ -309,18 +309,21 @@ typedef u16 gui_dock_ref_t;
 #define GUI_DOCK_REF_NONE ( (gui_dock_ref_t)0xFFFFu )
 
 /*==============================================================================================
-    Viewport -- one render surface (managed in frame/gui_viewport.c)
+    Viewport -- The gui render surface (managed in frame/gui_viewport.c)
 
-    Everything for one surface gui can draw to: GPU buffers, a color target, the OS window
-    hosting it, its drawable size and reserved chrome bands, and its dock tree. Slot [0] is the
-    main swapchain; the rest are floating windows torn off from it. Viewports are global
-    (s_vp_pool below), not per-context -- every gui_context_t shares the same table.
+    Controls the gui specific state over a render context draw area.
+
+    The viewport has GPU render buffers, a color targets, and the OS window hosting it, 
+    its drawable size and reserved chrome bands, and its dock tree. etc.
+    
+    Slot [0] is the main swapchain; the rest are floating windows torn off from it. 
+    Viewports are global (s_vp_pool) not per-context (every gui_context_t shares the table).
 ==============================================================================================*/
 
 typedef struct
 {
-    rhi_buffer_t  vb;           // CPU_TO_GPU vertex buffer, one region per frame-in-flight
-    rhi_buffer_t  ib;           // CPU_TO_GPU index buffer (u16), one region per frame-in-flight
+    rhi_buffer_t  vb;       // CPU_TO_GPU vertex buffer, one region per frame-in-flight
+    rhi_buffer_t  ib;       // CPU_TO_GPU index buffer (u16), one region per frame-in-flight
 
     /* Color target that flush draws into -- the main swapchain for viewport 0, or a floater's
        own swapchain image. */
