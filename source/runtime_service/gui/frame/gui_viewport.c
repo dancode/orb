@@ -167,9 +167,9 @@ gui_viewport_open( i32 win_id )
 
     /* The slot index matches the win_id; An open window guarantees the slot is useable. */
 
-    GUI_CONTRACT( win_id >= 0 && win_id < (i32)GUI_MAX_VIEWPORTS, 
+    GUI_CONTRACT( win_id >= 0 && win_id < GUI_MAX_VIEWPORTS, 
                  "viewport_open( %d ): win_id outside [0, %u).", win_id, GUI_MAX_VIEWPORTS );
-    if ( win_id < 0 || win_id >= (i32)GUI_MAX_VIEWPORTS )
+    if ( win_id < 0 || win_id >= GUI_MAX_VIEWPORTS )
          return GUI_VP_INVALID;
 
     /* Get the viewport slot for this window */
@@ -259,6 +259,7 @@ gui_viewport_resize( i32 vp, i32 w, i32 h )
    secondary viewports alike.  Windows still assigned to it revert to the primary
    (viewport_migrate_windows) instead of being left pointing at a slot that just gave up its
    GPU buffers.  The host owns the OS window and rhi context; gui owns only the geometry buffers. */
+
 void
 gui_viewport_close( i32 vp )
 {
