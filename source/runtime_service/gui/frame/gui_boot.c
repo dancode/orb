@@ -315,12 +315,17 @@ gui_boot_present_end( void )
     already spent this frame, so the loop lands on the target rate instead of undershooting it
     by however long the frame's own work took:
 
-        spin_sleep_ms -- sleep between frames when idle skip is off (or unavailable).
-                         4 ~= 250 Hz; 0 = free-run.
+        spin_sleep_ms -- cadence between frames when idle skip is off (or unavailable): a hard
+                         rate cap, e.g. a game loop pinning render rate.  4 ~= 250 Hz; 0 =
+                         free-run.  Paced by pace_spin_wait() -- sleeps most of the remaining
+                         budget, then busy-spins the last couple ms, since Sleep() alone
+                         overshoots a target this tight (see pace_spin_wait's comment).
         anim_sleep_ms -- sleep while idle skip is ON but the UI is still settling: an animation
                          is mid-transition (s_any_redraw) OR this frame emitted widgets
                          (gui_frame_dirty()).  Frames keep pumping until a clean frame lands.
-                         16 ~= 60 Hz; 0 = free-run.
+                         16 ~= 60 Hz; 0 = free-run.  Sleep-only (pace_remaining_ms) -- this path
+                         is a courtesy cadence, not a rate cap, so Sleep()'s slop is fine and a
+                         spin tail would waste a core for no benefit here.
 
     With idle skip on and the UI settled, the loop blocks on OS input (500 ms safety cap),
     burning no frames -- unless gui_volatile_live() blocks are on screen, which keep the
@@ -346,6 +351,35 @@ pace_remaining_ms( i32 target_ms )
     f64 elapsed_ms = ( s_perf.clock() - s_perf.t_loop_start ) * 1000.0;
     i32 remain     = ( i32 )( ( f64 )target_ms - elapsed_ms + 0.5 );
     return remain > 0 ? remain : 0;
+}
+
+/* Sleep() only promises "at least N ms" -- OS wake + dispatch latency after the requested
+   duration routinely overshoots a millisecond-scale target (observed ~0.3-1 ms on Windows even
+   with timeBeginPeriod(1)), which is a large fraction of a 4 ms / 250 Hz period.  Hold back this
+   many ms from the sleep and spin them instead: polling the clock has no wake latency, so it
+   lands on the deadline exactly, at the cost of busy-waiting the tail on this core. */
+#define PACE_SLEEP_MARGIN_MS 2.0
+
+/* Hybrid sleep + spin: sleep for most of target_ms's remaining budget, then busy-spin the last
+   PACE_SLEEP_MARGIN_MS to land on the deadline exactly.  No-op (returns immediately) without a
+   clock or an armed loop start. */
+static void
+pace_spin_wait( i32 target_ms )
+{
+    if ( !s_perf.clock || s_perf.t_loop_start <= 0.0 )
+        return;
+
+    f64 target_s = s_perf.t_loop_start + ( f64 )target_ms / 1000.0;
+
+    if ( s_hook_sleep )
+    {
+        f64 sleep_s = target_s - s_perf.clock() - PACE_SLEEP_MARGIN_MS / 1000.0;
+        if ( sleep_s > 0.0 )
+             s_hook_sleep( ( i32 )( sleep_s * 1000.0 + 0.5 ) );
+    }
+
+    while ( s_perf.clock() < target_s )
+        ;   /* spin out the sleep's margin (and any overshoot) to hit the deadline exactly */
 }
 
 void
@@ -390,9 +424,7 @@ gui_boot_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
     }
     else if ( s_hook_sleep && spin_sleep_ms > 0 )
     {
-        i32 remain = pace_remaining_ms( spin_sleep_ms );
-        if ( remain > 0 )
-             s_hook_sleep( remain );              /* spin cadence between frames */
+        pace_spin_wait( spin_sleep_ms );          /* hybrid sleep+spin: hit the target rate exactly */
     }
 
     perf_span_ema( &s_perf.s_wait_ms, t_wait );

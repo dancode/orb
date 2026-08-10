@@ -374,7 +374,7 @@ static vk_state_t vk =
 static vk_state_t vk =
 {
     .use_vsync                  = false,
-    .use_vrr_if_available       = true,
+    .use_vrr_if_available       = true, // true -- for gsync/freesync benchmarking.
     .use_pipeline_cache         = true,
     .use_vk_alloc_cb            = false,
     .use_vk_ext_debug_utils     = false,
