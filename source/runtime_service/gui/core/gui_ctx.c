@@ -233,29 +233,35 @@ ctx_bind( gui_context_t* ctx )
 }
 
 /*==============================================================================================
-    Viewport table -- the one real surface set
+    Viewport table -- The one shared real surface set
 
-    Not per-context: OS windows and RHI contexts are a genuinely global, small, fixed-size
-    resource (APP_WIN_MAX), so every context that ever existed shares this ONE table and differs
-    from another only in which of its own windows assign into which slot.  [0] is the main
-    swapchain, the rest are floaters.  A plain zero-init global -- not part of any context's
-    malloc block -- sized once at compile time and outliving every context; the open/close
-    lifecycle over it is frame/gui_viewport.c's.
+    Not per-context: OS windows and RHI contexts are global, small, fixed-size resource.
+    The gui concern is which gui window is assigned into which slot resource slot.  
+    
+    - Viewport [0] is the main swapchain, the rest are floaters.
+    - A plain zero-init global (not part of any context's malloc block)
+    - The open/close lifecycle over it is frame/gui_viewport.c's.
+
 ==============================================================================================*/
 
 gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
 i32            s_vp_count;
 
 /* Resolve an app win_id to its viewport slot: the live slot (one with GPU buffers) whose recorded
-   win_id matches, else 0 (the main swapchain).  Context-independent -- there is only one table.
-   Forward-declared in core/gui_ctx.h; called by the mouse-input path in core/gui_io.c. */
+   win_id matches, else GUI_VP_INVALID -- the window closed between the event and this frame, so
+   the pending mouse coordinates belong to no live viewport and must not be aliased onto one (in
+   particular never onto 0; that would read as a genuine hover of the main viewport).
+   Context-independent -- there is only one table.  Forward-declared in core/gui_ctx.h; called by
+   the mouse-input path in core/gui_io.c. */
+
 static i32
 viewport_index_for_window( i32 win_id )
 {
-    for ( i32 i = 0; i < APP_WIN_MAX; ++i )
+    for ( i32 i = 0; i < APP_WIN_MAX; ++i ) {
         if ( rhi_handle_valid( s_vp_pool[ i ].vb ) && s_vp_pool[ i ].win_id == win_id )
             return i;
-    return 0;
+    }
+    return GUI_VP_INVALID;
 }
 
 /* Drawable size of a surface: its own extent once opened, else the s_io snapshot of the primary
@@ -315,7 +321,7 @@ cursor_flush( void )
         /* The OS window the cursor is in: viewport slot index -> its app win_id. */
 
         i32 win = 0;
-        if ( s_io.mouse_viewport < s_vp_count )
+        if ( s_io.mouse_viewport >= 0 && s_io.mouse_viewport < s_vp_count )
             win = s_vp_pool[ s_io.mouse_viewport ].win_id;
 
         if ( win != s_flushed_win || s_interaction.mouse_cursor != s_flushed_cur )

@@ -99,6 +99,7 @@ viewport_destroy( i32 vp )
 /* True if viewport slot vp currently holds a live surface -- created and not yet destroyed.
    vb is the tell: viewport_create only writes it a valid handle on success, and viewport_destroy
    always resets it back to invalid, so an untouched or freed slot reads false. */
+
 static bool
 viewport_slot_live( i32 vp )
 {
@@ -114,6 +115,7 @@ viewport_bump_count( i32 win_id )
 
 /* Drop the high-water count while the top slot is no longer live (its GPU buffers were just
    freed by viewport_destroy). */
+
 static void
 viewport_trim_count( void )
 {
@@ -122,6 +124,7 @@ viewport_trim_count( void )
 }
 
 /* Reassign every window on viewport from_vp, in any context, to to_vp. */
+
 static void
 viewport_migrate_windows( i32 from_vp, i32 to_vp )
 {
@@ -138,6 +141,7 @@ viewport_migrate_windows( i32 from_vp, i32 to_vp )
 
 /* True if any window, in any context, is currently assigned to viewport vp.  When
    out_max_last_frame is non-NULL, also writes the highest last_frame among them (0 if none). */
+
 static bool
 viewport_has_windows( i32 vp, u32* out_max_last_frame )
 {
@@ -181,7 +185,7 @@ gui_viewport_open( i32 win_id )
     if ( win_id < 0 || win_id >= GUI_MAX_VIEWPORTS )
          return GUI_VP_INVALID;
 
-    /* Get the viewport slot for this window */
+    /* Get the viewport slot for the corresponding window (matching id) */
 
     gui_viewport_t* vp = &s_vp_pool[ win_id ];
 
@@ -225,6 +229,7 @@ gui_viewport_open( i32 win_id )
    window or before the shell's first emit.  Hosts stack their own pinned strips (menu bar,
    toolbar) below it; the built-in main_menu_bar, window clamping, and the dock tree already
    inset themselves.  Sticky across frames (see gui_viewport_t.caption_inset). */
+
 f32
 gui_viewport_caption_h( i32 vp )
 {
@@ -235,6 +240,7 @@ gui_viewport_caption_h( i32 vp )
 
 /* A viewport's current drawable size (disp_w/disp_h) -- the query twin of viewport_resize.
    Either out pointer may be NULL; an invalid viewport reports 0 x 0. */
+
 void
 gui_viewport_size( i32 vp, i32* out_w, i32* out_h )
 {
@@ -250,6 +256,7 @@ gui_viewport_size( i32 vp, i32* out_w, i32* out_h )
 
 /* Update a viewport's drawable size.  Call on OS resize BEFORE frame_begin.
    Works identically for the primary (0) and secondary viewports.  GUI_VP_INVALID is a no-op. */
+
 void
 gui_viewport_resize( i32 vp, i32 w, i32 h )
 {
