@@ -17,12 +17,19 @@
     Context pool helpers
 ==============================================================================================*/
 
+/* True if context slot i is live (allocated). id must be in [0, RHI_CTX_MAX). */
+static inline bool
+vk_ctx_slot_live( i32 id )
+{
+    return ( vk.ctx_alloc & ( 1u << id ) ) != 0;
+}
+
 static i32
 vk_ctx_alloc( i32 win_id )
 {
     /* Slot index == win_id: an open window guarantees this context slot is free. */
     ORB_ASSERT( win_id >= 0 && win_id < RHI_CTX_MAX );
-    ORB_ASSERT( !( vk.ctx_alloc & ( 1u << win_id ) ) );
+    ORB_ASSERT( !vk_ctx_slot_live( win_id ) );
     vk.ctx_alloc |= ( 1u << win_id );
     return win_id;
 }
@@ -39,7 +46,7 @@ vk_ctx_get( i32 id )
 {
     if ( id < 0 || id >= RHI_CTX_MAX )
         return NULL;
-    if ( !( vk.ctx_alloc & ( 1u << id ) ) )
+    if ( !vk_ctx_slot_live( id ) )
         return NULL;
     return &vk.contexts[ id ];
 }
@@ -173,7 +180,7 @@ vk_context_open( i32 win_id )
         LOG_ERROR( "win_id %d out of range (max %d)\n", win_id, RHI_CTX_MAX );
         return RHI_CTX_INVALID;
     }
-    if ( vk.ctx_alloc & ( 1u << win_id ) ) {
+    if ( vk_ctx_slot_live( win_id ) ) {
         LOG_ERROR( "context slot %d already live\n", win_id );
         return RHI_CTX_INVALID;
     }
@@ -332,8 +339,9 @@ vk_event( const app_event_t* ev )
 
     for ( i32 i = 0; i < RHI_CTX_MAX; ++i )
     {
-        if ( !( vk.ctx_alloc & ( 1u << i ) ) )
+        if ( !vk_ctx_slot_live( i ) )
             continue;
+
         if ( vk.contexts[ i ].win_id == ev->win_id )
         {
             vk_context_resize( i, ev->data.win_resize.w, ev->data.win_resize.h );

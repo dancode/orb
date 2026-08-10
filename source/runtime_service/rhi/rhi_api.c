@@ -124,7 +124,7 @@ rhi_mod_exit( void* raw_state )
     /* Defensive cleanup: destroy any contexts the host left open, then shut down. */
     for ( int i = 0; i < RHI_CTX_MAX; ++i )
     {
-        if ( vk.ctx_alloc & ( 1u << i ) )
+        if ( vk_ctx_slot_live( i ) )
             vk_context_destroy( i );
     }
 
