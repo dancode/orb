@@ -85,6 +85,7 @@ typedef enum app_win_flags_e
        sizing frame, min/max box and system menu so the gui titlebar can drive
        native move / resize / maximize / system-menu via the window_* primitives
        below.  This is window "kind 3" -- the gui window acts as the OS window. */
+
     APP_WIN_BORDERLESS = 1 << 10,
 
     /* Tool window: exclude from the OS task switcher (alt-tab) and taskbar.
@@ -92,6 +93,7 @@ typedef enum app_win_flags_e
        that belongs to the app but is not a destination the user would alt-tab
        to independently.  Torn-off floating panels should NOT use this flag --
        they are first-class app windows in their own right. */
+
     APP_WIN_TOOL = 1 << 11,
 
 } app_win_flags_t;
@@ -244,6 +246,7 @@ typedef struct app_mouse_wheel_event_s /* 8 bytes */
 /* Clipboard paste. `text` points at a NUL-terminated buffer owned by the platform backend,
    valid only until the next pump_events; consumers must copy it out while draining the ring
    (gui does this in gui_event).  Carrying a pointer keeps the payload within 8 bytes. */
+
 typedef struct app_clipboard_event_s /* 8 bytes (x64) */
 {
     const char* text;
@@ -260,6 +263,7 @@ typedef struct app_win_resize_event_s /* 8 bytes */
    the user edits the OS scale setting.  The platform layer queues this first and then applies
    the OS-suggested window rect, so the matching APP_EV_WIN_RESIZE follows it in the ring and a
    consumer already knows the new scale when the resize arrives. */
+
 typedef struct app_win_dpi_event_s /* 8 bytes */
 {
     u32 dpi;   /* new dots-per-inch (96 = 100%)              */

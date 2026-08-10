@@ -77,18 +77,18 @@
 
 enum    // RUN_HOST_FLAGS
 {
-    RUN_HOST_HOT_RELOAD   = 1 << 0, /* poll DLL changes + flush each frame        */
-    RUN_HOST_CONSOLE      = 1 << 1, /* sys_console_input_init / poll / shutdown    */
-    RUN_HOST_EDITOR_SLEEP = 1 << 2, /* block on OS input when idle instead of
-                                       spinning at frame_target_ms; use for tools
-                                       and editors, not game loops               */
-    RUN_HOST_BORDERLESS   = 1 << 3, /* borderless main window with gui-drawn chrome;
-                                       honored only when gui is in k_modules[] (gui
-                                       draws the shell) — plain frame otherwise    */
-    RUN_HOST_WINDOWED     = 1 << 4, /* open a window and pump OS events.  app is always
-                                       loaded (engine floor), so windowed vs headless is
-                                       explicit policy, not an app()-presence inference;
-                                       server / tool hosts leave this clear             */
+    RUN_HOST_HOT_RELOAD   = 1 << 0,     /* poll DLL changes + flush each frame */
+    RUN_HOST_CONSOLE      = 1 << 1,     /* sys_console_input_init / poll / shutdown */
+    RUN_HOST_EDITOR_SLEEP = 1 << 2,     /* block on OS input when idle instead of
+                                           spinning at frame_target_ms; use for tools
+                                           and editors, not game loops */
+    RUN_HOST_BORDERLESS   = 1 << 3,     /* borderless main window with gui-drawn chrome; */
+                                        /* honored only when gui is in k_modules[] (gui
+                                           draws the shell) — plain frame otherwise */
+    RUN_HOST_WINDOWED     = 1 << 4,     /* open a window and pump OS events.  app is always
+                                           loaded (engine floor), so windowed vs headless is
+                                           explicit policy, not an app()-presence inference;
+                                           server / tool hosts leave this clear */
 };
 
 /*============================================================================================*/

@@ -158,11 +158,14 @@ perf_present_end( void )
    emit + render + present + poll + wait now sums to the whole frame. Each is a single span per
    frame (not an accumulator like render), so open() returns the clock and close folds the span
    into *dst via EMA. */
+
 static f64
 perf_span_open( void )
 {
     return s_perf.clock ? s_perf.clock() : 0.0;
 }
+
+/* Fold the span from t0 -> now into *dst via EMA. No-op if timing is off (no clock, or t0 <= 0). */
 
 static void
 perf_span_ema( f32* dst, f64 t0 )

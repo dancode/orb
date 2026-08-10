@@ -4,23 +4,23 @@
 
     Input reaches gui two ways, and the frame is bracketed around both:
 
-        gui_event()      -- during the host's ring drain (BEFORE frame_begin): writes the
-                            EVENT-borne input (typed text, wheel, clipboard paste) straight into
-                            s_io, accumulating across the several events of one frame.
-        io_frame_begin() -- from gui_frame_begin: samples the POLLED input (mouse position +
-                            buttons, per-key state, display size) and computes s_io_dirty.  Never
-                            touches the event-borne fields -- the drain already filled them.
-        io_frame_end()   -- from gui_frame_end: clears the one-frame fields (text/wheel/paste) so
-                            each is non-empty only on the frame its event arrived.
+    gui_event()      -- during the host's ring drain (BEFORE frame_begin): writes the
+                        EVENT-borne input (typed text, wheel, clipboard paste) straight into
+                        s_io, accumulating across the several events of one frame.
 
+    io_frame_begin() -- from gui_frame_begin: samples the POLLED input (mouse position +
+                        buttons, per-key state, display size) and computes s_io_dirty.  
+                        Never touches the event-borne fields -- the drain already filled them.
+
+    io_frame_end()   -- from gui_frame_end: clears the one-frame fields (text/wheel/paste) so
+                        each is non-empty only on the frame its event arrived.
+    
     The app event ring is single-consumer: the host drains it and hands each event here, so gui
-    never drains it itself.  Because that drain completes before frame_begin, one storage slot per
-    field suffices -- gui_event fills it, widgets read it, io_frame_end clears it -- with no
-    pending buffer.  The result is s_io, the one snapshot every tier above reads.
-
-    File order: state -> snapshot readers -> event intake -> frame lifecycle.
-
-    Included by gui_core.c first, ahead of everything that reads s_io.
+    never drains it itself.  
+    
+    Because that drain completes before frame_begin, one storage slot per field suffices 
+    -- gui_event fills it, widgets read it, io_frame_end clears it -- with no pending buffer.
+    The result is s_io, the one snapshot every tier above it reads.
 
 ==============================================================================================*/
 
@@ -180,14 +180,19 @@ io_add_wheel( f32 delta )
     s_io.mouse_wheel += delta;
 }
 
-/* Forward one drained app event to gui.  The host loops its event ring and
-   passes every event here; gui unpacks the input events it cares about (text +
-   scroll) so that logic lives in one place instead of in every host's switch.
+/*==============================================================================================
+    GUI Event -- the host's ring drain calls this for every event, before frame_begin.   
 
-   Answers the app_event_result_t routing schema (app.h): PASS = untouched, SHARED = acted on
-   but the event is broadcast, CONSUMED = gui owns it and routing stops.  Hosts need no
-   per-event-type knowledge -- the whole rule is
-   `if ( gui()->event( &ev ) == APP_EVENT_CONSUMED ) continue;`. */
+    Forward one drained app event to gui.  The host loops its event ring and
+    passes every event here; gui unpacks the input events it cares about (text +
+    scroll) so that logic lives in one place instead of in every host's switch.
+
+    Answers the app_event_result_t routing schema (app.h): PASS = untouched, SHARED = acted on
+    but the event is broadcast, CONSUMED = gui owns it and routing stops.  Hosts need no
+    per-event-type knowledge -- the whole rule is
+    `if ( gui()->event( &ev ) == APP_EVENT_CONSUMED ) continue;`.
+
+==============================================================================================*/
 
 app_event_result_t
 gui_event( const app_event_t* ev )

@@ -180,17 +180,20 @@ boot_shell_emit( void )
     and return the frame dt.  
     
     - Returns false when the app should exit: pump_events said quit, or the main window was closed.
-    - gui_event consumes owned-floater closes, any WIN_CLOSE that reaches us is the main window.
-    - dt is clamped to 100 ms to prevent large steps after a debugger stall or window drag.  
-    - Without a clock hook, defaults to a nominal 60 Hz frame.
+    - Outputs the dt used to advance the gui frame clock (perf_frame_begin) and drive animations.  
+      The host may use it for its own scheduling, but gui does not require it.
+
+    - The gui_event consumes owned-floater closes, WIN_CLOSE inside here is the main window.
+    - The dt is clamped to 100 ms to prevent large steps after a debugger stall or window drag.  
+    - Without a clock hook, defaults to a nominal 60 Hz frame.    
 
 ==============================================================================================*/
 
 bool
 gui_boot_poll( f32* out_dt )
 {
-    f64 t_poll = perf_span_open();   /* time the OS pump + input snapshot as the "poll" phase */
-    s_perf.t_loop_start = t_poll;    /* boot_pace's elapsed-time base for this iteration */
+    f64 t_poll = perf_span_open();          /* start timing the poll phase */
+    s_perf.t_loop_start = t_poll;           /* elapsed-time base for this iteration of polling */
 
     if ( !app()->pump_events() )
         return false;
@@ -198,28 +201,33 @@ gui_boot_poll( f32* out_dt )
     app_event_t ev;
     while ( app()->next_event( &ev ) )
     {
-        rhi()->event( &ev );
-        if ( gui_event( &ev ) )
+        rhi()->event( &ev );                /* render context only handles resize events */
+
+        if ( gui_event( &ev ) )             /* route input + floater events to gui */
             continue;
-        if ( ev.type == APP_EV_WIN_CLOSE )
+
+        if ( ev.type == APP_EV_WIN_CLOSE )  /* exit gui loop on main window */
             return false;
     }
 
-    f32 dt = 1.0f / 60.0f;
+    /* finished polling -- compute the frame dt for the gui clock and animation advance */
+
+    f32 dt = 1.0f / 60.0f;                  /* default to 60 Hz if no clock hook is installed */
     if ( s_perf.clock )
     {
         f64 now = s_perf.clock();
-        if ( s_poll_last > 0.0 )
-        {
+        if ( s_poll_last > 0.0 )            /* first frame has nothing to delta against */
+        {            
             dt = ( f32 )( now - s_poll_last );
-            if ( dt > 0.1f )
-                dt = 0.1f;
+            if ( dt > 0.1f )                
+                 dt = 0.1f;                 /* clamp to avoid huge steps after a stall */
         }
         s_poll_last = now;
     }
     if ( out_dt )
         *out_dt = dt;
 
+    /* fold the poll span into the smoothed readout for the overlay -- calls clock() */
     perf_span_ema( &s_perf.s_poll_ms, t_poll );
     return true;
 }

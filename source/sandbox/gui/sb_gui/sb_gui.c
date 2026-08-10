@@ -222,6 +222,7 @@ main( int argc, char** argv )
        the gui hotkey driver (see debug_enable in gui_api.h). */
 
     int      ret_code    = 1;
+    bool     draw_used   = false;
     bool     draw_inited = false;
 
     i32 vp = gui()->boot( &( gui_boot_desc_t ){
@@ -246,12 +247,15 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup Resources */
 
-    // if ( !draw()->init() )
-    // {
-    //     fprintf( stderr, "[sb_gui] draw->init failed\n" );
-    //     goto shutdown;
-    // }
-    // draw_inited = true;
+    if ( draw_used )
+    {
+        if ( !draw()->init() )
+        {
+            fprintf( stderr, "[sb_gui] draw->init failed\n" );
+            goto shutdown;
+        }
+        draw_inited = true;
+    }
 
     /* ------------------------------------------------------------------------------ */
     /* GUI Style */
@@ -279,6 +283,7 @@ main( int argc, char** argv )
         // Re-scale and apply the changes across the UI
         gui()->style_apply();
     }
+
     /* ------------------------------------------------------------------------------ */
     /* Start render loop.  boot_poll pumps the OS and routes every event (rhi swapchain
        resize, gui input + floater lifecycle); false = quit or main-window close.  Frame
@@ -286,7 +291,7 @@ main( int argc, char** argv )
 
     f32 dt = 0.0f;
 
-    while ( gui()->boot_poll( &dt ) )
+    while ( gui()->boot_poll( &dt ))
     {
         /* ------------------------------------------------------------------------------ */
         /* Host-side debug keys.  The gui debug hotkeys (F1-F4 layers, F9 render view, F10
@@ -345,4 +350,5 @@ shutdown:
     return ret_code;
 }
 
+/*============================================================================================*/
 // clang-format on

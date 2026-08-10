@@ -18,6 +18,7 @@
 
 typedef struct app_api_s
 {
+    /*=======================================================================================*/
     /* ---- Window ---- */
 
     /* Open a native window. Returns APP_WIN_INVALID on failure.
@@ -70,8 +71,6 @@ typedef struct app_api_s
     void ( *window_minimize )( win_id_t id );
     void ( *window_restore  )( win_id_t id );
 
-
-
     /* ---- Native-borderless window actions (window kind 3) ----
 
        A borderless window has no Win32 non-client area, so the gui titlebar /
@@ -122,23 +121,27 @@ typedef struct app_api_s
     void ( *window_maximize        )( win_id_t id );
     void ( *window_toggle_maximize )( win_id_t id );
 
+    /*=======================================================================================*/
     /* ---- Event loop ---- */
 
-    /* Drain the OS message queue, snapshot input state, fill the event ring buffer.
-       Returns false when the application should exit. */
+    // Drain the OS message queue, snapshot input state, fill the event ring buffer.
+    // Returns false when the application should exit.
     bool ( *pump_events )( void );
 
-    /* Pull the next typed event from the ring buffer. Returns false when empty. */
+    // Pull the next typed event from the ring buffer. Returns false when empty.
+    // Call pump first to fill the ring buffer, then call next_event repeatedly until false.
     bool ( *next_event  )( app_event_t* out );
 
+    // True if the app should exit (quit flag set by WM_CLOSE or app()->quit_request()).
     bool ( *should_quit )( void );
 
-    /* Cancel a pending quit.  The main window's WM_CLOSE arms the quit flag AND queues
-       APP_EV_WIN_CLOSE in the same pump; a host that vetoes the close (on_close_request
-       returning false) calls this after draining the event so pump_events resumes
-       returning true. */
-    void ( *quit_reset  )( void );
+    // Cancel a pending quit. The main window's WM_CLOSE arms the quit flag AND queues 
+    // APP_EV_WIN_CLOSE in the same pump; 
+    // A host that vetoes the close (run_host.h -- on_close_request cb returns false) 
+    // calls this after draining the event so pump_events resumes returning true.
+    void ( *quit_reset )( void );
 
+    /*=======================================================================================*/
     /* ---- Input snapshot ---- */
 
     /* key_pressed is the initial press only; key_pressed_repeat also fires on each OS auto-repeat

@@ -726,6 +726,8 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
                 if ( ev.type == APP_EV_WIN_CLOSE )
                 {
+                    /* The main window is closing -- give the host a chance to veto it (save prompt).  
+                       The veto is the only way to cancel the quit that app() armed in pump_events. */
                     if ( !desc->on_close_request || desc->on_close_request() )
                         goto loop_exit;
 
