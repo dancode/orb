@@ -1,28 +1,23 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/pipeline/gui_submit.c -- Per-surface GPU submit 
+    runtime_service/gui/render/pipeline/gui_render_submit.c -- Per-surface GPU submit
 
-    The last of the three render phases (see gui_build_cache.c for the full map):
+    Last of the three render phases:
 
         EMIT    gui_emit_draw.c    widgets -> s_draw semantic command list
         BUILD   gui_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
         RENDER  this file          upload each surface's slots + emit indexed draw calls
 
-    Two responsibilities live here, both per-surface:
+    Two jobs, both per-surface:
 
-      - A surface's own vertex/index buffers (surface_geo_create / surface_geo_destroy), created
-        once per render target.  The shared pipeline + samplers those buffers draw with are NOT
-        here -- see pipeline/gui_render_init.c (render_init / render_shutdown).
+        1. Own each surface's vertex/index buffers (surface_geo_create/destroy). The shared
+           pipeline and samplers those buffers draw with live elsewhere (gui_render_init.c).
 
-      - The flush (gui_render_flush): kick the once-per-frame BUILD (cache_build_frame, lazy),
-        then upload this surface's slice of the shared geometry and emit one indexed draw call
-        per cached GPU command, back-to-front in dispatch order.  The flush takes the surface's
-        GPU pieces (vb / ib / target) as PARAMETERS -- the surface RECORD (gui_viewport_t) is the
-        interact server's storage, orchestrated by frame, and this server never sees it (R11).
+        2. Flush a surface (gui_render_flush): trigger the once-per-frame BUILD if it hasn't
+           run yet, then upload that surface's geometry and issue one draw call per command.
 
-    Included by gui_render.c right after pipeline/gui_render_init.c, whose gui_push_t layout and
-    s_render static this file reads.  gui_debug_overlay.c follows this file and reuses s_render
-    and render_ortho.
+    Included by gui_render.c right after gui_render_init.c, whose gui_push_t layout and s_render
+    static this file reads.
 
 ==============================================================================================*/
 
@@ -185,6 +180,7 @@ void
 gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
                   i32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
+    // Nothing was recorded this frame, or the caller's command buffer isn't ready to record into.
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
         return;
 
@@ -222,9 +218,11 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         if ( sl->idx_base  + sl->idx_count     > idx_hi ) idx_hi = sl->idx_base  + sl->idx_count;
     }
 
-    u32 up_batches = 0;
-    u32 up_bytes = 0;
+    u32 up_batches = 0;   // how many buffer_write calls this flush issued (0, 1, or 2)
+    u32 up_bytes = 0;     // total bytes those writes moved
 
+    // Upload the vertex span, then the index span -- each only if this surface actually
+    // touched geometry in that range.
     if ( vtx_hi > vtx_lo )
     {
         u32 bytes = ( vtx_hi - vtx_lo ) * sizeof( gui_draw_vert_t );
@@ -246,6 +244,8 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         up_bytes += bytes;
     }
 
+    // Report upload stats net of the debug overlay's own geometry, so the dashboard reflects
+    // what the app drew, not the tooling drawn on top of it.
     if ( up_batches > 0 )
     {
         u32 actual_bytes = up_bytes > overlay_bytes ? up_bytes - overlay_bytes : 0;
@@ -305,25 +305,19 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        the effect band's clock costs no batch split and no per-draw work (gui.h, GUI_FX_TIME_WRAP). */
     push.time = s_render.fx_time;
 
-    /*  THE WHOLE BLOCK, ONCE, before the walk -- head and tail both.
+    /* Push the whole struct once, before the walk. tex_idx/tex_mode/samp_idx live in the vertex,
+       not the push constant, so everything left here -- both sampler slots, dbg_flat, the frame
+       clock -- is constant for the entire flush and needs no per-draw comparison.
 
-        The tail used to be per-draw state behind a redundancy filter, and it no longer is.  It
-        carried tex_idx, tex_mode and samp_idx, three fields that genuinely changed from one draw
-        call to the next, so a shadow copy and a memcmp paid for themselves.  All three moved into
-        the vertex.  What is left -- both sampler slots, dbg_flat, the frame clock -- is written
-        here and is constant for the entire flush, so the filter had degenerated into comparing
-        twenty bytes against themselves once per draw call, forever, to answer "no" every time.
+       The one field that does move is dbg_tint, and only in the BATCH debug view: it changes
+       every draw call so a colour shift marks a batch split.  That path re-pushes just the tail
+       explicitly inside the loop below; normal rendering never touches it again after this point.
 
-        Pushing it once and dropping the filter is the honest shape.  ONE field still moves, and
-        only in the BATCH debug view: dbg_tint, which is deliberately different per draw call so a
-        colour change marks a batch split.  That case re-pushes the tail explicitly in the loop --
-        an unconditional write in a debug view, rather than a test every normal frame pays for.
-
-        The SCISSOR filter below is untouched and still earns its keep: the clip rect is the one
-        thing that cuts a batch (tess_ensure_gpu_cmd), so consecutive commands frequently share
-        one -- volatile-block edges and slot boundaries force a new command without changing the
-        clip at all.  `have_scissor` rather than a sentinel because every rect value is legitimate
-        (0,0,0,0 is a fully clipped draw), so there is nothing safe to pre-seed with.  */
+       The scissor filter below is a separate, still-necessary optimization: the clip rect is what
+       actually splits a batch (tess_ensure_gpu_cmd), so consecutive commands frequently share one
+       -- volatile-block edges and slot boundaries force a new command without changing the clip.
+       `have_scissor` is a bool rather than a sentinel value because every rect, including
+       (0,0,0,0), is a legitimate scissor. */
     const u8* tail = (const u8*)&push + GUI_PUSH_TAIL_OFF;
     rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
     ++s_render.state_pushes;

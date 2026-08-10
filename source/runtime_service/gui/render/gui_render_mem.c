@@ -33,6 +33,7 @@ backend_memory( u32 live_viewports )
     s.gpu_texture_bytes = res_atlas_bytes() + res_sprite_bytes() + res_sdf_bytes();
 
 #ifdef GUI_DEBUG_OVERLAY
+
     /* The overlay's own VB/IB (one region per viewport per frame-in-flight, dbg_init). */
     if ( rhi_handle_valid( s_dbg.vb ) )
         s.gpu_debug_bytes = (u32)( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS

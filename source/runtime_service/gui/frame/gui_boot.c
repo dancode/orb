@@ -80,25 +80,28 @@ gui_boot( const gui_boot_desc_t* desc )
     if ( !rhi()->init() )
         return GUI_VP_INVALID;
 
-    u32 win_flags = desc->os_chrome ? APP_WIN_DEFAULT : APP_WIN_BORDERLESS;
-    i32 win = app()->window_open( desc->title ? desc->title : "orb",
-                                  desc->x, desc->y, desc->w, desc->h, win_flags );
+    /* create window and render context */
+
+    u32  win_flags = desc->os_chrome ? APP_WIN_DEFAULT : APP_WIN_BORDERLESS;
+    i32  win = app()->window_open( desc->title ? desc->title : "orb", desc->x, desc->y, desc->w, desc->h, win_flags );
     if ( win == APP_WIN_INVALID )
-        return GUI_VP_INVALID;
+         return GUI_VP_INVALID;
 
     i32  rctx = rhi()->context_open( win );
-    if ( rctx == RHI_CTX_INVALID )
-    {
-        app()->window_close( win );
-        return GUI_VP_INVALID;
+    if ( rctx == RHI_CTX_INVALID ) {
+         app()->window_close( win );
+         return GUI_VP_INVALID;
     }
 
-    if ( !gui_init( desc->font ) )
-    {
-        rhi()->context_destroy( rctx );
-        app()->window_close( win );
-        return GUI_VP_INVALID;
+    /* the gui requires a valid rhi context to initialize the drawing atlas */
+
+    if ( !gui_init( desc->font ) ) {
+         rhi()->context_destroy( rctx );
+         app()->window_close( win );
+         return GUI_VP_INVALID;
     }
+
+    /* create the main windows viewport render area */
 
     i32  vp = gui_viewport_open( win );
     if ( vp == GUI_VP_INVALID )
@@ -109,7 +112,12 @@ gui_boot( const gui_boot_desc_t* desc )
         return GUI_VP_INVALID;
     }
 
+    /* hook the host's clock/sleep/wait into the gui loop */
+
     gui_frame_set_hooks( desc->clock, desc->sleep, desc->wait );
+
+    /* optionally enable debug view */
+
     if ( desc->debug )
         gui_debug_enable( true );
 
@@ -120,6 +128,7 @@ gui_boot( const gui_boot_desc_t* desc )
     s_boot.shell   = !desc->os_chrome;
 
     /* Alpha 0 means unset (cleared swapchain is always opaque): fall back to default dark. */
+
     if ( desc->clear[ 3 ] > 0.0f )
         memcpy( s_boot.clear, desc->clear, sizeof( s_boot.clear ) );
     else

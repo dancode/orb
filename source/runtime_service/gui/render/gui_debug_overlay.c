@@ -22,7 +22,7 @@
     Active layers are chosen at runtime with gui()->debug_set_layers( gui_dbg_layer_t mask ).
 
     Included by gui_render.c after the whole pipeline -- it needs s_render, render_ortho, and
-    gui_push_t from pipeline/gui_submit.c in scope.  The ambient build viewport it tags rects with
+    gui_push_t from pipeline/gui_render_submit.c in scope.  The ambient build viewport it tags rects with
     lives in the core unit (s_build, core/gui_ctx.c), reached across the seam via dbg_build_viewport().
 
 ==============================================================================================*/

@@ -49,7 +49,7 @@
                                         the build_* seam
     pipeline/gui_render_init.c      -- RENDER: shared GPU resources, created once: pipeline, samplers,
                                         the push-constant layout (render_init/shutdown, TU-local)
-    pipeline/gui_submit.c           -- RENDER: per-surface GPU submit: surface_geo_create/destroy,
+    pipeline/gui_render_submit.c    -- RENDER: per-surface GPU submit: surface_geo_create/destroy,
                                         gui_render_flush, the debug-mode/time setters
 
     gui_debug_overlay.c             -- DEBUG OVERLAY: bolt-on second draw list, flushed on top (Debug only).  Stays
@@ -125,7 +125,7 @@
 #include "runtime_service/gui/render/pipeline/gui_render_init.c"
 
 // pipeline/ RENDER, part B: per-surface GPU resources + submit (surface_geo_*, gui_render_flush).
-#include "runtime_service/gui/render/pipeline/gui_submit.c"
+#include "runtime_service/gui/render/pipeline/gui_render_submit.c"
 
 // DEBUG OVERLAY: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY.  Stays at the
 // render/ root -- see the file banner above for why.

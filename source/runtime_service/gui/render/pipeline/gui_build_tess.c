@@ -8,8 +8,8 @@
     touches the GPU API.
 
     s_tess is read only by the two files included after: gui_build_cache.c (the BUILD phase
-    fills it via tess_dispatch) and gui_submit.c (gui_render_flush uploads it and emits draw
-    calls).  No file above the backend unit touches it.
+    fills it via tess_dispatch) and gui_render_submit.c (gui_render_flush uploads it and emits
+    draw calls).  No file above the backend unit touches it.
 
     Included by gui_render.c after gui_emit_path.c (provides v2, seg_normal,
     stroke_center_offset, STROKE_* constants) and before gui_build_cache.c (which drives

@@ -55,7 +55,7 @@ ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
 /*==============================================================================================
     Backend lifecycle (gui_render.c) -- the seam the frame orchestrator calls to stand up / tear
     down the whole render backend.  Internally wraps render_init/shutdown (pipeline/
-    gui_submit.c), which are not exposed past this header.
+    gui_render_submit.c), which are not exposed past this header.
 ==============================================================================================*/
 
 bool backend_init( void );
@@ -414,7 +414,7 @@ void     replay_scope_measure( f32* out_w, f32* out_h );    // extent the replay
 void     replay_scope_exit   ( bool force_redraw );
 
 /*==============================================================================================
-    RENDER: GPU resources + flush (pipeline/gui_submit.c)
+    RENDER: GPU resources + flush (pipeline/gui_render_submit.c)
 
     render_init/shutdown are NOT declared here -- they are TU-local statics, an implementation
     detail of backend_init/exit (above) called directly within the gui_render.c unity TU.

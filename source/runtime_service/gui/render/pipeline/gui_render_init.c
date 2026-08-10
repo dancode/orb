@@ -9,13 +9,13 @@
 
         EMIT    gui_emit_draw.c    widgets -> s_draw semantic command list
         BUILD   gui_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
-        RENDER  this file          shared GPU resources (once) -- gui_submit.c submits per surface
+        RENDER  this file          shared GPU resources (once) -- gui_render_submit.c submits per surface
 
     Per-surface state -- a surface's own geometry buffers and the flush that uploads and draws
-    them -- lives next door in pipeline/gui_submit.c, which reads s_render (this file's static)
+    them -- lives next door in pipeline/gui_render_submit.c, which reads s_render (this file's static)
     as a shared constant and never writes it.
 
-    Included by gui_render.c right after gui_build_cache.c and before gui_submit.c, which depends
+    Included by gui_render.c right after gui_build_cache.c and before gui_render_submit.c, which depends
     on the gui_push_t layout and s_render defined here.
 
 ==============================================================================================*/

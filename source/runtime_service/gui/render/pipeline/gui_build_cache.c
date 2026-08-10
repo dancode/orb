@@ -9,7 +9,7 @@
         BUILD  (this file)        once per frame: diff each window's commands against last frame,
                                    reuse unchanged geometry in place, tessellate changed windows,
                                    then z-sort the result into a dispatch table.
-        RENDER (gui_submit.c)     once per surface: upload the surface's slot-union span (each
+        RENDER (gui_render_submit.c) once per surface: upload the surface's slot-union span (each
                                    frame-in-flight region must hold complete geometry, so the
                                    cache saves TESSELLATION, not upload) and emit one indexed
                                    draw call per cached GPU command.
