@@ -36,7 +36,7 @@
     - render:  sum of every render() flush this frame.
     - present: (boot path only) the present pair's wall time minus render -- the non-render
                overhead, dominated by the frame_begin fence wait (GPU backpressure).
-
+    
     All three are smoothed (EMA) into the readout at the NEXT frame_begin, so the panel trails
     the work it describes by one frame -- unavoidable self-measurement lag.
 ==============================================================================================*/

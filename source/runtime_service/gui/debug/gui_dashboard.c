@@ -152,6 +152,36 @@ dash_vline( f32 x, f32 y0, f32 y1, u32 abgr )
     gui_draw_dashed_line( x, y0, x, y1, 3.0f, 3.0f, 1.0f, abgr );
 }
 
+/* Rect batch: queues solid fills for one flush via gui_draw_rects (GUI_CMD_RECT_LIST), so a
+   panel drawing many small fills -- per-command bars, per-slot arena segments, per-row progress
+   bars -- spends ONE semantic command instead of one gui_draw_rect per shape.  A flush preserves
+   push order (entries tessellate in array order, so an overlapping later entry still paints on
+   top of an earlier one within the same flush) -- anything that must land on top of a batched
+   fill from OUTSIDE the batch (an outline stroke, a text label) needs an explicit flush first. */
+#define DASH_RECT_BATCH_CAP 256
+
+typedef struct
+{
+    gui_rect_col_t buf[ DASH_RECT_BATCH_CAP ];
+    u32            n;
+} dash_rect_batch_t;
+
+static void
+dash_rb_flush( dash_rect_batch_t* rb )
+{
+    if ( rb->n == 0 ) return;
+    gui_draw_rects( rb->buf, rb->n );
+    rb->n = 0;
+}
+
+static void
+dash_rb_push( dash_rect_batch_t* rb, f32 x, f32 y, f32 w, f32 h, u32 abgr )
+{
+    if ( rb->n >= DASH_RECT_BATCH_CAP )
+        dash_rb_flush( rb );
+    rb->buf[ rb->n++ ] = ( gui_rect_col_t ){ x, y, w, h, abgr };
+}
+
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12. */
 static const char*
 dash_name( gui_id_t id, char* buf, u32 bufsz )
@@ -246,6 +276,17 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
     u32 scale  = ( s_full_range || hwm == 0 ) ? cap : hwm;
     f32 px_per = bar.w / (f32)scale;
 
+    /* Pass 1: every slot's flat fill + its volatile strips, batched into one draw_rects flush --
+       drawn before pass 2 below so the outline stroke and text label of pass 2 still land on top
+       of them, exactly as the old single-pass order had it.  Span cached per slot so pass 2 does
+       not need to redo the base/count/alloc -> pixel math.  Pad mode ("Show pad") mixes a hatch
+       pattern in with the headroom fill, so it stays on the immediate path -- the hatch must land
+       on top of ITS OWN fill, which a deferred batch flush cannot guarantee mid-loop. */
+    typedef struct { u32 slot_i; f32 x0, xa; } dash_map_span_t;
+    dash_map_span_t   spans[ RENDER_MAX_WIN ];
+    u32               span_n = 0;
+    dash_rect_batch_t rb     = { 0 };
+
     for ( u32 i = 0; i < sn->slot_count; ++i )
     {
         const dash_slot_t* sl = &sn->slots[ i ];
@@ -272,7 +313,7 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
         }
         else
         {
-            gui_draw_rect( x0, bar.y, xa - x0, bar.h, col );   /* whole reservation as one flat fill */
+            dash_rb_push( &rb, x0, bar.y, xa - x0, bar.h, col );   /* whole reservation, one flat fill */
         }
 
         /* Volatile sub-slots: brighter strips over the full height of their owner's extent.  Axis-
@@ -290,8 +331,9 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
             f32 vx0 = bar.x + (f32)( base + vbase ) * px_per;
             f32 vx1 = bar.x + (f32)( base + vbase + valloc ) * px_per;
             gui_rect_t vr = { vx0, bar.y + 1.0f, vx1 - vx0, bar.h - 2.0f };
-            gui_draw_rect( vr.x, vr.y, vr.w, vr.h, DASH_COL_VOLATILE );
+            dash_rb_push( &rb, vr.x, vr.y, vr.w, vr.h, DASH_COL_VOLATILE );
 
+            /* Hover hit-test is independent of when the fill actually draws -- keep it here. */
             if ( dash_tip_at( vr ) )
             {
                 char nb[ 12 ], wb[ 12 ];
@@ -309,7 +351,20 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
             }
         }
 
-        /* Diff pulse / self-marker outlines. */
+        if ( span_n < RENDER_MAX_WIN )
+            spans[ span_n++ ] = ( dash_map_span_t ){ i, x0, xa };
+    }
+
+    dash_rb_flush( &rb );   /* every slot's fill + strips land before any outline/label below */
+
+    /* Pass 2: diff-pulse / self-marker outlines and window-name labels -- must draw on top of
+       every slot's fill above, so it is a second pass over the cached spans rather than
+       interleaved into pass 1. */
+    for ( u32 s = 0; s < span_n; ++s )
+    {
+        const dash_slot_t* sl = &sn->slots[ spans[ s ].slot_i ];
+        f32                x0 = spans[ s ].x0, xa = spans[ s ].xa;
+
         gui_rect_t seg = { x0, bar.y, xa - x0, bar.h };
         if ( sl->win == g_dash_window_id )
             dash_outline( seg, DASH_COL_SELF );
@@ -451,6 +506,13 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
     const f32 bars_x = r.x + 330.0f;   /* meta column (z/vp/gen), wide enough for the compact
                                            z label below, before the command bars */
 
+    /* Every row marker, batch-cut tick and command bar is a flat fill with nothing else drawn
+       into the same pixels anywhere in the panel (names/meta live in their own column, tooltips
+       are a separate overlay band), so the whole panel can defer to one flush at the end instead
+       of one gui_draw_rect per command -- this loop is the dashboard's biggest command spender,
+       one to two bars/ticks per cached GPU command across every visible row. */
+    dash_rect_batch_t rb = { 0 };
+
     for ( u32 d = 0; d < sn->dispatch_count; ++d )
     {
         if ( y + row_h > r.y + r.h )
@@ -465,7 +527,7 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
         u32                col = dash_slot_color( sn->dispatch[ d ] );
         char               nb[ 12 ], zb[ 12 ];
 
-        gui_draw_rect( r.x + 2.0f, y + 3.0f, 8.0f, 8.0f, col );
+        dash_rb_push( &rb, r.x + 2.0f, y + 3.0f, 8.0f, 8.0f, col );
         dash_text( r.x + 14.0f, y, name_x, DASH_COL_TEXT,
                    dash_name( sl->win, nb, sizeof( nb ) ) );
         dash_textf( name_x + 4.0f, y, bars_x - 4.0f, DASH_COL_TEXT_DIM, "z%-8s v%u g%u",
@@ -493,14 +555,14 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
                                        || dc->clip.w != pc->clip.w || dc->clip.h != pc->clip.h )
                                                                        ? DASH_COL_CUT_CLIP
                                                                        : DASH_COL_CUT_FORCE;
-                gui_draw_rect( bx - 2.0f, y + 1.0f, 1.0f, row_h - 3.0f, cut );
+                dash_rb_push( &rb, bx - 2.0f, y + 1.0f, 1.0f, row_h - 3.0f, cut );
             }
 
             /* One colour per batch: a batch can now MIX atlases, so "which texture is this" is no
                longer a property of the bar -- it belongs to the individual vertices inside it. */
             u32 bcol = col | 0xFF000000u;
             gui_rect_t bar = { bx, y + 2.0f, bw, row_h - 5.0f };
-            gui_draw_rect( bar.x, bar.y, bar.w, bar.h, bcol );
+            dash_rb_push( &rb, bar.x, bar.y, bar.w, bar.h, bcol );
 
             if ( dash_tip_at( bar ) )
             {
@@ -534,6 +596,8 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
         }
         y += row_h;
     }
+
+    dash_rb_flush( &rb );
 }
 
 /* EMIT/BUILD usage bars vs caps, graded green -> amber -> red, with hwm ticks where tracked,
@@ -568,15 +632,25 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
     const f32 val_w = 132.0f;         /* value column: fits a full "NNNNN / NNNNN" with no ellipsis */
     const f32 bar_w = r.w - 84.0f - val_w;
 
+    /* Pass 1: every row's bg + fill, batched -- flushed before pass 2's hwm tick so the tick
+       still lands on top of the fill it marks, exactly as the old single-pass draw order had it. */
+    dash_rect_batch_t rb = { 0 };
     for ( u32 i = 0; i < n; ++i )
     {
         f32 y    = r.y + 2.0f + (f32)i * row_h;
         f32 frac = rows[ i ].cap ? (f32)rows[ i ].used / (f32)rows[ i ].cap : 0.0f;
         u32 col  = frac > 0.90f ? DASH_COL_BAD : frac > 0.75f ? DASH_COL_WARN : DASH_COL_OK;
 
+        dash_rb_push( &rb, bar_x, y + 2.0f, bar_w, row_h - 4.0f, DASH_COL_BG );
+        dash_rb_push( &rb, bar_x, y + 2.0f, bar_w * frac, row_h - 4.0f, col );
+    }
+    dash_rb_flush( &rb );
+
+    for ( u32 i = 0; i < n; ++i )
+    {
+        f32 y = r.y + 2.0f + (f32)i * row_h;
+
         dash_text( r.x + 2.0f, y, bar_x - 10.0f, DASH_COL_TEXT_DIM, rows[ i ].name );
-        gui_draw_rect( bar_x, y + 2.0f, bar_w, row_h - 4.0f, DASH_COL_BG );
-        gui_draw_rect( bar_x, y + 2.0f, bar_w * frac, row_h - 4.0f, col );
         if ( rows[ i ].hwm )
             dash_vline( bar_x + bar_w * (f32)rows[ i ].hwm / (f32)rows[ i ].cap,
                         y + 1.0f, y + row_h - 1.0f, DASH_COL_HWM );
@@ -613,6 +687,10 @@ dash_panel_volatile( gui_rect_t r, const dash_snapshot_t* sn )
         return;
     }
 
+    /* Nothing else in this panel draws into the status dot / bar-pair pixels, so every row's
+       fills can batch into one flush at the end instead of 5 gui_draw_rect calls each. */
+    dash_rect_batch_t rb = { 0 };
+
     for ( u32 v = 0; v < sn->vol_count; ++v )
     {
         if ( y + row_h > r.y + r.h ) break;
@@ -630,18 +708,18 @@ dash_panel_volatile( gui_rect_t r, const dash_snapshot_t* sn )
         if ( slot_band != 0 && !s_show_second_band ) continue;   /* debug-band owner: omit by default */
         bool stale = have_own && vo->active && vo->tess_gen != slot_gen;
 
-        gui_draw_rect( r.x + 2.0f, y + 4.0f, 6.0f, 6.0f,
-                       vo->active ? ( vo->hidden ? DASH_COL_WARN : DASH_COL_OK ) : DASH_COL_FIF_IDLE );
+        dash_rb_push( &rb, r.x + 2.0f, y + 4.0f, 6.0f, 6.0f,
+                      vo->active ? ( vo->hidden ? DASH_COL_WARN : DASH_COL_OK ) : DASH_COL_FIF_IDLE );
         dash_text( r.x + 14.0f,  y, r.x + 116.0f, DASH_COL_TEXT, dash_name( vo->id, nb, sizeof( nb ) ) );
         dash_text( r.x + 120.0f, y, r.x + 210.0f, DASH_COL_TEXT_DIM, dash_name( vo->win, wb, sizeof( wb ) ) );
 
         f32 bx = r.x + 216.0f, bw = 70.0f, bh = row_h - 6.0f;
         f32 vfrac = vo->vert_alloc ? (f32)vo->vert_count / (f32)vo->vert_alloc : 0.0f;
         f32 ifrac = vo->idx_alloc  ? (f32)vo->idx_count  / (f32)vo->idx_alloc  : 0.0f;
-        gui_draw_rect( bx, y + 3.0f, bw, bh, DASH_COL_BG );
-        gui_draw_rect( bx, y + 3.0f, bw * vfrac, bh, DASH_COL_SPAN_VERT );
-        gui_draw_rect( bx + bw + 6.0f, y + 3.0f, bw, bh, DASH_COL_BG );
-        gui_draw_rect( bx + bw + 6.0f, y + 3.0f, bw * ifrac, bh, DASH_COL_SPAN_IDX );
+        dash_rb_push( &rb, bx, y + 3.0f, bw, bh, DASH_COL_BG );
+        dash_rb_push( &rb, bx, y + 3.0f, bw * vfrac, bh, DASH_COL_SPAN_VERT );
+        dash_rb_push( &rb, bx + bw + 6.0f, y + 3.0f, bw, bh, DASH_COL_BG );
+        dash_rb_push( &rb, bx + bw + 6.0f, y + 3.0f, bw * ifrac, bh, DASH_COL_SPAN_IDX );
 
         dash_textf( bx + 2.0f * bw + 14.0f, y, r.x + r.w, stale ? DASH_COL_BAD : DASH_COL_TEXT_DIM,
                     stale ? "gen %u STALE" : "gen %u", vo->tess_gen );
@@ -665,6 +743,8 @@ dash_panel_volatile( gui_rect_t r, const dash_snapshot_t* sn )
         }
         y += row_h;
     }
+
+    dash_rb_flush( &rb );
 }
 
 /* Frame stats strip (last published frame + capture state). */
