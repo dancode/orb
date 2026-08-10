@@ -306,10 +306,10 @@ main( int argc, char** argv )
         {
             gui()->ctx_begin( GUI_CTX_DEFAULT );
 
-            show_example_main_menu_bar();
-
-            if ( show_demo )
-                show_demo_window( &show_demo );
+            // show_example_main_menu_bar();
+            // 
+            // if ( show_demo )
+            //     show_demo_window( &show_demo );
 
             /* Closing the default context also auto-emits the debug overlays (perf/state/dashboard)
                last in its build.  Clean frames skip this whole scope; frame_end below replays the

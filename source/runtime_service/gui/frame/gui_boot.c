@@ -183,6 +183,7 @@ bool
 gui_boot_poll( f32* out_dt )
 {
     f64 t_poll = perf_span_open();   /* time the OS pump + input snapshot as the "poll" phase */
+    s_perf.t_loop_start = t_poll;    /* boot_pace's elapsed-time base for this iteration */
 
     if ( !app()->pump_events() )
         return false;
@@ -308,7 +309,11 @@ gui_boot_present_end( void )
     frame_dirty, volatile_live -- to make the same decision on its own terms.  That is the shared
     part, and it is already public.  See run_host.c's editor_sleep for the worked example.
 
-    The two parameters set the cadence; passing 0 opts that branch out entirely:
+    The two parameters set the cadence; passing 0 opts that branch out entirely.  Both are a
+    target period for the WHOLE iteration (poll + emit + render + present + this sleep), not a
+    flat sleep tacked on top -- pace_remaining_ms() subtracts what boot_poll..boot_present_end
+    already spent this frame, so the loop lands on the target rate instead of undershooting it
+    by however long the frame's own work took:
 
         spin_sleep_ms -- sleep between frames when idle skip is off (or unavailable).
                          4 ~= 250 Hz; 0 = free-run.
@@ -327,12 +332,28 @@ gui_boot_present_end( void )
     gui_frame_overlay.c / gui_frame_loop.c -- both included before this unit.
 ==============================================================================================*/
 
+/* spin_sleep_ms / anim_sleep_ms are a cadence for the WHOLE loop iteration (poll + emit +
+   render + present + this sleep), not just the sleep call -- so sleep only the budget left
+   after everything before it this frame.  t_loop_start is armed at boot_poll entry.  Returns
+   0 once the frame has already eaten the whole budget (or clock/loop-start is unavailable, so
+   the caller falls back to the full target -- no worse than the old fixed-sleep behavior). */
+static i32
+pace_remaining_ms( i32 target_ms )
+{
+    if ( !s_perf.clock || s_perf.t_loop_start <= 0.0 )
+        return target_ms;
+
+    f64 elapsed_ms = ( s_perf.clock() - s_perf.t_loop_start ) * 1000.0;
+    i32 remain     = ( i32 )( ( f64 )target_ms - elapsed_ms + 0.5 );
+    return remain > 0 ? remain : 0;
+}
+
 void
 gui_boot_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
 {
     /* time the whole pace phase: this IS the loop's "wait time" */
 
-    f64 t_wait = perf_span_open();   
+    f64 t_wait = perf_span_open();
 
     if ( s_idle_skip && s_hook_wait )
     {
@@ -343,7 +364,11 @@ gui_boot_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
         if ( s_any_redraw || gui_frame_dirty() )
         {
             if ( s_hook_sleep && anim_sleep_ms > 0 )
-                 s_hook_sleep( anim_sleep_ms );   /* settling: pump frames until it goes clean */
+            {
+                i32 remain = pace_remaining_ms( anim_sleep_ms );
+                if ( remain > 0 )
+                     s_hook_sleep( remain );      /* settling: pump frames until it goes clean */
+            }
         }
         else if ( gui_volatile_live() )
         {
@@ -352,7 +377,11 @@ gui_boot_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
                stutter at the wait interval.  Keep presenting at the animation cadence instead;
                these frames stay on the cheap path (patch + upload, no emit, no full tess). */
             if ( s_hook_sleep && anim_sleep_ms > 0 )
-                 s_hook_sleep( anim_sleep_ms );
+            {
+                i32 remain = pace_remaining_ms( anim_sleep_ms );
+                if ( remain > 0 )
+                     s_hook_sleep( remain );
+            }
         }
         else
         {
@@ -361,7 +390,9 @@ gui_boot_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
     }
     else if ( s_hook_sleep && spin_sleep_ms > 0 )
     {
-        s_hook_sleep( spin_sleep_ms );           /* spin cadence between frames */
+        i32 remain = pace_remaining_ms( spin_sleep_ms );
+        if ( remain > 0 )
+             s_hook_sleep( remain );              /* spin cadence between frames */
     }
 
     perf_span_ema( &s_perf.s_wait_ms, t_wait );

@@ -43,19 +43,20 @@
 
 static struct
 {
-    gui_clock_fn    clock;              /* host monotonic seconds source (NULL = timing off) */
-    f64             t_emit_start;       /* clock() captured at frame_begin (0 = not armed)    */
-    f64             emit_ms;            /* this frame: frame_begin -> first render() (ms)     */
-    f64             rend_ms;            /* this frame: accumulated render() wall time (ms)    */
-    bool            emit_captured;      /* emit_ms latched on the first render() this frame   */
-    f64             t_present_start;    /* clock() at boot_present_begin entry (0 = not armed) */
-    f64             pres_ms;            /* this frame: present pair wall minus render (ms)    */
-    f32             fps;                /* smoothed readouts shown by the overlay             */
+    gui_clock_fn    clock;              // host monotonic seconds source (NULL = timing off)
+    f64             t_loop_start;       // clock() captured at boot_poll entry (0 = not armed)
+    f64             t_emit_start;       // clock() captured at frame_begin (0 = not armed)
+    f64             emit_ms;            // this frame: frame_begin -> first render() (ms)    
+    f64             rend_ms;            // this frame: accumulated render() wall time (ms)   
+    bool            emit_captured;      // emit_ms latched on the first render() this frame  
+    f64             t_present_start;    // clock() at boot_present_begin entry (0 = not armed)
+    f64             pres_ms;            // this frame: present pair wall minus render (ms)
+    f32             fps;                // smoothed readouts shown by the overlay
     f32             s_emit_ms;
     f32             s_rend_ms;
     f32             s_pres_ms;
-    f32             s_poll_ms;          /* smoothed boot_poll (pump + input) span            */
-    f32             s_wait_ms;          /* smoothed boot_pace sleep / idle wait span         */
+    f32             s_poll_ms;          // smoothed boot_poll (pump + input) span          
+    f32             s_wait_ms;          // smoothed boot_pace sleep / idle wait span       
 
 } s_perf;
 
