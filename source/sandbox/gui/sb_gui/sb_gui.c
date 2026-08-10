@@ -119,68 +119,57 @@ show_demo_window(bool* p_open)
     
     // We demonstrate using the full window_begin() API
     gui()->window_set_next_size( 640.0f, 640.0f, GUI_COND_ONCE );
-    if (gui()->window_begin("Basic Gui Demo", window_flags) == false ) {        
-        gui()->window_end(); // Early out if the window is collapsed, as a optimization.
-        return;
-    }
-
-    // Just for testing.
-    bool skip_body = false;
-    if ( skip_body )
-    {
-        gui()->window_end();
-        return;
-    }
-
-    gui()->stack();
-    gui()->text("This is some useful text."); gui()->same_line(0);
-    gui()->help_marker("This is a help marker for the text above.\nIt can be very useful to explain things.");
-
     static bool show_another_window = false;
-    gui()->checkbox("Demo Window", p_open);
-    gui()->checkbox("Another Window", &show_another_window);
-
-    static f32 f = 0.0f;
-    gui()->slider_float("float", &f, 0.0f, 1.0f);
-    gui()->separator_text("Inline color editor");
-    gui()->text("Color widget:");
-    gui()->stack_same_line(0.0f); gui()->help_marker("Click on the color square to open a color picker.\nCtrl+Click on individual component to input value.\n");
-    static f32 color[4] = { 0.4f, 0.7f, 0.0f, 1.0f };
-    gui()->color_edit3("MyColor##1", color, GUI_COLOR_EDIT_NONE);
-    
-    gui()->text("Color widget HSV with Alpha:");
-    gui()->color_edit4("MyColor##2", color, GUI_COLOR_EDIT_DISPLAY_HSV);
-
-    gui()->text("Color widget with Float Display:");
-    gui()->color_edit4("MyColor##2f", color, GUI_COLOR_EDIT_FLOAT);
-
-    static int counter = 0;
-    if (gui()->button("Button"))
-        counter++;
-    gui()->same_line( -1 );
-    gui()->textf("counter = %d", counter);
-
-    /* Static placeholder text (not wired to a real per-frame delta) -- if this were made to
-       recompute from an ever-growing clock every frame, its changing content would keep this
-       window's command hash different frame to frame forever, which would keep frame_dirty()
-       true forever and defeat the idle-skip entirely (the exact problem volatile widgets exist
-       to route around; see demo_volatile_pulse_cb above for the widget that keeps animating anyway). */
-    // gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 6.061f, 165.0f);
-
-    gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );
-    gui()->text( "<- volatile widget: keeps pulsing on idle frames, no full rebuild" );
-    
-    for ( int i = 0; i < 40; i++ )
+    if (gui()->window_begin("Basic Gui Demo", window_flags))
     {
-        gui()->textf( "Line %d", i );
-    }
+        gui()->stack();
+        gui()->text("This is some useful text."); gui()->same_line(0);
+        gui()->help_marker("This is a help marker for the text above.\nIt can be very useful to explain things.");
 
+        gui()->checkbox("Demo Window", p_open);
+        gui()->checkbox("Another Window", &show_another_window);
+
+        static f32 f = 0.0f;
+        gui()->slider_float("float", &f, 0.0f, 1.0f);
+        gui()->separator_text("Inline color editor");
+        gui()->text("Color widget:");
+        gui()->stack_same_line(0.0f); gui()->help_marker("Click on the color square to open a color picker.\nCtrl+Click on individual component to input value.\n");
+        static f32 color[4] = { 0.4f, 0.7f, 0.0f, 1.0f };
+        gui()->color_edit3("MyColor##1", color, GUI_COLOR_EDIT_NONE);
+
+        gui()->text("Color widget HSV with Alpha:");
+        gui()->color_edit4("MyColor##2", color, GUI_COLOR_EDIT_DISPLAY_HSV);
+
+        gui()->text("Color widget with Float Display:");
+        gui()->color_edit4("MyColor##2f", color, GUI_COLOR_EDIT_FLOAT);
+
+        static int counter = 0;
+        if (gui()->button("Button"))
+            counter++;
+        gui()->same_line( -1 );
+        gui()->textf("counter = %d", counter);
+
+        /* Static placeholder text (not wired to a real per-frame delta) -- if this were made to
+           recompute from an ever-growing clock every frame, its changing content would keep this
+           window's command hash different frame to frame forever, which would keep frame_dirty()
+           true forever and defeat the idle-skip entirely (the exact problem volatile widgets exist
+           to route around; see demo_volatile_pulse_cb above for the widget that keeps animating anyway). */
+        // gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 6.061f, 165.0f);
+
+        gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );
+        gui()->text( "<- volatile widget: keeps pulsing on idle frames, no full rebuild" );
+
+        for ( int i = 0; i < 40; i++ )
+        {
+            gui()->textf( "Line %d", i );
+        }
+    }
     gui()->window_end();
 
-    if (show_another_window)
+    if ( show_another_window )
     {
         gui_win_flags_t another_window_flags = GUI_WIN_CAN_AUTOSIZE;  // Add a menu bar to the window
-        if (gui()->window_begin("Another Window", another_window_flags ))
+        if ( gui()->window_begin("Another Window", another_window_flags ))
         {
             gui()->stack();
             gui()->text("Hello from another window!");
@@ -243,7 +232,7 @@ main( int argc, char** argv )
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
         .wait      = sys_wait_for_os_events_ms,
-        .clear     = { 0.15f, 0.15f, 0.15f, 1.00f },
+        .clear     = { 0.10f, 0.10f, 0.10f, 1.00f },
         .debug     = true,
     } );
     if ( vp == GUI_VP_INVALID )

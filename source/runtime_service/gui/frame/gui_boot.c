@@ -65,8 +65,8 @@ static struct
 } s_present;
 
 /*==============================================================================================
-    boot -- stand up the main surface end to end 
-    returns: gui viewport (always 0) for the host to use.
+    boot init -- stand up the main surface end to end.
+    returns: gui viewport id (always 0) for the host to use.
 ==============================================================================================*/
 
 i32
@@ -141,16 +141,14 @@ gui_boot( const gui_boot_desc_t* desc )
     return vp;
 }
 
-/* Teardown for the boot-owned surface, called at the END of gui_shutdown (forward-declared
-   there).  The viewport's GPU buffers are already gone; release the swapchain context and
-   OS window.  rhi()->shutdown() stays host-side -- boot cannot know what else still needs
-   the device. */
+/* Teardown for the boot-owned surface, called at the END of gui_shutdown() -- NOT IN USER SPACE */
 
 static void
 boot_shutdown( void )
 {
     if ( !s_boot.active )
-        return;
+         return;
+
     rhi()->context_destroy( s_boot.rhi_ctx );
     app()->window_close( s_boot.win_id );
     memset( &s_boot, 0, sizeof( s_boot ) );
@@ -158,15 +156,16 @@ boot_shutdown( void )
     s_poll_last = 0.0;
 }
 
-/* Auto chrome shell -- called from gui_ctx_begin when the DEFAULT context binds (once per
-   frame).  viewport_shell no-ops on an OS-chrome window, so this is doubly gated.
-   Explicit-path hosts (no boot) are untouched: s_boot.shell is false. */
+/* Auto chrome shell -- called from gui_ctx_begin -- NOT IN USER SPACE
+   when the DEFAULT context binds (once per frame). 
+   viewport_shell no-ops on an OS-chrome window. */
 
 static void
 boot_shell_emit( void )
 {
     if ( !s_boot.active || !s_boot.shell )
         return;
+
     gui_viewport_shell( s_boot.vp_id, s_boot.title, GUI_WIN_NONE );
 }
 
