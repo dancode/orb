@@ -497,6 +497,7 @@ gui_ctx_begin( i32 ctx_handle )
        first in the default context's build, so the caption band it publishes is live for every
        window after it.  Once per frame (mirrors the s_overlays_emitted latch at ctx_end); a
        no-op for explicit-path hosts, who emit viewport_shell themselves. */
+
     if ( g_ctx == s_ctx_pool[ 0 ] && !s_shell_emitted )
     {
         s_shell_emitted = true;

@@ -319,11 +319,11 @@ vk_context_size( i32 ctx_id, i32* out_w, i32* out_h )
 }
 
 /*============================================================================================*/
-
 /* Route a host app_event_t into the rhi context pool.  On APP_EV_WIN_RESIZE, finds the context
    whose win_id matches and calls vk_context_resize.  A resize is a broadcast event -- the ui
    viewport and the host track the same size change -- so a serviced resize answers SHARED and
    rhi never consumes anything. */
+
 static app_event_result_t
 vk_event( const app_event_t* ev )
 {

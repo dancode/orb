@@ -37,7 +37,9 @@
 // clang-format off
 
 /*==============================================================================================
-    boot state -- handles created by boot() that shutdown must destroy
+
+    Boot State -- GUI managed application setup and frame loop state.   
+
 ==============================================================================================*/
 
 static struct
@@ -65,8 +67,9 @@ static struct
 } s_present;
 
 /*==============================================================================================
-    boot init -- stand up the main surface end to end.
-    returns: gui viewport id (always 0) for the host to use.
+
+    Boot Init -- Convenience composition of the public init sequence  
+
 ==============================================================================================*/
 
 i32
@@ -170,14 +173,18 @@ boot_shell_emit( void )
 }
 
 /*==============================================================================================
-    boot_poll -- the loop's event pump
-==============================================================================================*/
 
-/* Pump the OS, route events through rhi (swapchain resize) and gui (input, floater lifecycle),
-   and return the frame dt.  Returns false when the app should exit: pump_events said quit, or
-   the main window was closed (gui_event consumes owned-floater closes, so any WIN_CLOSE that
-   reaches here is the main window's).  dt is clamped to 100 ms to prevent large steps after a
-   debugger stall or window drag.  Without a clock hook, defaults to a nominal 60 Hz frame. */
+    Boot Poll -- The loop's event pump
+
+    Pump the OS, route events through rhi (swapchain resize) and gui (input, floater lifecycle),
+    and return the frame dt.  
+    
+    - Returns false when the app should exit: pump_events said quit, or the main window was closed.
+    - gui_event consumes owned-floater closes, any WIN_CLOSE that reaches us is the main window.
+    - dt is clamped to 100 ms to prevent large steps after a debugger stall or window drag.  
+    - Without a clock hook, defaults to a nominal 60 Hz frame.
+
+==============================================================================================*/
 
 bool
 gui_boot_poll( f32* out_dt )
@@ -218,26 +225,14 @@ gui_boot_poll( f32* out_dt )
 }
 
 /*==============================================================================================
-    boot_present_begin / boot_present_end -- render + present pair.
 
-    These reach the boot-owned window + context + viewport, which a runtime-path host cannot
-    supply.  Off the boot path the begin fires a contract message and returns false; there is
-    no half-measure -- use the explicit block from gui_api.h (BOOT TIER) instead.
+    BOOT PRESENT -- The loop's render + present pair
+    
 ==============================================================================================*/
-
-/* Open the main surface's frame: reconcile floaters, guard minimized, begin the rhi frame,
-   and clear the swapchain.  Returns true with the live command buffer so the host can record
-   its own passes before boot_present_end() draws the gui.  Returns false on minimized,
-   swapchain rebuild, or no boot -- still call boot_present_end() unconditionally. */
 
 bool
 gui_boot_present_begin( rhi_cmd_t* out_cmd )
 {
-    /* Fork gate FIRST -- before perf clock, viewport_update, or `begun`.  Off the boot path
-       this call does not apply at all: a viewport_update here would double-reconcile a host
-       that already runs it, and a latched `begun` would hand the floater present to a pair
-       that never opened anything. */
-
     GUI_CONTRACT( s_boot.active,
                   "boot_present_begin() without gui()->boot() -- this pair only presents the "
                   "boot-owned window; write the explicit block (BOOT TIER in gui_api.h)." );
@@ -246,17 +241,17 @@ gui_boot_present_begin( rhi_cmd_t* out_cmd )
         return false;
 
     perf_present_begin();   /* arm the present clock: the whole pair, fence wait included */
-    gui_viewport_update();
+    gui_viewport_update();  /* reconcile any floater lifecycle requests (tear-off, merge-back, close) */
 
     s_present.begun    = true;
     s_present.cmd_live = false;
 
     if ( app()->window_is_minimized( s_boot.win_id ) )
-        return false;
+         return false;
 
     rhi_cmd_t cmd = rhi()->frame_begin( s_boot.rhi_ctx );
     if ( !rhi_cmd_valid( cmd ) )
-        return false;
+         return false;
 
     rhi()->cmd_begin_rendering( cmd, &( rhi_color_attachment_t ){
         .texture  = { .id = RHI_SWAPCHAIN_COLOR },
@@ -268,19 +263,17 @@ gui_boot_present_begin( rhi_cmd_t* out_cmd )
 
     s_present.cmd      = cmd;
     s_present.cmd_live = true;
+
     if ( out_cmd )
         *out_cmd = cmd;
 
     return true;
 }
 
-/* Draw the gui over whatever the host recorded, present the main surface, then present every
-   owned floater.  No-ops without a matching boot_present_begin; off the boot path `begun`
-   never latches so this is a complete no-op. */
-
 void
 gui_boot_present_end( void )
 {
+
     if ( !s_present.begun )
         return;
 

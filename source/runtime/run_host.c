@@ -830,6 +830,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
             {
                 gui()->ctx_begin( GUI_CTX_DEFAULT );
 
+                /* Borderless shell -- draws the caption and sizing borders over the host's windows. */
                 if ( borderless && s_vp0 != GUI_VP_INVALID )
                     gui()->viewport_shell( s_vp0, desc->name ? desc->name : "orb", GUI_WIN_NONE );
 

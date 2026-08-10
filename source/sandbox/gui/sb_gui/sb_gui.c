@@ -338,9 +338,9 @@ main( int argc, char** argv )
 
 shutdown:
 
-    if ( vp != GUI_VP_INVALID ) gui()->shutdown();  /* also tears down the boot window + context */
+    if ( vp != GUI_VP_INVALID ) gui()->shutdown();
     if ( draw_inited ) draw()->shutdown();
-    rhi()->shutdown();                               /* no-op if boot never initialized it */
+    rhi()->shutdown();
     mod_system_exit();
     return ret_code;
 }
