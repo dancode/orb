@@ -1,19 +1,23 @@
 /*==============================================================================================
 
-    runtime_service/gui/frame/gui_frame_overlay.c -- Built-in perf / state HUD overlays + debug driver.
+    gui/frame/gui_frame_overlay.c -- Built-in perf / state HUD overlays + debug driver.
 
-    Two hidden-chrome debug readouts drawn through the ordinary GUI pipeline, plus the frame-timing
-    instrumentation the perf overlay reads.  The timing helpers (perf_frame_begin / perf_frame_end /
-    perf_render_begin / perf_render_end / perf_present_begin / perf_present_end) are the private half
-    of this unit: they are called from the frame lifecycle in gui_frame_loop.c (emit / render) and
-    the boot present pair in gui_boot.c (present), which is why this file is included BEFORE both in
-    the gui_frame.c unity build -- those statics must be in scope where the lifecycle brackets them.
+    Debug readouts drawn through the ordinary GUI pipeline. No host UI code needed.
 
-    The overlays are NOT host-called: debug_enable( true ) arms an internal hotkey driver
-    (debug_hotkeys, run from frame_begin) that cycles the overlay tiers, and the lifecycle emits
-    them into the default context at its ctx_end (debug_overlays_emit).  The host's only jobs are
-    debug_enable() and a one-time frame_set_hooks() to hand gui the OS clock / sleep / wait
-    callbacks it cannot reach itself; boot_pace() then owns the end-of-loop sleep or idle wait.
+    Two halves: performance timing overlays and debug visual overlays.
+
+    - perf_frame_* / perf_render_* / perf_present_* -- timing helpers, private to this unit.
+      Called from the frame lifecycle in gui_frame_loop.c (emit/render) and the boot present
+      pair in gui_boot.c (present). This file is included BEFORE both in the gui_frame.c unity
+      build so those statics are in scope where the lifecycle calls them.
+
+    - debug_hotkeys / debug_overlays_emit -- the hotkey driver and overlay emission. Not
+      host-called: debug_enable( true ) arms the hotkeys (polled from frame_begin), which cycle
+      the overlay tiers; the lifecycle emits the overlays into the default context at ctx_end.
+
+    Host's only jobs: call debug_enable(), and once, frame_set_hooks() to hand gui the OS clock /
+    sleep / wait callbacks it cannot reach itself. boot_pace() then owns the end-of-loop sleep or
+    idle wait.
 
 ==============================================================================================*/
 // clang-format off
@@ -21,16 +25,20 @@
 /*==============================================================================================
     Performance overlay
 
-    A built-in, hidden-chrome FPS / cost readout (the host used to hand-roll this).  gui owns no
-    clock -- it is a leaf of rhi + app -- so the host hands it a monotonic seconds callback through
-    perf_overlay(); gui brackets the frame with it.  The emit clock opens at frame_begin and is
-    latched on the first render() of the frame; the render clock sums the render() flush calls; the
-    present clock (boot path only) times the present pair and subtracts the render flush already
-    counted, so it reports the non-render present overhead -- dominated by the frame_begin fence wait
-    (GPU backpressure).  emit + render + present then account for the whole CPU frame.  All three
-    raw measurements are folded into smoothed (EMA) readouts at the next frame_begin, so the panel
-    trails the work it describes by one frame -- the standard self-measurement lag for an in-frame
-    overlay (the build that reads the numbers is also the one being measured).
+    Built-in FPS / cost readout, no host code required.
+
+    The gui owns no clock (it's a leaf of rhi + app), so the host supplies a monotonic
+    seconds callback via frame_set_hooks(); gui brackets the frame with it.
+
+    Three clocks, summing to the whole CPU frame:
+
+    - emit:    frame_begin -> first render() call this frame.
+    - render:  sum of every render() flush this frame.
+    - present: (boot path only) the present pair's wall time minus render -- the non-render
+               overhead, dominated by the frame_begin fence wait (GPU backpressure).
+
+    All three are smoothed (EMA) into the readout at the NEXT frame_begin, so the panel trails
+    the work it describes by one frame -- unavoidable self-measurement lag.
 ==============================================================================================*/
 
 static struct
@@ -76,9 +84,9 @@ perf_frame_begin( f32 dt )
     s_perf.t_emit_start    = s_perf.clock ? s_perf.clock() : 0.0;
 }
 
-/* Close the emit phase at frame_end -- "build cost = frame_begin -> frame_end".  Latches emit_ms
-   from the clock armed in perf_frame_begin; idempotent (the first capture this frame wins, so the
-   render fallback below is a no-op once this has run). */
+/* Close the emit phase at frame_end: build cost = frame_begin -> frame_end. Latches emit_ms from
+   the clock armed in perf_frame_begin. Idempotent -- first capture wins, so perf_render_begin's
+   fallback below is a no-op once this has run. */
 static void
 perf_frame_end( void )
 {
@@ -91,9 +99,9 @@ perf_frame_end( void )
     }
 }
 
-/* Close the emit phase and return the clock reading to bracket the render flush.  frame_end normally
-   latches emit_ms first; this remains as a fallback so timing still reads if frame_end was skipped.
-   Returns 0 when timing is off (clock not yet supplied or t_emit_start unarmed). */
+/* Bracket a render() flush: returns the clock reading to time it. Also a fallback emit-phase
+   close -- frame_end normally latches emit_ms first, but this catches it if frame_end was
+   skipped. Returns 0 if timing is off (no clock, or t_emit_start unarmed). */
 static f64
 perf_render_begin( void )
 {
@@ -116,13 +124,14 @@ perf_render_end( f64 t0 )
         s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
 }
 
-/* Present bracket -- boot-tier only (gui_boot_present_begin / _end, gui_boot.c).  Arm the
-   clock at begin entry so the span covers the whole pair: floater reconcile, the frame_begin
-   fence wait (CPU parks on GPU completion here), swapchain acquire, the gui_render flush, submit,
-   present, and floater presents.  At the end's exit, subtract rend_ms -- the render flush is shown
-   on its own row and lives inside this span -- leaving the NON-render present overhead, which is
-   dominated by the fence wait (GPU backpressure).  emit + render + present then sum to the CPU frame.
-   Runtime-path hosts never call the present pair, so pres_ms stays 0 and the row reads zero for them. */
+/* Present bracket -- boot-tier only (gui_boot_present_begin/_end, gui_boot.c).
+
+   Spans the whole pair: floater reconcile, the frame_begin fence wait (CPU parks on GPU
+   completion here), swapchain acquire, the gui_render flush, submit, present, floater presents.
+   At the end, render time is subtracted back out (it has its own row) leaving the NON-render
+   overhead -- dominated by the fence wait (GPU backpressure).
+
+   Runtime-path hosts never call this pair, so pres_ms stays 0 for them. */
 static void
 perf_present_begin( void )
 {
@@ -138,14 +147,16 @@ perf_present_end( void )
     s_perf.pres_ms = span > 0.0 ? span : 0.0;   /* clamp: render flush can't exceed the pair span */
 }
 
-/* Poll + pace brackets (gui_boot_poll / gui_boot_pace, gui_boot.c).  Both rows are boot-path
-   only -- a runtime host pumps and paces itself, so they read zero there.  These are the
-   last two unmeasured phases of the loop: boot_poll (OS pump + gamepad + input snapshot) and
-   boot_pace (the end-of-loop sleep / idle wait).  The pace span is the "wait time" -- a
-   boot_pace(4,16) sleep otherwise hides ~4 ms from the breakdown, which is exactly what made the
-   totals not add up.  With these, emit + render + present + poll + wait accounts for the whole
-   frame.  Both are single spans per frame (unlike render's accumulator), so they EMA directly at
-   close via perf_span_ema -- open() returns the clock, close folds the span into *dst. */
+/* Poll + pace brackets (gui_boot_poll / gui_boot_pace, gui_boot.c). Boot-path only -- a
+   runtime host pumps and paces itself, so these read zero there.
+
+   - poll: OS pump + gamepad + input snapshot.
+   - wait: end-of-loop sleep / idle wait. Without this row a boot_pace(4,16) sleep hides ~4 ms
+     from the breakdown -- that's what made the totals not add up before.
+
+   emit + render + present + poll + wait now sums to the whole frame. Each is a single span per
+   frame (not an accumulator like render), so open() returns the clock and close folds the span
+   into *dst via EMA. */
 static f64
 perf_span_open( void )
 {
@@ -165,20 +176,18 @@ perf_span_ema( f32* dst, f64 t0 )
    gui_force_redraw (frame/gui_frame_loop.c) and gui_idle_skip (further down this file) -- is declared
    on the frame unit's public face (gui_host.h), in scope here via the render header. */
 
-/* Backing panel behind an overlay's text -- a plain filled rect emitted FIRST inside the region,
-   so it draws behind the region's own text but (region z-band) on top of every ordinary window
-   beneath it; over a busy editor UI the digits are unreadable without it.  Sized from the region's
-   persisted content measure (the same state its w/h <= 0 autosize reads, gui_region.c), so no
-   second content-size tracker is needed; the size is last frame's -- one frame of lag, and the
-   very first frame draws no backdrop (no measure exists yet).
+/* Backing panel behind an overlay's text -- a plain filled rect, so digits stay legible over a
+   busy editor UI.
 
-   fixed_w > 0 overrides the measured width, for a region opened at an EXPLICIT width (the selector
-   panel).  The content measure is not that width: a widget that FILLS its track (slider, input)
-   deliberately contributes nothing to the x highwater -- its width is just the track's, which is
-   derived from the region's own view width (see line_place_cell, flow/gui_layout_core.c) -- so a
-   panel of sliders measures only as wide as its widest SHRINKING widget (a checkbox label) and the
-   backdrop stopped short of the slider rows.  An explicit-width region already knows its width;
-   only an autosizing one (w <= 0) has to read it back from the measure. */
+   - Emitted FIRST inside the region: draws behind the region's own text, but on top of any
+     ordinary window beneath it (region z-band).
+   - Sized from the region's persisted content measure (gui_region.c, same state w/h <= 0
+     autosize reads) -- no separate size tracker needed. One frame of lag; the first frame draws
+     no backdrop (no measure exists yet).
+   - fixed_w > 0 overrides the measured width, for a region opened at an EXPLICIT width (e.g. the
+     selector panel). Needed because a FILLING widget (slider, input) contributes nothing to the
+     measured width -- it just takes the track width, so a panel of sliders would measure only as
+     wide as its widest label and the backdrop would stop short. */
 static void
 overlay_backdrop( gui_id_t id, f32 x, f32 y, f32 fixed_w )
 {
@@ -196,24 +205,20 @@ overlay_perf( int mode )
 
     f32 fps = s_perf.fps;
 
-    /* Below the viewport's chrome, not below a hardcoded guess at it: gui_viewport_content_y is
-       where host content starts -- the native caption band when the surface is gui-shelled
-       (borderless) plus the main menu bar on frames one is emitted -- the same work top the
-       maximize pin and the window drag clamp use.  Adding the bar HEIGHT to a fixed offset (what
-       this did) ignores where the bar actually sits, so every overlay landed ON the caption band
-       of a borderless window instead of under the bar below it. */
+    /* gui_viewport_content_y is where host content actually starts -- native caption band
+       (borderless surfaces) plus the main menu bar, if one is emitted this frame. Same work top
+       used by the maximize pin and window-drag clamp. A fixed offset guess used to land the
+       overlay ON the caption band instead of below it. */
     f32 top_y = gui_viewport_content_y( 0 ) + 34.0f;
 
     float left_x = 8.0f;
 
-    /* A root region: no chrome to hide (no window body/border to paint transparent), fixed
-       top-left, hugging its content (w/h <= 0 autosize both axes).  NO_INPUT: pure text readout,
-       a region is interactive by default and this one has no business entering the hover_win
-       contest or eating the mouse wheel.  DEBUG_BAND: a self-measuring readout -- its own
-       ever-changing digits must not count in the stats it displays or poison idle-skip.
-       GUI_REGION_FG: the diagnostic HUD renders in the foreground band (above every popup depth
-       AND a GUI_WIN_MODAL overlay window like the dev console), so it is never occluded -- a debug
-       readout you cannot see is useless. */
+    /* A root region, autosized to its content (w/h <= 0), fixed top-left.
+       - NOSCROLL/NO_INPUT: pure text readout -- shouldn't grab hover or eat the mouse wheel.
+       - DEBUG_BAND: exempt from its own stats -- the digits it draws must not count toward the
+         numbers it displays, or poison idle-skip.
+       - GUI_REGION_FG: foreground band, above every popup and modal (e.g. the dev console) --
+         a debug readout you can't see is useless. */
     gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f, GUI_REGION_FG,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
     {
@@ -236,12 +241,13 @@ overlay_perf( int mode )
             gui_textf( "emit    %5.2f ms", s_perf.s_emit_ms );
             gui_textf( "render  %5.2f ms", s_perf.s_rend_ms );
 
-            /* Full loop breakdown -- tier 2 ONLY.  present = non-render present overhead (fence
-               wait + acquire + submit + present); poll = OS pump + input; wait = boot_pace sleep /
-               idle (the "wait time" -- a paced loop's sleep shows here instead of hiding).  total
-               sums the five phases and should track the FPS ms above (small residual = loop
-               arithmetic + self-measurement lag).  Tiers 3+ trade all this for the deep geometry /
-               pool stats below, where these fence/sleep-dominated numbers are just noise. */
+            /* Full loop breakdown -- tier 2 only. Tiers 3+ swap this for geometry/pool stats,
+               where these fence/sleep numbers are just noise.
+               - present: non-render overhead (fence wait + acquire + submit + present)
+               - poll:    OS pump + input
+               - wait:    boot_pace sleep / idle -- the loop's sleep, made visible instead of hidden
+               total sums all five and should track the FPS ms above (residual = loop arithmetic +
+               one frame of self-measurement lag). */
             if ( mode == 2 )
             {
                 gui_textf( "present %5.2f ms", s_perf.s_pres_ms );
@@ -267,10 +273,10 @@ overlay_perf( int mode )
             bool show_retained_rows = ( mode >= 4 );
             if ( show_retained_rows )
             {
-                /* Retained-mode stats: how much geometry was reused vs re-tessellated.
-                   volatile patched is a separate signal, not folded into wins ret above -- a
-                   window holding an animating volatile widget (gui()->volatile_cb) still counts
-                   as fully retained; this is what actually moved inside it this frame. */
+                /* Retained-mode stats: geometry reused vs re-tessellated. vol patch is separate
+                   from wins ret above -- a window with an animating volatile widget
+                   (gui()->volatile_cb) still counts as fully retained; this is what moved inside
+                   it this frame. */
                 gui_new_line( 2.0f );
                 gui_textf( "wins ret  %u/%u", rs.win_retained,  rs.win_total   );
                 gui_textf( "verts ret %u/%u", rs.vert_retained, rs.vert_count  );
@@ -291,11 +297,10 @@ overlay_perf( int mode )
                 gui_textf( "st small %u/%u/%u", su.small_live, su.small_used, su.small_cap );
                 gui_textf( "st big   %u/%u/%u", su.big_live,   su.big_used,   su.big_cap   );
 
-                /* Fixed-pool pressure: used vs cap for the per-frame emit pools that fail
-                   silently (or nearly so) when they fill.  Watch these approach their caps
-                   under load and raise the caps BEFORE labels drop / clips go wrong / nav
-                   items fall off the list.  nav is this frame's live count (the overlay
-                   emits last, after every window has registered its items). */
+                /* Fixed-pool pressure: used vs cap. These pools fail silently when full --
+                   watch for caps under load and raise them BEFORE labels drop, clips break, or
+                   nav items fall off the list. nav is this frame's live count (the overlay emits
+                   last, after every window has registered). */
                 gui_new_line( 2.0f );
                 gui_textf( "cmds  %u/%u", rs.cmd_count,      (u32)GUI_MAX_CMDS       );
                 gui_textf( "segs  %u/%u", rs.seg_count,      (u32)GUI_MAX_SEGS       );
@@ -305,10 +310,10 @@ overlay_perf( int mode )
             }
         }
 
-        /* Debug-lever status (mode >= 3): the emit / tessellation / pacing toggles, live, so
-           the console log is not needed to know which regime the numbers above were measured
-           in.  Toggled from the selector menu (right edge of the viewport), not a hotkey of
-           their own.  Fixed-width states keep the footprint stable. */
+        /* Debug-lever status (mode >= 3): the live emit / tessellation / pacing toggles, so you
+           don't need the console log to know which regime the numbers above were measured under.
+           Toggled from the selector menu (right edge of viewport), not their own hotkey.
+           Fixed-width states keep the row from resizing. */
         bool show_status_rows = ( mode >= 3 );
         if ( show_status_rows )
         {
@@ -326,12 +331,13 @@ overlay_perf( int mode )
 /*==============================================================================================
     State overlay
 
-    A built-in text readout of the live interaction state -- hover/active/focused widget, hover
-    window, keyboard nav cursor -- resolved to the source label/title string via the id name
-    registry (gui_debug_name, gui_debug_overlay.c) instead of a raw hash.  Debug builds populate
-    that registry at every id mint point (DBG_NAME in item_id / window_begin_ex / region /
-    child / table); Release builds leave it empty and every id shows as hex, same shape as
-    perf_overlay's always-available-but-more-useful-in-Debug pattern.
+    Text readout of live interaction state: hover/active/focused widget, hover window, keyboard
+    nav cursor. Ids resolve to their source label/title via the id name registry (gui_debug_name,
+    gui_debug_overlay.c) instead of a raw hash.
+
+    Debug builds populate that registry at every id mint point (DBG_NAME in item_id /
+    window_begin_ex / region / child / table). Release builds leave it empty, so every id shows
+    as hex -- same always-available-but-more-useful-in-Debug shape as perf_overlay.
 ==============================================================================================*/
 
 /* id -> "name" or "0x########" -- round-robins through a few static scratch buffers so multiple
@@ -362,10 +368,9 @@ overlay_state( int mode )
     /* Same work top + base offset as perf_overlay, so the two HUDs share one top edge. */
     f32 top_y = gui_viewport_content_y( 0 ) + 34.0f;
 
-    /* Fixed offset to the right of perf_overlay's top-left HUD so both can be shown at once
-       without overlap -- perf_overlay hugs its content and stays narrow, so a flat offset is
-       simpler than coordinating widths through a shared channel. */
-    /* GUI_REGION_FG: foreground band, above popups and the modal console -- see perf_overlay. */
+    /* Fixed offset to the right of perf_overlay's HUD so both can show at once without overlap --
+       perf_overlay stays narrow, so a flat offset is simpler than coordinating widths.
+       GUI_REGION_FG: foreground band, above popups and the modal console -- see perf_overlay. */
     gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_REGION_FG,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
     {
@@ -406,13 +411,15 @@ overlay_state( int mode )
 }
 
 /*==============================================================================================
-    Frame hooks -- the host OS services gui cannot reach itself
+    Frame hooks -- OS services gui cannot reach itself
 
-    gui links only app + rhi (no sys), so the wall clock, the sleep, and the block-on-input wait
-    arrive as callbacks, set once after init().  The clock powers the perf overlay's emit/render
-    timing; sleep + wait power boot_pace() (gui_boot.c) and are inert for a host that paces
-    itself.  Any member may be NULL: the dependent feature
-    simply switches off (no clock -> timing reads zero; no wait -> idle skip unavailable).
+    gui links only app + rhi (no sys), so the wall clock, sleep, and block-on-input wait arrive as
+    callbacks, set once after init().
+    - clock powers the perf overlay's emit/render timing.
+    - sleep + wait power boot_pace() (gui_boot.c); inert for a host that paces itself.
+
+    Any hook may be NULL -- the dependent feature just switches off (no clock -> timing reads
+    zero; no wait -> idle skip unavailable).
 ==============================================================================================*/
 
 static gui_sleep_fn       s_hook_sleep;
@@ -429,48 +436,49 @@ gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
 /*==============================================================================================
     Debug driver -- hotkeys + internal overlay emission (armed by debug_enable( true ))
 
-    The debug modes that used to be host-side loop state (perf/state overlay tiers, pipeline
-    dashboard, render mode, retained/idle skip) live here, behind hotkeys read from the frame's
-    own IO snapshot.  debug_hotkeys() runs from frame_begin after io_frame_begin; the overlays are
-    emitted by debug_overlays_emit(), called from ctx_end while the DEFAULT context is still
-    bound -- last in its build, so they draw on top and their cost is counted like any widget.
+    Debug modes that used to be host-side loop state (perf/state overlay tiers, pipeline
+    dashboard, render mode, retained/idle skip) live here, driven by hotkeys read from the
+    frame's own IO snapshot.
+    - debug_hotkeys() runs from frame_begin, after io_frame_begin.
+    - debug_overlays_emit() runs from ctx_end, while the DEFAULT context is still bound -- last
+      in its build, so overlays draw on top and their cost counts like any other widget.
 
-    Every hotkey below is gated behind a master ARM so the broad single-letter keys never fire
-    during normal use:
+    Every hotkey is gated behind a master ARM, so the broad single-letter keys stay inert during
+    normal use:
 
-        NP_DOT  master arm ('.'): toggle EVERY debug hotkey on / off as a group.  Off by default;
-                everything below is inert until it is armed, and disarming resets every debug mode
-                back to normal (overlays off, render mode normal, layers cleared).  The main-row
-                '.' arms too (laptop keyboards), except while a stepper freeze owns it for scrub.
-        NP1-NP6 debug layers (window / interact / resize / layout / clip / content rects)
-        F8      command stepper: show / hide the control window (Capture there freezes the frame)
+        NP_DOT  master arm ('.'): toggles EVERY debug hotkey on/off as a group. Off by default.
+                Disarming resets every debug mode to normal (overlays off, render mode normal,
+                layers cleared). Main-row '.' arms too (laptop keyboards), except while a stepper
+                freeze owns it for scrub.
+        NP1-NP7 debug layers (window / interact / resize / layout / clip / content / region rects)
+        F8      command stepper: show/hide the control window (Capture there freezes the frame)
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
         NP+     perf overlay tier  (off / fps / +timings / +counts / +retained)
         NP-     state overlay tier (off / ids / +focus,nav / +popups)
-        , .     command stepper (while frozen): step the replay cursor back / forward
-                (repeat-aware, so holding scrubs; shift steps by 16)
-                (picking a command under the mouse is the stepper window's Pick toggle -- a
-                hotkey fought the focused window's keyboard nav / type-ahead)
+        , .     command stepper (while frozen): step the replay cursor back/forward
+                (repeat-aware -- holding scrubs; shift steps by 16)
+                (picking a command under the mouse is the stepper window's own Pick toggle, not
+                a hotkey -- a hotkey would fight the focused window's keyboard nav/type-ahead)
 
-    While armed, a dense selector panel (debug_selector_menu, right edge of the viewport) is also
-    up, mirroring NP+ / NP- as sliders alongside the levers that no longer have keys of their own:
-    retained skip (tessellation cache), force redraw, and idle skip -- toggled there now instead of
-    the old C / F / I letters -- and closing with the KEY LEGEND, where every key above prints with
-    its name and live value (lit when on).  That legend is the only readout the NP1-NP7 layer bits
-    have.  It is part of debug rendering, so it never perturbs perf-stats or counts (same
-    GUI_WIN_DEBUG_BAND exemption as the overlays).
+    While armed, a selector panel (debug_selector_menu, right edge of viewport) is also up:
+    - Mirrors NP+ / NP- as sliders.
+    - Adds the levers that have no key of their own: retained skip (tessellation cache), force
+      redraw, idle skip.
+    - Ends with a KEY LEGEND -- every key above, its name, and live value (lit when on). This is
+      the only readout the NP1-NP7 layer bits have. Counted as debug rendering (GUI_WIN_DEBUG_BAND),
+      so it never perturbs the perf-stats or counts it's showing.
 
-    Letter and numpad keys are fenced by want_capture_keyboard so typing in a text field never
-    toggles them (numpad digits are text input with Num Lock on).
+    Letter and numpad keys are fenced by want_capture_keyboard, so typing in a text field never
+    triggers them (numpad digits are text input with Num Lock on).
 
-    NOTE (F): a host that writes set_force_redraw itself every frame (sb_gui_editor pins it for
-    play mode / always-emit) owns the flag -- its per-frame write overrides the hotkey toggle.
+    NOTE: a host that writes set_force_redraw itself every frame (e.g. sb_gui_editor, pinned for
+    play mode / always-emit) owns that flag -- its per-frame write overrides the hotkey toggle.
 ==============================================================================================*/
 
 
-/* The master switch everything in this section is gated on: gui_debug_enable( true ) opts a host
-   into the debug driver at all, and NP_DOT then arms the individual hotkeys below. */
+/* Master switch for this whole section: gui_debug_enable( true ) opts a host into the debug
+   driver; NP_DOT then arms the individual hotkeys below. */
 
 static bool s_debug_enabled;
 
@@ -491,18 +499,19 @@ static bool s_dbg_step_open;     /* command stepper window, F8 opens (X button h
 static bool s_idle_skip;         /* boot_pace: block on OS input when idle, selector menu toggles */
 static bool s_dbg_hotkeys_armed; /* master arm: every hotkey below is inert until NP_DOT arms it */
 
-/* Query for hosts that own a debug lever themselves (e.g. sb_gui_editor's own set_force_redraw
-   write for its scene pass): while armed, the selector menu's checkboxes are the sole owner of
-   force redraw / retained skip / idle skip, so a host's own per-frame write should stand down and
-   let the menu's value stick instead of fighting it every frame it changes. */
+/* For hosts that own a debug lever themselves (e.g. sb_gui_editor's set_force_redraw write for
+   its scene pass): while armed, the selector menu's checkboxes are the sole owner of force
+   redraw / retained skip / idle skip. A host's own per-frame write should stand down and let the
+   menu's value stick, rather than fighting it every frame. */
 bool gui_debug_hotkeys_armed( void ) { return s_dbg_hotkeys_armed; }
 
-/* Remembered selector-menu lever values -- snapshotted by debug_reset() when the arm goes off
-   (so disarming can still force the live flags back to normal) and re-applied by debug_restore()
-   when the arm goes back on, so reopening the menu picks up exactly where it left off instead of
-   the arm's "normal" defaults.  Perf/state tier and idle skip need no separate shadow: they are
-   plain local state (or already left alone -- idle skip) that debug_reset() no longer touches, so
-   they are already sitting at their last value when the menu reopens. */
+/* Remembered selector-menu lever values.
+   - debug_reset() snapshots these when the arm goes off, so disarming can still force the live
+     flags back to normal.
+   - debug_restore() re-applies them when the arm goes back on, so reopening the menu picks up
+     exactly where it left off instead of the arm's "normal" defaults.
+   Perf/state tier and idle skip need no shadow of their own -- debug_reset() doesn't touch them,
+   so they're already sitting at their last value when the menu reopens. */
 static bool s_dbg_force_redraw_saved;
 static bool s_dbg_retained_skip_saved = true;   /* default: cached (skip tess when unchanged) */
 
@@ -516,12 +525,12 @@ void gui_set_idle_skip( bool on ) { s_idle_skip = on; }
 bool gui_idle_skip( void )        { return s_idle_skip; }
 
 /*==============================================================================================
-    Key tables -- the bindings AND their display names in one list
+    Key tables -- bindings AND their display names, in one place
 
-    Read by both consumers below: debug_hotkeys() polls the keys, and the selector panel's key
-    legend (debug_selector_menu) prints them with their live state.  One row per setting, so a new
-    layer or tier lands in the hotkey, the legend, and the slider range from a single edit -- the
-    array LENGTHS are the tier cycles' moduli and the sliders' ranges for exactly that reason.
+    Read by both consumers: debug_hotkeys() polls the keys; the selector panel's key legend
+    (debug_selector_menu) prints them with live state. One row per setting, so adding a layer or
+    tier updates the hotkey, the legend, and the slider range from a single edit -- array LENGTHS
+    double as the tier cycles' moduli and the sliders' ranges.
 ==============================================================================================*/
 
 /* NP1-NP7 -- the debug layer bits. */
@@ -551,20 +560,14 @@ static const char* const k_render_mode [] = { "normal", "wireframe", "batch" };
 #define DBG_PERF_TIERS   ( (int)( sizeof( k_perf_tier   ) / sizeof( k_perf_tier  [ 0 ] ) ) )
 #define DBG_STATE_TIERS  ( (int)( sizeof( k_state_tier  ) / sizeof( k_state_tier [ 0 ] ) ) )
 
-/* Poll the debug hotkeys from this frame's IO snapshot.  Called from frame_end (after nav_new_frame
-   and all widget emission, so nav/widgets have already consumed any key they use -- see
-   gui_want_capture_keyboard) only while debug_enable is on.  Because this now runs AFTER the
-   frame's overlay emit, a mode changed here is one frame too late for THIS frame's draw list; each
-   branch that mutates a mode requests g_ctx->retained.wants_redraw so frame_begin sees the frame as
-   dirty next time round instead of an idle/retained replay silently sitting on the stale mode. */
-/* Return every debug mode to normal -- called when the master arm is switched off so disarming
-   visibly clears the screen (overlays, selector menu, layer rects, render mode) and returns the
-   live perf levers to their defaults, rather than leaving whatever was toggled on frozen in
-   place.  The two levers that are real engine flags (force redraw, retained skip) are snapshotted
-   into s_dbg_*_saved first so debug_restore() can put them back on re-arm -- everything else the
-   selector menu shows (perf/state tier, idle skip) is already plain local state debug_reset()
-   does not touch, so it is untouched here too and simply sits at its last value until the arm's
-   gate (debug_overlays_emit / gui_idle_skip) hides its effect meanwhile. */
+/* Return every debug mode to normal. Called when the master arm switches off, so disarming
+   visibly clears the screen (overlays, selector menu, layer rects, render mode) instead of
+   leaving whatever was toggled on frozen in place.
+
+   The two real engine flags (force redraw, retained skip) are snapshotted into s_dbg_*_saved
+   first, so debug_restore() can put them back on re-arm. Everything else the selector menu shows
+   (perf/state tier, idle skip) is plain local state this function doesn't touch -- it just sits
+   at its last value, hidden by the arm's own gate meanwhile. */
 static void
 debug_reset( void )
 {
@@ -587,10 +590,10 @@ debug_reset( void )
     redraw_request();
 }
 
-/* Put the remembered selector-menu lever values back -- called when the master arm is switched
-   back on, so the panel (and the behavior it drives) reopens exactly as the user left it instead
-   of debug_reset()'s normal defaults.  Perf/state tier and idle skip need no restore call: they
-   were never reset, so they are already correct. */
+/* Put the remembered selector-menu lever values back. Called when the master arm switches back
+   on, so the panel (and the behavior it drives) reopens exactly where the user left it, instead
+   of debug_reset()'s defaults. Perf/state tier and idle skip need no restore -- they were never
+   reset, so they're already correct. */
 static void
 debug_restore( void )
 {
@@ -598,18 +601,25 @@ debug_restore( void )
     gui_set_force_redraw( s_dbg_force_redraw_saved );
 }
 
+/* Poll the debug hotkeys from this frame's IO snapshot. Called from frame_end -- after
+   nav_new_frame and all widget emission, so nav/widgets have already consumed any key they use
+   (see gui_want_capture_keyboard) -- only while debug_enable is on.
+
+   Runs AFTER this frame's overlay emit, so a mode change here is one frame too late for THIS
+   frame's draw list. Every branch that mutates a mode calls redraw_request() so frame_begin sees
+   the frame as dirty next time, instead of an idle/retained replay sitting on the stale mode. */
 static void
 debug_hotkeys( void )
 {
-    /* Master arm: numpad '.' (APP_KEY_NP_DOT) is the one always-live debug key -- it gates every
-       other hotkey below so the broad single-letter (C/F/I/P/O) and function keys are inert during
-       normal use and only respond after an explicit opt-in.  Disarming resets every debug mode to
-       normal (debug_reset), so one press returns the view to a clean state.  Fenced by
-       want_capture_keyboard like the letter keys (numpad '.' is text input with Num Lock on), so it
-       never fires while a text field is focused.  Chosen because it is rarely bound elsewhere.
-       The MAIN-ROW '.' arms too -- laptop keyboards have no numpad -- except while a stepper
-       freeze is active, where '.' is the scrub-forward key below and owns the row; NP_DOT still
-       disarms during a freeze. */
+    /* Master arm: numpad '.' is the one always-live debug key. It gates every other hotkey below,
+       so function keys stay inert during normal use until this explicit opt-in. Disarming resets
+       every debug mode to normal (debug_reset), returning the view to a clean state in one press.
+       Fenced by want_capture_keyboard, like the letter keys (numpad '.' is text input with Num
+       Lock on) -- never fires while a text field is focused. Chosen because it's rarely bound
+       elsewhere.
+
+       Main-row '.' arms too (laptop keyboards have no numpad), except during a stepper freeze,
+       where '.' is the scrub-forward key below and owns the row -- NP_DOT still disarms then. */
     bool arm_toggle = gui_is_key_pressed( APP_KEY_NP_DOT );
 #ifdef GUI_CMD_STEPPER
     if ( !step_frozen() )
@@ -644,10 +654,10 @@ debug_hotkeys( void )
     }
 
 #ifdef GUI_CMD_STEPPER
-    /* F8 just shows/hides the control window (gui_step_window.c) -- it does NOT freeze.  Merely
-       opening the stepper leaves the scene live; only the window's Capture button freezes this
-       frame's band-0 command list for stepped replay (the , . step hotkeys scrub a freeze that
-       is already active).  The window's X button hides it and never releases an active freeze. */
+    /* F8 shows/hides the control window (gui_step_window.c) -- it does NOT freeze. Opening the
+       stepper leaves the scene live; only the window's Capture button freezes this frame's
+       band-0 command list for stepped replay (the , . hotkeys below scrub an active freeze).
+       The window's X button hides it but never releases an active freeze. */
     if ( gui_is_key_pressed( APP_KEY_F8 ) )
     {
         s_dbg_step_open = !s_dbg_step_open;
@@ -662,13 +672,13 @@ debug_hotkeys( void )
         return;
 
     /* NP1-NP7 toggle the debug layer mask (window / interact / resize / layout / clip / content
-       / region geometry).
-       Read from the frame IO like every other debug hotkey -- initial-press only, so holding a
-       key never flickers the layer.  The layer setters compile to no-ops in Release
-       (render/gui_debug_overlay.c), so no build guard is needed here.  CONTENT differs from the
-       rest in where it draws -- the MAIN list at region pop (gui_scroll.c), not the overlay list,
-       so that toggle changes every scrollable window's emitted commands; the shared wants_redraw
-       below makes the flip land instead of sitting behind the clean-frame emit skip. */
+       / region geometry). Initial-press only, so holding a key never flickers the layer.
+
+       Layer setters compile to no-ops in Release (render/gui_debug_overlay.c), so no build guard
+       is needed here. CONTENT differs from the rest: it draws into the MAIN list at region pop
+       (gui_scroll.c) rather than the overlay list, so toggling it changes every scrollable
+       window's emitted commands -- redraw_request() below makes that land instead of sitting
+       behind the clean-frame emit skip. */
     for ( u32 i = 0; i < DBG_LAYER_COUNT; ++i )
         if ( gui_is_key_pressed( k_dbg_layer[ i ].key ) )
         {
@@ -676,11 +686,10 @@ debug_hotkeys( void )
             redraw_request();
         }
 
-    /* Perf / state overlay tiers keep a quick keyboard cycle (numpad +/-, away from the letter
-       row so they read as a pair) alongside their checkbox-list slider (debug_selector_menu
-       below) -- these two are flipped often enough while chasing a frame that a click is friction.
-       C/F/I lost their letter keys entirely: single booleans toggled rarely, better discovered as
-       checkboxes than memorized as hotkeys. */
+    /* Perf / state overlay tiers keep a quick hotkey (numpad +/-, paired away from the letter
+       row) alongside their slider in debug_selector_menu -- flipped often enough while chasing a
+       frame that a click is friction. C/F/I have no letter keys at all: rarely-toggled booleans
+       are better discovered as checkboxes than memorized as hotkeys. */
     if ( gui_is_key_pressed( APP_KEY_NP_ADD ) )
     {
         s_dbg_perf_mode = ( s_dbg_perf_mode + 1 ) % DBG_PERF_TIERS;
@@ -694,9 +703,9 @@ debug_hotkeys( void )
     }
 
 #ifdef GUI_CMD_STEPPER
-    /* , . step the frozen replay cursor (repeat-aware so holding scrubs; shift steps by 16).
-       The seek latches -- it applies at the next frame's restore -- so wants_redraw is required
-       here or the clean-frame emit skip would sit on the stale cursor (the deferred-update rule). */
+    /* , . step the frozen replay cursor (repeat-aware -- holding scrubs; shift steps by 16).
+       The seek latches at the next frame's restore, so redraw_request() is required here, or the
+       clean-frame emit skip would sit on the stale cursor (the deferred-update rule). */
     if ( step_frozen() )
     {
         u32  stride = ( gui_is_key_down( APP_KEY_LSHIFT ) || gui_is_key_down( APP_KEY_RSHIFT ) )
@@ -721,28 +730,27 @@ debug_hotkeys( void )
 /*==============================================================================================
     Debug selector menu -- dense lever panel + key legend, right edge of the viewport
 
-    Where C/F/I/P/O used to be single letters read out of the raw key stream, this is an actual
-    UI: three checkboxes (retained skip, force redraw, idle skip), the perf/state overlay tier
-    sliders, and -- at the bottom -- the KEY LEGEND: every key-driven debug setting with the key
-    that toggles it, its name, and its live value, lit when on and dim when off.  The legend is
-    what makes the numpad keys usable without the source: a tier slider reading "3" says nothing,
-    "NP+ perf +counts" says what is on screen, and the seven layer bits (NP1-NP7) have no other
-    readout at all.  Both halves walk the same k_dbg_layer / k_*_tier tables the hotkeys do.
+    An actual UI, where C/F/I/P/O used to be single letters read out of the raw key stream:
+    - Three checkboxes: retained skip, force redraw, idle skip.
+    - Perf/state overlay tier sliders.
+    - A KEY LEGEND at the bottom: every key-driven setting, its name, and live value (lit when
+      on). This is what makes the numpad keys usable without reading source -- a tier slider
+      reading "3" says nothing, "NP+ perf +counts" does. The seven layer bits (NP1-NP7) have no
+      other readout at all. Both halves walk the same k_dbg_layer / k_*_tier tables the hotkeys use.
 
-    Whole panel at GUI_SCALE_DENSE (a HUD row pitch, like the two overlays), so the added legend
-    costs less height than the old five rows did.
+    Whole panel at GUI_SCALE_DENSE (HUD row pitch, like the two overlays), so the legend costs
+    less height than the old five rows did.
 
-    Shown exactly while the master arm is on (NP_DOT), same as every other debug lever in this
-    file -- press it again and debug_reset() clears the levers back to default the same frame this
-    panel disappears.
+    Shown exactly while the master arm is on (NP_DOT) -- press it again and debug_reset() clears
+    the levers back to default the same frame this panel disappears.
 
-    GUI_WIN_DEBUG_BAND (not GUI_WIN_NO_INPUT, unlike the read-only overlays above): this panel
-    must be clickable, but its own geometry still has to stay out of the very stats/counts it is
-    used to tweak -- the same arena-band exemption the perf/state overlays get. */
+    GUI_WIN_DEBUG_BAND, not GUI_WIN_NO_INPUT (unlike the read-only overlays above): this panel
+    must be clickable, but its own geometry still has to stay out of the stats/counts it's used
+    to tweak -- same arena-band exemption the perf/state overlays get. */
 
-/* The panel's own strings, named once so the width measure below and the emit further down speak
-   the same text -- a measure of a string the panel does not actually print is how a "fits" panel
-   quietly stops fitting. */
+/* Panel strings, named once so the width measure below and the emit further down always agree.
+   A measure of text the panel doesn't actually print is how a "fits" panel quietly stops
+   fitting. */
 #define SEL_HINT    "debug -- '.' to close"
 #define SEL_FORCE   "Force redraw"
 #define SEL_TESS    "Tess cache"
@@ -750,9 +758,9 @@ debug_hotkeys( void )
 #define SEL_PERF    "NP+ perf"
 #define SEL_STATE   "NP- state"
 
-/* One legend line: "<key> <name>" plus the setting's value where it has one (a tier / mode; NULL
-   for the layer bits, which are just on or off).  Formatted through this one helper so the measure
-   pass and the paint can never disagree about how wide a row is. */
+/* One legend line: "<key> <name>" plus its value where it has one (a tier/mode; NULL for the
+   layer bits, which are just on or off). Both the measure pass and the paint go through this one
+   helper, so they can never disagree on row width. */
 static const char*
 legend_line( char* buf, u32 cap, const char* key_name, const char* name, const char* value )
 {
@@ -760,10 +768,9 @@ legend_line( char* buf, u32 cap, const char* key_name, const char* name, const c
     return buf;
 }
 
-/* Paint one legend row, lit (MARK) while the setting is on and dim while it is off -- so the block
-   reads as "what is toggled on right now" at a glance yet still names every key for discovery.
-   One entry per row, whole line in one colour: the list stays a narrow vertical column, which is
-   what keeps the panel thin. */
+/* Paint one legend row: lit while the setting is on, dim while off -- reads as "what's on right
+   now" at a glance, while still naming every key for discovery. One line per row, one colour per
+   line -- keeps the list a narrow column, which is what keeps the panel thin. */
 static void
 legend_row( const char* key_name, const char* name, const char* value, bool on )
 {
@@ -773,13 +780,14 @@ legend_row( const char* key_name, const char* name, const char* value, bool on )
 }
 
 /* The widest row this panel can EVER print, in px of the live font -- the content width it needs.
-   MEASURED, not a constant: every row here is text in a font that moves with the DPI / ui_scale
-   response (frame/gui_frame_dpi.c), so one hardcoded width fits at one scale and clips the slider
-   labels or the legend at every other.  Every legend row is measured at every VALUE it can take
-   (not just today's), so the panel keeps one width as the tiers cycle instead of breathing --
-   the same fixed-footprint rule the overlay's status rows follow.  ~20 short measures a frame, on
-   a panel that only exists while the debug arm is on.  Call inside the scale scope the panel
-   emits in: WIDGET_PAD / CHECKBOX_SZ are style reads. */
+
+   MEASURED, not a constant: text moves with the DPI / ui_scale response (frame/gui_frame_dpi.c),
+   so a hardcoded width fits at one scale and clips at every other. Every legend row is measured
+   at every VALUE it can take, not just today's, so the panel holds one width as tiers cycle
+   instead of breathing (same fixed-footprint rule the overlay's status rows follow).
+
+   ~20 short measures a frame, only while the debug arm is on. Call inside the scale scope the
+   panel emits in -- WIDGET_PAD / CHECKBOX_SZ are style reads. */
 static f32
 selector_content_w( f32 label_w )
 {
@@ -826,19 +834,19 @@ selector_content_w( f32 label_w )
 static void
 debug_selector_menu( void )
 {
-    /* Dense HUD pitch, pushed BEFORE the region opens: region_begin bakes REGION_PAD_DEFAULT (a
-       WIDGET_PAD / WIDGET_GAP read) into the frame at push time, so pushing inside would leave the
-       panel's own inset at the STD step while every row inside it ran dense -- and would measure
-       the width below against the wrong pad. */
+    /* Dense HUD pitch, pushed BEFORE the region opens: region_begin bakes REGION_PAD_DEFAULT
+       (a WIDGET_PAD / WIDGET_GAP read) in at push time. Pushing dense scale AFTER would leave
+       the panel's own inset at the STD step while rows inside ran dense, and would measure the
+       width below against the wrong pad. */
     gui_scale_push( GUI_SCALE_DENSE );
 
     /* Work top (caption band + menu bar) + this panel's own margin -- see perf_overlay. */
     f32 top_y = gui_viewport_content_y( 0 ) + 8.0f;
 
     /* Thin by design: the legend runs straight down (one key per row), so the widest row is a
-       single "<key> <name> <value>" run ("NP- state +retained") rather than two columns of them.
-       The label column holds the longest slider label; the panel then fits the widest row it can
-       print plus the region's own left/right inset (REGION_PAD_DEFAULT = WIDGET_PAD each side). */
+       single "<key> <name> <value>" run (e.g. "NP- state +retained"), not two columns of them.
+       Panel width = widest row it can print + the region's own left/right inset
+       (REGION_PAD_DEFAULT = WIDGET_PAD each side); label_w holds the longest slider label. */
     f32 label_w = font_text_w( SEL_STATE ) + WIDGET_PAD;
     f32 w       = selector_content_w( label_w ) + 2.0f * WIDGET_PAD;
     f32 x       = (f32)s_io.display_w - w - 8.0f;
@@ -851,8 +859,8 @@ debug_selector_menu( void )
         overlay_backdrop( id_hash( "debug_selector" ), x, top_y, w );
         gui_stack();
 
-        /* The ambient field is a set-once global (gui_field_set): whatever the last host window
-           declared is still installed here, and this panel declares its own splits below.  Snapshot
+        /* The ambient field is a set-once global (gui_field_set) -- whatever the last host
+           window declared is still installed here, and this panel sets its own below. Snapshot
            and restore so neither direction leaks across the seam. */
         gui_field_t saved_field = *gui_field_get();
         gui_field_set( NULL );                  /* default: box on the left, label trailing */
@@ -876,8 +884,8 @@ debug_selector_menu( void )
         gui_slider_int( SEL_STATE, &s_dbg_state_mode, 0, DBG_STATE_TIERS - 1 );
         gui_field_set( NULL );
 
-        /* Key legend: one row per key, straight down -- the tier rows spelling out the number
-           their slider shows, the layer rows carrying the only state readout NP1-NP7 have. */
+        /* Key legend, straight down: tier rows spell out the number their slider shows; layer
+           rows are the only state readout NP1-NP7 have. */
         gui_separator_text( "keys" );
 
         legend_row( "NP+", "perf",  k_perf_tier [ s_dbg_perf_mode  ], s_dbg_perf_mode  > 0 );
@@ -897,9 +905,9 @@ debug_selector_menu( void )
     gui_scale_pop();
 }
 
-/* Emit the debug overlays into the currently bound (default) context -- called from ctx_end
-   before it rebinds, so this is exactly where a host used to hand-place them: last in the
-   default context's build, drawing on top of everything it emitted. */
+/* Emit the debug overlays into the currently bound (default) context. Called from ctx_end before
+   it rebinds -- last in the default context's build, drawing on top of everything else emitted,
+   exactly where a host used to hand-place these. */
 static void
 debug_overlays_emit( void )
 {

@@ -162,6 +162,21 @@ dash_name( gui_id_t id, char* buf, u32 bufsz )
     return buf;
 }
 
+/* Compact z label: the dispenser's plain window z values print as-is, but the fixed high bands
+   (region / overlay / foreground / dock-drag-overlay -- the z band map in gui_surface.c) are
+   large constants plus a small offset, and printing them raw is a 10-digit number that blows any
+   column meant for "z3 v0 g12".  Print the band's tag and its offset instead.  buf must hold >= 12. */
+static const char*
+dash_fmt_z( u32 z, char* buf, u32 bufsz )
+{
+    if ( z >= 0xF8000000u )          fmt_snprintf( buf, bufsz, "DOCK+%u", z - 0xF8000000u );
+    else if ( z >= GUI_REGION_FG_Z ) fmt_snprintf( buf, bufsz, "FG+%u",   z - GUI_REGION_FG_Z );
+    else if ( z >= GUI_Z_OVERLAY )   fmt_snprintf( buf, bufsz, "OVL+%u",  z - GUI_Z_OVERLAY );
+    else if ( z >= GUI_REGION_Z )    fmt_snprintf( buf, bufsz, "REG+%u",  z - GUI_REGION_Z );
+    else                              fmt_snprintf( buf, bufsz, "%u", z );
+    return buf;
+}
+
 /* One tooltip per emit frame, gated on the dashboard owning the hover (a window floating above
    must not probe through).  A hit claims the frame so overlapping rects lower in the paint
    order (a slot segment under a volatile strip) cannot double-tooltip. */
@@ -432,7 +447,9 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
 {
     const f32 row_h  = font_line_h() + 3.0f;
     f32       y      = r.y + 2.0f;
-    const f32 bars_x = r.x + 320.0f;   /* wider name + meta column before the command bars */
+    const f32 name_x = r.x + 150.0f;   /* window name column */
+    const f32 bars_x = r.x + 330.0f;   /* meta column (z/vp/gen), wide enough for the compact
+                                           z label below, before the command bars */
 
     for ( u32 d = 0; d < sn->dispatch_count; ++d )
     {
@@ -446,13 +463,13 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
         const dash_slot_t* sl  = &sn->slots[ sn->dispatch[ d ] ];
         if ( sl->band != 0 && !s_show_second_band ) continue;   /* second band omitted by default */
         u32                col = dash_slot_color( sn->dispatch[ d ] );
-        char               nb[ 12 ];
+        char               nb[ 12 ], zb[ 12 ];
 
         gui_draw_rect( r.x + 2.0f, y + 3.0f, 8.0f, 8.0f, col );
-        dash_text( r.x + 14.0f, y, r.x + 190.0f, DASH_COL_TEXT,
+        dash_text( r.x + 14.0f, y, name_x, DASH_COL_TEXT,
                    dash_name( sl->win, nb, sizeof( nb ) ) );
-        dash_textf( r.x + 194.0f, y, bars_x - 4.0f, DASH_COL_TEXT_DIM, "z%-2u v%u g%u",
-                    sl->z, sl->vp, sl->tess_gen );
+        dash_textf( name_x + 4.0f, y, bars_x - 4.0f, DASH_COL_TEXT_DIM, "z%-8s v%u g%u",
+                    dash_fmt_z( sl->z, zb, sizeof( zb ) ), sl->vp, sl->tess_gen );
 
         /* One bar per cached GPU command: width ~ log2(elem_count), colored by texture. */
         f32 bx = bars_x;
