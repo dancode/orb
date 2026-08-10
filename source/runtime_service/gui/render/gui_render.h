@@ -1,5 +1,5 @@
-#ifndef GUI_BACKEND_H
-#define GUI_BACKEND_H
+#ifndef GUI_RENDER_H
+#define GUI_RENDER_H
 /*==============================================================================================
 
     runtime_service/gui/render/gui_render.h -- THE RENDER SERVER's surface (the unit seam).
@@ -730,4 +730,4 @@ extern gui_id_t g_dash_window_id;
 
 // clang-format on
 /*============================================================================================*/
-#endif    // GUI_BACKEND_H
+#endif    // GUI_RENDER_H

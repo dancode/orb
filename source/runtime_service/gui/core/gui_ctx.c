@@ -115,11 +115,13 @@ static u32              s_item_flag_sp;
 
 /* Save the current merged flags, then set or clear `flag` in the live set.  Non-static: the
    public brackets (gui_push_item_flag / gui_disabled_begin, style/gui_stacks.c) wrap these. */
+
 void
 item_flag_push( gui_item_flags_t flag, bool enable )
 {
     if ( s_item_flag_sp < GUI_ITEM_FLAG_DEPTH )
         s_item_flag_stack[ s_item_flag_sp ] = s_build.item_flags;
+
     ++s_item_flag_sp;    /* count truthfully so push/pop stay paired even past the cap */
 
     if ( enable ) s_build.item_flags |=  flag;
@@ -226,6 +228,7 @@ u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
 gui_context_t* g_ctx = NULL;       /* the bound context (extern'd in core/gui_ctx.h) */
 
 /* Bind the active context; NULL rebinds the default. */
+
 void
 ctx_bind( gui_context_t* ctx )
 {
@@ -251,8 +254,9 @@ i32            s_vp_count;
    win_id matches, else GUI_VP_INVALID -- the window closed between the event and this frame, so
    the pending mouse coordinates belong to no live viewport and must not be aliased onto one (in
    particular never onto 0; that would read as a genuine hover of the main viewport).
-   Context-independent -- there is only one table.  Forward-declared in core/gui_ctx.h; called by
-   the mouse-input path in core/gui_io.c. */
+   Context-independent -- there is only one table.  
+
+   Forward-declared in core/gui_ctx.h; called by the mouse-input path in core/gui_io.c. */
 
 static i32
 viewport_index_for_window( i32 win_id )

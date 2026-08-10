@@ -353,39 +353,45 @@ typedef struct
     bool pending_close;
 
     /* Drawable size of this surface in pixels, set before the frame's windows are built
-       (viewport 0 by frame_begin, floaters by viewport_resize) so window_begin clips windows to
-       THIS surface, not the main one. 0 means unset, and gui falls back to the main display
-       size. Separate from the win_w/win_h passed to flush, which only sets the GPU scissor at
-       submit time -- the per-draw clip rects are built from this field instead. */
+       (viewport 0 by frame_begin, floaters by viewport_resize) windows clip to THIS surface,
+       not the main one. 0 means unset, and gui falls back to the main display size.
+       Separate from the win_w/win_h passed to flush, which sets the GPU scissor at submit time 
+       -- the per-draw clip rects are built from this field instead. */
     i32 disp_w, disp_h;
 
+    /* DPI Data --------------------------------------------------------------------------------- */
+    
     /* Per-surface DPI state, for mixed-DPI multi-monitor setups (frame/gui_frame_font.c).
        dpi_bake is the font atlas size this surface's windows use, resolved from its own
        monitor's scale -- so surfaces on differently-scaled monitors can use different bakes in
        the same frame. dpi_os_scale is last frame's OS-reported scale, kept so gui can tell an
-       OS-driven DPI change (which already resized the window) apart from a gui-driven one (a
-       ui_scale change, where gui must resize the window itself). */
+       OS-driven DPI change (which already resized the window) apart from a gui-driven one 
+       (a manual ui_scale change where gui must resize the window itself). */
+
     gui_builtin_font_t dpi_bake;      // font bake this surface uses; GUI_FONT_NONE = unmanaged
     f32                dpi_os_scale;  // OS scale last reported for this surface's window (1.0 = 100%)
 
+    /* Area Data -------------------------------------------------------------------------------- */
+    
     /* Height in pixels of the native title bar drawn by a GUI_WIN_NATIVE shell window on this
        surface, published each frame by that shell. window_clamp keeps other windows below this
-       so their own title bars stay clickable above it. 0 if no native shell is present. Not
-       cleared each frame -- stays at its last value so this is always valid even if the shell
+       so their own title bars stay clickable above it. 0 if no native shell is present. 
+       Not cleared each frame -- stays at its last value so this is always valid even if the shell
        hasn't run yet this frame. */
     f32 caption_inset;
 
     /* Height of the main menu bar on this surface, and the frame it was last drawn. If the host
-       stops calling the menu-bar function, bar_seen_frame falls behind and the band is
-       released. window_work_top adds this to caption_inset to size a maximized window's work
-       area. */
+       stops calling the menu-bar function, bar_seen_frame falls behind and the band is released. 
+       window_work_top adds this to caption_inset to size a maximized window's work area. */
     f32 bar_inset;
     u32 bar_seen_frame;
 
+    /* Dock Data -------------------------------------------------------------------------------- */
+
     /* Extra top band the host reserves above the dock area (e.g. a toolbar strip), set via
        gui()->dockspace_inset() before dockspace_over_viewport. Shrinks the dock tree's layout
-       area; free-floating windows are unaffected. Persists until the host sets a new value (0
-       to clear it). */
+       area; free-floating windows are unaffected. 
+       Persists until the host sets a new value (0 to clear it). */
     f32 dock_inset;
 
     /* Root of this surface's dock tree. GUI_DOCK_REF_NONE means windows here are free-floating
@@ -393,8 +399,8 @@ typedef struct
        dock_serialize.c. */
     gui_dock_ref_t dock_root;
 
-    /* Dockspace policy flags, re-published on every dockspace_over_viewport call. NO_SPLIT
-       restricts docking to tabs only -- no split drop zones. */
+    /* Dockspace policy flags, re-published on every dockspace_over_viewport call. 
+       NO_SPLIT restricts docking to tabs only -- no split drop zones. */ 
     gui_dockspace_flags_t dock_flags;
 
     /* Frame this viewport's dockspace was last emitted. Like any immediate-mode element, a
@@ -410,16 +416,18 @@ typedef struct
        finished -- until then covered siblings keep drawing, since they are still partly
        visible. dock_max_from is the rect the tween eases from, captured when maximize/
        un-maximize is toggled. See dock_max_set / dock_max_node in gui_dock_core.c. */
+
+    gui_rect_t    dock_max_from;
     gui_dock_id_t dock_max_id;
     bool          dock_max_on;
     bool          dock_max_settled;
-    gui_rect_t    dock_max_from;
 
 } gui_viewport_t;
 
 /* Drawable width/height of viewport vp, falling back to s_io's display size if unset
    (core/gui_ctx.c). Takes a slot index rather than a pointer since s_vp_pool is a fixed global
    table and an index stays valid across calls. */
+
 f32 vp_w( i32 vp );
 f32 vp_h( i32 vp );
 

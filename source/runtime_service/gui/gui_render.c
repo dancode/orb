@@ -2,19 +2,18 @@
 
     runtime_service/gui/gui_render.c -- GUI_RENDER translation unit: the RENDER SERVER.
 
-    The 2d batch renderer: a narrow primitive foundation any 2d utility
-    can emit to.  This unit owns the pixel pipeline: the CPU draw list, path stroking, the
-    CPU tessellator, the GPU flush, and the debug overlay.  It produces no UI -- the layers
-    above call the draw_* primitives declared in render/gui_render.h, and this unit turns
-    that semantic command list into vertices and submits them.  It never sees the interact
-    server: ids, widget state, and style stay above the seam.  Nor does it know what a font
-    or an icon IS: those resources are the draw unit's (gui_draw.c), one level up; the server
-    only renders from the shared atlas they pack into and resolves their UVs through the
-    glyph/sprite source contract in render/gui_render.h.
-
-    It does NOT define the module API pointer storage (MOD_USE_RHI / MOD_USE_APP): those globals
-    live in gui.c and are fetched once at module init; this unit reads them through the same
-    inline rhi() / app() accessors (extern g_*_api_ptr) from rhi_api.h / app_api.h.
+    The 2d batch renderer: a narrow primitive foundation any 2d utility can emit to.  
+    This unit owns the pixel pipeline: the CPU draw list, path stroking, the CPU 
+    tessellator, the GPU flush, and the debug overlay.
+    
+    It produces no UI -- the layers above call the draw_* primitives declared in 
+    render/gui_render.h, and this unit turns that semantic command list into vertices 
+    and submits them.
+    
+    It never sees the interact server: ids, widget state, and style stay above the seam. 
+    Nor does it know what a font or an icon IS: those resources are the draw unit's
+    (gui_draw.c), one level up; the server only renders from the shared atlas they pack
+    into and resolves their UVs through the glyph/sprite source contract in render/gui_render.h.
 
     Include order matters: each file can reference statics from files included above it.  That
     order lives in the #include list below, not in the filenames.  Two subfolders name the two
@@ -25,6 +24,7 @@
                        rather than a struct it reaches into, and never calls into pipeline/
                        itself.  Only the atlas pair lives here now; fonts and icons -- once
                        resource/ tenants -- moved up to the draw unit and pack in from outside.
+
         pipeline/  -- the per-frame submission path: EMIT (semantic draw list) -> BUILD
                        (tessellate + retained cache) -> RENDER (GPU flush).  Named for the
                        pipeline stage each implements, matching the function prefix each exports.
@@ -47,8 +47,10 @@
     pipeline/gui_build_volatile.c   -- BUILD: volatile-widget inline-emit replay (see gui_render.h)
     pipeline/gui_build_cache.c      -- BUILD: retained frame-geometry cache: cache_build_frame, s_cache, s_dispatch,
                                         the build_* seam
-    pipeline/gui_submit.c           -- RENDER: GPU resources + flush: surface_geo_create/destroy, the
-                                        gui_render_* public API (render_init/shutdown stay TU-local)
+    pipeline/gui_render_init.c      -- RENDER: shared GPU resources, created once: pipeline, samplers,
+                                        the push-constant layout (render_init/shutdown, TU-local)
+    pipeline/gui_submit.c           -- RENDER: per-surface GPU submit: surface_geo_create/destroy,
+                                        gui_render_flush, the debug-mode/time setters
 
     gui_debug_overlay.c             -- DEBUG OVERLAY: bolt-on second draw list, flushed on top (Debug only).  Stays
                                         at the render/ root -- it reads resource/ AND pipeline/ internals plus the
@@ -64,7 +66,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h> /* floorf / ceilf -- pixel-grid snapping in draw + scissor */
+#include <math.h>       // floorf / ceilf -- pixel-grid snapping in draw + scissor
 
 #include "orb.h"
 #include "base/fmt.h"   // fmt_snprintf / fmt_vsnprintf -- CRT-free formatting on the per-frame text paths
@@ -74,6 +76,7 @@
    THE RENDER SERVER sees the public gui types, the engine APIs, and its own header -- never
    the interact server or a library unit.  The debug header is the sanctioned severable
    instrumentation (this unit IMPLEMENTS the capture entry points it declares). */
+
 #include "runtime_service/gui/render/gui_render.h"   /* pulls gui_host.h + rhi/app APIs */
 #include "runtime_service/gui/debug/gui_debug.h"
 
@@ -118,7 +121,10 @@
 // pipeline/ BUILD, part B: retained cache & orchestration (diff, reuse-or-tessellate, z-sort).
 #include "runtime_service/gui/render/pipeline/gui_build_cache.c"
 
-// pipeline/ RENDER: GPU resource lifecycle + the per-surface flush.
+// pipeline/ RENDER, part A: shared GPU resources (pipeline, samplers), created once.
+#include "runtime_service/gui/render/pipeline/gui_render_init.c"
+
+// pipeline/ RENDER, part B: per-surface GPU resources + submit (surface_geo_*, gui_render_flush).
 #include "runtime_service/gui/render/pipeline/gui_submit.c"
 
 // DEBUG OVERLAY: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY.  Stays at the

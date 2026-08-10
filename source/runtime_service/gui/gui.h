@@ -2531,7 +2531,8 @@ typedef struct gui_pane_t
 
 typedef enum
 {
-    GUI_DOCKSPACE_NONE     = 0,        /* default: fill the viewport, draw splitters + tab bars */
+    /* default: fill the viewport, draw splitters + tab bars */
+    GUI_DOCKSPACE_NONE = 0,
 
     /* Tab docking only: windows may tab into leaves (center drop) but never split them -- no side
        or edge drop chips are offered and the programmatic split verbs refuse, so no splitters can

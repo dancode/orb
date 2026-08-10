@@ -1,8 +1,9 @@
 /*==============================================================================================
 
     runtime_service/gui/frame/gui_viewport.c -- Viewport (render surface) life cycle.
-    
-    GUI owned windows for primary and secondary floater surfaces.
+
+    Two kinds of surface live here: host-provided viewports (opened via viewport_open) and
+    gui-owned floaters (spawned via viewport_spawn) -- see each section below for how they differ.
 
     Open a viewport: claim the slot at win_id (slot index == win_id), create its GPU geometry
     buffers, and record the OS window and initial drawable size.
@@ -14,8 +15,8 @@
     the swapchain.
 
     Returns the handle to pass to render / viewport_resize / viewport_close / window_set_next_viewport,
-    or GUI_VP_INVALID on bad win_id or GPU buffer failure. 
-    Must be called after init() and before frame_begin().
+    or GUI_VP_INVALID on bad win_id or GPU buffer failure. Must be called after init() and before
+    frame_begin().
 
     Also owns the gui-owned floater lifecycle (viewport_spawn / update / render_floaters):
     unlike viewport_open (the host hands gui a window + context to flush into), a floater owns
@@ -30,33 +31,37 @@
 // clang-format off
 
 /*==============================================================================================
-    Surface record lifecycle (the pane-handoff completion)
 
-    The render server mints and frees only the GPU geometry ring (surface_geo_create/destroy,
-    render/gui_render.h); every other field of the surface record (gui_viewport_t,
-    core/gui_ctx.h) is orchestration -- OS window, rhi context, routing, dock policy -- and
-    the orchestrator owns it here.  Both take a slot INDEX into the one global s_vp_pool, not a
-    context: a viewport is a real OS window / RHI context, not context-owned state, so there is
-    no context to be agnostic of anymore.
+    Viewport Surface Lifecycle (render surface create and destroy)
+
 ==============================================================================================*/
 
 bool
 viewport_create( i32 vp, rhi_texture_t target, i32 win_id )
 {
     gui_viewport_t* v = &s_vp_pool[ vp ];
+
     v->target          = target;
-    v->win_id          = win_id;           // OS window hosting this surface; -1 = unassociated
-    v->rhi_ctx         = RHI_CTX_INVALID;  // set only by viewport_spawn for an gui-owned floater
-    v->owned           = false;            // host-provided unless viewport_spawn flips it
-    v->pending_close   = false;            // owned floater close request; serviced by viewport_update
-    v->disp_w          = 0;                // drawable size set by the host before build; 0 = fall back to main
+    v->win_id          = win_id;             // OS window hosting this surface; -1 = unassociated
+    v->rhi_ctx         = RHI_CTX_INVALID;    // set only by viewport_spawn for a gui-owned floater
+    v->owned           = false;              // (true) gui created and owned floater or (false) host provided.
+    v->pending_close   = false;              // owned floater close request; serviced by viewport_update
+    v->disp_w          = 0;                  // drawable size set by the host before ui build; 0 = fall back to main
     v->disp_h          = 0;
-    v->caption_inset   = 0.0f;             // no native shell band until one publishes it during the build
-    v->dock_inset      = 0.0f;             // no host menu/toolbar band until one publishes it
-    v->dock_root       = GUI_DOCK_REF_NONE; // free-float until docking assigns a tree
-    v->dock_seen_frame = 0;                 // never emitted; frame clock starts at 1 so 0 = dormant
-    v->dpi_bake        = s_dpi.base;        // managed-family bake; per-surface once poll resolves it
-    v->dpi_os_scale    = 1.0f;              // OS-scale snapshot; first poll takes the real value
+    v->dpi_bake        = s_dpi.base;         // managed-family bake; per-surface once poll resolves it
+    v->dpi_os_scale    = 1.0f;               // OS-scale snapshot; first poll takes the real value
+
+    v->caption_inset   = 0.0f;               // no native shell band until one publishes it during the build
+    v->bar_inset       = 0.0f;               // no host menu/toolbar band until one publishes it
+    v->bar_seen_frame  = 0;                  // never emitted; frame clock starts at 1 so 0 = dormant
+
+    /* dock */
+
+    v->dock_inset      = 0.0f;               // no host menu/toolbar band until one publishes it
+    v->dock_root       = GUI_DOCK_REF_NONE;  // free-float until docking assigns a tree
+    v->dock_seen_frame = 0;                  // never emitted; frame clock starts at 1 so 0 = dormant
+
+    /* create the GPU geometry ring for this surface -- the host owns the swapchain, gui owns the vb/ib */
 
     return surface_geo_create( &v->vb, &v->ib );
 }
@@ -66,43 +71,43 @@ viewport_destroy( i32 vp )
 {
     gui_viewport_t* v = &s_vp_pool[ vp ];
 
-    /* Owned floater: destroy the rhi context FIRST.  context_destroy idles the GPU (waits the device)
-       before tearing down its swapchain/sync, so the geometry-buffer frees below are then safe --
-       matching the host's own shutdown order (drain, free buffers, close window).  A host-provided
-       surface (owned == false) leaves its context to the host; gui frees only the GPU buffers it
-       created via viewport_create. */
+    /* owned floater: destroy the gui owned render context */   
+
     if ( v->owned && v->rhi_ctx != RHI_CTX_INVALID )
+    {
         rhi()->context_destroy( v->rhi_ctx );
+    }
+
+    /* all viewports: destroy the GPU geometry ring (vb/ib) */
 
     surface_geo_destroy( &v->vb, &v->ib );
 
-    // Owned floater: close the OS window gui opened, only after the context (and its swapchain) is gone.
-    if ( v->owned && v->win_id >= 0 )
-        app()->window_close( v->win_id );
+    /* owned floater: destroy the gui owned OS window */
 
-    v->win_id        = -1;            // slot freed -> no window matches it for input routing
-    v->rhi_ctx       = RHI_CTX_INVALID;
+    if ( v->owned && v->win_id >= 0 )
+    {
+        app()->window_close( v->win_id );
+    }
+
+    v->win_id        = APP_WIN_INVALID;  // slot freed -> no window matches it for input routing
+    v->rhi_ctx       = RHI_CTX_INVALID;  // slot freed -> no context matches it for flush
     v->owned         = false;
     v->pending_close = false;
 }
 
 /*==============================================================================================
-    Viewport pool bookkeeping
 
-    s_vp_count is a high-water mark: bumped when a slot opens, trimmed back once the top slot
-    closes.  A viewport is shared by every context (s_vp_pool is global, not per-context), so
-    any query or edit keyed on "windows assigned to slot N" has to walk every live context's
-    window pool, not just the bound one -- viewport_migrate_windows and viewport_has_windows are
-    that walk, and every close/teardown path below goes through them.
+    Viewport Pool
+
 ==============================================================================================*/
-
-/* True if viewport slot vp currently holds a live surface -- created and not yet destroyed.
-   vb is the tell: viewport_create only writes it a valid handle on success, and viewport_destroy
-   always resets it back to invalid, so an untouched or freed slot reads false. */
 
 static bool
 viewport_slot_live( i32 vp )
 {
+    /* True if viewport currently holds a live surface -- created and not yet destroyed.
+       vb is the tell: viewport_create only writes it a valid handle on success, and 
+       viewport_destroy always resets it back to invalid */
+
     return rhi_handle_valid( s_vp_pool[ vp ].vb );
 }
 
@@ -133,9 +138,10 @@ viewport_migrate_windows( i32 from_vp, i32 to_vp )
         gui_context_t* ctx = s_ctx_pool[ c ];
         if ( !ctx )
             continue;
+
         for ( u32 i = 0; i < ctx->win.count; ++i )
             if ( ctx->win.pool[ i ].viewport == from_vp )
-                ctx->win.pool[ i ].viewport = to_vp;
+                 ctx->win.pool[ i ].viewport = to_vp;
     }
 }
 
@@ -152,23 +158,29 @@ viewport_has_windows( i32 vp, u32* out_max_last_frame )
         gui_context_t* ctx = s_ctx_pool[ c ];
         if ( !ctx )
             continue;
+
         for ( u32 i = 0; i < ctx->win.count; ++i )
         {
             gui_window_t* win = &ctx->win.pool[ i ];
             if ( win->viewport != vp )
                 continue;
+
             any = true;
+
             if ( win->last_frame > max_lf )
                 max_lf = win->last_frame;
         }
     }
     if ( out_max_last_frame )
         *out_max_last_frame = max_lf;
+
     return any;
 }
 
 /*==============================================================================================
+
     Viewport API
+
 ==============================================================================================*/
 
 i32
@@ -178,14 +190,12 @@ gui_viewport_open( i32 win_id )
     if ( !s_gui_ready )
         return GUI_VP_INVALID;
 
-    /* The slot index matches the win_id; An open window guarantees the slot is useable. */
+    /* The slot index matches the win_id; an open window guarantees the slot is usable. */
 
-    GUI_CONTRACT( win_id >= 0 && win_id < GUI_MAX_VIEWPORTS, 
+    GUI_CONTRACT( win_id >= 0 && win_id < GUI_MAX_VIEWPORTS,
                  "viewport_open( %d ): win_id outside [0, %u).", win_id, GUI_MAX_VIEWPORTS );
     if ( win_id < 0 || win_id >= GUI_MAX_VIEWPORTS )
-         return GUI_VP_INVALID;
-
-    /* Get the viewport slot for the corresponding window (matching id) */
+        return GUI_VP_INVALID;
 
     gui_viewport_t* vp = &s_vp_pool[ win_id ];
 
@@ -195,7 +205,7 @@ gui_viewport_open( i32 win_id )
     bool slot_free = !viewport_slot_live( win_id );
     GUI_CONTRACT( slot_free, "viewport_open( %d ): that slot is already open.", win_id );
     if ( !slot_free )
-         return GUI_VP_INVALID;
+        return GUI_VP_INVALID;
 
     /* The window's rhi context must exist first: gui flushes into ITS swapchain, and the slot
        convention is index == win_id == rhi context id.  Without it every render() on this
@@ -208,8 +218,7 @@ gui_viewport_open( i32 win_id )
     if ( !ctx_live )
         return GUI_VP_INVALID;
 
-    /* Create the viewport's GPU geometry buffers */
-    if ( !viewport_create( (i32)win_id, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
+    if ( !viewport_create( win_id, ( rhi_texture_t ){ .id = RHI_SWAPCHAIN_COLOR }, win_id ) )
         return GUI_VP_INVALID;
 
     /* Size from the rhi context, not app(): the swapchain extent IS what gui flushes into, so
@@ -289,11 +298,9 @@ gui_viewport_close( i32 vp )
 }
 
 /*==============================================================================================
-    Owned-floater lifecycle (gui-owned surfaces)
 
-    Surfaces gui creates and destroys itself, end to end -- see the file header for how this
-    differs from viewport_open.  The tear-off gesture drives spawn/close; a host/sandbox may
-    also call gui_viewport_spawn directly to place a panel in its own OS window.
+    Owned-Floater Lifecycle (Gui-Owned Surfaces)
+
 ==============================================================================================*/
 
 /* Create a NEW gui-owned floater surface: OS window + its rhi context (swapchain) + per-surface
@@ -305,20 +312,18 @@ gui_viewport_close( i32 vp )
 static i32
 viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate )
 {
-    /* OS window first -- its win_id is the viewport slot index.  no_activate (set for a mid-drag
-       tear-off) opens the floater with APP_WIN_NOFOCUS so it does NOT steal foreground from the
-       origin window -- on Windows, activating another top-level window releases that window's
-       mouse capture, which would sever the in-flight drag the moment the floater appeared. */
-
-    /* Owned floaters are native-borderless: a detached panel owns its OS window and acts as that
-       window's frame (window_begin treats any window on an owned viewport as GUI_WIN_NATIVE), so
-       the OS drives its move / resize / snap.  no_activate (mid-drag tear-off) adds APP_WIN_NOFOCUS
-       so spawning does not steal foreground and sever the origin window's mouse capture. */
+    /* OS window first -- its win_id is the viewport slot index.  Owned floaters are
+       native-borderless: a detached panel owns its OS window and acts as that window's frame
+       (window_begin treats any window on an owned viewport as GUI_WIN_NATIVE), so the OS drives
+       its move / resize / snap.  no_activate (set for a mid-drag tear-off) adds APP_WIN_NOFOCUS
+       so spawning does NOT steal foreground from the origin window -- on Windows, activating
+       another top-level window releases that window's mouse capture, which would sever the
+       in-flight drag the moment the floater appeared. */
 
     u32 open_flags = APP_WIN_BORDERLESS | ( no_activate ? APP_WIN_NOFOCUS : 0u );
     i32 win_id = app()->window_open( title, x, y, w, h, open_flags );
     if ( win_id == APP_WIN_INVALID )
-         return GUI_VP_INVALID;
+        return GUI_VP_INVALID;
 
     if ( win_id < 0 || win_id >= (i32)GUI_MAX_VIEWPORTS )
     {
@@ -360,7 +365,7 @@ viewport_spawn( const char* title, i32 x, i32 y, i32 w, i32 h, bool no_activate 
     return (i32)win_id;
 }
 
-/* Public spawn: open an gui-owned floater hosting its own OS window at (x,y) sized w x h.
+/* Public spawn: open a gui-owned floater hosting its own OS window at (x,y) sized w x h.
    Returns the viewport handle to assign windows to (window_set_next_viewport), or
    GUI_VP_INVALID.  Must be called between frames (it creates an OS window + rhi context). */
 
@@ -663,11 +668,11 @@ gui_viewport_render_floaters( void )
     {
         gui_viewport_t* vp = &s_vp_pool[ viewport_id ];
 
-        // Skip any slot that is not an gui owned floater (or closed without a valid rhi context)
+        // Skip any slot that is not a gui-owned floater (or closed without a valid rhi context)
         if ( !vp->owned || vp->rhi_ctx == RHI_CTX_INVALID )
             continue;
 
-        // We don't render minimized windows.
+        // Minimized: no swapchain image to present into.
         if ( app()->window_is_minimized( vp->win_id ) )
             continue;
 

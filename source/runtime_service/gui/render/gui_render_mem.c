@@ -31,12 +31,14 @@ backend_memory( u32 live_viewports )
     s.gpu_index_bytes   = live_viewports * RHI_MAX_FRAMES_IN_FLIGHT * (u32)GUI_IB_REGION_BYTES;
     /* Sprite and SDF atlases report 0 until something creates them. */
     s.gpu_texture_bytes = res_atlas_bytes() + res_sprite_bytes() + res_sdf_bytes();
+
 #ifdef GUI_DEBUG_OVERLAY
     /* The overlay's own VB/IB (one region per viewport per frame-in-flight, dbg_init). */
     if ( rhi_handle_valid( s_dbg.vb ) )
         s.gpu_debug_bytes = (u32)( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS
                                  * ( GUI_DBG_VB_REGION_BYTES + GUI_DBG_IB_REGION_BYTES ) );
 #endif
+
     s.gpu_total = s.gpu_vertex_bytes + s.gpu_index_bytes + s.gpu_texture_bytes + s.gpu_debug_bytes;
 
     /* EMIT: the semantic draw list and the line/path stroker built on it. */
