@@ -1,23 +1,12 @@
 /*==============================================================================================
 
-    gui/frame/gui_frame_overlay.c -- Built-in perf / state HUD overlays + debug driver.
+    gui/frame/gui_frame_overlay.c : Debug overlays and performance readouts.
+    
+    Debug readouts drawn through the ordinary GUI pipeline. No host UI code needed.  
+    The host's only jobs is to call debug_enable() and set frame_set_hooks() to support the 
+    system depedent functions for timing and idle wait.
 
-    Debug readouts drawn through the ordinary GUI pipeline. No host UI code needed.
-
-    Two halves: performance timing overlays and debug visual overlays.
-
-    - perf_frame_* / perf_render_* / perf_present_* -- timing helpers, private to this unit.
-      Called from the frame lifecycle in gui_frame_loop.c (emit/render) and the boot present
-      pair in gui_boot.c (present). This file is included BEFORE both in the gui_frame.c unity
-      build so those statics are in scope where the lifecycle calls them.
-
-    - debug_hotkeys / debug_overlays_emit -- the hotkey driver and overlay emission. Not
-      host-called: debug_enable( true ) arms the hotkeys (polled from frame_begin), which cycle
-      the overlay tiers; the lifecycle emits the overlays into the default context at ctx_end.
-
-    Host's only jobs: call debug_enable(), and once, frame_set_hooks() to hand gui the OS clock /
-    sleep / wait callbacks it cannot reach itself. boot_pace() then owns the end-of-loop sleep or
-    idle wait.
+    The '.' key will activate the debug overlay once enabled.
 
 ==============================================================================================*/
 // clang-format off
@@ -44,24 +33,29 @@
 static struct
 {
     gui_clock_fn    clock;              // host monotonic seconds source (NULL = timing off)
+
     f64             t_loop_start;       // clock() captured at boot_poll entry (0 = not armed)
     f64             t_emit_start;       // clock() captured at frame_begin (0 = not armed)
-    f64             emit_ms;            // this frame: frame_begin -> first render() (ms)    
-    f64             rend_ms;            // this frame: accumulated render() wall time (ms)   
-    bool            emit_captured;      // emit_ms latched on the first render() this frame  
+    f64             emit_ms;            // this frame: frame_begin -> first render() (ms)
+    f64             rend_ms;            // this frame: accumulated render() wall time (ms)
     f64             t_present_start;    // clock() at boot_present_begin entry (0 = not armed)
     f64             pres_ms;            // this frame: present pair wall minus render (ms)
+
     f32             fps;                // smoothed readouts shown by the overlay
-    f32             s_emit_ms;
-    f32             s_rend_ms;
-    f32             s_pres_ms;
-    f32             s_poll_ms;          // smoothed boot_poll (pump + input) span          
-    f32             s_wait_ms;          // smoothed boot_pace sleep / idle wait span       
+    f32             s_poll_ms;          // smooth time boot_poll      -> boot_present_begin
+    f32             s_emit_ms;          // smooth time frame_begin    -> first render()
+    f32             s_rend_ms;          // smooth time first render() -> boot_present_end
+    f32             s_pres_ms;          // smooth time present_begin  -> boot_present_end minus render
+    f32             s_wait_ms;          // smooth time present_end    -> boot_poll
+
+    bool            emit_captured;      // emit_ms latched on the first render() this frame  
 
 } s_perf;
 
+/*============================================================================================*/
 /* Publish last frame's raw emit/render times into the smoothed readouts and open a fresh emit clock.
    Called from frame_begin (which owns dt -> fps). */
+
 static void
 perf_frame_begin( f32 dt )
 {
@@ -85,9 +79,11 @@ perf_frame_begin( f32 dt )
     s_perf.t_emit_start    = s_perf.clock ? s_perf.clock() : 0.0;
 }
 
+/*============================================================================================*/
 /* Close the emit phase at frame_end: build cost = frame_begin -> frame_end. Latches emit_ms from
    the clock armed in perf_frame_begin. Idempotent -- first capture wins, so perf_render_begin's
    fallback below is a no-op once this has run. */
+
 static void
 perf_frame_end( void )
 {
@@ -100,9 +96,11 @@ perf_frame_end( void )
     }
 }
 
+/*============================================================================================*/
 /* Bracket a render() flush: returns the clock reading to time it. Also a fallback emit-phase
    close -- frame_end normally latches emit_ms first, but this catches it if frame_end was
    skipped. Returns 0 if timing is off (no clock, or t_emit_start unarmed). */
+
 static f64
 perf_render_begin( void )
 {
@@ -117,7 +115,9 @@ perf_render_begin( void )
     return now;
 }
 
+/*============================================================================================*/
 /* Fold one render() flush span into this frame's render accumulator (t0 from perf_render_begin). */
+
 static void
 perf_render_end( f64 t0 )
 {
@@ -125,6 +125,7 @@ perf_render_end( f64 t0 )
         s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
 }
 
+/*============================================================================================*/
 /* Present bracket -- boot-tier only (gui_boot_present_begin/_end, gui_boot.c).
 
    Spans the whole pair: floater reconcile, the frame_begin fence wait (CPU parks on GPU
@@ -148,6 +149,7 @@ perf_present_end( void )
     s_perf.pres_ms = span > 0.0 ? span : 0.0;   /* clamp: render flush can't exceed the pair span */
 }
 
+/*============================================================================================*/
 /* Poll + pace brackets (gui_boot_poll / gui_boot_pace, gui_boot.c). Boot-path only -- a
    runtime host pumps and paces itself, so these read zero there.
 
@@ -165,6 +167,7 @@ perf_span_open( void )
     return s_perf.clock ? s_perf.clock() : 0.0;
 }
 
+/*============================================================================================*/
 /* Fold the span from t0 -> now into *dst via EMA. No-op if timing is off (no clock, or t0 <= 0). */
 
 static void
@@ -176,6 +179,7 @@ perf_span_ema( f32* dst, f64 t0 )
     *dst = ( *dst <= 0.0f ) ? ms : *dst * 0.9f + ms * 0.1f;
 }
 
+/*============================================================================================*/
 /* The debug-lever state read by the overlay's status rows below -- gui_set_force_redraw /
    gui_force_redraw (frame/gui_frame_loop.c) and gui_idle_skip (further down this file) -- is declared
    on the frame unit's public face (gui_host.h), in scope here via the render header. */
@@ -192,6 +196,7 @@ perf_span_ema( f32* dst, f64 t0 )
      selector panel). Needed because a FILLING widget (slider, input) contributes nothing to the
      measured width -- it just takes the track width, so a panel of sliders would measure only as
      wide as its widest label and the backdrop would stop short. */
+
 static void
 overlay_backdrop( gui_id_t id, f32 x, f32 y, f32 fixed_w )
 {
@@ -362,6 +367,8 @@ overlay_id_str( gui_id_t id )
     fmt_snprintf( b, sizeof( bufs[ 0 ] ), "0x%08X", id );
     return b;
 }
+
+/*============================================================================================*/
 
 static void
 overlay_state( int mode )
@@ -594,10 +601,12 @@ debug_reset( void )
     redraw_request();
 }
 
+/*============================================================================================*/
 /* Put the remembered selector-menu lever values back. Called when the master arm switches back
    on, so the panel (and the behavior it drives) reopens exactly where the user left it, instead
    of debug_reset()'s defaults. Perf/state tier and idle skip need no restore -- they were never
    reset, so they're already correct. */
+
 static void
 debug_restore( void )
 {
@@ -605,6 +614,7 @@ debug_restore( void )
     gui_set_force_redraw( s_dbg_force_redraw_saved );
 }
 
+/*============================================================================================*/
 /* Poll the debug hotkeys from this frame's IO snapshot. Called from frame_end -- after
    nav_new_frame and all widget emission, so nav/widgets have already consumed any key they use
    (see gui_want_capture_keyboard) -- only while debug_enable is on.
@@ -612,6 +622,7 @@ debug_restore( void )
    Runs AFTER this frame's overlay emit, so a mode change here is one frame too late for THIS
    frame's draw list. Every branch that mutates a mode calls redraw_request() so frame_begin sees
    the frame as dirty next time, instead of an idle/retained replay sitting on the stale mode. */
+
 static void
 debug_hotkeys( void )
 {
@@ -624,6 +635,7 @@ debug_hotkeys( void )
 
        Main-row '.' arms too (laptop keyboards have no numpad), except during a stepper freeze,
        where '.' is the scrub-forward key below and owns the row -- NP_DOT still disarms then. */
+
     bool arm_toggle = gui_is_key_pressed( APP_KEY_NP_DOT );
 #ifdef GUI_CMD_STEPPER
     if ( !step_frozen() )
@@ -755,6 +767,7 @@ debug_hotkeys( void )
 /* Panel strings, named once so the width measure below and the emit further down always agree.
    A measure of text the panel doesn't actually print is how a "fits" panel quietly stops
    fitting. */
+
 #define SEL_HINT    "debug -- '.' to close"
 #define SEL_FORCE   "Force redraw"
 #define SEL_TESS    "Tess cache"
@@ -762,6 +775,7 @@ debug_hotkeys( void )
 #define SEL_PERF    "NP+ perf"
 #define SEL_STATE   "NP- state"
 
+   /*============================================================================================*/
 /* One legend line: "<key> <name>" plus its value where it has one (a tier/mode; NULL for the
    layer bits, which are just on or off). Both the measure pass and the paint go through this one
    helper, so they can never disagree on row width. */
@@ -772,6 +786,7 @@ legend_line( char* buf, u32 cap, const char* key_name, const char* name, const c
     return buf;
 }
 
+/*============================================================================================*/
 /* Paint one legend row: lit while the setting is on, dim while off -- reads as "what's on right
    now" at a glance, while still naming every key for discovery. One line per row, one colour per
    line -- keeps the list a narrow column, which is what keeps the panel thin. */
@@ -783,6 +798,7 @@ legend_row( const char* key_name, const char* name, const char* value, bool on )
                       legend_line( line, sizeof( line ), key_name, name, value ) );
 }
 
+/*============================================================================================*/
 /* The widest row this panel can EVER print, in px of the live font -- the content width it needs.
 
    MEASURED, not a constant: text moves with the DPI / ui_scale response (frame/gui_frame_dpi.c),
@@ -792,6 +808,7 @@ legend_row( const char* key_name, const char* name, const char* value, bool on )
 
    ~20 short measures a frame, only while the debug arm is on. Call inside the scale scope the
    panel emits in -- WIDGET_PAD / CHECKBOX_SZ are style reads. */
+
 static f32
 selector_content_w( f32 label_w )
 {
@@ -835,6 +852,7 @@ selector_content_w( f32 label_w )
     return w;
 }
 
+/*============================================================================================*/
 static void
 debug_selector_menu( void )
 {
@@ -909,9 +927,11 @@ debug_selector_menu( void )
     gui_scale_pop();
 }
 
+/*============================================================================================*/
 /* Emit the debug overlays into the currently bound (default) context. Called from ctx_end before
    it rebinds -- last in the default context's build, drawing on top of everything else emitted,
    exactly where a host used to hand-place these. */
+
 static void
 debug_overlays_emit( void )
 {
@@ -919,8 +939,10 @@ debug_overlays_emit( void )
     step_window( &s_dbg_step_open );
     if ( s_dbg_hotkeys_armed )
         debug_selector_menu();
+
     /* Tier state is no longer zeroed on disarm (debug_reset) so the selector menu can remember
        it -- gate visibility on the arm here instead, the same net effect (hidden while off). */
+
     overlay_perf ( s_dbg_hotkeys_armed ? s_dbg_perf_mode  : 0 );
     overlay_state( s_dbg_hotkeys_armed ? s_dbg_state_mode : 0 );
 }

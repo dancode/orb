@@ -222,7 +222,7 @@ gui_boot_poll( f32* out_dt )
             if ( dt > 0.1f )                
                  dt = 0.1f;                 /* clamp to avoid huge steps after a stall */
         }
-        s_poll_last = now;
+        s_poll_last = now;                  /* store for the next frame's delta */
     }
     if ( out_dt )
         *out_dt = dt;
