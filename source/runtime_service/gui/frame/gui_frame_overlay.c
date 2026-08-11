@@ -22,7 +22,8 @@
     Three clocks summing to the whole CPU frame:
 
     - emit:    frame_begin -> frame_end (the UI build cost).
-    - render:  sum of every render() flush this frame.
+    - render:  sum of every render() flush this frame -- one call per viewport (the main surface
+               plus every open floater, each its own rhi_ctx), accumulated into a single total.
     - present: (boot path only) the present pair's wall time minus render -- the non-render
                overhead, dominated by the frame_begin fence wait (GPU backpressure).
     
@@ -106,6 +107,10 @@ perf_frame_end( void )
 /*==============================================================================================
 
     * Render bracket -- render-tier only.
+    * An ACCUMULATOR, not a single span: gui_render() is called once per viewport (the main
+      surface plus every open floater, each its own rhi_ctx) -- every call this frame adds into
+      rend_ms instead of overwriting it, so the readout is the frame's total render cost across
+      every context, not any one of them.
     * Returns 0 if no timers is active.
 
 ==============================================================================================*/
