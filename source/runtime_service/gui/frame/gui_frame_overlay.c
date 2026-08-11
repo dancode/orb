@@ -215,7 +215,7 @@ overlay_perf( int mode )
        - GUI_REGION_FG: foreground band, above every popup and modal (e.g. the dev console) --
          a debug readout you can't see is useless. */
 
-    gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f, GUI_REGION_FG, 0,
+    gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f, GUI_REGION_FG, GUI_VP_MAIN,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
     {
         overlay_backdrop( id_hash( "perf_overlay" ), left_x, top_y, 0.0f );
@@ -227,6 +227,7 @@ overlay_perf( int mode )
         u32 fps_col = fps >= 60.0f ? GUI_COLOR( 0x66, 0xDD, 0x55, 0xFF )
                     : fps >= 30.0f ? GUI_COLOR( 0xE0, 0xC0, 0x40, 0xFF )
                     :                GUI_COLOR( 0xEE, 0x55, 0x44, 0xFF );
+
         char line[ 64 ];
         fmt_snprintf( line, sizeof( line ), "FPS %5.1f  (%4.2f ms)", fps, fps > 0.0f ? 1000.0f / fps : 0.0f );
         gui_text_colored( fps_col, line );

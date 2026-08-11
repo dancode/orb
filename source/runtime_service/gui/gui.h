@@ -90,6 +90,7 @@ typedef u32 gui_sprite_id_t;
    i32 window id and rhi context handle. */
 
 #define GUI_VP_INVALID (-1)
+#define GUI_VP_MAIN 0    /* the host's primary swapchain surface (first window opened) */
 
 /* Opaque dock-node handle -- one region of a viewport's dock tree.  Returned by dockspace_over_viewport
    (the tree root) and dock_split (the new sibling), and passed to dock_split / dock_window to name a
