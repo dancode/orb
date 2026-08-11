@@ -371,7 +371,7 @@ overlay_state( int mode )
     /* Fixed offset to the right of perf_overlay's HUD so both can show at once without overlap --
        perf_overlay stays narrow, so a flat offset is simpler than coordinating widths.
        GUI_REGION_FG: foreground band, above popups and the modal console -- see perf_overlay. */
-    gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_REGION_FG, 0,
+    gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_REGION_FG, GUI_VP_MAIN,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
     {
         overlay_backdrop( id_hash( "state_overlay" ), 260.0f, top_y, 0.0f );
@@ -862,7 +862,7 @@ debug_selector_menu( void )
     f32 w       = selector_content_w( label_w ) + 2.0f * WIDGET_PAD;
     f32 x       = (f32)s_io.display_w - w - 8.0f;
 
-    gui_region_begin( "debug_selector", x, top_y, w, 0.0f, GUI_REGION_FG, 0,
+    gui_region_begin( "debug_selector", x, top_y, w, 0.0f, GUI_REGION_FG, GUI_VP_MAIN,
                       GUI_WIN_NOSCROLL | GUI_WIN_DEBUG_BAND );
     {
         /* Explicit width -- the measure would stop at the widest checkbox label (see the

@@ -1095,7 +1095,8 @@ typedef struct gui_api_s
        paint, no scroll.  The caller owns every pixel (stock_* / draw_* over carved rects) and any
        cross-frame state; open flow inside with flow_begin( pane.rect ) if wanted.  Flags
        honored: GUI_WIN_NO_INPUT (pure display), GUI_WIN_NO_CLIP, GUI_WIN_DEBUG_BAND.  vp
-       GUI_VP_INVALID = primary surface.  Root-level, never nests; always pair with pane_end.
+       GUI_VP_MAIN = primary surface (GUI_VP_INVALID and a closed viewport map to it).
+       Root-level, never nests; always pair with pane_end.
        region_begin below = this + persisted scroll + a layout; window_begin = this + the
        persisted record + stock chrome. */
     gui_pane_t ( *pane_begin )( const char* id_str, gui_rect_t r, gui_region_tier_t tier,
@@ -1110,7 +1111,7 @@ typedef struct gui_api_s
        the reference case.  w/h <= 0 autosizes that axis to last frame's measured content, like
        child_begin's AutoResizeY.  Unlike window_begin / child_begin, it takes no parent region --
        call it directly at the top of a frame.  Paints on viewport `vp` (rect in that surface's
-       client space; GUI_VP_INVALID = the primary, a closed viewport falls back to it) at the z
+       client space; GUI_VP_MAIN = the primary, GUI_VP_INVALID and a closed viewport map to it) at the z
        tier picked by `tier` (gui_region_tier_t: MID over windows / under popups, BG, FG);
        interactive by default -- competes for hover in the same z contest as windows (opt out
        with GUI_WIN_NO_INPUT; see gui_region.c).  Always returns true; always pair with
@@ -1136,7 +1137,7 @@ typedef struct gui_api_s
        (hover gating reads the ambient scope).  The open latch needs no mechanism: it is a
        caller bool your close button clears; scroll is region_begin ("region owns scroll").
 
-           gui_pane_t p     = gui()->pane_begin( "tool", st->rect, GUI_REGION_MID, 0, 0 );
+           gui_pane_t p     = gui()->pane_begin( "tool", st->rect, GUI_REGION_MID, GUI_VP_MAIN, 0 );
            gui_rect_t r     = p.rect;
            gui_rect_t title = gui_rect_cut_top( &r, 26.0f );          // titlebar = a band...
            gui()->feat_move( p.id, title, &st->rect.x, &st->rect.y ); // ...that drags

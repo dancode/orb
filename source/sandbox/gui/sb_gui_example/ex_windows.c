@@ -522,7 +522,7 @@ ex_windows_pane( void )
                         :                 GUI_REGION_MID;
 
     gui_rect_t r = { 620.0f, 240.0f, 250.0f, 180.0f };
-    gui_pane_t p = gui()->pane_begin( "ex_raw_pane", r, t, 0,
+    gui_pane_t p = gui()->pane_begin( "ex_raw_pane", r, t, GUI_VP_MAIN,
                                       input ? GUI_WIN_NONE : GUI_WIN_NO_INPUT );
 
     /* Hand-built chrome: backdrop, title band, body rows -- every rect accounted for. */
@@ -610,7 +610,7 @@ ex_windows_features( void )
 
     gui_pane_t p = gui()->pane_begin( "ex_feat_pane",
                                       ( gui_rect_t ){ rect.x, rect.y, rect.w, disp_h },
-                                      GUI_REGION_MID, 0, GUI_WIN_NONE );
+                                      GUI_REGION_MID, GUI_VP_MAIN, GUI_WIN_NONE );
 
     /* Edge resize FIRST, all four edges, so an edge grab pre-empts the title-band move arm
        (stock chrome resolves resize before its drag for the same reason -- the T band and
@@ -695,7 +695,7 @@ ex_windows_region( void )
 
     /* The region itself -- root level, never inside a window bracket. */
     gui()->region_begin( "Root Region Box", spots[ slot ].x, spots[ slot ].y, 260.0f, 160.0f,
-                         GUI_REGION_BG, 0, GUI_WIN_NOSCROLL );
+                         GUI_REGION_BG, GUI_VP_MAIN, GUI_WIN_NOSCROLL );
         gui()->stack();
         gui()->text( "A region: fixed rect, no window chrome." );
         gui()->textf( "pos %.0f, %.0f", spots[ slot ].x, spots[ slot ].y );

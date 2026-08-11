@@ -24,7 +24,7 @@
     slot in the window pool, no drag/resize/dock/native path, no title, no background fill.
 
     Root-level, on any surface: the rect is in the target viewport's client space
-    (`vp`; GUI_VP_INVALID = the primary, and a torn-down viewport falls back to it).  
+    (`vp`; GUI_VP_MAIN = the primary, GUI_VP_INVALID and a torn-down viewport map to it).  
     The z tier is the caller's three-way choice (gui_region_tier_t: MID over windows / 
     under popups, BG, FG), and it competes for hover_win in the same z contest windows 
     and popups use, so it is interactive by default:

@@ -432,8 +432,8 @@ f32 vp_w( i32 vp );
 f32 vp_h( i32 vp );
 
 /* Resolve a caller-supplied viewport index to a live slot: GUI_VP_INVALID, out-of-range, and
-   torn-down slots all map to the primary (0).  Run by record-less root callers (pane, region)
-   on every open (core/gui_ctx.c). */
+   torn-down slots all map to the primary (GUI_VP_MAIN).  Run by record-less root callers
+   (pane, region) on every open (core/gui_ctx.c). */
 
 i32 vp_resolve( i32 vp );
 

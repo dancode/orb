@@ -87,7 +87,7 @@ tier_surface( void )
     static gui_rect_t s_rect = { 140.0f, 120.0f, 320.0f, 210.0f };  // caller-owned persistence
     static bool       s_on   = false;
 
-    gui_pane_t p = gui()->pane_begin( "t2_pane", s_rect, GUI_REGION_MID, GUI_VP_INVALID,
+    gui_pane_t p = gui()->pane_begin( "t2_pane", s_rect, GUI_REGION_MID, GUI_VP_MAIN,
                                       GUI_WIN_NONE );
     gui_rect_t r = p.rect;
 
@@ -171,7 +171,7 @@ tier_stock( void )
     static const char* const s_modes[] = { "alpha", "beta", "gamma" };
 
     gui_rect_t area = { 140.0f, 120.0f, 480.0f, 300.0f };
-    gui_pane_t p = gui()->pane_begin( "t3_pane", area, GUI_REGION_MID, GUI_VP_INVALID,
+    gui_pane_t p = gui()->pane_begin( "t3_pane", area, GUI_REGION_MID, GUI_VP_MAIN,
                                       GUI_WIN_NONE );
     gui()->draw_frame( p.rect, PANEL_BG, PANEL_LN, 1.0f );
 
@@ -255,8 +255,8 @@ tier_stock( void )
 static void
 tier_flow( void )
 {
-    gui()->region_begin( "t4_region", 140.0f, 120.0f, 380.0f, 320.0f, GUI_REGION_MID, 0,
-                         GUI_WIN_NONE );
+    gui()->region_begin( "t4_region", 140.0f, 120.0f, 380.0f, 320.0f, GUI_REGION_MID,
+                         GUI_VP_MAIN, GUI_WIN_NONE );
     gui()->row( 26.0f );
 
     for ( i32 i = 0; i < 30; ++i )
@@ -393,7 +393,7 @@ tier_style( void )
         gui()->style_set_push( s_t5_set );
 
     gui_rect_t area = { 140.0f, 120.0f, 380.0f, 280.0f };
-    gui_pane_t p = gui()->pane_begin( "t5_pane", area, GUI_REGION_MID, GUI_VP_INVALID,
+    gui_pane_t p = gui()->pane_begin( "t5_pane", area, GUI_REGION_MID, GUI_VP_MAIN,
                                       GUI_WIN_NONE );
     gui()->stock_panel( p.rect );
 

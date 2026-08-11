@@ -50,7 +50,8 @@ static struct
    nomination + base clip, nothing else.  No pool record, no persistence, no layout, no
    background paint: the caller owns every pixel (stock_* / draw_* over carved rects) and any
    cross-frame state (open flags, dragged position) lives with the caller.  Rect-first: flow
-   is available inside via flow_begin( pane.rect ) if wanted.  vp GUI_VP_INVALID = primary. */
+   is available inside via flow_begin( pane.rect ) if wanted.  vp GUI_VP_MAIN = primary
+   (GUI_VP_INVALID and a torn-down viewport map to it). */
 gui_pane_t
 gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier, i32 vp,
                 gui_win_flags_t flags )
