@@ -82,7 +82,7 @@ game_ui_hud_begin( i32 gui_vp )
     f32 y0 = gui()->viewport_content_y( vp );    /* below the caption band on a shelled window */
 
     gui()->region_begin( "sg_hud", 0.0f, y0, ( f32 )w, ( f32 )h - y0,
-                         GUI_REGION_MID, GUI_WIN_NOSCROLL );
+                         GUI_REGION_MID, vp, GUI_WIN_NOSCROLL );
     gui()->stack();    /* declare a mode so stray flow widgets are legal; the HUD never flows */
 
     return ( gui_rect_t ){ 0.0f, y0, ( f32 )w, ( f32 )h - y0 };

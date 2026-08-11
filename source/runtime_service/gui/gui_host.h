@@ -331,7 +331,7 @@ void       gui_pane_end( void );
 
 /* root region -- a fixed-rect layout primitive with no window chrome */
 bool gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
-                       gui_win_flags_t flags );
+                       i32 vp, gui_win_flags_t flags );
 void gui_region_end( void );
 void gui_scroll_by( f32 dx, f32 dy );
 

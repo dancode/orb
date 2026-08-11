@@ -255,7 +255,7 @@ tier_stock( void )
 static void
 tier_flow( void )
 {
-    gui()->region_begin( "t4_region", 140.0f, 120.0f, 380.0f, 320.0f, GUI_REGION_MID,
+    gui()->region_begin( "t4_region", 140.0f, 120.0f, 380.0f, 320.0f, GUI_REGION_MID, 0,
                          GUI_WIN_NONE );
     gui()->row( 26.0f );
 

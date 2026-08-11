@@ -275,6 +275,19 @@ viewport_index_for_window( i32 win_id )
 f32 vp_w( i32 vp ) { i32 w = s_vp_pool[ vp ].disp_w; return w > 0 ? (f32)w : (f32)s_io.display_w; }
 f32 vp_h( i32 vp ) { i32 h = s_vp_pool[ vp ].disp_h; return h > 0 ? (f32)h : (f32)s_io.display_h; }
 
+/* Resolve a caller-supplied viewport to a live slot: GUI_VP_INVALID / out-of-range map to the
+   primary, and so does a slot whose surface has been torn down -- the same fallback a window
+   record gets in window_begin_ex.  Record-less callers (pane_begin, region_begin) have nowhere
+   to persist that reversion, so they resolve on every open. */
+
+i32
+vp_resolve( i32 vp )
+{
+    if ( vp <= 0 || vp >= APP_WIN_MAX )
+        return 0;
+    return rhi_handle_valid( s_vp_pool[ vp ].vb ) ? vp : 0;
+}
+
 /*==============================================================================================
     Pointer hit test
 

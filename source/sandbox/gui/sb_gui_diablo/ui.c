@@ -105,7 +105,8 @@ ui_screen_begin( i32 vp, const char* id )
     gui()->viewport_size( vp, &w, &h );
     f32 y0 = gui()->viewport_content_y( vp );    /* below the caption band on a shelled window */
 
-    gui()->region_begin( id, 0.0f, y0, (f32)w, (f32)h - y0, GUI_REGION_MID, GUI_WIN_NOSCROLL );
+    gui()->region_begin( id, 0.0f, y0, (f32)w, (f32)h - y0, GUI_REGION_MID, 0,
+                         GUI_WIN_NOSCROLL );
     gui()->stack();    /* declare a mode so stray flow widgets are legal; ours never flow */
 
     return ( gui_rect_t ){ 0.0f, y0, (f32)w, (f32)h - y0 };

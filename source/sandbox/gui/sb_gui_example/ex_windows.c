@@ -695,7 +695,7 @@ ex_windows_region( void )
 
     /* The region itself -- root level, never inside a window bracket. */
     gui()->region_begin( "Root Region Box", spots[ slot ].x, spots[ slot ].y, 260.0f, 160.0f,
-                         GUI_REGION_BG, GUI_WIN_NOSCROLL );
+                         GUI_REGION_BG, 0, GUI_WIN_NOSCROLL );
         gui()->stack();
         gui()->text( "A region: fixed rect, no window chrome." );
         gui()->textf( "pos %.0f, %.0f", spots[ slot ].x, spots[ slot ].y );

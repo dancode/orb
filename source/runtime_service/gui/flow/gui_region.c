@@ -23,11 +23,11 @@
     (draw_set_window/sort_key/viewport) so the retained-cache dispatch keys correctly -- but no
     slot in the window pool, no drag/resize/dock/native path, no title, no background fill.
 
-    Root-level only: paints on viewport 0 (the main surface); FUTURE: routing a region to a
-    non-main viewport.  The z tier is the caller's three-way choice (gui_region_tier_t: MID over
-    windows / under popups, BG, FG), and it competes for hover_win in the same z contest windows
-    and popups use, so it is interactive by default 
-    (opt out with GUI_WIN_NO_INPUT, same flag a window honors).
+    Root-level, on any surface: the rect is in the target viewport's client space (`vp`;
+    GUI_VP_INVALID = the primary, and a torn-down viewport falls back to it).  The z tier is the
+    caller's three-way choice (gui_region_tier_t: MID over windows / under popups, BG, FG), and
+    it competes for hover_win in the same z contest windows and popups use, so it is interactive
+    by default (opt out with GUI_WIN_NO_INPUT, same flag a window honors).
 
     A region enters the same hover_win contest a window does through the surface service
     (surface_hover_nominate, core/gui_surface.c) -- occlusion is a tier-1 concern shared
@@ -55,11 +55,18 @@ region_root_scroll_get( gui_id_t id )
 
 bool
 gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
-                  gui_win_flags_t flags )
+                  i32 vp, gui_win_flags_t flags )
 {
     gui_id_t            id     = id_hash( id_str );
     gui_scroll_link_t*  scroll = region_root_scroll_get( id );
     DBG_NAME( id, id_str );
+
+    vp = vp_resolve( vp );   /* GUI_VP_INVALID and a torn-down surface both mean the primary */
+
+    /* Mixed DPI: land this surface's bake before any metric below (the WIDGET_H autosize seed,
+       REGION_PAD_DEFAULT) reads s_style -- surfaces on differently-scaled monitors carry
+       different bakes.  A no-op when already landed (the overwhelmingly common case). */
+    gui_dpi_land( vp );
 
     /* Autosize on either axis, exactly like child_begin's h <= 0 (AutoResizeY): hug last
        frame's measured content once one exists, else open one widget-row tall.  No border term
@@ -80,25 +87,29 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tie
           :                             GUI_REGION_Z;
 
     /* The pane open (frame/gui_pane.c): stamp the draw state with this region's tag
-       (retained-cache key, z tier, the main surface -- a root region paints only on viewport 0;
-       FUTURE: other viewports, arena band) and commit the interaction scope so item_state
-       attributes this region's widgets against hover_win.  A region IS a pane + scroll layout. */
-    pane_tag( id, z, 0, ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
+       (retained-cache key, z tier, host viewport, arena band) and commit the interaction scope
+       so item_state attributes this region's widgets against hover_win.  A region IS a pane +
+       scroll layout. */
+    pane_tag( id, z, vp, ( flags & GUI_WIN_DEBUG_BAND ) ? 1u : 0u );
+
+    /* Base clip = this region's surface, not whatever surface painted last -- the same root-clip
+       stamp window_begin_ex and pane_begin apply; region_end hands the primary's back. */
+    draw_set_root_clip( vp_w( vp ), vp_h( vp ) );
 
     /* Interactive by default -- enter the same hover_win contest a window does, at this region's
        z tier, so its widgets can go hot/active.  Opt out with GUI_WIN_NO_INPUT for a pure HUD. */
     if ( !( flags & GUI_WIN_NO_INPUT ) )
-        surface_hover_nominate( id, box, z, 0 );
+        surface_hover_nominate( id, box, z, vp );
 
     /* layout_push_region intersects its own clip against s_scope.clip as "the parent clip" --
        correct for child_begin, genuinely nested inside a window's body clip.  A root region has no
        real parent: s_scope.clip here is just whatever the last unrelated window left behind
        (e.g. a menu bar's thin strip), and intersecting against it silently empties this region's
        hit-test clip, so no widget inside it can ever pass rect_hit(s_scope.clip) -- hover is
-       gone regardless of z / hover_win.  Reset to the full display rect first, exactly like a
-       window's own plain (non-intersecting) clip assignment in window_begin_ex, so a region is a
-       true root-level context. */
-    s_scope.clip = ( gui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
+       gone regardless of z / hover_win.  Reset to the host surface's full rect first, exactly
+       like a window's own plain (non-intersecting) clip assignment in window_begin_ex, so a
+       region is a true root-level context. */
+    s_scope.clip = ( gui_rect_t ){ 0.0f, 0.0f, vp_w( vp ), vp_h( vp ) };
 
     /* Chrome-equivalent reset: this open is not an item, so a disabled latch left by a prior
        widget does not leak into the region's first widget. */
@@ -113,6 +124,10 @@ void
 gui_region_end( void )
 {
     layout_pop_region();
+
+    /* Restore the main display's root clip for whatever paints next at root level, the same
+       hand-back window_end and pane_end perform. */
+    draw_set_root_clip( (f32)s_io.display_w, (f32)s_io.display_h );
 }
 
 // clang-format on

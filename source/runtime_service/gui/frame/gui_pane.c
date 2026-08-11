@@ -60,8 +60,11 @@ gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier, i32 vp
     gui_id_t id = id_hash( id_str );
     DBG_NAME( id, id_str );
 
-    if ( vp == GUI_VP_INVALID )
-        vp = 0;
+    vp = vp_resolve( vp );   /* GUI_VP_INVALID and a torn-down surface both mean the primary */
+
+    /* Mixed DPI: land this surface's bake before any widget inside reads s_style -- surfaces on
+       differently-scaled monitors carry different bakes.  A no-op when already landed. */
+    gui_dpi_land( vp );
 
     u32 z = ( tier == GUI_REGION_BG ) ? GUI_REGION_BG_Z
           : ( tier == GUI_REGION_FG ) ? GUI_REGION_FG_Z
@@ -85,7 +88,7 @@ gui_pane_begin( const char* id_str, gui_rect_t r, gui_region_tier_t tier, i32 vp
     }
     else
     {
-        s_scope.clip = ( gui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
+        s_scope.clip = ( gui_rect_t ){ 0.0f, 0.0f, vp_w( vp ), vp_h( vp ) };
     }
 
     /* This open is not an item: a disabled latch from a prior widget must not leak in. */
