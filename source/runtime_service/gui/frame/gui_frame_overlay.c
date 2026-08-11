@@ -176,29 +176,23 @@ perf_span_end( f32* dst, f64 t0 )
     *dst = ( *dst <= 0.0f ) ? ms : *dst * 0.9f + ms * 0.1f;
 }
 
-/*============================================================================================*/
-/* The debug-lever state read by the overlay's status rows below -- gui_set_force_redraw /
-   gui_force_redraw (frame/gui_frame_loop.c) and gui_idle_skip (further down this file) -- is declared
-   on the frame unit's public face (gui_host.h), in scope here via the render header. */
+/*==============================================================================================
 
-/* Backing panel behind an overlay's text -- a plain filled rect, so digits stay legible over a
-   busy editor UI.
+    * Debug Overlay -- the built-in performance readout, no host code required.
 
-   - Emitted FIRST inside the region: draws behind the region's own text, but on top of any
-     ordinary window beneath it (region z-band).
-   - Sized from the region's persisted content measure (gui_region.c, same state w/h <= 0
-     autosize reads) -- no separate size tracker needed. One frame of lag; the first frame draws
-     no backdrop (no measure exists yet).
-   - fixed_w > 0 overrides the measured width, for a region opened at an EXPLICIT width (e.g. the
-     selector panel). Needed because a FILLING widget (slider, input) contributes nothing to the
-     measured width -- it just takes the track width, so a panel of sliders would measure only as
-     wide as its widest label and the backdrop would stop short. */
+==============================================================================================*/
 
 static void
 overlay_backdrop( gui_id_t id, f32 x, f32 y, f32 fixed_w )
 {
+    /* The overlay is a root region, autosized to its content (w/h <= 0), fixed top-left.  
+       The backdrop is drawn by the overlay's scroll link, which is the only child of the root region.
+       The scroll link's content_w is the width of the text readout, which is what we want to fill
+       with a dark backdrop. If the caller specifies a fixed width, use that instead. */
+
     gui_scroll_link_t* scroll = GUI_STATE( gui_scroll_link_t, id );
-    f32                w      = ( fixed_w > 0.0f ) ? fixed_w : scroll->content_w;
+    f32 w = ( fixed_w > 0.0f ) ? fixed_w : scroll->content_w;
+
     if ( w > 0.0f && scroll->content_h > 0.0f )
         gui_draw_rect( x, y, w, scroll->content_h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
 }
@@ -211,13 +205,8 @@ overlay_perf( int mode )
 
     f32 fps = s_perf.fps;
 
-    /* gui_viewport_content_y is where host content actually starts -- native caption band
-       (borderless surfaces) plus the main menu bar, if one is emitted this frame. Same work top
-       used by the maximize pin and window-drag clamp. A fixed offset guess used to land the
-       overlay ON the caption band instead of below it. */
-    f32 top_y = gui_viewport_content_y( 0 ) + 34.0f;
-
-    float left_x = 8.0f;
+    f32 top_y  = gui_viewport_content_y( 0 ) + 32.0f;
+    f32 left_x = 8.0f;
 
     /* A root region, autosized to its content (w/h <= 0), fixed top-left.
        - NOSCROLL/NO_INPUT: pure text readout -- shouldn't grab hover or eat the mouse wheel.
@@ -225,10 +214,12 @@ overlay_perf( int mode )
          numbers it displays, or poison idle-skip.
        - GUI_REGION_FG: foreground band, above every popup and modal (e.g. the dev console) --
          a debug readout you can't see is useless. */
+
     gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f, GUI_REGION_FG,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
     {
         overlay_backdrop( id_hash( "perf_overlay" ), left_x, top_y, 0.0f );
+
         gui_stack();
         gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
 

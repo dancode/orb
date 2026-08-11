@@ -297,70 +297,76 @@ void redraw_request ( void );
 ==============================================================================================*/
 
 /* identity (core/gui_id.c) -- the id namespace verbs. */
+
 gui_id_t id_hash   ( const char* str );   /* FNV-1a of the full string */
 gui_id_t id_combine( gui_id_t seed, u32 key );
 gui_id_t id_seed   ( void );
 void     id_push   ( gui_id_t id );
 void     id_pop    ( void );
+
 extern u32 s_id_sp;                       /* core/gui_ctx.c -- id-scope stack pointer */
 
 /* io (core/gui_io.c) -- modifier reads, key claims, outbound clipboard, and the input-frame
    bracket the orchestrator drives (gui_frame_begin/end pump the io frame into this server). */
+
 bool io_shift( void );
 bool io_ctrl ( void );
 bool io_alt  ( void );
-bool key_claim( app_key_t k );                        /* claim a key edge      */
-void gui_clipboard_set( const char* s, u32 n );       /* outbound clipboard    */
-void io_frame_begin( i32 win_w, i32 win_h, f32 dt );  /* sample polled input   */
-void io_frame_end  ( void );                          /* clear one-frame input */
-bool io_dirty      ( void );                          /* any input change this frame */
+bool key_claim( app_key_t k );                        // claim a key edge
+void gui_clipboard_set( const char* s, u32 n );       // outbound clipboard
+void io_frame_begin( i32 win_w, i32 win_h, f32 dt );  // sample polled input
+void io_frame_end  ( void );                          // clear one-frame input
+bool io_dirty      ( void );                          // any input change this frame
 
 /* keyed state pool (core/gui_state.c) + the typed sugar over it.  gui_state_get: zero-on-create
    T* persisted by id; gui_state_peek: read-only, non-allocating, non-stamping probe (NULL when
    absent).  sizeof(T) must be <= GUI_STATE_BIG_CAP. */
+
 void*       gui_state_get ( gui_id_t id, u32 size );
 const void* gui_state_peek( gui_id_t id, u32 size );
-#define GUI_STATE( T, id )      ( (T*)gui_state_get( ( id ), (u32)sizeof( T ) ) )
-#define GUI_STATE_PEEK( T, id ) ( (const T*)gui_state_peek( ( id ), (u32)sizeof( T ) ) )
+
+#define GUI_STATE( T, id )             ((T*)gui_state_get( ( id ), (u32)sizeof( T ) ))
+#define GUI_STATE_PEEK( T, id ) ((const T*)gui_state_peek( ( id ), (u32)sizeof( T ) ))
 
 /* frame scratch accessors + item seams (core/gui_ctx.c).  The flag seams are the PURE halves;
    the style/draw application wrappers keeping the old names (item_flags_resolve,
    item_flags_chrome_reset) live in stock/gui_adornment.c and are declared in
    style/gui_style.h -- this server never touches a style value or the draw state. */
-bool             rect_hit( gui_rect_t r );         /* cursor (s_io) inside r                  */
-gui_item_flags_t item_flags_take( void );          /* per-item flag merge + scope latch       */
-void             item_flags_chrome_drop( void );   /* clear the item scope at chrome seams    */
-void             item_flag_push( gui_item_flags_t flag, bool enable );   /* bracketing stack  */
-void             item_flag_pop ( void );
-void             item_flag_next( gui_item_flags_t flag, bool enable );   /* one-shot override */
-void             cursor_set( app_cursor_t c );     /* hardware-cursor nomination              */
-void             item_mark_edited( void );         /* focus edit latch                        */
 
-extern bool s_replay_mode;          /* core/gui_ctx.c -- volatile idle-replay phase flag      */
-extern u32  s_popup_begin_count;    /* core/gui_ctx.c -- popup nesting depth (per-frame)      */
+bool             rect_hit( gui_rect_t r );         // cursor (s_io) inside r
+gui_item_flags_t item_flags_take( void );          // per-item flag merge + scope latch
+void             item_flags_chrome_drop( void );   // clear the item scope at chrome seams
+void             item_flag_push( gui_item_flags_t flag, bool enable );   // bracketing stack
+void             item_flag_pop ( void );
+void             item_flag_next( gui_item_flags_t flag, bool enable );   // one-shot override
+void             cursor_set( app_cursor_t c );     // hardware-cursor nomination
+void             item_mark_edited( void );         // focus edit latch
+
+extern bool s_replay_mode;          // core/gui_ctx.c -- volatile idle-replay phase flag
+extern u32  s_popup_begin_count;    // core/gui_ctx.c -- popup nesting depth (per-frame)
 
 /* Interaction arbitration (core/gui_ctx.c) -- the verbs over the s_interaction record, defined
    with it.  The read half is named once so compound gesture gates read as sentences; the write
    half is the sanctioned door for a higher tier to start a gesture / fence a window, keeping
    core/ + interact/ the only raw writers of the arbitration fields. */
-bool interact_idle      ( void );             /* nothing holds the pointer capture      */
-bool interact_held      ( gui_id_t id );      /* id's press-drag gesture is in flight   */
-bool interact_hover_bare( gui_id_t win_id );  /* cursor on win_id, no widget beneath it */
-void interact_claim( gui_id_t id, u8 button );/* claim the capture -- the one door for a
-                                                 higher tier to start a press-drag       */
-void interact_hover_fence( gui_id_t owner );  /* aim hover at one window (modal fence)  */
+bool interact_idle      ( void );             // nothing holds the pointer capture
+bool interact_held      ( gui_id_t id );      // id's press-drag gesture is in flight
+bool interact_hover_bare( gui_id_t win_id );  // cursor on win_id, no widget beneath it
+void interact_claim( gui_id_t id, u8 button );// claim the capture -- the one door for a
+                                                 // higher tier to start a press-drag
+void interact_hover_fence( gui_id_t owner );  // aim hover at one window (modal fence)
 
 /* Keyboard focus (core/gui_focus.c) -- the policy over s_interaction's focused_id: the CONFINE
    and HOLD rules of the exclusive input mode (a live GUI_WIN_MODAL window), the programmatic
    request latch behind gui_set_keyboard_focus, and the release verb.  The claim paths themselves
    are item_state's (a press, a nav activation, a granted request). */
-bool focus_allowed     ( gui_id_t win );   /* may a widget in win take focus (confine)   */
-bool focus_scope_holds ( gui_id_t id );    /* the live mode owns id -- keep it (hold)    */
-bool focus_request_take( void );           /* consume a pending programmatic request     */
-void focus_release     ( void );           /* Enter commit / Escape revert               */
+bool focus_allowed     ( gui_id_t win );   // may a widget in win take focus (confine)
+bool focus_scope_holds ( gui_id_t id );    // the live mode owns id -- keep it (hold)
+bool focus_request_take( void );           // consume a pending programmatic request
+void focus_release     ( void );           // Enter commit / Escape revert
 
-/* the item protocol (core/gui_item.c) -- the behavior seam every widget rides, plus the bare
-   grab protocol for hot chrome that is not a widget (dock splitter, table column boundary). */
+/* the item protocol (core/gui_item.c) -- the behavior seam every widget rides, plus the bare */
+
 gui_item_state_t item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind );
 bool             item_grab ( gui_id_t id, gui_rect_t r, bool gate, bool* active );
 
@@ -368,6 +374,7 @@ bool             item_grab ( gui_id_t id, gui_rect_t r, bool gate, bool* active 
    resolver over the list it builds is chrome (chrome/nav/gui_nav.c).  item_state calls
    nav_item_register for every item of the nav window; a list-y widget adds its label right
    after, opting into type-ahead. */
+
 void nav_item_register  ( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kind_t kind );
 void nav_item_stamp_label( gui_id_t id, const char* label );
 
@@ -401,6 +408,7 @@ void           gui_item_sub_end( gui_item_sub_t s );
 
 /* Widget label grammar -- the id half (core/gui_id.c: a label's id is identity
    derivation).  "Text##key" displays "Text" with a distinct id; "###key" re-roots the id hash. */
+
 gui_id_t    item_id( const char* label );        /* label -> widget id per the grammar        */
 u32         label_vis_len( const char* s );      /* visible byte count (up to the first "##") */
 const char* label_id_str( const char* s );
@@ -411,6 +419,7 @@ const char* label_id_str( const char* s );
    stamps BOTH servers, which neither server may do itself.  pane_tag is declared here --
    the go-between verb's consumers (chrome's window opens, flow's region opens) all sit on
    this header. */
+
 void surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, i32 viewport );
 u32  surface_z_raise( u32 z );
 u32  surface_z_overlay( u32 depth );
@@ -428,17 +437,21 @@ f32  gui_anim_timer( gui_id_t id, gui_ease_fn ease, bool* out_active );
 void gui_anim_start( gui_id_t id, f32 duration );
 f32  gui_anim_f32( gui_id_t anim_id, f32 target, f32 speed );
 f32  gui_anim_f32_from( gui_id_t anim_id, f32 rest, f32 target, f32 speed );
+
 /* The MEASURED-quantity damper: always stamps, so a value that sits still between changes still
    has a history to ease from (the two above evict at rest and would snap).  Adopts on first
    sight -- an appearance lands at its size rather than growing into it. */
+
 f32  gui_anim_track( gui_id_t anim_id, f32 target, f32 speed );
 gui_anim4_t gui_anim4( gui_id_t id, gui_anim4_t rest, gui_anim4_t target, gui_anim4_t speed );
 
 /* The timer slot payload -- shared so the feat_* kit (interact/gui_feature.c) can PEEK a
    timer's remaining duration without starting one. */
+
 typedef struct { f32 elapsed; f32 duration; } gui_anim_timer_t;
 
 /* Public vtable adapters over the anim utilities (core/gui_anim.c); wired by gui_api.c. */
+
 f32        gui_anim_ease ( gui_id_t id, gui_ease_t ease, bool* out_active );
 u32        gui_anim_color( gui_id_t id, u32 target_abgr, f32 speed );
 gui_vec2_t gui_anim_vec2 ( gui_id_t id, gui_vec2_t target, f32 speed );
@@ -446,6 +459,7 @@ gui_rect_t gui_anim_rect ( gui_id_t id, gui_rect_t target, f32 speed );
 
 /* Keyed-state pool usage introspection (core/gui_state.c) -- a full-table walk; the perf
    overlay (frame unit) calls it when displaying, not per frame. */
+
 typedef struct
 {
     u32 tiny_live,  tiny_used,  tiny_cap;

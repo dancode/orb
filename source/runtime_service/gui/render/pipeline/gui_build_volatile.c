@@ -535,7 +535,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     u32  nc          = s_tess.cmd_count  - tcmd_ck;
     bool scratch_ovf = s_tess.overflow && !ovf_ck;   /* scratch itself hit the buffer cap */
 
-    bool ok = !scratch_ovf
+    bool ok = !scratch_ovf 
             && nv <= (u32)row->vert_alloc
             && ni <= (u32)row->idx_alloc
             && nc <= (u32)row->cmd_alloc;
@@ -562,7 +562,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
             else
             {
                 s_tess.gpu_cmds[ dst ].cmd.elem_count = 0;
-                s_tess.gpu_cmds[ dst ].vp             = GUI_VP_INVALID;
+                s_tess.gpu_cmds[ dst ].vp = GUI_VP_INVALID;
             }
         }
         row->vert_count = (u16)nv;

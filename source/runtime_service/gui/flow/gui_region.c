@@ -3,26 +3,31 @@
     runtime_service/gui/flow/gui_region.c -- Root-level region: a fixed-rect layout primitive
     with no window chrome.
 
-    window_begin_ex (chrome/window/gui_window_free.c) and child_begin (gui_layout_child.c) are both
-    callers of the shared scroll-region engine in gui_scroll.c, each layered with its own
-    bookkeeping -- a persisted, draggable, z-ordered, dockable record for a window; a
-    parent-pen-relative box with a resize grip for a child.  Neither fits a HUD-style element
-    that just wants a caller-positioned rect on screen: a window drags along the whole pool
-    record, dock lookup, and native-surface sync even when every one of those paths is disabled
-    by flags, and a child_begin box cannot open without an already-active parent frame to carve
-    its box from.
+    Purpose: A HUD-style element that wants a caller-positioned rect on screen.
 
-    region_begin / region_end are that third, minimal caller: an explicit screen rect, persisted
-    scroll + content-measure state (so h/w <= 0 autosizes to last frame's content, exactly like
-    child_begin's AutoResizeY), and the draw-state stamping window_begin_ex does
+    Background: window_begin_ex (gui_window_free.c) and child_begin (gui_layout_child.c)
+    are both callers of the shared scroll-region engine in gui_scroll.c, each layered with
+    its own bookkeeping:
+
+    -- window is a persisted, draggable, z-ordered, dockable record for a window; 
+    -- child is a parent-pen-relative box with a resize grip.
+    
+    Neither fits a HUD-style element that just wants a caller-positioned rect on screen: 
+    a window drags along the whole pool record, dock lookup, and native-surface sync even 
+    when every one of those paths is disabled by flags, and a child_begin box cannot open 
+    without an already-active parent frame to carve its box from.
+
+    The region (begin/end) are that third, minimal caller: an explicit screen rect, 
+    persisted scroll + content-measure state (so h/w <= 0 autosizes to last frame's content, 
+    exactly like child_begin's AutoResizeY), and the draw-state stamping window_begin_ex does
     (draw_set_window/sort_key/viewport) so the retained-cache dispatch keys correctly -- but no
     slot in the window pool, no drag/resize/dock/native path, no title, no background fill.
 
     Root-level only: paints on viewport 0 (the main surface); FUTURE: routing a region to a
     non-main viewport.  The z tier is the caller's three-way choice (gui_region_tier_t: MID over
     windows / under popups, BG, FG), and it competes for hover_win in the same z contest windows
-    and popups use, so it is interactive by default (opt out with GUI_WIN_NO_INPUT, same flag a
-    window honors).
+    and popups use, so it is interactive by default 
+    (opt out with GUI_WIN_NO_INPUT, same flag a window honors).
 
     A region enters the same hover_win contest a window does through the surface service
     (surface_hover_nominate, core/gui_surface.c) -- occlusion is a tier-1 concern shared
@@ -41,6 +46,7 @@
 
 /* Persistent scroll + content-measure state, keyed by id -- exactly gui_region_t's scroll link,
    but standalone since a root region has no user_w/user_h (no resize grip). */
+
 static gui_scroll_link_t*
 region_root_scroll_get( gui_id_t id )
 {
