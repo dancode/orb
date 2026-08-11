@@ -585,17 +585,21 @@ void
 gui_render( i32 vp, rhi_cmd_t cmd )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
-        return;
+         return;
+
     gui_viewport_t* v = &s_vp_pool[ vp ];
 
     /* Rendering an open build replays a draw list the emit is still writing into. */
     GUI_CONTRACT( s_frame_phase != GUI_FRAME_BUILD,
                   "render() before frame_end() -- the draw list is not sealed." );
+
     render_contract_check( vp, v );
 
     /* Latch the emit time (first render of the frame) and bracket the flush -- "conclude cost at
        render": emit ends here, render time accumulates across every render() call this frame. */
+
     f64 t0 = perf_render_begin();
+
     gui_render_flush( v->vb, v->ib, v->target, vp, cmd, v->disp_w, v->disp_h );
 
 #ifdef GUI_DEBUG_OVERLAY

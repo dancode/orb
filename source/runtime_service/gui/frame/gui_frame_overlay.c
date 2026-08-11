@@ -53,9 +53,12 @@ static struct
 
 } s_perf;
 
-/*============================================================================================*/
-/* Publish last frame's raw emit/render times into the smoothed readouts and open a fresh
-   emit clock. Called from frame_begin (which owns dt -> fps). */
+/*==============================================================================================
+
+    * Publish last frame's clock times into the smoothed readouts from gui()->frame_begin()
+    * Start a fresh emit clock for the next frame. 
+
+==============================================================================================*/
 
 static void
 perf_frame_begin( f32 dt )
@@ -81,11 +84,11 @@ perf_frame_begin( f32 dt )
     s_perf.t_emit_start    = s_perf.clock ? s_perf.clock() : 0.0;
 }
 
-/*============================================================================================*/
-/* Close the emit phase at frame_end: emit stage cost = frame_begin -> frame_end.
-   Latches emit_ms from the clock armed in perf_frame_begin. render() (gui_render) contractually
-   only ever runs once the frame is sealed (GUI_FRAME_BUILD contract check in gui_frame_loop.c),
-   so this is always the one place emit_ms gets captured. */
+/*==============================================================================================
+
+    * Close out the emit phase at gui()->frame_end()
+
+==============================================================================================*/
 
 static void
 perf_frame_end( void )
@@ -100,9 +103,12 @@ perf_frame_end( void )
     }
 }
 
-/*============================================================================================*/
-/* Bracket a render() flush: returns the clock reading to time it. Returns 0 if timing is off
-   (no clock). */
+/*==============================================================================================
+
+    * Render bracket -- render-tier only.
+    * Returns 0 if no timers is active.
+
+==============================================================================================*/
 
 static f64
 perf_render_begin( void )
@@ -110,25 +116,20 @@ perf_render_begin( void )
     return s_perf.clock ? s_perf.clock() : 0.0;
 }
 
-/*============================================================================================*/
-/* Fold one render() flush span into this frame's render accumulator (t0 from perf_render_begin). */
-
 static void
 perf_render_end( f64 t0 )
 {
     if ( s_perf.clock && t0 > 0.0 )
-        s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
+         s_perf.rend_ms += ( s_perf.clock() - t0 ) * 1000.0;
 }
 
-/*============================================================================================*/
-/* Present bracket -- boot-tier only (gui_boot_present_begin/_end, gui_boot.c).
+/*==============================================================================================
 
-   Spans the whole pair: floater reconcile, the frame_begin fence wait (CPU parks on GPU
-   completion here), swapchain acquire, the gui_render flush, submit, present, floater presents.
-   At the end, render time is subtracted back out (it has its own row) leaving the NON-render
-   overhead -- dominated by the fence wait (GPU backpressure).
+    * Present bracket -- boot-tier only.
+    * Returns 0 if no timers is active.
 
-   Runtime-path hosts never call this pair, so pres_ms stays 0 for them. */
+==============================================================================================*/
+
 static void
 perf_present_begin( void )
 {
@@ -139,37 +140,33 @@ static void
 perf_present_end( void )
 {
     if ( !s_perf.clock || s_perf.t_present_start <= 0.0 )
-        return;
+         return;
+
     f64 span = ( s_perf.clock() - s_perf.t_present_start ) * 1000.0 - s_perf.rend_ms;
     s_perf.pres_ms = span > 0.0 ? span : 0.0;   /* clamp: render flush can't exceed the pair span */
 }
 
-/*============================================================================================*/
-/* Poll + pace brackets (gui_boot_poll / gui_boot_pace, gui_boot.c). Boot-path only -- a
-   runtime host pumps and paces itself, so these read zero there.
+/*==============================================================================================
 
-   - poll: OS pump + gamepad + input snapshot.
-   - wait: end-of-loop sleep / idle wait. Without this row a boot_pace(4,16) sleep hides ~4 ms
-     from the breakdown -- that's what made the totals not add up before.
+    * Span bracket -- generic single-span timer, shared by the poll and wait brackets below.
+    * Returns 0 if no timer is active.
+    * End folds the span from t0 -> now into *dst via EMA.
+    * Used in gui_boot_poll, and gui_boot_pace.
 
-   emit + render + present + poll + wait now sums to the whole frame. Each is a single span per
-   frame (not an accumulator like render), so open() returns the clock and close folds the span
-   into *dst via EMA. */
+==============================================================================================*/
 
 static f64
-perf_span_open( void )
+perf_span_begin( void )
 {
     return s_perf.clock ? s_perf.clock() : 0.0;
 }
 
-/*============================================================================================*/
-/* Fold the span from t0 -> now into *dst via EMA. No-op if timing is off (no clock, or t0 <= 0). */
-
 static void
-perf_span_ema( f32* dst, f64 t0 )
+perf_span_end( f32* dst, f64 t0 )
 {
     if ( !s_perf.clock || t0 <= 0.0 )
         return;
+
     f32 ms = ( f32 )( ( s_perf.clock() - t0 ) * 1000.0 );
     *dst = ( *dst <= 0.0f ) ? ms : *dst * 0.9f + ms * 0.1f;
 }

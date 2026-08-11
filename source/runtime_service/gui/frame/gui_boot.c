@@ -192,7 +192,7 @@ boot_shell_emit( void )
 bool
 gui_boot_poll( f32* out_dt )
 {
-    f64 t_poll = perf_span_open();          /* start timing the poll phase */
+    f64 t_poll = perf_span_begin();         /* start timing the poll phase */
     s_perf.t_loop_start = t_poll;           /* elapsed-time base for this iteration of polling */
 
     if ( !app()->pump_events() )
@@ -228,7 +228,7 @@ gui_boot_poll( f32* out_dt )
         *out_dt = dt;
 
     /* fold the poll span into the smoothed readout for the overlay -- calls clock() */
-    perf_span_ema( &s_perf.s_poll_ms, t_poll );
+    perf_span_end( &s_perf.s_poll_ms, t_poll );
     return true;
 }
 
@@ -388,7 +388,7 @@ gui_boot_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
 {
     /* time the whole pace phase: this IS the loop's "wait time" */
 
-    f64 t_wait = perf_span_open();
+    f64 t_wait = perf_span_begin();
 
     if ( s_idle_skip && s_hook_wait )
     {
@@ -428,7 +428,7 @@ gui_boot_pace( i32 spin_sleep_ms, i32 anim_sleep_ms )
         pace_spin_wait( spin_sleep_ms );          /* hybrid sleep+spin: hit the target rate exactly */
     }
 
-    perf_span_ema( &s_perf.s_wait_ms, t_wait );
+    perf_span_end( &s_perf.s_wait_ms, t_wait );
 }
 
 // clang-format on
