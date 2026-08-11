@@ -597,9 +597,11 @@ gui_render( i32 vp, rhi_cmd_t cmd )
        render": emit ends here, render time accumulates across every render() call this frame. */
     f64 t0 = perf_render_begin();
     gui_render_flush( v->vb, v->ib, v->target, vp, cmd, v->disp_w, v->disp_h );
+
 #ifdef GUI_DEBUG_OVERLAY
     dbg_flush( vp, cmd, v->disp_w, v->disp_h );   /* each viewport flushes its own rects */
 #endif
+
     perf_render_end( t0 );
 }
 

@@ -12,16 +12,16 @@
 // clang-format off
 
 /*==============================================================================================
-    Performance overlay
-
+    Performance Overlay 
+    
     Built-in FPS / cost readout, no host code required.
 
-    The gui owns no clock (it's a leaf of rhi + app), so the host supplies a monotonic
-    seconds callback via frame_set_hooks(); gui brackets the frame with it.
+    The gui owns no clock so the host supplies a monotonic seconds callback via 
+    frame_set_hooks(); and gui brackets the frame with it.
 
-    Three clocks, summing to the whole CPU frame:
+    Three clocks summing to the whole CPU frame:
 
-    - emit:    frame_begin -> first render() call this frame.
+    - emit:    frame_begin -> frame_end (the UI build cost).
     - render:  sum of every render() flush this frame.
     - present: (boot path only) the present pair's wall time minus render -- the non-render
                overhead, dominated by the frame_begin fence wait (GPU backpressure).
@@ -36,37 +36,39 @@ static struct
 
     f64             t_loop_start;       // clock() captured at boot_poll entry (0 = not armed)
     f64             t_emit_start;       // clock() captured at frame_begin (0 = not armed)
-    f64             emit_ms;            // this frame: frame_begin -> first render() (ms)
+    f64             t_present_start;    // clock() captured at present_begin entry (0 = not armed)
+
+    f64             emit_ms;            // this frame: frame_begin -> frame_end (ms)
     f64             rend_ms;            // this frame: accumulated render() wall time (ms)
-    f64             t_present_start;    // clock() at boot_present_begin entry (0 = not armed)
     f64             pres_ms;            // this frame: present pair wall minus render (ms)
 
     f32             fps;                // smoothed readouts shown by the overlay
     f32             s_poll_ms;          // smooth time boot_poll      -> boot_present_begin
-    f32             s_emit_ms;          // smooth time frame_begin    -> first render()
+    f32             s_emit_ms;          // smooth time frame_begin    -> frame_end
     f32             s_rend_ms;          // smooth time first render() -> boot_present_end
     f32             s_pres_ms;          // smooth time present_begin  -> boot_present_end minus render
     f32             s_wait_ms;          // smooth time present_end    -> boot_poll
 
-    bool            emit_captured;      // emit_ms latched on the first render() this frame  
+    bool            emit_captured;      // emit_ms latched at frame_end this frame
 
 } s_perf;
 
 /*============================================================================================*/
-/* Publish last frame's raw emit/render times into the smoothed readouts and open a fresh emit clock.
-   Called from frame_begin (which owns dt -> fps). */
+/* Publish last frame's raw emit/render times into the smoothed readouts and open a fresh
+   emit clock. Called from frame_begin (which owns dt -> fps). */
 
 static void
 perf_frame_begin( f32 dt )
 {
     if ( dt > 0.0f )
     {
-        f32 inst = 1.0f / dt;
+        f32 inst = 1.0f / dt; // instantaneous FPS this frame
         s_perf.fps = s_perf.fps <= 0.0f ? inst : s_perf.fps * 0.92f + inst * 0.08f;
     }
     f32 em = (f32)s_perf.emit_ms;
     f32 rm = (f32)s_perf.rend_ms;
     f32 pm = (f32)s_perf.pres_ms;
+
     s_perf.s_emit_ms = s_perf.s_emit_ms <= 0.0f ? em : s_perf.s_emit_ms * 0.9f + em * 0.1f;
     s_perf.s_rend_ms = s_perf.s_rend_ms <= 0.0f ? rm : s_perf.s_rend_ms * 0.9f + rm * 0.1f;
     s_perf.s_pres_ms = s_perf.s_pres_ms <= 0.0f ? pm : s_perf.s_pres_ms * 0.9f + pm * 0.1f;
@@ -80,15 +82,17 @@ perf_frame_begin( f32 dt )
 }
 
 /*============================================================================================*/
-/* Close the emit phase at frame_end: build cost = frame_begin -> frame_end. Latches emit_ms from
-   the clock armed in perf_frame_begin. Idempotent -- first capture wins, so perf_render_begin's
-   fallback below is a no-op once this has run. */
+/* Close the emit phase at frame_end: emit stage cost = frame_begin -> frame_end.
+   Latches emit_ms from the clock armed in perf_frame_begin. render() (gui_render) contractually
+   only ever runs once the frame is sealed (GUI_FRAME_BUILD contract check in gui_frame_loop.c),
+   so this is always the one place emit_ms gets captured. */
 
 static void
 perf_frame_end( void )
 {
     if ( !s_perf.clock )
-        return;
+         return;
+    
     if ( !s_perf.emit_captured && s_perf.t_emit_start > 0.0 )
     {
         s_perf.emit_ms       = ( s_perf.clock() - s_perf.t_emit_start ) * 1000.0;
@@ -97,22 +101,13 @@ perf_frame_end( void )
 }
 
 /*============================================================================================*/
-/* Bracket a render() flush: returns the clock reading to time it. Also a fallback emit-phase
-   close -- frame_end normally latches emit_ms first, but this catches it if frame_end was
-   skipped. Returns 0 if timing is off (no clock, or t_emit_start unarmed). */
+/* Bracket a render() flush: returns the clock reading to time it. Returns 0 if timing is off
+   (no clock). */
 
 static f64
 perf_render_begin( void )
 {
-    if ( !s_perf.clock )
-        return 0.0;
-    f64 now = s_perf.clock();
-    if ( !s_perf.emit_captured && s_perf.t_emit_start > 0.0 )
-    {
-        s_perf.emit_ms       = ( now - s_perf.t_emit_start ) * 1000.0;
-        s_perf.emit_captured = true;
-    }
-    return now;
+    return s_perf.clock ? s_perf.clock() : 0.0;
 }
 
 /*============================================================================================*/
