@@ -246,6 +246,7 @@ overlay_perf( int mode )
                - wait:    boot_pace sleep / idle -- the loop's sleep, made visible instead of hidden
                total sums all five and should track the FPS ms above (residual = loop arithmetic +
                one frame of self-measurement lag). */
+
             if ( mode == 2 )
             {
                 gui_textf( "present %5.2f ms", s_perf.s_pres_ms );
