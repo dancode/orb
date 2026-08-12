@@ -183,18 +183,17 @@ perf_span_end( f32* dst, f64 t0 )
 ==============================================================================================*/
 
 static void
-overlay_backdrop( gui_id_t id, f32 x, f32 y, f32 fixed_w )
+overlay_backdrop( void )
 {
-    /* The overlay is a root region, autosized to its content (w/h <= 0), fixed top-left.  
-       The backdrop is drawn by the overlay's scroll link, which is the only child of the root region.
-       The scroll link's content_w is the width of the text readout, which is what we want to fill
-       with a dark backdrop. If the caller specifies a fixed width, use that instead. */
-
-    gui_scroll_link_t* scroll = GUI_STATE( gui_scroll_link_t, id );
-    f32 w = ( fixed_w > 0.0f ) ? fixed_w : scroll->content_w;
-
-    if ( w > 0.0f && scroll->content_h > 0.0f )
-        gui_draw_rect( x, y, w, scroll->content_h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
+    /* Called as the first statement inside a region's body, right after gui_region_begin, so
+       lf() is still that region's frame -- outer is the exact box it resolved this frame
+       (fixed, autosized to content, or user-resized via GUI_WIN_CHILD_RESIZE_X/_Y).  Reading
+       the box directly, rather than re-deriving a size from the region's measured content,
+       keeps this correct once a region is resizeable: a dragged box need not match its
+       content's extent, so the two can no longer be assumed equal.  gui_region_begin never
+       resolves a zero-size box, so no positive-size guard is needed here. */
+    gui_rect_t box = lf()->outer;
+    gui_draw_rect( box.x, box.y, box.w, box.h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
 }
 
 static void
@@ -216,13 +215,12 @@ overlay_perf( int mode )
          a debug readout you can't see is useless. */
 
     gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f, GUI_REGION_FG, GUI_VP_MAIN,
-                     GUI_WIN_ALWAYS_AUTOSIZE | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND | GUI_WIN_NOSCROLL );
-                     // GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
+                     GUI_WIN_DEBUG_BAND | GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_ALWAYS_AUTOSIZE );
     {
-        overlay_backdrop( id_hash( "perf_overlay" ), left_x, top_y, 0.0f );
+        overlay_backdrop();
 
         gui_stack();
-        // gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
+        gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
 
         /* FPS, graded by health: >=60 green, >=30 amber, else red. */
         u32 fps_col = fps >= 60.0f ? GUI_COLOR( 0x66, 0xDD, 0x55, 0xFF )
@@ -236,31 +234,31 @@ overlay_perf( int mode )
         fmt_snprintf( line, sizeof( line ), "FPS %5.1f  (%4.2f ms)", fps, fps > 0.0f ? 1000.0f / fps : 0.0f );
         gui_text_colored( fps_col, line );
         
-        // bool show_timing_rows = ( mode >= 2 );
-        // if ( show_timing_rows )
-        // {
-        //     gui_new_line( 2.0f );
-        //     gui_textf( "emit    %5.2f ms", s_perf.s_emit_ms );
-        //     gui_textf( "render  %5.2f ms", s_perf.s_rend_ms );
-        // 
-        //     /* Full loop breakdown -- tier 2 only. Tiers 3+ swap this for geometry/pool stats,
-        //        where these fence/sleep numbers are just noise.
-        //        - present: non-render overhead (fence wait + acquire + submit + present)
-        //        - poll:    OS pump + input
-        //        - wait:    boot_pace sleep / idle -- the loop's sleep, made visible instead of hidden
-        //        total sums all five and should track the FPS ms above (residual = loop arithmetic +
-        //        one frame of self-measurement lag). */
-        // 
-        //     if ( mode == 2 )
-        //     {
-        //         gui_textf( "present %5.2f ms", s_perf.s_pres_ms );
-        //         gui_textf( "poll    %5.2f ms", s_perf.s_poll_ms );
-        //         gui_textf( "wait    %5.2f ms", s_perf.s_wait_ms );
-        //         gui_textf( "total   %5.2f ms", s_perf.s_emit_ms + s_perf.s_rend_ms
-        //                                      + s_perf.s_pres_ms + s_perf.s_poll_ms
-        //                                      + s_perf.s_wait_ms );
-        //     }
-        // }
+        bool show_timing_rows = ( mode >= 2 );
+        if ( show_timing_rows )
+        {
+            gui_new_line( 2.0f );
+            gui_textf( "emit    %5.2f ms", s_perf.s_emit_ms );
+            gui_textf( "render  %5.2f ms", s_perf.s_rend_ms );
+        
+            /* Full loop breakdown -- tier 2 only. Tiers 3+ swap this for geometry/pool stats,
+               where these fence/sleep numbers are just noise.
+               - present: non-render overhead (fence wait + acquire + submit + present)
+               - poll:    OS pump + input
+               - wait:    boot_pace sleep / idle -- the loop's sleep, made visible instead of hidden
+               total sums all five and should track the FPS ms above (residual = loop arithmetic +
+               one frame of self-measurement lag). */
+        
+            if ( mode == 2 )
+            {
+                gui_textf( "present %5.2f ms", s_perf.s_pres_ms );
+                gui_textf( "poll    %5.2f ms", s_perf.s_poll_ms );
+                gui_textf( "wait    %5.2f ms", s_perf.s_wait_ms );
+                gui_textf( "total   %5.2f ms", s_perf.s_emit_ms + s_perf.s_rend_ms
+                                             + s_perf.s_pres_ms + s_perf.s_poll_ms
+                                             + s_perf.s_wait_ms );
+            }
+        }
         // 
         // bool show_geometry_rows = ( mode >= 3 );
         // if ( show_geometry_rows )
@@ -326,7 +324,7 @@ overlay_perf( int mode )
         //     gui_textf( "pace  %s", gui_idle_skip()           ? "idleskip" : "spin    " );
         // }
 
-        // gui_scale_pop();
+        gui_scale_pop();
     }
     gui_region_end();
 }
@@ -379,7 +377,7 @@ overlay_state( int mode )
     gui_region_begin( "state_overlay", 260.0f, top_y, 0.0f, 0.0f, GUI_REGION_FG, GUI_VP_MAIN,
                       GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT );
     {
-        overlay_backdrop( id_hash( "state_overlay" ), 260.0f, top_y, 0.0f );
+        overlay_backdrop();
         gui_stack();
         gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
 
@@ -870,9 +868,7 @@ debug_selector_menu( void )
     gui_region_begin( "debug_selector", x, top_y, w, 0.0f, GUI_REGION_FG, GUI_VP_MAIN,
                       GUI_WIN_NOSCROLL | GUI_WIN_DEBUG_BAND );
     {
-        /* Explicit width -- the measure would stop at the widest checkbox label (see the
-           fill-vs-shrink note on overlay_backdrop). */
-        overlay_backdrop( id_hash( "debug_selector" ), x, top_y, w );
+        overlay_backdrop();
         gui_stack();
 
         /* The ambient field is a set-once global (gui_field_set) -- whatever the last host

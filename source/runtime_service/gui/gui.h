@@ -2303,7 +2303,10 @@ typedef enum
 
     GUI_WIN_NO_BOUNDARY_CLAMP = 1 << 5,    /* placement is externally managed; skip both clamps */
 
-    /* Auto-resize -- size the window to its content instead of a fixed w/h. */
+    /* Auto-resize -- size the window to its content instead of a fixed w/h.  Window-only: a
+       region already autosizes per-axis on w/h <= 0 without this bit (see GUI_WIN_CHILD_RESIZE_X/_Y
+       below for how a region mixes autosize and resize across its two axes); gui_region_begin
+       does not read it. */
 
     GUI_WIN_ALWAYS_AUTOSIZE   = 1 << 6,    /* hug content every frame: no user resize, no scrollbars */
     GUI_WIN_CAN_AUTOSIZE      = 1 << 7,    /* show a corner size-grip; double-click it to fit content */
@@ -2377,21 +2380,24 @@ typedef enum
 
     GUI_WIN_NO_INPUT          = 1 << 19,   /* click-through: never becomes hover_win */
 
-    /* Child regions -- child_begin only.
+    /* Child / root regions -- child_begin and gui_region_begin.
 
        CHILD_RESIZE_X / _Y (the ImGuiChildFlags_ResizeX / _ResizeY analogue): a draggable grip on
-       the child's right / bottom border; the size on that axis then becomes user-owned and persisted
-       -- seeded once from the child_begin w/h, thereafter set by the drag -- overriding the passed
-       value.  RESIZE_Y supersedes the h<=0 auto-size on that axis.  A real window ignores these (it
-       owns its geometry already), as does a grid-cell child (the cell sizes it).  Vertical is the
-       common case; both axes may be combined.
+       the right / bottom border; the size on that axis then becomes user-owned and persisted --
+       seeded once from the child_begin / region_begin w/h, thereafter set by the drag --
+       overriding the passed value.  RESIZE_Y supersedes the h<=0 auto-size on that axis.  A real
+       window ignores these (it owns its geometry already), as does a grid-cell child (the cell
+       sizes it).  Vertical is the common case; both axes may be combined.
 
-       NO_CLIP: skip pushing a draw clip rect for this child region.  Use when the caller knows
+       Each axis picks independently -- a region may autosize x (its w argument <= 0) while
+       CHILD_RESIZE_Y drives y, or any other mix; they are not mutually exclusive across axes.
+
+       NO_CLIP: skip pushing a draw clip rect for this region.  Use when the caller knows
        content fits and wants to avoid the extra draw batch the scissor causes. */
 
-    GUI_WIN_CHILD_RESIZE_X    = 1 << 20,   /* child: drag the right border to resize width   */
-    GUI_WIN_CHILD_RESIZE_Y    = 1 << 21,   /* child: drag the bottom border to resize height  */
-    GUI_WIN_NO_CLIP           = 1 << 22,   /* child: do not push a clip rect */
+    GUI_WIN_CHILD_RESIZE_X    = 1 << 20,   /* child/region: drag the right border to resize width  */
+    GUI_WIN_CHILD_RESIZE_Y    = 1 << 21,   /* child/region: drag the bottom border to resize height */
+    GUI_WIN_NO_CLIP           = 1 << 22,   /* child/region: do not push a clip rect */
 
     /* Arena band: routes this window's (or region's) retained geometry into the debug band of
        the shared vertex/index arena.  Debug-band windows pack AFTER every main-band slot, are

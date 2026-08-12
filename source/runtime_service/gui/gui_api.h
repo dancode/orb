@@ -1104,18 +1104,19 @@ typedef struct gui_api_s
     void       ( *pane_end   )( void );
 
     /* region_begin / region_end -- a root-level layout region: an explicit screen rect with no
-       window chrome (no title, no drag/resize, no dock, no z-order competition, no pool record).
+       window chrome (no title, no drag, no dock, no z-order competition, no pool record).
        It is the third caller of the same scroll-region engine window_begin and child_begin sit
        on, stripped to just a rect + persisted scroll/content state, for a HUD-style element that
        needs a fixed, caller-positioned box rather than a movable window -- the perf overlay is
        the reference case.  w/h <= 0 autosizes that axis to last frame's measured content, like
-       child_begin's AutoResizeY.  Unlike window_begin / child_begin, it takes no parent region --
-       call it directly at the top of a frame.  Paints on viewport `vp` (rect in that surface's
-       client space; GUI_VP_MAIN = the primary, GUI_VP_INVALID and a closed viewport map to it) at the z
-       tier picked by `tier` (gui_region_tier_t: MID over windows / under popups, BG, FG);
-       interactive by default -- competes for hover in the same z contest as windows (opt out
-       with GUI_WIN_NO_INPUT; see gui_region.c).  Always returns true; always pair with
-       region_end. */
+       child_begin's AutoResizeY; GUI_WIN_CHILD_RESIZE_X/_Y opts that axis into a drag grip
+       instead, same as child_begin.  Unlike window_begin / child_begin, it takes no parent
+       region -- call it directly at the top of a frame.  Paints on viewport `vp` (rect in that
+       surface's client space; GUI_VP_MAIN = the primary, GUI_VP_INVALID and a closed viewport
+       map to it) at the z tier picked by `tier` (gui_region_tier_t: MID over windows / under
+       popups, BG, FG); interactive by default -- competes for hover in the same z contest as
+       windows (opt out with GUI_WIN_NO_INPUT; see gui_region.c).  Always returns true; always
+       pair with region_end. */
     bool ( *region_begin )( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tier_t tier,
                             i32 vp, gui_win_flags_t flags );
     void ( *region_end   )( void );

@@ -226,8 +226,9 @@ layout_frame_t* lf( void );         /* flow/gui_layout_core.c -- top frame (clam
 /*==============================================================================================
     Persistent region state (flow/gui_scroll.c)
 
-    A child_begin region's scroll offset and last-measured content size, kept across frames in the
-    keyed state pool (gui_ctx.c), keyed by region id.  Windows keep these inline in gui_window_t.
+    A child_begin or gui_region_begin region's scroll offset, last-measured content size, and
+    (if GUI_WIN_CHILD_RESIZE_X/_Y is set) user-dragged size, kept across frames in the keyed
+    state pool (gui_ctx.c), keyed by region id.  Windows keep these inline in gui_window_t.
 ==============================================================================================*/
 
 typedef struct
