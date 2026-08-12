@@ -216,113 +216,117 @@ overlay_perf( int mode )
          a debug readout you can't see is useless. */
 
     gui_region_begin( "perf_overlay", left_x, top_y, 0.0f, 0.0f, GUI_REGION_FG, GUI_VP_MAIN,
-                      GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
+                     GUI_WIN_ALWAYS_AUTOSIZE | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND | GUI_WIN_NOSCROLL );
+                     // GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT | GUI_WIN_DEBUG_BAND );
     {
         overlay_backdrop( id_hash( "perf_overlay" ), left_x, top_y, 0.0f );
 
         gui_stack();
-        gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
+        // gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
 
         /* FPS, graded by health: >=60 green, >=30 amber, else red. */
         u32 fps_col = fps >= 60.0f ? GUI_COLOR( 0x66, 0xDD, 0x55, 0xFF )
                     : fps >= 30.0f ? GUI_COLOR( 0xE0, 0xC0, 0x40, 0xFF )
                     :                GUI_COLOR( 0xEE, 0x55, 0x44, 0xFF );
+        
+        UNUSED( fps );
+        UNUSED( fps_col );
 
         char line[ 64 ];
         fmt_snprintf( line, sizeof( line ), "FPS %5.1f  (%4.2f ms)", fps, fps > 0.0f ? 1000.0f / fps : 0.0f );
         gui_text_colored( fps_col, line );
+        
+        // bool show_timing_rows = ( mode >= 2 );
+        // if ( show_timing_rows )
+        // {
+        //     gui_new_line( 2.0f );
+        //     gui_textf( "emit    %5.2f ms", s_perf.s_emit_ms );
+        //     gui_textf( "render  %5.2f ms", s_perf.s_rend_ms );
+        // 
+        //     /* Full loop breakdown -- tier 2 only. Tiers 3+ swap this for geometry/pool stats,
+        //        where these fence/sleep numbers are just noise.
+        //        - present: non-render overhead (fence wait + acquire + submit + present)
+        //        - poll:    OS pump + input
+        //        - wait:    boot_pace sleep / idle -- the loop's sleep, made visible instead of hidden
+        //        total sums all five and should track the FPS ms above (residual = loop arithmetic +
+        //        one frame of self-measurement lag). */
+        // 
+        //     if ( mode == 2 )
+        //     {
+        //         gui_textf( "present %5.2f ms", s_perf.s_pres_ms );
+        //         gui_textf( "poll    %5.2f ms", s_perf.s_poll_ms );
+        //         gui_textf( "wait    %5.2f ms", s_perf.s_wait_ms );
+        //         gui_textf( "total   %5.2f ms", s_perf.s_emit_ms + s_perf.s_rend_ms
+        //                                      + s_perf.s_pres_ms + s_perf.s_poll_ms
+        //                                      + s_perf.s_wait_ms );
+        //     }
+        // }
+        // 
+        // bool show_geometry_rows = ( mode >= 3 );
+        // if ( show_geometry_rows )
+        // {
+        //     gui_render_stats_t rs = gui_render_stats();
+        //     gui_new_line( 2.0f );
+        //     gui_textf( "verts   %6u", rs.vert_count );
+        //     gui_textf( "tris    %6u", rs.tri_count  );
+        //     gui_textf( "batches %6u", rs.draw_calls );
+        //     gui_textf( "cmds    %6u", rs.cmd_count  );
+        //     gui_textf( "clips   %6u", rs.clip_count );
+        // 
+        //     bool show_retained_rows = ( mode >= 4 );
+        //     if ( show_retained_rows )
+        //     {
+        //         /* Retained-mode stats: geometry reused vs re-tessellated. vol patch is separate
+        //            from wins ret above -- a window with an animating volatile widget
+        //            (gui()->volatile_cb) still counts as fully retained; this is what moved inside
+        //            it this frame. */
+        //         gui_new_line( 2.0f );
+        //         gui_textf( "wins ret  %u/%u", rs.win_retained,  rs.win_total   );
+        //         gui_textf( "verts ret %u/%u", rs.vert_retained, rs.vert_count  );
+        //         gui_textf( "tris ret  %u/%u", rs.tri_retained,  rs.tri_count   );
+        //         gui_textf( "vol patch %u",    rs.volatile_patched              );
+        //         gui_textf( "vol rows  %u/%u", volatile_row_count(), GUI_MAX_VOLATILE );
+        // 
+        //         /* Upload stats: GPU memory bandwidth. */
+        //         gui_new_line( 2.0f );
+        //         gui_textf( "up batch  %u", rs.upload_batches );
+        //         gui_textf( "up bytes  %u", rs.upload_bytes   );
+        // 
+        //         /* Keyed state pool load per class: live (touched within a frame) / occupied
+        //            (live + unreclaimed tombstones) / capacity.  The partition-tuning metric. */
+        //         gui_state_usage_t su = gui_state_usage();
+        //         gui_new_line( 2.0f );
+        //         gui_textf( "st tiny  %u/%u/%u", su.tiny_live,  su.tiny_used,  su.tiny_cap  );
+        //         gui_textf( "st small %u/%u/%u", su.small_live, su.small_used, su.small_cap );
+        //         gui_textf( "st big   %u/%u/%u", su.big_live,   su.big_used,   su.big_cap   );
+        // 
+        //         /* Fixed-pool pressure: used vs cap. These pools fail silently when full --
+        //            watch for caps under load and raise them BEFORE labels drop, clips break, or
+        //            nav items fall off the list. nav is this frame's live count (the overlay emits
+        //            last, after every window has registered). */
+        //         gui_new_line( 2.0f );
+        //         gui_textf( "cmds  %u/%u", rs.cmd_count,      (u32)GUI_MAX_CMDS       );
+        //         gui_textf( "segs  %u/%u", rs.seg_count,      (u32)GUI_MAX_SEGS       );
+        //         gui_textf( "clips %u/%u", rs.clip_count,     (u32)GUI_MAX_CLIP_RECTS );
+        //         gui_textf( "text  %u/%u", rs.text_pool_used, (u32)GUI_MAX_TEXT_POOL  );
+        //         gui_textf( "nav   %u/%u", g_ctx->nav.item_count, (u32)GUI_NAV_ITEMS_MAX );
+        //     }
+        // }
+        // 
+        // /* Debug-lever status (mode >= 3): the live emit / tessellation / pacing toggles, so you
+        //    don't need the console log to know which regime the numbers above were measured under.
+        //    Toggled from the selector menu (right edge of viewport), not their own hotkey.
+        //    Fixed-width states keep the row from resizing. */
+        // bool show_status_rows = ( mode >= 3 );
+        // if ( show_status_rows )
+        // {
+        //     gui_new_line( 2.0f );
+        //     gui_textf( "emit  %s", gui_force_redraw()        ? "forced  " : "on-dirty" );
+        //     gui_textf( "tess  %s", build_retained_skip() ? "cached  " : "always  " );
+        //     gui_textf( "pace  %s", gui_idle_skip()           ? "idleskip" : "spin    " );
+        // }
 
-        bool show_timing_rows = ( mode >= 2 );
-        if ( show_timing_rows )
-        {
-            gui_new_line( 2.0f );
-            gui_textf( "emit    %5.2f ms", s_perf.s_emit_ms );
-            gui_textf( "render  %5.2f ms", s_perf.s_rend_ms );
-
-            /* Full loop breakdown -- tier 2 only. Tiers 3+ swap this for geometry/pool stats,
-               where these fence/sleep numbers are just noise.
-               - present: non-render overhead (fence wait + acquire + submit + present)
-               - poll:    OS pump + input
-               - wait:    boot_pace sleep / idle -- the loop's sleep, made visible instead of hidden
-               total sums all five and should track the FPS ms above (residual = loop arithmetic +
-               one frame of self-measurement lag). */
-
-            if ( mode == 2 )
-            {
-                gui_textf( "present %5.2f ms", s_perf.s_pres_ms );
-                gui_textf( "poll    %5.2f ms", s_perf.s_poll_ms );
-                gui_textf( "wait    %5.2f ms", s_perf.s_wait_ms );
-                gui_textf( "total   %5.2f ms", s_perf.s_emit_ms + s_perf.s_rend_ms
-                                             + s_perf.s_pres_ms + s_perf.s_poll_ms
-                                             + s_perf.s_wait_ms );
-            }
-        }
-
-        bool show_geometry_rows = ( mode >= 3 );
-        if ( show_geometry_rows )
-        {
-            gui_render_stats_t rs = gui_render_stats();
-            gui_new_line( 2.0f );
-            gui_textf( "verts   %6u", rs.vert_count );
-            gui_textf( "tris    %6u", rs.tri_count  );
-            gui_textf( "batches %6u", rs.draw_calls );
-            gui_textf( "cmds    %6u", rs.cmd_count  );
-            gui_textf( "clips   %6u", rs.clip_count );
-
-            bool show_retained_rows = ( mode >= 4 );
-            if ( show_retained_rows )
-            {
-                /* Retained-mode stats: geometry reused vs re-tessellated. vol patch is separate
-                   from wins ret above -- a window with an animating volatile widget
-                   (gui()->volatile_cb) still counts as fully retained; this is what moved inside
-                   it this frame. */
-                gui_new_line( 2.0f );
-                gui_textf( "wins ret  %u/%u", rs.win_retained,  rs.win_total   );
-                gui_textf( "verts ret %u/%u", rs.vert_retained, rs.vert_count  );
-                gui_textf( "tris ret  %u/%u", rs.tri_retained,  rs.tri_count   );
-                gui_textf( "vol patch %u",    rs.volatile_patched              );
-                gui_textf( "vol rows  %u/%u", volatile_row_count(), GUI_MAX_VOLATILE );
-
-                /* Upload stats: GPU memory bandwidth. */
-                gui_new_line( 2.0f );
-                gui_textf( "up batch  %u", rs.upload_batches );
-                gui_textf( "up bytes  %u", rs.upload_bytes   );
-
-                /* Keyed state pool load per class: live (touched within a frame) / occupied
-                   (live + unreclaimed tombstones) / capacity.  The partition-tuning metric. */
-                gui_state_usage_t su = gui_state_usage();
-                gui_new_line( 2.0f );
-                gui_textf( "st tiny  %u/%u/%u", su.tiny_live,  su.tiny_used,  su.tiny_cap  );
-                gui_textf( "st small %u/%u/%u", su.small_live, su.small_used, su.small_cap );
-                gui_textf( "st big   %u/%u/%u", su.big_live,   su.big_used,   su.big_cap   );
-
-                /* Fixed-pool pressure: used vs cap. These pools fail silently when full --
-                   watch for caps under load and raise them BEFORE labels drop, clips break, or
-                   nav items fall off the list. nav is this frame's live count (the overlay emits
-                   last, after every window has registered). */
-                gui_new_line( 2.0f );
-                gui_textf( "cmds  %u/%u", rs.cmd_count,      (u32)GUI_MAX_CMDS       );
-                gui_textf( "segs  %u/%u", rs.seg_count,      (u32)GUI_MAX_SEGS       );
-                gui_textf( "clips %u/%u", rs.clip_count,     (u32)GUI_MAX_CLIP_RECTS );
-                gui_textf( "text  %u/%u", rs.text_pool_used, (u32)GUI_MAX_TEXT_POOL  );
-                gui_textf( "nav   %u/%u", g_ctx->nav.item_count, (u32)GUI_NAV_ITEMS_MAX );
-            }
-        }
-
-        /* Debug-lever status (mode >= 3): the live emit / tessellation / pacing toggles, so you
-           don't need the console log to know which regime the numbers above were measured under.
-           Toggled from the selector menu (right edge of viewport), not their own hotkey.
-           Fixed-width states keep the row from resizing. */
-        bool show_status_rows = ( mode >= 3 );
-        if ( show_status_rows )
-        {
-            gui_new_line( 2.0f );
-            gui_textf( "emit  %s", gui_force_redraw()        ? "forced  " : "on-dirty" );
-            gui_textf( "tess  %s", build_retained_skip() ? "cached  " : "always  " );
-            gui_textf( "pace  %s", gui_idle_skip()           ? "idleskip" : "spin    " );
-        }
-
-        gui_scale_pop();
+        // gui_scale_pop();
     }
     gui_region_end();
 }

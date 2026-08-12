@@ -280,11 +280,11 @@ f32 vp_h( i32 vp ) { i32 h = s_vp_pool[ vp ].disp_h; return h > 0 ? (f32)h : (f3
    record gets in window_begin_ex.  Record-less callers (pane_begin, region_begin) have nowhere
    to persist that reversion, so they resolve on every open. */
 
-i32
-vp_resolve( i32 vp )
+i32 vp_resolve( i32 vp )
 {
     if ( vp <= 0 || vp >= APP_WIN_MAX )
-        return 0;
+         return GUI_VP_MAIN;
+
     return rhi_handle_valid( s_vp_pool[ vp ].vb ) ? vp : 0;
 }
 

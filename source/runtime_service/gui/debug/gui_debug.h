@@ -62,13 +62,13 @@ u32  debug_unit_mem_bytes ( void );         /* debug unit: its fixed statics, fo
        readable name instead of a hash.  See gui_debug_name() in gui_host.h for the reader. */
     void dbg_name_register( gui_id_t id, const char* str );
 
-    #define DBG_WIDGET( id, r, hov, act ) dbg_capture_widget( ( id ), ( r ), ( hov ), ( act ) )
-    #define DBG_CLIP( r, depth )          dbg_capture_clip( ( r ), ( depth ) )
-    #define DBG_WINDOW( r, is_hover )     dbg_capture_window( ( r ), ( is_hover ) )
-    #define DBG_RESIZE( band, hot )       dbg_capture_resize( ( band ), ( hot ) )
-    #define DBG_LAYOUT( r )               dbg_capture_layout( ( r ) )
+    #define DBG_WIDGET( id, r, hov, act )   dbg_capture_widget( ( id ), ( r ), ( hov ), ( act ) )
+    #define DBG_CLIP( r, depth )            dbg_capture_clip( ( r ), ( depth ) )
+    #define DBG_WINDOW( r, is_hover )       dbg_capture_window( ( r ), ( is_hover ) )
+    #define DBG_RESIZE( band, hot )         dbg_capture_resize( ( band ), ( hot ) )
+    #define DBG_LAYOUT( r )                 dbg_capture_layout( ( r ) )
     #define DBG_REGION( view, hit, sw, sh ) dbg_capture_region( ( view ), ( hit ), ( sw ), ( sh ) )
-    #define DBG_NAME( id, str )           dbg_name_register( ( id ), ( str ) )
+    #define DBG_NAME( id, str )             dbg_name_register( ( id ), ( str ) )
 
     /* Ambient build viewport (s_build.win.viewport, core/gui_ctx.c) -- the capture functions
        live in the render unit, so they read it through this accessor rather than the static. */
