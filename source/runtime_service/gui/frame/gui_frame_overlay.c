@@ -240,7 +240,7 @@ overlay_perf( int mode )
             gui_new_line( 2.0f );
             gui_textf( "emit    %5.2f ms", s_perf.s_emit_ms );
             gui_textf( "render  %5.2f ms", s_perf.s_rend_ms );
-        
+            
             /* Full loop breakdown -- tier 2 only. Tiers 3+ swap this for geometry/pool stats,
                where these fence/sleep numbers are just noise.
                - present: non-render overhead (fence wait + acquire + submit + present)

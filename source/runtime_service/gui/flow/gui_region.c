@@ -47,19 +47,22 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tie
 
     gui_dpi_land( vp );
 
-    /* GUI_WIN_CHILD_RESIZE_X/_Y (gui.h): a draggable grip on the right / bottom edge, the same
-       flag and the same user_w/user_h field child_begin drags -- seeded once from the passed
-       w/h (or a sensible default), thereafter owned by the drag.  Absent, the axis autosizes
-       exactly like child_begin's h <= 0 (AutoResizeY): hug last frame's measured content once
-       one exists, else open one widget-row tall.  layout_push_region insets the view from this
-       box by WIN_BORDER (view_w by 2x, left+right; view_h by 1x), so the border is added back
-       on the autosize path -- otherwise the view comes out a border short of the content that
-       was just measured against a full-width view, and region_gutters reads that shortfall as
-       overflow, reserving a scrollbar gutter no actual content needs.
+    /* GUI_WIN_CHILD_RESIZE_X/_Y (gui.h) puts a draggable grip on the right / bottom edge. 
+       It is the same flag and the same user_w/user_h field that child_begin drags: seeded
+       once from the passed w/h (or a default), then owned by the drag from then on.
 
-       The two axes resolve independently: x and y each pick autosize or resize on their own, so
-       a caller can autosize one axis (its w or h argument <= 0) while dragging the other (its
-       CHILD_RESIZE_X/_Y bit set) in the same region -- deliberate, not a conflict. */
+       Without the flag, the axis autosizes the same way child_begin's h <= 0 does (AutoResizeY):
+       hug last frame's measured content if there is any, else open one widget-row tall.
+
+       layout_push_region insets the view from this box by WIN_BORDER (view_w loses it twice,
+       left and right; view_h loses it once). On the autosize path that border has to be added
+       back here, or the view ends up a border short of the content it was just measured
+       against, and region_gutters mistakes that shortfall for overflow and reserves a
+       scrollbar gutter nothing needs.
+
+       x and y each choose autosize or resize independently. A caller can autosize one axis
+       (w or h <= 0) while dragging the other (its CHILD_RESIZE_X/_Y bit set) in the same
+       region -- that is deliberate, not a conflict. */
 
     bool resize_x = ( flags & GUI_WIN_CHILD_RESIZE_X ) != 0;
     bool resize_y = ( flags & GUI_WIN_CHILD_RESIZE_Y ) != 0;
