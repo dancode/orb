@@ -125,6 +125,7 @@ typedef struct
 /* A queued request to move a window to a different viewport -- either tearing a docked window
    off into its own floating OS window, or merging a floater back in. Resolved once per frame by
    gui_viewport_update. */
+
 typedef struct
 {
     bool        active;     // a request is queued this frame
@@ -135,8 +136,8 @@ typedef struct
     bool        has_home;   // re-opening a closed floater: use its saved restore rect
 
     /* The context win_id belongs to, captured when the request is queued. The context bound
-       when it is later resolved may be different, so this must be saved rather than looked up
-       again. */
+       when it is later resolved may be different, so this must be saved rather than looked up again. */
+
     struct gui_context_t* owner;
 
 } gui_vp_request_t;

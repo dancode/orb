@@ -25,17 +25,20 @@
     The top frame owns the layout pen and content column the leaf widgets emit into;
     The rest is the resolve context layout_pop_region needs to measure content and draw 
     the region's scrollbars.
+
+    Three grouped lifetimes of a layout frame, named so each reset in gui_layout_core.c 
+    is a single struct assignment that cannot drift from the field list:
+
+    layout_tmpl_t -- the installed shape; persists until the next header replaces it
+
+    layout_mod_t  -- orthogonal modifiers; persist across installs, reset only by the full
+                     clears (layout_clear / layout_set_default via layout_modifiers_reset)
+
+    layout_line_t -- the iteration cursor + open-line record; re-zeroed by every install
+                     (layout_template_reset) 
+
 ==============================================================================================*/
 
-/* The three grouped lifetimes of a layout frame, named so each reset in gui_layout_core.c is a
-   single struct assignment that cannot drift from the field list:
-
-     layout_tmpl_t -- the installed shape; persists until the next header replaces it
-     layout_mod_t  -- orthogonal modifiers; persist across installs, reset only by the full
-                      clears (layout_clear / layout_set_default via layout_modifiers_reset)
-     layout_line_t -- the iteration cursor + open-line record; re-zeroed by every install
-                      (layout_template_reset) 
-*/
 
 /* Active row template (the row / cols headers).  Persists and repeats: each widget fills the
    next cell, wrapping to a fresh row of the same shape when the columns run out.  See
