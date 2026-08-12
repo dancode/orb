@@ -1,32 +1,11 @@
 /*==============================================================================================
 
-    runtime_service/gui/flow/gui_region.c -- Root-level region: a caller-positioned rect with
-    no window chrome, for HUD-style elements that just need to draw and take input somewhere
-    on screen.
+    runtime_service/gui/flow/gui_region.c -- a lightweight, chrome-free rectangle for
+    HUD-style UI: draws and takes input at a caller-given rect, with none of a window's
+    title bar, dragging, or docking.
 
-    window_begin_ex (gui_window_free.c) and child_begin (gui_layout_child.c) both build on the
-    shared scroll-region engine in gui_scroll.c, but neither is minimal: a window carries a
-    pool record, drag, and dock/native-surface sync even with every one of those paths flagged
-    off; a child_begin box needs an already-active parent frame to carve its rect from.
-    gui_region_begin/end is the third, minimal caller -- an explicit rect, persisted scroll +
-    content-measure state (autosize on h/w <= 0, exactly like child_begin's AutoResizeY), and
-    the same draw-state stamp window_begin_ex applies -- with no pool slot, no drag, no dock,
-    no title, no background fill.
-
-    It rents the full gui_region_t (gui_flow.h) from the keyed state pool -- the same record
-    child_begin uses. GUI_WIN_CHILD_RESIZE_X/_Y opts a region into the same right/bottom drag
-    grip child_begin offers, persisted in user_w/user_h; everything else about the record
-    (window-free, no pool slot, no dock) is unchanged by that.
-
-    The rect lives in the target viewport's client space (`vp`; GUI_VP_MAIN = primary,
-    GUI_VP_INVALID or a torn-down viewport both resolve to it). It competes for hover_win in
-    the same z contest windows and popups use (surface_hover_nominate, core/gui_surface.c), so
-    it is interactive by default at the caller's chosen tier (gui_region_tier_t, see gui.h);
-    opt out with GUI_WIN_NO_INPUT, the same flag a window honors.
-
-    Included by gui_flow.c after the sub-layout / split files (needs layout_push/pop_region,
-    REGION_PAD_DEFAULT, and the resize protocol resize_item/resize_apply_edges pulled in via
-    gui_interact.h) -- no dependency of its own.
+    Included by gui_flow.c after the layout-splitting files, since it needs
+    layout_push/pop_region and the resize helpers from gui_interact.h.
 
 ==============================================================================================*/
 // clang-format off
@@ -77,7 +56,6 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tie
         // 
         w = ( rg->scroll.content_w > 0.0f ) ? rg->scroll.content_w + 2.0f * WIN_BORDER : WIDGET_H * 4.0f;
     }
-
     if ( resize_y )
     {
         if ( rg->user_h <= 0.0f ) rg->user_h = ( h > 0.0f ) ? h : WIDGET_H * 8.0f;

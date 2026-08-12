@@ -2,10 +2,17 @@
 
     runtime_service/gui/gui_rect.c -- GUI_RECT translation unit: the leaf rect library.
 
-    The bottom of the gui stack: pure geometry + color primitives with no dependency beyond
-    base types.  No draw, no ids, no ambient state -- usable by any 2d utility, inside gui or
-    out.  The inline kit (types + carve algebra) is rect/gui_rect.h; this unit compiles the
-    non-inline half.
+    The most basic building block in the whole GUI: a rectangle (x, y, width, height) and the
+    handful of plain math operations every other unit does with one -- does this point fall
+    inside it, split it into two pieces, shrink it by a margin, blend two colors together. No
+    widget, no window, no on-screen drawing happens here; this file only does the arithmetic
+    those things are built from.
+
+    Because it depends on nothing but basic types, it sits at the very bottom of the gui stack
+    (every other unit can use it; it uses none of them) and could just as easily be used by
+    code outside the GUI entirely. The inline half -- the rect type itself and the small carve
+    operations that are cheap enough to inline -- lives in rect/gui_rect.h; this file compiles
+    the rest.
 
 ==============================================================================================*/
 

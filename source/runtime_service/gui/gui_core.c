@@ -2,24 +2,51 @@
 
     runtime_service/gui/gui_core.c -- GUI_CORE translation unit: the INTERACT SERVER.
 
-    The second server of the two-server model: io routing + dedicated
-    retained-mode storage.  It owns the id namespace, the distilled io snapshot, the keyed
-    state pool, the ambient interaction record (hover / active / focus), the interaction
-    scope, the context pool, the window-record surface service (placement, z dispenser,
-    hover/z contest), the standard item protocol, the retained-state animation utilities, and
-    the interact query readers.  It answers ONE question for every layer above: "what is the
-    user doing to this (id, rect)?"
+    This is the half of the GUI that answers one question, over and over, for every widget on
+    screen: "what is the user doing to this thing right now?" Is the mouse over it? Did it
+    just get clicked? Does it have keyboard focus? It reads the raw input -- mouse position,
+    key presses -- once per frame and turns it into that answer for whoever asks.
 
-    It knows nothing of style, themes, or drawing.  It never includes the render server's
-    header (render/gui_render.h) -- the two servers meet only in the frame orchestrator (the
-    pane bracket, frame/gui_pane.c).  Its few documented upward calls are listed in the
-    upward-seams block of core/gui_core.h (draw_nav_ring, nav_scroll_chase + the severable
-    debug stamps).
+    It also remembers things between frames, which is the "retained-mode storage" half of the
+    job. A checkbox's on/off state, a window's position, how far a scroll region has scrolled:
+    none of that is recomputed from scratch every frame. It is looked up here by a stable id (a
+    hash of the string the caller passed in, e.g. "Save Button"), updated if something changed,
+    and left alone otherwise.
 
-    It does NOT define the module API pointer storage (MOD_USE_RHI / MOD_USE_APP): those
-    globals live in gui.c and are fetched once at module init; this unit reads app() through
-    the same inline accessors (extern g_*_api_ptr) from app_api.h, since it owns the OS-input
-    boundary (event drain, key snapshot, clipboard, hardware cursor).
+    Critically, this unit knows nothing about colors, themes, or how anything looks, and it
+    never draws a single pixel. It is one of the two "servers" the rest of the GUI is built on
+    top of -- the other is the RENDER SERVER (gui_render.c), which does the opposite: it only
+    draws, and knows nothing about clicks or focus. The two never talk to each other directly;
+    they meet only inside the frame orchestrator that drives each frame (frame/gui_pane.c).
+
+    The pieces below, roughly in the order they build on each other:
+
+    - An input snapshot that reads raw events from the window/app layer once per frame and
+      turns them into a clean, stable reading the rest of the frame works from.
+    - The shared scratchpad everything else here builds on: which widget is hovered, which is
+      active (pressed or being dragged), which has keyboard focus, plus the pool of
+      per-window contexts.
+    - Identity: turns a caller's id string into the stable hash number ("id") that keys
+      everything else in this file back to that one specific widget.
+    - The state pool: the per-widget memory mentioned above, looked up by id and kept across
+      frames.
+    - Window records: bookkeeping for each open window -- its position, its draw order
+      relative to other windows, and which window currently wins the mouse when several
+      overlap.
+    - Keyboard-focus rules: which widget currently owns the keyboard, plus the rules for
+      exclusive input (a text field that should swallow all typing while it is active, say).
+    - Keyboard navigation: lets a widget register itself as a tab-stop, so arrow keys and Tab
+      can move focus between widgets without the mouse.
+    - The item protocol: the common "is this hovered / clicked / dragged" check nearly every
+      widget in the GUI runs through, written once here instead of once per widget.
+    - Animation helpers: smoothed values and timers (fades, slide-ins) that live here, keyed by
+      id just like widget state, so both the style system and gesture code can share them.
+    - Query functions: the public "ask a question" API other code calls -- e.g. "does the
+      mouse want to click through to the game world right now, or is a widget using it?"
+
+    This unit does not hold the pointers to the app/rhi module APIs it calls into -- those live
+    in gui.c, fetched once at startup -- it only reads them, since it owns the boundary where
+    raw OS input (events, keys, clipboard, the hardware cursor) enters the GUI.
 
     Include order matters: each file can reference statics from files included above it.
 

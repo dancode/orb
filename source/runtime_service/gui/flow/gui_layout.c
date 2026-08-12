@@ -20,7 +20,7 @@
         region verbs       empty / rows_clip / scroll_by -- act on the region that is open
         rect algebra       split / carve / anchor -- pure math over a caller rect, nothing
                            emitted and no region required
-
+    
     The region ENGINE the headers shape (layout_push/pop_region, scroll_clamp, nav_scroll_chase)
     is gui_scroll.c's, and the child / sub-layout lifecycles are gui_layout_child.c's and
     gui_sublayout.c's -- all included before this file.
@@ -43,6 +43,7 @@
    (the everyday vertical list).  This is the canonical name for what a region used to do silently
    by default; it must now be declared.  Keeps the orthogonal modifiers (align, field split) as
    they stand -- use layout_default() for the full reset. */
+
 void
 gui_stack( void )
 {

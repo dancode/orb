@@ -2,24 +2,28 @@
 
     runtime_service/gui/gui_stock.c -- GUI_STOCK translation unit: the reference widget set.
 
-    THE STOCK TIER: the example widgets that combine interact state with styled paint over a
-    caller-supplied rect.  This is the layer astride both servers -- below it, style resolves and
-    never emits, draw emits and never resolves; stock is where the two meet, the rect CONSUMER
-    over the rects flow carves.
+    This is where a widget finally becomes something you can see: component logic (is it
+    hovered, what's its current value) plus a theme's colors and metrics, combined into an
+    actual filled rectangle on screen. Everything below this unit is either pure logic
+    (component, interact) or pure lookup (style resolves a color but never draws it, draw
+    knows how to draw but never asks "what color should this be") -- stock is the one place
+    those two halves meet.
 
     Where it sits in the stack (see GUI_ARCHITECTURE.md):
 
         state/interact  ->  component  ->  stock  ->  chrome
                             (logic)       (this)     (product)
 
-    A stock widget = a component's logic + one plain render.  It is the reference a user forks
-    to build their own look (my_game_slider = the same component + their art); it is NOT a
-    privileged default.  Every interactive stock_* render drives a gui_comp_* logic core
-    (source/runtime_service/gui/component/); the three inert ones (panel / label / meter) have
-    no component because they have no interaction to extract.
+    A stock widget is a component's logic plus one plain render of it. It exists to be READ and
+    FORKED, not used blindly: a game that wants its own art writes "my_game_slider" as the same
+    slider component with its own paint instead of this one, and neither is treated as more
+    correct than the other. Most stock_* renders drive a matching component underneath; the
+    three with no interaction of their own (a plain panel, a label, a progress meter) skip that
+    step since there is no state to track.
 
-    Naming: stock_ is the WIDGET SET; style_ is the LOOK it paints from (style_col over the
-    GUI_ROLE_* x GUI_PHASE_* grid).  ONE vocabulary -- the same cells chrome names.
+    Naming: "stock_" names the widget set itself; "style_" names the look it paints with (a
+    color/metric lookup keyed by role and phase -- idle, hovered, pressed, and so on). Chrome
+    uses the exact same style_ vocabulary, so a theme applies uniformly everywhere.
 
     Four constituents, four faces of the same role:
 

@@ -2,24 +2,26 @@
 
     runtime_service/gui/gui_ui_mem.c -- Frontend (frame unit) memory accounting.
 
-    The frame-unit counterpart of render/gui_render_mem.c: sizeof-sums every fixed static the
-    gui_frame.c unity TU defines into one bucket (cpu_frontend_bytes), plus the carved units'
-    footprints through their *_unit_mem_bytes seams.  The interaction/layout state proper is
-    small (the real state lives in the malloc'd context blocks, already counted as CPU heap);
-    what makes this bucket scale is the font seam -- each loaded font's resident bitmap and
-    ext glyph records ride through font_unit_mem_bytes, so a -range bake shows up here.  The
-    accounting contract is unchanged: the grand total is the true resident footprint.
+    Answers one question: how much memory is the GUI actually using right now? This file adds
+    up the size of every fixed-size global the GUI keeps -- state pools, caches, tables --
+    across every unit, plus each loaded font's resident pixel data, into one total. It is the
+    frame-side counterpart to render/gui_render_mem.c, which does the same job for the render
+    server's own memory.
 
-    Also home to gui_mem_stats / gui_print_mem_stats: the full-footprint aggregation reads BOTH
-    servers (backend_memory + the core pool), which makes it orchestrator work, not
-    interact-server work.
+    Most of a widget's per-instance state actually lives in malloc'd blocks that already get
+    counted elsewhere as ordinary heap usage. What makes this particular bucket grow is mostly
+    fonts: load a font with a wide character range and its resident bitmap shows up here.
 
-    MUST be the LAST include in the gui_frame.c unit root: every line below is a sizeof over
-    another file's static, and unity visibility only flows downward.  Adding a static aggregate
-    to this unit?  Add it here.
+    This file is also where gui_mem_stats / gui_print_mem_stats live -- the functions that add
+    both servers' totals together into one final number a caller can print or log.
 
-    Not counted: scalar statics (bools, counters, stack depths, hook pointers) -- sub-cache-line
-    noise -- and string literals (pooled by the linker).
+    It must be the LAST file included in the gui_frame.c unit: every line below measures the
+    size of a static variable defined in a file included earlier, which only works if this file
+    comes after all of them. Adding a new fixed-size global anywhere in the GUI? Add its sizeof
+    here too.
+
+    Not counted: small scalar statics (bools, counters, a stack depth, a hook pointer) -- not
+    worth tracking individually -- and string literals, which the linker already pools.
 
 ==============================================================================================*/
 // clang-format off

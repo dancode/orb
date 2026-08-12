@@ -1,12 +1,12 @@
 /*==============================================================================================
 
-    gui/frame/gui_frame_overlay.c : Debug overlays and performance readouts.
-    
-    Debug readouts drawn through the ordinary GUI pipeline. No host UI code needed.  
-    The host's only jobs is to call debug_enable() and set frame_set_hooks() to support the 
-    system depedent functions for timing and idle wait.
+    gui/frame/gui_frame_overlay.c -- debug overlays and performance readouts.
 
-    The '.' key will activate the debug overlay once enabled.
+    Panels drawn through the ordinary GUI pipeline, so no separate host UI code is needed.
+    The host's only job is to call debug_enable() and give it a clock and idle-wait function
+    through frame_set_hooks().
+
+    Press '.' to toggle the debug overlay once it's enabled.
 
 ==============================================================================================*/
 // clang-format off
@@ -16,7 +16,7 @@
     
     Built-in FPS / cost readout, no host code required.
 
-    The gui owns no clock so the host supplies a monotonic seconds callback via 
+    The gui owns no clock so the host supplies a monotonic seconds callback via,
     frame_set_hooks(); and gui brackets the frame with it.
 
     Three clocks summing to the whole CPU frame:
@@ -29,6 +29,7 @@
     
     All three are smoothed (EMA) into the readout at the NEXT frame_begin, so the panel trails
     the work it describes by one frame -- unavoidable self-measurement lag.
+
 ==============================================================================================*/
 
 static struct
@@ -179,6 +180,7 @@ perf_span_end( f32* dst, f64 t0 )
 /*==============================================================================================
 
     * Debug Overlay -- the built-in performance readout, no host code required.
+    * Used by both performance and state overlay.
 
 ==============================================================================================*/
 
@@ -192,8 +194,9 @@ overlay_backdrop( void )
        keeps this correct once a region is resizeable: a dragged box need not match its
        content's extent, so the two can no longer be assumed equal.  gui_region_begin never
        resolves a zero-size box, so no positive-size guard is needed here. */
+
     gui_rect_t box = lf()->outer;
-    gui_draw_rect( box.x, box.y, box.w, box.h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
+    gui_draw_rect( box.x, box.y, box.w, box.h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ));
 }
 
 static void
@@ -259,10 +262,10 @@ overlay_perf( int mode )
                                              + s_perf.s_wait_ms );
             }
         }
-        // 
-        // bool show_geometry_rows = ( mode >= 3 );
-        // if ( show_geometry_rows )
-        // {
+        
+        bool show_geometry_rows = ( mode >= 3 );
+        if ( show_geometry_rows )
+        {
         //     gui_render_stats_t rs = gui_render_stats();
         //     gui_new_line( 2.0f );
         //     gui_textf( "verts   %6u", rs.vert_count );
@@ -309,7 +312,7 @@ overlay_perf( int mode )
         //         gui_textf( "text  %u/%u", rs.text_pool_used, (u32)GUI_MAX_TEXT_POOL  );
         //         gui_textf( "nav   %u/%u", g_ctx->nav.item_count, (u32)GUI_NAV_ITEMS_MAX );
         //     }
-        // }
+        }
         // 
         // /* Debug-lever status (mode >= 3): the live emit / tessellation / pacing toggles, so you
         //    don't need the console log to know which regime the numbers above were measured under.

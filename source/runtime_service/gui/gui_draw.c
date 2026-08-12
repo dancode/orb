@@ -2,17 +2,18 @@
 
     runtime_service/gui/gui_draw.c -- GUI_DRAW translation unit: the drawing-routine library.
 
-    Drawing and shapes over the RENDER SERVER's push primitives: the
-    rect-taking paint floor, the fitted text painters, the symbol/shape palette, the canvas
-    (the user door to 2d drawing), and the FONT + ICON resources -- glyph metrics and baking
-    live here, one level above the server, writing into the shared atlas they hand down
-    (the server renders from a pushed atlas; it does not know what a font is).
+    A toolbox of ready-made drawing routines built over the render server's raw push
+    primitives: fill a rect, draw a line of text so it fits inside a given width, draw one of a
+    small built-in set of symbols (an arrow, a checkmark), and a general-purpose "canvas" for a
+    caller who wants to draw custom 2d shapes of their own. This is also where fonts and icons
+    actually load and get packed into the shared texture the render server draws from -- the
+    render server itself has no idea what a font or an icon IS, it only knows how to draw from
+    an atlas someone else filled in.
 
-    Downward only: this unit calls the render server (draw_push_*, res_atlas_*) and reads the
-    style vocabulary for the few styled sites.  The server
-    calls BACK only through the glyph/sprite source contract (render/gui_render.h): the
-    tessellator resolves glyph UVs and the emit layer resolves icon UVs against the tables
-    this unit installs and manages.
+    This unit only calls DOWN into the render server, never up into anything that knows about
+    widgets or user interaction. The one thing that goes the other direction is deliberate: while
+    the render server is turning text or icons into triangles, it asks this unit (through a
+    small documented callback) where in the shared texture a given glyph or icon actually lives.
 
     Constituents (draw/), in include order:
         gui_glyph_internal.c / gui_glyph.c   -- glyph atlas upload + UV dispatch (the metrics half

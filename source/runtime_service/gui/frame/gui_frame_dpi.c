@@ -1,16 +1,20 @@
 /*==============================================================================================
 
-    runtime_service/gui/frame/gui_frame_dpi.c -- the DPI response engine.
+    runtime_service/gui/frame/gui_frame_dpi.c -- keeps the UI the right size on high-DPI
+    displays.
 
-    The state (mode / manual factor / managed lineage / shared bake cache), the per-viewport
-    bake resolve, the per-window landing, and the frame-begin poll.  The model -- scale enters
-    ONLY via the font bake, so one scale factor drives metrics, quantum, and window rects --
-    is documented on the section banner below.
+    Everything scales off one number: the display's DPI factor. That factor comes from the
+    font bake (the loaded font atlas already matches the target scale), and from there it
+    drives widget sizing, layout spacing, and window placement -- a single source of truth
+    for "how big is a pixel" across the whole GUI.
 
-    Included by the gui_frame.c unit root AFTER gui_frame_font.c (bake loads ride
-    gui_font_load_builtin; gui_style_apply reads dpi_scale_landed() through its forward decl)
-    and BEFORE gui_viewport.c (viewport_create seeds dpi_bake from s_dpi.base; the tear-off
-    path drives gui_dpi_vp_resolve + dpi_bake_scale).
+    This file holds the current DPI mode and scale, resolves the right font bake for each
+    viewport, applies that scale when a window lands on screen, and checks for DPI changes
+    at the start of every frame.
+
+    Include order matters: this file loads after gui_frame_font.c, which sets up font
+    baking, and before gui_viewport.c, which needs a scale factor already in place when it
+    creates a viewport.
 
 ==============================================================================================*/
 // clang-format off
@@ -35,6 +39,7 @@
     active font is the one the landing last activated (slot 0 at init).  A host that
     font_use()s / font_load()s its own font takes over; management resumes when the managed
     font is active again.  GUI_FONT_NONE at init disables the mechanism entirely.
+
 ==============================================================================================*/
 
 static struct
@@ -51,7 +56,11 @@ static struct
 /* A missing asset latches this sentinel in loaded_id[]: one load attempt, not one per frame. */
 #define GUI_DPI_LOAD_FAILED 0xFFFFFFFFu
 
-/* Scale a bake represents: its size over the init() preset's size.  1.0 while unmanaged. */
+/*==============================================================================================
+
+    Scale a bake represents: its size over the init() preset's size.  1.0 while unmanaged.
+
+==============================================================================================*/
 
 static f32
 dpi_bake_scale( gui_builtin_font_t bake )
@@ -61,7 +70,11 @@ dpi_bake_scale( gui_builtin_font_t bake )
     return ( base && now ) ? (f32)now / (f32)base : 1.0f;
 }
 
-/* The scale gui_style_apply feeds metrics_compute (grid quantum): the bake being APPLIED. */
+/*==============================================================================================
+
+    Scale gui_style_apply feeds metrics_compute (grid quantum): the bake being APPLIED.
+
+==============================================================================================*/
 
 static f32
 dpi_scale_landed( void )

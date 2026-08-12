@@ -2,19 +2,24 @@
 
     runtime_service/gui/gui_frame.c -- GUI_FRAME translation unit: THE FRAME ORCHESTRATOR.
 
-    The top of the stack and nothing else: boots both servers, owns the viewports and
-    the app/sys wiring, pumps io into the interact server, hands each surface's GPU pieces to
-    the render server at flush.  Everything with a role of its own is one of the carved units
-    at this directory's root (the roster is the `unit` list under `target gui` in orb.targets)
-    -- the model, the dependency graph, and the role map live in GUI_ARCHITECTURE.md, not here.
-    The module face (vtable + descriptor + the app/rhi API pointer storage) is the SEPARATE
-    gui.c unit; this unit is pure orchestration.
+    This is the conductor: the one piece of code that ties every other unit together into a
+    running GUI. It starts up both servers (interact and render), owns the list of open
+    windows/viewports and the plumbing that connects them to the OS window and the app layer,
+    feeds each frame's input into the interact server, and at the end of the frame hands each
+    window's drawing surface to the render server so it can flush to the GPU. Every piece with
+    real logic of its own lives in one of the other carved units at this directory's root; this
+    file's job is only to call them in the right order (the full model lives in
+    GUI_ARCHITECTURE.md, not here).
 
-    The frame unit owns NO unit header: its public face IS gui.h / gui_api.h / gui_host.h, and
-    its few internal seams are forward-declared below the includes.  It is the only unit that
-    includes every unit header -- the orchestrator sees the whole stack; the stack never sees
-    the orchestrator (the units call up only through the documented upward seams in their own
-    headers).
+    It has no header of its own -- other code reaches it through the public gui.h / gui_api.h /
+    gui_host.h headers -- and it is the one unit allowed to include every other unit's header,
+    since the conductor needs to see the whole orchestra. None of the other units are allowed
+    to see this one; if a lower unit needs to call back up, that call is declared explicitly in
+    its own header rather than by including this file.
+
+    The module's public identity -- the function table it exports, and the pointers to the
+    app/rhi module APIs it depends on -- lives in the separate gui.c unit, not here; this file
+    is pure orchestration, with no exported API surface of its own.
 
     THIS UNIT's constituents, in include order (each carved unit lists its own):
 

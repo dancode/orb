@@ -2,24 +2,28 @@
 
     runtime_service/gui/gui_interact.c -- GUI_INTERACT translation unit: gesture mechanisms.
 
-    The library of record-agnostic interaction elements over the interact server:
-    move-drag with deferred press, edge resize, drag-and-drop payload
-    transfer, the feat_* window feature kit, and the two text-edit engines.  Every mechanism
-    consumes (id, rect, io) plus caller-owned state and produces DECISIONS -- new geometry,
-    gesture liveness, a delivered payload.  None knows a widget, and none paints.
+    Where the interact server's raw hover/active/focus tracking gets turned into named,
+    reusable GESTURES -- the specific things a user actually does with the mouse and keyboard:
+    drag something around, resize a panel by its edge, drag-and-drop an item from one place to
+    another, type into a text field, extend a multi-item selection with shift-click. Each
+    mechanism here takes an id, a rect, and the current input, and hands back a decision --
+    "the box moved to here," "a character was typed," "a payload was dropped." None of them
+    know what a widget is (a slider, a window), and none of them paint. They are the plumbing a
+    widget's logic is built from, one layer above the interact server's raw tracking.
 
-    This unit and core/ are the ONLY writers of the s_interaction arbitration fields
-    (hover / active / focus): higher tiers claim through the core verbs (interact_claim)
-    and read the record for gating, never write it raw.
+    This unit and the interact server (core/) are the only code allowed to write the shared
+    hover/active/focus state directly; everything built on top of this file only claims or
+    reads it through documented verbs, never pokes it raw.
 
-    ACCEPTANCE: no render header.  The documented exceptions live in the upward-seams block
-    of interact/gui_interact.h (mirroring core's): draw_drop_ring -- the ONE adornment paint,
-    invoked where the accept is decided; the drag preview tooltip through the public chrome
-    verbs; and resize's WIN_BORDER read (geometry, not paint).
+    This unit does not draw, with a couple of narrow, deliberate exceptions: the one highlight
+    ring shown when a drag-and-drop payload is about to be accepted, the small preview tooltip
+    that follows the cursor during a drag, and reading one geometry constant (a border width)
+    for resize math. Everything else here is decisions, not pixels.
 
-    NOT here: window text selection (chrome/window/gui_select.c) -- its protocol reads the
-    render server's run capture and measures with draw-unit font metrics, server crossings
-    this unit must never make; it is chrome policy riding this unit's generic verbs.
+    One thing that looks like it belongs here but doesn't: text SELECTION inside a window (the
+    highlighted, copyable text a user drags over). That lives in chrome instead, because
+    selecting text needs to measure actual rendered glyph positions -- a server-level detail
+    this unit is not allowed to know about.
 
     Include order matters: each file can reference statics from files included above it.
 

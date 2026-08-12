@@ -2,20 +2,28 @@
 
     runtime_service/gui/gui_component.c -- GUI_COMPONENT translation unit: widget logic (STAGING).
 
-    The component tier: a widget's LOGIC with no look.  A component consumes an (id, rect) and
-    does the tedious work -- hit-testing, drag math, value snapping, focus / hover / active
-    state -- then reports clear outputs a render consumes.  It never paints, so its include
-    list stops BELOW the draw/render servers: it reads the interact server's services and
-    nothing that emits.
+    A widget usually has two separable halves: the LOGIC (where's the mouse, did it click,
+    what value should the slider now show) and the LOOK (what color, what shape). This unit is
+    the logic half, with no look at all. A component takes an id and a rect and does the
+    fiddly, easy-to-get-wrong work -- hit-testing, drag math, snapping a value to a step -- and
+    reports back a plain result: hovered? clicked? new value? It never draws anything, which is
+    why it sits below the drawing units in the dependency stack: it physically cannot call a
+    paint function even if it wanted to.
+
+    The point is that the same logic should be reusable under any number of different looks.
+    The engine's own reference widgets (stock/) render one look over this logic, and a game can
+    write its own renderer with completely different art over the exact same logic, with
+    neither one favored over the other.
 
         state/interact  ->  component  ->  stock  ->  chrome
                             (this unit)   (render)   (product)
 
-    See component/gui_component_internal.h for the tier's charter -- the call shape
-    ( id, rect, ... ) and the result shape (gui_item_state_t state first) every component
-    follows.  Six components live here (slider, button, check, cycle, selectable, input): the
-    whole interactive stock_* set now renders over them, and a user widget is a stock render's
-    sibling over the same call.  chrome/ has NOT migrated down and keeps its bespoke widgets.
+    See component/gui_component_internal.h for the shape every component follows: the
+    parameters (id, rect, ...) it takes, and the result -- starting with a shared "what is the
+    user doing" state -- it returns. Six components live here today (slider, button, checkbox,
+    cycle button, selectable row, text input), and the engine's whole interactive stock_*
+    widget set renders over them. chrome/'s widgets have not been migrated onto this yet and
+    keep their own bespoke logic for now.
 
 ==============================================================================================*/
 

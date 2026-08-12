@@ -2,22 +2,22 @@
 
     runtime_service/gui/gui_chrome.c -- Unity build entry for the GUI_CHROME unit.
 
-    The stock widget set and the host structures over the core tiers, all under chrome/:
-    chrome/widgets/ (prefab emit clients composing the three sibling roles),
-    chrome/table/, chrome/window/ (persisted record + chrome policy -- the stock RECIPE over
-    the feat_* kit), chrome/dock/, chrome/popup/, and chrome/nav/ (core-classified as a peer
-    focus service, but it reads/drives the popup stack, so it lives here).
+    This is the "product" layer: the actual widgets and window framework the editor and other
+    engine tools use day to day -- buttons, text fields, tables, whole draggable/resizable
+    windows, docking, popups and context menus, and keyboard navigation between all of it. It
+    is built entirely on top of the lower units (interact, style, draw, flow) through their
+    public surface, the same way any other piece of code using the GUI would.
 
-    One of the carved translation units (the full roster is the `unit` list under `target gui`
-    in orb.targets).  The compiler enforces the boundary: everything resolves through the
-    public gui_* surface (gui_host.h), the backend draw API (gui_render.h), and the unit
-    headers below it -- the ambient records, the core service seams (item / id / io / state /
-    style / paint / gesture services), and the flow unit's emit surface.  Chrome's few
-    core-facing definitions (scrollbar_widget, the viewport request slot) are seams the other
-    direction.
+    chrome/ is organized by feature: chrome/widgets/ is the widget set built directly on the
+    lower units, chrome/table/ handles multi-column tables, chrome/window/ is a window's
+    persisted state (position, size) plus the policy for how it behaves, chrome/dock/ lets
+    windows snap together into tabbed docking layouts, chrome/popup/ is floating menus and
+    context menus, and chrome/nav/ resolves keyboard/gamepad navigation between everything on
+    screen (it lives here rather than in core because it needs to know about the popup stack).
 
-    Include order inside the unit is the static-visibility dependency order, unchanged from
-    the unity list gui.c carried: widgets -> table -> window -> dock -> popup -> nav.
+    Include order inside the unit is the dependency order between those pieces: widgets, then
+    table, then window, then dock, then popup, then nav -- each one can use anything defined by
+    a piece listed before it.
 
 ==============================================================================================*/
 

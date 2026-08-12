@@ -2,13 +2,18 @@
 
     runtime_service/gui/gui_font.c -- GUI_FONT translation unit: the font resource.
 
-    * A low-level resource the GUI depends on, beside rect -- not a GUI feature: it draws nothing
-      and holds no widgets.  It parses a baked .orb_font into the two things the GUI needs: the
-      TYPE METRICS layout measures against, and the raw R8 GLYPH PIXELS the render atlas uploads.
-    * No atlas, no GPU: this unit never touches a render resource.  The render side is the one
-      consumer of the pixels -- it reads a slot's pixels and packs them into the shared atlas.
-    * Types + reader/loader surface are font/gui_font.h; this unit compiles the registry, the
-      metric readers, the .orb_font parser, and the built-in preset loader.
+    Loads fonts and holds what the rest of the GUI needs to use one. A font ships as a
+    pre-baked ".orb_font" file -- a font tool has already rasterized every character into a
+    grid of pixels offline, so this unit does no rendering of its own; it just parses that
+    file into two things: METRICS (how wide each character is, how tall a line is -- what
+    layout code measures text against) and the raw GLYPH PIXELS for each character.
+
+    This unit never touches the GPU or a texture. It hands the glyph pixels to the render
+    unit, which is the one that actually uploads them into the shared atlas texture the GPU
+    draws from. Font types and the loader functions other units call are declared in
+    font/gui_font.h; this file compiles the font registry (which fonts are currently loaded),
+    the metric readers, the .orb_font file parser, and the loader for the engine's built-in
+    default fonts.
 
 ==============================================================================================*/
 

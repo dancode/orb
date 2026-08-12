@@ -2,9 +2,13 @@
 
     runtime_service/gui/gui_api.c -- Module vtable and lifecycle descriptor.
 
-    Included last by gui.c so all functions from the other constituent
-    files are visible here.  The vtable (g_gui_api) is the live struct that
-    the module system hands out through the gui() accessor.
+    The actual function table gui.c assembles: one line per public function, mapping the name a
+    caller uses (e.g. .draw_rect) to the real function that implements it (gui_draw_rect).
+    Included last by gui.c specifically so every function from every other file is already
+    visible by the time this table tries to name them.
+
+    g_gui_api_struct is the live struct the module system hands back through the gui()
+    accessor -- it IS the module's entire public API, in one place.
 
 ==============================================================================================*/
 // clang-format off

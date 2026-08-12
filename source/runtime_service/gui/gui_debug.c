@@ -2,19 +2,20 @@
 
     runtime_service/gui/gui_debug.c -- GUI_DEBUG translation unit: server introspection.
 
-    Dev tooling OVER the system, not part of it (severable -- a ship build could drop this
-    unit and lose nothing but the diagnostics): the pipeline dashboard and the command
-    stepper, each an ordinary debug-band window painted through the standard draw API over a
-    snapshot the backend unit captured (render/gui_dash_capture.c / gui_step_capture.c).
+    Developer tools for looking INSIDE the GUI while it runs, rather than tools the GUI needs
+    in order to function: a pipeline dashboard that shows what the renderer is doing frame to
+    frame, and a command stepper that lets a developer freeze a frame and step through its
+    draw commands one at a time. Both are just ordinary debug windows, drawn through the same
+    public API any other window uses, over a snapshot the render unit captured for them.
 
-    Root unit .c, like every unit; implementation in debug/,
-    cross-unit decls in debug/gui_debug.h.  The compiler enforces that the debug tier reaches
-    the rest of gui only through the public gui_* surface (gui_host.h), the backend capture
-    API (gui_render.h), and the umbrella's cross-unit seams.
+    Because nothing else in the GUI depends on this unit, a shipping build could drop it
+    entirely and lose nothing but these diagnostics -- that is the whole point of keeping it
+    separate.
 
-    gui_frame_overlay.c is NOT here ON PURPOSE (frame/gui_frame_overlay.c): it
-    carries the frame-timing helpers the frame lifecycle itself calls (gui_frame_loop.c) --
-    conductor code, not severable tooling.
+    Note: the frame-timing overlay (frame/gui_frame_overlay.c, the FPS/perf HUD) is NOT part of
+    this unit even though it looks similar. Its numbers are read by the frame lifecycle itself
+    to pace the engine, so it counts as core plumbing rather than optional tooling, and lives
+    with the frame orchestrator instead.
 
 ==============================================================================================*/
 

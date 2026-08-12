@@ -2,37 +2,40 @@
 
     runtime_service/gui/gui_render.c -- GUI_RENDER translation unit: the RENDER SERVER.
 
-    The 2d batch renderer: a narrow primitive foundation any 2d utility can emit to.  
-    This unit owns the pixel pipeline: the CPU draw list, path stroking, the CPU 
-    tessellator, the GPU flush, and the debug overlay.
-    
-    It produces no UI -- the layers above call the draw_* primitives declared in 
-    render/gui_render.h, and this unit turns that semantic command list into vertices 
-    and submits them.
-    
-    It never sees the interact server: ids, widget state, and style stay above the seam. 
-    Nor does it know what a font or an icon IS: those resources are the draw unit's
-    (gui_draw.c), one level up; the server only renders from the shared atlas they pack
-    into and resolves their UVs through the glyph/sprite source contract in render/gui_render.h.
+    This is the part of the GUI that actually puts pixels on the screen. It is a small,
+    general-purpose 2d renderer -- rectangles, lines, and text turned into batches of triangles
+    -- that has no idea what a "widget" is. Everything above it (layout, style, widgets)
+    eventually boils down to a handful of simple draw commands ("fill this rect," "draw this
+    line of text"), and this unit's only job is to turn that command list into actual GPU
+    triangles and submit them each frame.
 
-    Include order matters: each file can reference statics from files included above it.  That
-    order lives in the #include list below, not in the filenames.  Two subfolders name the two
+    It owns the whole pixel pipeline: collecting the draw commands for a frame, turning curved
+    shapes into triangles (the CPU tessellator), stroking lines and paths, flushing everything
+    to the GPU, and a debug overlay for watching all of that while it runs.
+
+    Two things this unit deliberately does not know about. First, it never sees the interact
+    server -- no ids, no widget state, no hover or click -- input and interaction stay entirely
+    above this layer. Second, it does not know what a font or an icon actually IS; that
+    knowledge belongs to the draw unit one level up (gui_draw.c), which packs glyph and icon
+    pixels into a shared texture and tells this unit where in that texture to find them.
+
+    Include order matters: each file can reference statics from files included above it. That
+    order lives in the #include list below, not in the filenames. Two subfolders name the two
     halves of the backend:
 
-        resource/  -- GPU-backed assets with their own init/shutdown/query API, consumed BY the
-                       pipeline.  Each exposes a narrow query function the pipeline reads from
-                       rather than a struct it reaches into, and never calls into pipeline/
-                       itself.  Only the atlas pair lives here now; fonts and icons -- once
-                       resource/ tenants -- moved up to the draw unit and pack in from outside.
+        resource/  -- the GPU-backed textures this unit owns (the shared atlases), each with
+                       its own init/shutdown/query functions that the pipeline below reads
+                       from, never reaching into pipeline/ itself.
 
-        pipeline/  -- the per-frame submission path: EMIT (semantic draw list) -> BUILD
-                       (tessellate + retained cache) -> RENDER (GPU flush).  Named for the
-                       pipeline stage each implements, matching the function prefix each exports.
+        pipeline/  -- the per-frame path a draw command takes: EMIT (collect the command list)
+                       -> BUILD (turn it into triangles, reusing cached geometry where nothing
+                       changed) -> RENDER (send it to the GPU). Named for the stage each file
+                       implements.
 
-    Everything else sits at the render/ root: the debug overlay and the three CAPTURES.  A
-    capture is the same shape each time -- it snapshots pipeline statics at a build seam for a
-    consumer that must not reach in -- so they share the root rather than a subfolder of their
-    own, and all trail the pipeline includes because a snapshot must see what it copies.
+    Everything else sits at the render/ root: the debug overlay, and three "capture" files that
+    each snapshot the pipeline's internal state for some outside consumer -- the debug
+    dashboard, text selection, the frame stepper -- that is not allowed to reach into the
+    pipeline directly.
 
     resource/gui_atlas.h/.c         -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
     resource/gui_res_atlas.h/.c     -- the TWO resource atlases over one packer: the R8 COVERAGE atlas

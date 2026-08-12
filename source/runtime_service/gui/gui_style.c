@@ -2,30 +2,30 @@
 
     runtime_service/gui/gui_style.c -- GUI_STYLE translation unit: style resolution.
 
-    The first library over the interact server: interact-state flags in,
-    colors / metrics out; NEVER paints.  It owns the theme registry, the active scaled style,
-    the push/pop/next style stacks, the grid lattice, and the state -> color projections the
-    layers above paint with.  The COL_* / WIDGET_* vocabulary macros (style/gui_style.h)
-    resolve through this unit, so every read site above honors a stack override for free.
+    This is the theming layer: it turns a widget's current state -- idle, hovered, pressed,
+    disabled -- into an actual color or size to paint with. Feed it "this is a button, and
+    it's hovered" and it hands back the fill color a hovered button should use in the active
+    theme. Like the interact server it sits above, this unit never draws a pixel itself; it
+    only resolves values that something else (draw, stock) paints with afterward.
 
-    PURITY: resolution takes interact state as PARAMETERS -- col_item_bg( st ),
-    col_frame_bg( st, idle ) -- never queried from the interact server, so this unit is usable
-    for HUD theming with no interact server present.  The one exception rides core's anim
-    utility EXPLICITLY: style_mix( id, st, sel ) keys a damper through gui_anim4 (a keyed-state
-    tenant) -- a deliberate, documented core dependency, not a hidden query.  Everything that
-    SPENDS a mix (style_col_mix and friends) is as pure as the cell reads beside it.
+    It owns the theme itself (the full set of colors, sizes, and rounding a "look" is made
+    of), tracks which theme is active and at what scale (so a 4K monitor gets bigger widgets
+    than a 1080p one automatically), and provides the push/pop stacks that let a caller
+    override a color or size temporarily -- "make just this one button red" -- without
+    touching the base theme. Every color/metric macro other units use to ask "what should this
+    look like" resolves through this unit, so a temporary override applies automatically no
+    matter where in the code that macro is used.
 
-    This unit includes NO render header and calls NO draw_* routine (the acceptance
-    criterion): applying a resolved value to the draw state (alpha, rounding) is the impure
-    wrappers' job (item_flags_resolve / item_flags_chrome_reset, stock/gui_adornment.c).
+    PURITY: this unit is deliberately kept independent of the interact server -- it takes a
+    widget's state as a plain parameter (col_item_bg( state )) rather than asking the interact
+    server for it, so it stays usable for theming a HUD or any UI that has no interact server
+    running at all. The one exception is animated color blends (a hover fade, say): those key a
+    small "how far along is this animation" value off the interact server's shared animation
+    helper -- a deliberate, narrow dependency, not a hidden one.
 
-    Documented upward seam (the strata bridge -- see style/gui_style.h):
-      - gui_theme_reset calls gui_style_apply (frame/gui_frame_font.c): the rescale needs the
-        active font's metrics (draw unit), which style itself must not touch.
-
-    The style used to reach UP into the stock unit for the installed palette and its
-    projection table.  It does not any more: gui_style_t IS the installed layout, so the whole
-    schema lives here and stock reads it back down through style_col.
+    This unit never includes the render header and never calls a draw_* function: applying a
+    resolved color or metric to an actual draw call is someone else's job
+    (item_flags_resolve / item_flags_chrome_reset, stock/gui_adornment.c).
 
     Include order matters: each file can reference statics from files included above it.
 
