@@ -38,8 +38,10 @@
 
 /*==============================================================================================
 
-    Layout-frame stack -- the storage behind the type in flow/gui_flow.h. Just a fixed 
-    array, so deep nesting costs nothing beyond these slots.
+    The Layout Frame Stack
+    
+    The storage behind the type in flow/gui_flow.h. Just a fixed array, so deep nesting 
+    costs nothing beyond these slots.
 
     The stack pointer for the layout frames indicates how many layout frames are currently 
     active. The top frame can be accessed using s_layout_sp - 1, and when the stack is empty,
@@ -52,12 +54,9 @@
 static u32            s_layout_sp;
 static layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
 
-/* Top layout frame.  Valid between a window_begin/child_begin and its matching end.  When the
-   stack is empty (a caller emitted a widget into a collapsed window despite the false return)
-   slot 0 is returned instead of indexing out of bounds -- the stray widget draws into whatever
-   the last frame's root region left there rather than crashing.  The read index is also clamped
-   to the top slot so an over-deep nesting (capped in layout_frame_push) never reads past the
-   array. */
+/* Returns the top of the layout frame. Valid between a window/child begin and end.
+   Returns the clamped value to prevent out-of-bounds access.
+   When empty (slot 0) is returned, stray widget draws to the last frames root */
 
 layout_frame_t*
 lf( void )
@@ -72,6 +71,7 @@ lf( void )
    truthfully so each push stays paired with its pop (and lf() clamps its read the same way).
    Returns the raw slot -- callers (layout_push_region, sublayout_open, volatile_layout_push)
    each fill in a different subset of fields, so this only does the bookkeeping they all share. */
+
 layout_frame_t*
 layout_frame_push( void )
 {
@@ -726,6 +726,7 @@ layout_set_default( layout_frame_t* f )
    outer, scroll, and the resolved view rect (f->view) already set on the frame.  The live pen
    is biased by -scroll so widgets slide under the clip, while origin_* stays unscrolled so the
    content extent measures cleanly at pop; band_bottom is the grid band end / view bottom. */
+
 static void
 layout_seed_content( layout_frame_t* f, gui_pad_t pad )
 {
@@ -785,10 +786,14 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     layout_clear( f );   /* content re-seeded -> the template opens undeclared; declare a header */
 }
 
-/*============================================================================================*/
-/* Replace the active flow template on the current frame.  Finishes any open row first, then
-   resolves the columns into cell geometry once (they are constant for every row of the template).
-   The next widget starts a fresh row of the new shape; it repeats until set again. */
+/*==============================================================================================
+
+    Replace the active flow template on the current frame.  Finishes any open row first, then
+    resolves the columns into cell geometry once (they are constant for every row of the template).
+    The next widget starts a fresh row of the new shape; it repeats until set again. 
+
+==============================================================================================*/
+
 static void
 layout_set( const f32* cols, f32 row_h, f32 gap_x, f32 gap_y )
 {
@@ -814,6 +819,7 @@ layout_set( const f32* cols, f32 row_h, f32 gap_x, f32 gap_y )
    unindent shifts content_x / content_w so subsequent rows land at the new inset.  Flow only
    (STACK / COLUMNS); a grid carries a pre-resolved matrix and a pack its own pen, neither of which
    is re-indented mid-iteration, so they are left untouched. */
+
 static void
 layout_reflow( layout_frame_t* f )
 {
@@ -828,6 +834,7 @@ layout_reflow( layout_frame_t* f )
    front (the defining difference from flow, where the row height resolves lazily per row).
    Widgets then fill cells row-major; nothing scrolls.  Empty / NULL on either axis => one flex
    track.  Persists until another template is set, exactly like the flow row. */
+
 static void
 layout_set_grid( const f32* cols, const f32* rows, f32 gap_x, f32 gap_y )
 {
