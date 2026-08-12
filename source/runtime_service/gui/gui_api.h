@@ -5,8 +5,16 @@
     runtime_service/gui/gui_api.h -- gui module API struct and gateway macro.
     Always statically linked into the host.
 
-    A 2D interaction renderer.  Sections read in usage order, lowest stratum first once the
-    frame is open (all called through the gui() vtable or as gui_* direct calls):
+    This is the phone book: every function the GUI exposes, gathered into one big struct
+    (gui_api_t) so the rest of the engine can call gui()->whatever(...) without knowing which
+    internal unit actually implements it. gui.h (included above this file) defines the nouns
+    those functions take and return; this file is the verbs. It adds no logic of its own -- it
+    is purely the declaration of that struct, plus the macro that turns it into a working
+    module gateway.
+
+    The sections below are listed in the order you would actually use them once a frame is
+    open, from the lowest-level stratum to the highest, and every one of them is reached either
+    through the gui() vtable or as a direct gui_* call:
 
         GUI_FRAME    lifecycle: boot, frame phases, pacing, viewports, contexts, events
         GUI_DRAW     render server: the draw_* primitive set, fonts, icons, paths, clips
@@ -19,17 +27,20 @@
         GUI_CHROME   OPTIONAL policy layer: windows, dock, popups, flow widgets, themes
         GUI_DEBUG    severable diagnostics
 
-    Everything below GUI_CHROME stands alone -- chrome is one client of the strata, not the
-    system.  A kit builds its own UI from frame + draw + core + surface + rect/flow, and
-    promotes its own style; sb_gui_base is the bottom-up proof, tier by tier.
+    Everything below GUI_CHROME works fine without it -- chrome (windows, docking, popups) is
+    just one consumer of the lower strata, not something the rest of the GUI depends on. A game
+    or tool can build its whole UI directly out of frame + draw + core + surface + rect/flow and
+    define its own look, skipping chrome entirely; sb_gui_base is the working proof of that,
+    built up one tier at a time.
 
-    THE BEGIN / END RULE -- one rule, no exceptions, for every pair in this header (frame, ctx,
-    window, child, region, pane, popup, modal, tooltip, combo, listbox, menu, menu bar, toolbar
-    dropdown, tab bar, tab item, table, flow, layout, split, drag source / target):
+    THE BEGIN / END RULE -- one rule, no exceptions, for every begin/end pair in this header
+    (frame, ctx, window, child, region, pane, popup, modal, tooltip, combo, listbox, menu, menu
+    bar, toolbar dropdown, tab bar, tab item, table, flow, layout, split, drag source/target):
 
-        THE BOOL GATES THE BODY, NEVER THE END.  Every end is safe to call whatever its begin
-        returned -- it unwinds exactly what that begin opened, and nothing when it opened
-        nothing.  So you never have to remember which pairs are which:
+        THE BOOL GATES THE BODY, NEVER THE END. Whatever a begin() returns, its matching end()
+        is always safe to call -- it cleans up exactly what that begin() opened, and does
+        nothing when it opened nothing. That means you never have to remember which pairs need
+        special handling; the pattern is always the same:
 
             if ( gui()->window_begin( "Tools", GUI_WIN_NONE ) )
             {
@@ -37,13 +48,15 @@
             }
             gui()->window_end();             // safe whatever begin returned
 
-    A false return means "do not emit the body" (collapsed, closed, not the selected tab, popup
-    not open); it says nothing about what the begin opened internally.  That is why the end must
-    not be guarded on it -- a begin that opens state and then reports a body it does not want
-    (an auto-sizing popup mid-measure, a window closing this frame) would otherwise strand an
-    overlay detach, an id scope, or a window record.  Placing the end outside the guard, as
-    above, is the form that cannot get this wrong; older call sites in this repo still place it
-    inside and remain correct, because the ends are no-ops on the paths that reach them.
+    A false return just means "do not draw the body" -- the window is collapsed, closed, an
+    unselected tab, a popup that is not open. It says nothing about what state the begin() set
+    up behind the scenes. That is exactly why the end() must never be placed inside the `if`:
+    a begin() that opens some internal bookkeeping and then reports "no body this time" (an
+    auto-sizing popup still mid-measurement, a window that is closing this very frame) would
+    leave that bookkeeping stranded forever if its end() never ran. Writing the end() outside
+    the guard, as shown above, is the one form that can never get this wrong. Older call sites
+    in this codebase sometimes place the end() inside the guard anyway and are still correct --
+    but only because their end() happens to be a no-op on exactly the paths that would matter.
 
 ==============================================================================================*/
 

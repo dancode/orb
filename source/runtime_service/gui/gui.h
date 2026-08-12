@@ -4,35 +4,45 @@
 
     runtime_service/gui/gui.h -- gui module types (the public type header).
 
-    In-house 2D interaction renderer for ORB: draw + interact servers, root surfaces, rect and
-    flow composition, styled stock widgets -- with chrome (windows / dock / chrome widgets) 
-    as an OPTIONAL policy layer on top.
+    This file is the dictionary. It does not do anything by itself -- it has no functions --
+    it just defines the shape of every "noun" the GUI uses: what a widget id looks like, what a
+    color or a rect or a style struct is made of, what values a layout mode can take. Any time
+    you are calling a GUI function and need to know what kind of value to pass it, or what kind
+    of value it hands back, this is the file that answers that question.
 
-    Windowing / input come from the engine `app` layer (Win32); rendering goes through `rhi`
-    (Vulkan).  The host drives one lifecycle each frame:
-        frame_begin -> ctx_begin / widgets / ctx_end -> frame_end -> render.
+    The GUI itself is an in-house 2D interaction renderer for ORB: an INTERACT SERVER that
+    tracks what the user is doing (hover, click, focus) plus a RENDER SERVER that turns draw
+    commands into GPU triangles, with layout (rects), styling (colors/spacing), stock widgets,
+    and an optional windows/docking layer (chrome) built on top of those two. Windowing and
+    input come from the engine's `app` layer (Win32); the actual GPU submission goes through
+    `rhi` (Vulkan). A host drives one cycle every frame: frame_begin -> ctx_begin / widgets /
+    ctx_end -> frame_end -> render.
 
     Read GUI_ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is
     the orientation map: the two-server model, the widget tiers, the frame lifecycle, and the
-    region / scroll / clip invariants.  The unit roster is the `unit` list under `target gui`
-    in orb.targets, and each unit's root .c heads itself with its own constituents.  Header
-    split follows the house convention: this file (types) -> gui_api.h (DLL) -> gui_host.h
-    (hosts/sandboxes).
+    region / scroll / clip invariants. The unit roster is the `unit` list under `target gui`
+    in orb.targets, and each unit's root .c heads itself with its own constituents. Headers
+    split three ways, each one built on the last: this file (types anyone can include) ->
+    gui_api.h (adds the function table, for DLL modules) -> gui_host.h (adds host-only direct
+    calls, for exes and sandboxes).
 
-    State sits in three tiers, and which tier a record is in decides its lifetime: ambient
-    singular (s_interaction, s_io -- one set for the whole app), per-context retained (g_ctx->,
-    surviving frames), and frame scratch (s_build, s_scope -- reset every frame).  core/gui_ctx.c
-    holds all three and names each at its definition.
+    A GUI value lives in one of three places, and which place it lives in decides how long it
+    survives: ambient singular state (one shared copy for the whole app, e.g. s_interaction,
+    s_io), per-context retained state (belongs to one gui_context_t, survives across frames,
+    e.g. g_ctx->), or frame scratch (wiped clean at the start of every frame, e.g. s_build,
+    s_scope). core/gui_ctx.c is where all three kinds are actually defined.
 
-    Two caches make an idle UI cheap:
-    1. CPU emit skip (s_frame_dirty, gui_frame_loop.c): a single global bool.  When no input, animation,
-       or render delta occurred, the whole emit phase is skipped and the previous frame's draw list
-       is reused.
-    2. GPU tessellation cache (gui_build_cache.c): granular per window. A per-window hash mismatch
-       re-tessellates only that window's slot; sibling windows reuse their geometry in place.
-    
-    Contents -- types sit in DEPENDENCY order (a struct follows the enums it embeds), each
-    section banner tagged with its gui_api.h strata band.  Band -> sections:
+    Two caches exist purely to make an idle screen cheap to redraw:
+    1. CPU emit skip (s_frame_dirty, gui_frame_loop.c): one global bool. If nothing changed --
+       no input, no animation, no render delta -- the entire widget-building pass is skipped
+       and last frame's draw list is reused as-is.
+    2. GPU tessellation cache (gui_build_cache.c): the same idea, but per window instead of
+       global. Only a window whose content actually changed gets re-tessellated; every other
+       window on screen reuses its existing GPU geometry untouched.
+
+    Below, types are listed in DEPENDENCY order -- a struct comes after the enums it embeds --
+    and each section banner is tagged with the gui_api.h strata band it belongs to, so the type
+    list and the function list read in the same order. Band -> sections:
 
     GUI_FRAME    -- context config, font config, boot descriptor, limits, mem + render stats
     GUI_DRAW     -- angle algebra, color packing, stroking, draw vertex, volatile cb,

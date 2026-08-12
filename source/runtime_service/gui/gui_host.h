@@ -5,12 +5,19 @@
     runtime_service/gui/gui_host.h -- Host-only gui services.
     Includes gui_api.h.
 
+    Most engine code only ever sees gui.h (types) and gui_api.h (the gui() function table) --
+    that pair is all a DLL module needs. This third header adds a small extra set of functions
+    that only make sense for the executable actually hosting the GUI module: loading the module
+    itself, one-time boot/shutdown, memory and render stats, and a handful of other calls a
+    sandbox or host exe reaches for directly instead of through gui(). Nothing in here is meant
+    to be called from inside a hot-reloadable module.
+
     Usage:
         mod_static_load( "gui", gui_get_mod_desc() );
     or via the build-mode-transparent macro:
         mod_load( gui );
 
-    Sections follow the gui_api.h strata order:
+    Sections below follow the same order as gui_api.h, so the two headers read side by side:
     FRAME / DRAW / CORE / SURFACE / RECT / FLOW / STYLE / STOCK / CHROME / DEBUG.
 
 ==============================================================================================*/
