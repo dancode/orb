@@ -403,7 +403,7 @@ gui_owned_window_event( const app_event_t* ev )
         {
             vp->disp_w       = ev->data.win_resize.w;
             vp->disp_h       = ev->data.win_resize.h;
-            s_viewport_dirty = true;   /* layout must recompute for the new surface size */
+            viewport_mark_dirty();   /* layout must recompute for the new surface size */
             return vp->owned ? APP_EVENT_CONSUMED : APP_EVENT_SHARED;
         }
         else if ( ev->type == APP_EV_WIN_CLOSE && vp->owned )

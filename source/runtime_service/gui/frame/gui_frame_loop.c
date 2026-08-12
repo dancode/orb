@@ -483,7 +483,7 @@ gui_ctx_begin( i32 ctx_handle )
 
     g_ctx->retained.wants_redraw = false;    /* cleared before the build; set again by any animating widget */
     ctx_new_frame();                    /* per-context scratch reset + frame clock bump (no global interaction touch) */
-    s_layout_sp = 0;                    /* fresh layout stack (the flow unit's) -- no region is open
+    layout_new_frame();                 /* fresh layout stack (the flow unit's) -- no region is open
                                            until a window_begin/child_begin; paired here */
     style_new_frame();                  /* fresh style stacks, re-seeded from the theme -- the orchestrator
                                            pairs the two resets; the interact server knows no style */

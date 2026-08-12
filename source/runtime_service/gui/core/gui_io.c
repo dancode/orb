@@ -43,10 +43,12 @@ gui_io_t s_io;   /* extern'd in core/gui_core.h for the carved units */
    and cleared at the next call.  Read by frame_begin to gate the frontend-dirty check. */
 static bool s_io_dirty;
 
-/* Set by gui_owned_window_event (frame/gui_viewport.c, across the unit seam) when a floater
-   OS window is resized.  Consumed and cleared by io_frame_begin so the resize marks one frame
-   dirty.  Extern'd in core/gui_core.h for the frame unit. */
-bool s_viewport_dirty;
+/* Set via viewport_mark_dirty() by gui_owned_window_event (frame/gui_viewport.c, across the
+   unit seam) when a floater OS window is resized.  Consumed and cleared by io_frame_begin so
+   the resize marks one frame dirty. */
+static bool s_viewport_dirty;
+
+void viewport_mark_dirty( void ) { s_viewport_dirty = true; }
 
 /* Previous primary display size -- compared each frame to detect host-side viewport_resize
    calls on the main surface (which also change win_w/win_h passed into io_frame_begin). */

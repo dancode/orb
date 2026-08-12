@@ -18,8 +18,6 @@
 ==============================================================================================*/
 // clang-format off
 
-#define GUI_LAYOUT_DEPTH 8          // max nested scroll regions (windows or children)
-
 /*==============================================================================================
     Layout-frame (stack storage in flow/gui_layout_core.c)
 
@@ -36,7 +34,8 @@
      layout_mod_t  -- orthogonal modifiers; persist across installs, reset only by the full
                       clears (layout_clear / layout_set_default via layout_modifiers_reset)
      layout_line_t -- the iteration cursor + open-line record; re-zeroed by every install
-                      (layout_template_reset) */
+                      (layout_template_reset) 
+*/
 
 /* Active row template (the row / cols headers).  Persists and repeats: each widget fills the
    next cell, wrapping to a fresh row of the same shape when the columns run out.  See
@@ -219,10 +218,14 @@ typedef struct
 
 } layout_frame_t;
 
-extern layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];  /* flow/gui_layout_core.c -- region stack */
-extern u32            s_layout_sp;                         /* active frame count; top = s_layout_sp - 1 */
-
-layout_frame_t* lf( void );         /* flow/gui_layout_core.c -- top frame (clamped, never NULL) */
+/* Layout-frame stack -- storage is private to the flow unit (flow/gui_layout_core.c); this
+   function surface is the cross-unit seam.  Flow's own files reach the array directly (same
+   translation unit); chrome and frame reach it only through these. */
+layout_frame_t* lf( void );                 /* flow/gui_layout_core.c -- top frame (clamped, never NULL) */
+layout_frame_t* layout_frame_push( void );  /* flow/gui_layout_core.c -- clamp+slot+advance; caller fills the frame in */
+void            layout_frame_pop( void );   /* flow/gui_layout_core.c -- guarded decrement */
+bool            layout_frame_open( void );  /* flow/gui_layout_core.c -- a frame is open (s_layout_sp > 0) */
+void            layout_new_frame( void );   /* flow/gui_layout_core.c -- reset to empty; pairs with ctx_new_frame/style_new_frame */
 
 /*================================================================================================
     Persistent region state (flow/gui_scroll.c)

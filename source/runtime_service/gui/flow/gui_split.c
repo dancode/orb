@@ -56,9 +56,9 @@ split_pop_panel( void )
     layout_frame_t* f = lf();
     layout_row_break( f );   /* close any partially-filled multi-column row */
     f32 h = content_extent_y( f );
-    s_id_sp           = f->id_restore;
+    id_scope_unwind( f->id_restore );
     s_scope.clip = f->parent_clip;
-    if ( s_layout_sp ) --s_layout_sp;
+    layout_frame_pop();
     return h;
 }
 

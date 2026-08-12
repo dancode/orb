@@ -27,9 +27,12 @@ u8   resize_item( gui_id_t id, gui_id_t owner_win, gui_rect_t box, u8 allow, boo
                   bool* dragging );
 void resize_apply_edges( gui_rect_t* r, u8 edges );
 void resize_grab( gui_id_t id, gui_rect_t box, u8 edges );
-extern u8  s_resize_edges;                 /* in-flight edges (GUI_RESIZE_* bits)              */
-extern f32 s_resize_off_x, s_resize_off_y; /* grab offsets keeping the edge under the cursor   */
-extern f32 s_resize_fix_x, s_resize_fix_y; /* pinned far edges for a left / top drag           */
+/* The in-flight resize record (storage private to interact/gui_resize.c). */
+u8  resize_edges( void );  /* in-flight edges (GUI_RESIZE_* bits)            */
+f32 resize_off_x( void );  /* grab offset keeping the L/R edge under the cursor */
+f32 resize_off_y( void );  /* grab offset keeping the T/B edge under the cursor */
+f32 resize_fix_x( void );  /* pinned far edge for a left-edge drag           */
+f32 resize_fix_y( void );  /* pinned far edge for a top-edge drag            */
 
 /* The GUI_RESIZE_L/R/T/B edge bits live in gui.h (public: feat_resize's edge mask).  GRIP
    stays internal: the CAN_AUTOSIZE corner triangle -- a resize affordance like the edges,

@@ -50,11 +50,7 @@ static gui_scroll_link_t s_sublayout_sink;
 static void
 sublayout_open( gui_rect_t cell )
 {
-    /* Cap the write slot at the top of the stack (mirroring layout_push_region) so an over-deep
-       nesting aliases the deepest frame rather than writing past the array; sp still counts true. */
-    u32 slot = s_layout_sp < GUI_LAYOUT_DEPTH ? s_layout_sp : GUI_LAYOUT_DEPTH - 1;
-    ++s_layout_sp;
-    layout_frame_t* f = &s_layout_stack[ slot ];
+    layout_frame_t* f = layout_frame_push();
 
     /* Transient frame: no scroll, no clip, no own id scope.  The unused region fields point at the
        shared sink, and parent_clip / id_restore are saved only so pop is symmetric. */
@@ -63,7 +59,7 @@ sublayout_open( gui_rect_t cell )
     f->flags       = GUI_WIN_NOSCROLL;
     f->parent_clip = s_scope.clip;
     f->pushed_clip = false;
-    f->id_restore  = s_id_sp;
+    f->id_restore  = id_scope_depth();
 
     s_sublayout_sink.scroll_x = s_sublayout_sink.scroll_y = 0.0f;
     f->scroll = &s_sublayout_sink;
@@ -100,9 +96,9 @@ void
 gui_pop_layout( void )
 {
     layout_frame_t* f = lf();
-    s_id_sp         = f->id_restore;         /* unwind any push_id the body left open */
+    id_scope_unwind( f->id_restore );        /* unwind any push_id the body left open */
     s_scope.clip = f->parent_clip;      /* unchanged, but symmetric with push */
-    if ( s_layout_sp ) --s_layout_sp;        /* parent already advanced at push -- nothing more */
+    layout_frame_pop();                 /* parent already advanced at push -- nothing more */
 }
 
 /*==============================================================================================

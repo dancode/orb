@@ -113,7 +113,7 @@ overlay_detach( void )
     draw_clear_text_clip();
 
     /* Save the parent's top layout frame so its pen survives the popup's region pop. */
-    s.had_parent = ( s_layout_sp > 0 );
+    s.had_parent = layout_frame_open();
     if ( s.had_parent )
         s.parent_frame = *lf();
 
@@ -155,7 +155,7 @@ overlay_reattach( gui_overlay_save_t s )
 static void
 popup_open_id( gui_id_t id, f32 ax, f32 ay )
 {
-    u32 depth = s_popup_begin_count;
+    u32 depth = popup_begin_depth();
     if ( depth >= g_ctx->popup.depth ) return;
 
     gui_popup_t* p = &g_ctx->popup.open[ depth ];
@@ -226,7 +226,7 @@ static bool
 popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bool modal,
                        f32 fixed_w, f32 cap_h )
 {
-    u32 depth = s_popup_begin_count;
+    u32 depth = popup_begin_depth();
 
     /* Band inheritance: begun inside a debug-band window (the ambient band is still the parent's
        here), the popup is debug UI too -- its churn must stay out of the main arena band and the
@@ -317,7 +317,7 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
     /* Record the on-screen rect for next frame's click-outside test. */
     p->rect = ( gui_rect_t ){ win->x, win->y, win->w, win->h };
 
-    ++s_popup_begin_count;
+    popup_begin_depth_push();
     return vis;
 }
 
@@ -347,12 +347,12 @@ gui_popup_modal_begin( const char* str, const char* title, gui_win_flags_t flags
 void
 gui_popup_end( void )
 {
-    if ( !s_popup_begin_count ) return;     /* unbalanced popup_end -- ignore */
+    if ( !popup_begin_depth() ) return;     /* unbalanced popup_end -- ignore */
 
-    u32 depth = s_popup_begin_count - 1u;
+    u32 depth = popup_begin_depth() - 1u;
     gui_window_end();                     /* finalize the popup window (pops its own clip) */
     overlay_reattach( g_ctx->popup.open[ depth ].saved );
-    --s_popup_begin_count;
+    popup_begin_depth_pop();
 }
 
 /*==============================================================================================
@@ -365,8 +365,8 @@ gui_popup_end( void )
 void
 gui_popup_close_current( void )
 {
-    if ( s_popup_begin_count && g_ctx->popup.open_count >= s_popup_begin_count )
-        g_ctx->popup.open_count = s_popup_begin_count - 1u;
+    if ( popup_begin_depth() && g_ctx->popup.open_count >= popup_begin_depth() )
+        g_ctx->popup.open_count = popup_begin_depth() - 1u;
 }
 
 /*==============================================================================================
@@ -457,7 +457,7 @@ gui_set_item_tooltip( const char* text )
     {
         gui_stack();          /* tooltip body lays out like any region: declare a stack first */
 
-        f32  max_w = (f32)s_font_size * 35.0f;
+        f32  max_w = (f32)style_font_size() * 35.0f;
         if ( max_w < 100.0f ) max_w = 100.0f;
 
         f32 avail = (f32)s_io.display_w * 0.9f;

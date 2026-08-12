@@ -241,7 +241,7 @@ f32 lat_round    ( f32 v, u32 q );
 /* The ACTIVE (font-scaled) style is PRIVATE to gui_theme.c -- style_active() above is the only
    read door, and metrics_compute the only writer.  Nothing outside the theme file may poke it:
    the next rescale rebuilds it wholesale from the base, so a poke there silently evaporates. */
-extern u32 s_font_size;         /* style/gui_theme.c -- active em (0 = never set) */
+u32 style_font_size( void );    /* style/gui_theme.c -- active em (0 = never set) */
 
 /* The two state predicates every projection below is written in (gui_style_core.c).  style_phase
    is the ONE authoring of the interact-state -> phase rule: the public gui_item_phase

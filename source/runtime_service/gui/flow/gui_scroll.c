@@ -141,12 +141,7 @@ void
 layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win_flags_t flags,
                     gui_scroll_link_t* scroll, bool own_clip )
 {
-    /* Cap the write slot at the top of the stack so an over-deep nesting aliases the deepest
-       frame rather than writing past the array; s_layout_sp still counts truthfully so each
-       push stays paired with its pop (and lf() clamps its read the same way). */
-    u32 slot = s_layout_sp < GUI_LAYOUT_DEPTH ? s_layout_sp : GUI_LAYOUT_DEPTH - 1;
-    ++s_layout_sp;
-    layout_frame_t* f = &s_layout_stack[ slot ];
+    layout_frame_t* f = layout_frame_push();
 
     f->region_id  = id;
     f->outer      = outer;
@@ -157,7 +152,7 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     /* Seed the id scope with this region's id, so leaf widgets combine their label against it
        (identical labels in different regions never collide).  id_restore unwinds the scope -- and
        any push_id the caller left unbalanced -- at pop, so a leak cannot corrupt the parent. */
-    f->id_restore = s_id_sp;
+    f->id_restore = id_scope_depth();
     id_push( id );
 
     /* Same containment rule for the style set: a region remembers the set depth it opened at, so
@@ -364,11 +359,11 @@ layout_pop_region( void )
        exact bottom (the gap before whatever follows is owed via gap_pending, not appended), and
        line.prev_item / the line record are stamped so same_line after child_end anchors to the box.
        The root region (a window body) has no parent frame. */
-    s_id_sp = f->id_restore;            /* unwind this region's id scope (and any leaked push_id) */
+    id_scope_unwind( f->id_restore );   /* unwind this region's id scope (and any leaked push_id) */
     style_set_unwind( f->set_restore ); /* and any leaked style_set_push */
     gui_rect_t outer = f->outer;
-    --s_layout_sp;
-    if ( s_layout_sp > 0 )
+    layout_frame_pop();
+    if ( layout_frame_open() )
     {
         layout_frame_t* p = lf();
         content_reach( p, outer.x + outer.w, outer.y + outer.h );   /* pen + highwater past the box */

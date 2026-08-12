@@ -47,22 +47,58 @@
 
 ==============================================================================================*/
 
-u32            s_layout_sp;  
-layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
+#define GUI_LAYOUT_DEPTH 8          // max nested scroll regions (windows or children)
+
+static u32            s_layout_sp;
+static layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
 
 /* Top layout frame.  Valid between a window_begin/child_begin and its matching end.  When the
    stack is empty (a caller emitted a widget into a collapsed window despite the false return)
    slot 0 is returned instead of indexing out of bounds -- the stray widget draws into whatever
    the last frame's root region left there rather than crashing.  The read index is also clamped
-   to the top slot so an over-deep nesting (capped in layout_push_region) never reads past the
+   to the top slot so an over-deep nesting (capped in layout_frame_push) never reads past the
    array. */
 
 layout_frame_t*
-lf ( void )
+lf( void )
 {
     u32  i = s_layout_sp ? s_layout_sp - 1 : 0;
     if ( i >= GUI_LAYOUT_DEPTH ) i = GUI_LAYOUT_DEPTH - 1;
     return &s_layout_stack[ i ];
+}
+
+/* Open the next frame: caps the write slot at the top of the stack so an over-deep nesting
+   aliases the deepest frame rather than writing past the array; s_layout_sp still counts
+   truthfully so each push stays paired with its pop (and lf() clamps its read the same way).
+   Returns the raw slot -- callers (layout_push_region, sublayout_open, volatile_layout_push)
+   each fill in a different subset of fields, so this only does the bookkeeping they all share. */
+layout_frame_t*
+layout_frame_push( void )
+{
+    u32 slot = s_layout_sp < GUI_LAYOUT_DEPTH ? s_layout_sp : GUI_LAYOUT_DEPTH - 1;
+    ++s_layout_sp;
+    return &s_layout_stack[ slot ];
+}
+
+/* Close the top frame opened by layout_frame_push. */
+void
+layout_frame_pop( void )
+{
+    if ( s_layout_sp ) --s_layout_sp;
+}
+
+/* A frame is open (there is a region/sub-layout above the root to pop back into). */
+bool
+layout_frame_open( void )
+{
+    return s_layout_sp > 0;
+}
+
+/* Reset to empty at frame start -- pairs with ctx_new_frame/style_new_frame in gui_frame_loop.c. */
+void
+layout_new_frame( void )
+{
+    s_layout_sp = 0;
 }
 
 /*==============================================================================================

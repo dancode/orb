@@ -194,9 +194,7 @@ gui_volatile_end( void )
 static void
 volatile_layout_push( f32 x, f32 y, f32 w )
 {
-    u32 slot = s_layout_sp < GUI_LAYOUT_DEPTH ? s_layout_sp : GUI_LAYOUT_DEPTH - 1;
-    ++s_layout_sp;
-    layout_frame_t* f = &s_layout_stack[ slot ];
+    layout_frame_t* f = layout_frame_push();
 
     f->content_x     = x;
     f->pen_y     = y;
@@ -220,7 +218,7 @@ volatile_layout_push( f32 x, f32 y, f32 w )
 static void
 volatile_layout_pop( void )
 {
-    if ( s_layout_sp > 0 ) --s_layout_sp;
+    layout_frame_pop();
 }
 
 /*==============================================================================================
@@ -242,7 +240,7 @@ replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w )
     volatile_layout_push( x, y, w );
     s_replay_x    = x;
     s_replay_y    = y;
-    s_replay_mode = true;
+    replay_mode_enter();
 }
 
 /* Read back the layout extent the replayed callback just claimed, in the same terms
@@ -263,7 +261,7 @@ replay_scope_exit( bool force_redraw )
 {
     volatile_layout_pop();
     id_pop();
-    s_replay_mode = false;
+    replay_mode_exit();
     if ( force_redraw )
         redraw_request();
 }

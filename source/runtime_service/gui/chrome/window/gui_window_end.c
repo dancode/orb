@@ -602,7 +602,7 @@ gui_window_end( void )
        hot_edges is declared here (not in a block) so the grip section below can read it for
        the R+B -> triangle reverse direction. */
     u8 hot_edges = interact_held( id_combine( s_build.win.id, GUI_RESIZE_SALT ) )
-                 ? s_resize_edges
+                 ? resize_edges()
                  : s_scope.resize_hot;
     if ( hot_edges )
         draw_resize_highlight( win_r, hot_edges );

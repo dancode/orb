@@ -35,7 +35,7 @@
 
 /* The dashboard window's id -- stays 0 when the feature is compiled out or never emitted.
    Used to mark the dashboard's own slot in the memory map and to gate the hover tooltips. */
-gui_id_t g_dash_window_id = 0;
+static gui_id_t g_dash_window_id = 0;
 
 #ifdef GUI_PIPELINE_DASHBOARD
 

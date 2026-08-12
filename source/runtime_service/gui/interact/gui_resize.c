@@ -30,9 +30,15 @@
 /* In-flight edge resize.  s_resize_edges names which edges follow the cursor (GUI_RESIZE_* bits).
    s_resize_off keeps the grabbed edge under the cursor without a jump; s_resize_fix pins the
    opposite edge so a left/top drag grows from the far side. */
-u8   s_resize_edges;
-f32  s_resize_off_x, s_resize_off_y;
-f32  s_resize_fix_x, s_resize_fix_y;
+static u8   s_resize_edges;
+static f32  s_resize_off_x, s_resize_off_y;
+static f32  s_resize_fix_x, s_resize_fix_y;
+
+u8  resize_edges( void ) { return s_resize_edges; }
+f32 resize_off_x( void ) { return s_resize_off_x; }
+f32 resize_off_y( void ) { return s_resize_off_y; }
+f32 resize_fix_x( void ) { return s_resize_fix_x; }
+f32 resize_fix_y( void ) { return s_resize_fix_y; }
 
 /* Grab band straddling the border: a few pixels inside and a few outside. */
 

@@ -58,7 +58,11 @@ gui_interaction_t s_interaction;
    so a replay renders against the state the last real frame established and can never acquire
    state or see a fresh click. */
 
-bool s_replay_mode;
+static bool s_replay_mode;
+
+/* Entered/left by replay_scope_enter/_exit (chrome/widgets/gui_volatile.c) -- the only writer. */
+void replay_mode_enter( void ) { s_replay_mode = true; }
+void replay_mode_exit ( void ) { s_replay_mode = false; }
 
 /* Frame-build scratch -- "where am I emitting right now", rebuilt every frame as the widget
    tree is walked.  Nothing here survives frame_begin.  Field notes:
@@ -190,7 +194,7 @@ item_flags_chrome_drop( void )
 #define GUI_ID_STACK_DEPTH 32
 
 static gui_id_t s_id_stack[ GUI_ID_STACK_DEPTH ];
-u32             s_id_sp;
+static u32      s_id_sp;
 
 /*==============================================================================================
     Popup nesting depth (frame scratch)
@@ -202,7 +206,13 @@ u32             s_id_sp;
     is chrome/popup/gui_popup.c's.
 ==============================================================================================*/
 
-u32 s_popup_begin_count;   // current popup nesting depth (rebuilt per frame)
+static u32 s_popup_begin_count;   // current popup nesting depth (rebuilt per frame)
+
+/* The stack contract (push at popup_begin, pop at popup_end) is chrome/popup/gui_popup.c's;
+   this is just the depth counter's storage + verbs. */
+u32  popup_begin_depth( void )      { return s_popup_begin_count; }
+void popup_begin_depth_push( void ) { ++s_popup_begin_count; }
+void popup_begin_depth_pop( void )  { if ( s_popup_begin_count ) --s_popup_begin_count; }
 
 /*==============================================================================================
     Context pool -- the whole multi-context seam

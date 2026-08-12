@@ -425,27 +425,27 @@ window_apply_resize( gui_window_t* win, f32 title_h )
     const f32 min_h = window_min_h( title_h );
 
     gui_rect_t r = { win->x, win->y, win->w, win->h };
-    resize_apply_edges( &r, s_resize_edges );
+    resize_apply_edges( &r, resize_edges() );
     win->x = r.x;  win->y = r.y;  win->w = r.w;  win->h = r.h;
 
     /* Snap the moving edge onto the lattice, holding the pinned far edge fixed: a right/bottom drag
        snaps the extent out from the fixed origin; a left/top drag snaps the origin and recovers the
-       extent against the pinned far edge (s_resize_fix_*, itself on the lattice from the last rest).
+       extent against the pinned far edge (resize_fix_*, itself on the lattice from the last rest).
        Both edges land on the grid, so the window's content column stays lattice-aligned as it grows. */
-    if ( s_resize_edges & GUI_RESIZE_R ) win->w = window_snap( win->w );
-    if ( s_resize_edges & GUI_RESIZE_L ) { win->x = window_snap( win->x ); win->w = s_resize_fix_x - win->x; }
-    if ( s_resize_edges & GUI_RESIZE_B ) win->h = window_snap( win->h );
-    if ( s_resize_edges & GUI_RESIZE_T ) { win->y = window_snap( win->y ); win->h = s_resize_fix_y - win->y; }
+    if ( resize_edges() & GUI_RESIZE_R ) win->w = window_snap( win->w );
+    if ( resize_edges() & GUI_RESIZE_L ) { win->x = window_snap( win->x ); win->w = resize_fix_x() - win->x; }
+    if ( resize_edges() & GUI_RESIZE_B ) win->h = window_snap( win->h );
+    if ( resize_edges() & GUI_RESIZE_T ) { win->y = window_snap( win->y ); win->h = resize_fix_y() - win->y; }
 
     /* Clamp to minimum; a moving edge stops against the pinned far edge. */
     if ( win->w < min_w )
     {
-        if ( s_resize_edges & GUI_RESIZE_L ) win->x = s_resize_fix_x - min_w;
+        if ( resize_edges() & GUI_RESIZE_L ) win->x = resize_fix_x() - min_w;
         win->w = min_w;
     }
     if ( win->h < min_h )
     {
-        if ( s_resize_edges & GUI_RESIZE_T ) win->y = s_resize_fix_y - min_h;
+        if ( resize_edges() & GUI_RESIZE_T ) win->y = resize_fix_y() - min_h;
         win->h = min_h;
     }
 }
@@ -658,8 +658,8 @@ window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 ti
         app()->window_get_pos( os, &sox, &soy );
         f32 local_x = (f32)scx - (f32)sox;
         f32 local_y = (f32)scy - (f32)soy;
-        f32 new_w   = window_snap( local_x - s_resize_off_x );   /* rest the OS size on the lattice */
-        f32 new_h   = window_snap( local_y - s_resize_off_y );
+        f32 new_w   = window_snap( local_x - resize_off_x() );   /* rest the OS size on the lattice */
+        f32 new_h   = window_snap( local_y - resize_off_y() );
         if ( new_w < window_min_w() )        new_w = window_min_w();
         if ( new_h < window_min_h( title_h ) ) new_h = window_min_h( title_h );
         win->w = new_w;
@@ -1100,12 +1100,13 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
        the cascade.  The spawn viewport is the queued one when set, else the ambient the new
        record will inherit. */
     f32 x = 60.0f, y = 60.0f;
-    if ( !window_find( id ) && !s_next_win.has_pos && g_ctx->win.count < g_ctx->win.max )
+    const gui_next_win_t* next_win = gui_next_win_peek();
+    if ( !window_find( id ) && !next_win->has_pos && g_ctx->win.count < g_ctx->win.max )
     {
         /* The pool-full guard keeps a scratch-hosted overflow window (window_find never sees it,
            so it reads as appearing EVERY frame) from advancing the cascade and walking across
            the screen; it takes the fixed fallback above instead. */
-        i32 vp = s_next_win.has_viewport ? s_next_win.viewport : s_build.win.viewport;
+        i32 vp = next_win->has_viewport ? next_win->viewport : s_build.win.viewport;
         window_default_spawn( vp, &x, &y );
     }
 

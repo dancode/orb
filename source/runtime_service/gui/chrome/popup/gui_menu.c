@@ -73,8 +73,8 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
     /* Pointing at a leaf row -- by mouse or by the nav cursor -- collapses any submenu open at this
        depth, so moving off a sibling menu_begin onto a plain item closes that submenu: the menu
        reads as one active path under either input. */
-    if ( style_is_hot( st ) && g_ctx->popup.open_count > s_popup_begin_count )
-        g_ctx->popup.open_count = s_popup_begin_count;
+    if ( style_is_hot( st ) && g_ctx->popup.open_count > popup_begin_depth() )
+        g_ctx->popup.open_count = popup_begin_depth();
 
     /* Row highlight on hover / nav (active tint while pressed).  ONE mix for the row and its
        check gutter.  GUI_ID_NONE: menu rows snap -- a damped highlight trailing the cursor down
@@ -160,7 +160,7 @@ gui_menu_begin( const char* label )
     gui_menu_state_t* ms = GUI_STATE( gui_menu_state_t, id );
     bool was_open     = ( ms->open_frame + 1u == gui_frame_index() );
     bool this_open    = popup_is_open_id( pid );
-    bool sibling_open = ( g_ctx->popup.open_count > s_popup_begin_count );
+    bool sibling_open = ( g_ctx->popup.open_count > popup_begin_depth() );
 
     /* Open policy.  Bar: a click toggles (a click while open closes -- guarded by was_open since
        popup_close_check already dropped it at frame top), and once any bar menu is open, hovering a

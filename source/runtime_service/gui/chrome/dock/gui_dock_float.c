@@ -220,17 +220,17 @@ dock_float_resolve( gui_dock_node_t* node, gui_id_t active_win_id )
     if ( s_interaction.active_id == rid )
     {
         gui_rect_t r = node->rect;
-        resize_apply_edges( &r, s_resize_edges );
+        resize_apply_edges( &r, resize_edges() );
         const f32 min_w = window_min_w();
         const f32 min_h = window_min_h( WIN_TITLE_H );
         if ( r.w < min_w )
         {
-            if ( s_resize_edges & GUI_RESIZE_L ) r.x = s_resize_fix_x - min_w;
+            if ( resize_edges() & GUI_RESIZE_L ) r.x = resize_fix_x() - min_w;
             r.w = min_w;
         }
         if ( r.h < min_h )
         {
-            if ( s_resize_edges & GUI_RESIZE_T ) r.y = s_resize_fix_y - min_h;
+            if ( resize_edges() & GUI_RESIZE_T ) r.y = resize_fix_y() - min_h;
             r.h = min_h;
         }
         node->rect = r;

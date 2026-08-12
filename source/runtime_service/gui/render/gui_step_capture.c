@@ -67,8 +67,9 @@
     (rebuilt from the frozen frame at capture / on a mode toggle).
 ==============================================================================================*/
 
-/* Read by the emit hot path (STEP_EMIT_SUPPRESSED) to suppress live band-0 pushes per frame. */
-bool g_step_frozen;
+/* Read by the emit hot path (STEP_EMIT_SUPPRESSED, via step_frozen()) to suppress live band-0
+   pushes per frame. */
+static bool g_step_frozen;
 
 /* A latched request (capture / release / seek / order toggle) needs one more emit to take
    effect; frame_begin reads this through step_pending().  Cleared when the emit runs

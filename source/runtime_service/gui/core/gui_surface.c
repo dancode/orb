@@ -152,7 +152,15 @@ window_find_in( gui_context_t* ctx, gui_id_t id )
     queue (no window_begin follows) simply carries to whichever window is begun next.
 ==============================================================================================*/
 
-gui_next_win_t s_next_win;   /* TYPE in core/gui_ctx.h (extern for the chrome unit) */
+static gui_next_win_t s_next_win;   /* TYPE in core/gui_ctx.h; read cross-unit via gui_next_win_peek() */
+
+/* Read-only peek at the queue -- window_begin_ex (chrome) checks has_pos/has_viewport before
+   creating a new record; window_apply_next (below) is the only writer/consumer. */
+const gui_next_win_t*
+gui_next_win_peek( void )
+{
+    return &s_next_win;
+}
 
 void
 gui_window_set_next_pos( f32 x, f32 y, gui_cond_t cond )

@@ -102,7 +102,7 @@ typedef struct
 } gui_io_t;
 
 extern gui_io_t s_io;               /* core/gui_io.c -- the frame's distilled input */
-extern bool s_viewport_dirty;       /* core/gui_io.c -- a floater surface resized; set by the
+void viewport_mark_dirty( void );   /* core/gui_io.c -- a floater surface resized; set by the
                                        frame unit (gui_owned_window_event), consumed by
                                        io_frame_begin's dirty check */
 
@@ -304,7 +304,8 @@ gui_id_t id_seed   ( void );
 void     id_push   ( gui_id_t id );
 void     id_pop    ( void );
 
-extern u32 s_id_sp;                       /* core/gui_ctx.c -- id-scope stack pointer */
+u32  id_scope_depth ( void );             /* core/gui_id.c -- current id-scope stack depth */
+void id_scope_unwind( u32 depth );        /* core/gui_id.c -- pop back to a saved depth */
 
 /* io (core/gui_io.c) -- modifier reads, key claims, outbound clipboard, and the input-frame
    bracket the orchestrator drives (gui_frame_begin/end pump the io frame into this server). */
@@ -342,8 +343,11 @@ void             item_flag_next( gui_item_flags_t flag, bool enable );   // one-
 void             cursor_set( app_cursor_t c );     // hardware-cursor nomination
 void             item_mark_edited( void );         // focus edit latch
 
-extern bool s_replay_mode;          // core/gui_ctx.c -- volatile idle-replay phase flag
-extern u32  s_popup_begin_count;    // core/gui_ctx.c -- popup nesting depth (per-frame)
+void replay_mode_enter( void );     // core/gui_ctx.c -- enter the volatile idle-replay phase
+void replay_mode_exit ( void );     // core/gui_ctx.c -- leave it
+u32  popup_begin_depth( void );      // core/gui_ctx.c -- popup nesting depth (per-frame)
+void popup_begin_depth_push( void ); // core/gui_ctx.c
+void popup_begin_depth_pop( void );  // core/gui_ctx.c
 
 /* Interaction arbitration (core/gui_ctx.c) -- the verbs over the s_interaction record, defined
    with it.  The read half is named once so compound gesture gates read as sentences; the write

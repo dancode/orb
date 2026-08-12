@@ -82,6 +82,22 @@ id_pop( void )
     if ( s_id_sp ) --s_id_sp;
 }
 
+/* Depth + unwind-to-depth: the containment pair a region uses to save its entry depth at push
+   and drop back to it at pop, so any push_id the body left unbalanced cannot leak into a
+   sibling.  Mirrors style_set_depth/style_set_unwind (style/gui_style_core.c). */
+
+u32
+id_scope_depth( void )
+{
+    return s_id_sp;
+}
+
+void
+id_scope_unwind( u32 depth )
+{
+    s_id_sp = depth;
+}
+
 /*==============================================================================================
 
     Widget label grammar  (Dear ImGui style) -- the id half (a label's id is

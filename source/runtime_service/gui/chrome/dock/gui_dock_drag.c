@@ -702,7 +702,7 @@ dock_window_chrome( gui_dock_node_t* node )
     if ( node->floating )
     {
         u8 hot_edges = ( s_interaction.active_id == id_combine( node->id, GUI_RESIZE_SALT ) )
-                     ? s_resize_edges : s_scope.resize_hot;
+                     ? resize_edges() : s_scope.resize_hot;
         if ( hot_edges )
             draw_resize_highlight( ( gui_rect_t ){ x, y, w, s_build.win.h }, hot_edges );
     }

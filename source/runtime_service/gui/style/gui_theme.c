@@ -40,7 +40,9 @@
 ==============================================================================================*/
 
 /* Font type size (em) used by metrics_compute; updated by font_load(). */
-u32 s_font_size = 0;
+static u32 s_font_size = 0;
+
+u32 style_font_size( void ) { return s_font_size; }
 
 /*==============================================================================================
     The var schema -- ONE table describing every scalar the style has.

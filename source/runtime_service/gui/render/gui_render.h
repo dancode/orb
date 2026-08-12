@@ -496,11 +496,6 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
     #undef GUI_PIPELINE_DASHBOARD
 #endif
 
-/* The dashboard window's id (id_hash of its title), defined in debug/gui_dashboard.c; stays
-   0 when the feature is compiled out or the window has never been emitted.  Read by the dash
-   capture to mark the dashboard's own slot in the memory map ("observer marked, not hidden");
-   its stats/idle-skip exemption now comes from GUI_WIN_DEBUG_BAND, not from this id. */
-extern gui_id_t g_dash_window_id;
 
 #ifdef GUI_PIPELINE_DASHBOARD
 
@@ -635,10 +630,6 @@ extern gui_id_t g_dash_window_id;
 
 #ifdef GUI_CMD_STEPPER
 
-    /* Frozen-replay flag, read per push by the emit hot path (STEP_EMIT_SUPPRESSED below).
-       Defined in gui_step_capture.c; written only at the frame seams. */
-    extern bool g_step_frozen;
-
     /* Shell seam (the stepper window + debug_hotkeys).  capture/release/seek LATCH: capture
        applies at the next cache_build_frame, release and the cursor at the next frame's
        draw_reset -- a frame is never half live, half frozen.  Every latched request self-raises
@@ -719,7 +710,7 @@ extern gui_id_t g_dash_window_id;
     /* True while a frozen frame is replayed and the current emission targets the main band --
        every such push is dropped at the source so the live UI underneath cannot disturb the
        replay.  Expanded only inside the emit unit, where s_draw is in scope. */
-    #define STEP_EMIT_SUPPRESSED()    ( g_step_frozen && s_draw.cur_band == 0 )
+    #define STEP_EMIT_SUPPRESSED()    ( step_frozen() && s_draw.cur_band == 0 )
 
 #else
     #define STEP_CAPTURE_BUILD()      ( (void)0 )
