@@ -73,15 +73,20 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tie
         w = size_animate( rg->user_w, GUI_ID_NONE, 0.0f );
     }
     else if ( w <= 0.0f )
+    {
+        // 
         w = ( rg->scroll.content_w > 0.0f ) ? rg->scroll.content_w + 2.0f * WIN_BORDER : WIDGET_H * 4.0f;
+    }
 
     if ( resize_y )
     {
         if ( rg->user_h <= 0.0f ) rg->user_h = ( h > 0.0f ) ? h : WIDGET_H * 8.0f;
         h = size_animate( rg->user_h, GUI_ID_NONE, 0.0f );
     }
-    else if ( h <= 0.0f )
+    else if ( h <= 0.0f ) 
+    {
         h = ( rg->scroll.content_h > 0.0f ) ? rg->scroll.content_h + WIN_BORDER : WIDGET_H;
+    }
 
     gui_rect_t box = { x, y, w, h };
 
