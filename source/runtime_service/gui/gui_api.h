@@ -82,8 +82,9 @@ typedef struct gui_api_s
         Every section below emits inside the frame scope this one opens.
     =============================================================================================================*/
 
-    /* Diagnostics sink -- route every gui diagnostic (pool overflows, load failures, contract
-       violations, the stats dumps) to a host callback instead of stdout.
+    /* Diagnostics sink -- catch every message gui logs (pool overflows, load failures, contract
+       violations, the stats dumps) with a callback of your own instead of letting gui print
+       straight to stdout.
 
        gui deps are { rhi, app }, deliberately not core, so core's LOG_* macros are out of reach
        from inside gui; this hook is how the two meet without gui taking the dependency.  A
@@ -101,7 +102,7 @@ typedef struct gui_api_s
 
     void                ( *log_set_fn )         ( gui_log_fn fn, void* user );
 
-    /* GPU resource lifecycle.
+    /* GPU resource lifecycle -- the boot and teardown calls every host makes exactly once.
 
         init()
             : call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
@@ -138,10 +139,11 @@ typedef struct gui_api_s
     u32                 ( *font_load )          ( const char* path );
     u32                 ( *font_load_builtin )  ( gui_builtin_font_t font );
 
-    /* DPI response (gui_dpi_mode_t, gui.h).  The engine is per-monitor DPI aware and works in
-       physical pixels, so on a scaled monitor an unresponsive UI renders crisp but small.  When
-       enabled, gui retargets the init() preset's font family to the bake nearest the wanted
-       scale each frame; em-driven layout does the rest.  Granularity = the family's baked sizes.
+    /* DPI response (gui_dpi_mode_t, gui.h) -- keeps text and widgets a sensible physical size on
+       a scaled monitor. The engine works in physical pixels, so without this a UI on a 200%
+       display renders crisp but tiny. When enabled, gui swaps the init() preset's font family
+       for the closest pre-baked size to the wanted scale every frame; em-driven layout does the
+       rest. Granularity = the family's baked sizes.
 
         dpi_set()
             : select the response mode.  AUTO follows EACH surface's own monitor scale
@@ -187,8 +189,8 @@ typedef struct gui_api_s
        context's build -- see debug_enable (GUI_DEBUG section).  The perf overlay's clock arrives
        once through frame_set_hooks. */
 
-    /* Frame hooks -- one-time wiring (after init) of the host OS services gui cannot reach itself
-       (gui links only app + rhi, no sys):
+    /* Frame hooks -- hand gui a few OS services it has no way to reach on its own (gui links
+       only app + rhi, not sys), one time, right after init():
 
          clock       -- monotonic seconds source (sys_tick_seconds); brackets the frame for the
                         perf overlay's emit / render cost readouts.  NULL leaves timing at zero.
@@ -198,10 +200,11 @@ typedef struct gui_api_s
 
     void ( *frame_set_hooks )( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events );
 
-    /* Frame lifecycle -- the shared engine.  BOTH host paths call these verbs; they are what a
-       runtime host (run_host_main) uses to drive gui as a service, and what the boot loop below
-       wraps.  A frame is four explicit phases -- this is a multi-context system and the API does
-       not hide it; even a single-context host names its one context:
+    /* Frame lifecycle -- the four calls that run every single frame, in order, no matter which
+       host is driving gui. BOTH host paths call these verbs; they are what a runtime host
+       (run_host_main) uses to drive gui as a service, and what the boot loop below wraps. A
+       frame is four explicit phases -- this is a multi-context system and the API does not hide
+       it; even a single-context host names its one context:
 
          if ( frame_begin(dt) )        -- global: snapshot app input, compute frame_dirty, reset the
          {                                draw list on dirty frames.  Binds NO context; call once at
@@ -238,6 +241,14 @@ typedef struct gui_api_s
 
     /*========================================================================================
         BOOT PATH -- the other way to run gui  (boot_ == this path only)
+
+        In plain terms, this is the quick-start option: instead of a host wiring up its own
+        window, rhi context, and per-frame plumbing by hand, boot() does all of that in one
+        call, and boot_poll / boot_present_begin / boot_present_end / boot_pace replace the
+        manual frame-lifecycle calls with one simple loop. Reach for this in sandboxes, demos,
+        and tools whose main window is nothing but a gui surface; a full engine host drives the
+        frame verbs above directly instead. The two are not mutually exclusive machinery -- the
+        boot loop is built entirely out of the same public calls a hand-rolled host would make.
 
         There are exactly TWO host methodologies, and this band is one of them:
 
@@ -347,10 +358,12 @@ typedef struct gui_api_s
     void ( *set_idle_skip )( bool on );
     bool ( *idle_skip     )( void );
 
-    /* Viewport management.  A viewport is a render surface backed by an OS window.  One frame's build
-       gathers every window's geometry into a single draw list; render() dispatches each window's
-       partition to the viewport it is assigned to (window_set_next_viewport, or inherited from
-       whichever viewport was most recently emitted into this frame).
+    /* Viewport management -- a viewport is where gui actually draws to: one render surface backed
+       by one OS window. Most apps only ever have one (the main window); a second is a floating
+       tool window, an about box, anything with its own OS window. One frame's build gathers
+       every window's geometry into a single draw list; render() then dispatches each window's
+       share of that list to the viewport it is assigned to (window_set_next_viewport, or
+       inherited from whichever viewport was most recently emitted into this frame).
 
        viewport_open()   -- open a surface for OS window win_id.  The initial drawable size is
                             queried from that window's rhi context internally -- no redundant w/h
@@ -404,10 +417,12 @@ typedef struct gui_api_s
     void ( *viewport_size      )( i32 vp, i32* out_w, i32* out_h );
     f32  ( *viewport_content_y )( i32 vp );
 
-    /* gui-OWNED floater surfaces.  Where viewport_open hands gui a host-created window+context
-       to flush into, these own the OS window + rhi context end to end -- gui creates them on
-       spawn and tears them down on close.  This is the lifecycle the tear-off gesture drives;
-       a host may also call viewport_spawn directly to place a panel in its own OS window.
+    /* gui-owned floater surfaces -- a floater is a small OS window gui opens and closes by
+       itself (the window a user gets by dragging a panel loose from the main UI). Where
+       viewport_open hands gui a host-created window + context to flush into, these own the OS
+       window + rhi context end to end: gui creates them on spawn and tears them down on close.
+       This is the lifecycle the tear-off gesture drives; a host may also call viewport_spawn
+       directly to place a panel in its own OS window.
 
        viewport_spawn()          -- open a floater hosting its own OS window at (x,y) sized w x h;
                                     returns its viewport handle (assign windows via
@@ -424,8 +439,11 @@ typedef struct gui_api_s
     void ( *viewport_update          )( void );
     void ( *viewport_render_floaters )( void );
 
-    /* Multi-context -- isolated per-context retained state (windows, nav, popups, keyed widget state,
-       id namespace).  The primary context (GUI_CTX_DEFAULT / 0) is always live after init().
+    /* Multi-context -- lets one gui instance run more than one independent UI at once, each with
+       its own windows, nav, popups, keyed widget state, and id namespace, so identically-named
+       widgets in two contexts never collide. Most hosts only ever use the primary context
+       (GUI_CTX_DEFAULT / 0), which is always live after init(); a secondary context is for
+       something like a separate in-game overlay that must not share state with the editor UI.
 
        ctx_create()       -- allocate a fresh secondary context, sized to `cfg` (NULL / zero fields =
                              the internal maxima the library was compiled with).
@@ -465,9 +483,11 @@ typedef struct gui_api_s
     void ( *ctx_begin         )( i32 ctx );
     void ( *ctx_end           )( void );
 
-    /* Host input -- the host owns the app event ring drain and forwards each event here.
-       Answers with the app_event_result_t routing schema (app.h): the host keeps routing until
-       a sink returns APP_EVENT_CONSUMED.  gui consumes only what it exclusively owns:
+    /* Host input -- the one entry point for OS events. The host drains its own app event ring
+       and forwards each event here so gui can update input state and hit-test widgets. The
+       return value (app_event_result_t, app.h) tells the host whether it should keep routing
+       the event to other systems: the host keeps routing until some sink returns
+       APP_EVENT_CONSUMED. gui only claims events it exclusively owns:
 
          - APP_EV_CHAR / MOUSE_WHEEL / CLIPBOARD:  input state gui alone keeps  -> CONSUMED.
          - APP_EV_MOUSE_MOVE / _DOWN / _UP:        records which viewport the cursor is over,
@@ -485,9 +505,11 @@ typedef struct gui_api_s
 
     /*============================================================================================================
         GUI_DRAW -- render server  (render/ + draw/)
-        Fonts, icons, textures, the draw_* primitive set, paths, clips, volatile blocks.
-        S0 style stratum: NO ambient style -- every call takes explicit colors / widths.
-        Draws what it is told under the ambient clip / z; never asks how a rect was made.
+        Everything in this band puts actual pixels on screen: fonts, icons, textures, the draw_*
+        primitive set, paths, and clips. Every call here takes an explicit color and size -- there
+        is no ambient style at this level, and none of it knows or cares how the rect it was
+        given was computed. It draws exactly what it is told, clipped to the ambient clip rect
+        and stacked at the ambient z order.
     =============================================================================================================*/
 
     /*====================================  fonts -- id-addressed registry  =====================================*/
@@ -495,7 +517,8 @@ typedef struct gui_api_s
     /* Font -- select / load fonts; call between frames (outside frame_begin / render), except
        push_font / pop_font which may bracket a section or widget mid-frame.
 
-       Fonts live in an id-addressed registry.  Slot 0 is the default; it is empty until the first
+       Fonts live in a small registry of numbered slots, and everything below is either loading
+       one into a slot or picking which slot is active. Slot 0 is the default; it is empty until the first
        font_load / font_load_into( 0, path ) call -- call one right after gui()->init(), before any
        frame renders.  font_load() loads a .orb_font into a fresh id; font_load_into() loads one
        into an existing id (id 0 swaps the default).  font_use() makes a loaded id active; another
@@ -511,7 +534,8 @@ typedef struct gui_api_s
 
     /*===========================  custom draw -- canvas primitives, symbols, paths  ============================*/
 
-    /* Low-level draw list access -- may be called anywhere between frame_begin and render.
+    /* Low-level draw list access -- the bare-metal drawing calls: no widget, no layout, just
+       geometry. May be called anywhere between frame_begin and render.
        draw_rect and draw_text push geometry directly into the draw list.
        draw_rects pushes N solid rects as ONE command -- the batched form for dense custom
        drawing (timeline bars, graph columns) that would otherwise exhaust the frame's command
@@ -522,7 +546,9 @@ typedef struct gui_api_s
     void ( *draw_rects )( const gui_rect_col_t* rects, u32 count );
     void ( *draw_text  )( f32 x, f32 y, u32 abgr, const char* str );
 
-    /* volatile_cb -- runs `fn` inline, as ordinary code, wrapped so its command range can be
+    /* volatile_cb -- an escape hatch for content that must keep animating even on frames where
+       the rest of the UI is frozen because nothing changed (a live clock readout, a spinning
+       spinner). It runs `fn` inline, as ordinary code, wrapped so its command range can be
        replayed standalone on frames where the rest of the UI build is skipped (frame_begin
        returned false; frame_end runs the replay internally -- see frame_dirty below).
        `fn` calls ordinary emit functions (text, rect_filled,
@@ -544,7 +570,8 @@ typedef struct gui_api_s
     void ( *draw_text_in      )( gui_rect_t r, gui_align_t align, u32 col, const char* str );
     void ( *draw_text_clipped )( gui_rect_t r, gui_align_t align, u32 col, const char* str );
 
-    /* draw_text_xf -- the same run as draw_text, scaled uniformly and rotated about (x, y).
+    /* draw_text_xf -- text that scales and rotates, for gauges, compasses, and spinning labels:
+       the same run as draw_text, scaled uniformly and rotated about (x, y).
        `rot` is radians in screen space (0 points +x, positive turns clockwise -- gui_radians()).
        (x, y) is both the anchor and the pivot; to turn a label about its own middle, offset the
        anchor by the rotated half-extent of text_size().  Single line: '\n' is not a break here.
@@ -562,7 +589,8 @@ typedef struct gui_api_s
        a hundred runs of glyph work per frame, and a caller wanting that should say so knowingly. */
     void ( *draw_text_xf )( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot );
 
-    /* Icons -- a runtime-built R8 atlas of arbitrary symbols (folder, gear, check, editor glyphs).
+    /* Icons -- small symbols (a folder, a gear, a checkmark, an editor glyph) packed at runtime
+       into one shared R8 atlas texture so they all batch into the same draw call as text.
        register_icon packs a raw monochrome bitmap (row-major coverage, w*h bytes) and returns a
        handle (0 = atlas full); the pixels live in the same flush as text and tint by `col`.
        load_icon is the from-disk source: it decodes an image file (PNG and the other stb_image
@@ -587,7 +615,9 @@ typedef struct gui_api_s
        bakes have.  One quad, same batch. */
     void          ( *draw_icon_xf  )( gui_rect_t r, gui_icon_id_t id, u32 col, f32 rot );
 
-    /* The _sdf twins register the same coverage as a DISTANCE FIELD instead: the bytes are
+    /* The distance-field twin of the icon calls above: the same kind of icon, but stored in a
+       way that stays crisp at any size and rotation and can take an outline or glow.
+       The _sdf twins register the same coverage as a DISTANCE FIELD instead: the bytes are
        transformed and land in the distance-field atlas, and the fragment then recovers the edge
        from the field's screen-space derivative rather than from a texel.  What that buys is an
        icon that is exact at ANY size, survives rotation, and can take a GUI_FX_TEXT_EDGE outline
@@ -625,8 +655,8 @@ typedef struct gui_api_s
        a rounded rotated picture stacks draw_box_xf behind a plain one instead. */
     void ( *draw_texture_xf )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr, f32 rot );
 
-    /* Sprites -- authored RGBA art, packed into a sprite atlas of their own so a whole skin is
-       still ONE draw call.  The registration verbs mirror the icon ones exactly (register / load /
+    /* Sprites -- authored art (a PNG you drew, not a generated icon), packed into a sprite atlas
+       of their own so a whole skin is still ONE draw call.  The registration verbs mirror the icon ones exactly (register / load /
        find / size), because the two kinds differ in what a texel MEANS -- an icon is coverage the
        colour paints, a sprite is a picture the colour tints -- not in how you obtain one.
        register_sprite takes raw RGBA8 (row-major, w*h*4, straight alpha); load_sprite decodes an
@@ -651,7 +681,9 @@ typedef struct gui_api_s
     void            ( *image_sprite    )( gui_sprite_id_t id, f32 w, f32 h, u32 tint_abgr );
     void            ( *draw_sprite_in  )( gui_rect_t r, gui_sprite_id_t id, u32 tint_abgr );
 
-    /* draw_brush -- the paint floor, widened.  draw_rect fills a rect with a colour; this fills
+    /* draw_brush -- the general-purpose fill call: like draw_rect, but the fill can be a
+       gradient, a stretched sprite, or a nine-slice frame instead of a flat color.
+       draw_rect fills a rect with a colour; this fills
        one with a gui_brush_t (gui.h), which is the same thing plus three more answers to "with
        what": a gradient, a stretched sprite, or a nine-slice.  THE door a custom widget should
        paint its face through if it wants to be skinnable by whoever uses it, since a brush can be
@@ -679,8 +711,8 @@ typedef struct gui_api_s
     void ( *draw_set_rounding )( f32 r );
     f32  ( *draw_rounding     )( void );
 
-    /* Ambient TEXT EDGE -- a second colour painted OUTSIDE the glyph boundary, giving outlined and
-       drop-shadowed text.  Slate spends a whole extra vertex field (SecondaryColor) on this; here
+    /* Ambient TEXT EDGE -- draws an outline or drop-shadow color around text, in the same draw
+       call as the glyph itself: a second colour painted OUTSIDE the glyph boundary.  Slate spends a whole extra vertex field (SecondaryColor) on this; here
        it is a packed word on the text command, because once a glyph is a distance field the outline
        is not a second copy of the run -- it is the SAME quad, the same batch and the same texture
        sample, with the fill composited over a band widened by `width` pixels.  Nothing about the
@@ -707,8 +739,11 @@ typedef struct gui_api_s
     u32        ( *font_atlas_idx  )( u32 font_id );
     gui_vec2_t ( *font_atlas_size )( u32 font_id );
 
-    /* Symbol + shape draw primitives (the draw_* family, Dear ImGui's AddXxx / Render* analogue),
-       drawn through the normal vertex pipeline (lines / triangles / circles), NOT the icon atlas.
+    /* Symbol + shape draw primitives -- the shape-drawing toolbox: checkmarks, arrows, circles,
+       rounded rects, beziers, and more, the same primitives the built-in widgets use to draw
+       their own chrome, exposed here for a custom widget to use too (the draw_* family, Dear
+       ImGui's AddXxx / Render* analogue). Drawn through the normal vertex pipeline
+       (lines / triangles / circles), NOT the icon atlas.
        They share the draw_* verb with draw_rect / draw_text / draw_line above -- everything that
        pushes geometry into the draw list is draw_*; render() is reserved for the frame flush.  The
        built-in widgets draw their check marks, arrows, bullets and close crosses through these, and
@@ -774,7 +809,9 @@ typedef struct gui_api_s
     void ( *draw_gradient          )( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
     void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );
 
-    /* A rounded fill whose alpha breathes on the shared frame clock, evaluated in the FRAGMENT.
+    /* draw_pulse -- a rect whose fill alpha breathes in and out on a clock, for a "this is
+       live / recording" indicator, without costing any extra GPU work each frame it breathes.
+       A rounded fill whose alpha breathes on the shared frame clock, evaluated in the FRAGMENT.
        Its point is what it avoids: the emitted command is byte-identical every frame, so the
        window's retained geometry stays valid and the animation re-tessellates nothing -- unlike
        easing the color yourself, which dirties the window's hash on every frame it moves and
@@ -813,16 +850,21 @@ typedef struct gui_api_s
 
     /*============================================================================================================
         GUI_CORE -- interaction server  (core/ + interact/)
-        The ambient, id-keyed services every layer composes over: identity (id scopes), the
-        item() state machine over caller rects, keyed state, animation, drag and drop, io
-        snapshot queries, redraw levers.
+        This band answers "what is the user doing to this thing right now?" -- hover, click,
+        drag, focus -- and tracks it per widget id across frames. It never draws anything; it is
+        the shared services every widget, whether stock or custom, is built out of: identity
+        (id scopes), the item() state machine over a caller's rect, keyed state, animation, drag
+        and drop, io snapshot queries, redraw levers.
         item( id, rect ) -> state is the coordination axis: layout of any kind PRODUCES a
         rect, a widget of any kind CONSUMES one, and this server cannot tell them apart.
     =============================================================================================================*/
 
     /*=================================  item() -- behavior over a caller rect  =================================*/
 
-    /* item -- the user-UI behavior seam: run the shared widget interaction state machine over a
+    /* item -- the door to building your own widget. Give it a rect and an id, and it hands back
+       whether that rect is hovered, pressed, or clicked this frame -- the same behavior every
+       stock widget is built on, with none of the drawing decided for you.
+       item -- the user-UI behavior seam: run the shared widget interaction state machine over a
        rect the CALLER derived (a canvas() cut, an empty() slot, split/carve panels, custom math)
        and report the resolved state (hover / active / pressed / clicked).  A custom widget is
        rect + item() + draw_*: it hovers, press-captures, clicks, and registers for keyboard nav
@@ -834,7 +876,9 @@ typedef struct gui_api_s
 
     /*===============================  animation service -- keyed value stepping  ===============================*/
 
-    /* Animation service -- the general value-stepping surface any interface drives transitions with.
+    /* Animation service -- the shared toolkit for making a value glide toward a new target
+       instead of snapping to it (a hover highlight fading in, a panel sliding open). The
+       general value-stepping surface any interface drives transitions with.
        Two models, both keyed on a caller-owned gui_id_t (compose with id_combine to avoid slot
        collisions); storage is proportional to in-flight animations and self-evicts once settled.
        Every call that steps a value raises wants_redraw, so animations keep frames coming under
@@ -903,8 +947,10 @@ typedef struct gui_api_s
     void ( *disabled_end   )( void );
 
 
-    /* Drag and drop -- typed payload transfer between items (see gui_drag_flags_t /
-       gui_drag_payload_t in gui.h).  One drag exists at a time; the payload bytes are copied.
+    /* Drag and drop -- drag a piece of data off one widget and drop it on another (an asset
+       tile onto a scene view, a tab onto a dock). Typed payload transfer between items (see
+       gui_drag_flags_t / gui_drag_payload_t in gui.h). One drag exists at a time; the payload
+       bytes are copied.
 
        USAGE CONTRACT:
          Source -- right after the widget that should be draggable:
@@ -939,7 +985,10 @@ typedef struct gui_api_s
 
     /*==========================  multi-select -- clicks + modifiers -> one range action  =======================*/
 
-    /* Multi-select protocol (interact/gui_msel.c) -- the Explorer click/modifier rule (plain
+    /* Multi-select protocol -- turns raw clicks plus modifier keys into one resolved selection
+       change, the way Windows Explorer's file list behaves: click to replace the selection,
+       Ctrl to toggle one item, Shift to select a range. (interact/gui_msel.c) -- the Explorer
+       click/modifier rule (plain
        replaces, Ctrl toggles, Shift ranges from the anchor, Ctrl+Shift adds, Shift+arrow extends,
        Ctrl+A selects all) over CALLER-owned selection storage.  Bracket a list with
        msel_begin(id, full_count) .. msel_end(); rows report through the stock msel_item (chrome)
@@ -954,8 +1003,11 @@ typedef struct gui_api_s
 
     /*===========================  queries -- io snapshot, item state, redraw state  ============================*/
 
-    /* IO accessors -- the frame-coherent input snapshot the widgets see, for UI / tool code that
-       would otherwise re-query app() and so bypass gui's frame timing and its input capture.
+    /* IO accessors -- read the same per-frame keyboard/mouse snapshot the widgets themselves
+       read from, instead of querying app() directly and risking a value that disagrees with
+       what gui just saw (a stale frame's mouse position, an input gui already captured). For UI
+       / tool code that would otherwise re-query app() and so bypass gui's frame timing and its
+       input capture.
 
        want_capture_mouse / want_capture_keyboard are the fence: a true return means gui owns the
        device this frame (the cursor is over a window, a widget is dragging, or a field is focused),
@@ -982,7 +1034,9 @@ typedef struct gui_api_s
        region clip, no drag in flight): the IsMouseHoveringRect analogue for custom-drawn hit tests. */
     bool ( *is_mouse_hovering_rect   )( gui_rect_t r );
 
-    /* Last-item introspection (the ImGui IsItem* family) -- each reports on the widget just emitted,
+    /* Last-item introspection -- ask follow-up questions about the widget you just emitted
+       ("was that clicked? is it still focused?") instead of it returning everything at once
+       (the ImGui IsItem* family) -- each reports on the widget just emitted,
        so call immediately after it.  hovered / active / clicked / focused mirror the widget's own
        interaction; activated / deactivated are the press / release edges (deactivated is the natural
        "commit on release" seam); visible is true when any of the item's rect survives the region
@@ -1044,7 +1098,8 @@ typedef struct gui_api_s
        context internally; the query remains for hosts that run their own pacing. */
     bool ( *wants_redraw )( void );
 
-    /* request_redraw -- one-shot: mark the bound context so the NEXT frame_begin returns dirty
+    /* request_redraw -- tell gui "something changed that the UI needs to reflect next frame."
+       One-shot: mark the bound context so the NEXT frame_begin returns dirty
        and runs a full emit.  Self-clearing (the pin is set_force_redraw below).  Call it when a
        state change made DURING this build only the next build can show -- the click that switches
        which screen is emitted, a custom widget (gui()->item) mutating the model it draws.  Input
@@ -1091,16 +1146,22 @@ typedef struct gui_api_s
 
     /*============================================================================================================
         GUI_SURFACE -- root surfaces  (core/gui_surface.c + flow/gui_region.c + interact/gui_feature.c)
-        The renderer primitive: a raw pane/region block -- identity + clip + the hover/z contest,
-        and nothing else.  pane_begin is the bare block, region_begin adds persisted scroll + a
-        layout, and chrome's window_begin (GUI_CHROME) is the same pane plus a pool record and
-        stock policy.  The feat_* kit assembles window features (move / resize / collapse /
-        maximize / clamp) over any pane: custom chrome is composition, not a privileged layer.
+        This is the foundation every window, panel, and HUD element in the GUI is ultimately
+        built from: a raw block on screen that has an identity, a clip rect, and a place in the
+        hover/z order -- and nothing else. pane_begin is that bare block, region_begin adds
+        persisted scroll + a layout, and chrome's window_begin (GUI_CHROME) is the same pane plus
+        a pool record and stock policy on top. The feat_* kit assembles window features (move /
+        resize / collapse / maximize / clamp) over any pane: custom chrome is composition, not a
+        privileged layer -- a window is not special, it is just one particular combination of
+        these pieces.
     =============================================================================================================*/
 
     /*===================================  surfaces -- panes, root regions + scroll  ===================================*/
 
-    /* pane_begin / pane_end -- the MINIMAL top-level surface occupant (gui_pane_t, gui.h): the
+    /* pane_begin / pane_end -- the smallest possible on-screen surface: an id and a clip rect,
+       competing for hover/z like a window but with no scroll, no background, no persistence --
+       for a caller assembling entirely its own chrome from scratch. The MINIMAL top-level
+       surface occupant (gui_pane_t, gui.h): the
        raw block every window is built from, for callers assembling their own chrome.  Opens
        identity (items inside attribute to this pane), enters the hover/z contest at the tier's
        band (same contest windows and popups compete in), and pushes the base clip (draw + hit)
@@ -1116,7 +1177,9 @@ typedef struct gui_api_s
                                 i32 vp, gui_win_flags_t flags );
     void       ( *pane_end   )( void );
 
-    /* region_begin / region_end -- a root-level layout region: an explicit screen rect with no
+    /* region_begin / region_end -- a fixed-position box for HUD-style content: scrollable and
+       laid out like a window, but pinned at a screen rect you choose rather than movable by the
+       user. A root-level layout region: an explicit screen rect with no
        window chrome (no title, no drag, no dock, no z-order competition, no pool record).
        It is the third caller of the same scroll-region engine window_begin and child_begin sit
        on, stripped to just a rect + persisted scroll/content state, for a HUD-style element that
@@ -1143,9 +1206,12 @@ typedef struct gui_api_s
 
     /*=================================  window features as mechanisms  =================================*/
 
-    /* The feat_* kit: every window feature as a freestanding
-       id-keyed mechanism, so chrome is assembled feature by feature over a pane -- anything
-       can be a move handle, a collapse, or a maximize.  State rule: in-flight gesture state
+    /* The feat_* kit -- the individual behaviors a window is made of (dragging by its titlebar,
+       resizing by its edge, collapsing, maximizing), each offered as its own freestanding
+       function so a custom panel can pick and choose exactly the ones it wants over a plain
+       pane, instead of getting the whole window package or none of it. Every window feature as
+       a freestanding id-keyed mechanism, so chrome is assembled feature by feature over a pane
+       -- anything can be a move handle, a collapse, or a maximize.  State rule: in-flight gesture state
        is arbitrated by active_id (one drag at a time); PERSISTENT state is the caller's
        pointers -- you see every byte.  Call these inside the owning pane/window bracket
        (hover gating reads the ambient scope).  The open latch needs no mechanism: it is a
@@ -1184,9 +1250,12 @@ typedef struct gui_api_s
 
     /*============================================================================================================
         GUI_RECT -- rect kit  (stateless carve math)
-        Pure rect producers: no pen, no region state, no draw -- feed the results to elements,
-        item(), push_layout_overlay, or draw_* directly.  The inline half of this library
-        (cut / inset / align / anchor_box + the geometry types) lives in gui_rect.h.
+        Plain math for slicing screen space into rectangles -- nothing here remembers state, opens
+        a region, or draws a pixel; it only computes rects for you to hand to a widget, item(),
+        push_layout_overlay, or a draw_* call. Pure rect producers: no pen, no region state, no
+        draw -- feed the results to elements, item(), push_layout_overlay, or draw_* directly. The
+        inline half of this library (cut / inset / align / anchor_box + the geometry types) lives
+        in gui_rect.h.
     =============================================================================================================*/
 
     /* content_rect -- the current region's available area as a screen rect (cursor_screen_pos joined
@@ -1217,14 +1286,19 @@ typedef struct gui_api_s
 
     /*============================================================================================================
         GUI_FLOW -- layout engine  (flow/)
-        The stateful pen: templates (stack / cols / grid / form / pack), sizing, avail,
+        This is the part of the GUI that decides WHERE things go. Think of it as a pen that
+        walks down the window, handing each widget in turn a rect to draw itself into, according
+        to whichever template (stack, columns, grid, form, pack) is currently declared. The
+        stateful pen: templates (stack / cols / grid / form / pack), sizing, avail,
         row virtualization, and the rect<->flow seams (empty, canvas, push_layout_overlay).
         Produces rects and opens regions; draws nothing, and no widget core depends on it.
     =============================================================================================================*/
 
     /*================================  containers -- child boxes + sub-layouts  ================================*/
 
-    /* Child regions -- a nested scrollable layout box inside the current window (or another
+    /* Child regions -- a smaller scrollable panel nested inside the current window, with its own
+       scroll and clipping, like a window within a window. A nested scrollable layout box inside
+       the current window (or another
        child).  child_begin carves a box of height h (width w, or the remaining content width
        when w <= 0) from the layout pen, clips and scrolls its contents independently, and
        gives it its own scrollbar; flags take the GUI_WIN_*SCROLL policy bits.  h <= 0
@@ -1238,8 +1312,10 @@ typedef struct gui_api_s
 
     bool ( *child_begin )( const char* id_str, f32 w, f32 h, gui_win_flags_t flags );
 
-    /* Sub-layout -- carve the next cell into its own little layout, the way a window or child hosts
-       one, but transient: no scroll, no clip, no persistent state, no frame.  push_layout consumes
+    /* Sub-layout -- pack several widgets into what would normally be a single cell (e.g. put a
+       button and a label side by side inside one column of a grid). Carve the next cell into
+       its own little layout, the way a window or child hosts one, but transient: no scroll, no
+       clip, no persistent state, no frame.  push_layout consumes
        one cell (advancing the parent like any widget), opens a layout filling it (default single
        column; shape it with row / grid / widgets inside), and pop_layout closes it -- the parent
        resumes at the following cell.  The cell is one standard line tall unless the row height was
@@ -1265,7 +1341,12 @@ typedef struct gui_api_s
 
     /*==============================  layout verbs, sizing, virtualization, seams  ==============================*/
 
-    /* Layout -- declare the active region's next-item methodology (its "mode"), then shape it.
+    /* Layout -- the template family. Every region (a window body, a child, a sub-layout) must
+       first be told HOW to arrange the widgets placed in it -- as a single scrolling column
+       (stack), fixed side-by-side tracks (cols), a matrix of cells (grid), a "label: control"
+       form, or a toolbar-style run of natural-sized items (pack) -- and every widget from then
+       on fills whatever cell that template hands it, with no idea which shape it is in.
+       Declare the active region's next-item methodology (its "mode"), then shape it.
        A region opens UNDECLARED: the first header below names the mode (stack / columns / grid /
        form / ...), and a widget emitted before any header is a usage error (debug assert; release
        falls back to a stack).  The template then persists + repeats for every widget until set
@@ -1430,7 +1511,9 @@ typedef struct gui_api_s
        draw_* / path_* calls.  It flows like any widget and the window clips it. */
     gui_rect_t ( *canvas )( f32 height );
 
-    /* Sizing (sz_) -- the one family that turns intent into a pixel dimension; layout verbs
+    /* Sizing (sz_) -- helpers that turn a plain intent ("n rows tall", "wide enough for this
+       text") into an actual pixel number, so call sites don't hardcode magic numbers that drift
+       out of step with the theme. The one family that turns intent into a pixel dimension; layout verbs
        (row, cols, child_begin, window_set_next_size) consume what these produce.  Grid-first,
        in order of preference:
 
@@ -1487,7 +1570,9 @@ typedef struct gui_api_s
        scrollbar gutter).  Scroll-free: a box sized by it keeps its width while the region scrolls. */
     gui_vec2_t ( *view_avail )( void );
 
-    /* rows_clip -- fixed-pitch row virtualization (the ImGuiListClipper analogue).  Reserves
+    /* rows_clip -- makes a list with thousands of rows cost only what the visible handful cost,
+       by telling the caller which row indices are actually on screen so it only needs to emit
+       those. Fixed-pitch row virtualization (the ImGuiListClipper analogue).  Reserves
        `count` rows of layout extent, skips the offscreen head, and returns the visible
        [first, last) range; the caller emits only those rows, so a 10000-row list costs what its
        visible slice costs.  Rows must be fixed pitch: row_h 0 defaults to the template's fixed
@@ -1510,7 +1595,10 @@ typedef struct gui_api_s
     gui_vec2_t ( *cursor_screen_pos )( void );
     gui_rect_t ( *empty             )( f32 w, f32 h );
 
-    /* flow_begin / flow_cell / flow_end -- the named rect <-> flow seam pair.  flow_begin opens
+    /* flow_begin / flow_cell / flow_end -- opens the layout engine (stack / cols / grid / ...)
+       inside any rect you already have, however you got it -- a carved slice, a split panel, a
+       hand-computed box -- so you get flow's automatic placement without needing a window or
+       child region first. The named rect <-> flow seam pair.  flow_begin opens
        the layout engine inside ANY rect, however it was produced (cut_* algebra, split, carve,
        anchor, a flow cell, custom math) -- push_layout_overlay under its first-class name.
        flow_cell takes the next flow element back out AS a rect (w / h <= 0 = natural: the
@@ -1537,16 +1625,21 @@ typedef struct gui_api_s
 
     /*============================================================================================================
         GUI_STYLE -- style service  (style/)
-        The neutral style MECHANISM: base style access, push/pop stacks, per-slot reads,
-        density scale, indicator-shape selectors.  Any UI on the service API styles through
-        these; the named theme presets are chrome's style kit and live with it (GUI_CHROME).
+        This is the theming layer: it turns a widget's state (idle, hovered, pressed) into an
+        actual color or size, and it never draws anything itself. Every widget, stock or custom,
+        asks this band "what color/size should I be right now?" instead of hardcoding one. This
+        band is just the neutral MECHANISM -- base style access, push/pop stacks, per-slot reads,
+        density scale, indicator-shape selectors; the actual named theme presets (Dark, Light, ...)
+        are chrome's style kit and live with it (GUI_CHROME).
     =============================================================================================================*/
 
     gui_style_t*       ( *style_get   )( void );   /* mutable base -- marks the theme anonymous      */
     const gui_style_t* ( *style_peek  )( void );   /* read-only base -- does NOT mark it anonymous   */
     void               ( *style_apply )( void );   /* rescale the active metrics from the base       */
 
-    /* style_bake -- derive s->col[][][] from s->palette: the step between what a theme AUTHORS
+    /* style_bake -- expands a theme's small, hand-authored description (a handful of seed
+       colors and a ramp) into the full grid of colors every widget actually reads. Derives
+       s->col[][][] from s->palette: the step between what a theme AUTHORS
        (seven seeds and a five-number ramp, gui_palette_t) and what a render READS (the 8x4
        colour grid).  Pure and in-place; touches no metric.
 
@@ -1562,16 +1655,21 @@ typedef struct gui_api_s
            e->col[ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;      // the one bespoke cell */
     void               ( *style_bake  )( gui_style_t* s );
 
-    /* style_source_set -- register the OWNER of the DEFAULT style set (set 0), the one chrome
-       and any unbracketed UI resolve through: the promotion seam a kit uses to restyle the whole
-       application.  The source is invoked immediately, then again at every style landing (font
+    /* style_source_set -- the way a game or tool takes over the WHOLE application's look: register
+       a function that gets re-run every time the style needs deriving, instead of setting colors
+       once and having them get silently overwritten later. Registers the OWNER of the DEFAULT
+       style set (set 0), the one chrome and any unbracketed UI resolve through: the promotion
+       seam a kit uses to restyle the whole application.  The source is invoked immediately, then again at every style landing (font
        activation, theme_set / theme_reset / style_apply) AFTER the layout metrics rescale -- so
        the kit re-derives against fresh numbers instead of being clobbered by the default compile.
        Inside the source, write through style_edit() and read metrics via style_peek / the sz_
        family.  fn NULL restores the default owner: chrome's theme compiler. */
     void ( *style_source_set )( gui_style_source_fn fn, void* user );
 
-    /* Style SETS -- two looks installed side by side instead of one overwriting the other.
+    /* Style SETS -- lets two completely different looks exist on screen at once, e.g. an editor
+       keeps its own theme while a game panel inside it paints with its own -- instead of one
+       theme installation overwriting the other. Two looks installed side by side instead of one
+       overwriting the other.
 
        A set is one installed copy of the WHOLE style -- colors, metrics, skin, density ramp --
        with its own owner.  Set 0 is chrome's;
@@ -1596,7 +1694,9 @@ typedef struct gui_api_s
     void            ( *style_set_pop     )( void );
     gui_style_set_t ( *style_set_current )( void );
 
-    /* Style stacks -- the push-model theme override.  A color names a (role, phase) cell of the
+    /* Style stacks -- temporarily override one color or size for a section of UI, then restore
+       the previous value automatically (like a save/restore pair). The push-model theme
+       override.  A color names a (role, phase) cell of the
        color grid; a var names a gui_style_var_t scalar.  push overrides until the matching pop
        (pop takes a count, like ImGui); next_style_* overrides for just the next widget, no pop.
        Colors are abgr (GUI_COLOR); vars are f32 px.  Like the item flags, this is callsite-free:
@@ -1642,8 +1742,10 @@ typedef struct gui_api_s
     void ( *push_style_color_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr );
     void ( *next_style_color_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr );
 
-    /* The RESOLVED reads -- the other half of the stacks above, and what every render actually
-       calls.  style_color returns a (role, phase) cell of the installed style (kit-owned when a
+    /* The RESOLVED reads -- ask "what color should I actually draw right now," accounting for
+       any active theme plus any push_style_color override in scope. The other half of the
+       stacks above, and what every render actually calls.  style_color returns a (role, phase)
+       cell of the installed style (kit-owned when a
        style source is registered) with any live push_style_color / next_style_color override
        already applied; item_phase distils an interact state into the phase to ask for.  THE
        color door for a widget of your own -- the same seam the stock renders and chrome's
@@ -1676,7 +1778,9 @@ typedef struct gui_api_s
 
     /*==========================  the FACE plane -- art where a colour was  ==========================*/
 
-    /* A face is a BRUSH installed on a (look, role, phase) cell: the same coordinate the colour
+    /* The face plane -- lets a theme swap in actual art (a gradient, a nine-slice sprite frame)
+       anywhere a flat color would otherwise go, without editing a single widget's code. A face
+       is a BRUSH installed on a (look, role, phase) cell: the same coordinate the colour
        grid uses, in a parallel plane, replacing that cell's flat fill with a gradient or a
        nine-slice.  This is the payoff of the brush -- because a face is addressed by the
        coordinate every render already resolves, installing one restyles every widget that paints
@@ -1721,8 +1825,10 @@ typedef struct gui_api_s
     void ( *draw_face      )( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase );
     void ( *draw_face_look )( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
 
-    /* THE MIX -- the continuous coordinate over the same grid (gui_style_mix_t, gui.h), and what
-       makes a widget MOVE between cells instead of snapping between them.
+    /* THE MIX -- what makes a widget's color/art smoothly animate between states (idle to
+       hovered, say) instead of popping instantly. The continuous coordinate over the same grid
+       (gui_style_mix_t, gui.h), and what makes a widget MOVE between cells instead of snapping
+       between them.
 
            gui_style_mix_t m = gui()->style_mix( id, st, selected );   // one probe, damped
            gui()->draw_face_mix( box, GUI_ROLE_BG, m );                // surface
@@ -1769,6 +1875,8 @@ typedef struct gui_api_s
 
     /*============================================================================================================
         GUI_STOCK -- components + the reference widget set  (component/ + stock/)
+        Every widget here splits into two halves you can use separately: the LOGIC (does the
+        user's click land on this? how far did they drag it?) and the LOOK (what does it draw?).
         Two rungs, one pair per widget.  A COMPONENT (comp_*) is a widget's LOGIC with no look:
         it consumes (id, rect), does the tedious part -- hit-testing, drag math, value snapping,
         focus / hover / active -- and reports state + the geometry a render needs.  It never
@@ -1837,6 +1945,11 @@ typedef struct gui_api_s
 
     /*============================================================================================================
         GUI_CHROME -- convenience / editor UI  (window/ + dock/ + popup/ + widgets/ + table/)
+        This is the product layer: the actual editor-style building blocks -- movable windows,
+        docking, popups, menus, toolbars, the ready-made widget set, tables, and named themes --
+        that an application assembles its UI out of. Everything here is BUILT from the strata
+        below (frame / draw / core / surface / rect / flow / style); nothing in this band is
+        privileged, it is just one particular, convenient way of combining those lower pieces.
         The imgui-style design layer over the strata beneath it: persistent windows, docking,
         popups / menus / toolbars, the stock flow-adapted widget set, tables, and the theme
         system (S2: a compiler that resolves down to the strata beneath it).
@@ -1900,8 +2013,11 @@ typedef struct gui_api_s
 
     /*==========================  dock/ -- dock tree, tab groups, layout persistence  ===========================*/
 
-    /* Docking -- tile + tab windows into a dock tree that fills a viewport (the DockSpaceOverViewport
-       analogue).  The programmatic path: build a layout in code, then windows whose titles were
+    /* Docking -- lets the user (or the host, in code) arrange windows into a tiled, tabbed
+       layout that fills a viewport, the way a modern IDE's panels dock together, instead of
+       every window floating loose on top of each other. Tile + tab windows into a dock tree
+       that fills a viewport (the DockSpaceOverViewport analogue). The programmatic path: build
+       a layout in code, then windows whose titles were
        dock_window'd render into their node (no per-window title bar -- the node draws a shared tab
        strip) instead of free-floating.  Mouse drag-to-dock and layout persistence (dock_save/load
        below) build on the same tree.  Free-floating windows still overlap on top of the dockspace.
@@ -1953,7 +2069,9 @@ typedef struct gui_api_s
     void          ( *dock_window_maximize     )( const char* title, bool on );
     bool          ( *window_is_dock_maximized )( const char* title );
 
-    /* Floating tab groups -- tabbing WITHOUT split panes.  window_tab() merges window `title` onto
+    /* Floating tab groups -- lets two ordinary floating windows merge into one tabbed group
+       without needing a dock tree at all, the way dragging one browser window's tab onto
+       another merges them. Tabbing WITHOUT split panes.  window_tab() merges window `title` onto
        window `onto_title`'s frame: a free target grows a floating tab group around itself (shared
        frame, tab strip in place of a title bar; drag the strip's empty band to move it, its edges
        to resize); a target already tabbed somewhere -- a group or a dockspace leaf -- just gains
@@ -1992,8 +2110,10 @@ typedef struct gui_api_s
 
     /*==========================  popup/ -- popups, tooltips, menus, combo + listbox  ===========================*/
 
-    /* Popups -- transient overlay windows on top of everything.  A regular popup auto-closes when
-       the user clicks outside it; a modal blocks input behind it and dims the background, closing
+    /* Popups -- a small window that appears on demand and goes away again: a right-click menu,
+       a confirmation dialog, a dropdown's list. Transient overlay windows on top of everything.
+       A regular popup auto-closes when the user clicks outside it; a modal blocks input behind
+       it and dims the background, closing
        only via popup_close_current.  The string id namespaces both the open request and the body,
        so popup_open("x") and popup_begin("x") must use the same id.  Popups stack (a popup opened
        while inside another nests under it); a click keeps the deepest popup under the cursor and
@@ -2034,8 +2154,10 @@ typedef struct gui_api_s
     bool ( *popup_context_window_begin )( const char* id_str );
 
     /*
-        Tooltips -- a non-interactive overlay shown at the cursor while the previous widget is
-        hovered.  set_item_tooltip is the one-liner; tooltip_begin / tooltip_end wrap a multi-widget
+        Tooltips -- the small text bubble that appears near the cursor when you hover over
+        something and explains what it does. A non-interactive overlay shown at the cursor while
+        the previous widget is hovered. set_item_tooltip is the one-liner; tooltip_begin /
+        tooltip_end wrap a multi-widget
         body (the return gates the body; tooltip_end is unconditional).
 
            gui()->button( "Hover me" );
@@ -2072,7 +2194,8 @@ typedef struct gui_api_s
     void ( *tooltip_end      )( void );
     void ( *help_marker      )( const char* str );
 
-    /* Menus -- a coordination layer over the popup stack.  A menu bar holds menu_begin entries;
+    /* Menus -- the File / Edit / View-style menu bar and its dropdowns, built as a coordination
+       layer over the popup stack above. A menu bar holds menu_begin entries;
        each opens a submenu popup that holds menu_items and further menu_begin entries (nesting on
        the popup stack).  Disabled state reuses the item-flag stack: push_item_flag(GUI_ITEM_DISABLED).
 
@@ -2113,7 +2236,8 @@ typedef struct gui_api_s
     void ( *menu_end        )( void );
     bool ( *menu_item       )( const char* label, const char* shortcut, bool* selected );
 
-    /* Toolbar -- an icon strip built on bar() (flow/).  toolbar_begin id-scopes the strip so
+    /* Toolbar -- a row of icon buttons, like an editor's main toolbar. An icon strip built on
+       bar() (flow/).  toolbar_begin id-scopes the strip so
        two toolbars' buttons never collide, then opens a bar() run; toolbar_end pops it.  Emit
        inside any window / child -- it owns no window of its own, matching bar() itself.  It does
        NOT push a scale -- wrap it in the caller's own scale_push/scale_pop (GUI_SCALE_BAR is the
@@ -2307,8 +2431,9 @@ typedef struct gui_api_s
        built across several clicks).  The row id folds in `index`, so repeated labels are fine. */
     bool ( *msel_item   )( const char* label, i32 index, bool selected );
 
-    /* Combo box -- a framed preview box (selected text + a down arrow) with a trailing label that
-       drops a popup of rows below it on click.  combo_begin opens the dropdown: it returns true
+    /* Combo box -- the standard dropdown selector: a framed preview box (selected text + a down
+       arrow) with a trailing label that drops a popup of rows below it on click. combo_begin
+       opens the dropdown: it returns true
        only while the dropdown is open, so -- like window_begin's collapse -- the return gates the
        rows and combo_end is unconditional.  preview_value is the text shown in the closed box (the
        caller's current selection, usually items[current]).  A row clicked in the body dismisses the
@@ -2374,7 +2499,9 @@ typedef struct gui_api_s
     void ( *indent    )( f32 w );
     void ( *unindent  )( f32 w );
 
-    /* box_begin / box_end -- a styled SURFACE behind a run of widgets, sized to whatever they
+    /* box_begin / box_end -- draws a card-like background behind a run of widgets, sized to
+       whatever those widgets turned out to need -- lighter weight than a full child region
+       (no scrolling, no clip). A styled SURFACE behind a run of widgets, sized to whatever they
        turned out to be.  The decorator that sits between a widget's own face (a thing, so it has
        a rect) and child_begin (a scroll region, with a clip, a scroll link and a layout frame --
        far too much machine to put a card behind three labels).  A box owns no region: it insets
@@ -2400,7 +2527,9 @@ typedef struct gui_api_s
     void ( *box_begin )( const char* label, gui_style_role_t role );
     void ( *box_end   )( void );
 
-    /* Tab bar -- an in-window tabbed content switcher (the ImGuiTabBar analogue): a strip of
+    /* Tab bar -- a row of clickable chips inside ONE window that switches which section of that
+       window's body is shown below it (a Settings dialog's General / Audio / Video tabs). An
+       in-window tabbed content switcher (the ImGuiTabBar analogue): a strip of
        clickable chips with only the selected tab's body emitted below it.  Distinct from docking,
        which tabs whole windows into a dock node -- this tabs SECTIONS of one window's body.
 
@@ -2461,9 +2590,12 @@ typedef struct gui_api_s
 
     /*==========================  table/ -- multi-column rows over the layout engine  ===========================*/
 
-    /* Tables -- a multi-column layout with self-fitting cells (one table clip, no per-cell clip) and
-       optional scrolling, sortable headers, and resizable columns.  Conceptually a grid whose rows accumulate and scroll
-       (like flow) with column tracks resolved once per table (like grid), plus frozen header support.
+    /* Tables -- a spreadsheet-style grid of rows and columns, with sortable/resizable/reorderable
+       headers and a scrollbar, for anything a plain list of rows is too flat to show. A
+       multi-column layout with self-fitting cells (one table clip, no per-cell clip) and
+       optional scrolling, sortable headers, and resizable columns.  Conceptually a grid whose
+       rows accumulate and scroll (like flow) with column tracks resolved once per table (like
+       grid), plus frozen header support.
 
        USAGE CONTRACT:
          1. table_begin()            -- open the table; returns true (always, like child_begin).
@@ -2571,7 +2703,8 @@ typedef struct gui_api_s
 
     /*==========================  theme -- chrome's named style presets (style kit)  ===========================*/
 
-    /* Theme -- named style presets that form the root of the push/pop stack.
+    /* Theme -- switch the whole application's look with one call by name ("Dark", "Light", ...).
+       Named style presets that form the root of the push/pop stack.
 
        theme_list()  -- returns the built-in theme array and writes the count to *count_out.
        theme_set()   -- copies the named theme into the base style and immediately resets the
@@ -2594,7 +2727,10 @@ typedef struct gui_api_s
 
     /*============================================================================================================
         GUI_DEBUG -- overlays, dashboard, stepper  (debug/)
-        Diagnostic surfaces and retained-cache levers, hotkey-armed via debug_enable.
+        Tools for looking INSIDE the GUI while it runs: performance numbers, hit-test rects, a
+        memory dashboard, a frame-by-frame command stepper. None of it is needed to ship a
+        product; a release build can drop this band entirely. Diagnostic surfaces and
+        retained-cache levers, hotkey-armed via debug_enable.
     =============================================================================================================*/
 
     /* Debug overlay -- a separate draw list painted last, on top of the UI.  Pass a bitmask
@@ -2606,8 +2742,10 @@ typedef struct gui_api_s
     void ( *debug_set_layers )( u32 layers );
     u32  ( *debug_get_layers )( void );
 
-    /* Master debug switch.  When on, gui owns the debug hotkeys and overlay emission -- the host
-       adds nothing to its loop.  Every hotkey below is gated behind a master ARM so the broad
+    /* Master debug switch -- flip this on and gui's debug hotkeys and overlays take over
+       entirely; the host does not need to add anything to its own loop. When on, gui owns the
+       debug hotkeys and overlay emission -- the host adds nothing to its loop.  Every hotkey
+       below is gated behind a master ARM so the broad
        single-letter keys never fire during normal use:
 
          '.'     master arm (main row or NP_DOT): toggle every debug hotkey below on / off as a

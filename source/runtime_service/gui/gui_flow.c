@@ -68,26 +68,18 @@
 #include "base/fmt.h"
 #include "base/math.h"
 
-/* This unit's world, and nothing above it (the include list IS the dependency graph). */
+/* header files */
 
-/* Note: The render header is flow's documented exception: flow computes THE view rect, 
-   so it owns the region scissor lifecycle (draw_push/pop_clip_rect) 
-   -- flow places, it does not paint. */
-
-/* Note: clip stack + GUI_DBG_REGION outline (pulls gui_host.h + rhi/app APIs)  */
 #include "runtime_service/gui/render/gui_render.h"
-
 #include "runtime_service/gui/core/gui_core.h"
 #include "runtime_service/gui/core/gui_ctx.h"
 #include "runtime_service/gui/style/gui_style.h"
-
-/* Note: text measure lives one level up from the server (font_text_w & co) 
-    -- the plan's single home for flow's measuring need */
 #include "runtime_service/gui/draw/gui_draw.h"
-
 #include "runtime_service/gui/interact/gui_interact.h"
 #include "runtime_service/gui/flow/gui_flow.h"
 #include "runtime_service/gui/debug/gui_debug.h"
+
+/* unity files */
 
 #include "runtime_service/gui/flow/gui_layout_core.c"
 #include "runtime_service/gui/flow/gui_scroll.c"
