@@ -1,10 +1,12 @@
 /*==============================================================================================
 
-    runtime_service/gui/flow/gui_layout_core.c -- Layout mechanism: track resolver + cell emitters.
+    gui/flow/gui_layout_core.c -- Layout: Track Resolver + Cell Emitters.
 
-    The engine the public layout API (gui_layout.c) drives.  It carves a region's content area
-    into cells from a repeating row / column template (or a fixed grid, or a pack run) and hands
-    the next cell to each widget, hiding the layout shape from the widgets entirely.
+    A utility module of mostly static functions that (gui_layout.c) uses.
+    
+    It carves a region's content area into cells from a repeating row / column template 
+    (or a fixed grid, or a pack run) and hands the next cell to each widget, hiding the 
+    layout shape from the widgets.
 
     File order -- the mechanism from the storage up to the emit seam:
 
@@ -21,9 +23,10 @@
         ambient field        the s_field label authority + field_geom_split's two-track geometry
 
     This tier composes and never paints: field_geom_split hands out a labeled row's two-track
-    geometry, and its painting companion gui_field_row (which draws the label) lives with the rest of
-    the label grammar in stock/gui_adornment.c.  The METRICS vocabulary (WIDGET_H / WIDGET_PAD /
-    ...) resolves in style/gui_style_core.c.
+    geometry, and its painting companion gui_field_row (which draws the label) lives with the
+    rest of the label grammar in stock/gui_adornment.c.
+
+    The METRICS vocabulary (WIDGET_H / WIDGET_PAD / ...) resolves in style/gui_style_core.c.
 
     Part of the flow unit (gui_flow.c), first of its includes: everything below composes over the
     cell emitters here.  The one ordering debt runs the other way -- replay_scope_enter/_exit
@@ -34,12 +37,18 @@
 // clang-format off
 
 /*==============================================================================================
-    Layout-frame stack -- the storage behind the type in flow/gui_flow.h.  Just a fixed array, so
-    deep nesting costs nothing beyond these slots.
+
+    Layout-frame stack -- the storage behind the type in flow/gui_flow.h. Just a fixed 
+    array, so deep nesting costs nothing beyond these slots.
+
+    The stack pointer for the layout frames indicates how many layout frames are currently 
+    active. The top frame can be accessed using s_layout_sp - 1, and when the stack is empty,
+    s_layout_sp will be 0.
+
 ==============================================================================================*/
 
+u32            s_layout_sp;  
 layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];
-u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
 
 /* Top layout frame.  Valid between a window_begin/child_begin and its matching end.  When the
    stack is empty (a caller emitted a widget into a collapsed window despite the false return)
@@ -49,9 +58,9 @@ u32            s_layout_sp;   // active frame count; top = s_layout_sp - 1
    array. */
 
 layout_frame_t*
-lf( void )
+lf ( void )
 {
-    u32 i = s_layout_sp ? s_layout_sp - 1 : 0;
+    u32  i = s_layout_sp ? s_layout_sp - 1 : 0;
     if ( i >= GUI_LAYOUT_DEPTH ) i = GUI_LAYOUT_DEPTH - 1;
     return &s_layout_stack[ i ];
 }

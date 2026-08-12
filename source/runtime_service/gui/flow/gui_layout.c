@@ -19,7 +19,7 @@
         queries            cursor_screen_pos / content_avail / view_avail / content_rect
         region verbs       empty / rows_clip / scroll_by -- act on the region that is open
         rect algebra       split / carve / anchor -- pure math over a caller rect, nothing
-                           emitted and no region required
+                           emitted and no region required.
     
     The region ENGINE the headers shape (layout_push/pop_region, scroll_clamp, nav_scroll_chase)
     is gui_scroll.c's, and the child / sub-layout lifecycles are gui_layout_child.c's and
@@ -52,6 +52,7 @@ gui_stack( void )
 }
 
 /* Single full-width column of height row_h (0 = auto) -- a stack with an explicit row height. */
+
 void
 gui_row( f32 row_h )
 {
@@ -64,6 +65,7 @@ gui_row( f32 row_h )
    (use pad() to re-inset).  The single "clear everything" verb -- row( 0 ) only resets the columns
    and field_label_left( 0 ) only the field split, so this is the way back to the plain stack when
    both a template and a field split are in play. */
+
 void
 gui_layout_default( void )
 {
@@ -74,10 +76,11 @@ gui_layout_default( void )
 
 /* row_cols_n -- n equal flex columns of height row_h (0 = auto, one standard line).  The fixed-height
    twin of cols_n; row_cols (below) is the explicit-tracks twin. */
+
 void
 gui_row_cols_n( f32 row_h, u32 n )
 {
-    if ( n == 0 )                 n = 1;
+    if ( n == 0 )               n = 1;
     if ( n > GUI_LAYOUT_COLS )  n = GUI_LAYOUT_COLS;
 
     f32 cols[ GUI_LAYOUT_COLS + 1 ];
@@ -88,6 +91,7 @@ gui_row_cols_n( f32 row_h, u32 n )
 
 /* row_cols -- explicit per-column tracks (GUI_END-terminated, overloaded units) of height row_h.
    The fixed-height twin of cols. */
+
 void
 gui_row_cols( f32 row_h, const f32* tracks )
 {
@@ -97,6 +101,7 @@ gui_row_cols( f32 row_h, const f32* tracks )
 /* cols -- the explicit header for N pre-divided column tracks (GUI_END-terminated, overloaded
    units), auto height, rows accumulating + scrolling.  The canonical name for the multi-column flow
    template; row_cols is the same with an explicit row height. */
+
 void
 gui_cols( const f32* tracks )
 {
@@ -104,6 +109,7 @@ gui_cols( const f32* tracks )
 }
 
 /* cols_n -- N equal flex columns, auto height: the everyday uniform split (a wrapper over row_cols_n). */
+
 void
 gui_cols_n( u32 n )
 {
@@ -126,6 +132,7 @@ void gui_row4( f32 a, f32 b, f32 c, f32 d )  { f32 t[ 5 ] = { a, b, c, d, GUI_EN
    to its glyphs); a widget with no natural width fills to the content's right edge.  The next plain
    widget after it resumes a fresh row below the line.  No-op before any widget has emitted in the
    region.  Mirrors ImGui::SameLine; built entirely on the cell engine's line.prev_item anchor. */
+
 void
 gui_same_line( f32 spacing )
 {

@@ -91,9 +91,7 @@
 #include "runtime_service/gui/flow/gui_table_engine.c"
 
 /*==============================================================================================
-    Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory
-    (gui_ui_mem.c).  The layout-frame stack lives in flow/gui_layout_core.c (with lf)
-    and is counted here.
+    Memory accounting -- this unit's fixed statics, read by gui_ui_memory (gui_ui_mem.c).
 ==============================================================================================*/
 
 u32

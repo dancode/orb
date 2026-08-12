@@ -2,34 +2,31 @@
 #define GUI_FLOW_H
 /*==============================================================================================
 
-    runtime_service/gui/flow/gui_flow.h -- layout composition (the flow unit).
+    gui/flow/gui_flow.h -- Layout Composition
 
     The rect PRODUCER: metrics in, rects out.  Owns the layout-frame types, the region
     lifecycle, and the cell emitters every widget and chrome file composes over.  Included by
     each unit .c after interact/gui_interact.h; the layers above (element, chrome) consume
-    the rects flow carves.  Its own unit (root gui_flow.c).
+    the rects flow carves. Its own unit (root gui_flow.c).
 
     Downward, flow reads the ambient records + the core services (the anim ease is core),
-    the style metrics, interact's edge-resize mechanism, and the render clip
-    stack (flow computes the view rect, so it owns the region scissor -- see the root
-    banner).  The upward seams are enumerated at the bottom of this header; do not add more.
+    the style metrics, interact's edge-resize mechanism, and the render clip stack 
+    (flow computes the view rect, so it owns the region scissor -- see the root banner).
+
+    The upward seams are enumerated at the bottom of this header; do not add more.
 
 ==============================================================================================*/
-
 // clang-format off
 
-#define GUI_LAYOUT_DEPTH            8       // max nested scroll regions (windows or children)
-
-/* gui_scroll_link_t (the persisted scroll record) is in core/gui_ctx.h: it is
-   retained-mode storage (gui_window_t embeds one), so it lives with the server's records.
-   The machinery that drives it stays here (flow/gui_scroll.c). */
+#define GUI_LAYOUT_DEPTH 8          // max nested scroll regions (windows or children)
 
 /*==============================================================================================
     Layout-frame (stack storage in flow/gui_layout_core.c)
 
-    Every scrollable region (a window body or a child_begin box) pushes one frame.  The top frame
-    owns the layout pen and the content column the leaf widgets emit into; the rest is the resolve
-    context layout_pop_region needs to measure content and draw the region's scrollbars.
+    Every scrollable region (a window body or child box) pushes one frame.
+    The top frame owns the layout pen and content column the leaf widgets emit into;
+    The rest is the resolve context layout_pop_region needs to measure content and draw 
+    the region's scrollbars.
 ==============================================================================================*/
 
 /* The three grouped lifetimes of a layout frame, named so each reset in gui_layout_core.c is a
@@ -111,6 +108,7 @@ typedef struct
 
     /* One-shot next_item_align: the verb swaps the override into mod.align (so the item's own
        paint reads it too) and arms the next emit; the emit AFTER that one restores the base. */
+
     u8   align_restore;             // mod.align to restore once the armed item has emitted
     bool align_swap;                // an override sits in mod.align (restore pending)
     bool align_armed;               // ... and its item has not emitted yet
@@ -123,12 +121,15 @@ typedef struct
 {
     /* ANCHORS.  Every position below is a coordinate on the same glass -- what differs is what
        it is anchored to, and each is tagged CANVAS or SCREEN where it is declared:
+
          CANVAS -- content-anchored: the position after the -scroll bias, sliding under the view
                    as the region scrolls.  The pen, content column, and highwater are canvas
                    values; so is every cell rect handed to a widget (which is why a widget can
                    draw and hit-test its cell with no conversion at all).
+
          SCREEN -- frame-anchored: pinned to the glass.  outer, view, origin_*, band_bottom,
                    parent_clip.
+
        Crossing anchors to COMPARE is legal and routine (a pen against band_bottom asks "has
        content reached the visible band end", and that is the intended question).  Adding a
        scroll-free SIZE to either anchor is legal too (content_x + a view-derived width).  The
@@ -190,6 +191,7 @@ typedef struct
        tracks (which sit exactly on its right / bottom edges), and the nav scroll chase.
        Never re-derive these extents from outer; drift between derivations is how content ends
        up interacting under a scrollbar. */
+
     gui_rect_t      view;
 
     f32             origin_x;           // SCREEN: unscrolled content origin (canvas position at
@@ -217,18 +219,18 @@ typedef struct
 
 } layout_frame_t;
 
-extern layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];  /* flow/gui_layout_core.c -- region
-                                                              stack                          */
-extern u32            s_layout_sp;  /* active frame count; top = s_layout_sp - 1 */
+extern layout_frame_t s_layout_stack[ GUI_LAYOUT_DEPTH ];  /* flow/gui_layout_core.c -- region stack */
+extern u32            s_layout_sp;                         /* active frame count; top = s_layout_sp - 1 */
 
 layout_frame_t* lf( void );         /* flow/gui_layout_core.c -- top frame (clamped, never NULL) */
 
-/*==============================================================================================
+/*================================================================================================
     Persistent region state (flow/gui_scroll.c)
 
     A child_begin or gui_region_begin region's scroll offset, last-measured content size, and
     (if GUI_WIN_CHILD_RESIZE_X/_Y is set) user-dragged size, kept across frames in the keyed
     state pool (gui_ctx.c), keyed by region id.  Windows keep these inline in gui_window_t.
+
 ==============================================================================================*/
 
 typedef struct
