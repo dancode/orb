@@ -1,13 +1,14 @@
 /*==============================================================================================
 
-    runtime_service/gui/style/gui_stacks.c -- Bracketing vocabulary: id scope, item flags, style.
+    gui/style/gui_stacks.c -- Bracketing vocabulary: id scope, item flags, style.
 
     The verbs a caller brackets widgets with -- thin wrappers, no machinery of their own:
 
-        push_id / pop_id            id-scope levels for repeated widgets    -> core/gui_id.c
-        push_item_flag / next_      per-item behavior tweaks                -> core/gui_ctx.c
+        push_id / pop_id            id-scope levels for repeated widgets
+        push_item_flag / next_      per-item behavior tweaks
         disabled_begin / _end       the named scope over GUI_ITEM_DISABLED
-        push_style_color / _var     per-item theme overrides                -> gui_style_core.c
+
+        push_style_color / _var     per-item theme overrides
         style_color                 the resolved read back out of the palette
         scale_push / _pop           a named density step, as three paired var pushes
 

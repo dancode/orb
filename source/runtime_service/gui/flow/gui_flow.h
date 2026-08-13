@@ -50,16 +50,17 @@
 typedef struct
 {
     u32 ncols;                      // column count
-    u32 nrows;                      // row count; 0 => flow mode, else grid
+    u32 nrows;                      // only set by grid (0 for flow, whose rows resolve lazily)
     f32 row_h;                      // flow row height: 0 = auto, >0 = pixels
+
     u32 seq;                        // install ordinal within the region -- keys the natural-track measures
     u8  nat_mask;                   // bit per column: a natural (0) track resolved from last frame's measure
-    f32 cols[ GUI_LAYOUT_COLS ];    // source column units, kept so indent can re-resolve
 
-    f32 cellx[ GUI_LAYOUT_COLS ];   // resolved cell left edges
-    f32 cellw[ GUI_LAYOUT_COLS ];   // resolved cell widths
-    f32 rowy [ GUI_LAYOUT_COLS ];   // resolved cell tops    (grid only)
-    f32 rowh [ GUI_LAYOUT_COLS ];   // resolved cell heights (grid only)
+    f32 cols  [ GUI_LAYOUT_COLS ];  // source column units, kept so indent can re-resolve
+    f32 cellx [ GUI_LAYOUT_COLS ];  // resolved cell left edges
+    f32 cellw [ GUI_LAYOUT_COLS ];  // resolved cell widths
+    f32 rowy  [ GUI_LAYOUT_COLS ];  // resolved cell tops    (grid only)
+    f32 rowh  [ GUI_LAYOUT_COLS ];  // resolved cell heights (grid only)
 
 } layout_tmpl_t;
 

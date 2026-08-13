@@ -780,10 +780,10 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
     /* Fresh nav coordinate: this content column is one container to the keyboard (a window body,
        a child box, a re-inset pad).  The first line dispenses when the first line opens. */
     f->nav_region = ++s_build.nav_region_seq;
-    f->nav_line   = 0;
-    f->tmpl_seq   = 0;   /* install ordinals restart with the region (natural-track keys) */
+    f->nav_line = 0;
+    f->tmpl_seq = 0;        /* install ordinals restart with the region (natural-track keys) */
 
-    layout_clear( f );   /* content re-seeded -> the template opens undeclared; declare a header */
+    layout_clear( f );      /* content re-seeded -> the template opens undeclared; declare a header */
 }
 
 /*==============================================================================================
@@ -801,10 +801,10 @@ layout_set( const f32* cols, f32 row_h, f32 gap_x, f32 gap_y )
     layout_row_break( f );
     layout_template_reset( f );
 
-    f->mode = GUI_MODE_COLUMNS;   /* a flow template; stack()/row() override to STACK */
+    f->mode = GUI_MODE_COLUMNS;     /* a flow template; stack()/row() override to STACK */
     f->tmpl.row_h = row_h;
-    f->mod.gap_x = gap_x;   /* raw request; 0 = live theme default, resolved by mod_gap_x/_y */
-    f->mod.gap_y = gap_y;
+    f->mod.gap_x  = gap_x;          /* raw request; 0 = live theme default, resolved by mod_gap_x/_y */
+    f->mod.gap_y  = gap_y;
 
     f32 tracks[ GUI_LAYOUT_COLS ];
     f->tmpl.ncols = layout_copy_tracks( cols, tracks );
