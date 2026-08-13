@@ -263,24 +263,24 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
    "background" cannot serve both.
 
    TITLE is the third surface kind: a caption band that LABELS a container rather than being one
-   -- a window title bar, a tab, a menu bar, a table header.  It earns a row because its four
-   states are genuinely its own; folded into PANEL it forced the phase axis to mean something
-   different for that one role, and a tab then had to reach into THREE roles to say active /
-   hovered / idle.  Now it says TITLE and picks a phase, like everything else.
+   -- a window title bar, a tab, a menu bar, a table header.  It earns a row of its own because
+   its four states are genuinely its own: folding it into PANEL would force the phase axis to
+   mean something different for that one role, and a tab would have to reach into three roles
+   just to say active / hovered / idle.  As its own role, a tab says TITLE and picks a phase,
+   like everything else.
 
-   ACCENT vs MARK is the same split one level down, and it was earned the same way TITLE was --
-   by a role holding TOKENS in its phase slots instead of phases.  ACCENT used to mean "emphasis"
-   and carried four unrelated colors: value fill (IDLE), nav ring (HOT), check mark (ACTIVE),
-   empty track (DIM).  Four widgets' colors, not four states of one surface -- and the row proved
-   it three ways: the dark theme's ACTIVE cell was GREEN in a row of blues (a ramp does not jump
-   hue, a token table does); style_col( role, item_phase( st ) ) -- the one generic accessor the
-   grid offers -- turned a pressed widget green; and push_style_color( ACCENT, PHASE_ALL ) meant
-   nothing, since it recolored a mark and a track to one value.  It also cost a real bug: a
-   slider read "lift WITHIN the accent role, DIM at rest to IDLE when engaged", which is correct
-   phase-reasoning walking straight onto the value-fill token, so a hovered slider painted its
-   EMPTY half the filled colour.  Split, both rows are honest ramps: ACCENT is the value a
-   control HOLDS (empty track / fill / engaged / dragged) and MARK is the indicator it SHOWS
-   (mark / nav ring / captured-nav ring / inert).  item_phase now works on both.
+   ACCENT vs MARK is the same split one level down: two roles instead of one, because a role's
+   four cells only make sense as a ramp if all four describe the SAME surface at different
+   interaction depths.  A role whose phase slots each hold a different concern -- a value fill at
+   IDLE, a nav ring at HOT, a check mark at ACTIVE, an empty track at DIM -- is a token table
+   wearing a ramp's clothing: nothing keeps its ACTIVE cell related in hue to its IDLE cell, the
+   one generic accessor the grid offers (style_col( role, item_phase( st ) )) can resolve to the
+   wrong colour for what a widget means (a slider that reasons "lift WITHIN the role, DIM at rest"
+   lands on the value-fill token, so a hovered slider paints its EMPTY half the filled colour),
+   and push_style_color( role, PHASE_ALL ) has nothing coherent to recolor.  Split, both rows are
+   honest ramps: ACCENT is the value a control HOLDS (empty track / fill / engaged / dragged) and
+   MARK is the indicator it SHOWS (mark / nav ring / captured-nav ring / inert), so item_phase
+   works correctly on either.
 
    GRAB is the movable part of a track control -- a slider knob, a scrollbar thumb -- and it earns
    a row for a reason no other surface has: it is the one element that must stay legible against
@@ -293,12 +293,12 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
    a value no phase of a shared row can hold in both directions.
 
    The four STATUS roles answer a different question from the eight above: not "what surface is
-   this" but "what is this telling me".  INFO / OK / WARN / ERROR is the severity ladder, and it
-   earns rows because every consumer that needed one grew a PRIVATE palette instead -- the
-   pipeline dashboard carried its own OK / WARN / BAD literals, the content debug layer its own
-   green, the drop overlay its own blue.  A private literal is a colour the theme cannot reach:
-   switch to the light theme and a saturated dark-theme green is still sitting there, and a kit
-   that re-seeded its whole UI gold still gets a stock blue drop preview.
+   this" but "what is this telling me".  INFO / OK / WARN / ERROR is the severity ladder, and each
+   earns its own row so a theme can reach it: without a row, a consumer that needs a status colour
+   (the pipeline dashboard's OK/WARN/BAD, the content debug layer's healthy green, the drop
+   overlay's accept blue) has to hold its own literal, and a literal the theme cannot reach stays
+   put when the theme changes -- a saturated dark-theme green survives a switch to light, and a
+   kit that re-seeds its whole UI gold still gets a stock blue drop preview.
 
    They take the phase axis like every other role, with one deliberate stretch, called out here
    because it is the single place the axis does not mean quite the same thing: a status role's
@@ -350,9 +350,10 @@ typedef enum
    track is ACCENT[DIM], secondary text is TEXT[DIM] -- and, for the status roles only, the
    banner tint behind a message rather than a quieter ink (see gui_style_role_t).
 
-   Note what is NOT on this axis: whether the item is SELECTED.  That was the old reading of
-   ACTIVE and it cost the library its hover feedback on every list row; it is now the look axis
-   below, because a selection persists while a phase does not.
+   Note what is NOT on this axis: whether the item is SELECTED.  Selection persists across
+   frames; a phase does not -- so folding SELECTED into ACTIVE would cost every list row its
+   hover feedback (a selected row could never also show as hovered).  Selection lives on its own
+   axis, the look axis below.
 
    TITLE[ACTIVE] is authored as the window BODY colour in every built-in theme, which is what
    makes a live tab merge into the panel it owns.  A focused WINDOW is signalled by its border
@@ -376,30 +377,21 @@ typedef enum
 /*==============================================================================================
     GUI_STYLE -- the look axis: what the item IS, beside what is happening TO it
 
-    The third and last coordinate, and the one the grid was missing.  A phase is TRANSIENT: the
-    pointer is over this, the button is down on this -- facts the interact server tracks, which
-    is why gui_item_phase() can distil one from a state.  A look is PERSISTENT and comes from the
-    caller's own data: this row is the chosen one.  The two are orthogonal, and until they had
-    separate axes the grid had no way to say so.
-
-    The collapse showed up as one line, repeated in every list widget in the library:
-
-        draw_fill( r, selected ? COL_BG_ACTIVE : COL_BG_HOT );      // the old selectable
-
-    Selected and pressed were the same cell, so hovering a selected row did nothing at all: the
-    feedback the rest of the schema spends four cells per role providing was simply absent on the
-    widget people click most, and a selected row could not be shown as pressed either.  Meanwhile
-    PANEL[ACTIVE] -- "the selected surface" -- had no reader anywhere, because the widget that
-    wanted it was busy borrowing BG[ACTIVE].  Fifteen sites read that one cell and meant five
-    different things by it: pressed, toggled on, menu open, focused, selected.
-
-    So the grid is two PLANES of the same twelve roles and four phases.  NORMAL is exactly the
-    grid that was there before and is what every unqualified read still gets; SELECT is the same
-    derivation run against a chosen GROUND, so a selected row hovers, presses and dims like any
-    other surface does:
+    The third coordinate, alongside role and phase.  A phase is TRANSIENT: the pointer is over
+    this, the button is down on this -- facts the interact server tracks, which is why
+    gui_item_phase() can distil one from a state.  A look is PERSISTENT and comes from the
+    caller's own data: this row is the chosen one.  The two are orthogonal -- a selected row can
+    still hover, press and dim like any other surface, because SELECT is a second PLANE of the
+    same twelve roles and four phases, not a fifth phase bolted onto ACTIVE:
 
         style_color     ( GUI_ROLE_BG, phase )                      // NORMAL -- the default
         style_color_look( GUI_ROLE_BG, phase, GUI_LOOK_SELECT )     // the chosen one
+
+    NORMAL is the plane every unqualified read resolves against; SELECT is the same role/phase
+    derivation run against a chosen GROUND.  A selected list row gets the full ramp too:
+    style_color_look( BG, item_phase( state ), GUI_LOOK_SELECT ) hovers, presses and dims the
+    SELECTED surface exactly as the unselected one does, rather than collapsing "selected" and
+    "pressed" onto one shared cell.
 
     There is deliberately no gui_item_look() beside gui_item_phase(), and the absence is the
     point: a phase can be distilled from interact state because interaction is what the server
@@ -453,14 +445,12 @@ typedef struct gui_style_mix_t
 /*==============================================================================================
     GUI_STYLE -- the seed palette: what a theme AUTHORS
 
-    The grid above is what a RENDER reads.  It is not what a theme WRITES.  Those used to be the
-    same thing -- 32 hex literals per theme -- and the duplication proved they should not be: in
-    the old hand-authored dark palette, TEXT held one colour in three phases, BORDER[HOT] equalled
-    BORDER[ACTIVE], MARK[IDLE] equalled MARK[ACTIVE], BG[DIM] equalled ACCENT[DIM], and
-    TITLE[ACTIVE] equalled PANEL[IDLE].  About a quarter of the cells were restatements, and the
-    LIGHT palette restated exactly the same ones -- so the redundancy was structural, a derivation
-    rule the schema had no way to say.  Every theme retyped it by hand and any of the 64 literals
-    could drift off the ramp with nothing to catch it.
+    The grid above is what a RENDER reads.  It is not what a theme WRITES.  96 literals would be
+    the wrong authoring surface: many cells are structurally redundant with each other (TEXT is
+    one colour across most phases, a role's HOT and ACTIVE cells usually sit close together, an
+    inert cell is usually its neighbour role's base) and a theme that hand-typed all 96 would
+    restate the same relationships dozens of times with nothing to keep the restatements in sync
+    -- one literal edited and its echoes elsewhere quietly drift off the ramp.
 
     So a theme authors ELEVEN colours and SIX numbers, and gui_style_bake derives the 96 cells:
 
@@ -470,9 +460,9 @@ typedef struct gui_style_mix_t
     A seed is a colour a designer picks; a ramp is the personality of the theme (how much a
     hover moves, how deep a press sits, how far an inert thing fades).  Neither is a cell.
 
-    The grid stays exactly as it was -- baking WRITES col[][], and a kit is free to overwrite any
-    cell afterwards.  Nothing is closed off: bake first for a coherent ramp, then hand-author the
-    two or three cells you actually want bespoke.
+    Baking WRITES col[][], and a kit is free to overwrite any cell afterwards.  Nothing is closed
+    off: bake first for a coherent ramp, then hand-author the two or three cells you actually
+    want bespoke.
 
         gui_style_t* e = gui()->style_edit();
         e->palette.seed[ GUI_SEED_ACCENT ] = gold;
@@ -585,10 +575,10 @@ typedef struct gui_scale_metrics_t
     it is answered per var by gui_style_class_t below rather than by position here.  Order is
     therefore free: a var may be inserted wherever it reads best.
 
-    Every scalar the style has is here.  That is the rule that replaced the old split, where
-    caret width and checkmark inset sat in the struct as fields no push could reach -- if a
-    number is worth having, it is worth being overridable, and if it is not worth overriding it
-    is not worth being a style field.
+    Every scalar the style has is here: if a number is worth having, it is worth being
+    overridable through push_style_var, and if it is not worth overriding, it is not worth being
+    a style field at all -- there is no second category of struct field sitting outside the var
+    array.
 ==============================================================================================*/
 
 typedef enum
@@ -662,9 +652,10 @@ typedef enum
    its own class rather than a RATIO because it is not bounded by 1 -- an editor offers it as a
    Hz slider running well past it, and 0 means "instant", not "invisible".
 
-   This replaced an ordering trap: the scaled span used to be an enum range, so a metric declared
-   past the marker silently never scaled.  A class is declared at the same site as the name, so
-   the failure mode is now a missing table entry the compiler can be asked about. */
+   Declaring the class at the same site as the name -- rather than inferring it from where a var
+   falls in the enum -- turns a missing classification into a missing table entry a compiler-
+   checked table can catch, instead of a metric that silently never scales because it happens to
+   sit past some ordering marker. */
 typedef enum
 {
     GUI_CLASS_METRIC = 0,
@@ -1144,9 +1135,9 @@ typedef struct gui_grid_t
 
     A region opens UNDECLARED (NONE): the first layout header names the mode (stack / columns /
     grid / ...), and a widget emitted before any header is a usage error (debug assert; a release
-    build falls back to STACK rather than faulting).  This replaces the old silent single-column
-    default -- the mode is now always explicit at the top of a region body.  The mode is the
-    "next item methodology"; the per-cell sizing inside it is still the one overloaded unit rule.
+    build falls back to STACK rather than faulting) -- the mode is always explicit at the top of a
+    region body, never an implicit default.  The mode is the "next item methodology"; the per-cell
+    sizing inside it is still the one overloaded unit rule.
 ==============================================================================================*/
 
 typedef enum
@@ -1266,8 +1257,8 @@ typedef enum
     GUI_ITEM_BUTTON_REPEAT = 1 << 1,
 
     /* slider_float: suppress the value text drawn centered on the
-       track.  The value is shown by default; set this (push or
-       next_item_flag) to hide it for a bare / compact slider. */
+       track.  The value is shown by default; set this 
+       (push or next_item_flag) to hide it for a bare / compact slider. */
     GUI_ITEM_NO_VALUE_TEXT = 1 << 2,
 
     /* selectable: do NOT close the enclosing popup when clicked.
@@ -1362,22 +1353,21 @@ static inline f32 gui_degrees( f32 radians ) { return radians * ( 180.0f / GUI_P
 /*==============================================================================================
     GUI_DRAW -- the BRUSH: what fills a rect
 
-    The paint floor used to be one u32: draw_fill( rect, colour ).  Colour being the only thing a
-    rect could be filled with is why every richer fill had to become a VERB of its own --
-    draw_gradient, draw_texture_in, draw_checker, draw_shadow -- and why none of them compose: a
-    widget written against draw_fill cannot be handed a gradient, and a window frame cannot be
-    handed authored art, without forking the code that paints it.
+    If colour were the only thing a rect could be filled with, every richer fill would need to be
+    a VERB of its own -- draw_gradient, draw_texture_in, draw_checker, draw_shadow -- and none of
+    them would compose: a widget written against draw_fill could never be handed a gradient, and
+    a window frame could never be handed authored art, without forking the code that paints it.
 
-    A brush is that one u32 widened into a value.  It is a plain descriptor -- no handle, no
-    lifetime, no allocation -- so it is passed as a compound literal exactly like every other desc
-    in the library, stored in a theme, or held by a widget:
+    A brush is a plain descriptor that widens "fill colour" into a value: a KIND plus the fields
+    that kind reads.  No handle, no lifetime, no allocation -- it is passed as a compound literal
+    exactly like every other desc in the library, stored in a theme, or held by a widget:
 
         gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = frame } );
 
-    GUI_BRUSH_SOLID with col_a is EXACTLY draw_fill, so the floor did not move -- it only grew
-    three more things it can say.  What it buys is that the growth stops: a future effect brush
-    (SDF rounding, glow, blur-behind) is one more kind, not one more verb, and every render that
-    already speaks brushes picks it up for free.
+    GUI_BRUSH_SOLID with col_a is EXACTLY draw_fill, so a brush costs nothing over a flat colour
+    and only adds what else it can say.  A future effect brush (SDF rounding, glow, blur-behind)
+    is one more kind, not one more verb, and every render that already speaks brushes picks it up
+    for free.
 ==============================================================================================*/
 
 typedef enum
@@ -1461,12 +1451,12 @@ typedef enum
 /*==============================================================================================
     GUI_DRAW -- the effect band: a shape the FRAGMENT resolves
 
-    Everything above this line is geometry the CPU tessellated: to round a corner the backend
-    walked an arc table and fanned triangles, so a "rounded rect" cost ~37 vertices, had hard
-    stair-stepped edges, and could not carry a texture.  A soft shadow was six stacked rects
-    pretending to be a gaussian.  Each of those is the same failure -- an effect the rasterizer
-    could evaluate exactly, approximated in vertices because the vertex had nowhere to say what
-    shape it belonged to.
+    Everything above this line is geometry the CPU tessellates outright.  Without a way for the
+    fragment to resolve a shape itself, rounding a corner means walking an arc table and fanning
+    triangles -- a rounded rect at ~37 vertices, with hard stair-stepped edges and no room for a
+    texture -- and a soft shadow means six stacked rects pretending to be a gaussian.  Both are
+    the same shortfall: an effect the rasterizer could evaluate exactly, approximated in vertices
+    because the vertex has nowhere to say what shape it belongs to.
 
     The effect band is that missing sentence.  Every vertex carries a signed-distance coordinate
     and one packed word naming the shape, so a rounded box is FOUR quads whose fragment shader
@@ -1488,17 +1478,18 @@ typedef enum
 
     FOUR of those six are packed, and the shader is unaware of it: the fetch unit widens every
     normalized and half format to float, so the vertex stage still declares vec2 / vec4 and reads
-    exactly what it read when all six were 32-bit.  The vertex went 36 -> 28 bytes (-22%) for no
-    shader change and no precision anyone can see -- the two decisions worth recording are WHY
-    each packing is safe, because both have a failure mode that is invisible until it is not:
+    the same values it would if all six fields were 32-bit.  The packed layout is 28 bytes against
+    36 unpacked (-22%), for no shader change and no visible precision loss -- the two decisions
+    worth recording are WHY each packing is safe, because both have a failure mode that is
+    invisible until it is not:
 
       uv as UNORM16X2 -- 1/65535, against a largest atlas of 1024 px, is 64 steps per texel, so a
         glyph's sample lands where it did.  What it cannot represent is U OUTSIDE [0,1], and one
-        primitive wanted that: a dashed line spans U 0..len/period and lets the sampler's REPEAT
-        tile the atlas stipple row.  That is what GUI_FX_TILE_U exists for -- the repeat count moved
-        into the effect word and the VERTEX stage multiplies, so the stored UV is back inside [0,1]
-        and the interpolated one is unchanged.  Any future primitive that wants to tile does the
-        same; storing U > 1 now silently CLAMPS.
+        primitive needs that: a dashed line spans U 0..len/period and lets the sampler's REPEAT
+        tile the atlas stipple row.  That is what GUI_FX_TILE_U exists for -- the repeat count
+        moves into the effect word and the VERTEX stage multiplies, so the stored UV stays inside
+        [0,1] and the interpolated one is unchanged.  Any future primitive that wants to tile does
+        the same; storing U > 1 directly would silently CLAMP.
 
       fxc as HALF2 -- half is only ~3 decimal digits, and the effect coordinate reaches hundreds of
         pixels at the centre of a large panel, where its ulp is half a pixel.  It is safe anyway,
@@ -1507,21 +1498,21 @@ typedef enum
         dominated by the NEAR vertex -- whose value is small (radius + feather, tens of pixels) and
         whose ulp is therefore ~0.008 px.  The far vertex's half-pixel error arrives multiplied by
         a barycentric weight of a few percent.  Measured at the boundary of a 1600 px panel the
-        total is under 0.02 px.  A uniform fixed-point encoding would have been WORSE (0.06 px
+        total is under 0.02 px.  A uniform fixed-point encoding would be WORSE (0.06 px
         everywhere) despite sounding safer: what matters is precision where the field is zero, not
         precision on average.
 
     THE TEXTURE TRAVELS PER VERTEX, for the same reason the effect word does: so it cannot split
-    a batch.  It was a push constant until the atlas forked -- coverage, SDF and sprite art are a
-    pixel format and a sampler apart, so they cannot share a texture, and while the texture was
-    per-DRAW that meant they could not share a draw call either.  A window's background fill, its
-    SDF label and an icon were three draws that alternated with z-order.  Now the only thing that
-    opens a new draw call is a clip-rect change.
+    a batch.  Coverage, SDF and sprite art are a pixel format and a sampler apart, so they cannot
+    share a texture -- if the texture rode per-DRAW instead of per-vertex, they could not share a
+    draw call either, and a window's background fill, its SDF label and an icon would be three
+    draws alternating by z-order.  Carried per vertex, the only thing that opens a new draw call
+    is a clip-rect change.
 
     This is the one place the design leans on being bindless.  Slate must batch by texture because
-    it binds a descriptor per batch; we index a 2048-entry array, so the slot is just a number and
-    a number can live in a vertex.  The fragment indexes with nonuniformEXT since neighbouring
-    primitives in one draw now legitimately name different textures.
+    it binds a descriptor per batch; here the fragment indexes a 2048-entry array, so the slot is
+    just a number and a number can live in a vertex.  The fragment indexes with nonuniformEXT since
+    neighbouring primitives in one draw legitimately name different textures.
 ==============================================================================================*/
 
 /* What the fragment does with the effect coordinate.  Four bits, so the band has room to grow
@@ -1643,11 +1634,11 @@ typedef enum
 #define GUI_FX_TIME_WRAP     1024.0
 
 /* Clamp a fixed-point field into the range its bit width can hold, BEFORE the shift.  Every packer
-   below goes through it, and the reason is that the alternative -- masking after the shift, which
-   is what the packers used to do -- turns an out-of-range value into a WRAPPED one: a 600 px corner
-   radius (a "fully round" pill on a tall panel, the idiom being `draw_set_rounding( 9999 )` clamped
-   to half the short side) came out the far side as 88 px, and the shape simply looked wrong with
-   nothing to point at.  Saturating is not merely safer, it is the only answer that is ever wanted:
+   below goes through it, because the alternative -- masking after the shift -- turns an
+   out-of-range value into a WRAPPED one instead of a clamped one: a 600 px corner radius (a
+   "fully round" pill on a tall panel, the idiom being `draw_set_rounding( 9999 )` clamped to half
+   the short side) would wrap to 88 px, and the shape would simply look wrong with nothing to
+   point at.  Saturating is not merely safer, it is the only answer that is ever wanted:
    every one of these fields is a physical pixel quantity whose max is past what the rasterizer can
    show, so a value beyond it means "as much as you have".  Negatives clamp to 0 for a second
    reason -- converting a negative float to unsigned is undefined behaviour in C. */
@@ -1796,8 +1787,9 @@ gui_fx_pack_text_edge( f32 width, u32 abgr )
     Positional compound literals are what a struct of six scalars invites, and they are exactly
     what this layout cannot survive: `{ x, y, u, v, abgr }` against the packed fields would put a
     float U into a u32 UV slot -- a legal implicit conversion, so a warning at best and a silently
-    black quad at worst.  The constructors take the same floats the old literal did and do the
-    packing, so a call site reads unchanged and a WRONG one does not compile.
+    black quad at worst.  The constructors take the same plain floats a positional literal would,
+    and do the packing themselves, so a call site reads the same way and a wrong one does not
+    compile.
 
     Note what they do NOT set: `tex` and `fx` stay 0 here on purpose.  Both are stamped by the
     tessellator's single commit point (tess_verts_commit) from ambient state, which is what makes
@@ -1984,8 +1976,8 @@ typedef enum
     GUI_CMD_IMAGE_XF,        // textured quad under a rotation about its centre: rotated icons,
                              //   images, markers -- the text_xf treatment for one quad
     GUI_CMD_CHECKER,         // two-colour cell pattern resolved in the FRAGMENT (GUI_FX_CHECKER):
-                             //   the transparency backdrop as ONE quad, where the rect-pool
-                             //   expansion cost 64 commands / 4096 quads at its 64x64 clamp
+                             //   the transparency backdrop as ONE quad, versus the 64 commands /
+                             //   4096 quads a rect-pool expansion would cost at its 64x64 clamp
     GUI_CMD_GRID,            // line lattice (GUI_FX_GRID): graph-paper / node-graph backdrop in
                              //   one quad; the lattice anchors to (ox, oy) so it pans with content
 
@@ -2001,15 +1993,15 @@ typedef enum
 
    It rides the tex_idx rather than taking a field of its own because it is a property of the
    TEXTURE, not of the shape drawn with it -- so wherever the slot goes, the model goes with it for
-   free.  That is what let both of them move into the VERTEX (see gui_draw_vert_t) without widening
-   anything: one u32 carries the pair, and models now MIX freely inside one draw call rather than
-   being kept apart by it.  The SAMPLER is DERIVED from the mode in the fragment and never carried
-   per command: coverage must stay point-sampled or glyphs stop being crisp, colour must filter or
-   it blocks up the moment it is stretched.
+   free.  That is what lets both of them live in the VERTEX (see gui_draw_vert_t) without widening
+   anything: one u32 carries the pair, so models MIX freely inside one draw call instead of needing
+   to be kept apart.  The SAMPLER is DERIVED from the mode in the fragment and never carried per
+   command: coverage must stay point-sampled or glyphs stop being crisp, colour must filter or it
+   blocks up the moment it is stretched.
 
-   That derivation is the whole reason this is a mode and not the bool it started as: SDF was added
-   as a VALUE here, not as a format change.  Three of the sixteen are spent; the rest stay unnamed
-   until something emits them, the same rule the effect band's spare modes follow.
+   That derivation is the whole reason this is a MODE rather than a bool: a third sampling model
+   (SDF) is one more value, not a format change.  Three of the sixteen are spent; the rest stay
+   unnamed until something emits them, the same rule the effect band's spare modes follow.
 
    FOUR bits, matching GUI_FX_MODE_BITS -- the two mode fields answer the same kind of question and
    grow by the same rule.  The bits come out of the INDEX half, which never needed them: the RHI's
@@ -2078,12 +2070,12 @@ typedef struct
            the command rather than being re-read at tessellation because the ambient can have moved
            on by then -- a retained window re-tessellates long after its emit. */
         /* font is the registry id whose glyph metrics and atlas UVs this run resolves from -- the
-           ONLY thing the font decides.  It rides the command rather than the command SEGMENT (where
-           it used to live) because a segment is the backend's batch-dispatch unit and the font is
-           not a batch key: every font packs into one shared atlas, so a font change moves no
-           texture, and even when it does the texture rides the vertex and cannot cut a draw call
-           either.  A per-command property tagging a batch unit was forcing a segment split for a
-           lookup -- see draw_set_font. */
+           ONLY thing the font decides.  It rides the command rather than the command SEGMENT
+           because a segment is the backend's batch-dispatch unit and the font is not a batch key:
+           every font packs into one shared atlas, so a font change moves no texture, and even
+           when it does the texture rides the vertex and cannot cut a draw call either.  Tagging a
+           batch unit with a per-command property would force a segment split just for a lookup --
+           see draw_set_font. */
         struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; u32 edge;
                  u16 font; } text;
         /* The same glyph run under a uniform SCALE and a ROTATION about (x, y) -- (x, y) is both
@@ -2156,9 +2148,9 @@ typedef struct
            screen space (0 points +x, positive turns clockwise, matching text_xf.rot); a1 < a0 is
            normalized at tessellation and a sweep of a full turn routes to the exact ring / disc
            primitives instead.  `thickness` is the stroke width for ARC and is ignored by PIE.
-           This is the shape the library used to SAMPLE: up to 66 points fanned or stroked, so a
-           pie was up to 65 separate TRIANGLE commands and a spinner ~130 vertices.  Both are now
-           one quad, because a circular field needs no quadrant fold (see the effect band). */
+           Sampled as a polyline this shape would need up to 66 points fanned or stroked -- up to
+           65 separate TRIANGLE commands for a pie, ~130 vertices for a spinner.  It costs one
+           quad instead, because a circular field needs no quadrant fold (see the effect band). */
         struct { f32 cx, cy, r, thickness, a0, a1;                u32 abgr; } arc;
         /* The arc under an angular dash cut.  `period` is radians per dash+gap cycle -- the emit
            side quantizes it so a WHOLE number of cycles fits the sweep, which is what keeps a
@@ -2177,7 +2169,7 @@ typedef struct
         struct { f32 x, y, w, h; f32 u0, v0, u1, v1; f32 rot; u32 tex_idx; u32 abgr; } image_xf;
         /* The cell pattern: col_a fills even cells, col_b odd, anchored at the box origin.  The
            fragment tiles it in framebuffer space (GUI_FX_CHECKER), so this is ONE quad at any
-           area and any cell -- the rect-pool expansion this replaces capped at 64x64 cells. */
+           area and any cell, where a rect-pool expansion would cap at 64x64 cells. */
         struct { f32 x, y, w, h; f32 cell; u32 col_a, col_b; } checker;
         /* The line lattice: a line every `cell` px, `thickness` px wide, in abgr over NOTHING --
            the caller layers it on its own fill.  (ox, oy) is the lattice anchor in screen px:
@@ -2879,8 +2871,8 @@ typedef struct
     u32 cpu_tess_bytes;         // BUILD: s_tess CPU vertex / index / GPU-command staging
     u32 cpu_cache_bytes;        // retained cache: slot tables, stable cmd cache, diff records, seg chains,
                                 //   permutation scratch, volatile registry, stats
-    u32 cpu_draw_bytes;         // DRAW unit statics: icon + sprite registries (the font registry moved
-                                //   to the font/ leaf and is counted under cpu_frontend_bytes)
+    u32 cpu_draw_bytes;         // DRAW unit statics: icon + sprite registries (the font registry
+                                //   lives under font/ and counts under cpu_frontend_bytes instead)
     u32 cpu_res_bytes;          // the three atlas instance records (packer nodes + tenant bookkeeping)
     u32 cpu_render_bytes;       // RENDER: pipeline/sampler state + embedded SPIR-V bytecode
     u32 cpu_select_bytes;       // text-selection run capture buffer (always compiled; a product feature)

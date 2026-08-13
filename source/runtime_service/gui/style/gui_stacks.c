@@ -1,29 +1,25 @@
 /*==============================================================================================
 
-    gui/style/gui_stacks.c -- Bracketing vocabulary: id scope, item flags, style.
+    gui/style/gui_stacks.c -- push/pop bracketing verbs: id scope, item flags, style overrides.
 
-    The verbs a caller brackets widgets with -- thin wrappers, no machinery of their own:
+    Every function here is a thin wrapper with no logic of its own -- it just forwards to a stack
+    that lives elsewhere:
 
-        push_id / pop_id            id-scope levels for repeated widgets
-        push_item_flag / next_      per-item behavior tweaks
-        disabled_begin / _end       the named scope over GUI_ITEM_DISABLED
+        push_id / pop_id             id-scope levels for repeated widgets
+        push_item_flag / next_       per-item behavior tweaks
+        disabled_begin / _end        the named scope over GUI_ITEM_DISABLED
 
-        push_style_color / _var     per-item theme overrides
-        style_color                 the resolved read back out of the palette
-        scale_push / _pop           a named density step, as three paired var pushes
+        push_style_color / _var      per-item theme overrides
+        style_color                  the resolved read back out of the palette
+        scale_push / _pop            a named density step, as three paired var pushes
 
-    Pure caller vocabulary (the machinery / vocabulary split: the stacks and their resolution live
-    in the machinery files; the verbs a user speaks live here).  Nothing in the lib below depends
-    on these wrappers; internal uses (combo's push_id for its list rows) are deliberate dogfooding
-    through the gui_host.h declarations.
+    Two different stacks sit behind these verbs: id and item-flag pushes forward down to the
+    interact server (core); style color / var / scale / seed pushes forward to statics kept in
+    this unit's own gui_style_core.c.  Internal callers (e.g. combo's list rows using push_id) go
+    through these same public functions -- there is no private shortcut.
 
-    The forwarding cuts two ways, which is why this file sits in the style unit: the id and
-    item-flag brackets forward DOWN to interact-server seams (style -> core is the graph's own
-    edge), while the style color / var / scale brackets reach this unit's own statics in
-    gui_style_core.c -- which is what keeps those static.
-
-    Included by gui_style.c LAST, above both machinery files.  gui_api.c (frame unit) wires these
-    into the vtable through the gui_host.h declarations.
+    Included by gui_style.c LAST, after both machinery files, so every stack these wrappers call
+    into already exists.  gui_api.c wires these functions into the public vtable.
 
 ==============================================================================================*/
 // clang-format off
@@ -31,23 +27,26 @@
 /*==============================================================================================
     push_id / pop_id -- add a temporary id-scope level for repeated widgets within one region.
 
-    Widget ids are already region-seeded, so this is only needed to separate widgets that share a
-    label in the same region (e.g. list rows keyed by index).  push_id combines its key onto the
-    current scope; pop_id removes one level.  Always balance them -- a region pop restores the
-    scope depth anyway, so a stray push cannot escape its region, but balancing keeps ids stable.
+    Widget ids are already region-seeded, this is needed to separate widgets that share
+    a label in the same region (e.g. list rows keyed by index).  
+    
+    push_id combines its key onto the current scope; pop_id removes one level.  
+    
+    Always balance them -- a region pop restores the scope depth anyway, so a stray push
+    cannot escape its region, but balancing keeps ids stable.
 ==============================================================================================*/
 
-void gui_push_id    ( const char* str ) { id_push( id_combine( id_seed(), id_hash( str ) ) ); }
-void gui_push_id_int( i32 i )           { id_push( id_combine( id_seed(), (u32)i ) ); }
-void gui_pop_id     ( void )            { id_pop(); }
+void gui_push_id     ( const char* str ) { id_push( id_combine( id_seed(), id_hash( str ))); }
+void gui_push_id_int ( i32 i )           { id_push( id_combine( id_seed(), (u32)i )); }
+void gui_pop_id      ( void )            { id_pop(); }
 
 /*==============================================================================================
     push_item_flag / pop_item_flag / next_item_flag -- the push-model per-item behavior set.
 
-    push/pop affect every widget until popped (and nest); next_item_flag is a one-shot override the
-    very next widget consumes, no pop needed.  The merged value is resolved once per widget at emit
-    time and read by item_state / the widget, so a new flag never touches a call site or the
-    vtable layout consumers see.  See gui_item_flags_t in gui.h for the model and the flags.
+    - push/pop affect every widget until popped.
+    - next_item_flag is a one-shot override the very next widget consumes, no pop needed.  
+    - The merged value is resolved once per widget at emit time and read by item_state / the widget
+    - so a new flag never touches a call site or the vtable layout consumers see.  
 
         gui()->push_item_flag( GUI_ITEM_DISABLED, true );
         gui()->button( "Off A" );  gui()->button( "Off B" );   // both disabled
@@ -68,16 +67,17 @@ void gui_next_item_flag( gui_item_flags_t flag, bool enable ) { item_flag_next( 
     still balances with one disabled_end).  Nests cleanly via the item-flag stack.
 
         gui()->disabled_begin( !has_selection );
-        gui()->button( "Delete" );          // inert + dimmed while nothing is selected
+        gui()->button( "Delete" );
         gui()->disabled_end();
 ==============================================================================================*/
 
 void
 gui_disabled_begin( bool disabled )
 {
-    /* OR the bit in -- never clear it -- so disabled_begin( false ) nested inside an outer
-       disabled_begin( true ) keeps the widgets disabled (the ImGui nesting rule). */
-    bool now = ( ( s_build.item_flags & GUI_ITEM_DISABLED ) != 0 ) || disabled;
+    /* disabled state can only be added not removed within a disabled block 
+       this or ensures that is true */
+
+    bool now = (( s_build.item_flags & GUI_ITEM_DISABLED ) != 0 ) || disabled;
     item_flag_push( GUI_ITEM_DISABLED, now );
 }
 
@@ -94,14 +94,14 @@ void gui_disabled_end( void ) { item_flag_pop(); }
     row as ONE push, which is what recolouring "the text" or "the border" nearly always means --
     and it stays one entry, so it takes one pop:
 
-        gui()->push_style_color( GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_COLOR( 0xFF,0,0,0xFF ) );      // red
-        gui()->push_style_color( GUI_ROLE_BG, GUI_PHASE_HOT,  GUI_COLOR( 0xFF,0x40,0x40,0xFF ) );
+        gui()->push_style_color( GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_COLOR( 0xFF,0,0,0xFF ));
+        gui()->push_style_color( GUI_ROLE_BG, GUI_PHASE_HOT,  GUI_COLOR( 0xFF,0x40,0x40,0xFF ));
         gui()->button( "Red Button" );
-        gui()->pop_style_color( 2 );                                             // both
+        gui()->pop_style_color( 2 );
 
-        gui()->push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, GUI_COLOR( 0,0xFF,0,0xFF ) );
+        gui()->push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, GUI_COLOR( 0,0xFF,0,0xFF ));
         gui()->button( "Green label, hovered or not" );
-        gui()->pop_style_color( 1 );                                             // all four cells
+        gui()->pop_style_color( 1 );
 
         gui()->push_style_var( GUI_VAR_PAD, 20.0f );
         gui()->button( "Roomy" );
@@ -114,41 +114,43 @@ void gui_disabled_end( void ) { item_flag_pop(); }
 
         gui()->push_style_color_look( GUI_ROLE_TEXT, GUI_PHASE_ALL, GUI_LOOK_ALL, ink );
         ... every text cell in the grid, both planes ...
-        gui()->pop_style_color( 1 );                        // still ONE entry, ONE pop
+        gui()->pop_style_color( 1 );
+
 ==============================================================================================*/
 
 void gui_push_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_push_color( role, phase, GUI_LOOK_NORMAL, abgr ); }
-void gui_pop_style_color ( u32 count )                                          { style_pop_color( count ); }
+void gui_pop_style_color ( u32 count )                                                { style_pop_color( count ); }
 void gui_next_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_next_color( role, phase, GUI_LOOK_NORMAL, abgr ); }
 
 /* The look-qualified pair.  No pop of their own: a look push is a colour push, so it lands on
    the colour stack and pop_style_color takes it back -- one stack per pop verb, and adding a
    coordinate to a cell address does not make it a different kind of override. */
+
 void gui_push_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr ) { style_push_color( role, phase, look, abgr ); }
 void gui_next_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr ) { style_next_color( role, phase, look, abgr ); }
 
 /* The FACE verbs -- the same four shapes over the parallel plane.  Their own stack (one per pop
    verb, the house rule) so an interleaved colour / face / var sequence unwinds correctly; the
    look-qualified push has no pop of its own for the same reason its colour twin has none. */
+
 void gui_push_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face ) { style_push_face( role, phase, GUI_LOOK_NORMAL, face ); }
 void gui_pop_style_face ( u32 count )                                                             { style_pop_face( count ); }
 void gui_next_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face ) { style_next_face( role, phase, GUI_LOOK_NORMAL, face ); }
 void gui_push_style_face_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, gui_style_face_t face ) { style_push_face( role, phase, look, face ); }
 
 void gui_push_style_var( gui_style_var_t var, f32 value )   { style_push_var( var, value ); }
-void gui_pop_style_var ( u32 count )                          { style_pop_var( count ); }
+void gui_pop_style_var ( u32 count )                        { style_pop_var( count ); }
 void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( var, value ); }
 
 /*==============================================================================================
-    push_style_seed / pop_style_seed -- the BULK recolour: replace a source colour and re-derive.
+    push_style_seed / pop_style_seed -- bulk recolour: replace a source colour and re-derive
+    every role that comes from it.
 
-    The verb the grid could not express.  push_style_color takes one cell; GUI_PHASE_ALL takes a
-    row but writes one value into all four of its cells, which flattens the ramp -- push it on
-    GUI_ROLE_BG and you get a button that no longer reacts to hover.  So the only bulk colour verb
-    was the one you could not use on anything interactive.
-
-    A seed push replaces the SOURCE and re-runs the bake, so the cells stay four colours a ramp
-    step apart and every role that derives from that seed moves together:
+    push_style_color only ever writes one cell -- and GUI_PHASE_ALL, its widest reach, writes one
+    flat value into all four phase cells of a role, which erases hover/focus reactions (a button
+    recoloured that way stops changing on hover).  push_style_seed instead replaces the SOURCE
+    colour and re-runs the bake, so the four phase cells stay a ramp step apart and every role
+    derived from that seed moves together:
 
         gui()->push_style_seed( GUI_SEED_ACCENT, GUI_COLOR( 0xC8, 0x96, 0x3C, 0xFF ) );
         ... this whole panel is gold: fills, hover washes, focus rings, nav highlight ...
@@ -158,9 +160,9 @@ void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( va
     shallow by design (8 deep): this is a panel-sized scope, not a per-widget one -- for a single
     widget, next_style_color is still the cheaper answer.
 
-    Note what it does NOT do: it never reaches the INSTALLED style.  A seed push is ambient scope
-    like every other push, cleared at the frame boundary.  To change a look permanently, write
-    the palette through style_edit() and call style_bake().
+    A seed push never reaches the INSTALLED style -- it is ambient scope like every other push,
+    cleared at the frame boundary.  To change a look permanently, write the palette through
+    style_edit() and call style_bake().
 ==============================================================================================*/
 
 void gui_push_style_seed( gui_style_seed_t seed, u32 abgr ) { style_push_seed( seed, abgr ); }
@@ -225,11 +227,9 @@ gui_sz_scale_row( gui_scale_t s )
     return style_scale( s, SCALE_ROW );
 }
 
-/* The seven GUI_VAR_*_SHAPE picks have no setter verb of their own: a theme AUTHORS one and
-   push_style_var scopes it, which is the same pair every other style value gets.  Three global
-   setters used to live here, from when chrome derived every look and there were no base widget
-   builders to push around; the alternate renders they selected are untouched and still live in
-   stock/gui_symbol_style.c. */
+/* The seven GUI_VAR_*_SHAPE picks have no setter verb of their own: a theme AUTHORS the value
+   and push_style_var / next_style_var scope it, exactly like every other style var.  The
+   alternate renders they select still live in stock/gui_symbol_style.c. */
 
 // clang-format on
 /*============================================================================================*/

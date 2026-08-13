@@ -788,9 +788,10 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
 
 /*==============================================================================================
 
-    Replace the active flow template on the current frame.  Finishes any open row first, then
-    resolves the columns into cell geometry once (they are constant for every row of the template).
-    The next widget starts a fresh row of the new shape; it repeats until set again. 
+    Replace the active flow template on the current frame.  Finishes any open row first,
+    then resolves the columns into cell geometry once (they are constant for every row of
+    the template). The next widget starts a fresh row of the new shape; it repeats until 
+    set again. 
 
 ==============================================================================================*/
 
