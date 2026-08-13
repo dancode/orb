@@ -148,23 +148,28 @@ ORB_STATIC_ASSERT( sizeof( gui_style_t ) == STYLE_SLOT_COUNT * sizeof( u32 ),
 
 static gui_style_t s_store[ GUI_STYLE_SET_MAX ];   // installed, one per set
 
-/* The resolved run, in BOTH of its views at once.  A read indexes .slot; the bake writes through
-   .style.  The union is not a convenience -- it is the static assert made usable: "the struct IS
-   the storage" stops being a claim the reader has to verify and becomes the declaration itself,
-   and re-deriving the grid after a seed push is gui_style_bake( &s_work.style ) rather than a
-   pointer cast the next reader has to talk themselves into. */
+/*==============================================================================================
+    The resolved run, in BOTH of its views at once.  A read indexes .slot; the bake writes 
+    through .style.  The union is not a convenience -- it is the static assert made usable:
+    "the struct IS the storage" stops being a claim the reader has to verify and becomes the
+    declaration itself, and re-deriving the grid after a seed push is 
+    gui_style_bake( &s_work.style ) rather than a pointer cast the next reader has to talk
+    themselves into.
+==============================================================================================*/
 
 static union
 {
-    gui_style_t style;                    // typed view -- what the bake reads and writes
-    u32         slot[ STYLE_SLOT_COUNT ]; // flat view  -- what every style read indexes
+    gui_style_t style;                      // typed view -- what the bake reads and writes
+    u32         slot[ STYLE_SLOT_COUNT ];   // flat view  -- what every style read indexes
 
 } s_work;
 
-static u16 s_set_cur;                     // which set s_work currently mirrors
+static u16 s_set_cur;                       // which set s_work currently mirrors
 
+/*============================================================================================*/
 /* The widest fan-out one public push can have: a full phase row (GUI_PHASE_ALL) on both planes
    at once (GUI_LOOK_ALL). */
+
 #define STYLE_FAN_MAX ( GUI_PHASE_COUNT * GUI_LOOK_COUNT )
 
 /* f32 <-> raw bits, so one u32 slot space carries both value types. */
@@ -209,6 +214,7 @@ static style_stack_t s_face_stack;                    // push_style_face's stack
    Indexed [set][handle - 1]; handle 0 is GUI_FACE_NONE and never resolves.  Per SET rather than
    global so a kit's art is its own: a handle only means something inside the set that issued it,
    exactly as a colour cell only means something inside the set that authored it. */
+
 static gui_brush_t s_brush  [ GUI_STYLE_SET_MAX ][ GUI_STYLE_BRUSH_MAX ];
 static u32         s_brush_n[ GUI_STYLE_SET_MAX ];
 
@@ -220,6 +226,7 @@ static u32         s_brush_n[ GUI_STYLE_SET_MAX ];
 
    Depth 8, not 32: a seed push is a coarse scope -- a panel, a HUD, a dialog -- exactly like a
    style set, and for the same reason.  Nobody brackets a single widget with a re-derivation. */
+
 #define GUI_STYLE_SEED_DEPTH 8
 
 typedef struct
