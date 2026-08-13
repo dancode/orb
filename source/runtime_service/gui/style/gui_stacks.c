@@ -207,7 +207,8 @@ void gui_pop_style_seed ( u32 count )                       { style_pop_seed( co
 void
 gui_scale_push( gui_scale_t s )
 {
-    if ( s >= GUI_SCALE_COUNT ) s = GUI_SCALE_STD;   /* clamp, like the other stacks */
+    /* clamp, like the other stacks */
+    if ( s >= GUI_SCALE_COUNT ) s = GUI_SCALE_STD;   
     style_push_var( GUI_VAR_ROW, style_scale( s, SCALE_ROW ) );
     style_push_var( GUI_VAR_PAD, style_scale( s, SCALE_PAD ) );
     style_push_var( GUI_VAR_GAP, style_scale( s, SCALE_GAP ) );

@@ -7,8 +7,10 @@
 
         Base   -- the installed style: the active theme compiled into this style SET's run, then
                   overwritten by whatever that set's source owns.
+
         Stack  -- push_style_color / _var override a slot until the matching pop (pop takes a
                   count, like ImGui); nests via a saved-previous stack.  Reset empty each frame.
+
         Next   -- next_style_color / _var override a slot for just the next item, consumed at the
                   per-item resolve seam (no pop), exactly like next_item_flag.
 
@@ -27,9 +29,9 @@
 
     Style State -- one installed style per set, one flat working set.
 
-    gui_style_t (gui.h) IS the storage, twice over: the installed layer is an ARRAY of it (one
-    whole style per set, so a kit can be handed a typed pointer with no copy and no offset
-    table), and the working set is the same struct's u32 image, so an override can address any
+    gui_style_t (gui.h) IS the storage, twice over: the installed layer is an ARRAY of it 
+    (one whole style per set, a kit can be handed a typed pointer with no copy and no offset table), 
+    and the working set is the same struct's u32 image, so an override can address any
     field by slot.  The static assert below is what makes the two views one thing.  Four runs
     inside the struct, all equal citizens -- that equality is the whole point of the schema:
 
@@ -39,7 +41,7 @@
                                           the flat fill for a cell (0 = none, the default)
         var    [ gui_style_var_t ]     -- every scalar the style has, metrics and skin alike
         scales [ gui_scale_t ]         -- the density ramp scale_push reads
-
+    
     An earlier design split these across three blocks with different instance counts, so a style
     set owned the colors and three metrics while chrome kept the rest.  That asymmetry is what
     made a kit's style a subset of chrome's instead of a peer.  Now a set owns the whole struct:
@@ -67,10 +69,10 @@
 
     FOUR stacks, one per public pop verb: pop_style_color, pop_style_face, pop_style_var and
     pop_style_seed each pop their own pushes, so an interleaved sequence unwinds correctly (the
-    same reason Dear ImGui keeps two).  The seed stack is separate for a second reason as well -- its entries are two
-    orders of magnitude wider, since one seed push displaces the whole derived grid on BOTH
-    planes, and there is no reason to make the var stack pay 400 bytes an entry for a fan it
-    never uses.
+    same reason Dear ImGui keeps two).  The seed stack is separate for a second reason as well
+    -- its entries are two orders of magnitude wider, since one seed push displaces the whole 
+    derived grid on BOTH planes, and there is no reason to make the var stack pay 400 bytes an
+    entry for a fan it never uses.
 
     Next-item layer: next_style_* queues (slot, value) pairs in `next`; at the per-item resolve
     seam they are WRITTEN THROUGH into the working set, and `item` remembers what each slot held
@@ -84,40 +86,53 @@
 
 #define GUI_STYLE_STACK_DEPTH 32
 
-/* The slot layout -- field order of gui_style_t.  Four runs, laid end to end.  The palette runs
-   FIRST because it runs first in the pipeline: seeds and ramp are what a theme authors, the
-   colour grid is what the bake derives from them, and the metrics follow. */
-#define STYLE_SEED_BASE   0
-#define STYLE_RAMP_BASE   ( STYLE_SEED_BASE  + GUI_SEED_COUNT   )
-#define STYLE_COL_BASE    ( STYLE_RAMP_BASE  + GUI_RAMP_COUNT   )
-#define STYLE_PLANE_COUNT ( GUI_ROLE_COUNT * GUI_PHASE_COUNT )     /* one look's worth of cells */
-#define STYLE_COL_COUNT   ( GUI_LOOK_COUNT * STYLE_PLANE_COUNT )
-#define STYLE_FACE_BASE   ( STYLE_COL_BASE   + STYLE_COL_COUNT )   /* the face plane mirrors col */
-#define STYLE_VAR_BASE    ( STYLE_FACE_BASE  + STYLE_COL_COUNT )
-#define STYLE_SCALE_BASE  ( STYLE_VAR_BASE   + GUI_VAR_COUNT    )
-#define STYLE_SCALE_COUNT ( GUI_SCALE_COUNT * 3 )                  /* row, pad, gap per step */
-#define STYLE_SLOT_COUNT  ( STYLE_SCALE_BASE + STYLE_SCALE_COUNT )
+/* The style system also needs to treat gui_style_t the whole thing as one large flat
+   array of u32 slots, so a single push/pop/override mechanism can address any field 
+   uniformly by index — no separate code path per field type. 
+
+   So the slot layout -- field order of gui_style_t is four runs, laid end to end.
+   
+   The palette runs FIRST because it runs first in the pipeline: seeds and ramp are
+   what a theme authors, the colour grid is what the bake derives from them, 
+   and the metrics follow. */
+
+#define STYLE_SEED_BASE   0                                         // seed[GUI_SEED_COUNT] starts at 0
+#define STYLE_RAMP_BASE   ( STYLE_SEED_BASE  + GUI_SEED_COUNT )     // ramp[] starts right after seed[]
+#define STYLE_COL_BASE    ( STYLE_RAMP_BASE  + GUI_RAMP_COUNT )     // col[][][] starts right after ramp[]
+
+#define STYLE_PLANE_COUNT ( GUI_ROLE_COUNT   * GUI_PHASE_COUNT )    // size of ONE look's slice of col[][][]
+#define STYLE_COL_COUNT   ( GUI_LOOK_COUNT   * STYLE_PLANE_COUNT )  // full size of col[][][]
+
+#define STYLE_FACE_BASE   ( STYLE_COL_BASE   + STYLE_COL_COUNT )    // face[][][] starts right after col[][][]
+#define STYLE_VAR_BASE    ( STYLE_FACE_BASE  + STYLE_COL_COUNT )    // var[] starts right after face[][][] (same size as col)
+#define STYLE_SCALE_BASE  ( STYLE_VAR_BASE   + GUI_VAR_COUNT )      // scales[] starts right after var[]
+#define STYLE_SCALE_COUNT ( GUI_SCALE_COUNT  * 3 )                  // each scale step is 3 f32s: row, pad, gap
+#define STYLE_SLOT_COUNT  ( STYLE_SCALE_BASE + STYLE_SCALE_COUNT )  // total size = end of the last run
 
 /* Look is the OUTER index, so each plane is one contiguous run and the NORMAL plane keeps the
    exact slot numbers it had before the look axis existed -- which is why adding a second plane
    cost no read site anything. */
+
 #define STYLE_COL_SLOT( look, role, phase ) \
     ( STYLE_COL_BASE + ( (u32)( look ) * GUI_ROLE_COUNT + (u32)( role ) ) * GUI_PHASE_COUNT \
-                     + (u32)( phase ) )
+                     +   (u32)( phase ) )
 
 /* The face plane is the colour plane's exact shape one base along, so ONE offset expression
    serves both -- a face cell and its colour cell are always the same distance apart, which is
    what lets the fan collector below emit either simply by picking a base. */
+
 #define STYLE_FACE_SLOT( look, role, phase ) \
     ( STYLE_FACE_BASE + ( (u32)( look ) * GUI_ROLE_COUNT + (u32)( role ) ) * GUI_PHASE_COUNT \
-                      + (u32)( phase ) )
+                      +   (u32)( phase ) )
 
 /* The load-bearing equivalence: the struct a theme is authored as and the flat run an override
    indexes are the SAME bytes.  Break the field order and this fires at compile time. */
+
 ORB_STATIC_ASSERT( sizeof( gui_style_t ) == STYLE_SLOT_COUNT * sizeof( u32 ),
                    "style slot layout must mirror gui_style_t field order" );
 
-/*  The two layers, and there are only two.
+/*==============================================================================================
+    The two layers, and there are only two.
 
     s_store -- INSTALLED.  One complete gui_style_t per set: what the theme compiled plus what
                that set's source overwrote.  Written only by style_install; never by a push.
@@ -128,7 +143,8 @@ ORB_STATIC_ASSERT( sizeof( gui_style_t ) == STYLE_SLOT_COUNT * sizeof( u32 ),
                whole reason the sets live behind an index instead of the reads living behind a
                base pointer.
 
-    Capacity is the array bound: a fifth set is a compile error, not a first-frame assert. */
+    Capacity is the array bound: a fifth set is a compile error, not a first-frame assert. 
+==============================================================================================*/
 
 static gui_style_t s_store[ GUI_STYLE_SET_MAX ];   // installed, one per set
 

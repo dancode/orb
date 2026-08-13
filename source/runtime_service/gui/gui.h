@@ -4,33 +4,25 @@
 
     runtime_service/gui/gui.h -- gui module types (the public type header).
 
-    This file is the dictionary. It does not do anything by itself -- it has no functions --
-    it just defines the shape of every "noun" the GUI uses: what a widget id looks like, what a
-    color or a rect or a style struct is made of, what values a layout mode can take. Any time
-    you are calling a GUI function and need to know what kind of value to pass it, or what kind
-    of value it hands back, this is the file that answers that question.
+    * This file has no functions just definitions.
+    * Defines the shape of every "noun" the GUI uses.
+        
+    * GUI is an in-house 2D interaction renderer for ORB separated in two parts.
+    * An INTERACT SERVER that tracks what the user is doing (hover, click, focus)
+    * A RENDER SERVER that turns draw commands into GPU triangles.
+    
+    * Windowing and input come from the engine's `app` layer (Win32); 
+    * The actual GPU submission goes through RHI (Vulkan). 
+    * A host drives one cycle every frame: 
+    
+        frame_begin -> ctx_begin / widgets / ctx_end -> frame_end -> render.
 
-    The GUI itself is an in-house 2D interaction renderer for ORB: an INTERACT SERVER that
-    tracks what the user is doing (hover, click, focus) plus a RENDER SERVER that turns draw
-    commands into GPU triangles, with layout (rects), styling (colors/spacing), stock widgets,
-    and an optional windows/docking layer (chrome) built on top of those two. Windowing and
-    input come from the engine's `app` layer (Win32); the actual GPU submission goes through
-    `rhi` (Vulkan). A host drives one cycle every frame: frame_begin -> ctx_begin / widgets /
-    ctx_end -> frame_end -> render.
-
-    Read GUI_ARCHITECTURE.md (alongside this file) before chasing a bug across files -- it is
-    the orientation map: the two-server model, the widget tiers, the frame lifecycle, and the
-    region / scroll / clip invariants. The unit roster is the `unit` list under `target gui`
-    in orb.targets, and each unit's root .c heads itself with its own constituents. Headers
-    split three ways, each one built on the last: this file (types anyone can include) ->
-    gui_api.h (adds the function table, for DLL modules) -> gui_host.h (adds host-only direct
-    calls, for exes and sandboxes).
-
-    A GUI value lives in one of three places, and which place it lives in decides how long it
-    survives: ambient singular state (one shared copy for the whole app, e.g. s_interaction,
-    s_io), per-context retained state (belongs to one gui_context_t, survives across frames,
-    e.g. g_ctx->), or frame scratch (wiped clean at the start of every frame, e.g. s_build,
-    s_scope). core/gui_ctx.c is where all three kinds are actually defined.
+    * The unit roster is the `unit` list under `target gui`in orb.targets. 
+    
+    * A GUI value lives in one of three places, which decides how long it survives: 
+    * Ambient singular state (one shared copy for the whole app, e.g. s_interaction, s_io).
+    * Per-context retained state (belongs to one gui_context_t, survives across frames).
+    * Frame scratch (wiped clean at the start of every frame, e.g. s_build,s_scope).
 
     Two caches exist purely to make an idle screen cheap to redraw:
     1. CPU emit skip (s_frame_dirty, gui_frame_loop.c): one global bool. If nothing changed --
@@ -66,7 +58,9 @@
 
 // clang-format off
 /*==============================================================================================
+
     GUI_CORE -- ids
+
 ==============================================================================================*/
 
 /* Widget id -- a hashed value creates a unique value to identify a widget */
@@ -506,6 +500,7 @@ typedef enum
 
    An array rather than named fields, for the same reason gui_style_t.var is one: the enum IS
    the field list, so a style editor walks the ramp with no table of its own. */
+
 typedef enum
 {
     GUI_RAMP_HOVER = 0,   // how far a surface washes toward the accent when hot
@@ -521,7 +516,8 @@ typedef enum
 /* The authored half of a style, in full: eleven colours and six numbers, 68 bytes.  Small
    enough that a theme is worth having dozens of, or deriving live from a single accent the
    user picked. */
-typedef struct gui_palette_t
+
+typedef struct gui_palette_s
 {
     u32 seed[ GUI_SEED_COUNT ];   // the source colours
     f32 ramp[ GUI_RAMP_COUNT ];   // how far each derivation travels
@@ -539,6 +535,7 @@ typedef struct gui_palette_t
    makes every metric read (WIDGET_H / pad / gap) and every counting helper (rows_h, calc_row)
    speak that step with no widget changes.  STD is authored identical to the base metrics, so
    an unpushed UI is unchanged. */
+
 typedef enum
 {
     GUI_SCALE_DENSE,   // text lists: outliners, entity browsers, tree views, table rows
@@ -579,6 +576,7 @@ typedef struct gui_scale_metrics_t
     overridable through push_style_var, and if it is not worth overriding, it is not worth being
     a style field at all -- there is no second category of struct field sitting outside the var
     array.
+
 ==============================================================================================*/
 
 typedef enum
@@ -588,6 +586,7 @@ typedef enum
     GUI_VAR_ROW = 0,        // widget row height (the frame height)
     GUI_VAR_PAD,            // interior padding: region inset, label inset, natural-width pad
     GUI_VAR_GAP,            // space between consecutive widgets / cells
+
     GUI_VAR_BORDER,         // frame line width -- consumes space: child heights, bar tracks, resize zones
     GUI_VAR_INDICATOR,      // square indicator side (checkbox / radio) -- feeds the natural width
     GUI_VAR_GUTTER,         // slider knob width AND the scrollbar gutter thickness
@@ -627,35 +626,41 @@ typedef enum
 
 } gui_style_var_t;
 
-/* What KIND of number a var holds -- the mechanical half of the schema, declared once per var
-   beside its display name (style/gui_theme.c) and read back through gui()->style_var_class.
-   Two questions, and every var answers both by naming a class:
+/*==============================================================================================    
+    Style Class 
 
-     class    em-scaled?   lattice-snapped?   what it is
-     -------  -----------  -----------------  --------------------------------------------
-     METRIC   yes          yes                a size that positions a rect; seams must align
-     STROKE   yes          no                 a line width -- snapping a hairline quadruples it
-     SKIN     yes          no                 a paint-only radius, same reason
-     PITCH    no           n/a                the lattice quantum itself, in raw pixels
-     RATIO    no           n/a                a unitless 0..1 fraction -- no pixels to scale
-     RATE     no           n/a                an animation speed in Hz -- a duration, not a size
-     SHAPE    no           n/a                an enum pick carried in the f32 slot
+    What KIND of number a var holds -- the mechanical half of the schema, declared once per 
+    var beside its display name (style/gui_theme.c) and read back through gui()->style_var_class.
+    Two questions, and every var answers both by naming a class:
 
-   RATIO exists because every other non-pick class is em-SCALED, and scaling a fraction is
-   simply wrong: a disabled item at 0.5 opacity would become 0.9 at a large font.  It is not
-   SHAPE either, despite sharing "unscaled" -- a shape is a pick a tool offers as a combo over
-   named values, a ratio is a number it offers as a 0..1 slider, and that difference is the
-   whole reason an editor asks for the class.
+    class    em-scaled?   lattice-snapped?   what it is
+    -------  -----------  -----------------  --------------------------------------------
+    METRIC   yes          yes                a size that positions a rect; seams must align
+    STROKE   yes          no                 a line width -- snapping a hairline quadruples it
+    SKIN     yes          no                 a paint-only radius, same reason
+    PITCH    no           n/a                the lattice quantum itself, in raw pixels
+    RATIO    no           n/a                a unitless 0..1 fraction -- no pixels to scale
+    RATE     no           n/a                an animation speed in Hz -- a duration, not a size
+    SHAPE    no           n/a                an enum pick carried in the f32 slot
+    
+    RATIO exists because every other non-pick class is em-SCALED, and scaling a fraction is
+    simply wrong: a disabled item at 0.5 opacity would become 0.9 at a large font.  It is not
+    SHAPE either, despite sharing "unscaled" -- a shape is a pick a tool offers as a combo over
+    named values, a ratio is a number it offers as a 0..1 slider, and that difference is the
+    whole reason an editor asks for the class.
 
-   RATE is unscaled for the same reason and a different one: a transition that took 150 ms at a
-   small font must still take 150 ms at a large one, because the eye is not typographic.  It is
-   its own class rather than a RATIO because it is not bounded by 1 -- an editor offers it as a
-   Hz slider running well past it, and 0 means "instant", not "invisible".
+    RATE is unscaled for the same reason and a different one: a transition that took 150 ms at a
+    small font must still take 150 ms at a large one, because the eye is not typographic.  It is
+    its own class rather than a RATIO because it is not bounded by 1 -- an editor offers it as a
+    Hz slider running well past it, and 0 means "instant", not "invisible".
 
-   Declaring the class at the same site as the name -- rather than inferring it from where a var
-   falls in the enum -- turns a missing classification into a missing table entry a compiler-
-   checked table can catch, instead of a metric that silently never scales because it happens to
-   sit past some ordering marker. */
+    Declaring the class at the same site as the name -- rather than inferring it from where a var
+    falls in the enum -- turns a missing classification into a missing table entry a compiler-
+    checked table can catch, instead of a metric that silently never scales because it happens to
+    sit past some ordering marker.
+
+==============================================================================================*/
+
 typedef enum
 {
     GUI_CLASS_METRIC = 0,
@@ -733,39 +738,42 @@ typedef enum
 
 } gui_menu_check_t;
 
-/* ONE struct, THREE runs, and every one of them instanced per style set.  They stay together
-   because the machinery treats them all identically -- themes author them, style sources
-   overwrite them, the style stacks override them, style_var / style_color resolve them, and
-   gui_style_apply em-scales them.  ONE test sorts a var between the two categories the enum is
-   grouped by: can a read of this field move a rect?
+/*==============================================================================================
+    ONE struct, THREE runs, and every one of them instanced per style set.  They stay together
+    because the machinery treats them all identically -- themes author them, style sources
+    overwrite them, the style stacks override them, style_var / style_color resolve them, and
+    gui_style_apply em-scales them.  ONE test sorts a var between the two categories the enum is
+    grouped by: can a read of this field move a rect?
 
-     1. METRICS -- the spacing/size vocabulary.  One set of numbers consumed at two moments:
-        composition (the composer divides space into cells -- row heights, gaps, region insets,
-        scrollbar gutters, title bars) and widget self-measurement (a widget computes the
-        natural size it REQUESTS through cell_next_w, then seats its label / indicator
-        inside the finished cell with the same pad).  Only the composer POSITIONS rects;
-        widgets only measure and request -- that is the composition contract.
-     2. SKIN -- paint-only: colors, corner roundings, mark shapes.  A read of these can only
-        change pixels inside a rect composition already fixed; none ever sizes or moves a cell.
+      1. METRICS -- the spacing/size vocabulary.  One set of numbers consumed at two moments:
+         composition (the composer divides space into cells -- row heights, gaps, region insets,
+         scrollbar gutters, title bars) and widget self-measurement (a widget computes the
+         natural size it REQUESTS through cell_next_w, then seats its label / indicator
+         inside the finished cell with the same pad).  Only the composer POSITIONS rects;
+         widgets only measure and request -- that is the composition contract.
+      2. SKIN -- paint-only: colors, corner roundings, mark shapes.  A read of these can only
+         change pixels inside a rect composition already fixed; none ever sizes or moves a cell.
 
-   Behavior (interact/) consumes neither category: it takes finished rects.  (Its one metric
-   read is GUI_VAR_BORDER, because the resize hit zone straddles the border -- border is
-   geometry.)
+    Behavior (interact/) consumes neither category: it takes finished rects.  (Its one metric
+    read is GUI_VAR_BORDER, because the resize hit zone straddles the border -- border is
+    geometry.)
 
-   The struct IS the storage: the installed layer is an array of it, one per style set, and the
-   resolved working run is its u32 image (asserted field-for-slot in style/gui_style_core.c).
-   So gui()->style_edit() hands a kit the struct itself, and a style read is one indexed load at
-   an offset the compiler already knows. */
+    The struct IS the storage: the installed layer is an array of it, one per style set, and the
+    resolved working run is its u32 image (asserted field-for-slot in style/gui_style_core.c).
+    So gui()->style_edit() hands a kit the struct itself, and a style read is one indexed load at
+    an offset the compiler already knows. 
+==============================================================================================*/
 
 /* GUI_GRID_LATTICE -- compile-time master switch for grid_quantum snapping.  1 (default) keeps
    the feature; define 0 (e.g. -DGUI_GRID_LATTICE=0) to strip every snap to identity so the lattice
    arithmetic folds out and grid_quantum costs nothing.  Independent of a style's grid_quantum,
    which still disables snapping per-style at runtime when <= 1. */
+
 #ifndef GUI_GRID_LATTICE
 #define GUI_GRID_LATTICE 1
 #endif
 
-typedef struct gui_style_t
+typedef struct gui_style_s
 {
     /* SKIN: the AUTHORED colour -- eleven seeds and a six-number ramp (gui_palette_t, above).
        Writing here changes nothing on its own; gui_style_bake derives col[][][] below from it.
