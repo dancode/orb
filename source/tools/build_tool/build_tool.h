@@ -60,7 +60,7 @@
 #ifndef BUILD_TOOL_H
 #define BUILD_TOOL_H
 
-#ifdef _WIN64              // 64-bit Windows code (this was added to prevent 32bit cl.exe)
+#ifdef _WIN64              // 64-bit Windows code -- 32-bit builds are rejected below
 #elif defined( _WIN32 )    // 32-bit Windows code
     #error 32bit windows
 #endif
@@ -75,28 +75,30 @@
     All original code is preserved under #else and restored by removing this define. */
 
 /*
-    What was changed : Change update for BUILD_SAFE_MODE -- don't remove for now.
+    Where BUILD_SAFE_MODE is wired in -- keep this list in sync if a guard site moves.
 
     build_tool.h
-    - Added #define BUILD_SAFE_MODE with a doc comment � uncomment to activate
-    - Guarded the build_run_cmd_quiet declaration with #if !defined( BUILD_SAFE_MODE )
-    
+    - The build_run_cmd_quiet declaration is guarded by #if !defined( BUILD_SAFE_MODE ).
+
     build_tool_win.c
-    - Added three Win32 helpers inside #if defined( BUILD_SAFE_MODE ):
-      - platform_delete_file_quiet(path) � DeleteFileA, silent
-      - platform_delete_glob_quiet(dir, glob) � FindFirstFileA loop + DeleteFileA
-      - platform_rmdir_quiet(path) � recursive RemoveDirectoryA
-    
+    - Three Win32 helpers exist only under #if defined( BUILD_SAFE_MODE ):
+      - platform_delete_file_quiet(path) -- DeleteFileA, silent
+      - platform_delete_glob_quiet(dir, glob) -- FindFirstFileA loop + DeleteFileA
+      - platform_rmdir_quiet(path) -- recursive RemoveDirectoryA
+
     build_tool_04_env.c (the main EDR trigger)
-    - locate_vcvarsall(): vswhere _popen loop wrapped in #if !defined( BUILD_SAFE_MODE ) � hardcoded path fallback always runs
-    - build_setup_vc_env(): after fast paths 1+2, safe mode prints a clear message and returns; original vcvars import under #else
-    
+    - locate_vcvarsall(): the vswhere _popen loop is guarded by #if !defined( BUILD_SAFE_MODE );
+      the hardcoded path fallback always runs regardless.
+    - build_setup_vc_env(): in safe mode, it prints a clear message and returns after the two
+      fast paths instead of importing vcvars.
+
     build_tool_06_spawn.c
-    - build_run_cmd_quiet() definition wrapped in #if !defined( BUILD_SAFE_MODE )
-    
+    - build_run_cmd_quiet() is defined only under #if !defined( BUILD_SAFE_MODE ).
+
     build_tool_11_clean.c
-    - Safe-mode build_clean() uses platform_delete_file_quiet / platform_delete_glob_quiet / platform_rmdir_quiet directly � no child processes
-    - Original del_q() + build_clean() preserved under #else
+    - In safe mode, build_clean() calls platform_delete_file_quiet / platform_delete_glob_quiet /
+      platform_rmdir_quiet directly, spawning no child processes; otherwise it uses del_q() and
+      the shell-based build_clean() path.
 */
 
 /* #define BUILD_SAFE_MODE */
@@ -563,8 +565,9 @@ typedef struct
 
     /*  NULL-terminated list of target names to include (embedded, no heap alloc).
         Populated by registry_load() from orb.targets; the generator looks each
-        name up in g_targets[]. Embedded array decays to const char** so all
-        existing for(*tn = sln->target_names; *tn; ++tn) loops are unchanged. */
+        name up in g_targets[]. The embedded array decays to const char**, so a
+        for(*tn = sln->target_names; *tn; ++tn) loop over it reads exactly like a
+        loop over a NULL-terminated pointer array. */
 
     const char*     target_names[ MAX_SLN_TARGETS ];
 

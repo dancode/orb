@@ -16,8 +16,9 @@
 
     The exported surface is deliberately lean: buffer codec + the archive operations the
     engine actually performs.  miniz itself stays quarantined inside the pack library -- no
-    other target includes vendor/miniz.h or compiles its own copy (the old fs / asset_tool
-    duplication), so the amalgamation can never collide at link time.
+    other target includes vendor/miniz.h or compiles its own copy, so the amalgamation can
+    never collide at link time; fs and asset_tool each vendoring their own copy is exactly
+    the setup this rules out.
 
 ==============================================================================================*/
 

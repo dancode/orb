@@ -183,9 +183,9 @@ typedef struct gui_api_s
        The runtime host does its own setup here and never boots. */
 
 
-    /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are no longer emitted
-       by host code.  debug_enable( true ) arms an internal hotkey driver ('.' -- main row or numpad
-       -- arms the group, then F9 / F10 ...) and gui emits them itself, last in the default
+    /* NOTE: the built-in perf overlay, state overlay, and pipeline dashboard are emitted by gui
+       itself, not by host code.  debug_enable( true ) arms an internal hotkey driver ('.' -- main
+       row or numpad -- arms the group, then F9 / F10 ...) and gui emits them last in the default
        context's build -- see debug_enable (GUI_DEBUG section).  The perf overlay's clock arrives
        once through frame_set_hooks. */
 
@@ -1357,8 +1357,8 @@ typedef struct gui_api_s
            gui()->row_cols_n( 0, 2 );  gui()->button("A");  gui()->button("B");  // two columns
            gui()->row_cols( 24, (f32[]){ 200, 1, GUI_END } );                     // 200px + fill
 
-       stack()      -- single full-width flex column, scrolling: the canonical vertical-list header
-                         (what a region used to be by default; now declared explicitly).
+       stack()      -- single full-width flex column, scrolling: the canonical vertical-list header,
+                         the shape most regions want, named explicitly like every other mode.
        cols()       -- N explicit column tracks (GUI_END-terminated), auto height, scrolling.
        cols_n()     -- n equal flex columns, auto height.
        form()       -- a stack with a fixed-width label track on `side`: the "Label  [control]"
@@ -2766,8 +2766,8 @@ typedef struct gui_api_s
          NP-     state overlay tier  (off / ids / +focus,nav / +popups)
 
        While armed, a dense checkbox/slider selector menu (right edge of the viewport) is also up:
-       retained skip (tessellation cache), force redraw, and idle skip are toggled there now
-       instead of the old C / F / I letters, alongside the NP+/NP- tiers as sliders.  A host that
+       retained skip (tessellation cache), force redraw, and idle skip are toggled there as
+       checkboxes, alongside the NP+/NP- tiers as sliders.  A host that
        writes set_force_redraw (or set_retained_skip / set_idle_skip) itself every frame should
        check debug_hotkeys_armed() first and stand down while armed, or its own write will fight
        the menu's checkbox every frame the two disagree -- see debug_hotkeys_armed below.

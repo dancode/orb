@@ -53,8 +53,8 @@ void gui_print_mem_stats( void );
 
 gui_render_stats_t gui_render_stats( void );
 
-/* NOTE: the built-in perf/state overlays and the pipeline dashboard are internal now -- armed by
-   gui_debug_enable( true ) and emitted behind hotkeys (P / O / F10); hosts no longer call them. */
+/* NOTE: the built-in perf/state overlays and the pipeline dashboard are internal -- armed by
+   gui_debug_enable( true ) and emitted behind hotkeys (P / O / F10); hosts never call them directly. */
 
 
 /* font lifecycle (load-into-registry half lives with GUI_DRAW below) */

@@ -31,17 +31,17 @@
 
     Every resource -- font glyph atlases, the runtime icon set, the drawing assists, and sprites --
     is packed into its atlas as a rectangular "tenant".  They all resolve to the same bindless index
-    (res_atlas_idx), which no longer decides the batching -- the tessellator cuts a draw call on a
-    clip/viewport change alone -- but still decides how much of the texture cache one draw touches:
+    (res_atlas_idx), which does not decide batching -- the tessellator cuts a draw call on a
+    clip/viewport change alone -- but does decide how much of the texture cache one draw touches:
     text, solid fills, dashed lines and icons read one 1024-square R8 image between them.  A user's
     OWN RGBA image (a scene render target handed to draw_texture_in) stays its own tex_idx and is
     not a tenant of either atlas -- these cover the resources gui itself owns, not every texture
     that can reach the draw list.
 
     Layout: the coverage atlas reserves a fixed full-width assist band (white texel +
-    GUI_DASH_PATTERN_COUNT dash rows) at the very bottom of the texture, exactly as each font atlas
-    used to carry per-atlas (font_finalize_atlas), but now once for the whole GUI and independent of
-    any loaded font.  The sprite atlas has no assists and packs its full height.  The
+    GUI_DASH_PATTERN_COUNT dash rows) once, at the very bottom of the texture, shared across the
+    whole GUI and independent of any loaded font -- not duplicated per font atlas the way a
+    per-font assist band would be.  The sprite atlas has no assists and packs its full height.  The
     remaining region is an incremental stb_rect_pack area: tenants are packed as they
     are registered (res_atlas_add) -- adding one rect is a single incremental pack call, no repack.
     A repack (res_atlas_repack, driven from res_atlas_add / res_atlas_update) only runs when a rect
@@ -52,8 +52,9 @@
     GPU upload is deferred: add/update/repack only touch the resident CPU buffer and set `dirty`;
     res_atlas_flush_upload (called from frame_begin) re-uploads once per frame when needed.  The GPU
     texture and its bindless slot are created once and never destroyed until shutdown, so a live font
-    reload mutates pixels within the persistent texture rather than churning the bindless slot -- the
-    VK_ERROR_DEVICE_LOST hazard the per-font-atlas rebuild used to guard against does not arise.
+    reload mutates pixels within the persistent texture rather than churning the bindless slot --
+    churning it on every reload is what would risk a VK_ERROR_DEVICE_LOST hazard, tearing down a
+    texture an in-flight frame may still reference; the persistent texture avoids that entirely.
 
     res_atlas_generation / res_sprite_generation bump on every structural (UV-affecting) change so
     the retained render cache can fold them into its per-window hash and re-tessellate geometry
@@ -104,10 +105,10 @@
 #define GUI_SPR_ATLAS_BPP          4u
 
 /* 1px gutter around every packed rect -- keeps a rect's edge texels from being reached by a
-   neighbour under any future non-nearest sampling, and matches the old icon-atlas ICON_PAD. */
+   neighbour under any future non-nearest sampling. */
 #define GUI_RES_ATLAS_PAD          1u
 
-/* Dash-pattern rows in the assist band (was in gui_font.h; assists are atlas-level now). */
+/* Dash-pattern rows in the assist band, which lives at the atlas level rather than per font. */
 #define GUI_DASH_PATTERN_COUNT     4
 
 /*==============================================================================================

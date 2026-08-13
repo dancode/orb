@@ -5,13 +5,12 @@
     sandbox/rhi/sb_vulkan_stress/stress_shader.h -- Embedded SPIR-V for the stress test's own
     textured pipeline (F4..F9 sampled modes).
 
-    OWNED BY THIS SANDBOX ON PURPOSE.  F4 used to borrow gui's compiled bytecode
-    (gui/render/pipeline/gui_shader.h) to get a real textured draw without linking gui.  That
-    made an RHI test track gui's vertex format: when gui repacked its vertex to 28 bytes and
-    moved the texture slot out of the push constant into location 5, this pipeline kept
-    declaring three attributes and a 72-byte push, so every pipeline_create raised
-    VUID-Input-07904 for the three inputs it no longer supplied -- and the sample then read an
-    undefined bindless slot, which is precisely what F4 exists to verify.
+    OWNED BY THIS SANDBOX ON PURPOSE.  Borrowing gui's compiled bytecode
+    (gui/render/pipeline/gui_shader.h) for a real textured draw would make an RHI test track
+    gui's vertex format: any time gui's vertex layout or push-constant shape changes, this
+    pipeline's own attribute and push declarations would drift out of step with it, and
+    pipeline_create would raise a validation error for inputs it no longer supplies -- with the
+    sample then reading an undefined bindless slot, which is precisely what F4 exists to verify.
 
     The shaders here are deliberately minimal and depend on nothing above the RHI, so gui and
     draw stay free to evolve their vertex formats without breaking this test.

@@ -94,9 +94,9 @@ typedef struct app_api_s
 
     /* Publish the edge-resize grab thickness for a native-borderless window.  gui calls this each
        frame for an GUI_WIN_NATIVE window.  border is the edge-grab thickness in client px (<= 0
-       disables resize).  gui now owns the entire client surface (HTCLIENT everywhere inside the
+       disables resize).  gui owns the entire client surface (HTCLIENT everywhere inside the
        border band) and dispatches move / title / system-menu gestures through window_start_move,
-       window_title_event, and window_system_menu rather than routing them through HTCAPTION. */
+       window_title_event, and window_system_menu instead of HTCAPTION. */
     void ( *window_set_native_frame )( win_id_t id, bool enabled, i32 border );
 
     /* Publish the live-resize client-area quantum (px) for this window.  During an interactive edge
@@ -211,8 +211,8 @@ typedef struct app_api_s
 
 /* app is part of the always-loaded engine floor (statically linked into every host, loaded
    unconditionally in run_host_main), so it uses the hard-bound static gateway -- app() is never
-   NULL.  "Windowed" is no longer inferred from app()'s presence; it is explicit host policy
-   (RUN_HOST_WINDOWED).  Unlike rhi/draw/gui/render this ignores MOD_HOST_DYNAMIC_SERVICES. */
+   NULL.  "Windowed" is explicit host policy (RUN_HOST_WINDOWED), not inferred from app()'s
+   presence.  Unlike rhi/draw/gui/render this ignores MOD_HOST_DYNAMIC_SERVICES. */
 #if defined( BUILD_STATIC ) || defined( APP_STATIC )
     MOD_GATEWAY_STATIC( app_api_t, app )
     #define MOD_USE_APP    /* static build */

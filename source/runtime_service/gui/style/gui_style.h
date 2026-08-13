@@ -54,8 +54,8 @@ const gui_brush_t* style_face_look( u8 role, u8 phase, u8 look );
 
 /* A GUI_CLASS_SHAPE var read back as its enum -- a rounding, and the ONE spelling for it.  Never
    compare a shape var with >= 0.5f (a two-value assumption) or cast it truncating (0.999999 is a
-   legal slot value and truncates to the wrong pick).  See the definition for the four idioms
-   this replaced. */
+   legal slot value and truncates to the wrong pick).  See the definition for why each of those
+   idioms picks the wrong glyph. */
 u32 style_shape( gui_style_var_t var );
 
 /* One field of one density-ramp step (field: 0 = row, 1 = pad, 2 = gap).  Read through the block
@@ -88,8 +88,8 @@ f32 style_scale( gui_scale_t s, u32 field );
 #define ROUND_WIN     style_var( GUI_VAR_PANEL_ROUND )   /* windows, children, popups    */
 
 /* The disabled dim, as a style value like any other -- so a kit can soften or disable it, and
-   push_style_var can scope it.  Was a file-local #define in stock/gui_adornment.c, which put the
-   one number every disabled widget in the system reads outside the schema entirely. */
+   push_style_var can scope it.  Living in the schema keeps the one number every disabled widget
+   reads inside the vocabulary, rather than off in a private #define no push can reach. */
 #define DISABLED_ALPHA style_var( GUI_VAR_DISABLED_ALPHA )
 
 /*==============================================================================================
@@ -103,16 +103,14 @@ f32 style_scale( gui_scale_t s, u32 field );
     seven-seed palette, and a theme authors no colour directly.  Nothing below this line changes
     because of that: a read is still one indexed load of the same slot, and a kit that overwrites
     a cell after baking still wins.  It only means the answer to "why is this cell that colour"
-    lives in the bake now, not in a hex literal.
+    lives in the bake, not in a hex literal.
 
     THE NAME IS THE CELL: COL_<ROLE>_<PHASE>, both halves spelled exactly as the enum suffixes in
     gui.h.  So a macro can be read off the grid and the grid read off a macro, with no table in
-    between -- COL_BORDER_ACTIVE is BORDER x ACTIVE and nothing else.  The names used to be the
-    pre-grid palette's (COL_WIN_BG, COL_FOCUS_BORDER, COL_SLIDER_TRACK ...), kept verbatim so the
-    unification would not have to touch every read site; that debt is paid, and it cost a real
-    bug -- the names implied a vocabulary the grid no longer had.  Renaming is free (these are
-    aliases); ADDING a second name for a cell is not -- that re-opens the drift the old token
-    table had.  One cell, one name.
+    between -- COL_BORDER_ACTIVE is BORDER x ACTIVE and nothing else.  Renaming a macro is free
+    (these are aliases); ADDING a second name for the same cell is not -- a second name is a token
+    divorced from its (role, phase) coordinate, free to imply a vocabulary the grid does not
+    actually have and to drift out of sync with what the cell means.  One cell, one name.
 
     Reading across a row shows what a phase MEANS for that role; the grid is documented once, in
     gui.h.  A render that speaks roles and phases generically wants style_col (or gui()->
@@ -121,16 +119,16 @@ f32 style_scale( gui_scale_t s, u32 field );
     Not every cell has a reader, and that is not a gap: the grid is wired uniformly because the
     schema is uniform.  TEXT never goes hot because any text that can be hot is inside a widget,
     and the text widgets return no state.  The cells stay filled so a role behaves like every
-    other role; nothing is missing -- and since the bake fills them, the unread ones now cost a
-    theme author nothing rather than a dozen literals.
+    other role; nothing is missing -- and since the bake fills every cell uniformly, an unread
+    one costs a theme author nothing: there is no literal to hand-write for a cell nobody reads.
 
     THERE IS NO COL_SEL_* FAMILY, and the omission is deliberate rather than unfinished.  A macro
     can only spell a CONSTANT, and role and phase are routinely constant at a read site -- chrome
     genuinely knows it is painting the border, idle.  A look never is: every single selection read
     in the library is of the form `chosen ? ... : ...`, because a look is a fact about the
     caller's DATA, not about the draw.  Ninety-six names to serve zero constant readers would be
-    ninety-six more chances for the grid and its spelling to drift, which is the exact debt the
-    pre-grid token table cost us.  Widgets that can be selected go through style_col_look or the
+    ninety-six more chances for the grid and its spelling to drift -- exactly the failure mode a
+    flat token table invites.  Widgets that can be selected go through style_col_look or the
     col_item_bg_look projection below, and pass the look along.
 ==============================================================================================*/
 
@@ -272,7 +270,7 @@ u32 col_grab_mix    ( gui_id_t id, gui_item_state_t st );
 
 /* Ink for a glyph on a bare icon button (fills only when hot/active) -- caption buttons, the dock
    maximize pin, a tab close cross.  Uses the SAME hover-or-active predicate those callers fill
-   on; splitting the two is what put DIM ink on an ACTIVE fill.  See the definition. */
+   on; diverging from it would put DIM ink on an ACTIVE fill.  See the definition. */
 u32 col_btn_glyph( gui_item_state_t st );
 
 /* Border of a focusable FIELD (input box, numeric field, drag box, slider track): the face rests
