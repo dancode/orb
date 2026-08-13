@@ -269,6 +269,7 @@ main( int argc, char** argv )
         // the usual door -- every role fed by the seed moves together and keeps its ramp.
         style->palette.seed[GUI_SEED_SURFACE] = GUI_COLOR( 0x20, 0x20, 0x20, 0xFF );
         style->palette.seed[GUI_SEED_INK    ] = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
+
         gui()->style_bake( style );
 
         // ...then disagree with the ramp on individual cells, if you want to.  Order matters:

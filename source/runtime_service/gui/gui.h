@@ -4,25 +4,37 @@
 
     runtime_service/gui/gui.h -- gui module types (the public type header).
 
-    * This file has no functions just definitions.
-    * Defines the shape of every "noun" the GUI uses.
-        
-    * GUI is an in-house 2D interaction renderer for ORB separated in two parts.
-    * An INTERACT SERVER that tracks what the user is doing (hover, click, focus)
-    * A RENDER SERVER that turns draw commands into GPU triangles.
-    
-    * Windowing and input come from the engine's `app` layer (Win32); 
-    * The actual GPU submission goes through RHI (Vulkan). 
-    * A host drives one cycle every frame: 
-    
+    This file has no functions, just definitions -- the shape of every "noun" the GUI uses.
+    For the deep dive on why it is built this way, see GUI_ARCHITECTURE.md in this directory.
+
+    GUI is ORB's in-house immediate-mode 2D interaction renderer, built from two servers
+    that never see each other:
+
+    1. An INTERACT SERVER that tracks what the user is doing (hover, click, focus, drag).
+    2. A RENDER SERVER that turns draw commands into GPU triangles.
+
+    Everything else -- layout, style, stock widgets, window chrome -- is a library layered
+    on top of those two, in the strata order the section banners below follow. Chrome
+    (windows, docking, popups) is the topmost layer and is OPTIONAL: a game can build its
+    whole UI directly out of the lower strata and never open a window.
+
+    It sits between two engine layers: windowing and input come in from `app` (Win32);
+    GPU submission goes out through RHI (Vulkan). A host drives one cycle every frame:
+
         frame_begin -> ctx_begin / widgets / ctx_end -> frame_end -> render.
 
-    * The unit roster is the `unit` list under `target gui`in orb.targets. 
-    
-    * A GUI value lives in one of three places, which decides how long it survives: 
-    * Ambient singular state (one shared copy for the whole app, e.g. s_interaction, s_io).
-    * Per-context retained state (belongs to one gui_context_t, survives across frames).
-    * Frame scratch (wiped clean at the start of every frame, e.g. s_build,s_scope).
+    A context (gui_context_t, addressed by a plain i32 handle) owns one bundle of retained
+    UI state -- windows, docks, nav, scroll links. GUI_CTX_DEFAULT (0) is always live after
+    init(); ctx_create() opens a secondary context for an isolated sub-UI (e.g. an in-game
+    menu separate from the editor). A context renders into one or more viewports -- OS
+    windows, each backed by its own RHI surface.
+
+    The unit roster is the `unit` list under `target gui` in orb.targets.
+
+    A GUI value lives in one of three places, which decides how long it survives:
+    1. Ambient singular state -- one shared copy for the whole app (e.g. s_interaction, s_io).
+    2. Per-context retained state -- One gui_context_t, survives across frames (g_ctx).
+    3. Frame scratch -- wiped clean at the start of every frame (e.g. s_build, s_scope).
 
     Two caches exist purely to make an idle screen cheap to redraw:
     1. CPU emit skip (s_frame_dirty, gui_frame_loop.c): one global bool. If nothing changed --
@@ -141,8 +153,6 @@ typedef struct
 /*==============================================================================================
     Shared leaf types -- spans, easing, callback typedefs
 ==============================================================================================*/
-
-/* gui_vec2_t / gui_rect_t / gui_pad_t / gui_align_t live in gui_rect.h (the leaf rect kit) */
 
 /* visible index range [first, last) returned by the row clippers (rows_clip / table_rows_clip) */
 typedef struct { i32 first, last; } gui_span_t;
@@ -437,7 +447,7 @@ typedef struct gui_style_mix_t
 } gui_style_mix_t;
 
 /*==============================================================================================
-    GUI_STYLE -- the seed palette: what a theme AUTHORS
+    GUI_STYLE -- The Seed Palette: What a theme AUTHORS
 
     The grid above is what a RENDER reads.  It is not what a theme WRITES.  96 literals would be
     the wrong authoring surface: many cells are structurally redundant with each other (TEXT is
@@ -450,7 +460,7 @@ typedef struct gui_style_mix_t
 
         seeds  -- the source colours, one per surface KIND (not per role, not per phase)
         ramp   -- how far a cell travels per interaction step, per theme
-
+    
     A seed is a colour a designer picks; a ramp is the personality of the theme (how much a
     hover moves, how deep a press sits, how far an inert thing fades).  Neither is a cell.
 
@@ -460,9 +470,10 @@ typedef struct gui_style_mix_t
 
         gui_style_t* e = gui()->style_edit();
         e->palette.seed[ GUI_SEED_ACCENT ] = gold;
-        gui()->style_bake( e );                                    // 96 cells re-derive
-        e->col[ GUI_LOOK_NORMAL ][ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;   // one bespoke cell
+        gui()->style_bake( e );                         // 96 cells re-derive
 
+        e->col[ GUI_LOOK_NORMAL ][ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;   // one bespoke cell
+    
     Alpha rides through: a seed's alpha byte is carried onto every cell derived from it, so a
     translucent panel seed yields a translucent panel in all four phases without four literals.
 ==============================================================================================*/
@@ -473,6 +484,7 @@ typedef struct gui_style_mix_t
    lifted surface, which is a derivation, not a decision.  The four status hues DO each get one --
    a severity ladder is a set of independent editorial choices (how orange is "warning" in this
    product?) and no derivation can guess them from an accent. */
+
 typedef enum
 {
     GUI_SEED_SURFACE = 0,   // container base: window body, panel, and the band over it
@@ -791,11 +803,16 @@ typedef struct gui_style_s
        colour slot, byte-identical to what it was before the SELECT plane existed. */
     u32 col[ GUI_LOOK_COUNT ][ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 
-    /* SKIN: the FACE plane -- the same 2x12x4 grid again, one gui_style_face_t handle per cell,
-       naming a brush from this set's brush pool (gui_style_brush_add) that REPLACES the flat
-       colour fill for that cell.  0 (GUI_FACE_NONE) everywhere by default, which means "just use
-       col" -- so a theme that authors no art behaves exactly as it did and pays one indexed load
-       it already had the cache line for.
+    /* SKIN: the FACE plane -- the same 2x12x4 grid again, but a cell here holds a HANDLE, not a
+       colour: a 1-based index into this set's brush pool (gui_style_brush_add), looked up by
+       style_face_look to return the gui_brush_t it names.  col and face share the u32 slot type
+       only because the push/pop stack below addresses the whole struct as one flat array of u32
+       slots (gui_style_core.c) -- nothing in the struct itself marks a slot as "colour" or
+       "handle"; that meaning comes from which grid you index and which accessor you call.
+
+       0 (GUI_FACE_NONE) everywhere by default, which means "just use col" -- so a theme that
+       authors no art behaves exactly as it did and pays one indexed load it already had the cache
+       line for.
 
        This plane is why the brush exists.  A colour cell can only ever say "fill it with this";
        a face cell can say "fill it with this nine-slice", and because it is addressed by the SAME

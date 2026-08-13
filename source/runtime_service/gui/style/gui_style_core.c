@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/style/gui_style_core.c -- Style resolution: one schema, one slot space.
+    gui/style/gui_style_core.c -- Style resolution: one schema, one slot space.
 
     The push-model theme override the widgets draw through, the ImGui PushStyleColor /
     PushStyleVar analogue.  Three layers resolve into the value a widget sees:
@@ -14,9 +14,9 @@
         Next   -- next_style_color / _var override a slot for just the next item, consumed at the
                   per-item resolve seam (no pop), exactly like next_item_flag.
 
-    The seam is shared with the item-flag system (item_flags_resolve calls style_item_commit; the
-    chrome reset calls style_chrome_reset), so colors / vars and flags all latch on the same
-    once-per-widget boundary -- see the impure wrappers in stock/gui_adornment.c.
+    The seam is shared with the item-flag system (item_flags_resolve calls style_item_commit; 
+    the chrome reset calls style_chrome_reset), so colors / vars and flags all latch on the 
+    same once-per-widget boundary -- see the impure wrappers in stock/gui_adornment.c.
 
     Included by gui_style.c after gui_theme.c -- s_style and GUI_COLOR (gui.h) are already
     visible.  The frame orchestrator drives the per-frame reset across the unit seam
@@ -132,9 +132,9 @@ ORB_STATIC_ASSERT( sizeof( gui_style_t ) == STYLE_SLOT_COUNT * sizeof( u32 ),
                    "style slot layout must mirror gui_style_t field order" );
 
 /*==============================================================================================
-    The two layers, and there are only two.
+    Style layers -- The two layers:
 
-    s_store -- INSTALLED.  One complete gui_style_t per set: what the theme compiled plus what
+    s_store -- INSTALLED. One complete gui_style_t per set: what the theme compiled plus what
                that set's source overwrote.  Written only by style_install; never by a push.
                Typed, so gui_style_edit() hands a kit &s_store[set] with no cast.
     s_work  -- RESOLVED.  The CURRENT set's installed values with every push / next override
@@ -143,7 +143,7 @@ ORB_STATIC_ASSERT( sizeof( gui_style_t ) == STYLE_SLOT_COUNT * sizeof( u32 ),
                whole reason the sets live behind an index instead of the reads living behind a
                base pointer.
 
-    Capacity is the array bound: a fifth set is a compile error, not a first-frame assert. 
+    Capacity is the array bound: a fifth set is a compile error, not a first-frame assert.
 ==============================================================================================*/
 
 static gui_style_t s_store[ GUI_STYLE_SET_MAX ];   // installed, one per set
@@ -153,6 +153,7 @@ static gui_style_t s_store[ GUI_STYLE_SET_MAX ];   // installed, one per set
    the storage" stops being a claim the reader has to verify and becomes the declaration itself,
    and re-deriving the grid after a seed push is gui_style_bake( &s_work.style ) rather than a
    pointer cast the next reader has to talk themselves into. */
+
 static union
 {
     gui_style_t style;                    // typed view -- what the bake reads and writes
