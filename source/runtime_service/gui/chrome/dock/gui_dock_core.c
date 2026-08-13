@@ -201,9 +201,12 @@ dock_hidden_refresh_node( gui_dock_node_t* n )
     return hidden;
 }
 
-/* Refresh every viewport tree of the bound context.  Called from gui_ctx_end while the closing
-   context is still bound -- the one point where every window's begin has run for this build.
-   Floating groups are not reachable from any dock_root and are never marked. */
+/* Refresh every viewport tree of the bound context, then every floating tab group.  Called from
+   gui_ctx_end while the closing context is still bound -- the one point where every window's
+   begin has run for this build.  Floating groups are not reachable from any dock_root, so they
+   are visited directly in the pool: the active-tab handoff matters just as much there -- the
+   strip is the ACTIVE tab's window_end to draw, so a group whose selected window stopped
+   emitting would render nothing while its live tabs sit buried inactive behind it. */
 void
 dock_hidden_refresh( void )
 {
@@ -211,6 +214,13 @@ dock_hidden_refresh( void )
         return;
     for ( i32 vp = 0; vp < s_vp_count; ++vp )
         dock_hidden_refresh_node( dock_at( s_vp_pool[ vp ].dock_root ) );
+
+    for ( u32 i = 0; i < g_ctx->dock.count; ++i )
+    {
+        gui_dock_node_t* n = &g_ctx->dock.pool[ i ];
+        if ( n->id != 0 && n->floating )
+            dock_hidden_refresh_node( n );
+    }
 }
 
 /* The hidden pane a `dir` drop beside `n` should REVIVE instead of carving a new split: when the

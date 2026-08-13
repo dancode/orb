@@ -64,34 +64,24 @@
     window_begin / window_end
 ==============================================================================================*/
 
-/* Top of the viewport work area: the native caption band plus the main-menu-bar band on frames
-   the host emits one (one-frame tolerance -- the bar may emit after this window builds, the
-   same lag hover_win runs on).  Shared by the maximize pin, window_clamp below, and the
-   floating-group clamp (chrome/dock/gui_dock_float.c). */
-static f32
-window_work_top( i32 vp )
-{
-    const gui_viewport_t* v = &s_vp_pool[ vp ];
-    f32 top = v->caption_inset;
-    if ( v->bar_seen_frame != 0u && v->bar_seen_frame + 1u >= gui_frame_index() )
-        top += v->bar_inset;
-    return top;
-}
+/* The viewport work-area top (caption band + main menu bar) is vp_work_top, core/gui_ctx.c --
+   shared by the maximize pin, window_clamp below, the floating-group clamp
+   (chrome/dock/gui_dock_float.c), and the floater-teardown migration (frame/gui_viewport.c). */
 
-/* Public query twin of window_work_top (gui_api.h viewport_content_y): where host content
+/* Public query twin of vp_work_top (gui_api.h viewport_content_y): where host content
    starts on a viewport -- 0 OS-chrome, + caption band gui-shelled, + menu bar when emitted. */
 f32
 gui_viewport_content_y( i32 vp )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return 0.0f;
-    return window_work_top( vp );
+    return vp_work_top( vp );
 }
 
 /* Keep a dragged window reachable within its own viewport's work area.  The geometry is the
    feat kit's clamp mechanism (gui_feat_clamp, interact/gui_feature.c); this wrapper is the
    window's POLICY: which surface bounds apply (the window's own viewport, so dragging on a
-   secondary surface clamps against that surface), where the work area starts (window_work_top
+   secondary surface clamps against that surface), where the work area starts (vp_work_top
    -- a titlebar may not slide under the OS caption band or the main menu bar, where the grab
    would be lost), the title-bar margin, and the GUI_WIN_NO_BOUNDARY_CLAMP opt-out. */
 static void
@@ -101,7 +91,7 @@ window_clamp( gui_window_t* win )
         return;
 
     i32 vp  = win->viewport;
-    const f32 top = window_work_top( vp );
+    const f32 top = vp_work_top( vp );
 
     gui_rect_t r = { win->x, win->y, win->w, win->h };
     gui_feat_clamp( &r, ( gui_rect_t ){ 0.0f, top, vp_w( vp ), vp_h( vp ) - top }, WIN_TITLE_H );
@@ -133,8 +123,8 @@ window_fit_bounds( const gui_window_t* win, f32* out_max_w, f32* out_max_h )
     offers either (the node owns its chrome).
 ==============================================================================================*/
 
-/* window_work_top (the caption band + main-menu-bar top bound both the maximize pin and
-   window_clamp share) is defined above window_clamp, which needs it first. */
+/* vp_work_top (the caption band + main-menu-bar top bound both the maximize pin and
+   window_clamp share) lives in core/gui_ctx.c next to the other viewport accessors. */
 
 /*==============================================================================================
     State-transition animation
@@ -929,7 +919,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     else if ( win->maximized )
     {
         i32 vp  = win->viewport;
-        f32  top   = window_work_top( vp );
+        f32  top   = vp_work_top( vp );
         pin_state  = 1u;
         pin_target = ( gui_rect_t ){ 0.0f, top, vp_w( vp ), vp_h( vp ) - top };
     }
@@ -1065,7 +1055,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
 /* Default spawn cascade: each window that first appears WITHOUT an explicit position lands one
    title-bar step down-right of the previous default spawn, OS-style, so windows opened in
    sequence stagger instead of stacking on one point.  The run starts at a fixed inset below the
-   viewport work area (caption band + main menu bar, window_work_top) and wraps back to that
+   viewport work area (caption band + main menu bar, vp_work_top) and wraps back to that
    first slot once the next position would cross half the viewport extent on either axis. */
 static void
 window_default_spawn( i32 viewport, f32* out_x, f32* out_y )
@@ -1073,7 +1063,7 @@ window_default_spawn( i32 viewport, f32* out_x, f32* out_y )
     i32 vp = viewport;
     const f32 inset = 60.0f;
     const f32 step  = WIN_TITLE_H;
-    const f32 top   = window_work_top( vp );
+    const f32 top   = vp_work_top( vp );
 
     f32 x = inset + step * (f32)g_ctx->win.cascade;
     f32 y = top + inset + step * (f32)g_ctx->win.cascade;
@@ -1106,7 +1096,7 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
         /* The pool-full guard keeps a scratch-hosted overflow window (window_find never sees it,
            so it reads as appearing EVERY frame) from advancing the cascade and walking across
            the screen; it takes the fixed fallback above instead. */
-        i32 vp = next_win->has_viewport ? next_win->viewport : s_build.win.viewport;
+        i32 vp = next_win->has_viewport ? next_win->viewport : window_spawn_viewport();
         window_default_spawn( vp, &x, &y );
     }
 
@@ -1138,7 +1128,7 @@ gui_viewport_shell( i32 vp, const char* title, gui_win_flags_t flags )
     gui_window_begin( title, GUI_WIN_NATIVE | GUI_WIN_NOSCROLL | flags );
     gui_window_end();
 
-    return s_vp_pool[ vp ].caption_inset;   /* published by the begin above */
+    return vp_caption( vp );   /* published (and frame-stamped) by the begin above */
 }
 
 /*==============================================================================================

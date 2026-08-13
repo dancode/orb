@@ -285,8 +285,9 @@ gui_frame_begin( f32 dt )
 
     perf_frame_begin( dt );
 
-    /* caption_inset is NOT cleared here.  Native shell windows republish it during the build, so
-       the field always reflects the last frame the shell was active. */
+    /* caption_inset is not cleared here.  Native windows republish it during the build, and
+       readers go through vp_caption(), which releases the band on its own when the publisher
+       stops emitting (caption_seen_frame falls behind). */
 
     /* Push last frame's cursor request to the OS BEFORE interact_new_frame promotes the new
        hover_win and io_frame_begin overwrites mouse_viewport -- cursor_flush reads both as the

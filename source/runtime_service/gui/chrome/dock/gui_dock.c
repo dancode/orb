@@ -70,7 +70,7 @@ gui_dockspace_over_viewport( i32 vp, gui_dockspace_flags_t flags )
 
     f32 dw  = vp_w( vp );
     f32 dh  = vp_h( vp );
-    f32 top = v->caption_inset + v->dock_inset;
+    f32 top = vp_caption( vp ) + v->dock_inset;
     gui_rect_t area = { 0.0f, top, dw, dh - top };
     if ( area.h < 0.0f ) area.h = 0.0f;
     dock_node_layout( root, area );

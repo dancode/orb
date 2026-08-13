@@ -108,6 +108,7 @@ gui_window_t* window_get ( gui_id_t id, f32 x, f32 y, f32 w, f32 h );     // fin
 gui_window_t* window_find( gui_id_t id );                                // find in the bound context, or NULL
 gui_window_t* window_find_in( struct gui_context_t* ctx, gui_id_t id );  // find in a specific context, or NULL
 void          window_apply_next( gui_window_t* win, bool appearing );
+i32           window_spawn_viewport( void );                             // viewport a NEW record inherits
 
 /* Position/size/viewport queued by gui_set_next_window_* for the next window_begin call. */
 typedef struct
@@ -375,15 +376,16 @@ typedef struct
     /* Area Data -------------------------------------------------------------------------------- */
     
     /* Height in pixels of the native title bar drawn by a GUI_WIN_NATIVE shell window on this
-       surface, published each frame by that shell. window_clamp keeps other windows below this
-       so their own title bars stay clickable above it. 0 if no native shell is present. 
-       Not cleared each frame -- stays at its last value so this is always valid even if the shell
-       hasn't run yet this frame. */
+       surface, and the frame it was last published (window_sync_native). Emit-gated like the
+       menu bar band below: read through vp_caption(), which releases the band when no native
+       window begins on the surface anymore (e.g. its windows all tabbed into a floating group).
+       window_clamp keeps other windows below the live band so their title bars stay clickable. */
     f32 caption_inset;
+    u32 caption_seen_frame;
 
     /* Height of the main menu bar on this surface, and the frame it was last drawn. If the host
-       stops calling the menu-bar function, bar_seen_frame falls behind and the band is released. 
-       window_work_top adds this to caption_inset to size a maximized window's work area. */
+       stops calling the menu-bar function, bar_seen_frame falls behind and the band is released.
+       vp_work_top adds this to the caption band to size a maximized window's work area. */
     f32 bar_inset;
     u32 bar_seen_frame;
 
@@ -431,6 +433,17 @@ typedef struct
 
 f32 vp_w( i32 vp );
 f32 vp_h( i32 vp );
+
+/* Caption band published on viewport vp by a native window, emit-gated: 0 unless published this
+   build or the one before (core/gui_ctx.c). Every reader of caption_inset goes through this;
+   only the publisher (window_sync_native) touches the raw field. */
+
+f32 vp_caption( i32 vp );
+
+/* Top of viewport vp's work area: vp_caption plus the main-menu-bar band while emitted
+   (core/gui_ctx.c). Title bars must stay reachable below this line. */
+
+f32 vp_work_top( i32 vp );
 
 /* Resolve a caller-supplied viewport index to a live slot: GUI_VP_INVALID, out-of-range, and
    torn-down slots all map to the primary (GUI_VP_MAIN).  Run by record-less root callers

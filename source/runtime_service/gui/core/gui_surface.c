@@ -30,6 +30,22 @@
     nothing retirable falls back to a shared transient scratch entry.
 ==============================================================================================*/
 
+/* Viewport a NEW top-level window record inherits: the ambient build surface, except when that
+   surface is a gui-owned floater.  An owned surface hosts exactly one native window (detach =
+   native, chrome/window/gui_window_native.c); a fresh window spawning there would be mistaken
+   for the surface itself and pinned over its host at full size.  New windows land on the primary
+   surface instead.  Popups and tooltips are unaffected: gui_popup.c re-stamps their viewport from
+   the parent every frame, so they stay anchored on the floater they were opened from; an explicit
+   window_set_next_viewport also still lands wherever it asked (window_apply_next). */
+i32
+window_spawn_viewport( void )
+{
+    i32 vp = s_build.win.viewport;
+    if ( vp != 0 && s_vp_pool[ vp ].owned )
+        return 0;
+    return vp;
+}
+
 gui_window_t*
 window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
 {
@@ -101,7 +117,7 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
     win->w         = w;
     win->h         = h;
     win->z         = 0;
-    win->viewport  = s_build.win.viewport;   /* inherit ambient; window_set_next_viewport overrides */
+    win->viewport  = window_spawn_viewport();   /* ambient, owned floaters excepted; window_set_next_viewport overrides */
     win->overlay   = false;   /* a normal window until the popup layer stamps otherwise */
     win->collapsed = false;   /* reset matters only for a reused scratch slot */
     win->closed    = false;   /* a freshly seen window starts open                */

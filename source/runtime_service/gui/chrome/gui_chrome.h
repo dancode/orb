@@ -112,8 +112,9 @@ struct gui_dock_node_t          /* typedef'd gui_dock_node_t in core/gui_ctx.h (
        gui_dock_core.c) from the windows' last_frame stamps; dock_node_layout collapses a hidden
        child to a zero-extent slice so the visible sibling absorbs its space -- tree structure and
        ratio stay untouched, so a window that re-emits gets its exact pane back.  Derived state:
-       recomputed every build, never serialized.  Always false on a floating group (not reachable
-       from any dock_root; a group tears down through the float paths instead). */
+       recomputed every build, never serialized.  A floating group is refreshed too (visited
+       directly in the pool, since no dock_root reaches it) -- chiefly for the active-tab handoff;
+       its hidden flag has no layout consumer. */
     bool hidden;
 };
 

@@ -190,7 +190,7 @@ dock_float_service_request( gui_id_t id, const char* title, gui_window_t* win )
 ==============================================================================================*/
 
 /* Keep the group reachable, mirroring window_clamp: the strip may not slide under the host's
-   native caption band or the main menu bar (window_work_top), or fully off the surface. */
+   native caption band or the main menu bar (vp_work_top), or fully off the surface. */
 static void
 dock_float_clamp( gui_dock_node_t* node )
 {
@@ -198,7 +198,7 @@ dock_float_clamp( gui_dock_node_t* node )
     f32 dw = vp_w( vp );
     f32 dh = vp_h( vp );
     const f32 margin = WIN_TITLE_H;
-    const f32 top    = window_work_top( vp );
+    const f32 top    = vp_work_top( vp );
 
     if ( node->rect.x > dw - margin )            node->rect.x = dw - margin;
     if ( node->rect.y > dh - margin )            node->rect.y = dh - margin;

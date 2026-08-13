@@ -51,9 +51,10 @@ viewport_create( i32 vp, rhi_texture_t target, i32 win_id )
     v->dpi_bake        = s_dpi.base;         // managed-family bake; per-surface once poll resolves it
     v->dpi_os_scale    = 1.0f;               // OS-scale snapshot; first poll takes the real value
 
-    v->caption_inset   = 0.0f;               // no native shell band until one publishes it during the build
-    v->bar_inset       = 0.0f;               // no host menu/toolbar band until one publishes it
-    v->bar_seen_frame  = 0;                  // never emitted; frame clock starts at 1 so 0 = dormant
+    v->caption_inset      = 0.0f;            // no native caption band until one publishes it during the build
+    v->caption_seen_frame = 0;               // never emitted; frame clock starts at 1 so 0 = dormant
+    v->bar_inset          = 0.0f;            // no host menu/toolbar band until one publishes it
+    v->bar_seen_frame     = 0;               // never emitted; frame clock starts at 1 so 0 = dormant
 
     /* dock */
 
@@ -128,11 +129,19 @@ viewport_trim_count( void )
         --s_vp_count;
 }
 
-/* Reassign every window on viewport from_vp, in any context, to to_vp. */
+/* Reassign every window on viewport from_vp, in any context, to to_vp, landing each inside the
+   destination's work area.  A floater-hosted window sits native-pinned at (0,0) at the floater's
+   full size; carried verbatim onto the primary surface that buries its title bar under the
+   caption band / main menu bar.  Size-then-position clamp, mirroring the merge-back placement;
+   NO_BOUNDARY_CLAMP windows keep their externally-managed rect. */
 
 static void
 viewport_migrate_windows( i32 from_vp, i32 to_vp )
 {
+    f32 dw  = vp_w( to_vp );
+    f32 dh  = vp_h( to_vp );
+    f32 top = vp_work_top( to_vp );
+
     for ( u32 c = 0; c < s_ctx_pool_count; ++c )
     {
         gui_context_t* ctx = s_ctx_pool[ c ];
@@ -140,8 +149,24 @@ viewport_migrate_windows( i32 from_vp, i32 to_vp )
             continue;
 
         for ( u32 i = 0; i < ctx->win.count; ++i )
-            if ( ctx->win.pool[ i ].viewport == from_vp )
-                 ctx->win.pool[ i ].viewport = to_vp;
+        {
+            gui_window_t* win = &ctx->win.pool[ i ];
+            if ( win->viewport != from_vp )
+                continue;
+            win->viewport = to_vp;
+
+            if ( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP )
+                continue;
+
+            f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
+            if ( win->w > dw )    win->w = dw;
+            if ( win->h > max_h ) win->h = max_h;
+
+            f32 max_x = dw - win->w; if ( max_x < 0.0f ) max_x = 0.0f;
+            f32 max_y = dh - win->h; if ( max_y < top  ) max_y = top;
+            win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );
+            win->y = win->y < top  ? top  : ( win->y > max_y ? max_y : win->y );
+        }
     }
 }
 
@@ -235,16 +260,17 @@ gui_viewport_open( i32 win_id )
 }
 
 /* The caption band height (px) a chrome shell published on this viewport -- 0 for an OS-chrome
-   window or before the shell's first emit.  Hosts stack their own pinned strips (menu bar,
+   window, before the shell's first emit, or once the shell stops emitting (the band is
+   emit-gated, see vp_caption in core/gui_ctx.c).  Hosts stack their own pinned strips (menu bar,
    toolbar) below it; the built-in main_menu_bar, window clamping, and the dock tree already
-   inset themselves.  Sticky across frames (see gui_viewport_t.caption_inset). */
+   inset themselves. */
 
 f32
 gui_viewport_caption_h( i32 vp )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return 0.0f;
-    return s_vp_pool[ vp ].caption_inset;
+    return vp_caption( vp );
 }
 
 /* A viewport's current drawable size (disp_w/disp_h) -- the query twin of viewport_resize.
@@ -521,7 +547,7 @@ viewport_service_mergeback( gui_window_t* win )
     {
         f32 dw    = vp_w( 0 );
         f32 dh    = vp_h( 0 );
-        f32 top   = s_vp_pool[ 0 ].caption_inset;
+        f32 top   = vp_caption( 0 );
         f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
         if ( win->w > dw )    win->w = dw;
         if ( win->h > max_h ) win->h = max_h;
@@ -551,7 +577,7 @@ viewport_service_mergeback( gui_window_t* win )
         {
             f32 dw  = vp_w( 0 );
             f32 dh  = vp_h( 0 );
-            f32 top = s_vp_pool[ 0 ].caption_inset;
+            f32 top = vp_caption( 0 );
             f32 max_x = dw - win->w;
             f32 max_y = dh - win->h; if ( max_y < top ) max_y = top;
             win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );

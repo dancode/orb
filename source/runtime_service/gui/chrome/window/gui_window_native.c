@@ -267,7 +267,8 @@ window_sync_native( gui_window_t* win, gui_win_flags_t flags )
     app()->window_set_size_step( window_native_id( win ), step, step );
 
     i32 caption = ( flags & GUI_WIN_NOTITLEBAR ) ? 0 : ( i32 )WIN_TITLE_H;
-    s_vp_pool[ win->viewport ].caption_inset = ( f32 )caption;
+    s_vp_pool[ win->viewport ].caption_inset      = ( f32 )caption;
+    s_vp_pool[ win->viewport ].caption_seen_frame = gui_frame_index();
 
     if ( win->viewport != 0 && ( flags & GUI_WIN_CLOSEABLE ) )
     {

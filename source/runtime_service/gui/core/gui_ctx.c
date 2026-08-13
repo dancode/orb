@@ -285,6 +285,34 @@ viewport_index_for_window( i32 win_id )
 f32 vp_w( i32 vp ) { i32 w = s_vp_pool[ vp ].disp_w; return w > 0 ? (f32)w : (f32)s_io.display_w; }
 f32 vp_h( i32 vp ) { i32 h = s_vp_pool[ vp ].disp_h; return h > 0 ? (f32)h : (f32)s_io.display_h; }
 
+/* Caption band a native window published on this surface, emit-gated like the menu-bar band:
+   0 unless published this build or the one before ("or the one before" covers readers that run
+   before the native window's begin within a build).  A surface whose native window stops
+   beginning -- every window on it tabbed into a floating group -- releases the band instead of
+   reserving a phantom caption strip forever. */
+
+f32 vp_caption( i32 vp )
+{
+    const gui_viewport_t* v = &s_vp_pool[ vp ];
+    if ( v->caption_seen_frame != 0u && v->caption_seen_frame + 1u >= gui_frame_index() )
+        return v->caption_inset;
+    return 0.0f;
+}
+
+/* Top of a surface's work area: the caption band plus the main-menu-bar band on frames the host
+   emits one (one-frame tolerance -- either may emit after a reader runs within a build, the
+   same lag hover_win runs on).  The maximize pin, window/floating-group clamps, spawn cascade,
+   and the floater-teardown migration all start below this line. */
+
+f32 vp_work_top( i32 vp )
+{
+    const gui_viewport_t* v = &s_vp_pool[ vp ];
+    f32 top = vp_caption( vp );
+    if ( v->bar_seen_frame != 0u && v->bar_seen_frame + 1u >= gui_frame_index() )
+        top += v->bar_inset;
+    return top;
+}
+
 /* Resolve a caller-supplied viewport to a live slot: GUI_VP_INVALID / out-of-range map to the
    primary, and so does a slot whose surface has been torn down -- the same fallback a window
    record gets in window_begin_ex.  Record-less callers (pane_begin, region_begin) have nowhere
