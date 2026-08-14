@@ -27,21 +27,17 @@ text_emit( u32 col, const char* str )
 {
     f32 tw = font_text_w( str );
 
-    /* The VISIBLE width at the pen, queried before cell_next_w below reserves the cell -- not
-       r.w: a STACK cell's width is f->content_w (gui_layout_core.c), which is the max of the
-       view width and LAST FRAME's measured content, so once a long run has overflowed once, the
-       cell latches to its width and stays there (that is what lets the region grow a horizontal
-       scrollbar).  Comparing against r.w after that point never overflows again -- tw and r.w
-       are the same number -- so the ellipsize path this comment used to describe never fires,
-       and a NO_CLIP child lets the run spill past its edge with nothing to catch it.  view_avail
-       is the same fix combo_begin / plot / text_edit_multi already use to keep an opaque box
-       inside the visible track instead of the content-tracking cell.
+    /* The visible width at the pen, queried before cell_next_w below reserves the cell.  A STACK
+       cell's own width (r.w, once reserved) can run wider than what is actually on screen -- it
+       tracks the region's scrollable content extent, not the view -- so the overflow test below
+       reads view_avail instead: the same query combo_begin / plot / text_edit_multi use to keep
+       an opaque box inside the visible track rather than the content-tracking cell.
 
-       pad.r is added back rather than left in place: view_avail reserves it as the region's
-       normal right-hand margin, the gap a sibling widget's cell would otherwise butt up against.
-       A run that has already overflowed has no sibling to keep clear of -- it is being cut either
-       way -- so the margin buys nothing but a few characters truncated one pad-width earlier than
-       the true edge requires. */
+       pad.r is added back in: view_avail reserves it as the region's normal right-hand margin,
+       the gap a sibling widget's cell would otherwise butt up against.  A run that overflows has
+       no sibling to keep clear of -- it is being cut either way -- so the full width up to the
+       true edge is available to it. */
+
     f32 avail_w = gui_view_avail().x + lf()->pad.r;
 
     gui_rect_t r = cell_next_w( tw, font_char_h() );   /* natural width feeds same_line */
