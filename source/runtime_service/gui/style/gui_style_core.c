@@ -13,7 +13,7 @@
 
         Next   -- next_style_color / _var override a slot for just the next item, consumed at the
                   per-item resolve seam (no pop), exactly like next_item_flag.
-
+    
     The seam is shared with the item-flag system (item_flags_resolve calls style_item_commit; 
     the chrome reset calls style_chrome_reset), so colors / vars and flags all latch on the 
     same once-per-widget boundary -- see the impure wrappers in stock/gui_adornment.c.
@@ -35,13 +35,13 @@
     field by slot.  The static assert below is what makes the two views one thing.  Four runs
     inside the struct, all equal citizens -- that equality is the whole point of the schema:
 
-        palette                 -- the AUTHORED colour: eleven seeds and a six-number ramp
-        col [ role ][ phase ]  -- the 12x4 grid DERIVED from it, THE color vocabulary
-        face[ role ][ phase ]  -- the same grid again, as brush HANDLES: art that replaces
-                                   the flat fill for a cell (0 = none, the default)
-        var    [ gui_style_var_t ]  -- every scalar the style has, metrics and skin alike
-        scales [ gui_scale_t ]      -- the density ramp scale_push reads
-
+        palette                     -- The AUTHORED colour: eleven seeds and a six-number ramp
+        col [ role ][ phase ]       -- The 12x4 grid DERIVED from it, THE color vocabulary
+        face[ role ][ phase ]       -- The same grid again, as brush HANDLES: art that replaces
+                                       the flat fill for a cell (0 = none, the default)
+        var    [ gui_style_var_t ]  -- Every scalar the style has, metrics and skin alike
+        scales [ gui_scale_t ]      -- The density ramp scale_push reads
+    
     An earlier design split these across three blocks with different instance counts, so a style
     set owned the colors and three metrics while chrome kept the rest.  That asymmetry is what
     made a kit's style a subset of chrome's instead of a peer.  Now a set owns the whole struct:
