@@ -35,8 +35,14 @@ text_emit( u32 col, const char* str )
        are the same number -- so the ellipsize path this comment used to describe never fires,
        and a NO_CLIP child lets the run spill past its edge with nothing to catch it.  view_avail
        is the same fix combo_begin / plot / text_edit_multi already use to keep an opaque box
-       inside the visible track instead of the content-tracking cell. */
-    f32 avail_w = gui_view_avail().x;
+       inside the visible track instead of the content-tracking cell.
+
+       pad.r is added back rather than left in place: view_avail reserves it as the region's
+       normal right-hand margin, the gap a sibling widget's cell would otherwise butt up against.
+       A run that has already overflowed has no sibling to keep clear of -- it is being cut either
+       way -- so the margin buys nothing but a few characters truncated one pad-width earlier than
+       the true edge requires. */
+    f32 avail_w = gui_view_avail().x + lf()->pad.r;
 
     gui_rect_t r = cell_next_w( tw, font_char_h() );   /* natural width feeds same_line */
 
@@ -46,9 +52,9 @@ text_emit( u32 col, const char* str )
     gui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->mod.align );
 
     /* When the run fits the visible track, draw at the aligned position.  When it overflows,
-       ellipsize to the visible edge so the widget self-fits regardless of whether a clip rect is
-       active (GUI_WIN_NO_CLIP children have no scissor, so the scissor is never the clipping
-       mechanism here). */
+       ellipsize to the true view edge (not the padded track) so the widget self-fits regardless
+       of whether a clip rect is active (GUI_WIN_NO_CLIP children have no scissor, so the scissor
+       is never the clipping mechanism here). */
 
     bool fits = tw <= avail_w;
     f32  x    = fits ? tr.x : r.x;

@@ -113,7 +113,7 @@ show_demo_window(bool* p_open)
 
     // Exceptionally add an extra assert here for people confused about initial Dear ImGui setup
     // Most functions would return false if the window is collapsed or entirely clipped.
-    gui_win_flags_t window_flags = 0;
+    gui_win_flags_t window_flags = GUI_WIN_NOSCROLL;
     
     window_flags |= GUI_WIN_CAN_AUTOSIZE;  // Add a menu bar to the window
     
@@ -133,7 +133,8 @@ show_demo_window(bool* p_open)
         gui()->slider_float("float", &f, 0.0f, 1.0f);
         gui()->separator_text("Inline color editor");
         gui()->text("Color widget:");
-        gui()->stack_same_line(0.0f); gui()->help_marker("Click on the color square to open a color picker.\nCtrl+Click on individual component to input value.\n");
+        gui()->stack_same_line(0.0f); 
+        gui()->help_marker("Click on the color square to open a color picker.\nCtrl+Click on individual component to input value.\n");
         static f32 color[4] = { 0.4f, 0.7f, 0.0f, 1.0f };
         gui()->color_edit3("MyColor##1", color, GUI_COLOR_EDIT_NONE);
 

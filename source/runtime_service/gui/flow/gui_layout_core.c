@@ -738,7 +738,16 @@ layout_seed_content( layout_frame_t* f, gui_pad_t pad )
        phantom scroll fragment with nothing to scroll to. */
 
     f->pad           = pad;   /* kept: the pads join the measured canvas at pop */
-    f->origin_x      = f->outer.x + pad.l;
+
+    /* origin_x from f->view.x, not f->outer.x: view.x already sits one WIN_BORDER in from outer
+       (layout_push_region), while view.w already has BOTH borders taken out.  Seeding from outer
+       here left content_w (below, view-relative) and origin_x (outer-relative) in two different
+       reference frames -- their difference is exactly one WIN_BORDER, so every measured right edge
+       (the STACK track, view_avail, an ellipsized text run's clip bound) landed a border-width
+       short of the true visible edge.  origin_y needs no such fix: layout_push_region never offsets
+       view.y off outer.y (only the width loses two borders, the height loses one at the bottom),
+       so the two already agree vertically. */
+    f->origin_x      = f->view.x + pad.l;
     f->origin_y      = f->outer.y + pad.t;
     f->content_x     = canv_from_scr_x( f, f->origin_x );   /* the bias enters the frame here */
     f->pen_y         = canv_from_scr_y( f, f->origin_y );   /*   ... and only here            */
