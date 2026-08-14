@@ -26,6 +26,18 @@ static void
 text_emit( u32 col, const char* str )
 {
     f32 tw = font_text_w( str );
+
+    /* The VISIBLE width at the pen, queried before cell_next_w below reserves the cell -- not
+       r.w: a STACK cell's width is f->content_w (gui_layout_core.c), which is the max of the
+       view width and LAST FRAME's measured content, so once a long run has overflowed once, the
+       cell latches to its width and stays there (that is what lets the region grow a horizontal
+       scrollbar).  Comparing against r.w after that point never overflows again -- tw and r.w
+       are the same number -- so the ellipsize path this comment used to describe never fires,
+       and a NO_CLIP child lets the run spill past its edge with nothing to catch it.  view_avail
+       is the same fix combo_begin / plot / text_edit_multi already use to keep an opaque box
+       inside the visible track instead of the content-tracking cell. */
+    f32 avail_w = gui_view_avail().x;
+
     gui_rect_t r = cell_next_w( tw, font_char_h() );   /* natural width feeds same_line */
 
     /* Place the run inside its cell per the region's content alignment (default LEFT | TOP, the
@@ -33,16 +45,18 @@ text_emit( u32 col, const char* str )
 
     gui_rect_t tr = rect_align( r, tw, font_char_h(), lf()->mod.align );
 
-    /* When the run fits its cell, draw at the aligned position.  When it overflows, ellipsize to the
-       cell width so the widget self-fits regardless of whether a clip rect is active (GUI_WIN_NO_CLIP
-       children have no scissor, so the scissor is never the clipping mechanism here). */
+    /* When the run fits the visible track, draw at the aligned position.  When it overflows,
+       ellipsize to the visible edge so the widget self-fits regardless of whether a clip rect is
+       active (GUI_WIN_NO_CLIP children have no scissor, so the scissor is never the clipping
+       mechanism here). */
 
-    f32 x = ( tw <= r.w ) ? tr.x : r.x;
-    if ( tw <= r.w )
+    bool fits = tw <= avail_w;
+    f32  x    = fits ? tr.x : r.x;
+    if ( fits )
         draw_push_text( tr.x, tr.y, col, str );
     else
     {
-        draw_set_text_clip_x( r.x, r.x + r.w );
+        draw_set_text_clip_x( r.x, r.x + avail_w );
         draw_push_text( r.x, tr.y, col, str );
         draw_clear_text_clip();
     }
