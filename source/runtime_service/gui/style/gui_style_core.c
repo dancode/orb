@@ -765,7 +765,7 @@ static const char* const k_phase_name[ GUI_PHASE_COUNT ] =
     [ GUI_PHASE_IDLE   ] = "Idle",
     [ GUI_PHASE_HOT    ] = "Hot",
     [ GUI_PHASE_ACTIVE ] = "Active",
-    [ GUI_PHASE_DIM    ] = "Dim",
+    [ GUI_PHASE_INERT  ] = "Inert",
 };
 
 /* The var axis is described once, in gui_theme.c's k_var table (name + class together), because
@@ -1081,8 +1081,8 @@ style_is_hot( gui_item_state_t st )
 /* Interact state -> style PHASE: the three-way rule every projection here and every render above
    picks a face with.  This is the whole body of the PUBLIC gui_item_phase (stock/), which now
    delegates down to it -- authored here because style is the lowest unit that needs the rule, and
-   a rule with two homes is a rule that drifts.  (GUI_PHASE_DIM is the inert / disabled variant --
-   a render selects it deliberately, never from live interaction.) */
+   a rule with two homes is a rule that drifts.  (GUI_PHASE_INERT is never derived from live
+   interaction -- a render selects it deliberately, and it never means "disabled".) */
 u8
 style_phase( gui_item_state_t st )
 {
@@ -1200,8 +1200,8 @@ col_tab_ink( gui_item_state_t st, bool current )
    it rides BG and the value fill beside it rides ACCENT, so a knob on either row matches one of
    them exactly in some phase (on BG it vanishes into the hovered track; on ACCENT into the fill).
    GRAB is authored per theme as the contrast anchor, opposite in polarity to the theme, which is
-   what keeps the knob readable against both at once.  There is no DIM step here: a phase is
-   selected from live interaction, and DIM is the deliberate inert face a render picks itself. */
+   what keeps the knob readable against both at once.  There is no INERT step here: a phase is
+   selected from live interaction, and INERT is the deliberate inert face a render picks itself. */
 u32 col_grab( gui_item_state_t st )
 {
     return style_col( GUI_ROLE_GRAB, style_phase( st ) );

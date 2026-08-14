@@ -105,7 +105,7 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
        colour, so hovering painted the EMPTY remainder the same blue as the filled part and every
        slider read as 100% full.  The knob does NOT ride this row (see col_grab below) -- if it
        did it would match the hovered track exactly and vanish into it. */
-    draw_face_field_mix( track_r, mix, GUI_ROLE_ACCENT, GUI_PHASE_DIM, 0u, 0.0f );
+    draw_face_field_mix( track_r, mix, GUI_ROLE_ACCENT, GUI_PHASE_INERT, 0u, 0.0f );
     /* Captured for keyboard value edit (st.focused -- see nav_item_register) gets the same border
        lift text/numeric fields use on focus, so going from nav highlight to Left/Right-adjust reads
        as a real state change instead of an invisible one. */
@@ -429,7 +429,7 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
              && value_step_i32( v, st.nav_adjust, (i32)( v_speed + 0.5f ), v_min, v_max ) )
             changed = true;
 
-        u32 bg = col_frame_bg_mix( style_mix( id, st, false ), COL_ACCENT_DIM );
+        u32 bg = col_frame_bg_mix( style_mix( id, st, false ), COL_ACCENT_INERT );
         draw_fill( box_r, bg );
         draw_outline( box_r, WIN_BORDER, col_field_border( st ) );
     }
@@ -536,7 +536,7 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
         if ( st.nav_adjust != 0 && value_step_f32( v, st.nav_adjust, v_speed, fmt, v_min, v_max ) )
             changed = true;
 
-        u32 bg = col_frame_bg_mix( style_mix( id, st, false ), COL_ACCENT_DIM );
+        u32 bg = col_frame_bg_mix( style_mix( id, st, false ), COL_ACCENT_INERT );
         draw_fill( box_r, bg );
         draw_outline( box_r, WIN_BORDER, col_field_border( st ) );
     }

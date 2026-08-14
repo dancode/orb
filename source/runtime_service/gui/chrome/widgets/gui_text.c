@@ -72,10 +72,12 @@ text_emit( u32 col, const char* str )
 void gui_text( const char* str ) { text_emit( COL_TEXT_PRIMARY_IDLE, str ); }
 
 /* text_colored -- a text run in an explicit colour (GUI_COLOR abgr), the ImGui TextColored
-   analogue.  text_disabled is the shorthand for the DISABLED-state ink (COL_TEXT_PRIMARY_DIM);
-   a permanently quieter label that is still enabled wants COL_TEXT_SECONDARY_IDLE instead. */
-void gui_text_colored ( u32 abgr, const char* str ) { text_emit( abgr,                str ); }
-void gui_text_disabled( const char* str )           { text_emit( COL_TEXT_PRIMARY_DIM, str ); }
+   analogue.  text_disabled is the shorthand for a caller-chosen "looks disabled" ink
+   (COL_TEXT_PRIMARY_INERT) -- it does not read or require GUI_ITEM_DISABLED, so it is on the
+   caller to use it where that reads true.  A permanently quieter label that is still enabled
+   wants COL_TEXT_SECONDARY_IDLE instead. */
+void gui_text_colored ( u32 abgr, const char* str ) { text_emit( abgr,                  str ); }
+void gui_text_disabled( const char* str )           { text_emit( COL_TEXT_PRIMARY_INERT, str ); }
 
 /*==============================================================================================
     text_wrapped -- a text run word-wrapped to the region's content width (the ImGui TextWrapped
@@ -264,7 +266,7 @@ gui_progress_bar( f32 fraction, const char* overlay )
 
     /* Track, then the fill bar up to the fraction, then the border on top so the fill stays inside.
        Solid fill by default; a top-to-bottom gradient gloss when GUI_VAR_PROGRESS_SHAPE selects it. */
-    draw_fill( r, COL_ACCENT_DIM );
+    draw_fill( r, COL_ACCENT_INERT );
     f32 fw = fraction * r.w;
     if ( fw > 0.0f )
     {

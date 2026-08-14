@@ -113,7 +113,7 @@ tier_surface( void )
         [ GUI_PHASE_IDLE   ] = GUI_COLOR( 0x30, 0x32, 0x38, 0xFF ),
         [ GUI_PHASE_HOT    ] = GUI_COLOR( 0x40, 0x40, 0x48, 0xFF ),
         [ GUI_PHASE_ACTIVE ] = GUI_COLOR( 0x50, 0x38, 0x18, 0xFF ),
-        [ GUI_PHASE_DIM    ] = GUI_COLOR( 0x28, 0x28, 0x2C, 0xFF ),
+        [ GUI_PHASE_INERT  ] = GUI_COLOR( 0x28, 0x28, 0x2C, 0xFF ),
     };
     gui()->draw_frame( box, FACE[ gui()->item_phase( st ) ], s_on ? AMBER : PANEL_LN, 1.0f );
     gui()->draw_text_in( box, GUI_ALIGN_CENTER, INK, s_on ? "ON  -- click me" : "OFF -- click me" );

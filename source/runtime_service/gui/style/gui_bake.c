@@ -38,6 +38,12 @@
 #define BAKE_WHITE 0x00FFFFFFu   /* rgb only -- alpha comes from the blend's first argument */
 #define BAKE_BLACK 0x00000000u
 
+/* A cell nothing in the current widget set reads (confirmed by a full call-site audit,
+   2026-08-14).  The grid stays uniform -- every role keeps all four phases, so a theme author
+   never hits a hole -- but a dead cell bakes to this instead of a plausible colour, so a future
+   accidental read is an obvious visual bug (loud magenta) rather than a quiet wrong guess. */
+#define BAKE_UNUSED GUI_COLOR( 0xFF, 0x00, 0xFF, 0xFF )
+
 /*==============================================================================================
     This function answers one question: "How bright does this colour appear to a human eye?"
     It takes a packed 32-bit colour (0xBBGGRR) and returns a single 0�255 brightness number.   
@@ -314,119 +320,108 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
 
     /* PANEL -- the window body.  A fifth of the hover and no lift at all: background should tint,
        not move.  Pressed is the full wash, sunk half a step so a held surface reads as pressed
-       rather than merely coloured.  DIM is the inert reading (gui_stock_panel's framed backdrop),
-       not a recess -- a nested child region has its own role below. */
+       rather than merely coloured.  INERT is the permanently non-interactive reading
+       (gui_stock_panel's framed backdrop, an empty dock-leaf placeholder), not a recess -- a
+       nested child region has its own role below. */
 
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.25f, accent );
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( ground, press, accent ), step * 0.50f );
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = bake_recess( ground, recess );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_INERT  ] = bake_recess( ground, recess );
 
     /* PANEL_CHILD -- a nested container: scroll region, embedded child panel.  Same shape as
        PANEL, seeded from a recessed ground instead of the bare one, so a child reads sunk into
-       its parent AT REST and still carries its own hover/press feedback on top.  DIM recesses
-       once further, for a disabled child inside a disabled control. */
+       its parent AT REST and still carries its own hover/press feedback on top.  INERT recesses
+       once further -- no caller reaches for it yet, but it exists for symmetry with PANEL's own
+       INERT cell rather than leaving the fourth phase a hole. */
 
     const u32 child_ground = bake_recess( ground, recess );
 
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_IDLE   ] = child_ground;
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_HOT    ] = bake_wash( child_ground, hover * 0.25f, accent );
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( child_ground, press, accent ), step * 0.50f );
-    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_DIM    ] = bake_recess( child_ground, recess );
+    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_INERT  ] = bake_recess( child_ground, recess );
 
     /* TITLE -- a caption band is a LIFTED ground, which is why it needs no seed of its own.
-       ACTIVE is the bare ground: a live tab IS its panel, merging into the body it owns. */
+       ACTIVE is the bare ground: a live tab IS its panel, merging into the body it owns.  INERT
+       is read only for a maximized window's titlebar (gui_window_end.c). */
 
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = band;
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( ground, hover, accent ), step, pole );
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_ACTIVE ] = ground;
-    col[ GUI_ROLE_TITLE ][ GUI_PHASE_DIM    ] = bake_fade( band, fade, ground );
+    col[ GUI_ROLE_TITLE ][ GUI_PHASE_INERT  ] = bake_fade( band, fade, ground );
 
     /* BG -- the control face.  Hot comes forward, active sinks back: that pair IS the pressed
-       read, and it is the one place the two direction verbs are deliberately opposed. */
+       read, and it is the one place the two direction verbs are deliberately opposed.  INERT is
+       read only by gui_plot's own backdrop -- a plot has no id, so it never lifts. */
 
     col[ GUI_ROLE_BG ][ GUI_PHASE_IDLE   ] = control;
     col[ GUI_ROLE_BG ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( control, hover, accent ), step, pole );
     col[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( control, press, accent ), step );
-    col[ GUI_ROLE_BG ][ GUI_PHASE_DIM    ] = bake_recess( control, recess );
+    col[ GUI_ROLE_BG ][ GUI_PHASE_INERT  ] = bake_recess( control, recess );
 
     /* BORDER -- structural at rest, pure signal when live.  ACTIVE takes a second lift step so
        the focus ring reads brighter than a hovered edge -- the border carries focus, so the two
-       cells must stay visibly distinct, the same HOT -> ACTIVE spacing the ACCENT row keeps. */
+       cells must stay visibly distinct, the same HOT -> ACTIVE spacing the ACCENT row keeps.
+       INERT frames the same permanently non-interactive surfaces PANEL's INERT cell does. */
 
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_IDLE   ] = line;
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_HOT    ] = bake_lift( accent, step,        pole );
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step * 2.0f, pole );
-    col[ GUI_ROLE_BORDER ][ GUI_PHASE_DIM    ] = bake_fade( line, fade, ground );
+    col[ GUI_ROLE_BORDER ][ GUI_PHASE_INERT  ] = bake_fade( line, fade, ground );
 
     /* TEXT_PRIMARY -- ink does not react BY CHOICE: IDLE/HOT/ACTIVE all start from the one ink,
-       because text on a hot face is the same ink and it is the FACE that moved.  Each is then
-       guarded against the face it will actually sit on (bake_ink_on), which is the only thing
-       that can make them differ -- and only by as much as legibility demands.  Written after BG
-       deliberately: the guard reads the very cells above.
-
-       HOT and ACTIVE guard against BG, not PANEL or TITLE, because BG is the face that travels
-       furthest -- it takes the full wash plus a lift or a sink, where a container takes a fifth
-       of the wash.  Clear BG and the quieter surfaces are clear by construction.
-
-       DIM is the disabled cell, like every other role's DIM -- not a "secondary" reading, that
-       is TEXT_SECONDARY's job below.  It still has a floor of its own, and a lower one than the
-       enabled cells: a disabled label is MEANT to recede, so holding it to the body-text
-       separation would defeat the fade that makes it read as disabled.  It is still a floor --
-       receding is not the same as disappearing. */
+       because text on a hot face is the same ink and it is the FACE that moved.  In practice
+       nothing ever reads the HOT/ACTIVE cells -- every real "ink on a live face" site (button
+       glyphs, tab ink) swaps to TEXT_SECONDARY's IDLE cell instead of asking this role for a
+       different phase, so they bake to BAKE_UNUSED rather than a plausible-looking guard nobody
+       exercises.  INERT is real: it is gui_text_disabled's hand-picked ink, a caller convention
+       with no tie to GUI_ITEM_DISABLED (see GUI_STYLE -- PHASE in gui.h). */
 
     col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_IDLE   ] = bake_ink_on( ink, ground, BAKE_INK_DELTA );
-    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_HOT    ] = bake_ink_on( ink, col[ GUI_ROLE_BG ][ GUI_PHASE_HOT ],
-                                                                    BAKE_INK_DELTA );
-    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_ACTIVE ] = bake_ink_on( ink, col[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ],
-                                                                    BAKE_INK_DELTA );
-    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_DIM    ] = bake_ink_on( bake_fade( ink, fade, ground ), ground,
+    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_HOT    ] = BAKE_UNUSED;
+    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_ACTIVE ] = BAKE_UNUSED;
+    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_INERT  ] = bake_ink_on( bake_fade( ink, fade, ground ), ground,
                                                                     BAKE_DIM_DELTA );
 
     /* TEXT_SECONDARY -- a permanently quieter ink, not a reaction to interaction: hints,
-       captions, shortcuts, inactive labels.  IDLE is the same faded-and-guarded formula
-       TEXT_PRIMARY's DIM carries above -- the "secondary" look this role now owns outright.
-       HOT/ACTIVE stay the same ink, guarded against BG, for the identical reason PRIMARY's do: a
-       secondary label can still sit on a hot or pressed face.  DIM fades once further, for a
-       secondary label inside a disabled control (a hint in a disabled field), at the same floor
-       -- receding further is the point, not a bug to guard away. */
+       captions, shortcuts, inactive labels.  Only IDLE is ever read (input hints, non-current tab
+       ink) -- nothing sits secondary text on a hot or pressed face today, and nothing asks for a
+       doubly-quiet secondary ink either, so HOT/ACTIVE/INERT all bake to BAKE_UNUSED. */
 
-    const u32 sec_idle = bake_ink_on( bake_fade( ink, fade, ground ), ground, BAKE_DIM_DELTA );
-    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_IDLE   ] = sec_idle;
-    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_HOT    ] = bake_ink_on( sec_idle, col[ GUI_ROLE_BG ][ GUI_PHASE_HOT ],
+    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_IDLE   ] = bake_ink_on( bake_fade( ink, fade, ground ), ground,
                                                                       BAKE_DIM_DELTA );
-    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_ACTIVE ] = bake_ink_on( sec_idle, col[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ],
-                                                                      BAKE_DIM_DELTA );
-    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_DIM    ] = bake_fade( sec_idle, fade + ( 1.0f - fade ) * 0.50f,
-                                                                    ground );
+    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_HOT    ] = BAKE_UNUSED;
+    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_ACTIVE ] = BAKE_UNUSED;
+    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_INERT  ] = BAKE_UNUSED;
 
     /* ACCENT -- the value a control holds: a straight three-cell lift (IDLE, +step, +2*step).
-       DIM is the EMPTY track, so it comes off the CONTROL face, not the accent -- an empty
+       INERT is the EMPTY track, so it comes off the CONTROL face, not the accent -- an empty
        slider well is a well, not a faded fill. */
 
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_IDLE   ] = accent;
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_HOT    ] = bake_lift( accent, step,        pole );
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step * 2.0f, pole );
-    col[ GUI_ROLE_ACCENT ][ GUI_PHASE_DIM    ] = bake_recess( control, recess );
+    col[ GUI_ROLE_ACCENT ][ GUI_PHASE_INERT  ] = bake_recess( control, recess );
 
     /* MARK -- the indicator a control shows.  IDLE and ACTIVE are the same colour: a check does
        not change colour when pressed.  HOT is the nav ring, which is accent business, not the
-       mark's. */
+       mark's.  Nothing ever asks for an inert mark -- a disabled checkbox's tick just gets the
+       ambient DISABLED_ALPHA dim, not a separate cell -- so INERT bakes to BAKE_UNUSED. */
     col[ GUI_ROLE_MARK ][ GUI_PHASE_IDLE   ] = mark;
     col[ GUI_ROLE_MARK ][ GUI_PHASE_HOT    ] = bake_lift( accent, step, pole );
     col[ GUI_ROLE_MARK ][ GUI_PHASE_ACTIVE ] = mark;
-    col[ GUI_ROLE_MARK ][ GUI_PHASE_DIM    ] = bake_fade( bake_mute( mark, 0.80f ), fade, ground );
+    col[ GUI_ROLE_MARK ][ GUI_PHASE_INERT  ] = BAKE_UNUSED;
 
     /* GRAB -- the contrast anchor, authored opposite the theme's polarity and lifted furthest of
        any role, since a knob must stay legible against both a hovering track and a filled bar.
-       Its DIM fades further too: the anchor sits as far from the ground as the palette goes, so
-       an ordinary fade would still leave an inert knob shouting. */
+       There is no live INERT reader (a knob is always part of a live control), so it bakes to
+       BAKE_UNUSED rather than a colour nothing shows. */
 
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_IDLE   ] = grab;
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_HOT    ] = bake_lift( grab, step * 3.0f, pole );
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_ACTIVE ] = bake_lift( grab, step * 6.0f, pole );
-    col[ GUI_ROLE_GRAB ][ GUI_PHASE_DIM    ] = bake_fade( grab, fade + ( 1.0f - fade ) * 0.40f,
-                                                          ground );
+    col[ GUI_ROLE_GRAB ][ GUI_PHASE_INERT  ] = BAKE_UNUSED;
 }
 /*==============================================================================================
 

@@ -47,8 +47,8 @@
 /* gui_item_phase -- interact state -> style phase, the one mapping EVERY render needs.
    Published because a user widget is the stock render's sibling: both pick a face from the same
    three-way rule, so neither should re-derive it.  nav counts as HOT so a keyboard-navigated
-   widget lights up exactly like a hovered one.  (GUI_PHASE_DIM is the inert / disabled variant --
-   a render selects it deliberately, never from live interaction.)
+   widget lights up exactly like a hovered one.  (GUI_PHASE_INERT is never derived from live
+   interaction -- a render selects it deliberately, and it never means "disabled".)
 
    This is the PUBLIC DOOR onto style_phase, not a second copy of the rule: the style unit's own
    projections resolve through the same function one tier down, so the face a user widget picks
@@ -112,7 +112,7 @@ stock_visible_text( const char* label, char* buf, u32 bufsz )
 void
 gui_stock_panel( gui_rect_t r )
 {
-    draw_face_frame( r, GUI_ROLE_PANEL, GUI_PHASE_DIM, STYLE_COL( BORDER, DIM ), WIN_BORDER );
+    draw_face_frame( r, GUI_ROLE_PANEL, GUI_PHASE_INERT, STYLE_COL( BORDER, INERT ), WIN_BORDER );
 }
 
 /* A text run seated in r per align.  The one-role render; a colored variant is just
@@ -206,8 +206,8 @@ gui_stock_slider( gui_rect_t r, const char* id_str, f32* v, f32 lo, f32 hi )
     gui_style_mix_t mix = style_mix( item_id( id_str ), s.state, false );
 
     gui_rect_t track = gui_rect_align( r, r.w, r.h * 0.30f, GUI_ALIGN_CENTER );
-    draw_face_field_mix( track, mix, GUI_ROLE_ACCENT, GUI_PHASE_DIM,
-                         STYLE_COL( BORDER, DIM ), 1.0f );
+    draw_face_field_mix( track, mix, GUI_ROLE_ACCENT, GUI_PHASE_INERT,
+                         STYLE_COL( BORDER, INERT ), 1.0f );
     gui_rect_t fill = gui_rect_pad( track, 1.0f );
     fill.w *= s.frac;
     if ( fill.w > 0.0f )
@@ -227,7 +227,7 @@ gui_stock_meter( gui_rect_t r, f32 frac, u32 fill_abgr )
 {
     frac = ( frac < 0.0f ) ? 0.0f : ( frac > 1.0f ) ? 1.0f : frac;
 
-    draw_face_frame( r, GUI_ROLE_ACCENT, GUI_PHASE_DIM, STYLE_COL( BORDER, DIM ), 1.0f );
+    draw_face_frame( r, GUI_ROLE_ACCENT, GUI_PHASE_INERT, STYLE_COL( BORDER, INERT ), 1.0f );
     gui_rect_t fill = gui_rect_pad( r, 1.0f );
     fill.w *= frac;
     if ( fill.w > 0.0f )

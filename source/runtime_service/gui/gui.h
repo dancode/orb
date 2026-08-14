@@ -277,10 +277,10 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
    ACCENT vs MARK is the same split one level down: two roles instead of one, because a role's
    four cells only make sense as a ramp if all four describe the SAME surface at different
    interaction depths.  A role whose phase slots each hold a different concern -- a value fill at
-   IDLE, a nav ring at HOT, a check mark at ACTIVE, an empty track at DIM -- is a token table
+   IDLE, a nav ring at HOT, a check mark at ACTIVE, an empty track at INERT -- is a token table
    wearing a ramp's clothing: nothing keeps its ACTIVE cell related in hue to its IDLE cell, the
    one generic accessor the grid offers (style_col( role, item_phase( st ) )) can resolve to the
-   wrong colour for what a widget means (a slider that reasons "lift WITHIN the role, DIM at rest"
+   wrong colour for what a widget means (a slider that reasons "lift WITHIN the role, INERT at rest"
    lands on the value-fill token, so a hovered slider paints its EMPTY half the filled colour),
    and push_style_color( role, PHASE_ALL ) has nothing coherent to recolor.  Split, both rows are
    honest ramps: ACCENT is the value a control HOLDS (empty track / fill / engaged / dragged) and
@@ -299,21 +299,25 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 
    TEXT_PRIMARY vs TEXT_SECONDARY is the same "a ramp must describe one surface" rule ACCENT/MARK
    was split for.  A single TEXT role cannot honestly hold both "the body ink, unreactive across
-   IDLE/HOT/ACTIVE, DIM when the item is disabled" and "a permanently quieter ink for hints,
-   captions and inactive labels" -- those are two different surfaces that happen to both be text,
-   and folding them into one role's DIM cell means DIM has no single meaning: sometimes disabled,
-   sometimes just quiet.  Split, PRIMARY's DIM is unambiguously "disabled" like every other role's
-   DIM, and SECONDARY is its own honest (if equally unreactive) ramp for the muted case.
+   IDLE/HOT/ACTIVE, with a caller-chosen quieter ink for the rare disabled READING (gui_text_
+   disabled -- not the automatic GUI_ITEM_DISABLED dim, see the INERT section below)" and "a
+   permanently quieter ink for hints, captions and inactive labels" -- those are two different
+   surfaces that happen to both be text.  Split, PRIMARY's INERT cell stays that one hand-picked
+   disabled-text ink, and SECONDARY is its own honest (if equally unreactive) ramp for the muted
+   case -- SECONDARY never actually reads its own INERT cell (nothing asks for a doubly-quiet
+   secondary ink today), which is fine: see UNUSED cells, below.
 
    PANEL vs PANEL_CHILD is the same "a ramp must describe one surface" rule ACCENT/MARK and
    TEXT_PRIMARY/SECONDARY were split for.  A window body and a nested scroll region both sit on
-   PANEL's plane, but they are not one surface: the window body is flush with the page and reads
-   disabled when DIM, while a child region is recessed AT REST and still needs its own HOT/ACTIVE
-   for a hovered or dragged (resize) child to read back to the user.  Folding "recessed" into
-   PANEL's DIM cell, as a single early build did, cost every child region its hover and press
-   feedback -- DIM is one cell, not a phase, so a recessed panel could never also show as hot.
-   Split, PANEL's DIM goes back to meaning "disabled" like every other role's DIM, and
-   PANEL_CHILD carries its own full IDLE/HOT/ACTIVE/DIM ramp, seeded from a recessed ground.
+   PANEL's plane, but they are not one surface: the window body is flush with the page, while a
+   child region is recessed AT REST and still needs its own HOT/ACTIVE for a hovered or dragged
+   (resize) child to read back to the user.  Folding "recessed" into PANEL's INERT cell, as a
+   single early build did, cost every child region its hover and press feedback -- INERT is one
+   cell, not a phase, so a recessed panel could never also show as hot.  Split, PANEL's INERT cell
+   goes back to being the one thing every other role's INERT cell already was -- a permanently
+   non-interactive surface's look (gui_stock_panel's decorative backdrop, an empty dock-leaf
+   placeholder) -- and PANEL_CHILD carries its own full IDLE/HOT/ACTIVE/INERT ramp, seeded from a
+   recessed ground.
 
    There is no STATUS row here.  INFO / OK / WARN / ERROR used to be four roles wearing the same
    ramp shape as everything above, but a severity signal is not a surface a widget hovers or
@@ -330,7 +334,7 @@ typedef enum
     GUI_ROLE_TITLE,           // caption band over a container: title bar, tab, menu bar, table header
     GUI_ROLE_BG,              // control surface: button face, input field, check box, cycle end caps
     GUI_ROLE_BORDER,          // frame line, focus ring, resize edge
-    GUI_ROLE_TEXT_PRIMARY,    // glyphs, caret -- the body ink; DIM is disabled, not muted
+    GUI_ROLE_TEXT_PRIMARY,    // glyphs, caret -- the body ink; INERT is gui_text_disabled's ink, not muted
     GUI_ROLE_TEXT_SECONDARY,  // a permanently quieter ink: hints, captions, shortcuts, inactive labels
     GUI_ROLE_ACCENT,          // the value a control HOLDS: slider / progress fill, empty track
     GUI_ROLE_MARK,            // the indicator a control SHOWS: check, radio dot, nav ring
@@ -344,26 +348,49 @@ typedef enum
    not a state, because gui_item_state_t is the interact server's flag set and GUI_STATE_* is the
    retained per-id pool: a phase is what item_phase() DISTILLS a state into for the style.
 
-   The same four steps mean the analogous thing for every role, which is what lets one 10x4 grid
-   replace a flat palette plus its per-widget token residue:
+   The same three interaction steps mean the analogous thing for every role -- INERT, the fourth
+   column, does not: it is a genuinely different reading per role, confirmed by auditing every
+   real call site in the widget set (2026-08-14), not a uniform fourth interaction step:
 
-     role     IDLE              HOT                  ACTIVE                 DIM
+     role     IDLE              HOT                  ACTIVE                 INERT
      -------  ----------------  -------------------  ---------------------  ------------------
      PANEL    window body       hovered surface      pressed surface        inert backdrop
-     CHILD    recessed surface  hovered child         pressed child         inert child
+     CHILD    recessed surface  hovered child         pressed child          inert child
      TITLE    bar, inactive tab hovered tab          focused bar, live tab  de-emphasized bar
-     BG       control face      hovered face         pressed / focused      inert face
+     BG       control face      hovered face         pressed / focused      plot backdrop
      BORDER   frame line        hovered / resize     focused window ring    subdued frame
-     TEXT     body text, caret  text on a hot face   text on a pressed one  secondary text
+     TEXT_PRI body text, caret  unused                unused                 disabled-text ink
+     TEXT_SEC secondary text    unused                unused                 unused
      ACCENT   value fill        engaged fill         dragged fill           empty track
-     MARK     check, radio dot  nav ring             captured-nav ring      inert mark
-     GRAB     knob / thumb      hovered knob         dragged knob           inert knob
+     MARK     check, radio dot  nav ring             captured-nav ring      unused
+     GRAB     knob / thumb      hovered knob         dragged knob           unused
+
      status   the signal        hovered signal       pressed signal         the FIELD (banner)
 
-   DIM doubles as the inert variant throughout: an inert framed backdrop is PANEL[DIM], a
-   disabled child region is CHILD[DIM], an empty value track is ACCENT[DIM], secondary text is
-   TEXT[DIM] -- and, for the status roles only, the banner tint behind a message rather than a
-   quieter ink (see gui_style_role_t).
+   INERT is at least three unrelated ideas wearing one column, and no single word covers all of
+   them honestly -- "inert" is the least wrong:
+
+     - an empty VALUE: ACCENT's track has nothing in it yet (progress bar, scrollbar, slider
+       groove before a drag engages it and the fill lifts to a different role, BG)
+     - a permanently NON-INTERACTIVE surface: PANEL's decorative backdrop (gui_stock_panel), an
+       empty dock-leaf placeholder, BORDER's matching frame around either, and a plot's own
+       backdrop (BG) -- these never react to the mouse because nothing behind them is an item,
+       not because anything disabled them
+     - a CALLER'S OWN one-off pick: TITLE/INERT is read only for a maximized window's titlebar;
+       TEXT_PRIMARY/INERT is read only by gui_text_disabled, a hand-chosen ink -- see below
+
+   INERT is NOT a widget-disabled colour, for any role, anywhere.  A disabled item is handled by
+   two mechanisms entirely outside this grid: item_state() forces its phase to IDLE (hover/active
+   can never fire, so nav and click both no-op), and item_flags_resolve() multiplies the whole
+   draw's alpha by DISABLED_ALPHA.  A disabled widget's face is therefore its own ordinary IDLE
+   cell, just dimmer by that alpha -- never a role's INERT cell.  gui_text_disabled is the one
+   exception, and it is a caller convention, not the GUI_ITEM_DISABLED mechanism: nothing ties the
+   two together, so a caller can invoke one without the other being true.
+
+   UNUSED in the table marks a cell gui_bake.c still computes -- the grid stays uniform, so a
+   theme author never hits a hole -- but that nothing in the current widget set reads.  Those
+   cells bake to a loud sentinel colour (BAKE_UNUSED, gui_bake.c) instead of a plausible one, so a
+   future accidental read is an obvious visual bug instead of a quiet wrong guess.
 
    Note what is NOT on this axis: whether the item is SELECTED.  Selection persists across
    frames; a phase does not -- so folding SELECTED into ACTIVE would cost every list row its
@@ -379,7 +406,7 @@ typedef enum
     GUI_PHASE_IDLE = 0,   // at rest
     GUI_PHASE_HOT,        // cursor over / keyboard nav on the item
     GUI_PHASE_ACTIVE,     // pressed / captured / focused
-    GUI_PHASE_DIM,        // inert, disabled, de-emphasized, recessed
+    GUI_PHASE_INERT,      // empty value, permanently non-interactive surface, or a caller's own pick -- never "disabled"
     GUI_PHASE_COUNT,
 
     /* Not a cell -- the "whole row" selector push_style_color takes, so recoloring TEXT or BORDER
@@ -512,7 +539,7 @@ typedef enum
 {
     GUI_RAMP_HOVER = 0,   // how far a surface washes toward the accent when hot
     GUI_RAMP_PRESS,       // how far it washes when pressed / selected -- deeper than hover
-    GUI_RAMP_FADE,        // how far an inert cell fades toward the surface (the DIM phase)
+    GUI_RAMP_FADE,        // how far an inert cell fades toward the surface (the INERT phase)
     GUI_RAMP_RECESS,      // how far a recessed surface / empty track sinks below its base
     GUI_RAMP_STEP,        // one lift notch for the accent, border and anchor ramps
     GUI_RAMP_SELECT,      // how far a CHOSEN surface washes toward the accent (style_wash_selected)

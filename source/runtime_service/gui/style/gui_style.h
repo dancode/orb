@@ -149,48 +149,48 @@ f32 style_scale( gui_scale_t s, u32 field );
 /*                             role               phase                                          */
 #define COL_PANEL_IDLE     style_col( GUI_ROLE_PANEL,  GUI_PHASE_IDLE   )  /* window body        */
 #define COL_PANEL_HOT      style_col( GUI_ROLE_PANEL,  GUI_PHASE_HOT    )  /* hovered surface    */
-#define COL_PANEL_ACTIVE   style_col( GUI_ROLE_PANEL,  GUI_PHASE_ACTIVE )  /* selected surface   */
-#define COL_PANEL_DIM      style_col( GUI_ROLE_PANEL,  GUI_PHASE_DIM    )  /* child / recessed   */
+#define COL_PANEL_ACTIVE   style_col( GUI_ROLE_PANEL,  GUI_PHASE_ACTIVE )  /* pressed surface    */
+#define COL_PANEL_INERT    style_col( GUI_ROLE_PANEL,  GUI_PHASE_INERT  )  /* inert backdrop     */
 
 #define COL_TITLE_IDLE     style_col( GUI_ROLE_TITLE,  GUI_PHASE_IDLE   )  /* bar, inactive tab  */
 #define COL_TITLE_HOT      style_col( GUI_ROLE_TITLE,  GUI_PHASE_HOT    )  /* hovered tab        */
 #define COL_TITLE_ACTIVE   style_col( GUI_ROLE_TITLE,  GUI_PHASE_ACTIVE )  /* focused bar / tab  */
-#define COL_TITLE_DIM      style_col( GUI_ROLE_TITLE,  GUI_PHASE_DIM    )  /* de-emphasized bar  */
+#define COL_TITLE_INERT    style_col( GUI_ROLE_TITLE,  GUI_PHASE_INERT  )  /* de-emphasized bar  */
 
 #define COL_BG_IDLE        style_col( GUI_ROLE_BG,     GUI_PHASE_IDLE   )  /* control face       */
 #define COL_BG_HOT         style_col( GUI_ROLE_BG,     GUI_PHASE_HOT    )  /* hovered face       */
 #define COL_BG_ACTIVE      style_col( GUI_ROLE_BG,     GUI_PHASE_ACTIVE )  /* pressed / focused  */
-#define COL_BG_DIM         style_col( GUI_ROLE_BG,     GUI_PHASE_DIM    )  /* inert face         */
+#define COL_BG_INERT       style_col( GUI_ROLE_BG,     GUI_PHASE_INERT  )  /* plot backdrop      */
 
 #define COL_BORDER_IDLE    style_col( GUI_ROLE_BORDER, GUI_PHASE_IDLE   )  /* frame line         */
 #define COL_BORDER_HOT     style_col( GUI_ROLE_BORDER, GUI_PHASE_HOT    )  /* hovered edge       */
 #define COL_BORDER_ACTIVE  style_col( GUI_ROLE_BORDER, GUI_PHASE_ACTIVE )  /* focused ring       */
-#define COL_BORDER_DIM     style_col( GUI_ROLE_BORDER, GUI_PHASE_DIM    )  /* subdued frame      */
+#define COL_BORDER_INERT   style_col( GUI_ROLE_BORDER, GUI_PHASE_INERT  )  /* subdued frame      */
 
 #define COL_TEXT_PRIMARY_IDLE    style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_IDLE   )  /* body text, caret   */
-#define COL_TEXT_PRIMARY_HOT     style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_HOT    )  /* on a hot face      */
-#define COL_TEXT_PRIMARY_ACTIVE  style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_ACTIVE )  /* on a pressed face  */
-#define COL_TEXT_PRIMARY_DIM     style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_DIM    )  /* disabled text      */
+#define COL_TEXT_PRIMARY_HOT     style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_HOT    )  /* unused -- BAKE_UNUSED sentinel, see gui_bake.c */
+#define COL_TEXT_PRIMARY_ACTIVE  style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_ACTIVE )  /* unused -- BAKE_UNUSED sentinel, see gui_bake.c */
+#define COL_TEXT_PRIMARY_INERT   style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_INERT  )  /* gui_text_disabled's ink */
 
 #define COL_TEXT_SECONDARY_IDLE   style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_IDLE   )  /* hint, caption, shortcut */
-#define COL_TEXT_SECONDARY_HOT    style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_HOT    )  /* on a hot face           */
-#define COL_TEXT_SECONDARY_ACTIVE style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_ACTIVE )  /* on a pressed face       */
-#define COL_TEXT_SECONDARY_DIM    style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_DIM    )  /* disabled secondary text */
+#define COL_TEXT_SECONDARY_HOT    style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_HOT    )  /* unused -- BAKE_UNUSED sentinel, see gui_bake.c */
+#define COL_TEXT_SECONDARY_ACTIVE style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_ACTIVE )  /* unused -- BAKE_UNUSED sentinel, see gui_bake.c */
+#define COL_TEXT_SECONDARY_INERT  style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_INERT  )  /* unused -- BAKE_UNUSED sentinel, see gui_bake.c */
 
 #define COL_ACCENT_IDLE    style_col( GUI_ROLE_ACCENT, GUI_PHASE_IDLE   )  /* value fill         */
 #define COL_ACCENT_HOT     style_col( GUI_ROLE_ACCENT, GUI_PHASE_HOT    )  /* engaged fill       */
 #define COL_ACCENT_ACTIVE  style_col( GUI_ROLE_ACCENT, GUI_PHASE_ACTIVE )  /* dragged fill       */
-#define COL_ACCENT_DIM     style_col( GUI_ROLE_ACCENT, GUI_PHASE_DIM    )  /* empty track        */
+#define COL_ACCENT_INERT   style_col( GUI_ROLE_ACCENT, GUI_PHASE_INERT  )  /* empty track        */
 
 #define COL_MARK_IDLE      style_col( GUI_ROLE_MARK,   GUI_PHASE_IDLE   )  /* check mark, dot    */
 #define COL_MARK_HOT       style_col( GUI_ROLE_MARK,   GUI_PHASE_HOT    )  /* nav ring           */
 #define COL_MARK_ACTIVE    style_col( GUI_ROLE_MARK,   GUI_PHASE_ACTIVE )  /* captured-nav ring  */
-#define COL_MARK_DIM       style_col( GUI_ROLE_MARK,   GUI_PHASE_DIM    )  /* inert mark         */
+#define COL_MARK_INERT     style_col( GUI_ROLE_MARK,   GUI_PHASE_INERT  )  /* unused -- BAKE_UNUSED sentinel, see gui_bake.c */
 
 #define COL_GRAB_IDLE      style_col( GUI_ROLE_GRAB,   GUI_PHASE_IDLE   )  /* knob / thumb       */
 #define COL_GRAB_HOT       style_col( GUI_ROLE_GRAB,   GUI_PHASE_HOT    )  /* hovered knob       */
 #define COL_GRAB_ACTIVE    style_col( GUI_ROLE_GRAB,   GUI_PHASE_ACTIVE )  /* dragged knob       */
-#define COL_GRAB_DIM       style_col( GUI_ROLE_GRAB,   GUI_PHASE_DIM    )  /* inert knob         */
+#define COL_GRAB_INERT     style_col( GUI_ROLE_GRAB,   GUI_PHASE_INERT  )  /* unused -- BAKE_UNUSED sentinel, see gui_bake.c */
 
 /* The severity ladder used to close the grid here as four more roles.  It now lives in the
    extended palette instead (gui_style_ext_t, gui.h) -- style_ext( GUI_EXT_WARN ) and friends,

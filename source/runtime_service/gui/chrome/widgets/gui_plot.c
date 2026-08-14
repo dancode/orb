@@ -98,7 +98,7 @@ plot_emit( bool bars, const char* label, const f32* values, i32 count, i32 offse
        per-row cost in a long list); hover/tooltip above already resolved. */
     if ( !draw_cull_box( r.x, r.y, r.w, r.h ) )
     {
-        draw_fill( r, COL_BG_DIM );
+        draw_fill( r, COL_BG_INERT );
         draw_outline( r, WIN_BORDER, COL_BORDER_IDLE );
 
         f32 lo = scale_min, hi = scale_max, inv_range = 0.0f;

@@ -137,7 +137,7 @@ static const char* const k_phase_id[ GUI_PHASE_COUNT ] =
     [ GUI_PHASE_IDLE   ] = "GUI_PHASE_IDLE",
     [ GUI_PHASE_HOT    ] = "GUI_PHASE_HOT",
     [ GUI_PHASE_ACTIVE ] = "GUI_PHASE_ACTIVE",
-    [ GUI_PHASE_DIM    ] = "GUI_PHASE_DIM",
+    [ GUI_PHASE_INERT  ] = "GUI_PHASE_INERT",
 };
 
 static const char* const k_scale_id[ GUI_SCALE_COUNT ] =

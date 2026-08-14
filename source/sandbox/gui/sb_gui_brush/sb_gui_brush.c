@@ -328,9 +328,9 @@ sb_style_source( void* user )
 
     /* Container surfaces. */
     st->face[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = panel;
-    st->face[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = panel;
+    st->face[ GUI_ROLE_PANEL ][ GUI_PHASE_INERT  ] = panel;
     st->face[ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = title;
-    st->face[ GUI_ROLE_TITLE ][ GUI_PHASE_DIM    ] = title;
+    st->face[ GUI_ROLE_TITLE ][ GUI_PHASE_INERT  ] = title;
 
     /* Control faces, across the phase ramp -- this row is what reaches buttons, checkboxes, combo
        fields, menu rows, tree nodes, input boxes and toolbar buttons all at once.  A selected row
@@ -568,7 +568,7 @@ panel_widget( void )
                                  .col_a = GUI_COLOR( 0xFF, 0xD8, 0xA0, 0xFF ) },
         [ GUI_PHASE_ACTIVE ] = { .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f,
                                  .col_a = AMBER },
-        [ GUI_PHASE_DIM    ] = { .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f,
+        [ GUI_PHASE_INERT  ] = { .kind = GUI_BRUSH_NINE, .sprite = s_art.button, .scale = 1.0f,
                                  .col_a = GUI_COLOR( 0x60, 0x60, 0x60, 0xFF ) },
     };
 
@@ -579,7 +579,7 @@ panel_widget( void )
         [ GUI_PHASE_HOT    ] = { .kind = GUI_BRUSH_GRADIENT, .col_a = GUI_COLOR( 0x50, 0x56, 0x64, 0xFF ),
                                  .col_b = GUI_COLOR( 0x30, 0x34, 0x3C, 0xFF ), .flags = GUI_BRUSH_VERTICAL },
         [ GUI_PHASE_ACTIVE ] = { .kind = GUI_BRUSH_SOLID, .col_a = GUI_COLOR( 0x60, 0x40, 0x18, 0xFF ) },
-        [ GUI_PHASE_DIM    ] = { .kind = GUI_BRUSH_SOLID, .col_a = GUI_COLOR( 0x28, 0x28, 0x2C, 0xFF ) },
+        [ GUI_PHASE_INERT  ] = { .kind = GUI_BRUSH_SOLID, .col_a = GUI_COLOR( 0x28, 0x28, 0x2C, 0xFF ) },
     };
 
     if ( brush_button( "nine-slice face", ( gui_rect_t ){ cell.x + 6.0f, cell.y + 8.0f, 190.0f, 40.0f },

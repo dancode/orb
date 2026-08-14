@@ -239,9 +239,9 @@ ex_style_stacks( void )
     {
         gui()->stack();
 
-        gui()->separator_text( "Text (COL_TEXT_PRIMARY_IDLE vs COL_TEXT_PRIMARY_DIM)" );
+        gui()->separator_text( "Text (COL_TEXT_PRIMARY_IDLE vs COL_TEXT_PRIMARY_INERT)" );
         gui()->text( "Plain text -- COL_TEXT_PRIMARY_IDLE" );
-        gui()->text_disabled( "Disabled text -- COL_TEXT_PRIMARY_DIM" );
+        gui()->text_disabled( "Disabled text -- COL_TEXT_PRIMARY_INERT" );
 
         gui()->separator_text( "Buttons (COL_BG_IDLE / _HOT / _ACT, label = COL_TEXT_PRIMARY_IDLE)" );
         gui()->button( "Sample button (hover/press me)" );
@@ -290,12 +290,12 @@ ex_style_stacks( void )
             }
         }
 
-        gui()->separator_text( "Progress + child region (COL_ACCENT_IDLE / COL_PANEL_DIM)" );
+        gui()->separator_text( "Progress + child region (COL_ACCENT_IDLE / GUI_ROLE_PANEL_CHILD)" );
         gui()->progress_bar( 0.66f, NULL );
         if ( gui()->child_begin( "sample child", 0, 60.0f, GUI_WIN_NONE ) )
         {
             gui()->stack();
-            gui()->text( "child region body -- COL_PANEL_DIM" );
+            gui()->text( "child region body -- GUI_ROLE_PANEL_CHILD" );
         }
         gui()->child_end();
     }

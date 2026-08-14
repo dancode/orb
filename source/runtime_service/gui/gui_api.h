@@ -1750,7 +1750,7 @@ typedef struct gui_api_s
        color door for a widget of your own -- the same seam the stock renders and chrome's
        internal COL_* macros read, so a push_style_color around your widget behaves exactly as
        it does around a stock one.  nav counts as HOT, so a keyboard-navigated widget lights
-       like a hovered one; GUI_PHASE_DIM is the inert variant a render picks deliberately.
+       like a hovered one; GUI_PHASE_INERT is the inert variant a render picks deliberately.
 
            gui_comp_button_t b = gui()->comp_button( "save", r );
            u32 face = gui()->style_color( GUI_ROLE_BG, gui()->item_phase( b.state ) );

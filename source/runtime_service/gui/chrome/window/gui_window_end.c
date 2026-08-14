@@ -100,7 +100,7 @@ window_end_titlebar( gui_window_t* win, bool native )
         if ( maxed )
             draw_set_rounding( 0.0f );
         draw_face( ( gui_rect_t ){ s_build.win.x, s_build.win.y, s_build.win.w, title_h },
-                   GUI_ROLE_TITLE, maxed ? GUI_PHASE_DIM : GUI_PHASE_IDLE );
+                   GUI_ROLE_TITLE, maxed ? GUI_PHASE_INERT : GUI_PHASE_IDLE );
 
         /* Shelf chip: its own reduced chrome (restore + close), nothing else on the bar. */
         if ( s_build.win.minimized )

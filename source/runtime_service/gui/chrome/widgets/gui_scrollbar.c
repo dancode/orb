@@ -98,7 +98,7 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
        style var away).  Saved/restored because the scrollbar draws in the chrome context. */
     f32 save_round = draw_rounding();
     draw_set_rounding( ROUND_WIDGET );
-    draw_face( track, GUI_ROLE_ACCENT, GUI_PHASE_DIM );
+    draw_face( track, GUI_ROLE_ACCENT, GUI_PHASE_INERT );
     draw_set_rounding( ROUND_WIDGET );
     if ( vertical )
         draw_face_grab( ( gui_rect_t ){ track.x, knob_off, track.w, knob_len }, id, st, 0u, 0.0f );
