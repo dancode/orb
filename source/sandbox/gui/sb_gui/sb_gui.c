@@ -233,7 +233,7 @@ main( int argc, char** argv )
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
         .wait      = sys_wait_for_os_events_ms,
-        .clear     = { 0.10f, 0.10f, 0.10f, 1.00f },
+        .clear     = { 0.0f, 0.0f, 0.0f, 1.00f },
         .debug     = true,
     } );
     if ( vp == GUI_VP_INVALID )
@@ -267,30 +267,43 @@ main( int argc, char** argv )
 
         // Recolor by SEED: change a source color, re-derive the 32-cell grid from it.  This is
         // the usual door -- every role fed by the seed moves together and keeps its ramp.
-        style->palette.seed[GUI_SEED_SURFACE] = GUI_COLOR( 32, 32, 32, 255 );
-        style->palette.seed[GUI_SEED_INK    ] = GUI_COLOR( 255, 170, 0, 255 );
-        style->palette.seed[GUI_SEED_ACCENT] = GUI_COLOR( 160, 160, 64, 255 );
-        // style->palette.seed[GUI_SEED_CONTROL ] = GUI_COLOR( 128, 128, 196, 255 );
 
+        // u32 blue = GUI_COLOR( 32, 32, 192, 255 );
+        u32 pane = GUI_COLOR( 96, 96, 96, 255 );
+        u32 accent = GUI_COLOR( 128, 128, 128, 255 );
+        u32 pop = GUI_COLOR( 192, 32, 32, 255 );
+
+        style->palette.seed[GUI_SEED_SURFACE]   = pane;
+        style->palette.seed[GUI_SEED_CONTROL]   = pane;
+        style->palette.seed[GUI_SEED_INK]       = pane;
+        style->palette.seed[GUI_SEED_LINE]      = pane;
+        style->palette.seed[GUI_SEED_ACCENT]    = pop;
+        style->palette.seed[GUI_SEED_MARK]      = accent;
+        style->palette.seed[GUI_SEED_GRAB]      = accent;
+        
         // Recolor by RAMP: change how far a derivation travels, not the color it travels from.
         // A deeper HOVER wash reads as a punchier, more reactive theme off the same seeds.
-        style->palette.ramp[GUI_RAMP_HOVER] = 0.1f;
-        style->palette.ramp[GUI_RAMP_PRESS] = 0.4f;
 
+        style->palette.ramp[GUI_RAMP_HOVER]     = 0.25f;
+        style->palette.ramp[GUI_RAMP_PRESS]     = 0.25f;
+        style->palette.ramp[GUI_RAMP_FADE]      = 0.25f;
+        style->palette.ramp[GUI_RAMP_RECESS]    = 0.25f;
+        style->palette.ramp[GUI_RAMP_STEP]      = 0.25f;
+        style->palette.ramp[GUI_RAMP_SELECT]    = 0.25f;
+    
         gui()->style_bake( style );
 
         // ...then disagree with the ramp on individual cells, if you want to. Order matters:
         // a cell written before the bake would simply be overwritten by it.
         // style->col[GUI_ROLE_MARK][GUI_PHASE_IDLE] = GUI_COLOR( 0xFF, 0x40, 0x40, 0xFF );
-
         // Modify any skin (STYLE) knob -- metrics are authored for a baseline em=12
 
-        style->var[GUI_VAR_PANEL_ROUND] = 0;    // Square windows
-        style->var[GUI_VAR_ROUND]       = 0;    // No bevel on buttons
+        // style->var[GUI_VAR_PANEL_ROUND] = 0;    // Square windows
+        // style->var[GUI_VAR_ROUND]       = 0;    // No bevel on buttons
      // style->var[GUI_VAR_GAP]         = 12;   // More breathing room
 
         // Re-scale and apply the changes across the UI
-        gui()->style_apply();
+        // gui()->style_apply();
     }
 
     /* ------------------------------------------------------------------------------ */

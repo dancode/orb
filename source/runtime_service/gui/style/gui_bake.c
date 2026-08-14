@@ -170,7 +170,7 @@ bake_fade( u32 c, f32 t, u32 ground )
     return bake_mix( c, ground, t );
 }
 
-/* WASH -- Blends c toward the accent colour. Used for hover and pressed states.
+/* WASH -- Blends 'c' toward the accent colour. Used for hover and pressed states.
    When a button is hovered or held, it washes toward the theme's accent.
    At the SELECT ramp it's used to tint the chosen ground itself. */
 static u32 
@@ -289,6 +289,8 @@ static void
 bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
             u32 ground, u32 control, u32 ink )
 {
+    /* get the ramp and seed values from the palette for easy reference */
+
     const f32 hover  = p->ramp[ GUI_RAMP_HOVER  ];
     const f32 press  = p->ramp[ GUI_RAMP_PRESS  ];
     const f32 fade   = p->ramp[ GUI_RAMP_FADE   ];
@@ -302,21 +304,22 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
 
     const u32 pole = bake_pole( ground );
 
-    /* The band a title sits in, derived once: both its IDLE cell and the base its DIM fades from
-       are this lifted, faintly accented ground.  It lifts by a ramp STEP rather than by the
-       recess, because the recess is authored per polarity (a light theme sinks far less than a
-       dark one) and a caption band has to stay equally visible in both. */
+    /*  The band a titlebar sits: elevate from pole, then wash (moves toward accent color).
+        Blends ground 50% of one ramp step toward pole (white on a dark, black on a light)
+        This is the "lifted" part of "lifted, faintly accented ground". Makes the
+        titlebar feel a part of the theme rather than a clone of the surface panel
+        Color is informed by the strength of main hover style 'color change' factor. */
 
-    const u32 band = bake_wash( bake_lift( ground, step * 0.60f, pole ), hover * 0.12f, accent );
+    const u32 band = bake_wash( bake_lift( ground, step * 0.50f, pole ), hover * 0.25f, accent );
 
     /* PANEL -- the container.  A fifth of the hover and no lift at all: background should tint,
        not move.  Pressed is the full wash, sunk half a step so a held surface reads as pressed
        rather than merely coloured. */
 
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.20f, accent );
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( ground, press, accent ), step * 0.50f );
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = bake_recess( ground, recess );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.25f, accent );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = ground; // bake_recess( bake_wash( ground, press, accent ), step * 0.50f );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = ground; // bake_recess( ground, recess );
 
     /* TITLE -- a caption band is a LIFTED ground, which is why it needs no seed of its own.
        ACTIVE is the bare ground: a live tab IS its panel, merging into the body it owns. */

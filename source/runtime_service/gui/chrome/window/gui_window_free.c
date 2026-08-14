@@ -929,11 +929,18 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     win->x = pin_r.x;  win->y = pin_r.y;  win->w = pin_r.w;  win->h = pin_r.h;
 
     /* The drag / resize gestures are suppressed while a transition eases so a half-finished
-       ease is never fought (a pinned window already suppresses them). */
-    if ( !pinned && !pin_live )
+       ease is never fought (a pinned window already suppresses them) -- EXCEPT a restore that
+       window_end_titlebar_poll kicked off by grabbing active_id (dragging a maximized window off
+       its title bar): the size still eases through the pin above, but position must keep tracking
+       the cursor every frame instead of riding the tween to the stale pre-maximize restore point,
+       or the window would slide back to its old spot and only snap to the cursor once the ease
+       lands.  interact_held( id ) is exactly that case -- a double-click restore never grabs
+       active_id, so it still rides the tween undisturbed. */
+    if ( !pinned && ( !pin_live || interact_held( id ) ) )
     {
         window_apply_drag( win, id );                           /* in-progress title-bar drag */
-        window_apply_tearoff_gesture( win, id, title, flags );  /* tear-off / merge-back / drag-to-dock */
+        if ( !pin_live )
+            window_apply_tearoff_gesture( win, id, title, flags );  /* tear-off / merge-back / drag-to-dock */
     }
 
     /* Apply an in-progress edge resize (mutually exclusive with the drag apply above). */
