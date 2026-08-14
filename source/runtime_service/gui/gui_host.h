@@ -474,8 +474,6 @@ void gui_pop_style_var( u32 count );
 void gui_next_style_var( gui_style_var_t var, f32 value );
 void gui_push_style_seed( gui_style_seed_t seed, u32 abgr );
 void gui_pop_style_seed( u32 count );
-void gui_push_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr );
-void gui_next_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr );
 
 /* the resolved reads: the phase mapping + the grid cell every render picks a face with, plus
    the installed-style door a kit writes a look through and the axis name tables */
@@ -485,23 +483,19 @@ gui_style_face_t gui_style_brush_add( const gui_brush_t* brush );
 void gui_push_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face );
 void gui_pop_style_face ( u32 count );
 void gui_next_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face );
-void gui_push_style_face_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, gui_style_face_t face );
-const gui_brush_t* gui_style_face     ( gui_style_role_t role, gui_style_phase_t phase );
-const gui_brush_t* gui_style_face_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
+const gui_brush_t* gui_style_face( gui_style_role_t role, gui_style_phase_t phase );
 void gui_draw_face     ( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase );
-void gui_draw_face_look( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
 void gui_draw_face_item( gui_rect_t r, gui_id_t id, gui_item_state_t st, bool selected );
 void gui_draw_face_mix ( gui_rect_t r, gui_style_role_t role, gui_style_mix_t mix );
 
 gui_style_mix_t gui_style_mix      ( gui_id_t id, gui_item_state_t st, bool selected );
 u32             gui_style_color_mix( gui_style_role_t role, gui_style_mix_t mix );
 
-u32               gui_style_color      ( gui_style_role_t role, gui_style_phase_t phase );
-u32               gui_style_color_look ( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
+u32               gui_style_color         ( gui_style_role_t role, gui_style_phase_t phase );
+u32               gui_style_color_selected( gui_style_role_t role, gui_style_phase_t phase );
 gui_style_t*      gui_style_edit      ( void );
 const char*       gui_style_role_name ( gui_style_role_t role );
 const char*       gui_style_phase_name( gui_style_phase_t phase );
-const char*       gui_style_look_name ( gui_style_look_t look );
 const char*       gui_style_seed_name ( gui_style_seed_t seed );
 const char*       gui_style_ramp_name ( gui_style_ramp_t ramp );
 const char*       gui_style_var_name  ( gui_style_var_t var );

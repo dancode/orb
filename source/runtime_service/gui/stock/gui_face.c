@@ -29,10 +29,13 @@
     passing are the coordinates the face plane is indexed by.
 
         style_col        ( role, phase )        ->  draw_face      ( r, role, phase )
-        style_col_look   ( role, phase, look )  ->  draw_face_look ( r, role, phase, look )
         col_item_bg_mix  ( id, st, sel )        ->  draw_face_item ( r, id, st, sel )
         col_grab_mix     ( id, st )             ->  draw_face_grab ( r, id, st, ... )
         col_frame_bg_mix ( mix, idle )          ->  draw_face_field( r, id, st, idle_cell, ... )
+
+    A selected item's brush is not a second stored cell: face_paint washes whichever brush the
+    span already resolved to (brush_selected), the same live wash style_col_mix spends on a flat
+    colour -- see GUI_STYLE -- SELECTED in gui.h.
 
     Included by gui_stock.c before the widget renders, which paint through it.
 
@@ -60,18 +63,12 @@
    the interaction path itself: you hover before you press, and release before you leave.  Adding
    the two weights therefore gives a single 0..2 coordinate whose halves are the two spans.
 
-   The look axis is a separate crossfade, and it TAKES PRECEDENCE while it is the one moving: a
-   row becoming selected under the cursor reads as the selection arriving, not as a hover, so
-   both ends of the span hold the phase still and differ only by plane.
-
-   `rest_look` is the plane the span sits in when sel is not moving it -- GUI_LOOK_NORMAL for an
-   item, and the caller's own pick for the still painters, which is how draw_face_look reaches the
-   SELECT plane without pretending to be mid-transition. */
+   Selection is not a second span here: it is a wash face_paint applies to whichever brush this
+   picks, by m.sel -- see brush_selected below. */
 
 static void
-face_span( u8 role, u8 rest_role, u8 rest_phase, u8 rest_look, gui_style_mix_t m,
-           u8* a_role, u8* a_phase, u8* a_look,
-           u8* b_role, u8* b_phase, u8* b_look, f32* w )
+face_span( u8 role, u8 rest_role, u8 rest_phase, gui_style_mix_t m,
+           u8* a_role, u8* a_phase, u8* b_role, u8* b_phase, f32* w )
 {
     f32 pos = m.hot + m.act;              /* 0 = at rest, 1 = fully hot, 2 = fully active */
 
@@ -87,47 +84,55 @@ face_span( u8 role, u8 rest_role, u8 rest_phase, u8 rest_look, gui_style_mix_t m
         *b_role = role;       *b_phase = GUI_PHASE_ACTIVE;
         *w      = pos - 1.0f;
     }
-    *a_look = *b_look = rest_look;
+}
 
-    if ( m.sel >= 1.0f )                  /* settled on the far plane */
-    {
-        *a_look = *b_look = GUI_LOOK_SELECT;
-    }
-    else if ( m.sel > 0.0f )              /* crossing planes -- hold the phase, fade the look */
-    {
-        bool far_end = ( *w >= 0.5f );
-        u8   c_role  = far_end ? *b_role  : *a_role;
-        u8   c_phase = far_end ? *b_phase : *a_phase;
+/* Wash a resolved brush's tint by travel, the brush-plane twin of style_wash_selected.  col_a
+   means different things per kind (gui.h): for SOLID/GRADIENT it IS the fill colour, so 0 is a
+   legitimate transparent black and washes as-is; for SPRITE/NINE it is a TINT where 0 means
+   "untinted" (white), which has to be substituted before washing or a selected sprite would wash
+   from black instead of from its own colours.  GRADIENT washes both ends so a selected gradient
+   shifts as a whole rather than pinching toward the accent at one end. */
+static gui_brush_t
+brush_selected( const gui_brush_t* b, f32 travel )
+{
+    if ( travel <= 0.0f ) return *b;
 
-        *a_role = *b_role  = c_role;
-        *a_phase = *b_phase = c_phase;
-        *a_look = GUI_LOOK_NORMAL;
-        *b_look = GUI_LOOK_SELECT;
-        *w      = m.sel;
-    }
+    gui_brush_t out = *b;
+    bool tint_kind = ( out.kind == GUI_BRUSH_SPRITE || out.kind == GUI_BRUSH_NINE );
+    u32  base      = ( tint_kind && out.col_a == 0u ) ? GUI_COLOR( 255, 255, 255, 255 ) : out.col_a;
+
+    out.col_a = style_wash_selected( base, travel );
+    if ( out.kind == GUI_BRUSH_GRADIENT )
+        out.col_b = style_wash_selected( out.col_b, travel );
+
+    return out;
 }
 
 /* Fill r for an item at mix `m`: its cells' faces if the theme authored any, else the blended
    colour with an optional border.  border_w <= 0 means no border either way. */
 static void
-face_paint( gui_rect_t r, u8 role, u8 rest_role, u8 rest_phase, u8 rest_look,
-            gui_style_mix_t m, u32 border_col, f32 border_w )
+face_paint( gui_rect_t r, u8 role, u8 rest_role, u8 rest_phase,
+           gui_style_mix_t m, u32 border_col, f32 border_w )
 {
-    u8  ar, ap, al, br, bp, bl;
+    u8  ar, ap, br, bp;
     f32 w;
-    face_span( role, rest_role, rest_phase, rest_look, m, &ar, &ap, &al, &br, &bp, &bl, &w );
+    face_span( role, rest_role, rest_phase, m, &ar, &ap, &br, &bp, &w );
 
-    const gui_brush_t* a = style_face_look( ar, ap, al );
-    const gui_brush_t* b = ( w > 0.0f ) ? style_face_look( br, bp, bl ) : NULL;
+    const gui_brush_t* a = style_face( ar, ap );
+    const gui_brush_t* b = ( w > 0.0f ) ? style_face( br, bp ) : NULL;
 
     if ( a || b )
     {
+        gui_brush_t a_washed, b_washed;
+        if ( a ) { a_washed = brush_selected( a, m.sel ); a = &a_washed; }
+        if ( b ) { b_washed = brush_selected( b, m.sel ); b = &b_washed; }
+
         /* The near end goes down opaque -- its brush, or its flat colour when only the far end
            carries art.  That colour base is what lets a HALF-skinned theme (a hover face over a
            plain resting cell, which is a completely reasonable thing to author) cross-fade into
            its art instead of popping into it. */
         if ( a ) draw_fill_brush( r, a );
-        else     draw_fill( r, style_col_look( ar, ap, al ) );
+        else     draw_fill( r, style_wash_selected( style_col( ar, ap ), m.sel ) );
 
         if ( w > 0.0f )
         {
@@ -137,7 +142,7 @@ face_paint( gui_rect_t r, u8 role, u8 rest_role, u8 rest_phase, u8 rest_look,
             f32 amb = draw_get_alpha();
             draw_set_alpha( amb * w );
             if ( b ) draw_fill_brush( r, b );
-            else     draw_fill( r, style_col_look( br, bp, bl ) );
+            else     draw_fill( r, style_wash_selected( style_col( br, bp ), m.sel ) );
             draw_set_alpha( amb );
         }
         return;                            /* art carries its own edge -- no border over the top */
@@ -147,9 +152,9 @@ face_paint( gui_rect_t r, u8 role, u8 rest_role, u8 rest_phase, u8 rest_look,
        spender is the EXACT one (style_col_mix / col_frame_bg_mix), not the two-cell span above --
        colour has no reason to approximate, and a face-painted widget must read identically to a
        colour-painted one that never asked about art. */
-    u32 col = ( rest_role == role && rest_phase == GUI_PHASE_IDLE && rest_look == GUI_LOOK_NORMAL )
+    u32 col = ( rest_role == role && rest_phase == GUI_PHASE_IDLE )
             ? style_col_mix( role, m )                                        /* the item shape */
-            : col_frame_bg_mix( m, style_col_look( rest_role, rest_phase, rest_look ) );
+            : col_frame_bg_mix( m, style_col( rest_role, rest_phase ) );
 
     if ( border_w > 0.0f )
         gui_draw_frame( r, col, border_col, border_w );
@@ -172,17 +177,12 @@ mix_still( void )
 
 void draw_face( gui_rect_t r, u8 role, u8 phase )
 {
-    face_paint( r, role, role, phase, GUI_LOOK_NORMAL, mix_still(), 0u, 0.0f );
-}
-
-void draw_face_look( gui_rect_t r, u8 role, u8 phase, u8 look )
-{
-    face_paint( r, role, role, phase, look, mix_still(), 0u, 0.0f );
+    face_paint( r, role, role, phase, mix_still(), 0u, 0.0f );
 }
 
 void draw_face_frame( gui_rect_t r, u8 role, u8 phase, u32 border_col, f32 border_w )
 {
-    face_paint( r, role, role, phase, GUI_LOOK_NORMAL, mix_still(), border_col, border_w );
+    face_paint( r, role, role, phase, mix_still(), border_col, border_w );
 }
 
 /*==============================================================================================
@@ -195,20 +195,20 @@ void draw_face_frame( gui_rect_t r, u8 role, u8 phase, u32 border_col, f32 borde
 
 void draw_face_item( gui_rect_t r, gui_id_t id, gui_item_state_t st, bool selected )
 {
-    face_paint( r, GUI_ROLE_BG, GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_LOOK_NORMAL,
+    face_paint( r, GUI_ROLE_BG, GUI_ROLE_BG, GUI_PHASE_IDLE,
                 style_mix( id, st, selected ), 0u, 0.0f );
 }
 
 void draw_face_item_frame( gui_rect_t r, gui_id_t id, gui_item_state_t st, bool selected,
                            u32 border_col, f32 border_w )
 {
-    face_paint( r, GUI_ROLE_BG, GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_LOOK_NORMAL,
+    face_paint( r, GUI_ROLE_BG, GUI_ROLE_BG, GUI_PHASE_IDLE,
                 style_mix( id, st, selected ), border_col, border_w );
 }
 
 void draw_face_grab( gui_rect_t r, gui_id_t id, gui_item_state_t st, u32 border_col, f32 border_w )
 {
-    face_paint( r, GUI_ROLE_GRAB, GUI_ROLE_GRAB, GUI_PHASE_IDLE, GUI_LOOK_NORMAL,
+    face_paint( r, GUI_ROLE_GRAB, GUI_ROLE_GRAB, GUI_PHASE_IDLE,
                 style_mix( id, st, false ), border_col, border_w );
 }
 
@@ -218,7 +218,7 @@ void
 draw_face_field( gui_rect_t r, gui_id_t id, gui_item_state_t st, u8 idle_role, u8 idle_phase,
                  u32 border_col, f32 border_w )
 {
-    face_paint( r, GUI_ROLE_BG, idle_role, idle_phase, GUI_LOOK_NORMAL,
+    face_paint( r, GUI_ROLE_BG, idle_role, idle_phase,
                 style_mix( id, st, false ), border_col, border_w );
 }
 
@@ -232,18 +232,18 @@ draw_face_field( gui_rect_t r, gui_id_t id, gui_item_state_t st, u8 idle_role, u
 
 void draw_face_mix( gui_rect_t r, u8 role, gui_style_mix_t m )
 {
-    face_paint( r, role, role, GUI_PHASE_IDLE, GUI_LOOK_NORMAL, m, 0u, 0.0f );
+    face_paint( r, role, role, GUI_PHASE_IDLE, m, 0u, 0.0f );
 }
 
 void draw_face_mix_frame( gui_rect_t r, u8 role, gui_style_mix_t m, u32 border_col, f32 border_w )
 {
-    face_paint( r, role, role, GUI_PHASE_IDLE, GUI_LOOK_NORMAL, m, border_col, border_w );
+    face_paint( r, role, role, GUI_PHASE_IDLE, m, border_col, border_w );
 }
 
 void draw_face_field_mix( gui_rect_t r, gui_style_mix_t m, u8 idle_role, u8 idle_phase,
                           u32 border_col, f32 border_w )
 {
-    face_paint( r, GUI_ROLE_BG, idle_role, idle_phase, GUI_LOOK_NORMAL, m, border_col, border_w );
+    face_paint( r, GUI_ROLE_BG, idle_role, idle_phase, m, border_col, border_w );
 }
 
 /*==============================================================================================
@@ -255,16 +255,14 @@ void draw_face_field_mix( gui_rect_t r, gui_style_mix_t m, u8 idle_role, u8 idle
     the stacks, the same trap reading ->col[][][] is.
 ==============================================================================================*/
 
-const gui_brush_t* gui_style_face     ( gui_style_role_t r, gui_style_phase_t p )                     { return style_face( (u8)r, (u8)p ); }
-const gui_brush_t* gui_style_face_look( gui_style_role_t r, gui_style_phase_t p, gui_style_look_t l ) { return style_face_look( (u8)r, (u8)p, (u8)l ); }
+const gui_brush_t* gui_style_face( gui_style_role_t r, gui_style_phase_t p ) { return style_face( (u8)r, (u8)p ); }
 
 gui_style_mix_t gui_style_mix      ( gui_id_t id, gui_item_state_t st, bool selected )        { return style_mix( id, st, selected ); }
 u32             gui_style_color_mix( gui_style_role_t r, gui_style_mix_t m )                  { return style_col_mix( (u8)r, m ); }
 
-void gui_draw_face     ( gui_rect_t box, gui_style_role_t r, gui_style_phase_t p )                     { draw_face( box, (u8)r, (u8)p ); }
-void gui_draw_face_look( gui_rect_t box, gui_style_role_t r, gui_style_phase_t p, gui_style_look_t l ) { draw_face_look( box, (u8)r, (u8)p, (u8)l ); }
-void gui_draw_face_item( gui_rect_t box, gui_id_t id, gui_item_state_t st, bool selected )             { draw_face_item( box, id, st, selected ); }
-void gui_draw_face_mix ( gui_rect_t box, gui_style_role_t r, gui_style_mix_t m )                       { draw_face_mix( box, (u8)r, m ); }
+void gui_draw_face     ( gui_rect_t box, gui_style_role_t r, gui_style_phase_t p ) { draw_face( box, (u8)r, (u8)p ); }
+void gui_draw_face_item( gui_rect_t box, gui_id_t id, gui_item_state_t st, bool selected ) { draw_face_item( box, id, st, selected ); }
+void gui_draw_face_mix ( gui_rect_t box, gui_style_role_t r, gui_style_mix_t m )            { draw_face_mix( box, (u8)r, m ); }
 
 // clang-format on
 /*============================================================================================*/

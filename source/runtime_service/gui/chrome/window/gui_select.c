@@ -388,13 +388,14 @@ select_paint_under( void )
     f32 save_round = draw_rounding();
     draw_set_rounding( 0.0f );
 
-    /* The marquee's fill.  PANEL on the SELECT plane is literally "a container surface, chosen,
-       at rest" -- the cell this always wanted.  It used to reach for COL_BG_ACTIVE, a pressed
-       BUTTON face, because until the look axis existed no cell said selection at all. */
+    /* The marquee's fill.  PANEL washed for being chosen is literally "a container surface,
+       chosen, at rest" -- the cell this always wanted.  It used to reach for COL_BG_ACTIVE, a
+       pressed BUTTON face, because until style_col_selected existed nothing said selection at
+       all. */
     if ( live_box && span.x1 > span.x0 && span.y1 > span.y0 )
         draw_push_rect_filled( span.x0, span.y0, span.x1 - span.x0, span.y1 - span.y0,
                                0, 0, 1, 1, 0,
-                               ( style_col_look( GUI_ROLE_PANEL, GUI_PHASE_IDLE, GUI_LOOK_SELECT )
+                               ( style_col_selected( GUI_ROLE_PANEL, GUI_PHASE_IDLE )
                                  & 0x00FFFFFFu ) | 0x30000000u );
 
     if ( select_exists() )
@@ -465,7 +466,7 @@ select_paint_overlay( gui_id_t win, gui_rect_t body )
     if ( live_box && span.x1 > span.x0 && span.y1 > span.y0 )
         draw_push_rect_outline( span.x0, span.y0, span.x1 - span.x0, span.y1 - span.y0,
                                 1.0f,
-                                ( style_col_look( GUI_ROLE_PANEL, GUI_PHASE_IDLE, GUI_LOOK_SELECT )
+                                ( style_col_selected( GUI_ROLE_PANEL, GUI_PHASE_IDLE )
                                   & 0x00FFFFFFu ) | 0xC0000000u );
 
     draw_set_rounding( save_round );

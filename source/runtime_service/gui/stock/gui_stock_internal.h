@@ -48,7 +48,6 @@ void draw_rule           ( f32 x, f32 yc, f32 w, f32 thickness, u32 col );
    damper slot touched.  A widget painting more than one row reads style_mix once itself and
    uses the _mix forms, so its parts move together off a single probe. */
 void draw_face           ( gui_rect_t r, u8 role, u8 phase );
-void draw_face_look      ( gui_rect_t r, u8 role, u8 phase, u8 look );
 void draw_face_frame     ( gui_rect_t r, u8 role, u8 phase, u32 border_col, f32 border_w );
 
 void draw_face_item      ( gui_rect_t r, gui_id_t id, gui_item_state_t st, bool selected );

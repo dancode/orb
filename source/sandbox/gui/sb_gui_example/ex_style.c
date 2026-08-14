@@ -263,10 +263,11 @@ ex_style_stacks( void )
         static char stxt[ 24 ] = "sample";
         gui()->input_text( "sample input (click to focus)", stxt, sizeof( stxt ) );
 
-        /* The look axis, live: row B ships selected.  Hover BOTH rows -- the selected one still
-           lifts, which is the whole point of the second plane.  Before it existed, "selected"
-           and "pressed" were one cell, so a selected row stopped reacting entirely. */
-        gui()->separator_text( "Combo / selectable (GUI_LOOK_NORMAL vs GUI_LOOK_SELECT)" );
+        /* The selected wash, live: row B ships selected.  Hover BOTH rows -- the selected one
+           still lifts, which is the whole point of washing the resolved phase colour rather than
+           reading a separate cell.  Before it existed, "selected" and "pressed" were one cell, so
+           a selected row stopped reacting entirely. */
+        gui()->separator_text( "Combo / selectable (plain vs style_col_selected)" );
         static i32          combo_sel      = 0;
         static const char*  combo_items[]  = { "Alpha", "Beta", "Gamma" };
         gui()->combo( "sample combo", &combo_sel, combo_items, 3 );

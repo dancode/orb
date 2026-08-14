@@ -23,20 +23,20 @@
 
 /* The text-selection band's colour, and the one spelling of it for both editors.
 
-   BG on the SELECT plane -- "a control surface, chosen, at rest" -- which is the same reasoning
-   gui_select.c's marquee runs on, one role down because a field's ground is a control face and
-   not a container.  It used to reach for COL_BG_ACTIVE, the PRESSED control face, which was
-   invisible for exactly the reason a pressed face is the wrong cell: the field itself was
+   BG washed for being chosen -- "a control surface, chosen, at rest" -- which is the same
+   reasoning gui_select.c's marquee runs on, one role down because a field's ground is a control
+   face and not a container.  It used to reach for COL_BG_ACTIVE, the PRESSED control face, which
+   was invisible for exactly the reason a pressed face is the wrong cell: the field itself was
    painted with BG/ACTIVE while focused, and a selection can only ever be drawn while focused,
    so highlight and ground were the same colour by construction.  Fields rest on BG/IDLE now
    (input_text_begin), so the band reads against the ground it is actually drawn on.
 
-   No COL_* macro: the colour macros spell (role, phase) on the NORMAL plane only, deliberately
-   (see style/gui_style.h) -- a look is named at the read site. */
+   No COL_* macro: the colour macros spell (role, phase) plain, deliberately (see
+   style/gui_style.h) -- a selected read is named at the read site. */
 static u32
 edit_sel_color( void )
 {
-    return style_col_look( GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_LOOK_SELECT );
+    return style_col_selected( GUI_ROLE_BG, GUI_PHASE_IDLE );
 }
 
 /* The selection band for one text run: the GLYPH BOX of the line, bled a pixel each way, held

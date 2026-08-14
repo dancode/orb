@@ -31,26 +31,35 @@ const gui_style_t* style_active( void );   /* style/gui_theme.c: the active scal
    after the metrics rescale -- which is where the style tracks a theme or font change. */
 void style_landing( void );
 
-/* The two coordinate systems, and there are only two.  A color is a (look, role, phase) cell of
-   the color grid; a scalar is a gui_style_var_t.  Both are the installed value with any
+/* The two coordinate systems, and there are only two.  A color is a (role, phase) cell of the
+   color grid; a scalar is a gui_style_var_t.  Both are the installed value with any
    push_style_* / next_style_* override already applied, since an override lands in the same
    slot -- one indexed load, nothing to scan.
 
-   style_col is the NORMAL plane, which is what an unqualified read means and what every macro
-   below resolves to; style_col_look names the plane for the handful of widgets whose caller
-   knows the item is selected. */
-u32 style_col     ( u8 role, u8 phase );
-u32 style_col_look( u8 role, u8 phase, u8 look );
+   style_col is the plain read, which is what every macro below resolves to; style_col_selected
+   washes the same cell toward the theme's accent for the handful of widgets whose caller knows
+   the item is selected -- see GUI_STYLE -- SELECTED in gui.h. */
+u32 style_col( u8 role, u8 phase );
 f32 style_var( gui_style_var_t var );
 
-/* The FACE read -- the same (look, role, phase) coordinate into the parallel brush-handle plane,
+/* Wash a resolved colour toward the theme's accent by GUI_RAMP_SELECT * travel (travel 0..1).
+   The one primitive both style_col_selected and style_col_mix's sel branch spend, and the one a
+   face painter reaches for to wash a resolved brush's tint (stock/gui_face.c) instead of naming
+   a second stored cell -- see GUI_STYLE -- SELECTED in gui.h. */
+u32 style_wash_selected( u32 color, f32 travel );
+
+/* style_col washed all the way toward the accent (travel = 1) -- the static "this item IS
+   selected" read a still (non-animated) painter wants, e.g. a selection-rect fill. */
+u32 style_col_selected( u8 role, u8 phase );
+
+/* The FACE read -- the same (role, phase) coordinate into the parallel brush-handle plane,
    resolved to the brush itself.  NULL means the cell names no face, which is every cell of a
    theme that authors no art: the caller falls back to style_col and nothing has changed.  Style
-   still never paints -- these RESOLVE a brush; the painters that consume one live in stock
+   still never paints -- this RESOLVES a brush; the painters that consume one live in stock
    (stock/gui_face.c), on the far side of the purity line, exactly like the colour projections'
-   painters do. */
-const gui_brush_t* style_face     ( u8 role, u8 phase );
-const gui_brush_t* style_face_look( u8 role, u8 phase, u8 look );
+   painters do.  There is no style_face_selected: a selected brush is the SAME brush with its
+   tint washed by style_wash_selected, not a second stored handle. */
+const gui_brush_t* style_face( u8 role, u8 phase );
 
 /* A GUI_CLASS_SHAPE var read back as its enum -- a rounding, and the ONE spelling for it.  Never
    compare a shape var with >= 0.5f (a two-value assumption) or cast it truncating (0.999999 is a
@@ -124,12 +133,12 @@ f32 style_scale( gui_scale_t s, u32 field );
 
     THERE IS NO COL_SEL_* FAMILY, and the omission is deliberate rather than unfinished.  A macro
     can only spell a CONSTANT, and role and phase are routinely constant at a read site -- chrome
-    genuinely knows it is painting the border, idle.  A look never is: every single selection read
-    in the library is of the form `chosen ? ... : ...`, because a look is a fact about the
-    caller's DATA, not about the draw.  Ninety-six names to serve zero constant readers would be
-    ninety-six more chances for the grid and its spelling to drift -- exactly the failure mode a
-    flat token table invites.  Widgets that can be selected go through style_col_look or the
-    col_item_bg_look projection below, and pass the look along.
+    genuinely knows it is painting the border, idle.  Whether an item is selected never is: every
+    single selection read in the library is of the form `chosen ? ... : ...`, because selection
+    is a fact about the caller's DATA, not about the draw -- which is why it is not a grid cell at
+    all, but a wash applied to whichever cell above already resolved (style_col_selected,
+    style_wash_selected).  Widgets that can be selected go through those, or the
+    col_item_bg_selected projection below, and pass the bool along.
 ==============================================================================================*/
 
 /*                             role               phase                                          */
@@ -252,7 +261,7 @@ u8   style_phase ( gui_item_state_t st );
 /* State -> color projections (gui_style_core.c) -- pure: the state flags arrive as
    parameters, so these resolve identically with no interact server present. */
 u32 col_item_bg( gui_item_state_t st );
-u32 col_item_bg_look( gui_item_state_t st, gui_style_look_t look );
+u32 col_item_bg_selected( gui_item_state_t st, bool selected );
 u32 col_frame_bg( gui_item_state_t st, u32 idle_color );
 u32 col_grab( gui_item_state_t st );
 

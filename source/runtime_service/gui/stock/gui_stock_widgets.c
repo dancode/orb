@@ -71,13 +71,13 @@ gui_style_color( gui_style_role_t role, gui_style_phase_t phase )
     return style_col( (u8)role, (u8)phase );
 }
 
-/* gui_style_color_look -- the same read with the third coordinate named.  A user widget whose
-   caller knows the item is chosen reads through this instead, and gets a selection that still
-   hovers and presses; gui_style_color is exactly this with GUI_LOOK_NORMAL. */
+/* gui_style_color_selected -- the same read washed toward the theme's accent.  A user widget
+   whose caller knows the item is chosen reads through this instead, and gets a selection that
+   still hovers and presses -- the wash rides on top of whatever gui_style_color already read. */
 u32
-gui_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look )
+gui_style_color_selected( gui_style_role_t role, gui_style_phase_t phase )
 {
-    return style_col_look( (u8)role, (u8)phase, (u8)look );
+    return style_col_selected( (u8)role, (u8)phase );
 }
 
 /* The "##id" label grammar for a DISPLAYED label: the suffix carries identity, never pixels.
@@ -267,10 +267,11 @@ gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
     draw_face_frame( r, GUI_ROLE_BG, GUI_PHASE_IDLE, col_field_border( st ), WIN_BORDER );
 
     /* Selection band and caret read the same cells chrome's edit_paint uses: a selection is the
-       BG face on the SELECT plane -- a control surface, chosen -- and a caret is TEXT.  Neither is
-       an accent: ACCENT is the value a control holds, and a text field's value is its glyphs. */
+       BG face washed for being chosen -- a control surface, selected -- and a caret is TEXT.
+       Neither is an accent: ACCENT is the value a control holds, and a text field's value is its
+       glyphs. */
     if ( in.selection.w > 0.0f )
-        draw_fill( in.selection, style_col_look( GUI_ROLE_BG, GUI_PHASE_IDLE, GUI_LOOK_SELECT ) );
+        draw_fill( in.selection, style_col_selected( GUI_ROLE_BG, GUI_PHASE_IDLE ) );
 
     draw_push_text_clip_n( in.text_x, in.text_y, STYLE_COL( TEXT, IDLE ), buf, 0xFFFFFFFFu,
                            in.content.x, in.content.x + in.content.w );
@@ -304,8 +305,9 @@ gui_stock_selectable( gui_rect_t r, const char* label, bool* selected )
     char        vis[ 128 ];
     const char* text = stock_visible_text( label, vis, sizeof vis );
     gui_rect_t  tr   = { r.x + WIDGET_PAD, r.y, r.w - 2.0f * WIDGET_PAD, r.h };
-    /* The ink crosses with the surface, but on the LOOK axis alone: a row's text is not meant to
-       brighten under the cursor, only to change with what the row has become. */
+    /* The ink crosses with the surface, but via the selected wash alone (hot/act held at 0): a
+       row's text is not meant to brighten under the cursor, only to change with what the row has
+       become. */
     gui_style_mix_t ink = { 0.0f, 0.0f, mix.sel };
     gui_draw_text_in( tr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
                       style_col_mix( GUI_ROLE_TEXT, ink ), text );

@@ -1731,17 +1731,6 @@ typedef struct gui_api_s
     void ( *push_style_seed  )( gui_style_seed_t seed, u32 abgr );
     void ( *pop_style_seed   )( u32 count );
 
-    /* The look-qualified pair -- the same colour stack, addressing a cell by all three
-       coordinates.  GUI_LOOK_ALL spans both planes as ONE push (the look-axis twin of
-       GUI_PHASE_ALL), and pop_style_color takes any of them back: a look is a coordinate on a
-       colour, not a different kind of override, so it does not earn a fourth stack.
-
-           gui()->push_style_color_look( GUI_ROLE_BG, GUI_PHASE_ALL, GUI_LOOK_SELECT, gold );
-           ... selected rows in this list are gold, unselected ones untouched ...
-           gui()->pop_style_color( 1 ); */
-    void ( *push_style_color_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr );
-    void ( *next_style_color_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr );
-
     /* The RESOLVED reads -- ask "what color should I actually draw right now," accounting for
        any active theme plus any push_style_color override in scope. The other half of the
        stacks above, and what every render actually calls.  style_color returns a (role, phase)
@@ -1756,31 +1745,31 @@ typedef struct gui_api_s
            gui_comp_button_t b = gui()->comp_button( "save", r );
            u32 face = gui()->style_color( GUI_ROLE_BG, gui()->item_phase( b.state ) );
 
-       style_color_look adds the third coordinate, for a widget whose CALLER knows the item is
-       chosen.  There is no item_look beside item_phase and there cannot be: a phase is distilled
-       from interact state, while nothing the interact server tracks knows what your data has
-       selected.  Pass the look in, and a selected row keeps its hover and press feedback instead
-       of freezing on one cell:
+       style_color_selected washes the same read toward the theme's accent, for a widget whose
+       CALLER knows the item is chosen.  There is no item_look beside item_phase and there cannot
+       be: a phase is distilled from interact state, while nothing the interact server tracks
+       knows what your data has selected.  Pass selected in, and a selected row keeps its hover
+       and press feedback instead of freezing on one cell:
 
-           u32 face = gui()->style_color_look( GUI_ROLE_BG, gui()->item_phase( b.state ),
-                                               chosen ? GUI_LOOK_SELECT : GUI_LOOK_NORMAL );
+           u32 face = chosen ? gui()->style_color_selected( GUI_ROLE_BG, gui()->item_phase( b.state ) )
+                             : gui()->style_color( GUI_ROLE_BG, gui()->item_phase( b.state ) );
 
        style_edit -- the raw INSTALLED style of the current set, mutable: the kit tuning door for
        INSTALLING a look, and the same gui_style_t a theme is authored as.  Ad-hoc writes last
        until the next style landing re-installs them; a kit that OWNS the look registers
        style_source_set (or style_set_create) so its style is re-derived rather than clobbered at
-       every landing.  Do not read ->col[][][] through it at paint time -- that bypasses the style
+       every landing.  Do not read ->col[][] through it at paint time -- that bypasses the style
        stacks; use style_color. */
-    gui_style_phase_t ( *item_phase       )( gui_item_state_t st );
-    u32               ( *style_color      )( gui_style_role_t role, gui_style_phase_t phase );
-    u32               ( *style_color_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
-    gui_style_t*      ( *style_edit       )( void );
+    gui_style_phase_t ( *item_phase          )( gui_item_state_t st );
+    u32               ( *style_color         )( gui_style_role_t role, gui_style_phase_t phase );
+    u32               ( *style_color_selected )( gui_style_role_t role, gui_style_phase_t phase );
+    gui_style_t*      ( *style_edit          )( void );
 
     /*==========================  the FACE plane -- art where a colour was  ==========================*/
 
     /* The face plane -- lets a theme swap in actual art (a gradient, a nine-slice sprite frame)
        anywhere a flat color would otherwise go, without editing a single widget's code. A face
-       is a BRUSH installed on a (look, role, phase) cell: the same coordinate the colour
+       is a BRUSH installed on a (role, phase) cell: the same coordinate the colour
        grid uses, in a parallel plane, replacing that cell's flat fill with a gradient or a
        nine-slice.  This is the payoff of the brush -- because a face is addressed by the
        coordinate every render already resolves, installing one restyles every widget that paints
@@ -1794,7 +1783,7 @@ typedef struct gui_api_s
                gui_style_face_t f  = gui()->style_brush_add(
                    &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = my_button_art } );
 
-               st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_BG ][ GUI_PHASE_IDLE ] = f;
+               st->face[ GUI_ROLE_BG ][ GUI_PHASE_IDLE ] = f;
            }
 
        Register inside a style SOURCE, not once at startup: the pool is cleared whenever a set is
@@ -1803,27 +1792,27 @@ typedef struct gui_api_s
 
        A cell with no face is 0 (GUI_FACE_NONE) and falls straight through to its colour, so a
        theme that authors no art is unchanged and pays one indexed load.  A face SUPPRESSES the
-       border its cell would otherwise have been given -- authored art carries its own edge.
+       border its cell would otherwise have been given -- authored art carries its own edge.  A
+       selected item's face is not a second stored cell either: draw_face_item washes whichever
+       brush the cell already names toward the accent, the same live wash style_color_selected
+       spends on a flat colour.
 
-       push / pop / next mirror the colour verbs exactly, including the GUI_PHASE_ALL and
-       GUI_LOOK_ALL fans, and pop their own stack so an interleaved colour / face / var sequence
-       unwinds correctly.  draw_face is the painter: fill a rect for a cell, using its face if it
-       has one and its colour if it does not -- the seam every converted widget paints through, and
-       the one a user widget should paint through to be skinnable by whoever installs the theme. */
+       push / pop / next mirror the colour verbs exactly, including the GUI_PHASE_ALL fan, and pop
+       their own stack so an interleaved colour / face / var sequence unwinds correctly.  draw_face
+       is the painter: fill a rect for a cell, using its face if it has one and its colour if it
+       does not -- the seam every converted widget paints through, and the one a user widget should
+       paint through to be skinnable by whoever installs the theme. */
 
     gui_style_face_t ( *style_brush_add )( const gui_brush_t* brush );
 
-    void ( *push_style_face      )( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face );
-    void ( *pop_style_face       )( u32 count );
-    void ( *next_style_face      )( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face );
-    void ( *push_style_face_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, gui_style_face_t face );
+    void ( *push_style_face )( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face );
+    void ( *pop_style_face  )( u32 count );
+    void ( *next_style_face )( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face );
 
     /* The resolved read (NULL = the cell names no face) and the painter over it. */
-    const gui_brush_t* ( *style_face      )( gui_style_role_t role, gui_style_phase_t phase );
-    const gui_brush_t* ( *style_face_look )( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
+    const gui_brush_t* ( *style_face )( gui_style_role_t role, gui_style_phase_t phase );
 
-    void ( *draw_face      )( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase );
-    void ( *draw_face_look )( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look );
+    void ( *draw_face )( gui_rect_t r, gui_style_role_t role, gui_style_phase_t phase );
 
     /* THE MIX -- what makes a widget's color/art smoothly animate between states (idle to
        hovered, say) instead of popping instantly. The continuous coordinate over the same grid
@@ -1849,15 +1838,14 @@ typedef struct gui_api_s
     gui_style_mix_t ( *style_mix       )( gui_id_t id, gui_item_state_t st, bool selected );
     u32             ( *style_color_mix )( gui_style_role_t role, gui_style_mix_t mix );
 
-    /* The schema, described by the engine that owns it -- so a style editor WALKS the six axes
-       (role, phase, look, seed, ramp, var) instead of keeping parallel tables in step with enums
-       it does not own.  Display names for each, plus what kind of number a var holds
+    /* The schema, described by the engine that owns it -- so a style editor WALKS the five axes
+       (role, phase, seed, ramp, var) instead of keeping parallel tables in step with enums it
+       does not own.  Display names for each, plus what kind of number a var holds
        (gui_style_class_t): its class says whether it is a size, a stroke, a radius, the lattice
        pitch, or an enum pick, which is exactly what an editor needs to group it and choose a
        slider or a combo.  An unnamed index reads "?" rather than running off the end. */
     const char*       ( *style_role_name  )( gui_style_role_t role );
     const char*       ( *style_phase_name )( gui_style_phase_t phase );
-    const char*       ( *style_look_name  )( gui_style_look_t look );
     const char*       ( *style_seed_name  )( gui_style_seed_t seed );
     const char*       ( *style_ramp_name  )( gui_style_ramp_t ramp );
     const char*       ( *style_var_name   )( gui_style_var_t var );

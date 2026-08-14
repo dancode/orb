@@ -1,9 +1,9 @@
 /*==============================================================================================
 
-    runtime_service/gui/style/gui_bake.c -- The bake: a seed palette -> the 96-cell colour grid.
+    runtime_service/gui/style/gui_bake.c -- The bake: a seed palette -> the 48-cell colour grid.
 
     The one step between what a theme AUTHORS (gui_palette_t) and what a render READS
-    (gui_style_t.col), and the only writer of col[][][] in the engine.  Pure: a function of the
+    (gui_style_t.col), and the only writer of col[][] in the engine.  Pure: a function of the
     palette alone -- no ambient state, no interact query, no draw call, not even a read of the
     active style -- so the same palette always bakes the same grid, and a caller can bake a
     scratch gui_style_t that is not installed anywhere.
@@ -11,13 +11,10 @@
     Included by gui_style.c FIRST: gui_theme_set bakes on the way in, and the seed push in
     gui_style_core.c re-bakes into the working run, so both files below need it.
 
-    ONE derivation, run TWICE.  The grid is two planes -- NORMAL and SELECT -- and they are not
-    two rulesets: bake_plane says what each role means across the four phases, and the two planes
-    differ only in the GROUND they are told to sit on.  NORMAL gets the theme's surface; SELECT
-    gets that surface washed toward the accent.  Everything follows from the ground, including
-    the polarity (a light theme with a saturated selection fill flips to a light-on-dark read
-    inside the selection automatically, because bake_pole asks the ground, not the theme).  That
-    is the whole reason a second plane is affordable: it costs a parameter, not a ruleset.
+    There is no SELECT plane to bake: a selected read washes a resolved cell toward the accent
+    LIVE (style_wash_selected, gui_style_core.c), spending bake_wash below -- the same formula
+    this file derives every ramp step with, so a bake-time colour and a selected-time wash of it
+    never disagree.
 
     WHY sRGB AND NOT LINEAR LIGHT.  Every blend here is a plain byte lerp in gamma-encoded sRGB,
     which is deliberate and is not the usual "we did not get around to it".  Linear light is the
@@ -330,17 +327,6 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     }
 }
 
-/*==============================================================================================
-    The two planes.  NORMAL sits on the theme's surface; SELECT sits on that surface washed to
-    the accent by the SELECT ramp -- deeper than the press wash, because a selection persists and
-    a press does not, so it has to survive being looked at for minutes rather than a frame.
-
-    The control face is washed by the same amount, so a button inside a selected row still reads
-    as a control ON that row rather than as a hole punched through it.  The RAW ink goes to both
-    planes -- the guard is applied per CELL inside bake_plane, against the specific face each ink
-    cell will sit on, which is what lets a light theme carry a deep selection at all.
-==============================================================================================*/
-
 void
 gui_style_bake( gui_style_t* s )
 {
@@ -351,15 +337,11 @@ gui_style_bake( gui_style_t* s )
     const u32 surface = p->seed[ GUI_SEED_SURFACE ];
     const u32 control = p->seed[ GUI_SEED_CONTROL ];
     const u32 ink     = p->seed[ GUI_SEED_INK     ];
-    const u32 accent  = p->seed[ GUI_SEED_ACCENT  ];
-    const f32 select  = p->ramp[ GUI_RAMP_SELECT  ];
 
-    bake_plane( s->col[ GUI_LOOK_NORMAL ], p, surface, control, ink );
+    bake_plane( s->col, p, surface, control, ink );
 
-    const u32 sel_ground  = bake_wash( surface, select, accent );
-    const u32 sel_control = bake_wash( control, select, accent );
-
-    bake_plane( s->col[ GUI_LOOK_SELECT ], p, sel_ground, sel_control, ink );
+    /* GUI_RAMP_SELECT is not spent here: it washes a resolved cell toward the accent LIVE, at
+       read time (style_wash_selected, gui_style_core.c), rather than baking a second plane. */
 }
 
 // clang-format on

@@ -14,10 +14,9 @@
     window never disturbs the theme.
 
     Nothing here names an individual colour or var: the editor walks the engine's own name
-    tables (style_seed_name / _ramp_name / _look_name / _role_name / _phase_name / _var_name /
-    _var_class / _class_name), so a new seed, role, phase or var shows up with no edit to this
-    file.  The one thing still authored per var is a SHAPE pick's value names, which the engine
-    does not own.
+    tables (style_seed_name / _ramp_name / _role_name / _phase_name / _var_name / _var_class /
+    _class_name), so a new seed, role, phase or var shows up with no edit to this file.  The one
+    thing still authored per var is a SHAPE pick's value names, which the engine does not own.
 
 ==============================================================================================*/
 // clang-format off
@@ -153,7 +152,7 @@ st_editor_window( void )
     gui()->form( GUI_LABEL_RIGHT, label_width );
 
     /* --- Palette: the AUTHORED colour, and the fastest knob in the panel --------------------
-       Twelve numbers that drive all 96 cells below.  Drag one ramp slider and the entire grid
+       Seventeen numbers that drive all 48 cells below.  Drag one ramp slider and the entire grid
        re-derives in the same frame -- which is the whole argument for the bake, made visible:
        the cells are a projection of this, not a parallel thing to keep in step with it.
 
@@ -183,24 +182,18 @@ st_editor_window( void )
        Editing a cell here is legitimate and sticks: it is the "bake, then disagree" shape a kit
        uses, just spelled interactively.  Touch a seed or a ramp value above and the disagreement
        is overwritten, because that is what re-deriving means -- and Style Export knows the
-       difference, emitting exactly these survivors as post-bake overrides. */
-    for ( u32 l = 0; l < GUI_LOOK_COUNT; ++l )
-    {
-        gui()->push_id( gui()->style_look_name( ( gui_style_look_t )l ) );
-        for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
-        {
-            char head[ 64 ];
-            snprintf( head, sizeof head, "%s / %s",
-                      gui()->style_look_name( ( gui_style_look_t )l ),
-                      gui()->style_role_name( ( gui_style_role_t )r ) );
+       difference, emitting exactly these survivors as post-bake overrides.
 
-            gui()->separator_text( head );
-            gui()->push_id( gui()->style_role_name( ( gui_style_role_t )r ) );
-            for ( u32 s = 0; s < GUI_PHASE_COUNT; ++s )
-                changed |= se_color( gui()->style_phase_name( ( gui_style_phase_t )s ),
-                                     &work.col[ l ][ r ][ s ] );
-            gui()->pop_id();
-        }
+       No SELECTED section: a selected read washes one of these cells live (style_col_selected),
+       so there is nothing selection-specific to tune here beyond the GUI_RAMP_SELECT slider
+       already in the ramp section above. */
+    for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
+    {
+        gui()->separator_text( gui()->style_role_name( ( gui_style_role_t )r ) );
+        gui()->push_id( gui()->style_role_name( ( gui_style_role_t )r ) );
+        for ( u32 s = 0; s < GUI_PHASE_COUNT; ++s )
+            changed |= se_color( gui()->style_phase_name( ( gui_style_phase_t )s ),
+                                 &work.col[ r ][ s ] );
         gui()->pop_id();
     }
 

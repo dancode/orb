@@ -315,8 +315,7 @@ console_show( f32 display_w, f32 display_h, f32 top_y )
             }
             s_page_px = gui()->view_avail().y * 0.5f;
 
-            const u32 text_col =
-                gui()->style_peek()->col[ GUI_LOOK_NORMAL ][ GUI_ROLE_TEXT ][ GUI_PHASE_IDLE ];
+            const u32 text_col = gui()->style_peek()->col[ GUI_ROLE_TEXT ][ GUI_PHASE_IDLE ];
             const i32 total    = ( i32 )core()->con_line_count();
 
             /* One fixed-height column; rows_clip reserves the whole run's extent (so the scroll range

@@ -86,12 +86,10 @@ ui_kit_install( void )
 
     /* The two the ramp cannot know: this kit's panels are painted scenery, not surfaces you can
        interact with, so they must not react at all.  Bake first, disagree after -- which is the
-       whole reason the bake is a call and not a side effect. */
-    for ( u32 look = 0; look < GUI_LOOK_COUNT; ++look )
-    {
-        e->col[ look ][ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = s_style.panel_bg;
-        e->col[ look ][ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = s_style.panel_bg;
-    }
+       whole reason the bake is a call and not a side effect.  A selected PANEL read still washes
+       this flat colour toward the accent live -- there is no separate plane to disagree with. */
+    e->col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = s_style.panel_bg;
+    e->col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = s_style.panel_bg;
 }
 
 /*==============================================================================================

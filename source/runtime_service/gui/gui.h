@@ -228,7 +228,7 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     widgets, and a kit's own renders all name a color as a (role, phase) cell, and all of them
     resolve through the same instanced style -- so "the editor look" and "the game look" are two
     instances of one schema rather than two schemas.  There is no flat color enum: twelve roles
-    times four phases times two looks ARE the 96 cells of gui_style_t.col below.
+    times four phases ARE the 48 cells of gui_style_t.col below.
 
         push_style_color( GUI_ROLE_BG,   GUI_PHASE_HOT, abgr );   // one cell, until the pop
         push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, abgr );   // the whole phase row
@@ -253,9 +253,10 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 
     Two doors, and the difference matters: gui()->style_color( role, phase ) is the RESOLVED
     read (push_style_color / next_style_color overrides win) -- use it in any render, stock or
-    your own; style_color_look adds the third coordinate for a widget that can be selected.
-    gui()->style_edit() is the raw installed struct of the CURRENT set, for a kit INSTALLING a
-    look; reading ->col[][][] through it at paint time bypasses the style stacks.
+    your own; style_color_selected washes the same read for a widget that can be selected (see
+    the SELECTED section below).  gui()->style_edit() is the raw installed struct of the CURRENT
+    set, for a kit INSTALLING a look; reading ->col[][] through it at paint time bypasses the
+    style stacks.
 ==============================================================================================*/
 
 /* What the color is FOR.  Eight roles cover every surface the GUI paints.
@@ -379,55 +380,38 @@ typedef enum
 } gui_style_phase_t;
 
 /*==============================================================================================
-    GUI_STYLE -- the look axis: what the item IS, beside what is happening TO it
+    GUI_STYLE -- SELECTED: a wash, not a stored axis
 
-    The third coordinate, alongside role and phase.  A phase is TRANSIENT: the pointer is over
-    this, the button is down on this -- facts the interact server tracks, which is why
-    gui_item_phase() can distil one from a state.  A look is PERSISTENT and comes from the
-    caller's own data: this row is the chosen one.  The two are orthogonal -- a selected row can
-    still hover, press and dim like any other surface, because SELECT is a second PLANE of the
-    same twelve roles and four phases, not a fifth phase bolted onto ACTIVE:
+    Role answers "what surface is this"; phase answers "what is happening to it right now".
+    Selected answers neither -- it is a persistent fact about the CALLER's data (this row is the
+    chosen one), not an identity and not a transient interaction, so it does not get a cell of
+    its own in the grid.  Instead it is a live transform applied to whatever colour role+phase
+    already resolved to: the resolved colour washed toward the theme's accent by GUI_RAMP_SELECT.
 
-        style_color     ( GUI_ROLE_BG, phase )                      // NORMAL -- the default
-        style_color_look( GUI_ROLE_BG, phase, GUI_LOOK_SELECT )     // the chosen one
+        style_col         ( GUI_ROLE_BG, phase )   // the plain read
+        style_col_selected( GUI_ROLE_BG, phase )   // the same cell, washed toward the accent
 
-    NORMAL is the plane every unqualified read resolves against; SELECT is the same role/phase
-    derivation run against a chosen GROUND.  A selected list row gets the full ramp too:
-    style_color_look( BG, item_phase( state ), GUI_LOOK_SELECT ) hovers, presses and dims the
-    SELECTED surface exactly as the unselected one does, rather than collapsing "selected" and
-    "pressed" onto one shared cell.
-
-    There is deliberately no gui_item_look() beside gui_item_phase(), and the absence is the
-    point: a phase can be distilled from interact state because interaction is what the server
-    watches, while only the caller knows what is selected.  A widget takes the look as an
-    argument, the same way gui_selectable already takes its bool.
+    This is what lets "selected" compose with hover for free: style_col_selected washes whatever
+    phase cell it is handed, so a selected-and-hovered row is the HOT cell washed, not a fourth
+    cell nobody baked.  There is deliberately no gui_item_look() beside gui_item_phase(): a phase
+    is distilled from interact state because interaction is what the server watches, while only
+    the caller knows what is selected.  A widget takes selected as a bool argument, the same way
+    gui_selectable already does.
 ==============================================================================================*/
-
-typedef enum
-{
-    GUI_LOOK_NORMAL = 0,   // the ordinary item
-    GUI_LOOK_SELECT,       // the chosen one: selected row, toggled button, open menu, sort column
-    GUI_LOOK_COUNT,
-
-    /* Not a plane -- the "both planes" selector, the look-axis twin of GUI_PHASE_ALL.  Only the
-       push / next verbs accept it; a read names one look. */
-    GUI_LOOK_ALL = GUI_LOOK_COUNT
-
-} gui_style_look_t;
 
 /*==============================================================================================
     GUI_STYLE -- the MIX: where an item sits BETWEEN cells
 
-    The phase and look axes are enumerations, and an enumeration cannot express "most of the way
-    to hovered".  That is the whole reason a widget snaps: it names one cell per frame, so the
-    only motion available to it is the jump from one cell to the next.
+    Phase is an enumeration, and an enumeration cannot express "most of the way to hovered".
+    That is the whole reason a widget snaps: it names one cell per frame, so the only motion
+    available to it is the jump from one cell to the next.
 
-    A mix is the continuous coordinate over the same grid -- three weights that say how far the
-    item has travelled from its resting cell toward each of the cells it can reach:
+    A mix is the continuous coordinate over the grid plus the selected wash -- three weights that
+    say how far the item has travelled from its resting cell:
 
-        hot   0 -> 1   toward the HOT phase    (cursor over / keyboard nav on it)
-        act   0 -> 1   toward the ACTIVE phase (pressed / captured)
-        sel   0 -> 1   toward the SELECT look  (chosen: toggled, open, selected row)
+        hot   0 -> 1   toward the HOT phase       (cursor over / keyboard nav on it)
+        act   0 -> 1   toward the ACTIVE phase    (pressed / captured)
+        sel   0 -> 1   into the selected wash     (chosen: toggled, open, selected row)
 
     Read it once per item with style_mix (gui()->style_mix), which owns the damper storage, then
     spend it on as many rows of the grid as the widget paints -- surface, border, ink.  One probe
@@ -442,7 +426,7 @@ typedef struct gui_style_mix_t
 {
     f32 hot;   // 0..1 travel toward GUI_PHASE_HOT
     f32 act;   // 0..1 travel toward GUI_PHASE_ACTIVE
-    f32 sel;   // 0..1 travel toward GUI_LOOK_SELECT
+    f32 sel;   // 0..1 travel into the selected wash
 
 } gui_style_mix_t;
 
@@ -456,13 +440,14 @@ typedef struct gui_style_mix_t
     restate the same relationships dozens of times with nothing to keep the restatements in sync
     -- one literal edited and its echoes elsewhere quietly drift off the ramp.
 
-    So a theme authors ELEVEN colours and SIX numbers, and gui_style_bake derives the 96 cells:
+    So a theme authors ELEVEN colours and SIX numbers, and gui_style_bake derives the 48 cells:
 
         seeds  -- the source colours, one per surface KIND (not per role, not per phase)
         ramp   -- how far a cell travels per interaction step, per theme
-    
+
     A seed is a colour a designer picks; a ramp is the personality of the theme (how much a
-    hover moves, how deep a press sits, how far an inert thing fades).  Neither is a cell.
+    hover moves, how deep a press sits, how far an inert thing fades, how far a chosen surface
+    washes toward the accent).  Neither is a cell.
 
     Baking WRITES col[][], and a kit is free to overwrite any cell afterwards.  Nothing is closed
     off: bake first for a coherent ramp, then hand-author the two or three cells you actually
@@ -470,9 +455,9 @@ typedef struct gui_style_mix_t
 
         gui_style_t* e = gui()->style_edit();
         e->palette.seed[ GUI_SEED_ACCENT ] = gold;
-        gui()->style_bake( e );                         // 96 cells re-derive
+        gui()->style_bake( e );                         // 48 cells re-derive
 
-        e->col[ GUI_LOOK_NORMAL ][ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;   // one bespoke cell
+        e->col[ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;   // one bespoke cell
     
     Alpha rides through: a seed's alpha byte is carried onto every cell derived from it, so a
     translucent panel seed yields a translucent panel in all four phases without four literals.
@@ -520,7 +505,7 @@ typedef enum
     GUI_RAMP_FADE,        // how far an inert cell fades toward the surface (the DIM phase)
     GUI_RAMP_RECESS,      // how far a recessed surface / empty track sinks below its base
     GUI_RAMP_STEP,        // one lift notch for the accent, border and anchor ramps
-    GUI_RAMP_SELECT,      // how far a CHOSEN surface washes toward the accent -- the SELECT plane
+    GUI_RAMP_SELECT,      // how far a CHOSEN surface washes toward the accent (style_wash_selected)
     GUI_RAMP_COUNT
 
 } gui_style_ramp_t;
@@ -793,22 +778,20 @@ typedef struct gui_style_s
        addresses a seed by slot exactly as push_style_var addresses a var. */
     gui_palette_t palette;
 
-    /* SKIN: the 2x12x4 color grid -- THE color vocabulary (gui_style_look_t x gui_style_role_t x
-       gui_style_phase_t, above), and the DERIVED half: gui_style_bake writes all 96 cells from
-       the palette, then a kit may overwrite any of them.  GUI_COLOR packs R,G,B,A bytes; a cell
-       is read with style_color( role, phase ) for the NORMAL plane, style_color_look for either.
+    /* SKIN: the 12x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
+       above), and the DERIVED half: gui_style_bake writes all 48 cells from the palette, then a
+       kit may overwrite any of them.  GUI_COLOR packs R,G,B,A bytes; a cell is read with
+       style_col( role, phase ).  There is no SELECTED plane here -- style_col_selected washes a
+       resolved cell toward the accent live, rather than reading a second stored one; see the
+       SELECTED section above. */
+    u32 col[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 
-       LOOK is the outer index so that each plane is one contiguous 48-cell run in the flat slot
-       space -- which is what keeps the NORMAL plane's layout, and therefore every compile-time
-       colour slot, byte-identical to what it was before the SELECT plane existed. */
-    u32 col[ GUI_LOOK_COUNT ][ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
-
-    /* SKIN: the FACE plane -- the same 2x12x4 grid again, but a cell here holds a HANDLE, not a
+    /* SKIN: the FACE plane -- the same 12x4 grid again, but a cell here holds a HANDLE, not a
        colour: a 1-based index into this set's brush pool (gui_style_brush_add), looked up by
-       style_face_look to return the gui_brush_t it names.  col and face share the u32 slot type
-       only because the push/pop stack below addresses the whole struct as one flat array of u32
-       slots (gui_style_core.c) -- nothing in the struct itself marks a slot as "colour" or
-       "handle"; that meaning comes from which grid you index and which accessor you call.
+       style_face to return the gui_brush_t it names.  col and face share the u32 slot type only
+       because the push/pop stack below addresses the whole struct as one flat array of u32 slots
+       (gui_style_core.c) -- nothing in the struct itself marks a slot as "colour" or "handle";
+       that meaning comes from which grid you index and which accessor you call.
 
        0 (GUI_FACE_NONE) everywhere by default, which means "just use col" -- so a theme that
        authors no art behaves exactly as it did and pays one indexed load it already had the cache
@@ -816,13 +799,13 @@ typedef struct gui_style_s
 
        This plane is why the brush exists.  A colour cell can only ever say "fill it with this";
        a face cell can say "fill it with this nine-slice", and because it is addressed by the SAME
-       (look, role, phase) coordinate every render already resolves, a theme installing faces
-       restyles every widget that paints through the grid -- stock, chrome, and a user's own --
-       without one of them being edited.  The handle (not the brush body) lives in the slot space
-       so that push_style_face / next_style_face / a set switch are the SAME machinery a colour
-       push uses, with nothing new to keep in step; the bodies live beside the store, since a
-       brush is registered once and named many times. */
-    u32 face[ GUI_LOOK_COUNT ][ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
+       (role, phase) coordinate every render already resolves, a theme installing faces restyles
+       every widget that paints through the grid -- stock, chrome, and a user's own -- without one
+       of them being edited.  The handle (not the brush body) lives in the slot space so that
+       push_style_face / next_style_face / a set switch are the SAME machinery a colour push uses,
+       with nothing new to keep in step; the bodies live beside the store, since a brush is
+       registered once and named many times. */
+    u32 face[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 
     /* METRICS + SKIN scalars, indexed by gui_style_var_t -- the push_style_var vocabulary.
        Authored in px at em=12 and rescaled by gui_style_apply; the enum below documents each

@@ -17,8 +17,8 @@
                  restyles at boot without owning a theme entry.
 
     Both emit the AUTHORED half only -- seeds, ramp, vars, density ramp -- plus, separately, the
-    colour cells that survive a re-bake.  That split is the point: gui_style_bake derives all 96
-    cells from the eleven seeds and six ramp values, so dumping the grid verbatim would be 96
+    colour cells that survive a re-bake.  That split is the point: gui_style_bake derives all 48
+    cells from the eleven seeds and six ramp values, so dumping the grid verbatim would be 48
     numbers of noise hiding the twelve that matter.  We re-bake a copy of the live palette and
     diff: cells that come back identical are DERIVED and emitted as nothing at all; cells that
     differ are hand edits and are emitted after the bake call, which is exactly where they have
@@ -31,7 +31,7 @@
 ==============================================================================================*/
 // clang-format off
 
-#define STX_CAP  ( 48 * 1024 )   /* worst case: 96 override cells + every var + a fat header */
+#define STX_CAP  ( 48 * 1024 )   /* worst case: 48 override cells + every var + a fat header */
 
 typedef enum
 {
@@ -112,12 +112,6 @@ static const char* const k_var_id[ GUI_VAR_COUNT ] =
     [ GUI_VAR_ANIM_ACTIVE     ] = "GUI_VAR_ANIM_ACTIVE",
     [ GUI_VAR_ANIM_SELECT     ] = "GUI_VAR_ANIM_SELECT",
     [ GUI_VAR_ANIM_SIZE       ] = "GUI_VAR_ANIM_SIZE",
-};
-
-static const char* const k_look_id[ GUI_LOOK_COUNT ] =
-{
-    [ GUI_LOOK_NORMAL ] = "GUI_LOOK_NORMAL",
-    [ GUI_LOOK_SELECT ] = "GUI_LOOK_SELECT",
 };
 
 static const char* const k_role_id[ GUI_ROLE_COUNT ] =
@@ -354,7 +348,7 @@ stx_emit_scales( const gui_style_t* s, const char* ind )
 }
 
 /* The cells that do NOT come back from a re-bake of this palette -- the hand edits, and the only
-   part of the 96-cell grid worth writing down.  `target` names the thing being assigned into
+   part of the 48-cell grid worth writing down.  `target` names the thing being assigned into
    ("s->col" for the runtime door, "style->col" inside a theme installer). */
 static u32
 stx_emit_overrides( const gui_style_t* s, const char* target, const char* ind )
@@ -364,20 +358,18 @@ stx_emit_overrides( const gui_style_t* s, const char* target, const char* ind )
     gui()->style_bake( &ref );
 
     u32 n = 0;
-    for ( u32 l = 0; l < GUI_LOOK_COUNT; ++l )
-        for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
-            for ( u32 p = 0; p < GUI_PHASE_COUNT; ++p )
-            {
-                if ( s->col[ l ][ r ][ p ] == ref.col[ l ][ r ][ p ] )
-                    continue;
+    for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
+        for ( u32 p = 0; p < GUI_PHASE_COUNT; ++p )
+        {
+            if ( s->col[ r ][ p ] == ref.col[ r ][ p ] )
+                continue;
 
-                stx_put( "%s%s[ %s ][ %s ][ %s ] = %s;\n", ind, target,
-                         stx_id( k_look_id,  GUI_LOOK_COUNT,  l ),
-                         stx_id( k_role_id,  GUI_ROLE_COUNT,  r ),
-                         stx_id( k_phase_id, GUI_PHASE_COUNT, p ),
-                         stx_color( s->col[ l ][ r ][ p ] ) );
-                ++n;
-            }
+            stx_put( "%s%s[ %s ][ %s ] = %s;\n", ind, target,
+                     stx_id( k_role_id,  GUI_ROLE_COUNT,  r ),
+                     stx_id( k_phase_id, GUI_PHASE_COUNT, p ),
+                     stx_color( s->col[ r ][ p ] ) );
+            ++n;
+        }
     return n;
 }
 
@@ -387,11 +379,10 @@ static u32
 stx_count_faces( const gui_style_t* s )
 {
     u32 n = 0;
-    for ( u32 l = 0; l < GUI_LOOK_COUNT; ++l )
-        for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
-            for ( u32 p = 0; p < GUI_PHASE_COUNT; ++p )
-                if ( s->face[ l ][ r ][ p ] != 0 )
-                    ++n;
+    for ( u32 r = 0; r < GUI_ROLE_COUNT; ++r )
+        for ( u32 p = 0; p < GUI_PHASE_COUNT; ++p )
+            if ( s->face[ r ][ p ] != 0 )
+                ++n;
     return n;
 }
 
@@ -466,7 +457,7 @@ stx_build( void )
             stx_put( "    s->palette.ramp[ %-16s ] = %s;\n",
                      stx_id( k_ramp_id, GUI_RAMP_COUNT, i ), stx_f32( s->palette.ramp[ i ] ) );
 
-        stx_put( "\n    /* Derive all 96 cells from the palette above. */\n"
+        stx_put( "\n    /* Derive all 48 cells from the palette above. */\n"
                  "    gui()->style_bake( s );\n" );
 
         u32 mark = s_stx.len;

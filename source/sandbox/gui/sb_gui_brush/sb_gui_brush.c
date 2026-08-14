@@ -327,21 +327,22 @@ sb_style_source( void* user )
                           .col_a = GUI_COLOR( 0xC0, 0xD8, 0xFF, 0xFF ) } );
 
     /* Container surfaces. */
-    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = panel;
-    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = panel;
-    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = title;
-    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_TITLE ][ GUI_PHASE_DIM    ] = title;
+    st->face[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = panel;
+    st->face[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = panel;
+    st->face[ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = title;
+    st->face[ GUI_ROLE_TITLE ][ GUI_PHASE_DIM    ] = title;
 
     /* Control faces, across the phase ramp -- this row is what reaches buttons, checkboxes, combo
-       fields, menu rows, tree nodes, input boxes and toolbar buttons all at once. */
-    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_BG ][ GUI_PHASE_IDLE   ] = face_idle;
-    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_BG ][ GUI_PHASE_HOT    ] = face_hot;
-    st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ] = face_act;
-    st->face[ GUI_LOOK_SELECT ][ GUI_ROLE_BG ][ GUI_PHASE_IDLE   ] = face_act;
+       fields, menu rows, tree nodes, input boxes and toolbar buttons all at once.  A selected row
+       needs no cell of its own here: draw_face_item washes whichever of these tints toward the
+       accent live, the same wash a flat colour gets. */
+    st->face[ GUI_ROLE_BG ][ GUI_PHASE_IDLE   ] = face_idle;
+    st->face[ GUI_ROLE_BG ][ GUI_PHASE_HOT    ] = face_hot;
+    st->face[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ] = face_act;
 
     /* Knobs and thumbs: slider handles and both scrollbar grabs. */
     for ( u32 p = 0; p < GUI_PHASE_COUNT; ++p )
-        st->face[ GUI_LOOK_NORMAL ][ GUI_ROLE_GRAB ][ p ] = grab;
+        st->face[ GUI_ROLE_GRAB ][ p ] = grab;
 }
 
 /* Install / remove the art theme.  style_source_set runs a landing immediately, so the whole UI

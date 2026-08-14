@@ -107,36 +107,22 @@ void gui_disabled_end( void ) { item_flag_pop(); }
         gui()->button( "Roomy" );
         gui()->pop_style_var( 1 );
 
-    The plain verbs address the NORMAL plane, which is what an unqualified colour means
-    everywhere in the system.  The _look pair adds the third coordinate and accepts GUI_LOOK_ALL
-    to span both planes as ONE push -- so recolouring "the text, selected or not" is still a
-    single balanced push_style_color_look, not two:
-
-        gui()->push_style_color_look( GUI_ROLE_TEXT, GUI_PHASE_ALL, GUI_LOOK_ALL, ink );
-        ... every text cell in the grid, both planes ...
-        gui()->pop_style_color( 1 );
-
+    There is no look-qualified pair: a selected read washes whatever cell already resolved
+    (style_wash_selected / style_col_selected, gui.h), so overriding "how selection looks here"
+    means pushing GUI_SEED_ACCENT or GUI_RAMP_SELECT for a scope, not naming a second plane --
+    see push_style_seed below.
 ==============================================================================================*/
 
-void gui_push_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_push_color( role, phase, GUI_LOOK_NORMAL, abgr ); }
+void gui_push_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_push_color( role, phase, abgr ); }
 void gui_pop_style_color ( u32 count )                                                { style_pop_color( count ); }
-void gui_next_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_next_color( role, phase, GUI_LOOK_NORMAL, abgr ); }
+void gui_next_style_color( gui_style_role_t role, gui_style_phase_t phase, u32 abgr ) { style_next_color( role, phase, abgr ); }
 
-/* The look-qualified pair.  No pop of their own: a look push is a colour push, so it lands on
-   the colour stack and pop_style_color takes it back -- one stack per pop verb, and adding a
-   coordinate to a cell address does not make it a different kind of override. */
+/* The FACE verbs -- the same shapes over the parallel plane.  Their own stack (one per pop verb,
+   the house rule) so an interleaved colour / face / var sequence unwinds correctly. */
 
-void gui_push_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr ) { style_push_color( role, phase, look, abgr ); }
-void gui_next_style_color_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, u32 abgr ) { style_next_color( role, phase, look, abgr ); }
-
-/* The FACE verbs -- the same four shapes over the parallel plane.  Their own stack (one per pop
-   verb, the house rule) so an interleaved colour / face / var sequence unwinds correctly; the
-   look-qualified push has no pop of its own for the same reason its colour twin has none. */
-
-void gui_push_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face ) { style_push_face( role, phase, GUI_LOOK_NORMAL, face ); }
+void gui_push_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face ) { style_push_face( role, phase, face ); }
 void gui_pop_style_face ( u32 count )                                                             { style_pop_face( count ); }
-void gui_next_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face ) { style_next_face( role, phase, GUI_LOOK_NORMAL, face ); }
-void gui_push_style_face_look( gui_style_role_t role, gui_style_phase_t phase, gui_style_look_t look, gui_style_face_t face ) { style_push_face( role, phase, look, face ); }
+void gui_next_style_face( gui_style_role_t role, gui_style_phase_t phase, gui_style_face_t face ) { style_next_face( role, phase, face ); }
 
 void gui_push_style_var( gui_style_var_t var, f32 value )   { style_push_var( var, value ); }
 void gui_pop_style_var ( u32 count )                        { style_pop_var( count ); }
