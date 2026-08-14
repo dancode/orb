@@ -1,9 +1,9 @@
 /*==============================================================================================
 
-    gui/style/gui_bake.c -- the bake: a seed palette -> the 36-cell colour grid.
+    gui/style/gui_bake.c -- the bake: a seed palette -> the 40-cell colour grid.
 
     A theme authors a gui_palette_t: seven seed colours plus a ramp (gui.h).  A render reads
-    gui_style_t.col: an 8-role x 4-phase grid of resolved colours.  gui_style_bake is the only
+    gui_style_t.col: a 10-role x 4-phase grid of resolved colours.  gui_style_bake is the only
     function that turns one into the other, and the only writer of col[][] anywhere.
 
     It is pure -- a function of the palette argument alone, with no ambient state, no interact
@@ -312,14 +312,27 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
 
     const u32 band = bake_wash( bake_lift( ground, step * 0.50f, pole ), hover * 0.25f, accent );
 
-    /* PANEL -- the container.  A fifth of the hover and no lift at all: background should tint,
+    /* PANEL -- the window body.  A fifth of the hover and no lift at all: background should tint,
        not move.  Pressed is the full wash, sunk half a step so a held surface reads as pressed
-       rather than merely coloured. */
+       rather than merely coloured.  DIM is the inert reading (gui_stock_panel's framed backdrop),
+       not a recess -- a nested child region has its own role below. */
 
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = ground; // bake_wash( ground, hover * 0.25f, accent );
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = ground; // bake_recess( bake_wash( ground, press, accent ), step * 0.50f );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.25f, accent );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( ground, press, accent ), step * 0.50f );
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = bake_recess( ground, recess );
+
+    /* PANEL_CHILD -- a nested container: scroll region, embedded child panel.  Same shape as
+       PANEL, seeded from a recessed ground instead of the bare one, so a child reads sunk into
+       its parent AT REST and still carries its own hover/press feedback on top.  DIM recesses
+       once further, for a disabled child inside a disabled control. */
+
+    const u32 child_ground = bake_recess( ground, recess );
+
+    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_IDLE   ] = child_ground;
+    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_HOT    ] = bake_wash( child_ground, hover * 0.25f, accent );
+    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( child_ground, press, accent ), step * 0.50f );
+    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_DIM    ] = bake_recess( child_ground, recess );
 
     /* TITLE -- a caption band is a LIFTED ground, which is why it needs no seed of its own.
        ACTIVE is the bare ground: a live tab IS its panel, merging into the body it owns. */

@@ -305,6 +305,16 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
    sometimes just quiet.  Split, PRIMARY's DIM is unambiguously "disabled" like every other role's
    DIM, and SECONDARY is its own honest (if equally unreactive) ramp for the muted case.
 
+   PANEL vs PANEL_CHILD is the same "a ramp must describe one surface" rule ACCENT/MARK and
+   TEXT_PRIMARY/SECONDARY were split for.  A window body and a nested scroll region both sit on
+   PANEL's plane, but they are not one surface: the window body is flush with the page and reads
+   disabled when DIM, while a child region is recessed AT REST and still needs its own HOT/ACTIVE
+   for a hovered or dragged (resize) child to read back to the user.  Folding "recessed" into
+   PANEL's DIM cell, as a single early build did, cost every child region its hover and press
+   feedback -- DIM is one cell, not a phase, so a recessed panel could never also show as hot.
+   Split, PANEL's DIM goes back to meaning "disabled" like every other role's DIM, and
+   PANEL_CHILD carries its own full IDLE/HOT/ACTIVE/DIM ramp, seeded from a recessed ground.
+
    There is no STATUS row here.  INFO / OK / WARN / ERROR used to be four roles wearing the same
    ramp shape as everything above, but a severity signal is not a surface a widget hovers or
    presses -- it is a standing fact a caller already knows before it draws.  Baking it into the
@@ -315,15 +325,16 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
 
 typedef enum
 {
-    GUI_ROLE_PANEL = 0,   // container surface: window body, child region
-    GUI_ROLE_TITLE,       // caption band over a container: title bar, tab, menu bar, table header
-    GUI_ROLE_BG,          // control surface: button face, input field, check box, cycle end caps
+    GUI_ROLE_PANEL = 0,       // container surface: window body
+    GUI_ROLE_PANEL_CHILD,     // nested container: scroll region, embedded child panel
+    GUI_ROLE_TITLE,           // caption band over a container: title bar, tab, menu bar, table header
+    GUI_ROLE_BG,              // control surface: button face, input field, check box, cycle end caps
     GUI_ROLE_BORDER,          // frame line, focus ring, resize edge
     GUI_ROLE_TEXT_PRIMARY,    // glyphs, caret -- the body ink; DIM is disabled, not muted
     GUI_ROLE_TEXT_SECONDARY,  // a permanently quieter ink: hints, captions, shortcuts, inactive labels
     GUI_ROLE_ACCENT,          // the value a control HOLDS: slider / progress fill, empty track
     GUI_ROLE_MARK,            // the indicator a control SHOWS: check, radio dot, nav ring
-    GUI_ROLE_GRAB,        // movable part of a track control: slider knob, scrollbar thumb
+    GUI_ROLE_GRAB,            // movable part of a track control: slider knob, scrollbar thumb
 
     GUI_ROLE_COUNT
 
@@ -333,12 +344,13 @@ typedef enum
    not a state, because gui_item_state_t is the interact server's flag set and GUI_STATE_* is the
    retained per-id pool: a phase is what item_phase() DISTILLS a state into for the style.
 
-   The same four steps mean the analogous thing for every role, which is what lets one 12x4 grid
+   The same four steps mean the analogous thing for every role, which is what lets one 10x4 grid
    replace a flat palette plus its per-widget token residue:
 
      role     IDLE              HOT                  ACTIVE                 DIM
      -------  ----------------  -------------------  ---------------------  ------------------
-     PANEL    window body       hovered surface      pressed surface        child / recessed
+     PANEL    window body       hovered surface      pressed surface        inert backdrop
+     CHILD    recessed surface  hovered child         pressed child         inert child
      TITLE    bar, inactive tab hovered tab          focused bar, live tab  de-emphasized bar
      BG       control face      hovered face         pressed / focused      inert face
      BORDER   frame line        hovered / resize     focused window ring    subdued frame
@@ -348,9 +360,10 @@ typedef enum
      GRAB     knob / thumb      hovered knob         dragged knob           inert knob
      status   the signal        hovered signal       pressed signal         the FIELD (banner)
 
-   DIM doubles as the inert variant throughout: a recessed panel is PANEL[DIM], an empty value
-   track is ACCENT[DIM], secondary text is TEXT[DIM] -- and, for the status roles only, the
-   banner tint behind a message rather than a quieter ink (see gui_style_role_t).
+   DIM doubles as the inert variant throughout: an inert framed backdrop is PANEL[DIM], a
+   disabled child region is CHILD[DIM], an empty value track is ACCENT[DIM], secondary text is
+   TEXT[DIM] -- and, for the status roles only, the banner tint behind a message rather than a
+   quieter ink (see gui_style_role_t).
 
    Note what is NOT on this axis: whether the item is SELECTED.  Selection persists across
    frames; a phase does not -- so folding SELECTED into ACTIVE would cost every list row its

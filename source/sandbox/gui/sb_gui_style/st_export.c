@@ -120,7 +120,8 @@ static const char* const k_var_id[ GUI_VAR_COUNT ] =
 
 static const char* const k_role_id[ GUI_ROLE_COUNT ] =
 {
-    [ GUI_ROLE_PANEL  ] = "GUI_ROLE_PANEL",
+    [ GUI_ROLE_PANEL       ] = "GUI_ROLE_PANEL",
+    [ GUI_ROLE_PANEL_CHILD ] = "GUI_ROLE_PANEL_CHILD",
     [ GUI_ROLE_TITLE  ] = "GUI_ROLE_TITLE",
     [ GUI_ROLE_BG     ] = "GUI_ROLE_BG",
     [ GUI_ROLE_BORDER ] = "GUI_ROLE_BORDER",

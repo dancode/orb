@@ -393,7 +393,7 @@ gui_span_t table_rows_span( i32 count, f32 h, f32 top );
 void scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
                        f32 content, f32 view, f32* scroll );
 
-void draw_child_bg        ( gui_rect_t r );
+void draw_child_bg        ( gui_rect_t r, u8 phase );
 void draw_child_border    ( gui_rect_t r );
 void draw_resize_highlight( gui_rect_t r, u8 edges );
 

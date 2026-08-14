@@ -177,11 +177,11 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
        its own size policy on an in-flight drag: clamp to the next-child constraints and the
        CHILD_MIN floor, persist into the region record, and feed the result back into the box
        drawn below.  Right/bottom only -- the child's top-left is pinned. */
-    u8 resize_hot = 0;
+    u8   resize_hot = 0;
+    bool dragging   = false;
     if ( resize_x || resize_y )
     {
-        u8   allow    = (u8)( ( resize_x ? GUI_RESIZE_R : 0u ) | ( resize_y ? GUI_RESIZE_B : 0u ) );
-        bool dragging = false;
+        u8 allow = (u8)( ( resize_x ? GUI_RESIZE_R : 0u ) | ( resize_y ? GUI_RESIZE_B : 0u ) );
         resize_hot = resize_item( id, s_scope.win, box, allow, false, &dragging );
 
         if ( dragging )
@@ -211,8 +211,11 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     /* Child body fill, drawn under the parent clip before the region clips in.  The border is
        deferred to child_end (after the scrollbars) so the bar tracks cannot overdraw it -- the
        same deferral window_end uses for the window frame.  Paint policy lives with the skin
-       (draw_child_bg / draw_child_border, stock/gui_adornment.c). */
-    draw_child_bg( box );
+       (draw_child_bg / draw_child_border, stock/gui_adornment.c).  Phase rides the same edge
+       signal resize_item already computed above: a live drag reads ACTIVE, a hot resize edge
+       reads HOT, otherwise the child sits at its resting IDLE recess. */
+    u8 body_phase = dragging ? GUI_PHASE_ACTIVE : resize_hot ? GUI_PHASE_HOT : GUI_PHASE_IDLE;
+    draw_child_bg( box, body_phase );
 
     layout_push_region( id, box, REGION_PAD_DEFAULT, flags, &rg->scroll,
                         /* own_clip */ !( flags & GUI_WIN_NO_CLIP ) );

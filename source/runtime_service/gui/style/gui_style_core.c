@@ -740,7 +740,8 @@ style_overrides_replay( void )
 
 static const char* const k_role_name[ GUI_ROLE_COUNT ] =
 {
-    [ GUI_ROLE_PANEL  ] = "Panel",
+    [ GUI_ROLE_PANEL       ] = "Panel",
+    [ GUI_ROLE_PANEL_CHILD ] = "Panel (child)",
     [ GUI_ROLE_TITLE  ] = "Title",
     [ GUI_ROLE_BG     ] = "Control",
     [ GUI_ROLE_BORDER ] = "Border",
