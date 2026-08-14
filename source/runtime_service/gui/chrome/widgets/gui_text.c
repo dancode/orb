@@ -25,8 +25,8 @@
 static void
 text_emit( u32 col, const char* str )
 {
-    f32          tw = font_text_w( str );
-    gui_rect_t r  = cell_next_w( tw, font_char_h() );   /* natural width feeds same_line */
+    f32 tw = font_text_w( str );
+    gui_rect_t r = cell_next_w( tw, font_char_h() );   /* natural width feeds same_line */
 
     /* Place the run inside its cell per the region's content alignment (default LEFT | TOP, the
        original top-left).  A row tall enough for the glyph centers vertically when asked. */

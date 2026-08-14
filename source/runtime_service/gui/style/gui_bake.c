@@ -317,9 +317,9 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        rather than merely coloured. */
 
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.25f, accent );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = ground; // bake_wash( ground, hover * 0.25f, accent );
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = ground; // bake_recess( bake_wash( ground, press, accent ), step * 0.50f );
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = ground; // bake_recess( ground, recess );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = bake_recess( ground, recess );
 
     /* TITLE -- a caption band is a LIFTED ground, which is why it needs no seed of its own.
        ACTIVE is the bare ground: a live tab IS its panel, merging into the body it owns. */

@@ -149,6 +149,26 @@ show_demo_window(bool* p_open)
         gui()->same_line( -1 );
         gui()->textf("counter = %d", counter);
 
+        static bool child_disabled = false;
+        gui()->disabled_begin( child_disabled );
+        if ( gui()->child_begin( "child_demo", 0, gui()->sz_child_rows_h( 4 ), GUI_WIN_NONE | GUI_WIN_NO_CLIP ) )
+        {
+            gui()->stack();
+            gui()->text( "This text lives inside a child window." );
+            gui()->text( "It scrolls and clips independently of the parent." );
+            gui()->text( "A few buttons below prove it takes its own input." );
+            if ( gui()->button( "Child Button A" ) )
+                counter++;
+            gui()->same_line( -1 );
+            if ( gui()->button( "Child Button B" ) )
+                counter++;
+        }
+        gui()->child_end();
+        gui()->disabled_end();
+
+        if ( gui()->button( child_disabled ? "Enable Child" : "Disable Child" ) )
+            child_disabled = !child_disabled;
+
         /* Static placeholder text (not wired to a real per-frame delta) -- if this were made to
            recompute from an ever-growing clock every frame, its changing content would keep this
            window's command hash different frame to frame forever, which would keep frame_dirty()
