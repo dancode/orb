@@ -243,22 +243,19 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        rather than merely coloured. */
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.20f, accent );
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( ground, press, accent ),
-                                                             step * 0.50f );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( ground, press, accent ), step * 0.50f );
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_DIM    ] = bake_recess( ground, recess );
 
     /* TITLE -- the lifted band.  ACTIVE is the bare ground: a live tab IS its panel. */
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = band;
-    col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( ground, hover, accent ),
-                                                           step, pole );
+    col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( ground, hover, accent ), step, pole );
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_ACTIVE ] = ground;
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_DIM    ] = bake_fade( band, fade, ground );
 
     /* BG -- the control face.  Hot comes forward, active sinks back: that pair IS the pressed
        read, and it is the one place the two direction verbs are deliberately opposed. */
     col[ GUI_ROLE_BG ][ GUI_PHASE_IDLE   ] = control;
-    col[ GUI_ROLE_BG ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( control, hover, accent ),
-                                                        step, pole );
+    col[ GUI_ROLE_BG ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( control, hover, accent ), step, pole );
     col[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( control, press, accent ), step );
     col[ GUI_ROLE_BG ][ GUI_PHASE_DIM    ] = bake_recess( control, recess );
 
