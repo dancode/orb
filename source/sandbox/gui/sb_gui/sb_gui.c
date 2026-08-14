@@ -267,12 +267,19 @@ main( int argc, char** argv )
 
         // Recolor by SEED: change a source color, re-derive the 32-cell grid from it.  This is
         // the usual door -- every role fed by the seed moves together and keeps its ramp.
-        style->palette.seed[GUI_SEED_SURFACE] = GUI_COLOR( 0x20, 0x20, 0x20, 0xFF );
-        style->palette.seed[GUI_SEED_INK    ] = GUI_COLOR( 0xFF, 0xAA, 0x00, 0xFF );
+        style->palette.seed[GUI_SEED_SURFACE] = GUI_COLOR( 32, 32, 32, 255 );
+        style->palette.seed[GUI_SEED_INK    ] = GUI_COLOR( 255, 170, 0, 255 );
+        style->palette.seed[GUI_SEED_ACCENT] = GUI_COLOR( 160, 160, 64, 255 );
+        // style->palette.seed[GUI_SEED_CONTROL ] = GUI_COLOR( 128, 128, 196, 255 );
+
+        // Recolor by RAMP: change how far a derivation travels, not the color it travels from.
+        // A deeper HOVER wash reads as a punchier, more reactive theme off the same seeds.
+        style->palette.ramp[GUI_RAMP_HOVER] = 0.1f;
+        style->palette.ramp[GUI_RAMP_PRESS] = 0.4f;
 
         gui()->style_bake( style );
 
-        // ...then disagree with the ramp on individual cells, if you want to.  Order matters:
+        // ...then disagree with the ramp on individual cells, if you want to. Order matters:
         // a cell written before the bake would simply be overwritten by it.
         // style->col[GUI_ROLE_MARK][GUI_PHASE_IDLE] = GUI_COLOR( 0xFF, 0x40, 0x40, 0xFF );
 

@@ -142,26 +142,30 @@ bake_mix( u32 a, u32 b, f32 t )
 ==============================================================================================*/
 
 /* POLE -- The light or dark decision point */
-static u32 bake_pole( u32 ground ) 
+static u32 
+bake_pole( u32 ground ) 
 { 
     return ( bake_lum( ground ) < 128u ) ? BAKE_WHITE : BAKE_BLACK; 
 }
 
 /* LIFT -- bring c forward, toward the pole (makes things feel elevated) */
-static u32 bake_lift( u32 c, f32 t, u32 pole ) 
+static u32 
+bake_lift( u32 c, f32 t, u32 pole ) 
 { 
     return bake_mix( c, pole, t ); 
 }
 
 /* RECESS -- sink c into the page, always blend toward black */
-static u32 bake_recess( u32 c, f32 t ) 
+static u32 
+bake_recess( u32 c, f32 t ) 
 { 
     return bake_mix( c, BAKE_BLACK, t ); 
 }
 
 /* FADE -- retire 'c' toward the ground it sits on: the DIM phase for anything drawn 
    ON a container (secondary text, a subdued frame, an inert mark). */
-static u32 bake_fade( u32 c, f32 t, u32 ground )   
+static u32 
+bake_fade( u32 c, f32 t, u32 ground )   
 { 
     return bake_mix( c, ground, t );
 }
@@ -169,7 +173,8 @@ static u32 bake_fade( u32 c, f32 t, u32 ground )
 /* WASH -- Blends c toward the accent colour. Used for hover and pressed states.
    When a button is hovered or held, it washes toward the theme's accent.
    At the SELECT ramp it's used to tint the chosen ground itself. */
-static u32 bake_wash( u32 c, f32 t, u32 accent )    
+static u32 
+bake_wash( u32 c, f32 t, u32 accent )    
 { 
     return bake_mix( c, accent, t ); 
 }
@@ -269,15 +274,15 @@ bake_ink_on( u32 ink, u32 ground, i32 want )
 /*==============================================================================================
     The derivation -- nine roles, each a sentence in the verbs above.
 
-    Written out role by role rather than driven from a data table, because each block below is an
+    Written out role by role rather than driven from a data table, each block below is an
     editorial claim about what a phase MEANS for that role, and a table of opcodes would bury
-    exactly the thing a theme author needs to read.  Each claim is stated relative to the GROUND
+    exactly the thing a theme author needs to read. Each claim is stated relative to the GROUND
     and INK bake_plane is handed, never to the raw palette seed -- see each role's comment below
     for what it claims and why.
 
-    The severity ladder (INFO / OK / WARN / ERROR) is not one of the nine roles here: it lives in
-    the extended palette (gui_style_ext_t, gui.h) as four flat colours, copied straight through
-    rather than walked through these verbs -- see the loop at the end of gui_style_bake.
+    The severity ladder (INFO / OK / WARN / ERROR) is not one of the nine roles here: it lives
+    in the extended palette (gui_style_ext_t, gui.h) as four flat colours, copied straight
+    through rather than walked through these verbs -- see the loop at the end of gui_style_bake.
 ==============================================================================================*/
 
 static void
@@ -301,11 +306,13 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        are this lifted, faintly accented ground.  It lifts by a ramp STEP rather than by the
        recess, because the recess is authored per polarity (a light theme sinks far less than a
        dark one) and a caption band has to stay equally visible in both. */
+
     const u32 band = bake_wash( bake_lift( ground, step * 0.60f, pole ), hover * 0.12f, accent );
 
     /* PANEL -- the container.  A fifth of the hover and no lift at all: background should tint,
        not move.  Pressed is the full wash, sunk half a step so a held surface reads as pressed
        rather than merely coloured. */
+
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.20f, accent );
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( ground, press, accent ), step * 0.50f );
@@ -313,6 +320,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
 
     /* TITLE -- a caption band is a LIFTED ground, which is why it needs no seed of its own.
        ACTIVE is the bare ground: a live tab IS its panel, merging into the body it owns. */
+
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = band;
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( ground, hover, accent ), step, pole );
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_ACTIVE ] = ground;
@@ -320,6 +328,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
 
     /* BG -- the control face.  Hot comes forward, active sinks back: that pair IS the pressed
        read, and it is the one place the two direction verbs are deliberately opposed. */
+
     col[ GUI_ROLE_BG ][ GUI_PHASE_IDLE   ] = control;
     col[ GUI_ROLE_BG ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( control, hover, accent ), step, pole );
     col[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( control, press, accent ), step );
@@ -328,6 +337,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     /* BORDER -- structural at rest, pure signal when live.  ACTIVE takes a second lift step so
        the focus ring reads brighter than a hovered edge -- the border carries focus, so the two
        cells must stay visibly distinct, the same HOT -> ACTIVE spacing the ACCENT row keeps. */
+
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_IDLE   ] = line;
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_HOT    ] = bake_lift( accent, step,        pole );
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step * 2.0f, pole );
@@ -348,6 +358,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        enabled cells: a disabled label is MEANT to recede, so holding it to the body-text
        separation would defeat the fade that makes it read as disabled.  It is still a floor --
        receding is not the same as disappearing. */
+
     col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_IDLE   ] = bake_ink_on( ink, ground, BAKE_INK_DELTA );
     col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_HOT    ] = bake_ink_on( ink, col[ GUI_ROLE_BG ][ GUI_PHASE_HOT ],
                                                                     BAKE_INK_DELTA );
@@ -363,6 +374,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        secondary label can still sit on a hot or pressed face.  DIM fades once further, for a
        secondary label inside a disabled control (a hint in a disabled field), at the same floor
        -- receding further is the point, not a bug to guard away. */
+
     const u32 sec_idle = bake_ink_on( bake_fade( ink, fade, ground ), ground, BAKE_DIM_DELTA );
     col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_IDLE   ] = sec_idle;
     col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_HOT    ] = bake_ink_on( sec_idle, col[ GUI_ROLE_BG ][ GUI_PHASE_HOT ],
@@ -375,6 +387,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     /* ACCENT -- the value a control holds: a straight three-cell lift (IDLE, +step, +2*step).
        DIM is the EMPTY track, so it comes off the CONTROL face, not the accent -- an empty
        slider well is a well, not a faded fill. */
+
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_IDLE   ] = accent;
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_HOT    ] = bake_lift( accent, step,        pole );
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step * 2.0f, pole );
@@ -392,12 +405,18 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        any role, since a knob must stay legible against both a hovering track and a filled bar.
        Its DIM fades further too: the anchor sits as far from the ground as the palette goes, so
        an ordinary fade would still leave an inert knob shouting. */
+
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_IDLE   ] = grab;
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_HOT    ] = bake_lift( grab, step * 3.0f, pole );
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_ACTIVE ] = bake_lift( grab, step * 6.0f, pole );
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_DIM    ] = bake_fade( grab, fade + ( 1.0f - fade ) * 0.40f,
                                                           ground );
 }
+/*==============================================================================================
+
+    Derive the theme full colour grid from s->palette.
+
+==============================================================================================*/
 
 void
 gui_style_bake( gui_style_t* s )
@@ -406,19 +425,22 @@ gui_style_bake( gui_style_t* s )
 
     const gui_palette_t* p = &s->palette;
 
-    const u32 surface = p->seed[ GUI_SEED_SURFACE ];
-    const u32 control = p->seed[ GUI_SEED_CONTROL ];
-    const u32 ink     = p->seed[ GUI_SEED_INK     ];
+    const u32 surface  = p->seed[ GUI_SEED_SURFACE ];
+    const u32 control  = p->seed[ GUI_SEED_CONTROL ];
+    const u32 ink      = p->seed[ GUI_SEED_INK     ];
 
     bake_plane( s->col, p, surface, control, ink );
 
     /* GUI_RAMP_SELECT is not spent here -- see the file header for where it is spent. */
 
-    /* The extended palette's reserved slots are a straight copy, not a derivation: there is no
-       ramp to walk, so this just carries the authored colour through to where style_ext expects
-       to find it. */
+    /* The extended palette's reserved slots are a straight copy, not a derivation: 
+       there is no ramp to walk, so this just carries the authored colour through to 
+       where style_ext expects to find it. */
+
     for ( u32 i = 0; i < GUI_EXT_RESERVED_COUNT; ++i )
+    {
         s->ext[ i ] = p->ext[ i ];
+    }
 }
 
 // clang-format on

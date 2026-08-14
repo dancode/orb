@@ -430,18 +430,22 @@ typedef struct gui_style_mix_t
 /*==============================================================================================
     GUI_STYLE -- The Seed Palette: What a theme AUTHORS
 
-    The grid above is what a RENDER reads.  It is not what a theme WRITES.  72 literals would be
-    the wrong authoring surface: many cells are structurally redundant with each other (TEXT_PRIMARY
-    is one colour across most phases, a role's HOT and ACTIVE cells usually sit close together, an
-    inert cell is usually its neighbour role's base) and a theme that hand-typed all 72 would
-    restate the same relationships dozens of times with nothing to keep the restatements in sync
-    -- one literal edited and its echoes elsewhere quietly drift off the ramp.
+    Purpose: Simplified authoring.
 
-    So a theme authors SEVEN colours and SIX numbers, and gui_style_bake derives the 36 cells:
+    The grid above is what a RENDER reads. It is not what a theme WRITES. 72 literals would
+    be the wrong authoring surface: many cells are structurally redundant with each other 
+    (TEXT_PRIMARY is one colour across most phases, a role's HOT and ACTIVE cells usually 
+    sit close together, an inert cell is usually its neighbour role's base) and a theme 
+    that hand-typed all 72 would restate the same relationships dozens of times with nothing
+    to keep the restatements in sync -- one literal edited and its echoes elsewhere quietly
+    drift off the ramp.
+
+    So a theme authors SEVEN colours and SIX numbers, and gui_style_bake derives the 
+    full 36 cells based on those 13 values.
 
         seeds  -- the source colours, one per surface KIND (not per role, not per phase)
         ramp   -- how far a cell travels per interaction step, per theme
-
+    
     A seed is a colour a designer picks; a ramp is the personality of the theme (how much a
     hover moves, how deep a press sits, how far an inert thing fades, how far a chosen surface
     washes toward the accent).  Neither is a cell.
