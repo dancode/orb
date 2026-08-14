@@ -457,6 +457,15 @@ window_apply_resize( gui_window_t* win, f32 title_h )
 
 /* window_sync_native (the native geometry pin + frame publish) lives in gui_window_native.c. */
 
+/* In-flight maximize-restore-by-drag: the horizontal fraction along the OLD (still-maximized)
+   titlebar width where the grab landed, captured once by window_end_titlebar_poll
+   (gui_window_end.c) at the moment it restores a dragged maximized window.  window_begin_ex
+   reapplies it every frame against the CURRENT (tweening) width below -- a fixed pixel offset
+   would only match the maximized width, and drift the grabbed point away from the cursor as the
+   window eases down toward its restored size.  Single global: only one window can hold this
+   drag at a time (same premise as gui_move.c's grab offset). */
+static f32 s_restore_drag_frac = 0.5f;
+
 /* Apply an in-progress title-bar drag: this window holds active_id while the button is down.
    On the main surface the panel slides within it (win->x/y).  On a floater the panel fills the
    surface, so the drag instead moves the whole OS window in SCREEN space to follow the cursor --
@@ -936,11 +945,26 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        or the window would slide back to its old spot and only snap to the cursor once the ease
        lands.  interact_held( id ) is exactly that case -- a double-click restore never grabs
        active_id, so it still rides the tween undisturbed. */
-    if ( !pinned && ( !pin_live || interact_held( id ) ) )
+    if ( !pinned && pin_live && interact_held( id ) )
+    {
+        /* window_apply_drag's move_track offset is a fixed pixel distance captured at grab time
+           against the maximized width -- fine once the window is back to a steady size, but wrong
+           while win->w is still easing down: the same pixel offset would drift the grabbed point
+           away from the cursor as the window shrinks (badly enough, for a grab taken near the
+           right of a wide maximized bar, to land the cursor outside the restored window
+           entirely).  Recompute from the title-bar-relative fraction instead, against THIS
+           frame's tweened width, so the grabbed point rides the cursor throughout the resize; then
+           re-arm move_grab so its offset matches the landed rect and the generic drag path above
+           picks up with no jump once the tween ends. */
+        win->x = window_snap( s_io.mouse_x - win->w * s_restore_drag_frac );
+        win->y = window_snap( s_io.mouse_y - title_h * 0.5f );
+        window_clamp( win );
+        move_grab( id, 0, win->x, win->y );
+    }
+    else if ( !pinned && !pin_live )
     {
         window_apply_drag( win, id );                           /* in-progress title-bar drag */
-        if ( !pin_live )
-            window_apply_tearoff_gesture( win, id, title, flags );  /* tear-off / merge-back / drag-to-dock */
+        window_apply_tearoff_gesture( win, id, title, flags );  /* tear-off / merge-back / drag-to-dock */
     }
 
     /* Apply an in-progress edge resize (mutually exclusive with the drag apply above). */

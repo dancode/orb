@@ -454,8 +454,12 @@ window_end_titlebar_poll( gui_window_t* win, bool frame_only )
             /* gui-maximized panel: restore first, placing the restored title bar under the
                cursor at the same proportional x (OS drag-off-maximize behavior), then continue
                as a normal gui drag -- window_begin applies it from next frame, when the
-               maximize pin no longer holds the geometry. */
+               maximize pin no longer holds the geometry.  s_restore_drag_frac is the fraction
+               window_begin_ex reapplies every frame against the tweening width while the
+               restore eases (gui_window_free.c); the x/y set here only cover this one frame,
+               before that override takes over. */
             f32 frac = s_build.win.w > 1.0f ? ( s_io.mouse_x - s_build.win.x ) / s_build.win.w : 0.5f;
+            s_restore_drag_frac = frac;
             window_maximize_set( win, false );
             win->x = window_snap( s_io.mouse_x - win->w * frac );
             win->y = window_snap( s_io.mouse_y - s_build.win.title_h * 0.5f );
