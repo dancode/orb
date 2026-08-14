@@ -117,7 +117,7 @@ gui_field_row( const char* label )
     field_geom_split( cell, (gui_label_side_t)fld->side, fld->control > 0.0f ? fld->control : 1.0f,
                       label_track, WIDGET_MIN_W, WIDGET_PAD, &label_r, &control_r );
 
-    draw_label_fit( label_r.x, text_center_y( cell.y, cell.h ), COL_TEXT_IDLE, label, label_r.w );
+    draw_label_fit( label_r.x, text_center_y( cell.y, cell.h ), COL_TEXT_PRIMARY_IDLE, label, label_r.w );
     gui_next_item_rect( control_r );
 }
 

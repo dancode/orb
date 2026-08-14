@@ -93,7 +93,7 @@ edit_paint( gui_rect_t content, const char* buf, const gui_edit_state_t* es, boo
             draw_fill( edit_sel_band( sx0, sx1, text_y, content ), edit_sel_color() );
     }
 
-    draw_push_text_clip_n( text_x, text_y, COL_TEXT_IDLE, buf, 0xFFFFFFFFu, clip_x0, clip_x1 );
+    draw_push_text_clip_n( text_x, text_y, COL_TEXT_PRIMARY_IDLE, buf, 0xFFFFFFFFu, clip_x0, clip_x1 );
 
     /* Blinking caret: visible for the first 0.5 s of each 1 s cycle. */
     if ( focused )
@@ -106,7 +106,7 @@ edit_paint( gui_rect_t content, const char* buf, const gui_edit_state_t* es, boo
                metric.  Deriving the caret from the row minus WIDGET_PAD collapsed it to a sliver
                whenever a density pass widened the pad past the font's headroom. */
             f32 cx = text_x + text_x_at( buf, es->cursor );
-            draw_fill( edit_sel_band( cx, cx + (f32)WIN_BORDER, text_y, content ), COL_TEXT_IDLE );
+            draw_fill( edit_sel_band( cx, cx + (f32)WIN_BORDER, text_y, content ), COL_TEXT_PRIMARY_IDLE );
         }
     }
 }

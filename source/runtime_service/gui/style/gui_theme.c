@@ -102,10 +102,6 @@ static const char* const k_seed_name[ GUI_SEED_COUNT ] =
     [ GUI_SEED_ACCENT  ] = "Accent",
     [ GUI_SEED_MARK    ] = "Mark",
     [ GUI_SEED_GRAB    ] = "Grab",
-    [ GUI_SEED_INFO    ] = "Info",
-    [ GUI_SEED_OK      ] = "OK",
-    [ GUI_SEED_WARN    ] = "Warn",
-    [ GUI_SEED_ERROR   ] = "Error",
 };
 
 static const char* const k_ramp_name[ GUI_RAMP_COUNT ] =
@@ -167,10 +163,6 @@ var_is_pixels( u8 cls )
             [ GUI_SEED_ACCENT  ] = GUI_COLOR( 0x20,0x90,0xD0,0xFF ), \
             [ GUI_SEED_MARK    ] = GUI_COLOR( 0x18,0xE6,0x48,0xFF ), \
             [ GUI_SEED_GRAB    ] = GUI_COLOR( 0xC8,0xCD,0xD4,0xFF ), \
-            [ GUI_SEED_INFO    ] = GUI_COLOR( 0x58,0xA8,0xE8,0xFF ), \
-            [ GUI_SEED_OK      ] = GUI_COLOR( 0x5C,0xC8,0x64,0xFF ), \
-            [ GUI_SEED_WARN    ] = GUI_COLOR( 0xE8,0xB8,0x40,0xFF ), \
-            [ GUI_SEED_ERROR   ] = GUI_COLOR( 0xE8,0x5C,0x4C,0xFF ), \
         }, \
         .ramp = { \
             [ GUI_RAMP_HOVER  ] = 0.60f, \
@@ -179,6 +171,12 @@ var_is_pixels( u8 cls )
             [ GUI_RAMP_RECESS ] = 0.22f, \
             [ GUI_RAMP_STEP   ] = 0.18f, \
             [ GUI_RAMP_SELECT ] = 0.55f, \
+        }, \
+        .ext = { \
+            [ GUI_EXT_INFO  ] = GUI_COLOR( 0x58,0xA8,0xE8,0xFF ), \
+            [ GUI_EXT_OK    ] = GUI_COLOR( 0x5C,0xC8,0x64,0xFF ), \
+            [ GUI_EXT_WARN  ] = GUI_COLOR( 0xE8,0xB8,0x40,0xFF ), \
+            [ GUI_EXT_ERROR ] = GUI_COLOR( 0xE8,0x5C,0x4C,0xFF ), \
         }, \
     }
 
@@ -203,10 +201,6 @@ var_is_pixels( u8 cls )
             [ GUI_SEED_ACCENT  ] = GUI_COLOR( 0x44,0x6C,0xA6,0xFF ), \
             [ GUI_SEED_MARK    ] = GUI_COLOR( 0x2E,0x9E,0x54,0xFF ), \
             [ GUI_SEED_GRAB    ] = GUI_COLOR( 0x3A,0x40,0x4A,0xFF ), \
-            [ GUI_SEED_INFO    ] = GUI_COLOR( 0x2C,0x6C,0xB0,0xFF ), \
-            [ GUI_SEED_OK      ] = GUI_COLOR( 0x2A,0x84,0x40,0xFF ), \
-            [ GUI_SEED_WARN    ] = GUI_COLOR( 0xA8,0x70,0x10,0xFF ), \
-            [ GUI_SEED_ERROR   ] = GUI_COLOR( 0xC0,0x38,0x2C,0xFF ), \
         }, \
         .ramp = { \
             [ GUI_RAMP_HOVER  ] = 0.50f, \
@@ -215,6 +209,12 @@ var_is_pixels( u8 cls )
             [ GUI_RAMP_RECESS ] = 0.08f, \
             [ GUI_RAMP_STEP   ] = 0.12f, \
             [ GUI_RAMP_SELECT ] = 0.50f, \
+        }, \
+        .ext = { \
+            [ GUI_EXT_INFO  ] = GUI_COLOR( 0x2C,0x6C,0xB0,0xFF ), \
+            [ GUI_EXT_OK    ] = GUI_COLOR( 0x2A,0x84,0x40,0xFF ), \
+            [ GUI_EXT_WARN  ] = GUI_COLOR( 0xA8,0x70,0x10,0xFF ), \
+            [ GUI_EXT_ERROR ] = GUI_COLOR( 0xC0,0x38,0x2C,0xFF ), \
         }, \
     }
 

@@ -71,10 +71,14 @@ static const char* const k_seed_id[ GUI_SEED_COUNT ] =
     [ GUI_SEED_ACCENT  ] = "GUI_SEED_ACCENT",
     [ GUI_SEED_MARK    ] = "GUI_SEED_MARK",
     [ GUI_SEED_GRAB    ] = "GUI_SEED_GRAB",
-    [ GUI_SEED_INFO    ] = "GUI_SEED_INFO",
-    [ GUI_SEED_OK      ] = "GUI_SEED_OK",
-    [ GUI_SEED_WARN    ] = "GUI_SEED_WARN",
-    [ GUI_SEED_ERROR   ] = "GUI_SEED_ERROR",
+};
+
+static const char* const k_ext_id[ GUI_EXT_RESERVED_COUNT ] =
+{
+    [ GUI_EXT_INFO  ] = "GUI_EXT_INFO",
+    [ GUI_EXT_OK    ] = "GUI_EXT_OK",
+    [ GUI_EXT_WARN  ] = "GUI_EXT_WARN",
+    [ GUI_EXT_ERROR ] = "GUI_EXT_ERROR",
 };
 
 static const char* const k_ramp_id[ GUI_RAMP_COUNT ] =
@@ -120,14 +124,11 @@ static const char* const k_role_id[ GUI_ROLE_COUNT ] =
     [ GUI_ROLE_TITLE  ] = "GUI_ROLE_TITLE",
     [ GUI_ROLE_BG     ] = "GUI_ROLE_BG",
     [ GUI_ROLE_BORDER ] = "GUI_ROLE_BORDER",
-    [ GUI_ROLE_TEXT   ] = "GUI_ROLE_TEXT",
+    [ GUI_ROLE_TEXT_PRIMARY   ] = "GUI_ROLE_TEXT_PRIMARY",
+    [ GUI_ROLE_TEXT_SECONDARY ] = "GUI_ROLE_TEXT_SECONDARY",
     [ GUI_ROLE_ACCENT ] = "GUI_ROLE_ACCENT",
     [ GUI_ROLE_MARK   ] = "GUI_ROLE_MARK",
     [ GUI_ROLE_GRAB   ] = "GUI_ROLE_GRAB",
-    [ GUI_ROLE_INFO   ] = "GUI_ROLE_INFO",
-    [ GUI_ROLE_OK     ] = "GUI_ROLE_OK",
-    [ GUI_ROLE_WARN   ] = "GUI_ROLE_WARN",
-    [ GUI_ROLE_ERROR  ] = "GUI_ROLE_ERROR",
 };
 
 static const char* const k_phase_id[ GUI_PHASE_COUNT ] =
@@ -277,7 +278,7 @@ stx_sanitize( const char* in, char* out, u32 out_size )
 /* Emit sections                                                                                */
 /*============================================================================================*/
 
-/* Seeds + ramp, the eleven-and-six the whole grid derives from. */
+/* Seeds + ramp + the extended palette's reserved four -- the whole authored surface. */
 static void
 stx_emit_palette( const gui_style_t* s, const char* ind )
 {
@@ -289,6 +290,10 @@ stx_emit_palette( const gui_style_t* s, const char* ind )
     for ( u32 i = 0; i < GUI_RAMP_COUNT; ++i )
         stx_put( "%s        [ %-16s ] = %s,\n", ind,
                  stx_id( k_ramp_id, GUI_RAMP_COUNT, i ), stx_f32( s->palette.ramp[ i ] ) );
+    stx_put( "%s    },\n%s    .ext =\n%s    {\n", ind, ind, ind );
+    for ( u32 i = 0; i < GUI_EXT_RESERVED_COUNT; ++i )
+        stx_put( "%s        [ %-14s ] = %s,\n", ind,
+                 stx_id( k_ext_id, GUI_EXT_RESERVED_COUNT, i ), stx_color( s->palette.ext[ i ] ) );
     stx_put( "%s    },\n%s},\n", ind, ind );
 }
 

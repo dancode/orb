@@ -239,11 +239,11 @@ ex_style_stacks( void )
     {
         gui()->stack();
 
-        gui()->separator_text( "Text (COL_TEXT_IDLE vs COL_TEXT_DIM)" );
-        gui()->text( "Plain text -- COL_TEXT_IDLE" );
-        gui()->text_disabled( "Disabled/dim text -- COL_TEXT_DIM" );
+        gui()->separator_text( "Text (COL_TEXT_PRIMARY_IDLE vs COL_TEXT_PRIMARY_DIM)" );
+        gui()->text( "Plain text -- COL_TEXT_PRIMARY_IDLE" );
+        gui()->text_disabled( "Disabled text -- COL_TEXT_PRIMARY_DIM" );
 
-        gui()->separator_text( "Buttons (COL_BG_IDLE / _HOT / _ACT, label = COL_TEXT_IDLE)" );
+        gui()->separator_text( "Buttons (COL_BG_IDLE / _HOT / _ACT, label = COL_TEXT_PRIMARY_IDLE)" );
         gui()->button( "Sample button (hover/press me)" );
         static bool small_sb = true;
         gui()->small_button( "small" ); gui()->same_line( 8.0f );
@@ -251,13 +251,13 @@ ex_style_stacks( void )
 
         gui()->separator_text( "Checkbox / radio (box = COL_BG_IDLE, mark = COL_MARK_IDLE)" );
         static bool sb = true;
-        gui()->checkbox( "Sample checkbox (label = COL_TEXT_IDLE)", &sb );
+        gui()->checkbox( "Sample checkbox (label = COL_TEXT_PRIMARY_IDLE)", &sb );
         static i32 mode = 0;
         gui()->radio_button( "A", &mode, 0 ); gui()->same_line( -1.0f );
         gui()->radio_button( "B", &mode, 1 ); gui()->same_line( -1.0f );
         gui()->radio_button( "C", &mode, 2 );
 
-        gui()->separator_text( "Slider / input (field label = COL_TEXT_DIM, border = COL_BORDER_IDLE)" );
+        gui()->separator_text( "Slider / input (field label = COL_TEXT_SECONDARY_IDLE, border = COL_BORDER_IDLE)" );
         static f32 sv = 5.0f;
         gui()->slider_float( "sample slider", &sv, 0.0f, 10.0f );
         static char stxt[ 24 ] = "sample";
@@ -275,21 +275,18 @@ ex_style_stacks( void )
         gui()->selectable( "selectable row A -- hover me", &sel_a );
         gui()->selectable( "selectable row B -- selected, hover me too", &sel_b );
 
-        /* The status roles: the severity ladder, each as its signal and then as its FIELD (the
-           DIM cell), which is the banner tint a message sits on. */
-        gui()->separator_text( "Status roles (IDLE = the signal, DIM = the field behind it)" );
+        /* The severity ladder: flat, unramped colours in the extended palette now, not a role/phase
+           band -- style_ext( id ) is the whole read, no phase to pick. */
+        gui()->separator_text( "Extended palette (severity: GUI_EXT_INFO / OK / WARN / ERROR)" );
         {
-            static const gui_style_role_t sev[] = { GUI_ROLE_INFO, GUI_ROLE_OK,
-                                                    GUI_ROLE_WARN, GUI_ROLE_ERROR };
+            static const gui_style_ext_t sev[] = { GUI_EXT_INFO, GUI_EXT_OK,
+                                                   GUI_EXT_WARN, GUI_EXT_ERROR };
             for ( u32 i = 0; i < 4; ++i )
             {
                 gui_rect_t band = gui()->canvas( gui()->sz_rows_h( 1 ) );
-                gui()->draw_rect( band.x, band.y, band.w, band.h,
-                                  gui()->style_color( sev[ i ], GUI_PHASE_DIM ) );
-                gui()->draw_text_in( ( gui_rect_t ){ band.x + 6.0f, band.y, band.w - 12.0f, band.h },
-                                     GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
-                                     gui()->style_color( sev[ i ], GUI_PHASE_IDLE ),
-                                     gui()->style_role_name( sev[ i ] ) );
+                gui()->draw_text_in( band, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
+                                     gui()->style_ext( sev[ i ] ),
+                                     gui()->style_ext_name( sev[ i ] ) );
             }
         }
 

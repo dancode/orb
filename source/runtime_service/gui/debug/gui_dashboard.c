@@ -46,11 +46,11 @@ static gui_id_t g_dash_window_id = 0;
 
     Two kinds live here, and the split is the point.
 
-    SEVERITY is the engine's, and reads out of the style's status roles -- OK / WARN / ERROR.
+    SEVERITY is the engine's, and reads out of the extended palette -- GUI_EXT_OK / WARN / ERROR.
     The dashboard used to carry its own literals for these, which is how a diagnostic ends up
     shouting a saturated dark-theme green at you on a light theme.  A severity is a claim the
-    whole application makes, so it belongs to the palette; four other consumers were making the
-    same claim in their own hex, which is what earned the status roles their rows.
+    whole application makes, so it belongs to the palette; other consumers were making the same
+    claim in their own hex, which is what earned the severity ladder its reserved slots.
 
     The rest genuinely IS private and stays that way: an instrument's near-black backdrop, its
     highwater marker, its CATEGORICAL region palette.  Those are not severities -- a categorical
@@ -58,11 +58,11 @@ static gui_id_t g_dash_window_id = 0;
     a theme has no opinion about them worth inheriting.
 ==============================================================================================*/
 
-#define DASH_COL_OK         COL_OK_IDLE
-#define DASH_COL_WARN       COL_WARN_IDLE
-#define DASH_COL_BAD        COL_ERROR_IDLE
-#define DASH_COL_OVERFLOW   COL_ERROR_IDLE
-#define DASH_COL_FIF_ACTIVE COL_OK_IDLE
+#define DASH_COL_OK         style_ext( GUI_EXT_OK )
+#define DASH_COL_WARN       style_ext( GUI_EXT_WARN )
+#define DASH_COL_BAD        style_ext( GUI_EXT_ERROR )
+#define DASH_COL_OVERFLOW   style_ext( GUI_EXT_ERROR )
+#define DASH_COL_FIF_ACTIVE style_ext( GUI_EXT_OK )
 
 #define DASH_COL_TEXT       GUI_COLOR( 0xD8, 0xD8, 0xD8, 0xFF )
 #define DASH_COL_TEXT_DIM   GUI_COLOR( 0x90, 0x90, 0x90, 0xFF )

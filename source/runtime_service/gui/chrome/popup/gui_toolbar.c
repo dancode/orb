@@ -178,7 +178,7 @@ gui_toolbar_dropdown_begin( const char* id_str, gui_icon_id_t icon, const char* 
     gui_rect_t icon_r  = { r.x, r.y, WIDGET_H, r.h };
     gui_rect_t arrow_r = { r.x + WIDGET_H, r.y, TB_DD_ARROW_W, r.h };
     gui_draw_icon_in( toolbar_icon_rect( icon_r ), icon, 0xFFFFFFFFu );
-    draw_dropdown_arrow( arrow_r, COL_TEXT_IDLE );
+    draw_dropdown_arrow( arrow_r, COL_TEXT_PRIMARY_IDLE );
 
     if ( tooltip && tooltip[ 0 ] && !this_open )
         gui_set_item_tooltip( tooltip );

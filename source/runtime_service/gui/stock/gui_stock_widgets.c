@@ -80,6 +80,14 @@ gui_style_color_selected( gui_style_role_t role, gui_style_phase_t phase )
     return style_col_selected( (u8)role, (u8)phase );
 }
 
+/* gui_style_ext -- the extended-palette sibling of gui_style_color: the resolved read published
+   outside this library, installed value plus any push_style_ext override in scope. */
+u32
+gui_style_ext( gui_style_ext_t ext )
+{
+    return style_ext( ext );
+}
+
 /* The "##id" label grammar for a DISPLAYED label: the suffix carries identity, never pixels.
    Returns the visible span -- the original pointer when there is no suffix (no copy), else the
    head copied into buf.  Shared by the label-bearing renders (stock_button, stock_selectable). */
@@ -112,7 +120,7 @@ gui_stock_panel( gui_rect_t r )
 void
 gui_stock_label( gui_rect_t r, gui_align_t align, const char* text )
 {
-    gui_draw_text_in( r, align, STYLE_COL( TEXT, IDLE ), text );
+    gui_draw_text_in( r, align, STYLE_COL( TEXT_PRIMARY, IDLE ), text );
 }
 
 /* Button face label: centered when it fits the frame, else left-anchored and ellipsized so an
@@ -131,10 +139,10 @@ stock_button_label( gui_rect_t r, const char* text )
        is the one thing a self-fitting widget must never do at its natural size.  Nothing
        sub-pixel is drawable, so the slack cannot cost a legible glyph. */
     if ( label_width( text ) <= avail + 0.5f )
-        gui_draw_text_in( r, GUI_ALIGN_CENTER, STYLE_COL( TEXT, IDLE ), text );
+        gui_draw_text_in( r, GUI_ALIGN_CENTER, STYLE_COL( TEXT_PRIMARY, IDLE ), text );
     else
         draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ),
-                        STYLE_COL( TEXT, IDLE ), text, avail );
+                        STYLE_COL( TEXT_PRIMARY, IDLE ), text, avail );
 }
 
 /* stock_button -- THE reference render over gui_comp_button: a flat, hover/press-animated fill +
@@ -240,11 +248,11 @@ gui_stock_cycle( gui_rect_t r, const char* id_str, i32* idx, const char* const* 
                           STYLE_COL( BORDER, IDLE ), WIN_BORDER );
     draw_face_item_frame( cy.next_box, id_combine( item_id( id_str ), 2u ), cy.next.state, false,
                           STYLE_COL( BORDER, IDLE ), WIN_BORDER );
-    gui_draw_chevron( gui_rect_pad( cy.prev_box, cy.prev_box.w * 0.30f ), GUI_DIR_LEFT,  2.0f, STYLE_COL( TEXT, IDLE ) );
-    gui_draw_chevron( gui_rect_pad( cy.next_box, cy.next_box.w * 0.30f ), GUI_DIR_RIGHT, 2.0f, STYLE_COL( TEXT, IDLE ) );
+    gui_draw_chevron( gui_rect_pad( cy.prev_box, cy.prev_box.w * 0.30f ), GUI_DIR_LEFT,  2.0f, STYLE_COL( TEXT_PRIMARY, IDLE ) );
+    gui_draw_chevron( gui_rect_pad( cy.next_box, cy.next_box.w * 0.30f ), GUI_DIR_RIGHT, 2.0f, STYLE_COL( TEXT_PRIMARY, IDLE ) );
 
     if ( count > 0 )
-        gui_draw_text_in( cy.label, GUI_ALIGN_CENTER, STYLE_COL( TEXT, IDLE ), items[ *idx ] );
+        gui_draw_text_in( cy.label, GUI_ALIGN_CENTER, STYLE_COL( TEXT_PRIMARY, IDLE ), items[ *idx ] );
 
     return cy.changed;
 }
@@ -273,11 +281,11 @@ gui_stock_input( gui_rect_t r, const char* id_str, char* buf, u32 bufsz )
     if ( in.selection.w > 0.0f )
         draw_fill( in.selection, style_col_selected( GUI_ROLE_BG, GUI_PHASE_IDLE ) );
 
-    draw_push_text_clip_n( in.text_x, in.text_y, STYLE_COL( TEXT, IDLE ), buf, 0xFFFFFFFFu,
+    draw_push_text_clip_n( in.text_x, in.text_y, STYLE_COL( TEXT_PRIMARY, IDLE ), buf, 0xFFFFFFFFu,
                            in.content.x, in.content.x + in.content.w );
 
     if ( in.caret.w > 0.0f )
-        draw_fill( in.caret, STYLE_COL( TEXT, IDLE ) );
+        draw_fill( in.caret, STYLE_COL( TEXT_PRIMARY, IDLE ) );
 
     return in.changed;
 }
@@ -310,7 +318,7 @@ gui_stock_selectable( gui_rect_t r, const char* label, bool* selected )
        become. */
     gui_style_mix_t ink = { 0.0f, 0.0f, mix.sel };
     gui_draw_text_in( tr, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,
-                      style_col_mix( GUI_ROLE_TEXT, ink ), text );
+                      style_col_mix( GUI_ROLE_TEXT_PRIMARY, ink ), text );
 
     return s.state.clicked;
 }

@@ -61,6 +61,11 @@ u32 style_col_selected( u8 role, u8 phase );
    tint washed by style_wash_selected, not a second stored handle. */
 const gui_brush_t* style_face( u8 role, u8 phase );
 
+/* The extended-palette read: a flat, unramped colour by id -- the severity ladder's new home,
+   and where a kit's own gui_style_ext_add colours resolve.  See GUI_STYLE -- the EXTENDED
+   palette, gui.h, for the whole story. */
+u32 style_ext( gui_style_ext_t ext );
+
 /* A GUI_CLASS_SHAPE var read back as its enum -- a rounding, and the ONE spelling for it.  Never
    compare a shape var with >= 0.5f (a two-value assumption) or cast it truncating (0.999999 is a
    legal slot value and truncates to the wrong pick).  See the definition for why each of those
@@ -162,10 +167,15 @@ f32 style_scale( gui_scale_t s, u32 field );
 #define COL_BORDER_ACTIVE  style_col( GUI_ROLE_BORDER, GUI_PHASE_ACTIVE )  /* focused ring       */
 #define COL_BORDER_DIM     style_col( GUI_ROLE_BORDER, GUI_PHASE_DIM    )  /* subdued frame      */
 
-#define COL_TEXT_IDLE      style_col( GUI_ROLE_TEXT,   GUI_PHASE_IDLE   )  /* body text, caret   */
-#define COL_TEXT_HOT       style_col( GUI_ROLE_TEXT,   GUI_PHASE_HOT    )  /* on a hot face      */
-#define COL_TEXT_ACTIVE    style_col( GUI_ROLE_TEXT,   GUI_PHASE_ACTIVE )  /* on a pressed face  */
-#define COL_TEXT_DIM       style_col( GUI_ROLE_TEXT,   GUI_PHASE_DIM    )  /* secondary text     */
+#define COL_TEXT_PRIMARY_IDLE    style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_IDLE   )  /* body text, caret   */
+#define COL_TEXT_PRIMARY_HOT     style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_HOT    )  /* on a hot face      */
+#define COL_TEXT_PRIMARY_ACTIVE  style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_ACTIVE )  /* on a pressed face  */
+#define COL_TEXT_PRIMARY_DIM     style_col( GUI_ROLE_TEXT_PRIMARY,   GUI_PHASE_DIM    )  /* disabled text      */
+
+#define COL_TEXT_SECONDARY_IDLE   style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_IDLE   )  /* hint, caption, shortcut */
+#define COL_TEXT_SECONDARY_HOT    style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_HOT    )  /* on a hot face           */
+#define COL_TEXT_SECONDARY_ACTIVE style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_ACTIVE )  /* on a pressed face       */
+#define COL_TEXT_SECONDARY_DIM    style_col( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_DIM    )  /* disabled secondary text */
 
 #define COL_ACCENT_IDLE    style_col( GUI_ROLE_ACCENT, GUI_PHASE_IDLE   )  /* value fill         */
 #define COL_ACCENT_HOT     style_col( GUI_ROLE_ACCENT, GUI_PHASE_HOT    )  /* engaged fill       */
@@ -182,29 +192,9 @@ f32 style_scale( gui_scale_t s, u32 field );
 #define COL_GRAB_ACTIVE    style_col( GUI_ROLE_GRAB,   GUI_PHASE_ACTIVE )  /* dragged knob       */
 #define COL_GRAB_DIM       style_col( GUI_ROLE_GRAB,   GUI_PHASE_DIM    )  /* inert knob         */
 
-/* The severity ladder.  IDLE is the signal (ink, icon, bar, rule); DIM is the FIELD -- the same
-   hue dropped nearly into the ground, for the banner behind a message rather than the message.
-   HOT / ACTIVE exist for the status that is also a control (a "3 errors" chip you can click). */
-
-#define COL_INFO_IDLE      style_col( GUI_ROLE_INFO,   GUI_PHASE_IDLE   )  /* notice             */
-#define COL_INFO_HOT       style_col( GUI_ROLE_INFO,   GUI_PHASE_HOT    )  /* hovered notice     */
-#define COL_INFO_ACTIVE    style_col( GUI_ROLE_INFO,   GUI_PHASE_ACTIVE )  /* pressed notice     */
-#define COL_INFO_DIM       style_col( GUI_ROLE_INFO,   GUI_PHASE_DIM    )  /* notice banner      */
-
-#define COL_OK_IDLE        style_col( GUI_ROLE_OK,     GUI_PHASE_IDLE   )  /* healthy            */
-#define COL_OK_HOT         style_col( GUI_ROLE_OK,     GUI_PHASE_HOT    )  /* hovered healthy    */
-#define COL_OK_ACTIVE      style_col( GUI_ROLE_OK,     GUI_PHASE_ACTIVE )  /* pressed healthy    */
-#define COL_OK_DIM         style_col( GUI_ROLE_OK,     GUI_PHASE_DIM    )  /* healthy banner     */
-
-#define COL_WARN_IDLE      style_col( GUI_ROLE_WARN,   GUI_PHASE_IDLE   )  /* caution            */
-#define COL_WARN_HOT       style_col( GUI_ROLE_WARN,   GUI_PHASE_HOT    )  /* hovered caution    */
-#define COL_WARN_ACTIVE    style_col( GUI_ROLE_WARN,   GUI_PHASE_ACTIVE )  /* pressed caution    */
-#define COL_WARN_DIM       style_col( GUI_ROLE_WARN,   GUI_PHASE_DIM    )  /* caution banner     */
-
-#define COL_ERROR_IDLE     style_col( GUI_ROLE_ERROR,  GUI_PHASE_IDLE   )  /* failure            */
-#define COL_ERROR_HOT      style_col( GUI_ROLE_ERROR,  GUI_PHASE_HOT    )  /* hovered failure    */
-#define COL_ERROR_ACTIVE   style_col( GUI_ROLE_ERROR,  GUI_PHASE_ACTIVE )  /* pressed failure    */
-#define COL_ERROR_DIM      style_col( GUI_ROLE_ERROR,  GUI_PHASE_DIM    )  /* failure banner     */
+/* The severity ladder used to close the grid here as four more roles.  It now lives in the
+   extended palette instead (gui_style_ext_t, gui.h) -- style_ext( GUI_EXT_WARN ) and friends,
+   a flat colour with no phase to spell a macro family over. */
 
 /*==============================================================================================
     Stacks, sets, and the seam hooks
@@ -214,9 +204,19 @@ f32 style_scale( gui_scale_t s, u32 field );
 void style_push_var( gui_style_var_t var, f32 value );
 void style_pop_var ( u32 count );
 
+/* Scope an extended-palette override -- push_style_var's shape exactly, since a flat colour has
+   no ramp to re-derive: a plain save / restore of the one slot. */
+void style_push_ext( gui_style_ext_t ext, u32 abgr );
+void style_pop_ext ( u32 count );
+
 /* Register a brush in a set's pool; the handle is what a face cell names.  Reset per landing --
    a source re-registers its art each time it is asked to install (see the definition). */
 gui_style_face_t gui_style_brush_add( const gui_brush_t* b );
+
+/* Claim a slot in a set's extended palette beyond the reserved severity four, seeded with a
+   default; the id is what a caller then reads with style_ext / overrides with push_style_ext.
+   Same idempotent-per-landing contract as gui_style_brush_add (see the definition). */
+gui_style_ext_t gui_style_ext_add( u32 default_abgr );
 
 /* True while no ambient style scope is open (the volatile-replay precondition). */
 bool style_stacks_empty( void );

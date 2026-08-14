@@ -26,9 +26,11 @@ st_gallery_window( void )
     gui()->stack();
 
     /* --- Text: the INK seed, across the phases that dim it -------------------------------- */
-    gui()->separator_text( "Text (GUI_ROLE_TEXT)" );
-    gui()->text( "Regular body text -- GUI_PHASE_IDLE" );
-    gui()->text_disabled( "Disabled / secondary text -- GUI_PHASE_DIM" );
+    gui()->separator_text( "Text (GUI_ROLE_TEXT_PRIMARY / TEXT_SECONDARY)" );
+    gui()->text( "Regular body text -- TEXT_PRIMARY, GUI_PHASE_IDLE" );
+    gui()->text_disabled( "Disabled text -- TEXT_PRIMARY, GUI_PHASE_DIM" );
+    gui()->text_colored( gui()->style_color( GUI_ROLE_TEXT_SECONDARY, GUI_PHASE_IDLE ),
+                         "Secondary text -- TEXT_SECONDARY, GUI_PHASE_IDLE" );
     gui()->text_wrapped( "Wrapped text runs the full content width and folds at the region edge, "
                          "which is where a padding or gap change shows up first." );
 
@@ -107,12 +109,12 @@ st_gallery_window( void )
         gui()->combo_end();
     }
 
-    /* --- Status roles: the four hues that are not the theme -------------------------------- */
-    gui()->separator_text( "Status roles (INFO / OK / WARN / ERROR)" );
-    gui()->text_colored( gui()->style_color( GUI_ROLE_INFO,  GUI_PHASE_IDLE ), "Info -- a neutral notice" );
-    gui()->text_colored( gui()->style_color( GUI_ROLE_OK,    GUI_PHASE_IDLE ), "Ok -- healthy, passing" );
-    gui()->text_colored( gui()->style_color( GUI_ROLE_WARN,  GUI_PHASE_IDLE ), "Warn -- near a limit" );
-    gui()->text_colored( gui()->style_color( GUI_ROLE_ERROR, GUI_PHASE_IDLE ), "Error -- failed" );
+    /* --- Extended palette: the severity hues that are not the theme's role/phase grid -------- */
+    gui()->separator_text( "Extended palette (INFO / OK / WARN / ERROR)" );
+    gui()->text_colored( gui()->style_ext( GUI_EXT_INFO  ), "Info -- a neutral notice" );
+    gui()->text_colored( gui()->style_ext( GUI_EXT_OK    ), "Ok -- healthy, passing" );
+    gui()->text_colored( gui()->style_ext( GUI_EXT_WARN  ), "Warn -- near a limit" );
+    gui()->text_colored( gui()->style_ext( GUI_EXT_ERROR ), "Error -- failed" );
 
     /* --- Density ramp: the same row at every scale_push step -------------------------------- */
     gui()->separator_text( "Density ramp (scale_push)" );

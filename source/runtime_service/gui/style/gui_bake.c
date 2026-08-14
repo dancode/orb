@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/style/gui_bake.c -- The bake: a seed palette -> the 48-cell colour grid.
+    runtime_service/gui/style/gui_bake.c -- The bake: a seed palette -> the 36-cell colour grid.
 
     The one step between what a theme AUTHORS (gui_palette_t) and what a render READS
     (gui_style_t.col), and the only writer of col[][] in the engine.  Pure: a function of the
@@ -173,7 +173,7 @@ bake_ink_on( u32 ink, u32 ground, i32 want )
 }
 
 /*==============================================================================================
-    The derivation -- twelve roles, each a sentence in the verbs above.
+    The derivation -- nine roles, each a sentence in the verbs above.
 
     Written out role by role rather than driven from a data table, because each row is an
     editorial claim about what that role MEANS across the phases, and a table of opcodes would
@@ -182,7 +182,7 @@ bake_ink_on( u32 ink, u32 ground, i32 want )
     out four times would only invite the four copies to drift apart.
 
     Everything here is stated relative to the GROUND and the INK it is handed, never to the
-    surface seed -- that is what makes the same twelve sentences correct for a selection.  The
+    surface seed -- that is what makes the same nine sentences correct for a selection.  The
     claims:
 
       PANEL   a container reacts WEAKLY -- it is background.  A fifth of the wash on hover with
@@ -194,8 +194,11 @@ bake_ink_on( u32 ink, u32 ground, i32 want )
               then sink.  Hot rises, active deepens -- that is the whole pressed-button read.
       BORDER  a frame line is structural at rest and pure signal when live: hot and focused are
               both the lifted accent, which is why they were one literal twice.
-      TEXT    ink does not react.  Three identical cells is not redundancy here, it is the claim:
-              text on a hot face is the same ink, the FACE moved.  Only DIM differs.
+      TEXT_PRIMARY    ink does not react.  IDLE/HOT/ACTIVE being near-identical is not redundancy
+              here, it is the claim: text on a hot face is the same ink, the FACE moved.  Only
+              DIM differs, and DIM means disabled.
+      TEXT_SECONDARY  the same non-reaction claim, at a permanently quieter step -- not a phase
+              response, a standing choice for hints, captions and inactive labels.
       ACCENT  the value a control holds -- a straight three-step lift, the one honest ramp in the
               palette.  Its DIM is the EMPTY track, so it comes off the control face, not off the
               accent: an empty slider well is a well, not a faded fill.
@@ -204,16 +207,13 @@ bake_ink_on( u32 ink, u32 ground, i32 want )
       GRAB    the contrast anchor -- authored opposite the theme's polarity, so its ramp is a
               lift away from the ground and it travels FURTHEST, since a knob has to stay legible
               against both a hovering track and a filled bar at once.
-      status  a signal, at three lift steps, and then the FIELD: DIM drops the hue nearly all the
-              way into the ground so it can be a banner behind a message rather than a mark on
-              one.  The mute first is what keeps a saturated warning from reading as a stripe of
-              orange paint at 15% -- chroma survives fading far better than lightness does.
-==============================================================================================*/
 
-/* The severity ladder, as the pairing the loop below walks.  Two parallel tables rather than one
-   table of structs: they are indexed together exactly once, and the enums are the real schema. */
-static const u8 k_sev_role[ 4 ] = { GUI_ROLE_INFO, GUI_ROLE_OK,   GUI_ROLE_WARN, GUI_ROLE_ERROR };
-static const u8 k_sev_seed[ 4 ] = { GUI_SEED_INFO, GUI_SEED_OK,   GUI_SEED_WARN, GUI_SEED_ERROR };
+    The severity ladder (INFO / OK / WARN / ERROR) used to close this list as a tenth-through-
+    thirteenth claim -- a signal at three lift steps and then the FIELD, DIM dropping the hue
+    nearly into the ground for a banner rather than a mark.  It is not derived here any more: the
+    extended palette (gui_style_ext_t, gui.h) carries those four as flat colours, copied straight
+    from the palette rather than walked through bake_plane's verbs.
+==============================================================================================*/
 
 static void
 bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
@@ -268,26 +268,44 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step * 2.0f, pole );
     col[ GUI_ROLE_BORDER ][ GUI_PHASE_DIM    ] = bake_fade( line, fade, ground );
 
-    /* TEXT -- ink does not react BY CHOICE: all four cells start from the one ink, because text
-       on a hot face is the same ink and it is the FACE that moved.  Each is then guarded against
-       the face it will actually sit on (bake_ink_on), which is the only thing that can make them
-       differ -- and only by as much as legibility demands.  Written after BG deliberately: the
-       guard reads the very cells above.
+    /* TEXT_PRIMARY -- ink does not react BY CHOICE: IDLE/HOT/ACTIVE all start from the one ink,
+       because text on a hot face is the same ink and it is the FACE that moved.  Each is then
+       guarded against the face it will actually sit on (bake_ink_on), which is the only thing
+       that can make them differ -- and only by as much as legibility demands.  Written after BG
+       deliberately: the guard reads the very cells above.
 
        HOT and ACTIVE guard against BG, not PANEL or TITLE, because BG is the face that travels
        furthest -- it takes the full wash plus a lift or a sink, where a container takes a fifth
        of the wash.  Clear BG and the quieter surfaces are clear by construction.
 
-       DIM has a floor of its own, and a lower one: secondary text is MEANT to recede, so holding
-       it to the body-text separation would defeat the fade that makes it secondary.  It is still
-       a floor -- receding is not the same as disappearing. */
-    col[ GUI_ROLE_TEXT ][ GUI_PHASE_IDLE   ] = bake_ink_on( ink, ground, BAKE_INK_DELTA );
-    col[ GUI_ROLE_TEXT ][ GUI_PHASE_HOT    ] = bake_ink_on( ink, col[ GUI_ROLE_BG ][ GUI_PHASE_HOT ],
-                                                            BAKE_INK_DELTA );
-    col[ GUI_ROLE_TEXT ][ GUI_PHASE_ACTIVE ] = bake_ink_on( ink, col[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ],
-                                                            BAKE_INK_DELTA );
-    col[ GUI_ROLE_TEXT ][ GUI_PHASE_DIM    ] = bake_ink_on( bake_fade( ink, fade, ground ), ground,
-                                                            BAKE_DIM_DELTA );
+       DIM is the disabled cell, like every other role's DIM -- not a "secondary" reading, that
+       is TEXT_SECONDARY's job below.  It still has a floor of its own, and a lower one than the
+       enabled cells: a disabled label is MEANT to recede, so holding it to the body-text
+       separation would defeat the fade that makes it read as disabled.  It is still a floor --
+       receding is not the same as disappearing. */
+    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_IDLE   ] = bake_ink_on( ink, ground, BAKE_INK_DELTA );
+    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_HOT    ] = bake_ink_on( ink, col[ GUI_ROLE_BG ][ GUI_PHASE_HOT ],
+                                                                    BAKE_INK_DELTA );
+    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_ACTIVE ] = bake_ink_on( ink, col[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ],
+                                                                    BAKE_INK_DELTA );
+    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_DIM    ] = bake_ink_on( bake_fade( ink, fade, ground ), ground,
+                                                                    BAKE_DIM_DELTA );
+
+    /* TEXT_SECONDARY -- a permanently quieter ink, not a reaction to interaction: hints,
+       captions, shortcuts, inactive labels.  IDLE is the same faded-and-guarded formula
+       TEXT_PRIMARY's DIM carries above -- the "secondary" look this role now owns outright.
+       HOT/ACTIVE stay the same ink, guarded against BG, for the identical reason PRIMARY's do: a
+       secondary label can still sit on a hot or pressed face.  DIM fades once further, for a
+       secondary label inside a disabled control (a hint in a disabled field), at the same floor
+       -- receding further is the point, not a bug to guard away. */
+    const u32 sec_idle = bake_ink_on( bake_fade( ink, fade, ground ), ground, BAKE_DIM_DELTA );
+    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_IDLE   ] = sec_idle;
+    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_HOT    ] = bake_ink_on( sec_idle, col[ GUI_ROLE_BG ][ GUI_PHASE_HOT ],
+                                                                      BAKE_DIM_DELTA );
+    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_ACTIVE ] = bake_ink_on( sec_idle, col[ GUI_ROLE_BG ][ GUI_PHASE_ACTIVE ],
+                                                                      BAKE_DIM_DELTA );
+    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_DIM    ] = bake_fade( sec_idle, fade + ( 1.0f - fade ) * 0.50f,
+                                                                    ground );
 
     /* ACCENT -- the value held.  DIM is the empty track, so it comes off the CONTROL face. */
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_IDLE   ] = accent;
@@ -309,19 +327,6 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_ACTIVE ] = bake_lift( grab, step * 6.0f, pole );
     col[ GUI_ROLE_GRAB ][ GUI_PHASE_DIM    ] = bake_fade( grab, fade + ( 1.0f - fade ) * 0.40f,
                                                           ground );
-
-    /* INFO / OK / WARN / ERROR -- the severity ladder.  Three lift steps and then the field. */
-    for ( u32 i = 0; i < 4; ++i )
-    {
-        const u32 r   = k_sev_role[ i ];
-        const u32 sev = p->seed[ k_sev_seed[ i ] ];
-
-        col[ r ][ GUI_PHASE_IDLE   ] = sev;
-        col[ r ][ GUI_PHASE_HOT    ] = bake_lift( sev, step,        pole );
-        col[ r ][ GUI_PHASE_ACTIVE ] = bake_lift( sev, step * 2.0f, pole );
-        col[ r ][ GUI_PHASE_DIM    ] = bake_fade( bake_mute( sev, 0.25f ),
-                                                  fade + ( 1.0f - fade ) * 0.72f, ground );
-    }
 }
 
 void
@@ -339,6 +344,12 @@ gui_style_bake( gui_style_t* s )
 
     /* GUI_RAMP_SELECT is not spent here: it washes a resolved cell toward the accent LIVE, at
        read time (style_wash_selected, gui_style_core.c), rather than baking a second plane. */
+
+    /* The extended palette's reserved slots are a straight copy, not a derivation -- there is no
+       ramp to walk, so "baking" them is just carrying the authored colour through to where a
+       read (style_ext) expects to find it. */
+    for ( u32 i = 0; i < GUI_EXT_RESERVED_COUNT; ++i )
+        s->ext[ i ] = p->ext[ i ];
 }
 
 // clang-format on

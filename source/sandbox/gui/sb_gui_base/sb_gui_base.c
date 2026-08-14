@@ -242,7 +242,7 @@ tier_stock( void )
     gui_style_phase_t    phase = gui()->item_phase( cb.state );
     gui()->draw_round_rect( foot, 8.0f, 8.0f, 8.0f, 8.0f, true, 0.0f,
                             gui()->style_color( GUI_ROLE_BG, phase ) );
-    gui()->draw_text_in( foot, GUI_ALIGN_CENTER, gui()->style_color( GUI_ROLE_TEXT, phase ),
+    gui()->draw_text_in( foot, GUI_ALIGN_CENTER, gui()->style_color( GUI_ROLE_TEXT_PRIMARY, phase ),
                          "comp_button" );
 
     gui()->pane_end();

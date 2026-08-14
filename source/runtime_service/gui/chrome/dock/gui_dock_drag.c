@@ -55,10 +55,10 @@
 /* The drop preview's colour is the INFO signal, not a literal.  It used to be a hardcoded blue,
    which meant a kit that re-seeded its whole UI gold still got a stock blue drop graphic -- a
    private literal is a colour the theme cannot reach.  Alpha is punched in here rather than
-   authored into the seed because these two are the SAME signal at two weights (a wash and its
-   outline), which is a draw decision, not a palette one. */
-#define DOCK_OVERLAY_FILL       ( ( COL_INFO_IDLE & 0x00FFFFFFu ) |  64u << 24 )   /* drop-region preview */
-#define DOCK_OVERLAY_LINE       ( ( COL_INFO_IDLE & 0x00FFFFFFu ) | 200u << 24 )   /* its outline         */
+   authored into the extended palette because these two are the SAME signal at two weights (a
+   wash and its outline), which is a draw decision, not a palette one. */
+#define DOCK_OVERLAY_FILL       ( ( style_ext( GUI_EXT_INFO ) & 0x00FFFFFFu ) |  64u << 24 )   /* drop-region preview */
+#define DOCK_OVERLAY_LINE       ( ( style_ext( GUI_EXT_INFO ) & 0x00FFFFFFu ) | 200u << 24 )   /* its outline         */
 
 /* Drop zones of the per-node 5-way: the chip the cursor is over (NONE = over the node but no chip). */
 typedef enum
@@ -222,7 +222,7 @@ dock_chip_tab_glyph( gui_rect_t cr )
     f32 ins = cr.w * 0.28f;
     draw_set_rounding( 0.0f );
     draw_push_rect_outline( cr.x + ins, cr.y + ins, cr.w - 2.0f * ins, cr.h - 2.0f * ins,
-                            WIN_BORDER, COL_TEXT_IDLE );
+                            WIN_BORDER, COL_TEXT_PRIMARY_IDLE );
     draw_set_rounding( ROUND_WIDGET );
 }
 
@@ -392,7 +392,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
             if ( z == DOCK_ZONE_CENTER )
                 dock_chip_tab_glyph( cr );
             else
-                draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT_IDLE );
+                draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT_PRIMARY_IDLE );
         }
 
     /* Edge chips: drawn against the dockspace edges, each pointing outward to read as "full side". */
@@ -401,7 +401,7 @@ dock_drag_detect( gui_id_t win_id, gui_window_t* win )
         {
             gui_rect_t cr = dock_outer_chip_rect( root->rect, (dock_zone_t)z, s, margin );
             dock_chip_draw( cr, outer && (dock_zone_t)z == outer_zone );
-            draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT_IDLE );
+            draw_arrow( cr, dock_zone_dir( (dock_zone_t)z ), COL_TEXT_PRIMARY_IDLE );
         }
 
     dock_overlay_end();

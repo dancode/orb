@@ -789,7 +789,7 @@ static void
 legend_row( const char* key_name, const char* name, const char* value, bool on )
 {
     char line[ 48 ];
-    gui_text_colored( on ? COL_MARK_IDLE : COL_TEXT_DIM,
+    gui_text_colored( on ? COL_MARK_IDLE : COL_TEXT_SECONDARY_IDLE,
                       legend_line( line, sizeof( line ), key_name, name, value ) );
 }
 
@@ -880,7 +880,7 @@ debug_selector_menu( void )
         gui_field_t saved_field = *gui_field_get();
         gui_field_set( NULL );                  /* default: box on the left, label trailing */
 
-        gui_text_disabled( SEL_HINT );
+        gui_text_colored( COL_TEXT_SECONDARY_IDLE, SEL_HINT );
 
         bool force = gui_force_redraw();
         if ( gui_checkbox( SEL_FORCE, &force ) )

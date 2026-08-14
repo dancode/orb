@@ -647,7 +647,7 @@ panel_motion( void )
     gui()->draw_frame( r, 0x00000000u,
                        gui()->style_color_mix( GUI_ROLE_BORDER, m ), 1.0f );   /* border  */
     gui()->draw_text_in( r, GUI_ALIGN_CENTER,
-                         gui()->style_color_mix( GUI_ROLE_TEXT, m ),           /* ink     */
+                         gui()->style_color_mix( GUI_ROLE_TEXT_PRIMARY, m ),           /* ink     */
                          s_probe_on ? "selected -- click to clear" : "hover, hold, click me" );
 
     f32 by = cell.y + 66.0f;
@@ -1034,7 +1034,7 @@ rate_swatch( void )
         f32  v = ( i == 0 ) ? one.hot : ( i == 1 ) ? one.act : one.sel;
         snprintf( txt, sizeof( txt ), "%s %.2f", k_name[ i ], (double)v );
         gui()->draw_text_in( r, GUI_ALIGN_CENTER,
-                             gui()->style_color_mix( GUI_ROLE_TEXT, one ), txt );
+                             gui()->style_color_mix( GUI_ROLE_TEXT_PRIMARY, one ), txt );
     }
 }
 

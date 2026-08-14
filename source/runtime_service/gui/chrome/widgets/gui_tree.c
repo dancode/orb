@@ -35,8 +35,8 @@ gui_collapsing_header( const char* label )
     draw_face_item( r, id, st, false );
 
     gui_rect_t arrow = { r.x, r.y, r.h, r.h };          /* a square the height of the bar */
-    draw_collapse_arrow( arrow, !hs->open, COL_TEXT_IDLE );    /* closed -> points right */
-    draw_label( r.x + r.h, text_center_y( r.y, r.h ), COL_TEXT_IDLE, label );
+    draw_collapse_arrow( arrow, !hs->open, COL_TEXT_PRIMARY_IDLE );    /* closed -> points right */
+    draw_label( r.x + r.h, text_center_y( r.y, r.h ), COL_TEXT_PRIMARY_IDLE, label );
 
     return hs->open;
 }
@@ -76,10 +76,10 @@ gui_tree_node( const char* label )
         draw_face_mix( r, GUI_ROLE_BG, mix );
 
     gui_rect_t arrow = { r.x, r.y, r.h, r.h };          /* fold arrow in a square at the left */
-    draw_collapse_arrow( arrow, !hs->open, COL_TEXT_IDLE );    /* closed -> points right */
+    draw_collapse_arrow( arrow, !hs->open, COL_TEXT_PRIMARY_IDLE );    /* closed -> points right */
 
     f32 label_x = r.x + r.h;
-    draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT_IDLE, label, ( r.x + r.w ) - label_x );
+    draw_label_fit( label_x, text_center_y( r.y, r.h ), COL_TEXT_PRIMARY_IDLE, label, ( r.x + r.w ) - label_x );
     cell_reach( label_x + label_width( label ) );   /* natural width may exceed the row */
 
     /* Indent the body while open; tree_pop removes the matching step.  Done here so children land

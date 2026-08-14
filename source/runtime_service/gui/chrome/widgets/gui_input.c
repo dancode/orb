@@ -92,7 +92,7 @@ gui_input_text_with_hint( const char* label, const char* hint, char* buf, u32 bu
         /* No per-widget clip: the hint fits the box in the common case, and the window's clip rect
            already bounds any overflow -- so no scissor (no batch split) and no ellipsis. */
         draw_push_text( f.box.x + WIDGET_PAD, text_center_y( f.box.y, f.box.h ),
-                        COL_TEXT_DIM, hint );
+                        COL_TEXT_SECONDARY_IDLE, hint );
     }
     return input_field_edit( f.id, f.box, f.st, buf, bufsz, NULL, NULL ).enter;
 }

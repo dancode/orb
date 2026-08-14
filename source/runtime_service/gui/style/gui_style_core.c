@@ -97,12 +97,19 @@
 
 #define STYLE_SEED_BASE   0                                         // seed[GUI_SEED_COUNT] starts at 0
 #define STYLE_RAMP_BASE   ( STYLE_SEED_BASE  + GUI_SEED_COUNT )     // ramp[] starts right after seed[]
-#define STYLE_COL_BASE    ( STYLE_RAMP_BASE  + GUI_RAMP_COUNT )     // col[][] starts right after ramp[]
+
+/* palette.ext[GUI_EXT_RESERVED_COUNT] sits here in the struct -- right after ramp[], since it is
+   the third and last field of gui_palette_t -- but earns no STYLE_xxx_SLOT of its own: nothing
+   addresses "the authored default" by slot, only style.ext[] (STYLE_EXT_BASE, below) which is
+   what a bake copies it INTO and what style_ext / push_style_ext actually read.  The four u32s
+   still have to be counted here, or every base after them is wrong by four. */
+#define STYLE_COL_BASE    ( STYLE_RAMP_BASE  + GUI_RAMP_COUNT + GUI_EXT_RESERVED_COUNT )   // col[][] starts after palette
 
 #define STYLE_COL_COUNT   ( GUI_ROLE_COUNT   * GUI_PHASE_COUNT )    // full size of col[][]
 
 #define STYLE_FACE_BASE   ( STYLE_COL_BASE   + STYLE_COL_COUNT )    // face[][] starts right after col[][]
-#define STYLE_VAR_BASE    ( STYLE_FACE_BASE  + STYLE_COL_COUNT )    // var[] starts right after face[][] (same size as col)
+#define STYLE_EXT_BASE    ( STYLE_FACE_BASE  + STYLE_COL_COUNT )    // ext[] starts right after face[][]
+#define STYLE_VAR_BASE    ( STYLE_EXT_BASE   + GUI_STYLE_EXT_MAX )  // var[] starts right after ext[]
 #define STYLE_SCALE_BASE  ( STYLE_VAR_BASE   + GUI_VAR_COUNT )      // scales[] starts right after var[]
 #define STYLE_SCALE_COUNT ( GUI_SCALE_COUNT  * 3 )                  // each scale step is 3 f32s: row, pad, gap
 #define STYLE_SLOT_COUNT  ( STYLE_SCALE_BASE + STYLE_SCALE_COUNT )  // total size = end of the last run
@@ -129,9 +136,9 @@ ORB_STATIC_ASSERT( sizeof( gui_style_t ) == STYLE_SLOT_COUNT * sizeof( u32 ),
                Typed, so gui_style_edit() hands a kit &s_store[set] with no cast.
     s_work  -- RESOLVED.  The CURRENT set's installed values with every push / next override
                already written in.  The only array a read touches, and it is a file static of
-               known size -- so COL_TEXT_IDLE compiles to a load from a fixed address, which is the
-               whole reason the sets live behind an index instead of the reads living behind a
-               base pointer.
+               known size -- so COL_TEXT_PRIMARY_IDLE compiles to a load from a fixed address,
+               which is the whole reason the sets live behind an index instead of the reads
+               living behind a base pointer.
 
     Capacity is the array bound: a fifth set is a compile error, not a first-frame assert.
 ==============================================================================================*/
@@ -171,6 +178,7 @@ typedef struct { u16 slot; u32 val; } style_pair_t;   // s_next: the pending val
    Keeping `cur` is what makes a set switch exact -- the freshly mirrored instance gets the live
    overrides re-applied over it, and each save is rebased to the new underlying value so the
    eventual pop restores the right thing. */
+
 typedef struct
 {
     u16 slot[ STYLE_FAN_MAX ];
@@ -193,6 +201,7 @@ typedef struct
 static style_stack_t s_col_stack;                     // push_style_color's stack
 static style_stack_t s_var_stack;                     // push_style_var's stack
 static style_stack_t s_face_stack;                    // push_style_face's stack
+static style_stack_t s_ext_stack;                     // push_style_ext's stack
 
 /* The brush BODIES, per set.  Only the HANDLE lives in the slot space (gui_style_t.face), which is
    the split that makes the face plane free: a handle is a u32 like every other slot, so push /
@@ -206,6 +215,12 @@ static style_stack_t s_face_stack;                    // push_style_face's stack
 
 static gui_brush_t s_brush  [ GUI_STYLE_SET_MAX ][ GUI_STYLE_BRUSH_MAX ];
 static u32         s_brush_n[ GUI_STYLE_SET_MAX ];
+
+/* Extended-palette registration count, per set -- the brush pool's exact shape, minus the body
+   array: an ext value lives in the slot space itself (gui_style_t.ext), so there is nothing here
+   to store beside the count.  Starts each landing at GUI_EXT_RESERVED_COUNT, not 0: those slots
+   are the standard severity colours, authored by the theme, and never up for re-registration. */
+static u32 s_ext_n[ GUI_STYLE_SET_MAX ];
 
 /* The SEED stack -- push_style_seed's, and a different shape from the two above because a seed
    push is a different KIND of override.  A colour push replaces a value; a seed push replaces a
@@ -331,13 +346,14 @@ style_next( u32 slot, u32 val )
 /*==============================================================================================
     The typed faces -- coordinate to slot, and nothing else.
 
-    A read site says COL_TEXT_IDLE or WIDGET_PAD; it never sees a slot, which is what kept the schema
-    rewrites off the 230-odd chrome read sites.
+    A read site says COL_TEXT_PRIMARY_IDLE or WIDGET_PAD; it never sees a slot, which is what kept
+    the schema rewrites off the 230-odd chrome read sites.
 ==============================================================================================*/
 
 static u16 style_col_slot ( u8 role, u8 phase ) { return (u16)STYLE_COL_SLOT ( role, phase ); }
 static u16 style_face_slot( u8 role, u8 phase ) { return (u16)STYLE_FACE_SLOT( role, phase ); }
 static u16 style_var_slot ( u32 var )           { return (u16)( STYLE_VAR_BASE + var ); }
+static u16 style_ext_slot ( u32 ext )           { return (u16)( STYLE_EXT_BASE + ext ); }
 
 /* One indexed load.  No projection, no override test, no fallback chain -- the installed value
    and any override live in the SAME slot, which is what the flat space bought. */
@@ -379,6 +395,29 @@ style_wash_selected( u32 color, f32 travel )
 }
 
 u32 style_col_selected( u8 role, u8 phase ) { return style_wash_selected( style_col( role, phase ), 1.0f ); }
+
+/* The extended-palette read: one indexed load, exactly like style_col, but at a flat slot with no
+   phase axis to fan across.  Out-of-range (never registered this landing, or never registered at
+   all) reads 0 rather than asserting -- a caller cannot tell "not registered" from "registered
+   transparent black", which is fine, since neither is a colour anyone painted with on purpose. */
+u32
+style_ext( gui_style_ext_t ext )
+{
+    if ( (u32)ext >= GUI_STYLE_EXT_MAX ) return 0;
+    return style_read( style_ext_slot( (u32)ext ) );
+}
+
+void
+style_push_ext( gui_style_ext_t ext, u32 abgr )
+{
+    if ( (u32)ext < GUI_STYLE_EXT_MAX )
+    {
+        u16 s = style_ext_slot( (u32)ext );
+        style_push( &s_ext_stack, &s, 1, abgr );
+    }
+}
+
+void style_pop_ext( u32 count ) { style_pop( &s_ext_stack, count ); }
 
 f32 style_var( gui_style_var_t var )
 {
@@ -705,14 +744,19 @@ static const char* const k_role_name[ GUI_ROLE_COUNT ] =
     [ GUI_ROLE_TITLE  ] = "Title",
     [ GUI_ROLE_BG     ] = "Control",
     [ GUI_ROLE_BORDER ] = "Border",
-    [ GUI_ROLE_TEXT   ] = "Text",
+    [ GUI_ROLE_TEXT_PRIMARY   ] = "Text (primary)",
+    [ GUI_ROLE_TEXT_SECONDARY ] = "Text (secondary)",
     [ GUI_ROLE_ACCENT ] = "Accent",
     [ GUI_ROLE_MARK   ] = "Mark",
     [ GUI_ROLE_GRAB   ] = "Grab",
-    [ GUI_ROLE_INFO   ] = "Info",
-    [ GUI_ROLE_OK     ] = "OK",
-    [ GUI_ROLE_WARN   ] = "Warn",
-    [ GUI_ROLE_ERROR  ] = "Error",
+};
+
+static const char* const k_ext_name[ GUI_EXT_RESERVED_COUNT ] =
+{
+    [ GUI_EXT_INFO  ] = "Info",
+    [ GUI_EXT_OK    ] = "OK",
+    [ GUI_EXT_WARN  ] = "Warn",
+    [ GUI_EXT_ERROR ] = "Error",
 };
 
 static const char* const k_phase_name[ GUI_PHASE_COUNT ] =
@@ -734,6 +778,10 @@ const char* gui_style_seed_name ( gui_style_seed_t s )  { return ( (u32)s < GUI_
 const char* gui_style_ramp_name ( gui_style_ramp_t r )  { return ( (u32)r < GUI_RAMP_COUNT  && k_ramp_name [ r ]       ) ? k_ramp_name [ r ]       : "?"; }
 const char* gui_style_var_name  ( gui_style_var_t v )   { return ( (u32)v < GUI_VAR_COUNT   && k_var       [ v ].name  ) ? k_var       [ v ].name  : "?"; }
 const char* gui_style_class_name( gui_style_class_t c ) { return ( (u32)c < GUI_CLASS_COUNT && k_class_name[ c ]       ) ? k_class_name[ c ]       : "?"; }
+
+/* Only the reserved slots are named -- a kit's own registered colour has no engine-owned name,
+   exactly as a kit's own brush has no entry in any name table either. */
+const char* gui_style_ext_name( gui_style_ext_t e ) { return ( (u32)e < GUI_EXT_RESERVED_COUNT && k_ext_name[ e ] ) ? k_ext_name[ e ] : "?"; }
 
 /* What KIND of number a var holds -- what the em rescale and the lattice snap branch on, and
    what lets a style editor group its sliders without a table of its own.  An out-of-range var
@@ -776,6 +824,14 @@ style_install( u16 set )
        grow by the source's whole art set per theme / font / scale change and exhaust itself after
        a handful.  Safe because the handles it hands back are re-issued in the same order. */
     s_brush_n[ set ] = 0;
+
+    /* Same reset, for the extended palette's kit-registered slots: the reserved four came across
+       intact in the *style_active() copy above (baked from palette.ext), and everything past them
+       is a registration this landing has not made yet -- cleared so a set never inherits a
+       previous landing's colours at an index its current source does not claim. */
+    s_ext_n[ set ] = GUI_EXT_RESERVED_COUNT;
+    for ( u32 i = GUI_EXT_RESERVED_COUNT; i < GUI_STYLE_EXT_MAX; ++i )
+        s_store[ set ].ext[ i ] = 0;
 
     if ( s_set_source[ set ] )
     {
@@ -835,7 +891,7 @@ style_new_frame( void )
 
     style_work_reseed();           /* working set <- installed layer */
 
-    s_col_stack.sp = s_var_stack.sp = s_face_stack.sp = 0;
+    s_col_stack.sp = s_var_stack.sp = s_face_stack.sp = s_ext_stack.sp = 0;
     s_seed_sp = 0;
     s_next_n = s_item_n = 0;
 }
@@ -964,6 +1020,27 @@ gui_style_brush_add( const gui_brush_t* b )
     return (gui_style_face_t)( ++s_brush_n[ set ] );   /* 1-based; 0 stays GUI_FACE_NONE */
 }
 
+/* Claim the next free extended-palette slot in a set's pool and seed it with a default -- the
+   ext-plane sibling of gui_style_brush_add, same idempotent-per-landing contract (called from a
+   style SOURCE, reset to GUI_EXT_RESERVED_COUNT at the top of every landing).  Unlike a brush
+   handle the slot value itself lives in the flat slot space (gui_style_t.ext), so registering one
+   is a plain store rather than a pool write: push / pop / a set switch already know how to move
+   it, with nothing new to keep in step. */
+gui_style_ext_t
+gui_style_ext_add( u32 default_abgr )
+{
+    u16 set = ( s_installing >= 0 ) ? (u16)s_installing : s_set_cur;
+
+    bool have_room = s_ext_n[ set ] < GUI_STYLE_EXT_MAX;
+    ORB_ASSERT( have_room && "style ext pool exhausted -- raise GUI_STYLE_EXT_MAX" );
+    if ( !have_room )
+        return GUI_EXT_INFO;      /* a reserved slot's colour beats a corrupt handle */
+
+    gui_style_ext_t id = (gui_style_ext_t)s_ext_n[ set ]++;
+    s_store[ set ].ext[ id ] = default_abgr;
+    return id;
+}
+
 /* Own the DEFAULT set.  Set 0 is what chrome and any unbracketed UI resolve through, so a
    source installed here restyles the whole application.  A kit that wants its look BESIDE
    chrome's takes gui_style_set_create instead. */
@@ -1073,7 +1150,7 @@ col_item_bg_selected( gui_item_state_t st, bool selected )
 u32
 col_btn_glyph( gui_item_state_t st )
 {
-    return ( st.hover || st.active ) ? COL_TEXT_IDLE : COL_TEXT_DIM;
+    return ( st.hover || st.active ) ? COL_TEXT_PRIMARY_IDLE : COL_TEXT_SECONDARY_IDLE;
 }
 
 /* The border of a focusable FIELD -- input box, numeric field, drag box, slider track.  A
@@ -1114,7 +1191,7 @@ col_tab_bg( gui_item_state_t st, bool current )
 u32
 col_tab_ink( gui_item_state_t st, bool current )
 {
-    return ( current || style_phase( st ) != GUI_PHASE_IDLE ) ? COL_TEXT_IDLE : COL_TEXT_DIM;
+    return ( current || style_phase( st ) != GUI_PHASE_IDLE ) ? COL_TEXT_PRIMARY_IDLE : COL_TEXT_SECONDARY_IDLE;
 }
 
 /* The movable part of a track control -- slider knob, scrollbar thumb -- off the GRAB row.

@@ -178,14 +178,14 @@ plot_emit( bool bars, const char* label, const f32* values, i32 count, i32 offse
             f32 tw = font_text_w( overlay );
             f32 tx = r.x + ( r.w - tw ) * 0.5f;
             if ( tx < r.x + WIDGET_PAD ) tx = r.x + WIDGET_PAD;
-            draw_text_fit_n( tx, r.y + WIN_BORDER + 1.0f, COL_TEXT_IDLE, overlay, 0xFFFFFFFFu,
+            draw_text_fit_n( tx, r.y + WIN_BORDER + 1.0f, COL_TEXT_PRIMARY_IDLE, overlay, 0xFFFFFFFFu,
                              r.w - 2.0f * WIDGET_PAD );
         }
 
         /* Trailing label past the box's right edge, seated on the first row (listbox_end). */
         if ( lab_w > 0.0f )
             draw_label( r.x + r.w + WIDGET_PAD, text_center_y( r.y, WIDGET_H ),
-                        COL_TEXT_IDLE, label );
+                        COL_TEXT_PRIMARY_IDLE, label );
     }
 
     /* The hovered sample as "index: value", bound to the item just emitted. */

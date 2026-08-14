@@ -99,7 +99,7 @@ void gui_disabled_end( void ) { item_flag_pop(); }
         gui()->button( "Red Button" );
         gui()->pop_style_color( 2 );
 
-        gui()->push_style_color( GUI_ROLE_TEXT, GUI_PHASE_ALL, GUI_COLOR( 0,0xFF,0,0xFF ));
+        gui()->push_style_color( GUI_ROLE_TEXT_PRIMARY, GUI_PHASE_ALL, GUI_COLOR( 0,0xFF,0,0xFF ));
         gui()->button( "Green label, hovered or not" );
         gui()->pop_style_color( 1 );
 
@@ -153,6 +153,14 @@ void gui_next_style_var( gui_style_var_t var, f32 value )   { style_next_var( va
 
 void gui_push_style_seed( gui_style_seed_t seed, u32 abgr ) { style_push_seed( seed, abgr ); }
 void gui_pop_style_seed ( u32 count )                       { style_pop_seed( count ); }
+
+/*==============================================================================================
+    push_style_ext / pop_style_ext -- scope an extended-palette override.  A flat colour has no
+    ramp to re-derive, so this is push_style_var's shape exactly: one slot, save, restore.
+==============================================================================================*/
+
+void gui_push_style_ext( gui_style_ext_t ext, u32 abgr ) { style_push_ext( ext, abgr ); }
+void gui_pop_style_ext ( u32 count )                      { style_pop_ext( count ); }
 
 /*==============================================================================================
     scale_push / scale_pop -- scope a named density step (the theme's scale ramp, gui_scale_t)

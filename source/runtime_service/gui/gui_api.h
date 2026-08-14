@@ -1720,7 +1720,15 @@ typedef struct gui_api_s
 
            gui()->push_style_seed( GUI_SEED_ACCENT, gold );   // fills, washes, rings, nav
            ... a gold panel ...
-           gui()->pop_style_seed( 1 ); */
+           gui()->pop_style_seed( 1 );
+
+       push_style_ext is the fourth stack, over the EXTENDED palette (gui_style_ext_t) rather
+       than the role/phase grid: a flat colour, no fan, no re-derivation -- a plain save/restore
+       of the one slot, exactly like push_style_var.
+
+           gui()->push_style_ext( GUI_EXT_WARN, GUI_COLOR( 0xFF, 0xA0, 0x20, 0xFF ) );
+           ... a brighter warning banner ...
+           gui()->pop_style_ext( 1 ); */
 
     void ( *push_style_color )( gui_style_role_t role, gui_style_phase_t phase, u32 abgr );
     void ( *pop_style_color  )( u32 count );
@@ -1730,6 +1738,8 @@ typedef struct gui_api_s
     void ( *next_style_var   )( gui_style_var_t var, f32 value );
     void ( *push_style_seed  )( gui_style_seed_t seed, u32 abgr );
     void ( *pop_style_seed   )( u32 count );
+    void ( *push_style_ext   )( gui_style_ext_t ext, u32 abgr );
+    void ( *pop_style_ext    )( u32 count );
 
     /* The RESOLVED reads -- ask "what color should I actually draw right now," accounting for
        any active theme plus any push_style_color override in scope. The other half of the
@@ -1764,6 +1774,18 @@ typedef struct gui_api_s
     u32               ( *style_color         )( gui_style_role_t role, gui_style_phase_t phase );
     u32               ( *style_color_selected )( gui_style_role_t role, gui_style_phase_t phase );
     gui_style_t*      ( *style_edit          )( void );
+
+    /* The extended-palette read: style_color's sibling with no phase to pass, resolving a flat
+       gui_style_ext_t slot the same way -- installed value, any push_style_ext override already
+       applied.  GUI_EXT_INFO/OK/WARN/ERROR are always valid; a kit's own registered id
+       (style_ext_add) is valid only in the set that registered it, this landing. */
+    u32 ( *style_ext )( gui_style_ext_t ext );
+
+    /* Claim a slot in the CURRENT set's extended palette beyond the reserved severity four,
+       seeded with a default colour -- call from a style SOURCE so the registration lands in the
+       set being installed, mirroring style_brush_add exactly (idempotent per landing, not
+       cumulative). */
+    gui_style_ext_t ( *style_ext_add )( u32 default_abgr );
 
     /*==========================  the FACE plane -- art where a colour was  ==========================*/
 
@@ -1821,7 +1843,7 @@ typedef struct gui_api_s
 
            gui_style_mix_t m = gui()->style_mix( id, st, selected );   // one probe, damped
            gui()->draw_face_mix( box, GUI_ROLE_BG, m );                // surface
-           u32 ink = gui()->style_color_mix( GUI_ROLE_TEXT, m );       // ...and its ink, together
+           u32 ink = gui()->style_color_mix( GUI_ROLE_TEXT_PRIMARY, m );       // ...and its ink, together
 
        style_mix is the only call here that touches storage: one 16-byte damper slot per item IN
        MOTION, which evicts the moment the item settles.  Read it ONCE per item and spend it on
@@ -1851,6 +1873,7 @@ typedef struct gui_api_s
     const char*       ( *style_var_name   )( gui_style_var_t var );
     gui_style_class_t ( *style_var_class  )( gui_style_var_t var );
     const char*       ( *style_class_name )( gui_style_class_t cls );
+    const char*       ( *style_ext_name   )( gui_style_ext_t ext );   // "?" past the reserved four
 
     /* scale_push / scale_pop -- scope a named density step (gui_scale_t: DENSE / STD / ROOMY /
        BAR) over the widgets until the pop: the theme's row + pad + gap for that step land on

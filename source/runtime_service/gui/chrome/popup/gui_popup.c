@@ -470,7 +470,7 @@ gui_set_item_tooltip( const char* text )
         f32 h     = font_char_h() + (f32)( lines - 1u ) * font_line_h();
 
         gui_rect_t r = cell_next_w( final_w, h );
-        text_wrap_walk( text, final_w, true, r.x, r.y, COL_TEXT_IDLE );
+        text_wrap_walk( text, final_w, true, r.x, r.y, COL_TEXT_PRIMARY_IDLE );
         cell_reach( r.x + final_w );
     }
     gui_tooltip_end();

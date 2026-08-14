@@ -51,7 +51,7 @@ num_field( gui_id_t id, gui_rect_t box_r, gui_item_state_t st,
         if ( is_int ) fmt_snprintf( disp, NUM_BUF_CAP, fmt, (int)( committed ? *out : cur ) );
         else          fmt_snprintf( disp, NUM_BUF_CAP, fmt, committed ? *out : cur );
         draw_push_text( box_r.x + WIDGET_PAD, text_center_y( box_r.y, box_r.h ),
-                        COL_TEXT_IDLE, disp );
+                        COL_TEXT_PRIMARY_IDLE, disp );
     }
 
     return committed;
@@ -66,7 +66,7 @@ num_step_button( gui_id_t id, gui_rect_t r, bool is_minus )
     draw_outline( r, WIN_BORDER, COL_BORDER_IDLE );
     const char* sym = is_minus ? "-" : "+";
     f32 sw = font_text_w( sym );
-    draw_push_text( r.x + ( r.w - sw ) * 0.5f, text_center_y( r.y, r.h ), COL_TEXT_IDLE, sym );
+    draw_push_text( r.x + ( r.w - sw ) * 0.5f, text_center_y( r.y, r.h ), COL_TEXT_PRIMARY_IDLE, sym );
     return st.clicked;
 }
 

@@ -104,12 +104,12 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
     }
 
     f32 lx = r.x + WIDGET_PAD + check_w;
-    draw_label( lx, text_center_y( r.y, r.h ), COL_TEXT_IDLE, label );
+    draw_label( lx, text_center_y( r.y, r.h ), COL_TEXT_PRIMARY_IDLE, label );
 
     /* Shortcut hint, dim and right-aligned in the row. */
     f32 sw = ( shortcut && shortcut[ 0 ] ) ? font_text_w( shortcut ) : 0.0f;
     if ( sw > 0.0f )
-        draw_push_text( r.x + r.w - WIDGET_PAD - sw, text_center_y( r.y, r.h ), COL_TEXT_DIM, shortcut );
+        draw_push_text( r.x + r.w - WIDGET_PAD - sw, text_center_y( r.y, r.h ), COL_TEXT_SECONDARY_IDLE, shortcut );
 
     /* Natural row width (gutter + label + a gap + shortcut) so the menu popup auto-sizes to its
        widest row over two frames, like the combo dropdown. */
@@ -216,7 +216,7 @@ gui_menu_begin( const char* label )
         draw_push_rect_filled( box.x, box.y, box.w, box.h, 0,0,1,1, 0,
                                style_col_mix( GUI_ROLE_BG, bmix ) );
 
-    draw_label( box.x + WIDGET_PAD, text_center_y( box.y, box.h ), COL_TEXT_IDLE, label );
+    draw_label( box.x + WIDGET_PAD, text_center_y( box.y, box.h ), COL_TEXT_PRIMARY_IDLE, label );
 
     if ( in_bar )
     {
@@ -226,7 +226,7 @@ gui_menu_begin( const char* label )
     {
         /* Submenu marker: a right-pointing arrow boxed at the row's right edge. */
         gui_rect_t arrow = { box.x + box.w - box.h, box.y, box.h, box.h };
-        draw_arrow( arrow, GUI_DIR_RIGHT, COL_TEXT_IDLE );
+        draw_arrow( arrow, GUI_DIR_RIGHT, COL_TEXT_PRIMARY_IDLE );
         cell_reach( box.x + WIDGET_PAD + label_width( label ) + box.h + WIDGET_PAD );
     }
 

@@ -88,7 +88,7 @@ medit_paint( gui_rect_t inner, const char* buf, u32 len, const gui_medit_state_t
         }
 
         if ( le > ls )
-            draw_push_text_clip_n( text_x, ry, COL_TEXT_IDLE, buf + ls, le - ls, clip_x0, clip_x1 );
+            draw_push_text_clip_n( text_x, ry, COL_TEXT_PRIMARY_IDLE, buf + ls, le - ls, clip_x0, clip_x1 );
 
         /* Blinking caret on its row (visible for the first 0.5 s of each 1 s cycle). */
         if ( focused && es->cursor >= ls && es->cursor <= le )
@@ -97,7 +97,7 @@ medit_paint( gui_rect_t inner, const char* buf, u32 len, const gui_medit_state_t
             f32  cxp       = text_x + text_x_at( buf + ls, es->cursor - ls );
             if ( caret_vis && cxp >= clip_x0 - 0.5f && cxp <= clip_x1 + 0.5f )
                 draw_fill( ( gui_rect_t ){ cxp, ry, (f32)WIN_BORDER, char_h },
-                           COL_TEXT_IDLE );
+                           COL_TEXT_PRIMARY_IDLE );
         }
 
         if ( le >= len ) break;
@@ -211,7 +211,7 @@ gui_input_text_multiline( const char* label, char* buf, u32 bufsz, f32 h )
 
     if ( label_vis_len( label ) > 0 )
         draw_label( box.x + box.w + WIDGET_PAD, text_center_y( box.y, WIDGET_H ),
-                    COL_TEXT_IDLE, label );
+                    COL_TEXT_PRIMARY_IDLE, label );
 
     return changed;
 }

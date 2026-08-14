@@ -1143,7 +1143,7 @@ table_draw_header( gui_table_t* t )
            Vertically centered in the strip (a fixed gap offset drifts whenever the metric ramp
            changes the header height / glyph size ratio). */
         table_text_clip( t, lblx, lblw );
-        draw_text_fit_n( lblx, hy + ( hh - font_char_h() ) * 0.5f, COL_TEXT_IDLE, lbl, 0xFFFFFFFFu, lblw );
+        draw_text_fit_n( lblx, hy + ( hh - font_char_h() ) * 0.5f, COL_TEXT_PRIMARY_IDLE, lbl, 0xFFFFFFFFu, lblw );
 
         /* Sort indicator triangle on the active sort column: tip up for ascending, down for
            descending, seated in the reserve the label just gave up. */
@@ -1155,10 +1155,10 @@ table_draw_header( gui_table_t* t )
 
             if ( t->persist->sort_dir == 0 )
                 draw_push_triangle( tx - aw * 0.5f, ty + ah, tx, ty, tx + aw * 0.5f, ty + ah,
-                                    COL_TEXT_IDLE );
+                                    COL_TEXT_PRIMARY_IDLE );
             else
                 draw_push_triangle( tx - aw * 0.5f, ty, tx, ty + ah, tx + aw * 0.5f, ty,
-                                    COL_TEXT_IDLE );
+                                    COL_TEXT_PRIMARY_IDLE );
         }
     }
 

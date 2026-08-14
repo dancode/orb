@@ -30,11 +30,11 @@ draw_button_label( gui_rect_t r, const char* label )
     if ( lw <= avail )
     {
         gui_rect_t lr = rect_align( r, lw, font_char_h(), GUI_ALIGN_CENTER );
-        draw_label( lr.x, lr.y, COL_TEXT_IDLE, label );
+        draw_label( lr.x, lr.y, COL_TEXT_PRIMARY_IDLE, label );
     }
     else
     {
-        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT_IDLE, label, avail );
+        draw_label_fit( r.x + WIDGET_PAD, text_center_y( r.y, r.h ), COL_TEXT_PRIMARY_IDLE, label, avail );
     }
 }
 
@@ -148,7 +148,7 @@ gui_arrow_button( const char* label, gui_dir_t dir )
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
     draw_face_item( r, id, st, false );
-    draw_arrow( r, dir, COL_TEXT_IDLE );
+    draw_arrow( r, dir, COL_TEXT_PRIMARY_IDLE );
 
     return st.clicked;
 }
@@ -278,7 +278,7 @@ gui_checkbox( const char* label, bool* v )
     /* The label, when the field kept it -- plainly, no ellipsis (markers still stripped); a label
        too wide for its track overflows and is bounded by the window clip, matching text() and the
        input widgets. */
-    if ( c.show_label ) draw_label( c.label_x, c.label_y, COL_TEXT_IDLE, label );
+    if ( c.show_label ) draw_label( c.label_x, c.label_y, COL_TEXT_PRIMARY_IDLE, label );
 
     bool changed = false;
     if ( c.st.clicked )
@@ -330,7 +330,7 @@ gui_radio_button( const char* label, i32* v, i32 value )
     if ( on )
         draw_push_circle_filled( cx, cy, rad * 0.55f, COL_MARK_IDLE );
 
-    if ( c.show_label ) draw_label_fit( c.label_x, c.label_y, COL_TEXT_IDLE, label, c.label_w );
+    if ( c.show_label ) draw_label_fit( c.label_x, c.label_y, COL_TEXT_PRIMARY_IDLE, label, c.label_w );
 
     bool changed = false;
     if ( c.st.clicked && v && *v != value )
@@ -379,7 +379,7 @@ gui_selectable( const char* label, bool* selected )
        so a kit that recolours the selection can recolour what is written on it. */
     gui_style_mix_t ink = { 0.0f, 0.0f, mix.sel };
     draw_label( r.x + WIDGET_PAD, text_center_y( r.y, r.h ),
-                style_col_mix( GUI_ROLE_TEXT, ink ), label );
+                style_col_mix( GUI_ROLE_TEXT_PRIMARY, ink ), label );
     cell_reach( r.x + WIDGET_PAD + label_width( label ) );   /* natural width may exceed the row */
 
     if ( st.clicked && selected )
@@ -440,7 +440,7 @@ gui_msel_item( const char* label, i32 index, bool selected )
 
     gui_style_mix_t ink = { 0.0f, 0.0f, mix.sel };
     draw_label( r.x + WIDGET_PAD, text_center_y( r.y, r.h ),
-                style_col_mix( GUI_ROLE_TEXT, ink ), label );
+                style_col_mix( GUI_ROLE_TEXT_PRIMARY, ink ), label );
     cell_reach( r.x + WIDGET_PAD + label_width( label ) );
 
     gui_msel_feed( index, st );

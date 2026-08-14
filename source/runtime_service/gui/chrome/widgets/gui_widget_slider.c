@@ -160,7 +160,7 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
         f32 tw    = font_text_w_n( value_text, 0xFFFFFFFFu );
         f32 tx    = track_r.x + ( track_r.w - tw ) * 0.5f;
         if ( tx < track_r.x + WIDGET_PAD ) tx = track_r.x + WIDGET_PAD;
-        draw_text_fit_n( tx, text_center_y( track_r.y, track_r.h ), COL_TEXT_IDLE, value_text, 0xFFFFFFFFu, inner );
+        draw_text_fit_n( tx, text_center_y( track_r.y, track_r.h ), COL_TEXT_PRIMARY_IDLE, value_text, 0xFFFFFFFFu, inner );
     }
 }
 
@@ -344,7 +344,7 @@ drag_value_text( gui_rect_t box_r, const char* buf )
     f32 tw = font_text_w_n( buf, 0xFFFFFFFFu );
     f32 tx = floorf( box_r.x + ( box_r.w - tw ) * 0.5f );
     if ( tx < box_r.x + WIDGET_PAD ) tx = box_r.x + WIDGET_PAD;
-    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT_IDLE, buf,
+    draw_push_text_clip_n( tx, text_center_y( box_r.y, box_r.h ), COL_TEXT_PRIMARY_IDLE, buf,
                            0xFFFFFFFFu, box_r.x, box_r.x + box_r.w - WIDGET_PAD );
 }
 
