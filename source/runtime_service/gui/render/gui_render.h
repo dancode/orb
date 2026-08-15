@@ -332,11 +332,13 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
 #define SLOT_IDX_PAD      128u  // per-slot index headroom (~2x vertex count for quads)
 
 /* One entry of a window slot's LOCAL clip table: the rects this window's cached vertices name
-   through the tex word's clip band (gui.h, GUI_TEX_CLIP_SHIFT).  The flush concatenates every
-   dispatched slot's entries into the frame clip buffer the fragment reads (gui_shader.h,
-   clip_coverage); the per-draw clip_base push constant locates a slot's span.  Lives beside the
-   slot's cached geometry so a cache-hit frame replays baked local indices against the exact
-   rects they meant, however the per-frame global clip table shuffled its indices. */
+   through the tex word's clip band (gui.h, GUI_TEX_CLIP_SHIFT).  Vertices bake ABSOLUTE frame-
+   region entry indices -- the window's fixed slab (its id-keyed cache slot * GUI_WIN_CLIP_MAX)
+   plus a local first-seen index -- so the flush uploads each slab at its fixed offset, and only
+   when its content changed (s_clip_slab_pending).  The fragment resolves them against the frame
+   clip buffer (gui_shader.h, clip_coverage) with clip_base flush-constant at the region origin.
+   Lives beside the slot's cached geometry so a cache-hit frame replays baked indices against the
+   exact rects they meant, however the per-frame global clip table shuffled its indices. */
 typedef struct
 {
     gui_rect_t rect;      // the clip rect, unsnapped pixels (the flush snaps edges on upload)
@@ -344,7 +346,11 @@ typedef struct
 
 } gui_clip_entry_t;
 
-#define GUI_WIN_CLIP_MAX  16    // distinct clips per window slot -- fits the clip band's 6 bits
+#define GUI_WIN_CLIP_MAX  16    // distinct clips per window slot
+
+ORB_STATIC_ASSERT( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX
+                       <= ( GUI_TEX_CLIP_MASK >> GUI_TEX_CLIP_SHIFT ) + 1,
+                   "every window's fixed clip slab must be addressable by the tex word's clip band" );
 
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
    The frame's semantic list is tessellated + z-sorted exactly once (lazily, on the first

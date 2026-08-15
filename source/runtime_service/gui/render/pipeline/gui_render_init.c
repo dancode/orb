@@ -65,8 +65,9 @@ typedef struct
     Frame clip table sizing -- the storage buffer clip_coverage reads (gui_shader.h).
 
     An ENTRY is two vec4s: (x0, y0, x1, y1) snapped pixel edges, then (radius, 0, 0, 0).  A
-    REGION holds the worst case a single flush can write -- every trackable window at its full
-    local clip table -- so the upload can never overflow and needs no cap logic.  One region per
+    REGION is an array of fixed per-window SLABS -- one per stable cache slot, GUI_WIN_CLIP_MAX
+    entries each, at cache_idx * GUI_WIN_CLIP_MAX -- the same base the window's vertices bake
+    into the clip band, so uploads land at fixed offsets and can never overflow.  One region per
     (frame-in-flight, viewport), because the buffer is shared across surfaces whose in-flight
     draws read their own frames' entries.
 ==============================================================================================*/

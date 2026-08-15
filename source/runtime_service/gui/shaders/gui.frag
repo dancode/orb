@@ -17,7 +17,7 @@ layout(push_constant) uniform PC {
     uint dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
     float time;      // effect-band frame clock, seconds wrapped to GUI_FX_TIME_WRAP (1024)
     uint clip_buf;   // bindless buffer slot of the frame's clip table (0 = no table, no clipping)
-    uint clip_base;  // this draw's first entry in the clip table (entries, not vec4s)
+    uint clip_base;  // the flush's clip-region origin in the table (entries, not vec4s)
 } pc;
 
 layout(location = 0) in  vec4 v_color;
@@ -29,9 +29,9 @@ layout(location = 0) out vec4 out_color;
 
 // Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_CLIP_SHIFT in gui.h -- keep the three in step.
 #define TEX_MODE_SHIFT  28u
-#define TEX_CLIP_SHIFT  22u
-#define TEX_CLIP_MASK   0x3Fu
-#define TEX_INDEX_MASK  0x003FFFFFu
+#define TEX_CLIP_SHIFT  17u
+#define TEX_CLIP_MASK   0x7FFu
+#define TEX_INDEX_MASK  0x0001FFFFu
 
 // v_color arrives ALREADY LINEAR -- the vertex stage decodes it (see gui.vert), because it is a
 // per-vertex constant and decoding it per fragment spent three pow() on every pixel of the UI.
@@ -195,11 +195,12 @@ float fx_coverage()
 }
 
 // The clip band: which clip rect cuts this fragment, resolved HERE rather than by the hardware
-// scissor so a clip change never opens a new draw call.  The vertex names its entry (bits 22..27
-// of the tex word, local to the draw); pc.clip_base locates the draw's span inside the frame's
-// clip table, which lives in a bindless storage buffer named by pc.clip_buf.  clip_buf 0 -- the
-// reserved invalid slot -- means "no clip table bound": full coverage, so a pipeline user without
-// a table (and the gui itself before its first upload) is never clipped by garbage.
+// scissor so a clip change never opens a new draw call.  The vertex names its entry (bits 17..27
+// of the tex word, absolute within the frame's clip region); pc.clip_base is the region's origin,
+// constant for the whole flush.  The table lives in a bindless storage buffer named by
+// pc.clip_buf.  clip_buf 0 -- the reserved invalid slot -- means "no clip table bound": full
+// coverage, so a pipeline user without a table (and the gui itself before its first upload) is
+// never clipped by garbage.
 //
 // Entries are two vec4s: [0] = (x0, y0, x1, y1) pixel EDGES, pre-snapped CPU-side to the same
 // grid the hardware scissor was, so radius-0 coverage is bit-identical to the scissor it

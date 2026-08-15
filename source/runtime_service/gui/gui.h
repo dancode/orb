@@ -2135,24 +2135,27 @@ typedef enum
 
    FOUR bits, matching GUI_FX_MODE_BITS -- the two mode fields answer the same kind of question and
    grow by the same rule.  The bits come out of the INDEX half, which never needed them: the RHI's
-   bindless array is 2048 entries (11 bits) and the low 22 still hold 4M.  This word is the shader
+   bindless array is 2048 entries (11 bits) and the low 17 still hold 128K.  This word is the shader
    contract: the shifts below must equal TEX_MODE_SHIFT / TEX_CLIP_SHIFT in gui.frag / gui.ps.hlsl
    (and the paraphrase in gui_shader.h) -- change one, change all, resplice the SPIR-V.
 
-   THE CLIP BAND -- bits 22..27, between the model and the index: which clip rect cuts this
-   vertex's fragments, as an index LOCAL to the window slot's clip table (win_geo_slot_t).  The
-   fragment resolves it against the frame clip table (gui_shader.h, clip_coverage), which is what
-   lets a clip change ride the vertex instead of cutting a draw call -- the same move the texture
-   and the effect word made.  Local rather than global on purpose: cached geometry bakes these six
-   bits, and a window's own first-seen clip order is reproducible from its (hashed) commands where
-   a global table's assignment order is not.  Stamped by tess_verts_commit from ambient state,
+   THE CLIP BAND -- bits 17..27, between the model and the index: which clip rect cuts this
+   vertex's fragments, as an ABSOLUTE entry index into the frame clip region -- the window's fixed
+   slab (its stable cache slot * GUI_WIN_CLIP_MAX) plus a local first-seen index within it
+   (win_geo_slot_t).  The fragment resolves it against the frame clip table (gui_shader.h,
+   clip_coverage), which is what lets a clip change ride the vertex instead of cutting a draw call
+   -- the same move the texture and the effect word made.  Keyed by the stable cache slot on
+   purpose: cached geometry bakes these bits, and both halves survive as long as the window does --
+   the slot is id-keyed, and the window's own first-seen clip order is reproducible from its
+   (hashed) commands where a per-frame table's assignment order is not.  Eleven bits because the
+   stress build tracks 128 windows * 16 clips.  Stamped by tess_verts_commit from ambient state,
    like the two words below it; nothing outside the tessellator sets it. */
 #define GUI_TEX_MODE_SHIFT  28u
 #define GUI_TEX_MODE_MASK   ( 0xFu << GUI_TEX_MODE_SHIFT )
 #define GUI_TEX_MODE( m )   ( (u32)( m ) << GUI_TEX_MODE_SHIFT )
 
-#define GUI_TEX_CLIP_SHIFT  22u
-#define GUI_TEX_CLIP_MASK   ( 0x3Fu << GUI_TEX_CLIP_SHIFT )
+#define GUI_TEX_CLIP_SHIFT  17u
+#define GUI_TEX_CLIP_MASK   ( 0x7FFu << GUI_TEX_CLIP_SHIFT )
 
 typedef enum
 {

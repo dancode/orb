@@ -172,12 +172,15 @@ test_fxc_pack( void )
 static void
 test_tex_word( void )
 {
-    /* This shift IS the shader contract: it must equal TEX_MODE_SHIFT in gui.frag /
-       gui.ps.hlsl and the paraphrase in gui_shader.h.  Changing it without resplicing the
-       SPIR-V samples the wrong texture with no compile error anywhere -- so the constant is
-       pinned here deliberately, and a failure means "go re-cook the shaders too". */
+    /* These shifts ARE the shader contract: they must equal TEX_MODE_SHIFT / TEX_CLIP_SHIFT in
+       gui.frag / gui.ps.hlsl and the paraphrase in gui_shader.h.  Changing one without
+       resplicing the SPIR-V samples the wrong texture (or cuts with the wrong clip) with no
+       compile error anywhere -- so the constants are pinned here deliberately, and a failure
+       means "go re-cook the shaders too". */
     test_equal( 28u, GUI_TEX_MODE_SHIFT );
     test_equal( 0xF0000000u, GUI_TEX_MODE_MASK );
+    test_equal( 17u, GUI_TEX_CLIP_SHIFT );
+    test_equal( 0x0FFE0000u, GUI_TEX_CLIP_MASK );
 
     /* The mode field is the same width as the fx mode field -- they grow by the same rule. */
     test_true( (u32)GUI_TEX_SDF < ( 1u << GUI_FX_MODE_BITS ) );

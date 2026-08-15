@@ -215,9 +215,12 @@ typedef struct
 
     /* The slot's LOCAL clip table: the rects this window's vertices name through the tex word's
        clip band (gui_render.h, gui_clip_entry_t).  Written by tess_clip_local while the window
-       tessellates, carried verbatim across reuse frames, and concatenated into the frame clip
-       buffer by the flush.  Lives on the slot (not the stable command cache) because every path
-       that renders the window needs it -- including uncacheable command runs. */
+       tessellates, carried verbatim across reuse frames, and uploaded by the flush into the
+       window's FIXED SLAB of the frame clip region (cache_idx * GUI_WIN_CLIP_MAX) -- only when
+       s_clip_slab_pending says the GPU copy is stale.  Lives on the slot (not the stable command
+       cache) because every path that renders the window needs it -- including uncacheable
+       command runs. */
+    u32              cache_idx;   // the window's id-keyed stable cache entry == its clip slab key
     gui_clip_entry_t clips[ GUI_WIN_CLIP_MAX ];
     u32              clip_count;
 
@@ -234,6 +237,13 @@ static win_slot_cmd_t   s_win_cached      [ RENDER_MAX_WIN ][ WIN_SLOT_CMD_MAX ]
 static u32              s_win_cached_count[ RENDER_MAX_WIN ];
 static gui_id_t         s_win_cached_win  [ RENDER_MAX_WIN ];
 static u8               s_win_cached_live [ RENDER_MAX_WIN ];
+
+/* Clip-slab upload masks, keyed like the cache above: bit r set = region r's GPU copy of this
+   window's clip slab is stale.  tess_clip_local sets all bits when it appends an entry; the
+   flush clears one bit per slab it uploads.  One bit per (frame-in-flight, viewport) region. */
+ORB_STATIC_ASSERT( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS <= 8,
+                   "clip slab pending mask is a u8 -- one bit per (frame, viewport) region" );
+static u8               s_clip_slab_pending[ RENDER_MAX_WIN ];
 
 /* Resolve a window's cache entry: existing, else a freshly claimed free slot, else ~0u (only
    possible past RENDER_MAX_WIN live windows -- those are dropped from rendering anyway). */
@@ -301,7 +311,7 @@ cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base, u
 
 /* Point s_tess at the window slot's LOCAL clip table (forward-declared in gui_build_volatile.c):
    a volatile patch's scratch tessellation resolves its clip-band indices against the table the
-   capture built, so an unchanged clip patches to the same six bits.  Same s_slots view as
+   capture built, so an unchanged clip patches to the same band bits.  Same s_slots view as
    cache_slot_lookup, and callers already gate on it succeeding. */
 static bool
 cache_slot_clips_bind( gui_id_t win )
@@ -310,9 +320,11 @@ cache_slot_clips_bind( gui_id_t win )
     {
         if ( s_slots[ i ].win != win || !s_slots[ i ].valid )
             continue;
-        s_tess.slot_clips      = s_slots[ i ].clips;
-        s_tess.slot_clip_count = &s_slots[ i ].clip_count;
-        s_tess.clip_memo_ci    = 0xFF;
+        s_tess.slot_clips        = s_slots[ i ].clips;
+        s_tess.slot_clip_count   = &s_slots[ i ].clip_count;
+        s_tess.slot_clip_pending = &s_clip_slab_pending[ s_slots[ i ].cache_idx ];
+        s_tess.slot_clip_base    = s_slots[ i ].cache_idx * GUI_WIN_CLIP_MAX;
+        s_tess.clip_memo_ci      = 0xFF;
         return true;
     }
     return false;
@@ -816,9 +828,10 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
     slot->idx_count  = prev->idx_count;
     slot->idx_alloc  = prev->idx_alloc;
     slot->tess_gen   = prev->tess_gen;   /* geometry unchanged: same tessellation pass */
+    slot->cache_idx  = cache_idx;        /* id-keyed, so it matches what the vertices baked */
 
-    /* The local clip table travels with the geometry it indexes: the cached vertices bake local
-       clip indices, and these are the rects those indices mean. */
+    /* The local clip table travels with the geometry it indexes: the cached vertices bake
+       absolute clip-slab indices, and these are the rects those indices mean. */
     slot->clip_count = prev->clip_count;
     memcpy( slot->clips, prev->clips, prev->clip_count * sizeof( gui_clip_entry_t ) );
 
@@ -901,16 +914,23 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_tess.slot_tess_gen  = slot->tess_gen;
     s_tess.force_new_cmd  = true;
 
-    /* Fresh tessellation rebuilds the slot's local clip table from scratch (tess_clip_local). */
-    slot->clip_count       = 0;
-    s_tess.slot_clips      = slot->clips;
-    s_tess.slot_clip_count = &slot->clip_count;
-    s_tess.clip_memo_ci    = 0xFF;
+    /* Fresh tessellation rebuilds the slot's local clip table from scratch (tess_clip_local).
+       cache_idx keys the window's fixed clip slab; a window past the cache cap (~0u, dropped
+       from caching anyway) borrows slab 0 rather than indexing out of the region. */
+    slot->cache_idx          = ( cache_idx == ~0u ) ? 0 : cache_idx;
+    slot->clip_count         = 0;
+    s_tess.slot_clips        = slot->clips;
+    s_tess.slot_clip_count   = &slot->clip_count;
+    s_tess.slot_clip_pending = &s_clip_slab_pending[ slot->cache_idx ];
+    s_tess.slot_clip_base    = slot->cache_idx * GUI_WIN_CLIP_MAX;
+    s_tess.clip_memo_ci      = 0xFF;
 
     cache_tess_window( wh );
 
-    s_tess.slot_clips      = NULL;
-    s_tess.slot_clip_count = NULL;
+    s_tess.slot_clips        = NULL;
+    s_tess.slot_clip_count   = NULL;
+    s_tess.slot_clip_pending = NULL;
+    s_tess.slot_clip_base    = 0;
 
     slot->vert_count = s_tess.vert_count - slot->vert_base;
     slot->idx_count  = s_tess.idx_count  - slot->idx_base;

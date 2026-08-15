@@ -257,25 +257,27 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         cache_count_upload( actual_batches, actual_bytes );
     }
 
-    /* Frame clip table upload: every dispatched slot's local clip entries, concatenated into this
-       (frame, viewport) region of the shared clip buffer.  Each slot's base entry is recorded by
-       dispatch position for the draw walk below (pc.clip_base).  Sized so the worst case fits by
-       construction (GUI_CLIP_REGION_MAX = RENDER_MAX_WIN * GUI_WIN_CLIP_MAX) -- no cap logic. */
-    static f32 s_clip_staging  [ GUI_CLIP_REGION_MAX * GUI_CLIP_ENTRY_FLOATS ];
-    static u32 s_slot_clip_base[ RENDER_MAX_WIN ];
-
+    /* Frame clip table upload: each window's local clip entries live at a FIXED SLAB of this
+       (frame, viewport) region -- cache_idx * GUI_WIN_CLIP_MAX, the same base its vertices baked
+       into the clip band -- so a slab only re-uploads when its content changed
+       (s_clip_slab_pending, set by tess_clip_local on append).  A stable frame uploads nothing;
+       nothing per-slot reaches the push constants. */
     u32 clip_region = frame * (u32)GUI_MAX_VIEWPORTS + (u32)vp_index;
-    u32 clip_total  = 0;
+    u8  region_bit  = (u8)( 1u << clip_region );
     for ( u32 d = 0; d < s_dispatch_count; ++d )
     {
         const win_geo_slot_t* sl = s_dispatch[ d ];
-        if ( sl->vp != vp_index )
+        if ( sl->vp != vp_index || sl->clip_count == 0 )
             continue;
-        s_slot_clip_base[ d ] = clip_total;
+        if ( !( s_clip_slab_pending[ sl->cache_idx ] & region_bit ) )
+            continue;
+        s_clip_slab_pending[ sl->cache_idx ] &= (u8)~region_bit;
+
+        f32 stage[ GUI_WIN_CLIP_MAX * GUI_CLIP_ENTRY_FLOATS ];
         for ( u32 c = 0; c < sl->clip_count; ++c )
         {
             const gui_clip_entry_t* e = &sl->clips[ c ];
-            f32* w = &s_clip_staging[ ( clip_total + c ) * GUI_CLIP_ENTRY_FLOATS ];
+            f32* w = &stage[ c * GUI_CLIP_ENTRY_FLOATS ];
 
             /* Edges snap to the nearest whole pixel -- the grid the hardware scissor rounded to,
                so the radius-0 fragment test reproduces the old cut exactly (fragment centres sit
@@ -290,12 +292,11 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
             w[ 6 ] = 0.0f;
             w[ 7 ] = 0.0f;
         }
-        clip_total += sl->clip_count;
+        rhi()->buffer_write( s_render.clip_buf, stage,
+                             sl->clip_count * (u32)GUI_CLIP_ENTRY_BYTES,
+                             clip_region * (u32)GUI_CLIP_REGION_BYTES
+                                 + sl->cache_idx * GUI_WIN_CLIP_MAX * (u32)GUI_CLIP_ENTRY_BYTES );
     }
-    if ( clip_total > 0 )
-        rhi()->buffer_write( s_render.clip_buf, s_clip_staging,
-                             clip_total * (u32)GUI_CLIP_ENTRY_BYTES,
-                             clip_region * (u32)GUI_CLIP_REGION_BYTES );
 
     /* Open a LOAD pass on the swapchain color target (no depth).  LOAD preserves the scene content
        rendered before this call; CLEAR would wipe it. */
@@ -355,20 +356,19 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        the effect band's clock costs no batch split and no per-draw work (gui.h, GUI_FX_TIME_WRAP). */
     push.time = s_render.fx_time;
 
-    /* Fragment-clip plumbing (gui_shader.h, "the clip band").  The buffer slot is flush-constant;
-       clip_base starts at this region's origin and is re-pushed per slot in the walk below. */
+    /* Fragment-clip plumbing (gui_shader.h, "the clip band").  Both fields are flush-constant:
+       vertices bake ABSOLUTE region entry indices (each window's fixed slab), so clip_base is
+       just this region's origin. */
     push.clip_buf  = s_render.clip_buf_idx;
     push.clip_base = clip_region * (u32)GUI_CLIP_REGION_MAX;
 
     /* Push the whole struct once, before the walk. tex_idx/tex_mode/samp_idx live in the vertex,
        not the push constant, so everything left here -- both sampler slots, dbg_flat, the frame
-       clock, the clip buffer slot -- is constant for the entire flush.
+       clock, the clip buffer slot and base -- is constant for the entire flush.
 
-       Two fields move mid-walk, both via the tail re-push: clip_base changes when the walk
-       crosses into a slot whose clip span sits elsewhere in the region (once per slot at most),
-       and dbg_tint changes every draw in the BATCH debug view so a colour shift marks a batch
-       split.  Normal rendering pays one small tail push per slot boundary and nothing per
-       draw. */
+       One field moves mid-walk, via the tail re-push: dbg_tint changes every draw in the BATCH
+       debug view so a colour shift marks a batch split.  Normal rendering pushes once per flush
+       and nothing per draw. */
     const u8* tail = (const u8*)&push + GUI_PUSH_TAIL_OFF;
     rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
     ++s_render.state_pushes;
@@ -388,19 +388,6 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         const win_geo_slot_t* slot = s_dispatch[ d ];
         if ( slot->vp != vp_index )
             continue;
-
-        /* This slot's span of the clip region, as an absolute entry index.  Re-pushed only when
-           it actually moves (the batch view's per-draw push below carries it for free). */
-        u32 slot_base = clip_region * (u32)GUI_CLIP_REGION_MAX + s_slot_clip_base[ d ];
-        if ( slot_base != push.clip_base )
-        {
-            push.clip_base = slot_base;
-            if ( !batch_view )
-            {
-                rhi()->cmd_push_constants( cmd, tail, GUI_PUSH_TAIL_SIZE, GUI_PUSH_TAIL_OFF );
-                ++s_render.state_pushes;
-            }
-        }
 
         for ( u32 k = 0; k < slot->cmd_count; ++k )
         {

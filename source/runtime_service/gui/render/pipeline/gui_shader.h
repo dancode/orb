@@ -49,11 +49,12 @@
     nonuniformEXT.  That is a correctness requirement, not a hint: the index is no longer
     wave-uniform.
 
-    THE CLIP BAND (set 0, binding 2 + tex-word bits 22..27): the clip rect is resolved in the
+    THE CLIP BAND (set 0, binding 2 + tex-word bits 17..27): the clip rect is resolved in the
     FRAGMENT, not by the hardware scissor, so a clip change never opens a draw call either --
-    the batch key is the viewport alone.  Each vertex names an entry (local index, 6 bits) into
-    the draw's span of the frame clip table, a bindless storage buffer named by pc.clip_buf with
-    pc.clip_base locating the span.  Entries are two vec4s: (x0, y0, x1, y1) pixel edges snapped
+    the batch key is the viewport alone.  Each vertex names an entry (11 bits, absolute within
+    the frame's clip region) of the clip table, a bindless storage buffer named by pc.clip_buf
+    with pc.clip_base at the region origin, constant for the whole flush.  Entries are two
+    vec4s: (x0, y0, x1, y1) pixel edges snapped
     CPU-side to the scissor's old grid, then a corner radius -- 0 reproduces the scissor's hard
     cut exactly, > 0 evaluates the rounded-box field with a 1 px AA band (the clip a scissor
     could never express).  pc.clip_buf == 0 (the reserved invalid bindless slot) disables the
@@ -558,8 +559,8 @@ static const u32 s_gui_frag_spirv[] =
     0x00000009, 0x00000006, 0x0004002B, 0x00000058, 0x000001AF, 0x00000006,
     0x00040020, 0x000001B0, 0x00000009, 0x00000035, 0x0004002B, 0x00000058,
     0x000001B8, 0x00000007, 0x0004003B, 0x00000038, 0x000001BB, 0x00000001,
-    0x0004002B, 0x00000035, 0x000001BD, 0x00000016, 0x0004002B, 0x00000035,
-    0x000001BF, 0x0000003F, 0x00040020, 0x000001C3, 0x00000007, 0x0000006C,
+    0x0004002B, 0x00000035, 0x000001BD, 0x00000011, 0x0004002B, 0x00000035,
+    0x000001BF, 0x000007FF, 0x00040020, 0x000001C3, 0x00000007, 0x0000006C,
     0x0003001D, 0x000001C5, 0x0000006C, 0x0003001E, 0x000001C6, 0x000001C5,
     0x0003001D, 0x000001C7, 0x000001C6, 0x00040020, 0x000001C8, 0x0000000C,
     0x000001C7, 0x0004003B, 0x000001C8, 0x000001C9, 0x0000000C, 0x0004002B,
@@ -571,7 +572,7 @@ static const u32 s_gui_frag_spirv[] =
     0x0000006C, 0x0004003B, 0x0000024B, 0x0000024C, 0x00000003, 0x0004002B,
     0x00000058, 0x00000252, 0x00000018, 0x0004003B, 0x0000006D, 0x0000025E,
     0x00000001, 0x0004002B, 0x00000035, 0x00000269, 0x0000001C, 0x0004002B,
-    0x00000035, 0x0000026D, 0x003FFFFF, 0x0004002B, 0x00000058, 0x00000275,
+    0x00000035, 0x0000026D, 0x0001FFFF, 0x0004002B, 0x00000058, 0x00000275,
     0x00000001, 0x0004002B, 0x00000058, 0x00000279, 0x00000002, 0x00090019,
     0x0000027E, 0x00000006, 0x00000001, 0x00000000, 0x00000000, 0x00000000,
     0x00000001, 0x00000000, 0x0003001D, 0x0000027F, 0x0000027E, 0x00040020,

@@ -12,7 +12,7 @@ struct gui_pc_t
     uint     dbg_tint;     // debug: packed RGBA8 batch tint (0 = use vertex color)
     float    time;         // effect-band frame clock, wrapped seconds (GUI_FX_TIME_WRAP)
     uint     clip_buf;     // bindless buffer slot of the frame's clip table (0 = no clipping)
-    uint     clip_base;    // this draw's first entry in the clip table (entries, not float4s)
+    uint     clip_base;    // the flush's clip-region origin in the table (entries, not float4s)
 };
 [[vk::push_constant]] gui_pc_t pc;
 
@@ -26,9 +26,9 @@ struct gui_pc_t
 
 // Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_CLIP_SHIFT in gui.h -- keep the three in step.
 #define TEX_MODE_SHIFT  28u
-#define TEX_CLIP_SHIFT  22u
-#define TEX_CLIP_MASK   0x3Fu
-#define TEX_INDEX_MASK  0x003FFFFFu
+#define TEX_CLIP_SHIFT  17u
+#define TEX_CLIP_MASK   0x7FFu
+#define TEX_INDEX_MASK  0x0001FFFFu
 
 struct ps_in_t
 {
@@ -200,11 +200,12 @@ float3 srgb_to_linear( float3 c )
 }
 
 // The clip band: which clip rect cuts this fragment, resolved HERE rather than by the hardware
-// scissor so a clip change never opens a new draw call.  The vertex names its entry (bits 22..27
-// of the tex word, local to the draw); pc.clip_base locates the draw's span inside the frame's
-// clip table, which lives in a bindless storage buffer named by pc.clip_buf.  clip_buf 0 -- the
-// reserved invalid slot -- means "no clip table bound": full coverage, so a pipeline user without
-// a table (and the gui itself before its first upload) is never clipped by garbage.
+// scissor so a clip change never opens a new draw call.  The vertex names its entry (bits 17..27
+// of the tex word, absolute within the frame's clip region); pc.clip_base is the region's origin,
+// constant for the whole flush.  The table lives in a bindless storage buffer named by
+// pc.clip_buf.  clip_buf 0 -- the reserved invalid slot -- means "no clip table bound": full
+// coverage, so a pipeline user without a table (and the gui itself before its first upload) is
+// never clipped by garbage.
 //
 // Entries are two float4s: [0] = (x0, y0, x1, y1) pixel EDGES, pre-snapped CPU-side to the same
 // grid the hardware scissor was, so radius-0 coverage is bit-identical to the scissor it

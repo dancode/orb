@@ -57,8 +57,9 @@ static struct
     u32 vert_count, idx_count, cmd_count;           // write head cursors
 
     gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
-    u32         cur_clip_local; /* the same clip as an index into the slot's LOCAL table -- the six
-                                   bits tess_verts_commit folds into every vertex's tex word      */
+    u32         cur_clip_local; /* the same clip as an ABSOLUTE frame-region entry index (the slot's
+                                   slab base + its local first-seen index) -- the clip-band bits
+                                   tess_verts_commit folds into every vertex's tex word           */
     i32         cur_vp;     /* viewport baked from the current semantic command                    */
     u32         cur_tex;    /* GUI_TEX_MODE | bindless slot stamped into every vertex committed --
                                set by tess_set_tex, applied by tess_verts_commit.  NOT a batch key */
@@ -86,11 +87,18 @@ static struct
 
     /* The slot's LOCAL clip table, written while its commands tessellate: first-seen distinct
        clip rects, appended by tess_clip_local and stored on the slot record itself so cache-hit
-       frames replay the exact rects the baked vertex indices mean.  Both point into the
-       win_geo_slot_t being tessellated (set alongside slot_vert_base); NULL between slots.
-       clip_memo_ci memoizes the common run of consecutive same-clip commands (0xFF = empty). */
+       frames replay the exact rects the baked vertex indices mean.  slot_clips/slot_clip_count
+       point into the win_geo_slot_t being tessellated (set alongside slot_vert_base); NULL
+       between slots.  slot_clip_base is the window's fixed slab origin in the frame clip region
+       (stable cache slot * GUI_WIN_CLIP_MAX) -- tess_clip_local folds it in so vertices bake
+       ABSOLUTE entry indices.  slot_clip_pending is the slot's upload mask (one bit per
+       (frame-in-flight, viewport) region); an append marks all bits so the flush re-uploads the
+       slab.  clip_memo_ci memoizes the common run of consecutive same-clip commands (0xFF =
+       empty). */
     gui_clip_entry_t* slot_clips;
     u32*              slot_clip_count;
+    u8*               slot_clip_pending;
+    u32               slot_clip_base;
     u8                clip_memo_ci;
     u32               clip_memo_local;
 
@@ -177,12 +185,14 @@ tess_reset( void )
     s_tess.slot_idx_base   = 0;
     s_tess.slot_cmd_base   = 0;
     s_tess.slot_tess_gen   = 0;
-    s_tess.slot_clips      = NULL;
-    s_tess.slot_clip_count = NULL;
-    s_tess.clip_memo_ci    = 0xFF;
-    s_tess.cur_clip_local  = 0;
-    s_tess.force_new_cmd   = false;
-    s_tess.overflow        = false;
+    s_tess.slot_clips        = NULL;
+    s_tess.slot_clip_count   = NULL;
+    s_tess.slot_clip_pending = NULL;
+    s_tess.slot_clip_base    = 0;
+    s_tess.clip_memo_ci      = 0xFF;
+    s_tess.cur_clip_local    = 0;
+    s_tess.force_new_cmd     = false;
+    s_tess.overflow          = false;
 }
 
 /* Name the texture the vertices about to be written will CARRY (tess_verts_commit stamps it onto
@@ -196,13 +206,16 @@ tess_set_tex( u32 tex_idx )
     s_tess.cur_tex = tex_idx;
 }
 
-/* Resolve the ambient clip to an index in the slot's LOCAL clip table, appending a new entry at
+/* Resolve the ambient clip to an ABSOLUTE entry index in the frame clip region: the window's
+   fixed slab base plus its position in the slot's LOCAL clip table, appending a new entry at
    first sight.  Content-keyed -- (rect, radius) is the whole identity -- and first-seen ordered
    over the window's own commands, so a window whose commands hash identical reproduces identical
-   indices: the property that lets cached vertices bake the six clip-band bits while the
-   per-frame GLOBAL clip table reassigns its indices freely.  The memo serves the common run of
-   consecutive same-clip commands.  A slot past GUI_WIN_CLIP_MAX distinct clips falls back to
-   entry 0 (asserted -- 16 distinct clips in one window is a bug, not a budget). */
+   indices: the property that lets cached vertices bake the clip-band bits.  The slab base
+   is keyed by the window's id-keyed stable cache slot, so the absolute index survives as long as
+   the window does.  An append marks the slot's upload mask -- the flush re-uploads a slab only
+   when its content changed.  The memo serves the common run of consecutive same-clip commands.
+   A slot past GUI_WIN_CLIP_MAX distinct clips falls back to its slab's entry 0 (asserted -- 16
+   distinct clips in one window is a bug, not a budget). */
 static u32
 tess_clip_local( u8 ci )
 {
@@ -211,7 +224,7 @@ tess_clip_local( u8 ci )
     s_tess.clip_memo_ci = ci;
 
     if ( !s_tess.slot_clips )
-        return s_tess.clip_memo_local = 0;
+        return s_tess.clip_memo_local = s_tess.slot_clip_base;
 
     const gui_rect_t* r   = &s_draw.clip_table[ ci ];
     f32               rad = s_draw.clip_radius[ ci ];
@@ -221,16 +234,18 @@ tess_clip_local( u8 ci )
         const gui_clip_entry_t* e = &s_tess.slot_clips[ g ];
         if ( e->rect.x == r->x && e->rect.y == r->y && e->rect.w == r->w && e->rect.h == r->h
           && e->radius == rad )
-            return s_tess.clip_memo_local = g;
+            return s_tess.clip_memo_local = s_tess.slot_clip_base + g;
     }
     if ( n >= GUI_WIN_CLIP_MAX )
     {
         ORB_ASSERT( false );
-        return s_tess.clip_memo_local = 0;
+        return s_tess.clip_memo_local = s_tess.slot_clip_base;
     }
     s_tess.slot_clips[ n ] = ( gui_clip_entry_t ){ .rect = *r, .radius = rad };
     *s_tess.slot_clip_count = n + 1;
-    return s_tess.clip_memo_local = n;
+    if ( s_tess.slot_clip_pending )
+        *s_tess.slot_clip_pending = 0xFF;
+    return s_tess.clip_memo_local = s_tess.slot_clip_base + n;
 }
 
 /* Ensure a GPU command is open whose viewport matches the ambient one, opening a new one at a
@@ -285,10 +300,11 @@ tess_ensure_gpu_cmd( void )
 static void
 tess_verts_commit( u32 n )
 {
-    /* The clip band (gui.h): the slot-local clip index rides bits 22..27 of the tex word.  The
+    /* The clip band (gui.h): the absolute clip entry index rides bits 17..27 of the tex word.  The
        bindless index below never reaches them (2048 slots, 11 bits), asserted because a collision
        here silently re-clips the primitive rather than failing. */
     ORB_ASSERT( ( s_tess.cur_tex & GUI_TEX_CLIP_MASK ) == 0u );
+    ORB_ASSERT( s_tess.cur_clip_local < ( GUI_TEX_CLIP_MASK >> GUI_TEX_CLIP_SHIFT ) + 1u );
     u32 tex = s_tess.cur_tex | ( s_tess.cur_clip_local << GUI_TEX_CLIP_SHIFT );
 
     gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];

@@ -530,8 +530,10 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     bool force_ck   = s_tess.force_new_cmd;
     bool ovf_ck     = s_tess.overflow;
 
-    gui_clip_entry_t* clips_ck      = s_tess.slot_clips;
-    u32*              clip_count_ck = s_tess.slot_clip_count;
+    gui_clip_entry_t* clips_ck        = s_tess.slot_clips;
+    u32*              clip_count_ck   = s_tess.slot_clip_count;
+    u8*               clip_pending_ck = s_tess.slot_clip_pending;
+    u32               clip_base_ck    = s_tess.slot_clip_base;
 
     /* Debug guard: the scratch tessellation below writes at vert_ck / idx_ck and its byte content
        survives the count rollback.  If that is not past every live slot's reservation, it scribbles
@@ -562,10 +564,12 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
 
     tess_dispatch( s_draw.cmds, s_patch_order, n, row->win );
 
-    s_volatile_patching    = false;
-    s_tess.slot_clips      = clips_ck;
-    s_tess.slot_clip_count = clip_count_ck;
-    s_tess.clip_memo_ci    = 0xFF;
+    s_volatile_patching      = false;
+    s_tess.slot_clips        = clips_ck;
+    s_tess.slot_clip_count   = clip_count_ck;
+    s_tess.slot_clip_pending = clip_pending_ck;
+    s_tess.slot_clip_base    = clip_base_ck;
+    s_tess.clip_memo_ci      = 0xFF;
 
     u32  nv          = s_tess.vert_count - vert_ck;
     u32  ni          = s_tess.idx_count  - idx_ck;
