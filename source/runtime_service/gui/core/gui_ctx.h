@@ -220,6 +220,8 @@ typedef struct
 
     bool        id_seen;       // id was emitted in win this frame (else it went stale)
     gui_id_t    first_item;    // first layout-placed item this frame (first-focus / recovery)
+    gui_id_t    first_chrome;  // first chrome item this frame -- recovery fallback for a window
+                                // with no placed items at all (a minimized shelf chip)
     gui_id_t    body_id;       // body cursor to land back on when F6 leaves the chrome lane
 
     /* Remembered x position for a run of Up/Down moves, so moving through rows of different

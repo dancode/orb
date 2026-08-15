@@ -216,6 +216,7 @@ nav_cycle_window( i32 dir )
     g_ctx->nav.focused_win = pick;
     g_ctx->nav.id          = GUI_ID_NONE;
     g_ctx->nav.active      = true;
+    g_ctx->nav.highlight   = true;   /* keyboard is the active instrument -- Space/Enter arm immediately */
 }
 
 /*==============================================================================================
@@ -560,11 +561,68 @@ nav_resolve_page( void )
         nav_adopt( pick, true );
 }
 
+/* One step around the shelf's live-chip ring on ref's surface, ordered by shelf_slot (visual
+   left-to-right) rather than z -- mirrors nav_cycle_step, but the candidate set is exactly
+   window_shelf_occupies' (chrome/window/gui_window_free.c): a live minimized chip on the same
+   viewport.  GUI_ID_NONE if ref has no sibling chips. */
+static gui_id_t
+nav_cycle_chip_step( i32 dir, const gui_window_t* ref )
+{
+    gui_id_t next  = GUI_ID_NONE;
+    gui_id_t wrap  = GUI_ID_NONE;
+    u32      froms = ref->shelf_slot;
+    u32      nexts = ( dir > 0 ) ? 0xFFFFFFFFu : 0u;
+    u32      wraps = ( dir > 0 ) ? 0xFFFFFFFFu : 0u;
+
+    for ( u32 i = 0; i < g_ctx->win.count; ++i )
+    {
+        gui_window_t* w = &g_ctx->win.pool[ i ];
+        if ( w == ref || !w->minimized || w->overlay || ( w->flags & GUI_WIN_NATIVE ) ) continue;
+        if ( w->viewport != ref->viewport ) continue;
+
+        u32 s = w->shelf_slot;
+        if ( dir > 0 )
+        {
+            if ( s > froms && s < nexts ) { nexts = s; next = w->id; }
+            if ( s <= wraps )             { wraps = s; wrap = w->id; }
+        }
+        else
+        {
+            if ( s < froms && s > nexts ) { nexts = s; next = w->id; }
+            if ( s >= wraps )             { wraps = s; wrap = w->id; }
+        }
+    }
+    return ( next != GUI_ID_NONE ) ? next : wrap;
+}
+
+/* Left/Right off the end of a chip's own chrome (its restore/close buttons) steps sideways to
+   the neighboring chip on the shelf instead of stopping dead -- the shelf reads as one strip of
+   sibling handles even though each chip is its own window/nav scope.  A no-op off a normal
+   (non-minimized) window's chrome. */
+static void
+nav_cycle_chip( i32 dir )
+{
+    gui_window_t* cw = window_find( g_ctx->nav.win );
+    if ( !cw || !cw->minimized ) return;
+
+    gui_id_t pick = nav_cycle_chip_step( dir, cw );
+    if ( pick == GUI_ID_NONE ) return;
+
+    gui_window_t* w = window_find( pick );
+    if ( w ) w->z = surface_z_raise( w->z );
+
+    g_ctx->nav.focused_win = pick;
+    g_ctx->nav.id          = GUI_ID_NONE;
+    g_ctx->nav.active      = true;
+    g_ctx->nav.highlight   = true;
+}
+
 /* Chrome-lane step: the cursor sits on a chrome item (F6, or a click on a title-bar button).
    Left/Right step to the nearest chrome item by x-center -- emission order is wrong here (the
    close button emits before the detach box but sits right of it), and the strip is one visual
    band, so geometry IS its order.  Down drops back into the body; Up and the strip ends are
-   walls. */
+   walls -- except on a minimized chip, where running off the strip's own buttons instead hops
+   to the next chip on the shelf (nav_cycle_chip). */
 static void
 nav_move_chrome( i32 cur )
 {
@@ -587,6 +645,8 @@ nav_move_chrome( i32 cur )
         }
         if ( best >= 0 )
             nav_adopt( best, false );
+        else
+            nav_cycle_chip( right ? +1 : -1 );
     }
     else if ( nav->move_dir == GUI_DIR_DOWN )
     {
@@ -957,12 +1017,20 @@ nav_new_frame( void )
         g_ctx->nav.edit_id = GUI_ID_NONE;
 
     /* First-focus / recovery: nav is engaged but its cursor item was not emitted last frame
-       (window just focused, popup opened, list shrank) -- land on the first placed item that was. */
-    if ( g_ctx->nav.active && !g_ctx->nav.id_seen && g_ctx->nav.first_item != GUI_ID_NONE )
+       (window just focused, popup opened, list shrank) -- land on the first placed item that was.
+       A window with no placed items at all (a minimized shelf chip, body collapsed to nothing)
+       falls back to its first chrome item -- the restore button -- so Ctrl+Tab-ing onto a chip
+       still gives the keyboard something to land on. */
+    if ( g_ctx->nav.active && !g_ctx->nav.id_seen )
     {
-        g_ctx->nav.id           = g_ctx->nav.first_item;
-        g_ctx->nav.goal_set     = false;
-        g_ctx->nav.scroll_chase = true;
+        gui_id_t land = ( g_ctx->nav.first_item != GUI_ID_NONE ) ? g_ctx->nav.first_item
+                                                                  : g_ctx->nav.first_chrome;
+        if ( land != GUI_ID_NONE )
+        {
+            g_ctx->nav.id           = land;
+            g_ctx->nav.goal_set     = false;
+            g_ctx->nav.scroll_chase = true;
+        }
     }
 
     /* Last frame's first placed item -- captured before the reset for the "Up at the top of a
@@ -979,8 +1047,9 @@ nav_new_frame( void )
     g_ctx->nav.lane       = false;
     g_ctx->nav.edit_dir   = 0;
     g_ctx->nav.mnemonic   = 0;
-    g_ctx->nav.id_seen    = false;
-    g_ctx->nav.first_item = GUI_ID_NONE;
+    g_ctx->nav.id_seen      = false;
+    g_ctx->nav.first_item   = GUI_ID_NONE;
+    g_ctx->nav.first_chrome = GUI_ID_NONE;
 
     /* A move makes the mouse the active instrument: it drops nav_highlight, so the nav item loses
        its fill (the ring stays, via nav_active) and the mouse hover regains the fill -- the ring

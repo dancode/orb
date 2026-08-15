@@ -61,6 +61,9 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kin
     bool placed = s_scope.nav.placed;
     if ( placed && g_ctx->nav.first_item == GUI_ID_NONE )
         g_ctx->nav.first_item = id;   /* first-focus / recovery landing spot */
+    if ( !placed && g_ctx->nav.first_chrome == GUI_ID_NONE )
+        g_ctx->nav.first_chrome = id;   /* recovery fallback: a window with only chrome items
+                                            (a minimized shelf chip) still needs a landing spot */
 
     if ( g_ctx->nav.item_count >= GUI_NAV_ITEMS_MAX )
     {
