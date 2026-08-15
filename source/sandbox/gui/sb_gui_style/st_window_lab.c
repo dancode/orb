@@ -86,13 +86,14 @@ lab_subject_window( void )
 
         gui()->stack();
 
+        /* Natural-size widgets only: a cell that fills its track reports no width to the content
+           measure (line_place_cell, flow/gui_layout_core.c), so under ALWAYS_AUTOSIZE a fill row
+           would let the window collapse to its text rows and ellipsize the labels. */
         static bool cb   = true;
         static f32  fval = 0.42f;
-        gui()->row_cols( 0.0f, (f32[]){ 1.0f, 1.0f, GUI_END } );
         gui()->button( "Button" );
-        gui()->next_item_fit( 1.0f );
+        gui()->same_line( -1.0f );
         gui()->checkbox( "Checkbox", &cb );
-        gui()->stack();
         gui()->slider_float( "##val", &fval, 0.0f, 1.0f );
 
         if ( s_lab_wide )
