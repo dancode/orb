@@ -99,8 +99,11 @@ window_end_titlebar( gui_window_t* win, bool native )
         bool maxed = win && win->maximized && !s_build.win.minimized;
         if ( maxed )
             draw_set_rounding( 0.0f );
+        u8 title_phase = maxed ? GUI_PHASE_INERT
+                        : ( s_build.win.id == g_ctx->nav.focused_win ) ? GUI_PHASE_HOT
+                                                                        : GUI_PHASE_IDLE;
         draw_face( ( gui_rect_t ){ s_build.win.x, s_build.win.y, s_build.win.w, title_h },
-                   GUI_ROLE_TITLE, maxed ? GUI_PHASE_INERT : GUI_PHASE_IDLE );
+                   GUI_ROLE_TITLE, title_phase );
 
         /* Shelf chip: its own reduced chrome (restore + close), nothing else on the bar. */
         if ( s_build.win.minimized )
@@ -585,17 +588,14 @@ gui_window_end( void )
            border input is OS-routed).  Restored right after for the chrome that follows. */
         if ( frame_only )
             draw_set_sort_key( GUI_REGION_Z );
-        draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER, COL_BORDER_IDLE );
+        u8 border_phase = ( s_build.win.id == g_ctx->nav.focused_win ) ? GUI_PHASE_ACTIVE
+                         : interact_hover_bare( s_build.win.id )       ? GUI_PHASE_HOT
+                                                                        : GUI_PHASE_IDLE;
+        draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER,
+                                style_col( GUI_ROLE_BORDER, border_phase ) );
         if ( frame_only )
             draw_set_sort_key( win ? win->z : 0 );
     }
-
-    /* Keyboard-focus marker: overlay the accent focus border on the window that holds focus, so a
-       click that gains/loses focus is visible (gui_nav.c owns focused_win; NONE after a viewport
-       click).  Skipped while maximized: an accent ring around the whole work area reads as chrome
-       noise, and a maximized window's focus is evident from it covering the surface. */
-    if ( s_build.win.id == g_ctx->nav.focused_win && !maxed )
-        draw_window_focus_border( win_r );
 
     /* Debug overlay: trace the window frame; the front-most (hover) window stands out. */
     DBG_WINDOW( win_r, ( s_build.win.id == s_interaction.hover_win ) );

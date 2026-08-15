@@ -704,9 +704,7 @@ window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 tit
             f32 save_round = draw_rounding();
             if ( win->maximized && !win->minimized )
                 draw_set_rounding( 0.0f );
-            u8 body_phase = interact_held( id )       ? GUI_PHASE_ACTIVE
-                          : interact_hover_bare( id ) ? GUI_PHASE_HOT
-                                                       : GUI_PHASE_IDLE;
+            u8 body_phase = interact_hover_bare( id ) ? GUI_PHASE_HOT : GUI_PHASE_IDLE;
             draw_face( ( gui_rect_t ){ win->x, win->y, win->w, win->h }, GUI_ROLE_PANEL, body_phase );
             draw_set_rounding( save_round );
         }

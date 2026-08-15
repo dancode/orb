@@ -26,10 +26,6 @@
    standard inset.  Its caption sibling gui_field_row is public, declared in gui_host.h. */
 f32 label_natural_w( const char* s );
 
-/* The one adornment consumed from ABOVE (stock/gui_adornment.c): chrome's window ends paint it
-   over their own border to mark the window holding keyboard focus. */
-void draw_window_focus_border( gui_rect_t r );
-
 /* The styled half of the symbol palette (stock/gui_symbol_style.c): emitters that resolve
    their own look (style-var picks, WIN_BORDER, ROUND_WIDGET) over the draw unit's pure ones.
    Their public wrappers (gui_draw_arrow / gui_draw_close / gui_draw_frame) are in gui_host.h. */

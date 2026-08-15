@@ -588,7 +588,8 @@ dock_window_chrome( gui_dock_node_t* node )
     f32 th = s_build.win.title_h;   /* tab-strip height (= WIN_TITLE_H, clamped for a tiny node) */
 
     draw_set_rounding( 0.0f );   /* the strip is a flat band behind the tabs */
-    draw_push_rect_filled( x, y, w, th, 0, 0, 1, 1, 0, COL_TITLE_IDLE );
+    u8 strip_phase = ( s_build.win.id == g_ctx->nav.focused_win ) ? GUI_PHASE_HOT : GUI_PHASE_IDLE;
+    draw_push_rect_filled( x, y, w, th, 0, 0, 1, 1, 0, style_col( GUI_ROLE_TITLE, strip_phase ) );
 
     f32 tx = x;
     for ( u32 i = 0; i < node->tab_count; ++i )
@@ -690,12 +691,11 @@ dock_window_chrome( gui_dock_node_t* node )
        angles.  Drawn before the undock handler so it never reads `node` after a drag-out collapses
        an emptied node. */
     draw_set_rounding( 0.0f );
-    draw_push_rect_outline( x, y, w, s_build.win.h, WIN_BORDER, COL_BORDER_IDLE );
-
-    /* Keyboard-focus marker: the node's active tab is the window being ended here, so overlay the
-       focus border when it is the focused window -- the docked twin of window_end's marker. */
-    if ( s_build.win.id == g_ctx->nav.focused_win )
-        draw_window_focus_border( ( gui_rect_t ){ x, y, w, s_build.win.h } );
+    u8 border_phase = ( s_build.win.id == g_ctx->nav.focused_win ) ? GUI_PHASE_ACTIVE
+                     : interact_hover_bare( s_build.win.id )       ? GUI_PHASE_HOT
+                                                                    : GUI_PHASE_IDLE;
+    draw_push_rect_outline( x, y, w, s_build.win.h, WIN_BORDER,
+                            style_col( GUI_ROLE_BORDER, border_phase ) );
 
     /* Floating group: bold the hot / grabbed resize edges over the thin border, exactly like a
        free window's window_end does (the hot mask was resolved in dock_float_resolve). */

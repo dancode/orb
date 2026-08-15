@@ -352,21 +352,26 @@ typedef enum
    column, does not: it is a genuinely different reading per role, confirmed by auditing every
    real call site in the widget set (2026-08-14), not a uniform fourth interaction step:
 
-     role     IDLE              HOT                  ACTIVE                 INERT
-     -------  ----------------  -------------------  ---------------------  ------------------
-     PANEL    window body       hovered surface      pressed surface        inert backdrop
-     CHILD    recessed surface  hovered child         pressed child          inert child
-     TITLE    bar, inactive tab hovered tab          focused bar, live tab  de-emphasized bar
-     BG       control face      hovered face         pressed / focused      plot backdrop
-     BORDER   frame line        hovered / resize     focused window ring    subdued frame
-     TEXT_PRI body text, caret  unused                unused                 disabled-text ink
-     TEXT_SEC secondary text    unused                unused                 unused
-     ACCENT   value fill        engaged fill         dragged fill           empty track
-     MARK     check, radio dot  nav ring             captured-nav ring      unused
-     GRAB     knob / thumb      hovered knob         dragged knob           unused
+   IDLE     = AT REST
+   HOT      = HOVER || NAV
+   ACTIVE   = PRESSED / CAPTURED / FOCUSED
+   INERT    = Non-Interact / Empty Value / Caller Decides
 
-     status   the signal        hovered signal       pressed signal         the FIELD (banner)
-
+    role     IDLE              HOT                  ACTIVE                 INERT
+    -------  ----------------  -------------------  ---------------------  ------------------
+    PANEL    window body       hovered surface      pressed surface        inert backdrop
+    CHILD    recessed surface  hovered child        pressed child          inert child
+    TITLE    bar, inactive tab hovered tab          focused bar, live tab  de-emphasized bar
+    BG       control face      hovered face         pressed / focused      plot backdrop
+    BORDER   frame line        hovered / resize     focused window ring    subdued frame
+    TEXT_PRI body text, caret  unused               unused                 disabled-text ink
+    TEXT_SEC secondary text    unused               unused                 unused
+    ACCENT   value fill        engaged fill         dragged fill           empty track
+    MARK     check, radio dot  nav ring             captured-nav ring      unused
+    GRAB     knob / thumb      hovered knob         dragged knob           unused
+    
+    status   the signal        hovered signal       pressed signal         the FIELD (banner)
+    
    INERT is at least three unrelated ideas wearing one column, and no single word covers all of
    them honestly -- "inert" is the least wrong:
 
