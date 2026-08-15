@@ -136,13 +136,12 @@ var_is_pixels( u8 cls )
 }
 
 /*==============================================================================================
-    The palettes -- seven seeds and a five-number ramp per family, and .col left EMPTY.
+    The palettes -- seven seeds and a six-number ramp per family, and .col left EMPTY.
 
-    Every built-in used to carry 32 colour literals, and the two families restated the same
-    quarter of them: TEXT one colour in three phases, BORDER hot == active, MARK idle == active,
-    BG dim == ACCENT dim, TITLE active == PANEL idle.  Those are derivations, and they now live
-    once, in style/gui_bake.c, instead of once per theme in hex.  gui_theme_set bakes the grid on
-    the way in (theme_bake below), so nothing here authors a cell.
+    Nothing here authors a cell: the relationships between cells (TEXT one colour across phases,
+    BORDER's hot and active a step apart, TITLE's band a lift of PANEL's ground) are
+    derivations, and they live once in style/gui_bake.c rather than once per theme in hex.
+    gui_theme_set bakes the grid on the way in (theme_install below).
 
     The ramps differ between the families, and that is the point rather than an oversight: a
     fixed fraction toward black is a gentle inset on a near-black surface and a bruise on a

@@ -29,7 +29,7 @@
 
     Include order matters: each file can reference statics from files included above it.
 
-    style/gui_bake.c        -- the bake: seven seeds and a five-number ramp -> the 32-cell colour
+    style/gui_bake.c        -- the bake: seven seeds and a six-number ramp -> the 40-cell colour
                                grid.  Pure, and depends on nothing above it, which is why it is
                                first: the theme registry bakes on the way in and the seed stack
                                re-bakes into the working run
@@ -80,8 +80,10 @@ style_unit_mem_bytes( void )
 {
     return (u32)( sizeof( s_style_base ) + sizeof( s_style ) + sizeof( k_themes )
                 + sizeof( s_store ) + sizeof( s_work )
-                + sizeof( s_col_stack ) + sizeof( s_var_stack ) + sizeof( s_seed_stack )
+                + sizeof( s_col_stack ) + sizeof( s_var_stack ) + sizeof( s_face_stack )
+                + sizeof( s_ext_stack ) + sizeof( s_seed_stack )
                 + sizeof( s_next ) + sizeof( s_item )
+                + sizeof( s_brush ) + sizeof( s_brush_n ) + sizeof( s_ext_n )
                 + sizeof( s_set_stack ) + sizeof( s_set_source ) + sizeof( s_set_user ) );
 }
 

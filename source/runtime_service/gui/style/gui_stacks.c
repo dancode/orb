@@ -166,7 +166,7 @@ void gui_pop_style_ext ( u32 count )                      { style_pop_ext( count
     scale_push / scale_pop -- scope a named density step (the theme's scale ramp, gui_scale_t)
     over the widgets until the matching pop: one declaration instead of per-row pixel sizes.
 
-    A step is a paired push of the three metric slots (LINE_SIZE, WIDGET_PAD, WIDGET_GAP) with
+    A step is a paired push of the three metric slots (GUI_VAR_ROW, GUI_VAR_PAD, GUI_VAR_GAP) with
     that step's theme values, so every metric read and counting helper inside the scope --
     WIDGET_H, sz_rows_h( n ), sz_fit_row -- speaks the step with no widget changes.
 

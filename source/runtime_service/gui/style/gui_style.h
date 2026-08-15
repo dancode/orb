@@ -109,11 +109,13 @@ f32 style_scale( gui_scale_t s, u32 field );
 /*==============================================================================================
     3. COLORS -- the color grid, one macro per cell and no cell with two names.
 
-    This table IS gui_style_t.col: eight roles down, four phases across.  A name here is chrome's
+    This table IS gui_style_t.col: ten roles down, four phases across.  A name here is chrome's
     SPELLING of a cell, not a cell of its own: nothing reachable through these macros is
-    unreachable through style_col, which is what makes chrome an ordinary consumer.
+    unreachable through style_col, which is what makes chrome an ordinary consumer.  PANEL_CHILD
+    is the one role with no macro family: its only consumer (draw_child_bg, stock/
+    gui_adornment.c) takes the phase as a parameter, so it reads the grid generically.
 
-    The cells themselves are DERIVED -- gui_style_bake (style/gui_bake.c) writes all 32 from the
+    The cells themselves are DERIVED -- gui_style_bake (style/gui_bake.c) writes all 40 from the
     seven-seed palette, and a theme authors no colour directly.  Nothing below this line changes
     because of that: a read is still one indexed load of the same slot, and a kit that overwrites
     a cell after baking still wins.  It only means the answer to "why is this cell that colour"

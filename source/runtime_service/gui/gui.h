@@ -227,8 +227,8 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     THE color vocabulary of the whole GUI, and there is no second one.  Chrome, the stock
     widgets, and a kit's own renders all name a color as a (role, phase) cell, and all of them
     resolve through the same instanced style -- so "the editor look" and "the game look" are two
-    instances of one schema rather than two schemas.  There is no flat color enum: nine roles
-    times four phases ARE the 36 cells of gui_style_t.col below.
+    instances of one schema rather than two schemas.  There is no flat color enum: ten roles
+    times four phases ARE the 40 cells of gui_style_t.col below.
 
         push_style_color( GUI_ROLE_BG,   GUI_PHASE_HOT, abgr );   // one cell, until the pop
         push_style_color( GUI_ROLE_TEXT_PRIMARY, GUI_PHASE_ALL, abgr );   // the whole phase row
@@ -259,7 +259,7 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
     style stacks.
 ==============================================================================================*/
 
-/* What the color is FOR.  Nine roles cover every surface the GUI paints.
+/* What the color is FOR.  Ten roles cover every surface the GUI paints.
 
    PANEL vs BG is the container / control split, and it is the one distinction that has to exist:
    a window body and a child region are surfaces the layout CARVES, while a button face, an input
@@ -378,8 +378,6 @@ typedef enum
     MARK     check, radio dot  nav ring             captured-nav ring      unused
     GRAB     knob / thumb      hovered knob         dragged knob           unused
 
-    status   the signal        hovered signal       pressed signal         the FIELD (banner)
-
    PANEL/HOT, CHILD/HOT and TITLE/HOT (the band, not the chip) share one formula: a wash toward
    the GUI_EXT_INFO hue, read while a drag gesture is in flight and this surface is the computed
    landing target -- a frame-level fact, not a cursor-over-pixel one, which is why it stays IDLE
@@ -443,8 +441,8 @@ typedef enum
 
    Note what is NOT on this axis: whether the item is SELECTED.  Selection persists across
    frames; a phase does not -- so folding SELECTED into ACTIVE would cost every list row its
-   hover feedback (a selected row could never also show as hovered).  Selection lives on its own
-   axis, the look axis below. */
+   hover feedback (a selected row could never also show as hovered).  Selection is a live wash
+   over whatever cell resolved -- see GUI_STYLE -- SELECTED below. */
 
 typedef enum
 {
@@ -517,16 +515,16 @@ typedef struct gui_style_mix_t
 
     Purpose: Simplified authoring.
 
-    The grid above is what a RENDER reads. It is not what a theme WRITES. 72 literals would
-    be the wrong authoring surface: many cells are structurally redundant with each other 
-    (TEXT_PRIMARY is one colour across most phases, a role's HOT and ACTIVE cells usually 
-    sit close together, an inert cell is usually its neighbour role's base) and a theme 
-    that hand-typed all 72 would restate the same relationships dozens of times with nothing
+    The grid above is what a RENDER reads. It is not what a theme WRITES. 40 literals would
+    be the wrong authoring surface: many cells are structurally redundant with each other
+    (TEXT_PRIMARY is one colour across most phases, a role's HOT and ACTIVE cells usually
+    sit close together, an inert cell is usually its neighbour role's base) and a theme
+    that hand-typed all 40 would restate the same relationships dozens of times with nothing
     to keep the restatements in sync -- one literal edited and its echoes elsewhere quietly
     drift off the ramp.
 
-    So a theme authors SEVEN colours and SIX numbers, and gui_style_bake derives the 
-    full 36 cells based on those 13 values.
+    So a theme authors SEVEN colours and SIX numbers, and gui_style_bake derives the
+    full 40 cells based on those 13 values.
 
         seeds  -- the source colours, one per surface KIND (not per role, not per phase)
         ramp   -- how far a cell travels per interaction step, per theme
@@ -541,7 +539,7 @@ typedef struct gui_style_mix_t
 
         gui_style_t* e = gui()->style_edit();
         e->palette.seed[ GUI_SEED_ACCENT ] = gold;
-        gui()->style_bake( e );                         // 36 cells re-derive
+        gui()->style_bake( e );                         // 40 cells re-derive
 
         e->col[ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;   // one bespoke cell
     
@@ -549,10 +547,11 @@ typedef struct gui_style_mix_t
     translucent panel seed yields a translucent panel in all four phases without four literals.
 ==============================================================================================*/
 
-/* The source colours.  One per surface KIND, which is a coarser axis than the role -- PANEL and
-   TITLE are both the container surface, so both derive from SURFACE and the ramp separates them.
-   Seven seeds cover nine roles because TITLE has no colour of its own: a caption band is a
-   lifted surface, which is a derivation, not a decision.  The severity hues used to live here too
+/* The source colours.  One per surface KIND, which is a coarser axis than the role -- PANEL,
+   PANEL_CHILD and TITLE are all the container surface, so all derive from SURFACE and the ramp
+   separates them.  Seven seeds cover ten roles because TITLE and PANEL_CHILD have no colour of
+   their own: a caption band is a lifted surface and a child region a recessed one --
+   derivations, not decisions.  The severity hues used to live here too
    (a severity ladder is a set of independent editorial choices no derivation can guess from an
    accent) but they were roles wearing a ramp they never used -- see GUI_ROLE_COUNT above and
    gui_style_ext_t below, where they live now as flat, unramped colours instead. */
@@ -883,21 +882,21 @@ typedef struct gui_style_s
 {
     /* SKIN: the AUTHORED colour -- seven seeds, a six-number ramp and four extended colours
        (gui_palette_t, above).  Writing here changes nothing on its own; gui_style_bake derives
-       col[][][] below from the seeds (the extended colours are copied straight through -- there
+       col[][] below from the seeds (the extended colours are copied straight through -- there
        is nothing to derive).  First in the struct because it is first in the pipeline, and
        because push_style_seed addresses a seed by slot exactly as push_style_var addresses a
        var. */
     gui_palette_t palette;
 
-    /* SKIN: the 9x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
-       above), and the DERIVED half: gui_style_bake writes all 36 cells from the palette, then a
+    /* SKIN: the 10x4 color grid -- THE color vocabulary (gui_style_role_t x gui_style_phase_t,
+       above), and the DERIVED half: gui_style_bake writes all 40 cells from the palette, then a
        kit may overwrite any of them.  GUI_COLOR packs R,G,B,A bytes; a cell is read with
        style_col( role, phase ).  There is no SELECTED plane here -- style_col_selected washes a
        resolved cell toward the accent live, rather than reading a second stored one; see the
        SELECTED section above. */
     u32 col[ GUI_ROLE_COUNT ][ GUI_PHASE_COUNT ];
 
-    /* SKIN: the FACE plane -- the same 9x4 grid again, but a cell here holds a HANDLE, not a
+    /* SKIN: the FACE plane -- the same 10x4 grid again, but a cell here holds a HANDLE, not a
        colour: a 1-based index into this set's brush pool (gui_style_brush_add), looked up by
        style_face to return the gui_brush_t it names.  col and face share the u32 slot type only
        because the push/pop stack below addresses the whole struct as one flat array of u32 slots

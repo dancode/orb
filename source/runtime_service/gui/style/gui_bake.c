@@ -27,9 +27,10 @@
 // clang-format off
 
 /*==============================================================================================
-    The colour operations -- six verbs, and the whole ramp is written in them.
+    The colour operations -- one mixer, four directional verbs, and one guard; the whole ramp
+    is written in them.
 
-    Alpha is never blended, only carried: every op keeps the alpha of its FIRST argument.  
+    Alpha is never blended, only carried: every op keeps the alpha of its FIRST argument.
     That is what lets a translucent seed (a HUD panel at 0xF0) yield a translucent cell in
     all four phases without the author restating the alpha four times -- and it is why these
     are not col_lerp, which lerps alpha like any other channel.
@@ -44,190 +45,93 @@
    accidental read is an obvious visual bug (loud magenta) rather than a quiet wrong guess. */
 #define BAKE_UNUSED GUI_COLOR( 0xFF, 0x00, 0xFF, 0xFF )
 
-/*==============================================================================================
-    This function answers one question: "How bright does this colour appear to a human eye?"
-    It takes a packed 32-bit colour (0xBBGGRR) and returns a single 0�255 brightness number.   
-    Your eye does not see red, green, and blue as equally bright. The weights reflect that:
-    
-    Channel     | Weight         | Why
-    ------------|----------------|-----------------------------------
-    Green       | 150            | Eyes are most sensitive to green
-    Red         | 77             | Medium sensitivity
-    Blue        | 29             | Least sensitive
-    
-    Caller      | What it does with the brightness
-    ------------|----------------------------------------------------
-    Pole        | Decides if a colour plane is "light" or "dark" (polarity)
-    MUTE        | Finds the grey a saturated hue should drain toward when muted
-    Ink guard   | Checks that text/ink is far enough from the BG in perceived brightness
-==============================================================================================*/
-
+/* Perceived brightness of a packed colour, 0..255 -- Rec. 601 luma with integer weights:
+   ( 77 R + 150 G + 29 B ) / 256.  The eye weighs green most and blue least, and every
+   light-or-dark judgement here (the pole pick, the ink guard's separation test) is made in
+   this space rather than on raw channel values. */
 static u32
 bake_lum( u32 c )
 {
-    // Step 1 � Unpack the channels
     u32 r = ( c       ) & 0xFFu;
     u32 g = ( c >>  8 ) & 0xFFu;
     u32 b = ( c >> 16 ) & 0xFFu;
 
-    // Step 2 � Weighted sum (Rec. 601 luma)    
-    // normalize to 0�255 range /w a divide by 256 (>>8)
-    return ( 77u * r + 150u * g + 29u * b ) >> 8;     
+    return ( 77u * r + 150u * g + 29u * b ) >> 8;
 }
 
-/*==============================================================================================
-    Blends two colours together by a fraction t, like fading from one to the other. 
-    It's described as "THE primitive" because every other colour operation in the 
-    system is just this function with a different choice of 'b'.
-
-    Tint a colour        - A solid target hue
-    Fade to grey         - The grey from bake_lum
-    Fade to black/white  - 0x000000 or 0xFFFFFF
-    Dim/brighten         - A darker/lighter version
-
-    Param       | Meaning
-    ------------|-----------------------------------------------------------
-    a           | Starting colour (packed 0xAABBGGRR)
-    b           | Target colour to blend toward
-    t           | How far to blend � 0.0 = all 'a', 1.0 = all 'b'
-==============================================================================================*/
-
+/* THE mixing primitive: blend a toward b by t (0 = all a, 1 = all b).  Every directional verb
+   below is this function with a different target.  The result keeps a's alpha untouched, and
+   each channel rounds (+0.5f) so the float -> int cast never biases the ramp darker. */
 static u32
 bake_mix( u32 a, u32 b, f32 t )
 {
-    // Step 1 � Clamp t
-    if ( t <= 0.0f ) return a;      // no blend needed, bail early
-    if ( t >= 1.0f ) t = 1.0f;      // cap at full blend (don't overshoot)
+    if ( t <= 0.0f ) return a;
+    if ( t >= 1.0f ) t = 1.0f;
 
-    // Step 2 � Preserve a's alpha
-    // The top 8 bits (alpha channel) are copied from 'a' immediately and never 
-    // touched again. Whatever transparency 'a' had, the result keeps it.
+    u32 out = a & 0xFF000000u;                       /* alpha carried from a, never blended */
 
-    u32 out = a & 0xFF000000u; 
-    
-    // Step 3 � Blend R, G, B in a loop
-    for ( u32 sh = 0; sh <= 16; sh += 8 )
+    for ( u32 sh = 0; sh <= 16; sh += 8 )            /* r, g, b */
     {
-        // The loop runs three times: sh = 0 (red), sh = 8 (green), sh = 16 (blue).
-        // Each loop unpacks one channel from both colours, blends it, and packs it back:
         f32 c0 = (f32)( ( a >> sh ) & 0xFFu );
         f32 c1 = (f32)( ( b >> sh ) & 0xFFu );
 
-        // +0.5f rounding trick keeps the result accurate despite the float -> int cast
-        // without it truncation would bias every channel slightly darker.
         out |= ( (u32)( c0 + ( c1 - c0 ) * t + 0.5f ) & 0xFFu ) << sh;
     }
     return out;
 }
 
 /*==============================================================================================
-    The Pole System — What it does:
+    The pole -- which way "forward" is.
 
-    This whole block is about one idea: "forward" means something different depending on 
-    whether your background is dark or light. The pole is how the system answers that 
-    question once, cleanly, for everything that follows.
+    "Come forward" means lighter on a dark ground and darker on a light one.  The pole answers
+    that once, from the ground's luma, and every lift in the plane uses the same answer -- so
+    the derivation stays consistent even for the cells whose base IS the ground, which a
+    per-colour comparison could not decide.
 
-    The decision point, it looks at the ground (background) colour, measures its brightness 
-    with bake_lum, and picks a single anchor:
-
-        Dark  (luma < 128) | White — "forward" means lighter
-        Light (luma ≥ 128) | Black — "forward" means darker
-
-    Why not compare per-colour?
-
-    Deriving the pole once from the ground sidesteps the issue of the color being the ground.
-    Every colour in the system uses the same pole, so the answer is always consistent and 
-    never needs a per-colour fallback (idle cell is the literal ground color)
-
-         ├── bake_lift    push toward pole         (prominent, elevated)
-         ├── bake_recess  push toward black        (shadow, always)
-         ├── bake_fade    push toward ground       (secondary, inert)
-         ├── bake_wash    push toward accent       (hot, pressed, selected)
-         └── bake_mute    push toward own grey     (off, disabled)
-
+        bake_lift    toward the pole     (elevated, prominent)
+        bake_recess  toward black        (sunk -- a shadow reads down on either polarity)
+        bake_fade    toward the ground   (retired: secondary ink, inert frames)
+        bake_wash    toward the accent   (engaged: hover, press, selected)
 ==============================================================================================*/
 
-/* POLE -- The light or dark decision point */
-static u32 
-bake_pole( u32 ground ) 
-{ 
-    return ( bake_lum( ground ) < 128u ) ? BAKE_WHITE : BAKE_BLACK; 
+static u32
+bake_pole( u32 ground )
+{
+    return ( bake_lum( ground ) < 128u ) ? BAKE_WHITE : BAKE_BLACK;
 }
 
-/* LIFT -- bring c forward, toward the pole (makes things feel elevated) */
-static u32 
-bake_lift( u32 c, f32 t, u32 pole ) 
-{ 
-    return bake_mix( c, pole, t ); 
+static u32
+bake_lift( u32 c, f32 t, u32 pole )
+{
+    return bake_mix( c, pole, t );
 }
 
-/* RECESS -- sink c into the page, always blend toward black */
-static u32 
-bake_recess( u32 c, f32 t ) 
-{ 
-    return bake_mix( c, BAKE_BLACK, t ); 
+static u32
+bake_recess( u32 c, f32 t )
+{
+    return bake_mix( c, BAKE_BLACK, t );
 }
 
-/* FADE -- retire 'c' toward the ground it sits on: the DIM phase for anything drawn 
-   ON a container (secondary text, a subdued frame, an inert mark). */
-static u32 
-bake_fade( u32 c, f32 t, u32 ground )   
-{ 
+static u32
+bake_fade( u32 c, f32 t, u32 ground )
+{
     return bake_mix( c, ground, t );
 }
 
-/* WASH -- Blends 'c' toward the accent colour. Used for hover and pressed states.
-   When a button is hovered or held, it washes toward the theme's accent.
-   At the SELECT ramp it's used to tint the chosen ground itself. */
-static u32 
-bake_wash( u32 c, f32 t, u32 accent )    
-{ 
-    return bake_mix( c, accent, t ); 
-}
-
-/* MUTE -- drain the chroma out of c toward its own luma, leaving lightness alone.  
-   Only the affirmative hues need it: a green check faded straight toward a grey surface 
-   stays a saturated green, which reads as "on but quiet" rather than "inert".  
-   Draining first reads as off. */
-
 static u32
-bake_mute( u32 c, f32 t )
+bake_wash( u32 c, f32 t, u32 accent )
 {
-    /* Step 1 — Find the grey equivalent */
-    u32 l = bake_lum( c );
-
-    /* Step 2 — Build a grey at that same brightness. Sets R, G, and B all to 'l'. 
-       This is the exact grey that has the same luminance as the original colour 
-       — same lightness, zero saturation. */
-    u32 new_grey = l | ( l << 8 ) | ( l << 16 );
-
-    /* Step 3 — Blend toward that grey. Gradually drains the colour toward neutral. 
-       The brightness stays the same throughout; only the hue bleeds away. */
-    return bake_mix( c, new_grey, t );
-
+    return bake_mix( c, accent, t );
 }
 
 /*==============================================================================================
-    The ink GUARD -- The legibility guard
-   
-    This is the only function that can refuse to act. Every other op always transforms 
-    its input. This one first asks "is there even a problem?" and returns unchanged if not.
+    The ink guard -- the one op that can refuse to act.
 
-    The problem it solves: 
-
-    A theme author picks an ink colour by looking at it on one specific surface.
-    But the bake then places that same ink on multiple derived grounds — hovered, pressed,
-    selected, pressed-while-selected, etc.
-    
-    Nobody looked at those. Some of them may have drifted close enough to the ink colour
-    that text becomes unreadable. The guard measures the gap and, only if it's too small,
-    pushes the ink further away until it clears the floor.
-
-     Constant           | Value         | Used for
-    --------------------|---------------|--------------------------------------------
-    BAKE_INK_DELTA      | 110           | Primary ink — must be clearly readable
-    BAKE_DIM_DELTA      | 70            | Secondary ink — quieter, but still legible
-
+    A theme author picks ink by eye against one surface, but the bake then sets that ink on
+    grounds it derived itself (hovered, pressed, faded) that nobody eyeballed.  bake_ink_on
+    measures the luma separation and, only when it is under the floor, pushes the ink exactly
+    far enough to clear it -- a barely-failing ink gets a nudge, a wildly-failing one may land
+    on the end of the greyscale.
 ==============================================================================================*/
 
 #define BAKE_INK_DELTA 110   /* minimum ink-vs-face luma separation, of 255                    */
@@ -236,49 +140,29 @@ bake_mute( u32 c, f32 t )
 static u32
 bake_ink_on( u32 ink, u32 ground, i32 want )
 {
-    /* Step 1 — Measure the separation */
     const i32 g = (i32)bake_lum( ground );
     const i32 i = (i32)bake_lum( ink    );
 
     if ( ( ( i > g ) ? i - g : g - i ) >= want ) return ink;   /* already legible -- leave it */
 
-    /* Step 2 — Decide which direction to push:
-       The rule is "stay on the side the ink is already on" — not which side the ground is on. 
-
-    Situation                        | Direction
-    ---------------------------------|----------------------------------------------------------------
-    Ink is brighter than ground      | Push up toward white
-    Ink is darker than ground        | Push down toward black
-    Ink and ground are equal         | Use the pole as tiebreak: dark ground → push up */
-
+    /* Push along the side the ink already sits on, not the side the ground is on (a tie breaks
+       by polarity: dark ground pushes up). */
     const bool up = ( i > g ) || ( i == g && g < 128 );
 
-    /* Step 3 — Solve for the exact blend amount.
-       Instead of nudging and checking repeatedly, the function solves for t directly 
-       — the exact blend fraction that will land ink right on the legibility floor.
-       "How far do I need to travel from ink toward 0 to gain the missing separation?"
-    
-        (1) Toward white: L(t) = i + (255 - i) * t.     (up = true) 
-        (2) Toward black: L(t) = i * (1 - t).           (up = false)
-
-        Out-of-reach targets solve to t > 1 and bake_mix clamps, which lands on the 
-        end of the greyscale -- the best available answer. 
-    */
-
+    /* Solve t directly for the blend that lands on the floor, no iteration:
+           toward white: L(t) = i + ( 255 - i ) * t
+           toward black: L(t) = i * ( 1 - t )
+       An out-of-reach target solves to t > 1 and bake_mix clamps, so the answer degrades to
+       the end of the greyscale -- the best separation available. */
     f32 t;
-    if ( up ) t = ( i >= 255 ) ? 1.0f : (f32)( g + want - i ) / (f32)( 255 - i );    
+    if ( up ) t = ( i >= 255 ) ? 1.0f : (f32)( g + want - i ) / (f32)( 255 - i );
     else      t = ( i <=   0 ) ? 1.0f : 1.0f - (f32)( g - want ) / (f32)i;
-
-    /* Step 4 — Apply the minimum necessary push 
-       This is surgical: t was solved to land exactly at the legibility floor, no further. 
-       A barely-failing ink gets the smallest correction needed. 
-       A wildly-failing ink gets pushed hard — possibly all the way to white or black. */
 
     return bake_mix( ink, up ? BAKE_WHITE : BAKE_BLACK, t );
 }
 
 /*==============================================================================================
-    The derivation -- nine roles, each a sentence in the verbs above.
+    The derivation -- ten roles, each a sentence in the verbs above.
 
     Written out role by role rather than driven from a data table, each block below is an
     editorial claim about what a phase MEANS for that role, and a table of opcodes would bury
@@ -286,7 +170,7 @@ bake_ink_on( u32 ink, u32 ground, i32 want )
     and INK bake_plane is handed, never to the raw palette seed -- see each role's comment below
     for what it claims and why.
 
-    The severity ladder (INFO / OK / WARN / ERROR) is not one of the nine roles here: it lives
+    The severity ladder (INFO / OK / WARN / ERROR) is not one of the ten roles here: it lives
     in the extended palette (gui_style_ext_t, gui.h) as four flat colours, copied straight
     through rather than walked through these verbs -- see the loop at the end of gui_style_bake.
 ==============================================================================================*/
@@ -310,11 +194,9 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
 
     const u32 pole = bake_pole( ground );
 
-    /*  The band a titlebar sits: elevate from pole, then wash (moves toward accent color).
-        Blends ground 50% of one ramp step toward pole (white on a dark, black on a light)
-        This is the "lifted" part of "lifted, faintly accented ground". Makes the
-        titlebar feel a part of the theme rather than a clone of the surface panel
-        Color is informed by the strength of main hover style 'color change' factor. */
+    /* The BAND a caption sits on: the ground lifted half a step, then faintly accent-washed --
+       kin to the panel under it rather than a clone of it.  TITLE's ACTIVE cell, and the base
+       its HOT and INERT cells derive from. */
 
     const u32 band = bake_wash( bake_lift( ground, step * 0.50f, pole ), hover * 0.25f, accent );
 

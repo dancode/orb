@@ -35,8 +35,9 @@
     field by slot.  The static assert below is what makes the two views one thing.  Four runs
     inside the struct, all equal citizens -- that equality is the whole point of the schema:
 
-        palette                     -- The AUTHORED colour: eleven seeds and a six-number ramp
-        col [ role ][ phase ]       -- The 12x4 grid DERIVED from it, THE color vocabulary
+        palette                     -- The AUTHORED colour: seven seeds, a six-number ramp, and
+                                       the four reserved severity colours
+        col [ role ][ phase ]       -- The 10x4 grid DERIVED from it, THE color vocabulary
         face[ role ][ phase ]       -- The same grid again, as brush HANDLES: art that replaces
                                        the flat fill for a cell (0 = none, the default)
         var    [ gui_style_var_t ]  -- Every scalar the style has, metrics and skin alike
@@ -85,15 +86,13 @@
 
 #define GUI_STYLE_STACK_DEPTH 32
 
-/* The style system also needs to treat gui_style_t the whole thing as one large flat
-   array of u32 slots, so a single push/pop/override mechanism can address any field 
-   uniformly by index — no separate code path per field type. 
+/* The style system also treats gui_style_t, the whole thing, as one flat array of u32 slots,
+   so a single push/pop/override mechanism can address any field uniformly by index -- no
+   separate code path per field type.
 
-   So the slot layout -- field order of gui_style_t is four runs, laid end to end.
-   
-   The palette runs FIRST because it runs first in the pipeline: seeds and ramp are
-   what a theme authors, the colour grid is what the bake derives from them, 
-   and the metrics follow. */
+   So the slot layout: the field order of gui_style_t, as runs laid end to end.  The palette
+   runs FIRST because it runs first in the pipeline: seeds and ramp are what a theme authors,
+   the colour grid is what the bake derives from them, and the metrics follow. */
 
 #define STYLE_SEED_BASE   0                                         // seed[GUI_SEED_COUNT] starts at 0
 #define STYLE_RAMP_BASE   ( STYLE_SEED_BASE  + GUI_SEED_COUNT )     // ramp[] starts right after seed[]
@@ -542,7 +541,7 @@ style_next_var( gui_style_var_t var, f32 value )
     ramp step apart -- just built from somewhere else.  That is what "recolour this panel" means
     nearly every time it is asked for, and it had no verb at all until the seeds existed.
 
-    Cost lands where it belongs.  A re-bake is 48 derived cells plus 48 saved ones, paid once per
+    Cost lands where it belongs.  A re-bake is 40 derived cells plus 40 saved ones, paid once per
     push; reads stay one indexed load, exactly as before, because the derived values land in the
     same slots any other override writes.  Re-seeding the ACCENT moves the selected wash too
     (style_wash_selected reads the same live slot), which is the behaviour you want and could not
@@ -688,7 +687,7 @@ style_stack_replay( style_stack_t* st )
 
 /* Seeds replay the same way, but a step further: re-applying the seed is not enough, the grid
    has to be DERIVED again -- against the palette the new instance brought with it, which is the
-   whole point of pushing a seed rather than 32 cells.  Push gold over chrome's blue and switch to
+   whole point of pushing a seed rather than 40 cells.  Push gold over chrome's blue and switch to
    a kit's ember set, and the cells land on ember-plus-gold, not on chrome's. */
 static void
 style_seed_replay( void )

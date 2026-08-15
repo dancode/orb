@@ -1651,8 +1651,8 @@ typedef struct gui_api_s
 
     /* style_bake -- expands a theme's small, hand-authored description (a handful of seed
        colors and a ramp) into the full grid of colors every widget actually reads. Derives
-       s->col[][][] from s->palette: the step between what a theme AUTHORS
-       (seven seeds and a five-number ramp, gui_palette_t) and what a render READS (the 8x4
+       s->col[][] from s->palette: the step between what a theme AUTHORS
+       (seven seeds and a six-number ramp, gui_palette_t) and what a render READS (the 10x4
        colour grid).  Pure and in-place; touches no metric.
 
        Explicit rather than implicit, because a kit's usual shape is bake THEN overwrite: an
@@ -1663,7 +1663,7 @@ typedef struct gui_api_s
            e->palette.seed[ GUI_SEED_SURFACE ] = charcoal;
            e->palette.seed[ GUI_SEED_ACCENT  ] = gold;
            e->palette.ramp[ GUI_RAMP_HOVER   ] = 0.5f;
-           gui()->style_bake( e );                                 // all 96 cells derive
+           gui()->style_bake( e );                                 // all 40 cells derive
            e->col[ GUI_ROLE_MARK ][ GUI_PHASE_IDLE ] = ember;      // the one bespoke cell */
     void               ( *style_bake  )( gui_style_t* s );
 
