@@ -89,7 +89,8 @@ bake_mix( u32 a, u32 b, f32 t )
     per-colour comparison could not decide.
 
         bake_lift    toward the pole     (elevated, prominent)
-        bake_recess  toward black        (sunk -- a shadow reads down on either polarity)
+        bake_recess  toward black        (a HOLE -- an empty track, a surface behind a scrim)
+        bake_nest    signed, either way  (one rung of the surface ladder; the theme picks which)
         bake_fade    toward the ground   (retired: secondary ink, inert frames)
         bake_wash    toward the accent   (engaged: hover, press, selected)
 ==============================================================================================*/
@@ -106,10 +107,29 @@ bake_lift( u32 c, f32 t, u32 pole )
     return bake_mix( c, pole, t );
 }
 
+/* A hole in a surface, not a rung of the ladder: the empty half of a slider track, the pushed-in
+   face of a pressed control, a panel behind an active modal's fence.  Always toward black, on
+   either polarity -- a well, a dent and a scrim all read as an absence of light, and a theme that
+   inverted them would show a RAISED empty track and a modal that brightened the page it fences. */
 static u32
 bake_recess( u32 c, f32 t )
 {
     return bake_mix( c, BAKE_BLACK, t );
+}
+
+/* One rung DOWN the surface ladder -- a region nested inside its parent.  Which way "down" points
+   is the theme's call, and t carries both the answer and the distance: positive sinks toward
+   black, negative lifts toward the pole.
+
+   It is a per-theme choice because the ground's own luma decides how much room the sink direction
+   even has.  The dark built-in grounds at 0x24, so everything below it must fit two ladder rungs
+   into 36 levels, where the same ramp above the ground has 219 to spend; a near-white ground has
+   the opposite problem.  Splitting this off bake_recess is what lets a theme spend that headroom
+   on the side it actually has, without also turning its empty tracks inside out. */
+static u32
+bake_nest( u32 c, f32 t, u32 pole )
+{
+    return ( t < 0.0f ) ? bake_mix( c, pole, -t ) : bake_mix( c, BAKE_BLACK, t );
 }
 
 static u32
@@ -191,6 +211,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     const f32 press  = p->ramp[ GUI_RAMP_PRESS  ];
     const f32 fade   = p->ramp[ GUI_RAMP_FADE   ];
     const f32 recess = p->ramp[ GUI_RAMP_RECESS ];
+    const f32 nest   = p->ramp[ GUI_RAMP_NEST   ];
     const f32 step   = p->ramp[ GUI_RAMP_STEP   ];
 
     const u32 line   = p->seed[ GUI_SEED_LINE   ];
@@ -218,9 +239,9 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        inside them, and lighting up every window under the cursor would claim "drop anywhere in
        me" for windows that mean nothing of the kind.  Either way it is a frame-level state, not a
        cursor-over-pixel one, so a wash toward the DROP hue reuses the same signal the dock's own
-       drop overlay already carries.  INERT is a window sitting behind an active modal fence --
-       non-interactive by definition, same recess gui_stock_panel's framed backdrop and an empty
-       dock-leaf placeholder already read; a nested child region has its own role below. */
+       drop overlay already carries.  INERT is a window sitting behind an active modal fence -- a
+       scrim rather than a ladder rung, the same hole gui_stock_panel's framed backdrop and an
+       empty dock-leaf placeholder already read; a nested child region has its own role below. */
 
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, BAKE_DROP_WASH, p->ext[ GUI_EXT_DROP ] );
@@ -228,19 +249,20 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_INERT  ] = bake_recess( ground, recess );
 
     /* PANEL_CHILD -- a nested container: scroll region, embedded child panel.  Same shape and the
-       same standing-based reading as PANEL (see above), seeded from a recessed ground instead of
-       the bare one so a child reads sunk into its parent AT REST: IDLE is open; HOT is the same
+       same standing-based reading as PANEL (see above), seeded from a NESTED ground instead of
+       the bare one so a child reads one rung off its parent AT REST: IDLE is open; HOT is the same
        drop-target wash, gated the same way PANEL's generic path is -- only a child opened with
        GUI_WIN_DRAG_TARGET lights up while a payload hovers it (a reorderable list body, say); a
        plain child holding its own individually-targetable widgets (colour swatches, tree rows)
        stays flat and lets THEM ring instead (child_standing_phase, flow/gui_layout_child.c).
        There is no dock equivalent for a child -- it is not part of the dock tree -- so the flag is
        its only HOT source.  ACTIVE is a faint lift while the keyboard cursor is scoped inside THIS
-       child, not the window; INERT is a further recess while an active modal fences the child off.
-       The resize edge has its own signal (BORDER, draw_resize_highlight) and does not touch this
-       role at all. */
+       child, not the window; INERT is the same modal-fence scrim PANEL's INERT carries, cut into
+       the child's own ground rather than the window's -- so a fenced child darkens whichever way
+       the theme nests.  The resize edge has its own signal (BORDER, draw_resize_highlight) and
+       does not touch this role at all. */
 
-    const u32 child_ground = bake_recess( ground, recess );
+    const u32 child_ground = bake_nest( ground, nest, pole );
 
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_IDLE   ] = child_ground;
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_HOT    ] = bake_wash( child_ground, BAKE_DROP_WASH, p->ext[ GUI_EXT_DROP ] );
@@ -265,8 +287,11 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        read, and it is the one place the two direction verbs are deliberately opposed.  Hover is
        a LUMINANCE event -- the lift does the talking and the hover ramp adds only a whisper of
        accent -- so the accent hue stays rationed for things that are chosen or engaged: the
-       press (a deeper wash), selection, value fills, focus.  INERT is read only by gui_plot's
-       own backdrop -- a plot has no id, so it never lifts. */
+       press (a deeper wash), selection, value fills, focus.  INERT is read only by gui_plot's own
+       backdrop -- a plot has no id, so it never lifts.  That backdrop is a WELL, the unpainted
+       area inside one widget's own footprint, so it sinks with the empty track ACCENT's INERT cell
+       bakes to the same expression for -- it is not a container, and does not ride the nest
+       ladder a child region does. */
 
     col[ GUI_ROLE_BG ][ GUI_PHASE_IDLE   ] = control;
     col[ GUI_ROLE_BG ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( control, hover, accent ), step, pole );

@@ -198,8 +198,14 @@ st_editor_window( void )
 
     gui()->separator_text( "Palette -- ramp" );
     for ( u32 i = 0; i < GUI_RAMP_COUNT; ++i )
+    {
+        /* NEST is the one signed ramp -- its sign is the direction a nested surface steps, so its
+           track has to reach below zero for the lift half to be reachable at all. */
+        const f32 lo = ( i == GUI_RAMP_NEST ) ? -1.0f : 0.0f;
+
         palette_changed |= se_f32( gui()->style_ramp_name( ( gui_style_ramp_t )i ),
-                                   &work.palette.ramp[ i ], 0.0f, 1.0f );
+                                   &work.palette.ramp[ i ], lo, 1.0f );
+    }
 
     if ( palette_changed )
     {

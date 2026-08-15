@@ -336,6 +336,7 @@ install_palette( i32 which )
     es->palette.ramp[ GUI_RAMP_PRESS  ] = 0.55f;
     es->palette.ramp[ GUI_RAMP_FADE   ] = 0.45f;
     es->palette.ramp[ GUI_RAMP_RECESS ] = 0.30f;
+    es->palette.ramp[ GUI_RAMP_NEST   ] = 0.30f;
     es->palette.ramp[ GUI_RAMP_STEP   ] = 0.14f;
     es->palette.ramp[ GUI_RAMP_SELECT ] = 0.50f;
 

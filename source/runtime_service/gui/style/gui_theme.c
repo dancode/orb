@@ -117,7 +117,8 @@ static const char* const k_ramp_name[ GUI_RAMP_COUNT ] =
     [ GUI_RAMP_HOVER  ] = "Hover Tinge",
     [ GUI_RAMP_PRESS  ] = "Press Wash",
     [ GUI_RAMP_FADE   ] = "Inert Fade",
-    [ GUI_RAMP_RECESS ] = "Recess Sink",
+    [ GUI_RAMP_RECESS ] = "Hole Sink",
+    [ GUI_RAMP_NEST   ] = "Nest Step",
     [ GUI_RAMP_STEP   ] = "Lift Step",
     [ GUI_RAMP_SELECT ] = "Select Wash",
 };
@@ -153,9 +154,9 @@ var_is_pixels( u8 cls )
     derivations, and they live once in style/gui_bake.c rather than once per theme in hex.
     gui_theme_set bakes the grid on the way in (theme_install below).
 
-    The ramps differ between the families, and that is the point rather than an oversight: 
+    The ramps differ between the families, and that is the point rather than an oversight:
     a fixed fraction toward black is a gentle inset on a near-black surface and a bruise on
-    a near-white one, so "light" recesses at 0.08 where "dark" recesses at 0.22. 
+    a near-white one, so "light" sinks at 0.08 where "dark" sinks at 0.22.
     Everything else they agree on, which is what says the two looks really are one system.
 ==============================================================================================*/
 
@@ -164,8 +165,13 @@ var_is_pixels( u8 cls )
    green, and a restrained light-grey anchor for the knobs.
 
    LINE sits just above the control face (0x52 on 0x40 controls / 0x24 ground), not at a
-   wireframe mid-grey: the surface ladder (ground / recessed child / raised control) carries the
-   structural separation, and a border that shouts over it reads as a debug overlay.  The loud
+   wireframe mid-grey: the surface ladder (nested child / ground / raised control) carries the
+   structural separation, and a border that shouts over it reads as a debug overlay.
+
+   NEST sinks here, matching HOLE, which is the ladder this family has always run -- but it is the
+   direction with the least room to run in: two rungs below a 0x24 ground share 36 levels where
+   the lifts above it have 219.  A negative NEST steps children UP instead, and is the knob to
+   reach for if the nested surfaces ever read as mud rather than depth.  The loud
    line is BORDER's HOT/ACTIVE accent, reserved for focus and engagement.
 
    The chromatic seeds stay mid-saturation on purpose -- a high-chroma hue at rest reads as a
@@ -188,6 +194,7 @@ var_is_pixels( u8 cls )
             [ GUI_RAMP_PRESS  ] = 0.30f, \
             [ GUI_RAMP_FADE   ] = 0.45f, \
             [ GUI_RAMP_RECESS ] = 0.22f, \
+            [ GUI_RAMP_NEST   ] = 0.22f, \
             [ GUI_RAMP_STEP   ] = 0.18f, \
             [ GUI_RAMP_SELECT ] = 0.55f, \
         }, \
@@ -208,8 +215,9 @@ var_is_pixels( u8 cls )
 
    Its ramp is the gentler of the two, and every difference is the same fact seen from a
    different angle: moves are LOUDER near white.  A 0.22 sink that reads as a subtle inset well
-   at 0x24 reads as a dirty smear at 0xE2, so recess drops to 0.08, and the lift step comes down
-   with it.  LINE follows the dark family's rule from the other side: a hairline just under the
+   at 0x24 reads as a dirty smear at 0xE2, so both sinks drop to 0.08, and the lift step comes
+   down with them.  A light ground has all the room it needs below it, so NEST stays positive
+   here -- the headroom argument that makes the direction a live question on dark does not apply.  LINE follows the dark family's rule from the other side: a hairline just under the
    surfaces (0xC6 on 0xEC controls), structure carried by the surface ladder. */
 #define THEME_PALETTE_LIGHT \
     .palette = { \
@@ -227,6 +235,7 @@ var_is_pixels( u8 cls )
             [ GUI_RAMP_PRESS  ] = 0.25f, \
             [ GUI_RAMP_FADE   ] = 0.40f, \
             [ GUI_RAMP_RECESS ] = 0.08f, \
+            [ GUI_RAMP_NEST   ] = 0.08f, \
             [ GUI_RAMP_STEP   ] = 0.12f, \
             [ GUI_RAMP_SELECT ] = 0.50f, \
         }, \

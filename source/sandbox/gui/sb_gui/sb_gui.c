@@ -104,18 +104,15 @@ static void show_example_main_menu_bar()
 /*============================================================================================*/
 
 static void
-show_demo_window(bool* p_open)
+show_demo_window( bool* p_open )
 {
-    if ( demo_data.show_main_menubar ) 
-    { 
-        show_example_main_menu_bar(); 
+    if ( demo_data.show_main_menubar )
+    {
+        show_example_main_menu_bar();
     }
 
-    // Exceptionally add an extra assert here for people confused about initial Dear ImGui setup
-    // Most functions would return false if the window is collapsed or entirely clipped.
     gui_win_flags_t window_flags = GUI_WIN_NOSCROLL;
-    
-    window_flags |= GUI_WIN_CAN_AUTOSIZE;  // Add a menu bar to the window
+    // window_flags |= GUI_WIN_CAN_AUTOSIZE;
     
     // We demonstrate using the full window_begin() API
     gui()->window_set_next_size( 640.0f, 640.0f + 220.0f, GUI_COND_ONCE );
@@ -176,8 +173,8 @@ show_demo_window(bool* p_open)
            window's command hash different frame to frame forever, which would keep frame_dirty()
            true forever and defeat the idle-skip entirely (the exact problem volatile widgets exist
            to route around; see demo_volatile_pulse_cb above for the widget that keeps animating anyway). */
-        // gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 6.061f, 165.0f);
-        bool emit_volatile = false;
+        
+        bool emit_volatile = true;
         if ( emit_volatile )
         {
             gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );
@@ -284,7 +281,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* GUI Style */
 
-    bool modify_style = true;
+    bool modify_style = false;
     if ( modify_style )
     {
         gui_style_t* style = gui()->style_get();
@@ -314,6 +311,7 @@ main( int argc, char** argv )
         // style->palette.ramp[GUI_RAMP_PRESS]     = 0.25f;
         // style->palette.ramp[GUI_RAMP_FADE]      = 0.25f;
         // style->palette.ramp[GUI_RAMP_RECESS]    = 0.25f;
+        // style->palette.ramp[GUI_RAMP_NEST]      = 0.25f;   // signed: negative LIFTS nested regions
         // style->palette.ramp[GUI_RAMP_STEP]      = 0.25f;
         // style->palette.ramp[GUI_RAMP_SELECT]    = 0.25f;
     

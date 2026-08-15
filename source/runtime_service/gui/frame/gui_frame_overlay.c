@@ -304,14 +304,16 @@ overlay_perf( int mode )
                 gui_textf( "st small %u/%u/%u", su.small_live, su.small_used, su.small_cap );
                 gui_textf( "st big   %u/%u/%u", su.big_live,   su.big_used,   su.big_cap   );
             
-                /* Fixed-pool pressure: used vs cap. These pools fail silently when full --
+                /* Fixed-pool pressure: used vs cap.  PHYSICAL fill (_all: both bands, this
+                   overlay included) -- the pools are shared, so overflow risk is physical and a
+                   band-netted number would hide it.  These pools fail silently when full --
                    watch for caps under load and raise them BEFORE labels drop, clips break, or
                    nav items fall off the list. nav is this frame's live count (the overlay emits
                    last, after every window has registered). */
                 gui_new_line( 2.0f );
-                gui_textf( "cmds  %u/%u", rs.cmd_count,      (u32)GUI_MAX_CMDS       );
+                gui_textf( "cmds  %u/%u", rs.cmd_count_all,  (u32)GUI_MAX_CMDS       );
                 gui_textf( "segs  %u/%u", rs.seg_count,      (u32)GUI_MAX_SEGS       );
-                gui_textf( "clips %u/%u", rs.clip_count,     (u32)GUI_MAX_CLIP_RECTS );
+                gui_textf( "clips %u/%u", rs.clip_count_all, (u32)GUI_MAX_CLIP_RECTS );
                 gui_textf( "text  %u/%u", rs.text_pool_used, (u32)GUI_MAX_TEXT_POOL  );
                 gui_textf( "nav   %u/%u", g_ctx->nav.item_count, (u32)GUI_NAV_ITEMS_MAX );
             }

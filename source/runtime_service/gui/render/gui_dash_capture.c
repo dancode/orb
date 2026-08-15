@@ -45,6 +45,11 @@ dash_capture_build( void )
     dash_snapshot_t* sn = &s_dash.snap;
     sn->serial++;
 
+    /* Retire every surface entry: the flushes that follow this build re-arm the ones that still
+       exist, so a closed viewport's panel disappears instead of showing its last upload forever. */
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+        sn->surf[ v ].live = false;
+
     sn->slot_count = s_slot_count < RENDER_MAX_WIN ? s_slot_count : RENDER_MAX_WIN;
     for ( u32 i = 0; i < sn->slot_count; ++i )
     {

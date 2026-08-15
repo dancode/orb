@@ -89,6 +89,7 @@ static const char* const k_ramp_id[ GUI_RAMP_COUNT ] =
     [ GUI_RAMP_PRESS  ] = "GUI_RAMP_PRESS",
     [ GUI_RAMP_FADE   ] = "GUI_RAMP_FADE",
     [ GUI_RAMP_RECESS ] = "GUI_RAMP_RECESS",
+    [ GUI_RAMP_NEST   ] = "GUI_RAMP_NEST",
     [ GUI_RAMP_STEP   ] = "GUI_RAMP_STEP",
     [ GUI_RAMP_SELECT ] = "GUI_RAMP_SELECT",
 };

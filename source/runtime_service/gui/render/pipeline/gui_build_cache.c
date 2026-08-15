@@ -653,17 +653,20 @@ cache_diff_windows( void )
         }
     }
 
-    s_stats.accum.cmd_count      = total_cmd;
+    s_stats.accum.cmd_count      = total_cmd;               /* band-0 only: application cost      */
+    s_stats.accum.cmd_count_all  = s_draw.cmd_count;        /* physical pool fill, both bands     */
     s_stats.accum.seg_count      = nseg;
     s_stats.accum.text_pool_used = s_draw.text_pool_used;   /* frame emit is complete at the build seam */
 
     /* Distinct clip rects the main band drew under this frame.  Counted by command reference, not
        raw table size (s_draw.clip_table_n): the raw table also holds debug-band pushes and pushes
-       no surviving command references, so it overstates what the application itself costs. */
+       no surviving command references, so it overstates what the application itself costs.  The
+       physical table fill is published alongside (clip_count_all) for the capacity view. */
     u32 total_clip = 0;
     for ( u32 ci = 0; ci < GUI_MAX_CLIP_RECTS; ++ci )
         total_clip += clip_used[ ci ];
-    s_stats.accum.clip_count = total_clip;
+    s_stats.accum.clip_count     = total_clip;
+    s_stats.accum.clip_count_all = s_draw.clip_table_n;
 }
 
 /*==============================================================================================

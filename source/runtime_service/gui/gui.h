@@ -310,7 +310,7 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
    PANEL vs PANEL_CHILD is the same "a ramp must describe one surface" rule ACCENT/MARK and
    TEXT_PRIMARY/SECONDARY were split for.  A window body and a nested scroll region both sit on
    PANEL's plane, but they are not one surface: the window body is flush with the page, while a
-   child region is recessed AT REST and still needs its own standing-based HOT/ACTIVE -- a drop
+   child region steps off it AT REST and still needs its own standing-based HOT/ACTIVE -- a drop
    target and a scoped focus are as real for a child as for the window it lives in, independent of
    the window's own reading (child_standing_phase, flow/gui_layout_child.c).  Folding "recessed"
    into PANEL's INERT cell, as a single early build did, cost every child region that reading
@@ -319,7 +319,7 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
    goes back to being the one thing every other role's INERT cell already was -- a non-interactive
    surface's look, permanent (gui_stock_panel's decorative backdrop, an empty dock-leaf
    placeholder) or temporary (a window fenced off by an active modal -- see the phase table below)
-   -- and PANEL_CHILD carries its own full IDLE/HOT/ACTIVE/INERT ramp, seeded from a recessed
+   -- and PANEL_CHILD carries its own full IDLE/HOT/ACTIVE/INERT ramp, seeded from a nested
    ground.
 
    There is no STATUS row here.  INFO / OK / WARN / ERROR used to be four roles wearing the same
@@ -367,7 +367,7 @@ typedef enum
     -------  ----------------  -------------------  ---------------------  ------------------
 
     PANEL    open, unfocused   valid drop target    focused / foreground   behind modal fence
-    CHILD    recessed surface  valid drop target    focus inside child     behind modal fence
+    CHILD    nested surface    valid drop target    focus inside child     behind modal fence
     TITLE    bar, inactive tab chip hov / drop      focused bar, live tab  de-emphasized bar
 
     BG       control face      hovered face         pressed / focused      plot backdrop
@@ -550,7 +550,7 @@ typedef struct gui_style_mix_t
 /* The source colours.  One per surface KIND, which is a coarser axis than the role -- PANEL,
    PANEL_CHILD and TITLE are all the container surface, so all derive from SURFACE and the ramp
    separates them.  Seven seeds cover ten roles because TITLE and PANEL_CHILD have no colour of
-   their own: a caption band is a lifted surface and a child region a recessed one --
+   their own: a caption band is a lifted surface and a child region a nested one --
    derivations, not decisions.  The severity hues used to live here too
    (a severity ladder is a set of independent editorial choices no derivation can guess from an
    accent) but they were roles wearing a ramp they never used -- see GUI_ROLE_COUNT above and
@@ -570,11 +570,14 @@ typedef enum
 
 } gui_style_seed_t;
 
-/* HOW FAR a derived cell travels -- the theme's personality, in six numbers, each 0..1, and
-   the index into gui_palette_t.ramp.  Authored per theme rather than fixed, because a step that
-   reads as one notch on a near-black surface reads as four on a near-white one: the light and
-   dark built-ins carry visibly different recess values for exactly that reason.  A ramp of all
-   zeroes bakes a flat, unreactive UI -- a legitimate look, and a useful debugging one.
+/* HOW FAR a derived cell travels -- the theme's personality, in seven numbers, and the index into
+   gui_palette_t.ramp.  Authored per theme rather than fixed, because a step that reads as one
+   notch on a near-black surface reads as four on a near-white one: the light and dark built-ins
+   carry visibly different sink values for exactly that reason.  A ramp of all zeroes bakes a
+   flat, unreactive UI -- a legitimate look, and a useful debugging one.
+
+   All are 0..1 except NEST, the one SIGNED entry, which also carries a direction -- see its
+   comment below and bake_nest in style/gui_bake.c.
 
    An array rather than named fields, for the same reason gui_style_t.var is one: the enum IS
    the field list, so a style editor walks the ramp with no table of its own. */
@@ -584,7 +587,9 @@ typedef enum
     GUI_RAMP_HOVER = 0,   // accent tinge on a hovered control face -- a whisper: hover is a lift, not a hue change
     GUI_RAMP_PRESS,       // how far a pressed face washes toward the accent -- the deeper, engaged wash
     GUI_RAMP_FADE,        // how far an inert cell fades toward the surface (the INERT phase)
-    GUI_RAMP_RECESS,      // how far a recessed surface / empty track sinks below its base
+    GUI_RAMP_RECESS,      // how deep a HOLE cuts below its base: the empty track, the modal-fenced panel
+    GUI_RAMP_NEST,        // SIGNED, -1..1: one rung of the surface ladder for a nested region --
+                          // positive sinks it toward black, negative lifts it toward the pole
     GUI_RAMP_STEP,        // one lift notch for the accent, border and anchor ramps
     GUI_RAMP_SELECT,      // how far a CHOSEN surface washes toward the accent (style_wash_selected)
     GUI_RAMP_COUNT
@@ -3064,12 +3069,18 @@ typedef struct
     one-frame-lag metric (the build that reads it is also the one being measured).
 ==============================================================================================*/
 
+/* Two families of numbers, split by intent: APPLICATION COST fields exclude the debug band (the
+   perf overlay / dashboard must not count themselves in what they display), while POOL FILL
+   (_all) fields are the physical count in the shared bucket, tooling included -- overflow
+   pressure against a cap is physical, so netting it would hide real risk. */
 typedef struct
 {
-    u32 cmd_count;          // semantic draw commands the UI emitted
+    u32 cmd_count;          // semantic draw commands the UI emitted (debug band excluded)
     u32 clip_count;         // clip table entries referenced by those commands (debug band excluded)
-    u32 seg_count;          // command segments cut this frame (per-(win,z,vp,band) spans)
-    u32 text_pool_used;     // bytes of the per-frame text pool consumed (cap: GUI_MAX_TEXT_POOL)
+    u32 cmd_count_all;      // physical command pool fill, both bands (cap: GUI_MAX_CMDS)
+    u32 clip_count_all;     // physical clip table fill, both bands (cap: GUI_MAX_CLIP_RECTS)
+    u32 seg_count;          // physical segment count, both bands (cap: GUI_MAX_SEGS)
+    u32 text_pool_used;     // physical text pool bytes, both bands (cap: GUI_MAX_TEXT_POOL)
     u32 vert_count;         // tessellated vertices (total, including retained)
     u32 tri_count;          // tessellated triangles (total, including retained)
     u32 draw_calls;         // GPU indexed draw calls (batches), summed over surfaces

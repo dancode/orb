@@ -137,7 +137,7 @@
    the interact server or a library unit.  The debug header is the sanctioned severable
    instrumentation (this unit IMPLEMENTS the capture entry points it declares). */
 
-#include "runtime_service/gui/render/gui_render.h"   /* pulls gui_host.h + rhi/app APIs */
+#include "runtime_service/gui/render/gui_render.h"      /* pulls gui_host.h + rhi/app APIs */
 #include "runtime_service/gui/debug/gui_debug.h"
 
 // clang-format off
@@ -150,10 +150,12 @@
 // texture at either pixel format; gui_res_atlas.h/.c owns both atlases (one texture and one
 // bindless slot each) that fonts, icons and sprites pack into as tenants, so everything of a kind
 // resolves to one tex_idx -- and since that word rides the vertex, the kinds batch together too.
+
 #include "runtime_service/gui/render/resource/gui_atlas.h"
 #include "runtime_service/gui/render/resource/gui_atlas.c"
 #include "runtime_service/gui/render/resource/gui_res_atlas.h"
 #include "runtime_service/gui/render/resource/gui_res_atlas.c"
+
 /* Fonts, icons and sprites live in the draw unit (gui_draw.c) -- the server
    renders from the atlases they push into; glyph/icon/sprite UV lookups at tess/emit time go
    through the glyph/sprite source contract in gui_render.h. */

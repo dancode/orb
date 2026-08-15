@@ -74,11 +74,12 @@ ui_kit_install( void )
     e->palette.seed[ GUI_SEED_GRAB    ] = s_style.text;              /* the contrast anchor   */
 
     /* A smouldering ramp, not a flashing one -- the whole difference between this kit's feel and
-       chrome's, and it is five numbers rather than a repainted grid. */
+       chrome's, and it is seven numbers rather than a repainted grid. */
     e->palette.ramp[ GUI_RAMP_HOVER  ] = 0.15f;
     e->palette.ramp[ GUI_RAMP_PRESS  ] = 0.30f;
     e->palette.ramp[ GUI_RAMP_FADE   ] = 0.45f;
     e->palette.ramp[ GUI_RAMP_RECESS ] = 0.30f;
+    e->palette.ramp[ GUI_RAMP_NEST   ] = 0.30f;   /* leather sinks: this kit's depth is carved */
     e->palette.ramp[ GUI_RAMP_STEP   ] = 0.18f;
     e->palette.ramp[ GUI_RAMP_SELECT ] = 0.45f;   /* a dark kit: a deep wash swallows the gold */
 
