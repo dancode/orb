@@ -145,14 +145,15 @@ void draw_set_font              ( u32 font );       // active font id, stamped o
    the ambient font stays global by design) plus the ambient glyph-clip window (a table cell
    sets it for its span).  draw_scope / draw_scope_set read and write it wholesale for the
    overlay seam. */
+
 typedef struct
 {
-    gui_id_t window;         // s_draw.cur_win (retained-cache key)
-    u32      sort_key;       // s_draw.cur_z (paint order)
-    i32 viewport;       // s_draw.cur_vp (target surface routing)
-    u32      band;           // s_draw.cur_band (arena band: debug UI isolation)
-    f32      text_clip_x0;   // ambient glyph-clip window
-    f32      text_clip_x1;
+    gui_id_t    window;         // s_draw.cur_win (retained-cache key)
+    u32         sort_key;       // s_draw.cur_z (paint order)
+    i32         viewport;       // s_draw.cur_vp (target surface routing)
+    u32         band;           // s_draw.cur_band (arena band: debug UI isolation)
+    f32         text_clip_x0;   // ambient glyph-clip window
+    f32         text_clip_x1;   // ambient glyph-clip window
 
 } gui_draw_scope_t;
 
@@ -160,6 +161,9 @@ gui_draw_scope_t draw_scope     ( void );              // paint cursor + glyph c
 void             draw_scope_set ( gui_draw_scope_t s );// restore it wholesale (the overlay seam)
 
 void draw_push_clip_rect        ( f32 x, f32 y, f32 w, f32 h ); // push clip, intersected with the parent
+void draw_push_clip_rect_rounded( f32 x, f32 y, f32 w, f32 h, f32 radius ); // same, corners rounded in the
+                                                                //   FRAGMENT (clip_coverage) -- radius
+                                                                //   clamped to the half-extent
 void draw_pop_clip_rect         ( void );                       // pop the top clip
 void draw_push_clip_root        ( void );                       // push the full-display clip (popup escape)
 void draw_set_root_clip         ( f32 w, f32 h );               // set clip_stack[0] to a surface size
@@ -326,6 +330,21 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
 #endif
 #define SLOT_VERT_PAD     64u   // per-slot vertex headroom: absorbs minor growth in-place
 #define SLOT_IDX_PAD      128u  // per-slot index headroom (~2x vertex count for quads)
+
+/* One entry of a window slot's LOCAL clip table: the rects this window's cached vertices name
+   through the tex word's clip band (gui.h, GUI_TEX_CLIP_SHIFT).  The flush concatenates every
+   dispatched slot's entries into the frame clip buffer the fragment reads (gui_shader.h,
+   clip_coverage); the per-draw clip_base push constant locates a slot's span.  Lives beside the
+   slot's cached geometry so a cache-hit frame replays baked local indices against the exact
+   rects they meant, however the per-frame global clip table shuffled its indices. */
+typedef struct
+{
+    gui_rect_t rect;      // the clip rect, unsnapped pixels (the flush snaps edges on upload)
+    f32        radius;    // corner radius; 0 = the hard scissor-parity cut
+
+} gui_clip_entry_t;
+
+#define GUI_WIN_CLIP_MAX  64    // distinct clips per window slot -- the clip band's 6 bits
 
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
    The frame's semantic list is tessellated + z-sorted exactly once (lazily, on the first

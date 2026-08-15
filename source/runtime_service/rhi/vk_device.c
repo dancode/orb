@@ -133,6 +133,9 @@ vk_device_init_features( vk_feature_chain_t* f )
        Spec covers VK_DESCRIPTOR_TYPE_SAMPLER under this same flag. */
     f->desc_idx.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
 
+    /* UPDATE_AFTER_BIND on the storage-buffer binding (bindless set binding 2) */
+    f->desc_idx.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
+
     /* write new slots while GPU reads others */
     f->desc_idx.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
 
@@ -175,7 +178,10 @@ vk_device_init_features( vk_feature_chain_t* f )
     f->feats2.features.samplerAnisotropy = VK_TRUE;  
 
     /* VK_POLYGON_MODE_LINE wireframe */
-    f->feats2.features.fillModeNonSolid  = VK_TRUE;  
+    f->feats2.features.fillModeNonSolid  = VK_TRUE;
+
+    /* dynamic (push-constant) index into the bindless storage-buffer array (binding 2) */
+    f->feats2.features.shaderStorageBufferArrayDynamicIndexing = VK_TRUE;
 }
 
 /*==============================================================================================

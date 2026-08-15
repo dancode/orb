@@ -149,6 +149,9 @@ static u32                 s_volatile_count;
      cache_count_volatile_patch -- stats: rows patched in place this frame.
      cache_slot_lookup          -- resolve a window's CURRENT slot position + tessellation
                                    generation by id; false if the window has no live slot.
+     cache_slot_clips_bind      -- point s_tess at the window slot's LOCAL clip table so a
+                                   patch's scratch tessellation resolves (and, for genuinely new
+                                   rects, appends) the same local clip indices the capture baked.
      cache_invalidate_window    -- corrupt the window's stored hash + raise any_changed so the
                                    next frame re-tessellates it (a failed patch's recovery path).
      cache_slots_extent         -- far edge of every slot's reservation; the debug guard below
@@ -156,6 +159,7 @@ static u32                 s_volatile_count;
 static void cache_count_volatile_patch( u32 n );
 static bool cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base,
                                u32* tess_gen );
+static bool cache_slot_clips_bind( gui_id_t win );
 static void cache_invalidate_window( gui_id_t win );
 #if !RELEASE
 static void cache_slots_extent( u32* out_vert_end, u32* out_idx_end );
@@ -351,7 +355,8 @@ volatile_cb_close( gui_volatile_fn fn, const gui_rect_t* cell )
                 if ( src != memo_src )
                 {
                     memo_src = src;
-                    memo_dst = clip_append( rect_intersect( *cell, s_draw.clip_table[ src ] ) );
+                    memo_dst = clip_append( rect_intersect( *cell, s_draw.clip_table[ src ] ),
+                                            0.0f );
                 }
                 s_draw.cmds[ i ].clip_idx = memo_dst;
             }
@@ -504,6 +509,9 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     bool force_ck   = s_tess.force_new_cmd;
     bool ovf_ck     = s_tess.overflow;
 
+    gui_clip_entry_t* clips_ck      = s_tess.slot_clips;
+    u32*              clip_count_ck = s_tess.slot_clip_count;
+
     /* Debug guard: the scratch tessellation below writes at vert_ck / idx_ck and its byte content
        survives the count rollback.  If that is not past every live slot's reservation, it scribbles
        through another window's geometry (the tooltip-vs-pulse collision).  Callers must arrange the
@@ -526,9 +534,17 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     s_tess.force_new_cmd  = true;
     s_volatile_patching   = true;
 
+    /* The patched vertices bake clip-band indices exactly like the capture's did, so resolve
+       them against the SAME local table -- the window slot's.  An unchanged footprint clip finds
+       its existing entry; a genuinely new rect appends and uploads with the next flush. */
+    cache_slot_clips_bind( row->win );
+
     tess_dispatch( s_draw.cmds, s_patch_order, n, row->win );
 
-    s_volatile_patching = false;
+    s_volatile_patching    = false;
+    s_tess.slot_clips      = clips_ck;
+    s_tess.slot_clip_count = clip_count_ck;
+    s_tess.clip_memo_ci    = 0xFF;
 
     u32  nv          = s_tess.vert_count - vert_ck;
     u32  ni          = s_tess.idx_count  - idx_ck;

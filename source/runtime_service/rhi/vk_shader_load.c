@@ -176,8 +176,8 @@ vk_shader_load_oshd_memory( const void* blob, u32 size, const char* debug_name )
 
     /* Contract guards: everything the pipeline will trust must fit the RHI's limits, and
        every binding must be the bindless global set -- set 0, binding 0 = sampled images,
-       binding 1 = samplers.  UBOs/SSBOs/anything else has no home in this RHI; refusing the
-       load here turns a would-be GPU mystery into a named error. */
+       binding 1 = samplers, binding 2 = storage buffers.  UBOs/anything else has no home in
+       this RHI; refusing the load here turns a would-be GPU mystery into a named error. */
     if ( h->input_count > RHI_MAX_VERTEX_ATTRIBS )
     {
         LOG_ERROR( "shader_load_oshd: '%s' declares %u vertex inputs (max %d)", name,
@@ -196,11 +196,13 @@ vk_shader_load_oshd_memory( const void* blob, u32 size, const char* debug_name )
         bool                  ok =
             b->set == 0 &&
             ( ( b->binding == 0 && b->descriptor_type == ( u32 )VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE ) ||
-              ( b->binding == 1 && b->descriptor_type == ( u32 )VK_DESCRIPTOR_TYPE_SAMPLER ) );
+              ( b->binding == 1 && b->descriptor_type == ( u32 )VK_DESCRIPTOR_TYPE_SAMPLER ) ||
+              ( b->binding == 2 && b->descriptor_type == ( u32 )VK_DESCRIPTOR_TYPE_STORAGE_BUFFER ) );
         if ( !ok )
         {
             LOG_ERROR( "shader_load_oshd: '%s' binding [set %u, binding %u, type %u] '%s' is "
-                       "outside the bindless contract (set 0: b0 sampled images, b1 samplers)",
+                       "outside the bindless contract (set 0: b0 sampled images, b1 samplers, "
+                       "b2 storage buffers)",
                        name, b->set, b->binding, b->descriptor_type,
                        b->name < h->strtab_size ? strtab + b->name : "" );
             return bad;

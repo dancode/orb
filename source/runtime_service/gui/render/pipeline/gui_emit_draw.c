@@ -116,7 +116,11 @@ static struct
        index (cur_clip_idx) is available O(1) at emit time -- no per-emit search. */
 
     gui_rect_t      clip_table      [ GUI_MAX_CLIP_RECTS ];     /* flat pool of all clip rects this frame   */
-    u32             clip_hash_cache [ GUI_MAX_CLIP_RECTS ];     /* fnv1a of clip_table[i], baked when added */
+    f32             clip_radius     [ GUI_MAX_CLIP_RECTS ];     /* per-entry corner radius; 0 = square cut.
+                                                                   Part of the entry's identity: baked into
+                                                                   clip_hash_cache, matched by dedup, read
+                                                                   by tess_clip_local into the slot table  */
+    u32             clip_hash_cache [ GUI_MAX_CLIP_RECTS ];     /* fnv1a of (rect, radius), baked when added */
     u32             clip_table_n;                               /* entries used this frame                  */
     u8              clip_idx_stack  [ GUI_CLIP_DEPTH ];         /* parallel to clip_stack: index per level  */
     u8              cur_clip_idx;                               /* top-of-stack index, stamped on each emit */
@@ -262,9 +266,12 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ 0 };
 
     /* Seed the clip table: slot 0 = full display rect.  clip_idx_stack[0] and cur_clip_idx both
-       start at 0 so every emitter finds the root clip without a push being required first. */
+       start at 0 so every emitter finds the root clip without a push being required first.
+       The hash folds (rect, radius) exactly as clip_append's does, or slot 0 could never dedup. */
     s_draw.clip_table[ 0 ]      = ( gui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
+    s_draw.clip_radius[ 0 ]     = 0.0f;
     s_draw.clip_hash_cache[ 0 ] = fnv1a( 2166136261u, &s_draw.clip_table[ 0 ], sizeof( gui_rect_t ) );
+    s_draw.clip_hash_cache[ 0 ] = fnv1a( s_draw.clip_hash_cache[ 0 ], &s_draw.clip_radius[ 0 ], sizeof( f32 ) );
     s_draw.clip_stack[ 0 ]      = s_draw.clip_table[ 0 ];
     s_draw.clip_table_n         = 1;
     s_draw.clip_idx_stack[ 0 ]  = 0;
@@ -299,26 +306,37 @@ draw_reset( i32 display_w, i32 display_h )
    On overflow (table full) the index saturates to the second-to-last slot -- commands share a
    slightly wrong clip rather than writing OOB.  Slot GUI_MAX_CLIP_RECTS-1 is reserved as an
    invalid sentinel and is never written. */
+
 static u8
-clip_append( gui_rect_t r )
+clip_append( gui_rect_t r, f32 radius )
 {
     /* Frozen replay: suppressed band-0 spans must not grow the table (the frozen entries plus
        the live debug band share its 64 slots).  Slot 0 is the frozen frame's root -- the display
        rect -- so any command stamped with it (all suppressed anyway) stays sane. */
     if ( STEP_EMIT_SUPPRESSED() )
         return 0;
+
+    /* A radius past the half-extent inverts the rounded-box field; clamp so the tightest legal
+       capsule is the worst case.  Runs before hashing so equal requests dedup to one entry. */
+    f32 max_r = ( ( r.w < r.h ) ? r.w : r.h ) * 0.5f;
+    if ( radius > max_r ) radius = max_r;
+    if ( radius < 0.0f )  radius = 0.0f;
+
     u32 h = fnv1a( 2166136261u, &r, sizeof( gui_rect_t ) );
+    h     = fnv1a( h, &radius, sizeof( f32 ) );
     for ( u32 i = 0; i < s_draw.clip_table_n; ++i )
         if ( s_draw.clip_hash_cache[ i ] == h )
         {
             const gui_rect_t* t = &s_draw.clip_table[ i ];
-            if ( t->x == r.x && t->y == r.y && t->w == r.w && t->h == r.h )
+            if ( t->x == r.x && t->y == r.y && t->w == r.w && t->h == r.h
+              && s_draw.clip_radius[ i ] == radius )
                 return (u8)i;
         }
     if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
     {
         u8 ci = (u8)s_draw.clip_table_n++;
         s_draw.clip_table      [ ci ] = r;
+        s_draw.clip_radius     [ ci ] = radius;
         s_draw.clip_hash_cache [ ci ] = h;
         return ci;
     }
@@ -364,14 +382,19 @@ draw_cull_box( f32 x, f32 y, f32 w, f32 h )
     return false;
 }
 
-void
-draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
+/* The shared push body.  `radius` rounds the clip's own corners -- the per-fragment cut the
+   scissor could never express (gui_shader.h, clip_coverage).  It applies to THIS entry only: a
+   clip nested inside a rounded one intersects against the parent's RECT (the corner arcs do not
+   compose through rect_intersect), which errs by letting a child paint into its parent's corner
+   arc -- the parent's own chrome overpaints there in practice. */
+static void
+draw_push_clip_body( f32 x, f32 y, f32 w, f32 h, f32 radius )
 {
-    /* Intersect with the enclosing clip so a nested region can never scissor outside its parent.
+    /* Intersect with the enclosing clip so a nested region can never clip outside its parent.
        The push always happens -- a clipped-out region pushes a zero rect and draws nothing --
        so every push has a matching pop and the stack stays balanced. */
     gui_rect_t c  = rect_intersect( ( gui_rect_t ){ x, y, w, h }, clip_current() );
-    u8         ci = clip_append( c );
+    u8         ci = clip_append( c, radius );
 
     if ( s_draw.clip_depth < GUI_CLIP_DEPTH )
     {
@@ -382,6 +405,18 @@ draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
     s_draw.cur_clip_idx = ci;
 
     DBG_CLIP( c, s_draw.clip_depth );
+}
+
+void
+draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
+{
+    draw_push_clip_body( x, y, w, h, 0.0f );
+}
+
+void
+draw_push_clip_rect_rounded( f32 x, f32 y, f32 w, f32 h, f32 radius )
+{
+    draw_push_clip_body( x, y, w, h, radius );
 }
 
 void
@@ -406,7 +441,7 @@ draw_set_root_clip( f32 w, f32 h )
 {
     gui_rect_t r              = ( gui_rect_t ){ 0.0f, 0.0f, w, h };
     s_draw.clip_stack[ 0 ]    = r;
-    u8 ci                     = clip_append( r );
+    u8 ci                     = clip_append( r, 0.0f );
     s_draw.clip_idx_stack[ 0 ] = ci;
     s_draw.cur_clip_idx        = ci;
 }
@@ -850,9 +885,10 @@ draw_hash_cmd( const gui_cmd_t* c )
     visible TEXT_EDGE keeps a transparent-fill run alive (the outline paints outside the glyph).
 ==============================================================================================*/
 
-/* Claim the next command slot and stamp the ambient BATCH KEY onto it.  (clip_idx, vp) is the
-   whole key -- texture and effect ride the vertex and cannot cut a draw call -- so stamping it is
-   the one thing every command must do and no command may get wrong.  Split out of draw_cmd_open
+/* Claim the next command slot and stamp the ambient (clip_idx, vp) pair onto it.  vp is the
+   batch key; clip_idx names the rect the tessellator resolves into the slot's local clip table
+   (the vertex clip band -- a clip change cannot cut a draw call either).  Stamping both is the
+   one thing every command must do and no command may get wrong.  Split out of draw_cmd_open
    below because the pool-backed pushes cannot use that function's preamble (their pool copy has
    to succeed before a slot is spent, and their cull is not an axis-aligned box test) but they owe
    the identical stamp.  Seven sites open-coded these four lines before it had a name. */

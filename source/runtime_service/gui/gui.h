@@ -2135,12 +2135,24 @@ typedef enum
 
    FOUR bits, matching GUI_FX_MODE_BITS -- the two mode fields answer the same kind of question and
    grow by the same rule.  The bits come out of the INDEX half, which never needed them: the RHI's
-   bindless array is 2048 entries (11 bits) and the low 28 hold 268M.  This word is the shader
-   contract: the shift below must equal TEX_MODE_SHIFT in gui.frag / gui.ps.hlsl (and the
-   paraphrase in gui_shader.h) -- change one, change all, resplice the SPIR-V. */
+   bindless array is 2048 entries (11 bits) and the low 22 still hold 4M.  This word is the shader
+   contract: the shifts below must equal TEX_MODE_SHIFT / TEX_CLIP_SHIFT in gui.frag / gui.ps.hlsl
+   (and the paraphrase in gui_shader.h) -- change one, change all, resplice the SPIR-V.
+
+   THE CLIP BAND -- bits 22..27, between the model and the index: which clip rect cuts this
+   vertex's fragments, as an index LOCAL to the window slot's clip table (win_geo_slot_t).  The
+   fragment resolves it against the frame clip table (gui_shader.h, clip_coverage), which is what
+   lets a clip change ride the vertex instead of cutting a draw call -- the same move the texture
+   and the effect word made.  Local rather than global on purpose: cached geometry bakes these six
+   bits, and a window's own first-seen clip order is reproducible from its (hashed) commands where
+   a global table's assignment order is not.  Stamped by tess_verts_commit from ambient state,
+   like the two words below it; nothing outside the tessellator sets it. */
 #define GUI_TEX_MODE_SHIFT  28u
 #define GUI_TEX_MODE_MASK   ( 0xFu << GUI_TEX_MODE_SHIFT )
 #define GUI_TEX_MODE( m )   ( (u32)( m ) << GUI_TEX_MODE_SHIFT )
+
+#define GUI_TEX_CLIP_SHIFT  22u
+#define GUI_TEX_CLIP_MASK   ( 0x3Fu << GUI_TEX_CLIP_SHIFT )
 
 typedef enum
 {
@@ -2166,11 +2178,11 @@ gui_tex_mode( u32 tex_idx )
 static inline u32
 gui_tex_index( u32 tex_idx )
 {
-    return tex_idx & ~GUI_TEX_MODE_MASK;
+    return tex_idx & ~( GUI_TEX_MODE_MASK | GUI_TEX_CLIP_MASK );
 }
 
 /* One semantic draw command.  The 4-byte header carries the command type, the index of the active
-   scissor rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), and
+   clip rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), and
    the target viewport.  z lives in gui_cmd_seg_t (per-segment, constant within a window) and is not
    repeated here.  Reducing the header from 28 bytes to 4 bytes brings the struct from 72 -> 48 bytes.
    tex_idx == 0 in rect means solid color (white texel).

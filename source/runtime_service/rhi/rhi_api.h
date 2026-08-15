@@ -188,7 +188,7 @@ typedef struct rhi_api_s
        shader so pipeline_create can derive vertex input and push constant size when the
        pipeline desc leaves them empty, and validate them when it does not.  Fails the load
        if any descriptor binding falls outside the bindless contract (set 0: binding 0
-       sampled images, binding 1 samplers -- no UBOs/SSBOs). */
+       sampled images, binding 1 samplers, binding 2 storage buffers -- no UBOs). */
     rhi_shader_t (*shader_load_oshd)( const char* path, const char* debug_name );
 
     /* Parses a cooked .oshd container from memory -- same contract as shader_load_oshd, for
@@ -335,6 +335,16 @@ typedef struct rhi_api_s
 
     /* Releases the bindless sampler slot.  Same rules as unregister_texture(). */
     void (*unregister_sampler)( u32 bindless_index );
+
+    /* Registers a buffer in the global bindless storage-buffer array (set 0, binding 2) and
+       returns a persistent slot index, or 0 if the pool is exhausted.  The WHOLE buffer is
+       bound; a caller subdividing it (per-frame regions, element tables) addresses inside the
+       shader by element index.  Create the buffer with RHI_BUFFER_USAGE_STORAGE.  Same
+       lifetime rules as register_texture(). */
+    u32 (*register_buffer)( rhi_buffer_t buf );
+
+    /* Releases the bindless buffer slot.  Same rules as unregister_texture(). */
+    void (*unregister_buffer)( u32 bindless_index );
 
     /* Binds the global bindless descriptor set (set 0) to the currently bound pipeline.
        Call once per frame after binding a pipeline and before the first draw or dispatch

@@ -19,6 +19,8 @@ struct gui_pc_t
     uint     dbg_flat;     // debug: 1 = ignore atlas coverage, output a flat color
     uint     dbg_tint;     // debug: packed RGBA8 batch tint (0 = use vertex color)
     float    time;         // effect-band frame clock, wrapped seconds (GUI_FX_TIME_WRAP)
+    uint     clip_buf;     // bindless buffer slot of the frame's clip table (fragment-only)
+    uint     clip_base;    // this draw's first entry in the clip table (fragment-only)
 };
 [[vk::push_constant]] gui_pc_t pc;
 

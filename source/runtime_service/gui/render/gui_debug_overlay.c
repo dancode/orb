@@ -436,6 +436,8 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
                                                  : s_render.font_sampler_idx;
     push.dbg_flat   = 0u;   /* the overlay always renders normally, never flat/batch-tinted */
     push.dbg_tint   = 0u;
+    push.clip_buf   = 0u;   /* no clip table: overlay verts carry clip band 0 and clip nothing */
+    push.clip_base  = 0u;
     push.time       = s_render.fx_time;   /* overlay geometry is fx-free, but the block must be
                                              fully initialized -- this field used to be garbage */
     rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );

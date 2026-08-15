@@ -7,6 +7,8 @@ layout(push_constant) uniform PC {
     uint dbg_flat;   // debug: 1 = ignore atlas coverage, output a flat color (wireframe / batch view)
     uint dbg_tint;   // debug: packed RGBA8 batch tint (0 = use vertex color)
     float time;      // effect-band frame clock, seconds wrapped to GUI_FX_TIME_WRAP (1024)
+    uint clip_buf;   // bindless buffer slot of the frame's clip table (fragment-only)
+    uint clip_base;  // this draw's first entry in the clip table (fragment-only)
 } pc;
 
 // FOUR of these six attributes are PACKED in memory (gui.h): uv is two unorm16, color is four

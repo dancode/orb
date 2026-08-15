@@ -58,6 +58,7 @@ ORB_STATIC_ASSERT( VK_MAX_FRAMES_IN_FLIGHT == RHI_MAX_FRAMES_IN_FLIGHT,
 
 #define VK_MAX_BINDLESS_TEXTURES    2048
 #define VK_MAX_BINDLESS_SAMPLERS    128
+#define VK_MAX_BINDLESS_BUFFERS     64
 
 /* Per-frame staging capacity (linear bump; reset at each frame_begin) */
 

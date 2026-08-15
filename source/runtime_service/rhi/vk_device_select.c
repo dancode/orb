@@ -206,15 +206,17 @@ vk_device_validate( VkPhysicalDevice dev,
 
     /* VK 1.0 requirements */
     if ( !f.feats2.features.samplerAnisotropy ||
-         !f.feats2.features.fillModeNonSolid ) {
+         !f.feats2.features.fillModeNonSolid  ||
+         !f.feats2.features.shaderStorageBufferArrayDynamicIndexing ) {
         return false;
     }
 
     /* VK 1.2 descriptor indexing requirements */
-    if ( !f.desc_idx.shaderSampledImageArrayNonUniformIndexing    ||
-         !f.desc_idx.descriptorBindingPartiallyBound              ||
-         !f.desc_idx.descriptorBindingSampledImageUpdateAfterBind ||
-         !f.desc_idx.descriptorBindingUpdateUnusedWhilePending    ||
+    if ( !f.desc_idx.shaderSampledImageArrayNonUniformIndexing     ||
+         !f.desc_idx.descriptorBindingPartiallyBound               ||
+         !f.desc_idx.descriptorBindingSampledImageUpdateAfterBind  ||
+         !f.desc_idx.descriptorBindingStorageBufferUpdateAfterBind ||
+         !f.desc_idx.descriptorBindingUpdateUnusedWhilePending     ||
          !f.desc_idx.runtimeDescriptorArray ) {
         return false;
     }

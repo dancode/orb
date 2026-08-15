@@ -57,6 +57,8 @@ static struct
     u32 vert_count, idx_count, cmd_count;           // write head cursors
 
     gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
+    u32         cur_clip_local; /* the same clip as an index into the slot's LOCAL table -- the six
+                                   bits tess_verts_commit folds into every vertex's tex word      */
     i32         cur_vp;     /* viewport baked from the current semantic command                    */
     u32         cur_tex;    /* GUI_TEX_MODE | bindless slot stamped into every vertex committed --
                                set by tess_set_tex, applied by tess_verts_commit.  NOT a batch key */
@@ -81,6 +83,16 @@ static struct
     u32 slot_idx_base;
     u32 slot_cmd_base;
     u32 slot_tess_gen;
+
+    /* The slot's LOCAL clip table, written while its commands tessellate: first-seen distinct
+       clip rects, appended by tess_clip_local and stored on the slot record itself so cache-hit
+       frames replay the exact rects the baked vertex indices mean.  Both point into the
+       win_geo_slot_t being tessellated (set alongside slot_vert_base); NULL between slots.
+       clip_memo_ci memoizes the common run of consecutive same-clip commands (0xFF = empty). */
+    gui_clip_entry_t* slot_clips;
+    u32*              slot_clip_count;
+    u8                clip_memo_ci;
+    u32               clip_memo_local;
 
     /* Set before each cache_tess_window call so tess_ensure_gpu_cmd always opens a fresh
        command for the first primitive of a new slot, even when the previous slot's last
@@ -165,6 +177,10 @@ tess_reset( void )
     s_tess.slot_idx_base   = 0;
     s_tess.slot_cmd_base   = 0;
     s_tess.slot_tess_gen   = 0;
+    s_tess.slot_clips      = NULL;
+    s_tess.slot_clip_count = NULL;
+    s_tess.clip_memo_ci    = 0xFF;
+    s_tess.cur_clip_local  = 0;
     s_tess.force_new_cmd   = false;
     s_tess.overflow        = false;
 }
@@ -180,26 +196,58 @@ tess_set_tex( u32 tex_idx )
     s_tess.cur_tex = tex_idx;
 }
 
-/* Ensure a GPU command is open whose (clip, viewport) match the ambient pair, opening a new one at
-   any mismatch.  THAT PAIR IS THE WHOLE BATCH KEY, which is why this takes no arguments: the
-   texture and the effect word both travel per vertex and cannot cut a draw call, and z is
-   per-segment rather than per-command (the segment system already guarantees every command in one
-   window's tessellation pass shares a z).  A new primitive type therefore batches correctly by
-   construction -- there is nothing left to pass in and get wrong.
+/* Resolve the ambient clip to an index in the slot's LOCAL clip table, appending a new entry at
+   first sight.  Content-keyed -- (rect, radius) is the whole identity -- and first-seen ordered
+   over the window's own commands, so a window whose commands hash identical reproduces identical
+   indices: the property that lets cached vertices bake the six clip-band bits while the
+   per-frame GLOBAL clip table reassigns its indices freely.  The memo serves the common run of
+   consecutive same-clip commands.  A slot past GUI_WIN_CLIP_MAX distinct clips falls back to
+   entry 0 (asserted -- 64 distinct clips in one window is a bug, not a budget). */
+static u32
+tess_clip_local( u8 ci )
+{
+    if ( s_tess.clip_memo_ci == ci )
+        return s_tess.clip_memo_local;
+    s_tess.clip_memo_ci = ci;
+
+    if ( !s_tess.slot_clips )
+        return s_tess.clip_memo_local = 0;
+
+    const gui_rect_t* r   = &s_draw.clip_table[ ci ];
+    f32               rad = s_draw.clip_radius[ ci ];
+    u32               n   = *s_tess.slot_clip_count;
+    for ( u32 g = 0; g < n; ++g )
+    {
+        const gui_clip_entry_t* e = &s_tess.slot_clips[ g ];
+        if ( e->rect.x == r->x && e->rect.y == r->y && e->rect.w == r->w && e->rect.h == r->h
+          && e->radius == rad )
+            return s_tess.clip_memo_local = g;
+    }
+    if ( n >= GUI_WIN_CLIP_MAX )
+    {
+        ORB_ASSERT( false );
+        return s_tess.clip_memo_local = 0;
+    }
+    s_tess.slot_clips[ n ] = ( gui_clip_entry_t ){ .rect = *r, .radius = rad };
+    *s_tess.slot_clip_count = n + 1;
+    return s_tess.clip_memo_local = n;
+}
+
+/* Ensure a GPU command is open whose viewport matches the ambient one, opening a new one at a
+   mismatch.  THE VIEWPORT IS THE WHOLE BATCH KEY, which is why this takes no arguments: the
+   texture, the effect word and the clip all travel per vertex and cannot cut a draw call, and z
+   is per-segment rather than per-command (the segment system already guarantees every command in
+   one window's tessellation pass shares a z).  A new primitive type therefore batches correctly
+   by construction -- there is nothing left to pass in and get wrong.
    Returns false when the command table is full and no matching command is open -- the caller must
-   drop its primitive, or its geometry would append to a command with the wrong clip. */
+   drop its primitive, or its geometry would append to a command with the wrong viewport. */
 static bool
 tess_ensure_gpu_cmd( void )
 {
     if ( s_tess.cmd_count > 0 && !s_tess.force_new_cmd )
     {
         const tess_gpu_cmd_t* prev = &s_tess.gpu_cmds[ s_tess.cmd_count - 1 ];
-        const gui_gpu_cmd_t*  cur  = &prev->cmd;
-        if ( prev->vp == s_tess.cur_vp
-          && cur->clip_rect.x   == s_tess.cur_clip.x
-          && cur->clip_rect.y   == s_tess.cur_clip.y
-          && cur->clip_rect.w   == s_tess.cur_clip.w
-          && cur->clip_rect.h   == s_tess.cur_clip.h )
+        if ( prev->vp == s_tess.cur_vp )
             return true;
     }
     if ( s_tess.cmd_count >= GUI_MAX_CMDS )
@@ -211,8 +259,9 @@ tess_ensure_gpu_cmd( void )
     /* Vertex span of this command starts at the current vert_count; the next command's vbase (or
        the final vert_count for the last) bounds it.  Lets a surface upload only its own vertices.
        ibase records where this command's indices start -- its draw call's first_index.
-       tex_idx is the ambient texture at the moment the command opened, i.e. the FIRST primitive's,
-       and is diagnostic only (the dashboard tooltip) -- the command may go on to span several. */
+       tex_idx and clip_rect are the ambient values at the moment the command opened, i.e. the
+       FIRST primitive's, and are diagnostic only (the dashboard tooltip) -- both ride the vertex
+       now and the command may go on to span several of each. */
     s_tess.gpu_cmds[ s_tess.cmd_count++ ] = ( tess_gpu_cmd_t ){
         .cmd   = { .elem_count = 0, .tex_idx = s_tess.cur_tex, .clip_rect = s_tess.cur_clip },
         .vp    = s_tess.cur_vp,
@@ -236,10 +285,16 @@ tess_ensure_gpu_cmd( void )
 static void
 tess_verts_commit( u32 n )
 {
+    /* The clip band (gui.h): the slot-local clip index rides bits 22..27 of the tex word.  The
+       bindless index below never reaches them (2048 slots, 11 bits), asserted because a collision
+       here silently re-clips the primitive rather than failing. */
+    ORB_ASSERT( ( s_tess.cur_tex & GUI_TEX_CLIP_MASK ) == 0u );
+    u32 tex = s_tess.cur_tex | ( s_tess.cur_clip_local << GUI_TEX_CLIP_SHIFT );
+
     gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     for ( u32 i = 0; i < n; ++i )
     {
-        v[ i ].tex = s_tess.cur_tex;
+        v[ i ].tex = tex;
         v[ i ].fx  = s_tess.cur_fx;
     }
     s_tess.vert_count += n;
@@ -1497,8 +1552,9 @@ static void volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 cmd
 
 /* Tessellate one frame's semantic command list into s_tess geometry.
 
-   `order` is a permutation of [0,count): the indices grouped by clip within each z-run (built by
-   cache_tess_window) so equal-clip commands tessellate contiguously and collapse into one GPU batch.
+   `order` is a permutation of [0,count): the window's visible commands in emission order (built
+   by cache_tess_window; clip-empty commands are already dropped).  Nothing about clips shapes it
+   any more -- the clip rides the vertex (the clip band) and cannot cut a draw call.
    `win` is the window being tessellated (informational; volatile rows already know their window
    from emit-time stamping).
 
@@ -1549,8 +1605,9 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             }
         }
 
-        s_tess.cur_clip = s_draw.clip_table[ c->clip_idx ];
-        s_tess.cur_vp   = c->vp;
+        s_tess.cur_clip       = s_draw.clip_table[ c->clip_idx ];
+        s_tess.cur_clip_local = tess_clip_local( c->clip_idx );
+        s_tess.cur_vp         = c->vp;
 
         /* The effect word is ambient over ONE command and cleared here, so a case that sets it
            cannot leak the effect onto the next primitive.  That containment is the whole reason it

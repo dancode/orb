@@ -172,8 +172,12 @@ render_batch_debug_color( u32 i )
 
     Geometry is shared and indices are slot-local (vertex_offset = slot->vert_base shifts them to the
     absolute VB position), so the whole vertex/index list is uploaded to every surface's buffer and
-    each surface draws only its own slots.  LOAD preserves the scene rendered before this call; each
-    draw command applies its own scissor.
+    each surface draws only its own slots.  LOAD preserves the scene rendered before this call.
+
+    The scissor is set ONCE, to the full surface: clipping is resolved per fragment against the
+    frame clip table (gui_shader.h, clip_coverage), which this flush also uploads -- each
+    dispatched slot's local clip entries, concatenated into this (frame, viewport) region, with
+    the slot's base entry pushed per draw (pc.clip_base).
 ==============================================================================================*/
 
 void
@@ -253,6 +257,46 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         cache_count_upload( actual_batches, actual_bytes );
     }
 
+    /* Frame clip table upload: every dispatched slot's local clip entries, concatenated into this
+       (frame, viewport) region of the shared clip buffer.  Each slot's base entry is recorded by
+       dispatch position for the draw walk below (pc.clip_base).  Sized so the worst case fits by
+       construction (GUI_CLIP_REGION_MAX = RENDER_MAX_WIN * GUI_WIN_CLIP_MAX) -- no cap logic. */
+    static f32 s_clip_staging  [ GUI_CLIP_REGION_MAX * GUI_CLIP_ENTRY_FLOATS ];
+    static u32 s_slot_clip_base[ RENDER_MAX_WIN ];
+
+    u32 clip_region = frame * (u32)GUI_MAX_VIEWPORTS + (u32)vp_index;
+    u32 clip_total  = 0;
+    for ( u32 d = 0; d < s_dispatch_count; ++d )
+    {
+        const win_geo_slot_t* sl = s_dispatch[ d ];
+        if ( sl->vp != vp_index )
+            continue;
+        s_slot_clip_base[ d ] = clip_total;
+        for ( u32 c = 0; c < sl->clip_count; ++c )
+        {
+            const gui_clip_entry_t* e = &sl->clips[ c ];
+            f32* w = &s_clip_staging[ ( clip_total + c ) * GUI_CLIP_ENTRY_FLOATS ];
+
+            /* Edges snap to the nearest whole pixel -- the grid the hardware scissor rounded to,
+               so the radius-0 fragment test reproduces the old cut exactly (fragment centres sit
+               at .5 against integer edges).  No framebuffer clamp: off-surface area has no
+               fragments to cut. */
+            w[ 0 ] = floorf( e->rect.x + 0.5f );
+            w[ 1 ] = floorf( e->rect.y + 0.5f );
+            w[ 2 ] = floorf( e->rect.x + e->rect.w + 0.5f );
+            w[ 3 ] = floorf( e->rect.y + e->rect.h + 0.5f );
+            w[ 4 ] = e->radius;
+            w[ 5 ] = 0.0f;
+            w[ 6 ] = 0.0f;
+            w[ 7 ] = 0.0f;
+        }
+        clip_total += sl->clip_count;
+    }
+    if ( clip_total > 0 )
+        rhi()->buffer_write( s_render.clip_buf, s_clip_staging,
+                             clip_total * (u32)GUI_CLIP_ENTRY_BYTES,
+                             clip_region * (u32)GUI_CLIP_REGION_BYTES );
+
     /* Open a LOAD pass on the swapchain color target (no depth).  LOAD preserves the scene content
        rendered before this call; CLEAR would wipe it. */
     rhi_color_attachment_t color_att = {
@@ -270,6 +314,12 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         .min_depth = 0.0f,
         .max_depth = 1.0f,
     } );
+
+    /* The scissor is a full-surface constant: clipping happens in the fragment against the clip
+       table uploaded above, so nothing per-draw touches scissor state again. */
+    rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){
+        .x = 0, .y = 0, .width = win_w, .height = win_h } );
+    ++s_render.state_scissors;
 
     // Wireframe mode binds the LINE pipeline (falling back to fill if it failed to compile); normal +
     // batch modes both rasterize filled triangles.
@@ -305,26 +355,24 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        the effect band's clock costs no batch split and no per-draw work (gui.h, GUI_FX_TIME_WRAP). */
     push.time = s_render.fx_time;
 
+    /* Fragment-clip plumbing (gui_shader.h, "the clip band").  The buffer slot is flush-constant;
+       clip_base starts at this region's origin and is re-pushed per slot in the walk below. */
+    push.clip_buf  = s_render.clip_buf_idx;
+    push.clip_base = clip_region * (u32)GUI_CLIP_REGION_MAX;
+
     /* Push the whole struct once, before the walk. tex_idx/tex_mode/samp_idx live in the vertex,
        not the push constant, so everything left here -- both sampler slots, dbg_flat, the frame
-       clock -- is constant for the entire flush and needs no per-draw comparison.
+       clock, the clip buffer slot -- is constant for the entire flush.
 
-       The one field that does move is dbg_tint, and only in the BATCH debug view: it changes
-       every draw call so a colour shift marks a batch split.  That path re-pushes just the tail
-       explicitly inside the loop below; normal rendering never touches it again after this point.
-
-       The scissor filter below is a separate, still-necessary optimization: the clip rect is what
-       actually splits a batch (tess_ensure_gpu_cmd), so consecutive commands frequently share one
-       -- volatile-block edges and slot boundaries force a new command without changing the clip.
-       `have_scissor` is a bool rather than a sentinel value because every rect, including
-       (0,0,0,0), is a legitimate scissor. */
+       Two fields move mid-walk, both via the tail re-push: clip_base changes when the walk
+       crosses into a slot whose clip span sits elsewhere in the region (once per slot at most),
+       and dbg_tint changes every draw in the BATCH debug view so a colour shift marks a batch
+       split.  Normal rendering pays one small tail push per slot boundary and nothing per
+       draw. */
     const u8* tail = (const u8*)&push + GUI_PUSH_TAIL_OFF;
     rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
     ++s_render.state_pushes;
     ++s_render.state_flushes;
-
-    rhi_rect_t last_scissor = { 0 };
-    bool       have_scissor = false;
 
     u32 draw_calls = 0;   // indexed draws actually emitted this surface (one per non-empty command)
 
@@ -341,6 +389,19 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         if ( slot->vp != vp_index )
             continue;
 
+        /* This slot's span of the clip region, as an absolute entry index.  Re-pushed only when
+           it actually moves (the batch view's per-draw push below carries it for free). */
+        u32 slot_base = clip_region * (u32)GUI_CLIP_REGION_MAX + s_slot_clip_base[ d ];
+        if ( slot_base != push.clip_base )
+        {
+            push.clip_base = slot_base;
+            if ( !batch_view )
+            {
+                rhi()->cmd_push_constants( cmd, tail, GUI_PUSH_TAIL_SIZE, GUI_PUSH_TAIL_OFF );
+                ++s_render.state_pushes;
+            }
+        }
+
         for ( u32 k = 0; k < slot->cmd_count; ++k )
         {
             u32                    ci = slot->cmd_base + k;
@@ -352,42 +413,11 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
             if ( dc->elem_count == 0 )
                 continue;
 
-            // Scissor to the command's clip rect, each edge rounded to the nearest pixel -- the
-            // same grid tess_snap_px puts fill edges on, and the pixel-center rule an unsnapped
-            // edge rasterizes by.  A floor/ceil expansion instead would admit up to one extra
-            // pixel row past a fractional clip edge, letting a child's content paint one pixel
-            // below the parent panel's own drawn bottom edge.
-            i32 sx0 = (i32)floorf( dc->clip_rect.x + 0.5f );
-            i32 sy0 = (i32)floorf( dc->clip_rect.y + 0.5f );
-            i32 sx1 = (i32)floorf( dc->clip_rect.x + dc->clip_rect.w + 0.5f );
-            i32 sy1 = (i32)floorf( dc->clip_rect.y + dc->clip_rect.h + 0.5f );
-
-            // Clamp to framebuffer bounds (Vulkan requires offset >= 0 and extent within the surface).
-            if ( sx0 < 0 ) sx0 = 0;
-            if ( sy0 < 0 ) sy0 = 0;
-            if ( sx1 > win_w ) sx1 = win_w;
-            if ( sy1 > win_h ) sy1 = win_h;
-            if ( sx1 < sx0 ) sx1 = sx0;
-            if ( sy1 < sy0 ) sy1 = sy0;
-
-            rhi_rect_t scissor = {
-                .x      = sx0,
-                .y      = sy0,
-                .width  = sx1 - sx0,
-                .height = sy1 - sy0,
-            };
             ++s_render.state_draws;
-            if ( !have_scissor || memcmp( &scissor, &last_scissor, sizeof( scissor ) ) != 0 )
-            {
-                rhi()->cmd_set_scissor( cmd, &scissor );
-                last_scissor = scissor;
-                have_scissor = true;
-                ++s_render.state_scissors;
-            }
 
             /* The one piece of tail state that is genuinely per-draw, and only in the debug view
                that wants it: a distinct tint per draw call, so a colour change marks a batch split.
-               Normal rendering never reaches this -- its tail went out once, above. */
+               Normal rendering never reaches this -- its tail went out per slot at most, above. */
             if ( batch_view )
             {
                 push.dbg_tint = render_batch_debug_color( draw_calls );

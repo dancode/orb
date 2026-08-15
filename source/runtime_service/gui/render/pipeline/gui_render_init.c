@@ -24,7 +24,7 @@
 
 // clang-format off
 /*==============================================================================================
-    Push constant layout (84 bytes; must match gui_shader.h GLSL source)
+    Push constant layout (92 bytes; must match gui_shader.h GLSL source)
 ==============================================================================================*/
 
 typedef struct
@@ -35,8 +35,10 @@ typedef struct
     u32 dbg_flat;       // debug: 1 = flat color (no atlas) 4 bytes
     u32 dbg_tint;       // debug: packed RGBA8 batch tint   4 bytes
     f32 time;           // frame clock, wrapped seconds     4 bytes
+    u32 clip_buf;       // bindless slot: frame clip table  4 bytes (0 = no table, no clipping)
+    u32 clip_base;      // draw's first clip-table entry    4 bytes
 
-} gui_push_t;         // total 84 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;         // total 92 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved into the vertex (gui.h): the fragment
@@ -58,6 +60,22 @@ typedef struct
     mvp is first and the tail is everything after it.  */
 #define GUI_PUSH_TAIL_OFF   ( (u32)offsetof( gui_push_t, samp_point ) )
 #define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, samp_point ) ) )
+
+/*==============================================================================================
+    Frame clip table sizing -- the storage buffer clip_coverage reads (gui_shader.h).
+
+    An ENTRY is two vec4s: (x0, y0, x1, y1) snapped pixel edges, then (radius, 0, 0, 0).  A
+    REGION holds the worst case a single flush can write -- every trackable window at its full
+    local clip table -- so the upload can never overflow and needs no cap logic.  One region per
+    (frame-in-flight, viewport), because the buffer is shared across surfaces whose in-flight
+    draws read their own frames' entries.
+==============================================================================================*/
+
+#define GUI_CLIP_ENTRY_FLOATS  8u
+#define GUI_CLIP_ENTRY_BYTES   ( GUI_CLIP_ENTRY_FLOATS * 4u )
+#define GUI_CLIP_REGION_MAX    ( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX )     /* entries per region */
+#define GUI_CLIP_REGION_BYTES  ( GUI_CLIP_REGION_MAX * GUI_CLIP_ENTRY_BYTES )
+#define GUI_CLIP_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
 
 ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
                    "the mvp must lead gui_push_t -- the per-draw push writes everything after it" );
@@ -93,6 +111,14 @@ static struct
        else is a picture or a field, which must filter. */
     rhi_sampler_t   image_sampler;      // sampler for RGBA images (bilinear clamp)
     u32             image_sampler_idx;  // bindless slot for image_sampler
+
+    /* The frame clip table -- the storage buffer clip_coverage reads (gui_shader.h).  One region
+       per (frame-in-flight, viewport): the flush writes each surface's dispatched slots' local
+       clip entries into its own region, so no surface's upload can overwrite entries another
+       surface's in-flight draws still read.  Registered bindless once; the slot index rides
+       pc.clip_buf every flush. */
+    rhi_buffer_t    clip_buf;           // storage buffer: all clip regions
+    u32             clip_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
     gui_render_mode_t debug_mode;     // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
 
@@ -161,6 +187,8 @@ render_try_oshd_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
     *out_frag = frag;
     return true;
 }
+
+static void render_shutdown( void );   /* the clip-table failure path below unwinds through it */
 
 static bool
 render_init( void )
@@ -301,6 +329,24 @@ render_init( void )
     if ( rhi_handle_valid( s_render.image_sampler ) )
         s_render.image_sampler_idx = rhi()->register_sampler( s_render.image_sampler );
 
+    /* The frame clip table.  REQUIRED, not a nicety: the fragment is the only thing cutting
+       content to its clip now (the scissor is a full-surface constant), so running without the
+       table would let every scrolled row paint past its region. */
+    s_render.clip_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+        .size       = GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES,
+        .usage      = RHI_BUFFER_USAGE_STORAGE,
+        .memory     = RHI_MEMORY_CPU_TO_GPU,
+        .debug_name = "gui_clip_table",
+    } );
+    if ( rhi_handle_valid( s_render.clip_buf ) )
+        s_render.clip_buf_idx = rhi()->register_buffer( s_render.clip_buf );
+    if ( s_render.clip_buf_idx == 0 )
+    {
+        gui_log( GUI_LOG_ERROR, "clip table buffer unavailable -- gui render disabled" );
+        render_shutdown();
+        return false;
+    }
+
     /* Fonts boot in the DRAW unit now (gui_draw_boot, after the whole server stands up) --
        the shared atlas carries the opaque white texel solid-color draws sample, so solids
        and text still share one texture and merge into one draw. */
@@ -319,28 +365,21 @@ render_shutdown( void )
     // Peak draw calls in a single frame -- a measure of batching effectiveness.
     gui_log( GUI_LOG_INFO, "peak draw calls in a frame: %u", cache_draw_call_hwm() );
 
-    /* Per-draw state cost.  The two halves are no longer the same kind of number and are not
-       reported as though they were:
-
-         pushes   -- 20-byte tail writes.  Once per FLUSH in normal rendering (the tail is
-                     frame-constant since the texture moved into the vertex), plus one per draw in
-                     the BATCH view, which is the only thing left that changes it.  Quoted against
-                     flushes, so a run that stayed in normal rendering reads ~1.00 and a session
-                     spent in the batch view reads far higher -- printing it as a "% suppressed"
-                     against draws would just assert 100% forever and measure nothing.
-         scissors -- a real redundancy filter with a real hit rate: the clip rect is the only thing
-                     that cuts a batch, so consecutive commands often share one, and the suppressed
-                     figure is what that saves. */
+    /* Per-draw state cost.
+         pushes   -- tail writes: the full block once per flush, plus a small tail per slot whose
+                     clip_base moved, plus one per draw in the BATCH debug view.  Quoted against
+                     flushes; a normal run reads a little above 1.00.
+         scissors -- exactly one full-surface set per flush now: clipping is per-fragment (the
+                     clip band), so scissor state never changes mid-walk. */
     if ( s_render.state_draws )
     {
         gui_log( GUI_LOG_INFO,
-                 "per-draw state: %llu scissors over %llu draws (%.0f%% suppressed); "
-                 "%llu tail pushes over %llu flushes (%.2f per flush)",
+                 "per-draw state: %llu scissors, %llu draws over %llu flushes; "
+                 "%llu tail pushes (%.2f per flush)",
                  (unsigned long long)s_render.state_scissors,
                  (unsigned long long)s_render.state_draws,
-                 100.0 * ( 1.0 - (f64)s_render.state_scissors / (f64)s_render.state_draws ),
-                 (unsigned long long)s_render.state_pushes,
                  (unsigned long long)s_render.state_flushes,
+                 (unsigned long long)s_render.state_pushes,
                  s_render.state_flushes ? (f64)s_render.state_pushes / (f64)s_render.state_flushes
                                         : 0.0 );
     }
@@ -357,6 +396,11 @@ render_shutdown( void )
         rhi()->unregister_sampler( s_render.image_sampler_idx );
     if ( rhi_handle_valid( s_render.image_sampler ) )
         rhi()->sampler_destroy( s_render.image_sampler );
+
+    if ( s_render.clip_buf_idx )
+        rhi()->unregister_buffer( s_render.clip_buf_idx );
+    if ( rhi_handle_valid( s_render.clip_buf ) )
+        rhi()->buffer_destroy( s_render.clip_buf );
 
     if ( rhi_handle_valid( s_render.pipeline_wire ) )
         rhi()->pipeline_destroy( s_render.pipeline_wire );

@@ -213,6 +213,14 @@ typedef struct
                                                  //   overflowed WIN_SLOT_CMD_MAX and must re-tessellate
                                                  //   every real frame instead of reusing (never truncate)
 
+    /* The slot's LOCAL clip table: the rects this window's vertices name through the tex word's
+       clip band (gui_render.h, gui_clip_entry_t).  Written by tess_clip_local while the window
+       tessellates, carried verbatim across reuse frames, and concatenated into the frame clip
+       buffer by the flush.  Lives on the slot (not the stable command cache) because every path
+       that renders the window needs it -- including uncacheable command runs. */
+    gui_clip_entry_t clips[ GUI_WIN_CLIP_MAX ];
+    u32              clip_count;
+
 } win_geo_slot_t;
 
 /* Stable GPU command cache -- outside the ping-pong arrays so the reuse path never copies it.
@@ -286,6 +294,25 @@ cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base, u
         *idx_base  = s_slots[ i ].idx_base;
         *cmd_base  = s_slots[ i ].cmd_base;
         *tess_gen  = s_slots[ i ].tess_gen;
+        return true;
+    }
+    return false;
+}
+
+/* Point s_tess at the window slot's LOCAL clip table (forward-declared in gui_build_volatile.c):
+   a volatile patch's scratch tessellation resolves its clip-band indices against the table the
+   capture built, so an unchanged clip patches to the same six bits.  Same s_slots view as
+   cache_slot_lookup, and callers already gate on it succeeding. */
+static bool
+cache_slot_clips_bind( gui_id_t win )
+{
+    for ( u32 i = 0; i < s_slot_count; ++i )
+    {
+        if ( s_slots[ i ].win != win || !s_slots[ i ].valid )
+            continue;
+        s_tess.slot_clips      = s_slots[ i ].clips;
+        s_tess.slot_clip_count = &s_slots[ i ].clip_count;
+        s_tess.clip_memo_ci    = 0xFF;
         return true;
     }
     return false;
@@ -614,78 +641,24 @@ cache_diff_windows( void )
     Per-window tessellation (BUILD step 2 helper).
 
     Gathers a window's commands (via the segment chain cache_diff_windows built onto its diff
-    record) and builds a clip-sorted permutation, then hands it to tess_dispatch.  Grouping by
-    clip makes equal-clip shapes tessellate back-to-back so they can merge into one GPU draw call.
+    record) into an emission-order permutation and hands it to tess_dispatch.  Emission order IS
+    paint order, so overpaint relationships (titlebar chrome over scrolled content) hold without
+    any per-clip care -- and since the clip rides the vertex (gui.h, the clip band), equal-clip
+    commands no longer need to be adjacent to share a draw call.  A clip-grouping counting sort
+    used to live here for exactly that adjacency; the fragment-side clip made it dead weight.
 
-    The permutation is a COUNTING SORT by clip group: one walk collects the groups and counts
-    each group's population, offsets are prefix-summed, and a second walk scatters the commands to
-    their final positions.  The sort is STABLE -- commands keep their emission order within a
-    group, because paint order inside one clip is load-bearing (a window's titlebar chrome
-    overpaints the content scrolled under it; see walk 2).  Every walk touches only this window's
-    own commands (the chain), so the cost is O(window cmds), not O(clip groups x all segments)
-    as the old rescan was -- the difference is what a 20x window pays per changed frame.
+    Only commands whose clip is EMPTY are dropped: they can paint nothing (a fully scrolled-out
+    child, a hidden volatile range), and dropping them here is what keeps them out of the
+    geometry buffers entirely.  Volatile ranges stay contiguous in emission order minus those
+    holes, which is what tess_dispatch's range tracking brackets.
 
     z is NOT sorted here -- a window occupies one slot whose dispatch z is its max segment z,
     keeping all of a window's geometry contiguous; cache_build_frame z-sorts the slots after.
 ==============================================================================================*/
 
-#define RENDER_MAX_CLIP_GROUPS  64   // distinct clip indices groupable within one window
-
-/* Group handle for a clip index: existing group, else a new one in first-seen order (the order
-   the groups are laid out in).  Returns ~0u on group-table overflow.  The one-entry memo serves
-   the common run of consecutive same-clip commands. */
-typedef struct
-{
-    u8  clip_ids [ RENDER_MAX_CLIP_GROUPS ];
-    u32 n_clips;
-    u8  memo_ci;    /* last clip index resolved (0xFF = empty memo) */
-    u32 memo_g;     /* its group */
-
-} clip_groups_t;
-
-static u32
-clip_group_of( clip_groups_t* cg, u8 ci )
-{
-    if ( cg->memo_ci == ci )
-        return cg->memo_g;
-    for ( u32 g = 0; g < cg->n_clips; ++g )
-        if ( cg->clip_ids[ g ] == ci )
-        {
-            cg->memo_ci = ci;
-            cg->memo_g  = g;
-            return g;
-        }
-    if ( cg->n_clips >= RENDER_MAX_CLIP_GROUPS )
-        return ~0u;
-    cg->clip_ids[ cg->n_clips ] = ci;
-    cg->memo_ci = ci;
-    cg->memo_g  = cg->n_clips;
-    return cg->n_clips++;
-}
-
-/* Bounds of the volatile range starting at command i within segment span [i, seg_hi): *out_hi is
-   one past the range, *out_anchor its first non-empty-clip command (== *out_hi when fully clip-
-   empty -- a hidden range, emitted nowhere, matching volatile_patch's filter). */
-static void
-tess_volatile_range( u32 i, u32 seg_hi, gui_id_t vid, u32* out_hi, u32* out_anchor )
-{
-    u32 hi = i;
-    while ( hi < seg_hi && s_draw.cmd_volatile_id[ hi ] == vid ) ++hi;
-    u32 anchor = i;
-    while ( anchor < hi && rect_empty( s_draw.clip_table[ s_draw.cmds[ anchor ].clip_idx ] ) )
-        ++anchor;
-    *out_hi     = hi;
-    *out_anchor = anchor;
-}
-
 /* Permutation output scratch, reused by every cache_tess_window call (cache_build_frame is
-   single-threaded and guarded against re-entry).  ONE array: the reordered command indices.
-   There used to be a parallel s_win_font[] beside it, carrying each entry's segment font because
-   the clip sort crosses segment boundaries and a per-segment property has to be re-attached to
-   every command individually once its segment is torn apart.  That array existed purely because
-   the font was on the wrong record; it is on the text commands now (gui.h), so it needs no
-   escort.  u16: order values are command indices (< GUI_MAX_CMDS, asserted u16-safe at
-   gui_cmd_seg_t). */
+   single-threaded and guarded against re-entry).  u16: order values are command indices
+   (< GUI_MAX_CMDS, asserted u16-safe at gui_cmd_seg_t). */
 static u16 s_win_order[ GUI_MAX_CMDS ];
 
 static void
@@ -693,115 +666,11 @@ cache_tess_window( const render_win_hash_t* wh )
 {
     const gui_cmd_seg_t* segs = s_draw.segs;
 
-    /* Walk 1 -- collect clip groups (first-seen order over every visible command, volatile
-       included, so the group layout matches emission) and count each group's populations:
-       plain commands by their own clip, volatile ranges by their anchor's clip (a range stays
-       whole -- see the placement comment below). */
-    clip_groups_t cg = { .n_clips = 0, .memo_ci = 0xFF };
-    u32  grp_cnt[ RENDER_MAX_CLIP_GROUPS ] = { 0 };
-    bool overflow = false;
-
-    for ( u16 si = wh->seg_head; si != SEG_CHAIN_END && !overflow; si = s_seg_next[ si ] )
-    {
-        for ( u32 i = segs[ si ].lo; i < segs[ si ].hi && !overflow; ++i )
-        {
-            gui_id_t vid = s_draw.cmd_volatile_id[ i ];
-            if ( vid == GUI_ID_NONE )
-            {
-                u8 ci = s_draw.cmds[ i ].clip_idx;
-                if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
-                u32 g = clip_group_of( &cg, ci );
-                if ( g == ~0u ) { overflow = true; break; }
-                ++grp_cnt[ g ];
-            }
-            else
-            {
-                u32 hi, anchor;
-                tess_volatile_range( i, segs[ si ].hi, vid, &hi, &anchor );
-                if ( anchor < hi )
-                {
-                    /* Count every visible command of the range at its ANCHOR's group (the range
-                       is placed whole there), while registering each visible clip it spans in
-                       emission order so the group layout matches the old full scan. */
-                    u32 ag = clip_group_of( &cg, s_draw.cmds[ anchor ].clip_idx );
-                    if ( ag == ~0u ) { overflow = true; break; }
-                    for ( u32 j = anchor; j < hi; ++j )
-                    {
-                        u8 ci = s_draw.cmds[ j ].clip_idx;
-                        if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
-                        if ( clip_group_of( &cg, ci ) == ~0u ) { overflow = true; break; }
-                        ++grp_cnt[ ag ];
-                    }
-                }
-                i = hi - 1;   /* loop ++ lands one past the range */
-            }
-        }
-    }
-
     u32 n = 0;
-
-    if ( overflow )
-    {
-        /* Too many distinct clips: emit in natural order (correct, just less merged).  Volatile
-           ranges are naturally contiguous in this order, so no special handling is needed. */
-        for ( u16 si = wh->seg_head; si != SEG_CHAIN_END; si = s_seg_next[ si ] )
-            for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-                if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
-                    s_win_order[ n++ ] = (u16)i;
-        tess_dispatch( s_draw.cmds, s_win_order, n, wh->win );
-        return;
-    }
-
-    /* Prefix-sum the group offsets: one span per group, groups laid out in first-seen order. */
-    u32 grp_off[ RENDER_MAX_CLIP_GROUPS ];
-    for ( u32 g = 0; g < cg.n_clips; ++g )
-    {
-        grp_off[ g ] = n;  n += grp_cnt[ g ];
-    }
-
-    /* Walk 2 -- scatter.  Every command lands at its group's single cursor in EMISSION order,
-       volatile ranges included: the permutation reorders across groups, never within one.
-       Paint order within a clip group is load-bearing, which is why the volatile block cannot be
-       appended at the end of its group (it was, and this is the bug that cost): a window shares
-       ONE clip rect across its background, its scrolled content and its titlebar/border chrome
-       (window_open_body, chrome/window/gui_window_free.c), and relies on the chrome window_end
-       emits LAST to overpaint whatever scrolled under it.  A block hoisted past that chrome draws
-       over the titlebar instead of under it.
-         A range still lands WHOLE at its ANCHOR's group -- it must stay CONTIGUOUS in the
-       permutation (tess_dispatch brackets one capture span per range) and so cannot be split
-       across groups -- but at the position its first command occupied, not at the tail.  The cost
-       is one extra batch per block whose group has plain commands on both sides of it (they can no
-       longer merge through it); the block's own commands were always forced separate anyway, since
-       a patch must be able to rewrite their elem_counts. */
     for ( u16 si = wh->seg_head; si != SEG_CHAIN_END; si = s_seg_next[ si ] )
-    {
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-        {
-            gui_id_t vid = s_draw.cmd_volatile_id[ i ];
-            if ( vid == GUI_ID_NONE )
-            {
-                u8 ci = s_draw.cmds[ i ].clip_idx;
-                if ( rect_empty( s_draw.clip_table[ ci ] ) ) continue;
-                u32 g = clip_group_of( &cg, ci );
-                s_win_order[ grp_off[ g ]++ ] = (u16)i;
-            }
-            else
-            {
-                u32 hi, anchor;
-                tess_volatile_range( i, segs[ si ].hi, vid, &hi, &anchor );
-                if ( anchor < hi )   /* hidden (fully clip-empty) ranges are emitted nowhere */
-                {
-                    u32 g = clip_group_of( &cg, s_draw.cmds[ anchor ].clip_idx );
-                    for ( u32 j = i; j < hi; ++j )
-                        if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ j ].clip_idx ] ) )
-                        {
-                            s_win_order[ grp_off[ g ]++ ] = (u16)j;
-                        }
-                }
-                i = hi - 1;
-            }
-        }
-    }
+            if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
+                s_win_order[ n++ ] = (u16)i;
 
     tess_dispatch( s_draw.cmds, s_win_order, n, wh->win );
 }
@@ -916,6 +785,11 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
     slot->idx_alloc  = prev->idx_alloc;
     slot->tess_gen   = prev->tess_gen;   /* geometry unchanged: same tessellation pass */
 
+    /* The local clip table travels with the geometry it indexes: the cached vertices bake local
+       clip indices, and these are the rects those indices mean. */
+    slot->clip_count = prev->clip_count;
+    memcpy( slot->clips, prev->clips, prev->clip_count * sizeof( gui_clip_entry_t ) );
+
     /* Keep the write head (== the arena tail every fresh tessellation targets) past this slot. */
     if ( prev->vert_base + prev->vert_alloc > s_tess.vert_count )
         s_tess.vert_count = prev->vert_base + prev->vert_alloc;
@@ -995,7 +869,16 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_tess.slot_tess_gen  = slot->tess_gen;
     s_tess.force_new_cmd  = true;
 
+    /* Fresh tessellation rebuilds the slot's local clip table from scratch (tess_clip_local). */
+    slot->clip_count       = 0;
+    s_tess.slot_clips      = slot->clips;
+    s_tess.slot_clip_count = &slot->clip_count;
+    s_tess.clip_memo_ci    = 0xFF;
+
     cache_tess_window( wh );
+
+    s_tess.slot_clips      = NULL;
+    s_tess.slot_clip_count = NULL;
 
     slot->vert_count = s_tess.vert_count - slot->vert_base;
     slot->idx_count  = s_tess.idx_count  - slot->idx_base;

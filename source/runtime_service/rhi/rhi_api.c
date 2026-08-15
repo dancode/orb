@@ -88,6 +88,8 @@ const rhi_api_t g_rhi_api_struct =
     .unregister_texture         = vk_unregister_texture,
     .register_sampler           = vk_register_sampler,
     .unregister_sampler         = vk_unregister_sampler,
+    .register_buffer            = vk_register_buffer,
+    .unregister_buffer          = vk_unregister_buffer,
     .cmd_bind_bindless          = vk_cmd_bind_bindless,
 
     /* Debug labels */

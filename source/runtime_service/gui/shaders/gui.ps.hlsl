@@ -11,15 +11,24 @@ struct gui_pc_t
     uint     dbg_flat;     // debug: 1 = ignore atlas coverage, output a flat color
     uint     dbg_tint;     // debug: packed RGBA8 batch tint (0 = use vertex color)
     float    time;         // effect-band frame clock, wrapped seconds (GUI_FX_TIME_WRAP)
+    uint     clip_buf;     // bindless buffer slot of the frame's clip table (0 = no clipping)
+    uint     clip_base;    // this draw's first entry in the clip table (entries, not float4s)
 };
 [[vk::push_constant]] gui_pc_t pc;
 
 [[vk::binding( 0, 0 )]] Texture2D    u_textures[] : register( t0, space0 );
 [[vk::binding( 1, 0 )]] SamplerState u_samplers[] : register( s0, space0 );
 
-// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_MODE_MASK in gui.h -- keep the three in step.
+// The bindless storage-buffer array (set 0, binding 2).  The gui reads ONE table through it: the
+// frame's clip entries, two float4s each -- [0] = (x0, y0, x1, y1) pixel edges, [1].x = corner
+// radius (see clip_coverage below).
+[[vk::binding( 2, 0 )]] StructuredBuffer<float4> u_buffers[] : register( t0, space1 );
+
+// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_CLIP_SHIFT in gui.h -- keep the three in step.
 #define TEX_MODE_SHIFT  28u
-#define TEX_INDEX_MASK  0x0FFFFFFFu
+#define TEX_CLIP_SHIFT  22u
+#define TEX_CLIP_MASK   0x3Fu
+#define TEX_INDEX_MASK  0x003FFFFFu
 
 struct ps_in_t
 {
@@ -190,8 +199,41 @@ float3 srgb_to_linear( float3 c )
     return lerp( hi, lo, step( c, 0.04045 ) );    // c <= 0.04045 selects lo (GLSL mix + cutoff)
 }
 
+// The clip band: which clip rect cuts this fragment, resolved HERE rather than by the hardware
+// scissor so a clip change never opens a new draw call.  The vertex names its entry (bits 22..27
+// of the tex word, local to the draw); pc.clip_base locates the draw's span inside the frame's
+// clip table, which lives in a bindless storage buffer named by pc.clip_buf.  clip_buf 0 -- the
+// reserved invalid slot -- means "no clip table bound": full coverage, so a pipeline user without
+// a table (and the gui itself before its first upload) is never clipped by garbage.
+//
+// Entries are two float4s: [0] = (x0, y0, x1, y1) pixel EDGES, pre-snapped CPU-side to the same
+// grid the hardware scissor was, so radius-0 coverage is bit-identical to the scissor it
+// replaces (fragment centres sit at .5 against integer edges; no AA band on purpose -- a clip is
+// a cut, not a shape).  radius > 0 evaluates the rounded-box field with a 1 px AA band instead:
+// the clip a scissor rect could never express.
+float clip_coverage( uint tex, float2 p )
+{
+    if ( pc.clip_buf == 0u )
+        return 1.0;
+    uint   e   = ( pc.clip_base + ( ( tex >> TEX_CLIP_SHIFT ) & TEX_CLIP_MASK ) ) * 2u;
+    float4 r   = u_buffers[ pc.clip_buf ][ e ];
+    float  rad = u_buffers[ pc.clip_buf ][ e + 1u ].x;
+    if ( rad <= 0.0 )
+        return ( p.x >= r.x && p.y >= r.y && p.x < r.z && p.y < r.w ) ? 1.0 : 0.0;
+    float2 c = ( r.xy + r.zw ) * 0.5;
+    float2 h = ( r.zw - r.xy ) * 0.5 - float2( rad, rad );
+    float2 q = abs( p - c ) - h;
+    float  d = min( max( q.x, q.y ), 0.0 ) + length( max( q, float2( 0.0, 0.0 ) ) ) - rad;
+    return saturate( 0.5 - d );
+}
+
 float4 main( ps_in_t i ) : SV_Target0
 {
+    // The clip cut applies to EVERYTHING, the debug views included -- the scissor this replaces
+    // cut their geometry too, and a batch-view block that ignored its clip would lie about what
+    // the draw painted.
+    float ccov = clip_coverage( i.tex, i.sv_pos.xy );
+
     // Debug views: bypass the atlas so geometry is visible regardless of glyph coverage.
     //   wireframe -- the LINE pipeline strokes triangle edges; a flat opaque color makes them
     //                show even across text quads (where s.r would otherwise alpha them away).
@@ -210,9 +252,9 @@ float4 main( ps_in_t i ) : SV_Target0
                                  float( ( pc.dbg_tint >> 8  ) & 0xFFu ),
                                  float( ( pc.dbg_tint >> 16 ) & 0xFFu ) ) / 255.0;
             return float4( srgb_to_linear( rgb ),
-                           float( ( pc.dbg_tint >> 24 ) & 0xFFu ) / 255.0 );
+                           float( ( pc.dbg_tint >> 24 ) & 0xFFu ) / 255.0 * ccov );
         }
-        return float4( i.color.rgb, 1.0 );    // wireframe keeps each window's own (linear) color
+        return float4( i.color.rgb, ccov );   // wireframe keeps each window's own (linear) color
     }
 
     /* The texture and its sampling model arrive PER VERTEX (gui.h), so one draw call can mix a
@@ -227,7 +269,7 @@ float4 main( ps_in_t i ) : SV_Target0
     uint   samp     = ( tex_mode == 0u ) ? pc.samp_point : pc.samp_image;
     float4 s        = u_textures[ NonUniformResourceIndex( tex_slot ) ]
                           .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], i.uv );
-    float  cov = fx_coverage( i.fx_coord, i.fx, i.uv, i.sv_pos.xy );
+    float  cov = fx_coverage( i.fx_coord, i.fx, i.uv, i.sv_pos.xy ) * ccov;
 
     // SELF-SAMPLED fx modes (9+): the shape is solid colour by definition, so the texel is not
     // consulted -- the uv word carried mode parameters instead (the sample above read a garbage
