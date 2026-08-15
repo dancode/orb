@@ -160,14 +160,14 @@ draw_drop_ring( gui_rect_t r )
    compatible payload starts dragging, not just the one under the cursor -- so a user can see
    every place a drag could land before their cursor gets there.  Flush with the rect and one
    frame-line wide (WIN_BORDER) rather than draw_drop_ring's bold offset outline, and washed in
-   the same GUI_EXT_INFO hue PANEL/PANEL_CHILD/TITLE's own drop-target HOT reads toward
+   the same GUI_EXT_DROP hue PANEL/PANEL_CHILD/TITLE's own drop-target HOT reads toward
    (gui_bake.c), so "you can drop here" is one signal at every scale, graduating from this thin
    candidate ring to draw_drop_ring's bold accepted one as the cursor arrives.  gui_drag_hint
    (interact/gui_drag.c) invokes it across that unit's drop-paint seam. */
 void
 draw_drop_hint( gui_rect_t r )
 {
-    draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, style_ext( GUI_EXT_INFO ) );
+    draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, style_ext( GUI_EXT_DROP ) );
 }
 
 /* Child box chrome (flow/gui_layout_child.c invokes these around its region): the body
@@ -177,7 +177,7 @@ void draw_child_bg( gui_rect_t r, u8 phase ) { draw_face( r, GUI_ROLE_PANEL_CHIL
 /* The child's own border, one of three reads (child_end passes back the SAME phase child_begin's
    body fill used, plus whether GUI_WIN_DRAG_TARGET was set -- see child_body_phase,
    flow/gui_flow.h): phase HOT bolds it into the drop-accepted ring (draw_drop_ring's geometry, but
-   the GUI_EXT_INFO hue instead of MARK -- this is the same "you can drop here" signal PANEL_CHILD's
+   the GUI_EXT_DROP hue instead of MARK -- this is the same "you can drop here" signal PANEL_CHILD's
    own HOT wash is already carrying on the fill, not the widget-level accept ring's family); not
    hot but still a live drag candidate gets the thin ambient hint (draw_drop_hint) so a
    GUI_WIN_DRAG_TARGET child reads as a candidate the moment a compatible drag starts, not only
@@ -186,7 +186,7 @@ void
 draw_child_border( gui_rect_t r, u8 phase, bool drag_candidate )
 {
     if ( phase == GUI_PHASE_HOT )
-        draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, style_ext( GUI_EXT_INFO ) );
+        draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, style_ext( GUI_EXT_DROP ) );
     else if ( drag_candidate )
         draw_drop_hint( r );
     else

@@ -109,12 +109,13 @@ st_gallery_window( void )
         gui()->combo_end();
     }
 
-    /* --- Extended palette: the severity hues that are not the theme's role/phase grid -------- */
-    gui()->separator_text( "Extended palette (INFO / OK / WARN / ERROR)" );
+    /* --- Extended palette: the flat hues that are not the theme's role/phase grid ------------ */
+    gui()->separator_text( "Extended palette (INFO / OK / WARN / ERROR / DROP)" );
     gui()->text_colored( gui()->style_ext( GUI_EXT_INFO  ), "Info -- a neutral notice" );
     gui()->text_colored( gui()->style_ext( GUI_EXT_OK    ), "Ok -- healthy, passing" );
     gui()->text_colored( gui()->style_ext( GUI_EXT_WARN  ), "Warn -- near a limit" );
     gui()->text_colored( gui()->style_ext( GUI_EXT_ERROR ), "Error -- failed" );
+    gui()->text_colored( gui()->style_ext( GUI_EXT_DROP  ), "Drop -- a drop can land here" );
 
     /* --- Density ramp: the same row at every scale_push step -------------------------------- */
     gui()->separator_text( "Density ramp (scale_push)" );

@@ -275,13 +275,13 @@ ex_style_stacks( void )
         gui()->selectable( "selectable row A -- hover me", &sel_a );
         gui()->selectable( "selectable row B -- selected, hover me too", &sel_b );
 
-        /* The severity ladder: flat, unramped colours in the extended palette now, not a role/phase
-           band -- style_ext( id ) is the whole read, no phase to pick. */
-        gui()->separator_text( "Extended palette (severity: GUI_EXT_INFO / OK / WARN / ERROR)" );
+        /* The reserved extended palette: flat, unramped colours, not a role/phase band --
+           style_ext( id ) is the whole read, no phase to pick. */
+        gui()->separator_text( "Extended palette (GUI_EXT_INFO / OK / WARN / ERROR / DROP)" );
         {
             static const gui_style_ext_t sev[] = { GUI_EXT_INFO, GUI_EXT_OK,
-                                                   GUI_EXT_WARN, GUI_EXT_ERROR };
-            for ( u32 i = 0; i < 4; ++i )
+                                                   GUI_EXT_WARN, GUI_EXT_ERROR, GUI_EXT_DROP };
+            for ( u32 i = 0; i < GUI_EXT_RESERVED_COUNT; ++i )
             {
                 gui_rect_t band = gui()->canvas( gui()->sz_rows_h( 1 ) );
                 gui()->draw_text_in( band, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER,

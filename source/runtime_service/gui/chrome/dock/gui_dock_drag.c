@@ -57,8 +57,8 @@
    private literal is a colour the theme cannot reach.  Alpha is punched in here rather than
    authored into the extended palette because these two are the SAME signal at two weights (a
    wash and its outline), which is a draw decision, not a palette one. */
-#define DOCK_OVERLAY_FILL       ( ( style_ext( GUI_EXT_INFO ) & 0x00FFFFFFu ) |  64u << 24 )   /* drop-region preview */
-#define DOCK_OVERLAY_LINE       ( ( style_ext( GUI_EXT_INFO ) & 0x00FFFFFFu ) | 200u << 24 )   /* its outline         */
+#define DOCK_OVERLAY_FILL       ( ( style_ext( GUI_EXT_DROP ) & 0x00FFFFFFu ) |  64u << 24 )   /* drop-region preview */
+#define DOCK_OVERLAY_LINE       ( ( style_ext( GUI_EXT_DROP ) & 0x00FFFFFFu ) | 200u << 24 )   /* its outline         */
 
 /* Drop zones of the per-node 5-way: the chip the cursor is over (NONE = over the node but no chip). */
 typedef enum

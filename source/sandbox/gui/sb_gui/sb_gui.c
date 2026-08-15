@@ -281,7 +281,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* GUI Style */
 
-    bool modify_style = true;
+    bool modify_style = false;
     if ( modify_style )
     {
         gui_style_t* style = gui()->style_get();

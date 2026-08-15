@@ -137,6 +137,12 @@ bake_wash( u32 c, f32 t, u32 accent )
 #define BAKE_INK_DELTA 110   /* minimum ink-vs-face luma separation, of 255                    */
 #define BAKE_DIM_DELTA  70   /* the same floor for SECONDARY ink, which is meant to be quieter */
 
+/* Fixed SIGNAL strengths, deliberately not ramp-scaled.  The ramps are theme personality and a
+   theme is free to run them near zero (a hover that barely tinges); these two are cues that must
+   stay visible under any personality, so they do not dim with it. */
+#define BAKE_DROP_WASH 0.20f   /* drop-target cue: how far PANEL / CHILD / TITLE wash toward DROP */
+#define BAKE_BAND_WASH 0.15f   /* the title band's accent tinge over its lift                     */
+
 static u32
 bake_ink_on( u32 ink, u32 ground, i32 want )
 {
@@ -198,7 +204,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        kin to the panel under it rather than a clone of it.  TITLE's ACTIVE cell, and the base
        its HOT and INERT cells derive from. */
 
-    const u32 band = bake_wash( bake_lift( ground, step * 0.50f, pole ), hover * 0.25f, accent );
+    const u32 band = bake_wash( bake_lift( ground, step * 0.50f, pole ), BAKE_BAND_WASH, accent );
 
     /* PANEL -- the window body.  Phase here does not track the cursor at all: a window's body
        covers too much screen for a per-pixel hover to tint without reading as noise.  Instead it
@@ -211,13 +217,13 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        explicit, because most windows are scenery a drag passes over on its way to a widget target
        inside them, and lighting up every window under the cursor would claim "drop anywhere in
        me" for windows that mean nothing of the kind.  Either way it is a frame-level state, not a
-       cursor-over-pixel one, so a wash toward the INFO hue reuses the same signal the dock's own
+       cursor-over-pixel one, so a wash toward the DROP hue reuses the same signal the dock's own
        drop overlay already carries.  INERT is a window sitting behind an active modal fence --
        non-interactive by definition, same recess gui_stock_panel's framed backdrop and an empty
        dock-leaf placeholder already read; a nested child region has its own role below. */
 
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.35f, p->ext[ GUI_EXT_INFO ] );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, BAKE_DROP_WASH, p->ext[ GUI_EXT_DROP ] );
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_lift( ground, step * 0.1f, pole );
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_INERT  ] = bake_recess( ground, recess );
 
@@ -237,7 +243,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     const u32 child_ground = bake_recess( ground, recess );
 
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_IDLE   ] = child_ground;
-    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_HOT    ] = bake_wash( child_ground, hover * 0.35f, p->ext[ GUI_EXT_INFO ] );
+    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_HOT    ] = bake_wash( child_ground, BAKE_DROP_WASH, p->ext[ GUI_EXT_DROP ] );
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_ACTIVE ] = bake_lift( child_ground, step * 0.1f, pole );
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_INERT  ] = bake_recess( child_ground, recess );
 
@@ -251,13 +257,16 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        (gui_window_end.c). */
 
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = ground;
-    col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_wash( band, hover * 0.35f, p->ext[ GUI_EXT_INFO ] );
+    col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_wash( band, BAKE_DROP_WASH, p->ext[ GUI_EXT_DROP ] );
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_ACTIVE ] = band;
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_INERT  ] = bake_fade( band, fade, ground );
 
     /* BG -- the control face.  Hot comes forward, active sinks back: that pair IS the pressed
-       read, and it is the one place the two direction verbs are deliberately opposed.  INERT is
-       read only by gui_plot's own backdrop -- a plot has no id, so it never lifts. */
+       read, and it is the one place the two direction verbs are deliberately opposed.  Hover is
+       a LUMINANCE event -- the lift does the talking and the hover ramp adds only a whisper of
+       accent -- so the accent hue stays rationed for things that are chosen or engaged: the
+       press (a deeper wash), selection, value fills, focus.  INERT is read only by gui_plot's
+       own backdrop -- a plot has no id, so it never lifts. */
 
     col[ GUI_ROLE_BG ][ GUI_PHASE_IDLE   ] = control;
     col[ GUI_ROLE_BG ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( control, hover, accent ), step, pole );

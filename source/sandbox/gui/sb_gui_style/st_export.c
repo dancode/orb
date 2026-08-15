@@ -79,6 +79,7 @@ static const char* const k_ext_id[ GUI_EXT_RESERVED_COUNT ] =
     [ GUI_EXT_OK    ] = "GUI_EXT_OK",
     [ GUI_EXT_WARN  ] = "GUI_EXT_WARN",
     [ GUI_EXT_ERROR ] = "GUI_EXT_ERROR",
+    [ GUI_EXT_DROP  ] = "GUI_EXT_DROP",
 };
 
 static const char* const k_ramp_id[ GUI_RAMP_COUNT ] =

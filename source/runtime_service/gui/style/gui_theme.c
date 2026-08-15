@@ -106,7 +106,7 @@ static const char* const k_seed_name[ GUI_SEED_COUNT ] =
 
 static const char* const k_ramp_name[ GUI_RAMP_COUNT ] =
 {
-    [ GUI_RAMP_HOVER  ] = "Hover Wash",
+    [ GUI_RAMP_HOVER  ] = "Hover Tinge",
     [ GUI_RAMP_PRESS  ] = "Press Wash",
     [ GUI_RAMP_FADE   ] = "Inert Fade",
     [ GUI_RAMP_RECESS ] = "Recess Sink",
@@ -151,21 +151,26 @@ var_is_pixels( u8 cls )
 
 /* The dark family -- shared by "dark", "rounded", and "quantum" (they diverge only in metrics /
    skin, never in colour).  A near-black desktop, a steel-blue accent, a green affirmative, and a
-   near-white anchor for the knobs. */
+   near-white anchor for the knobs.
+
+   LINE sits just above the control face (0x52 on 0x40 controls / 0x24 ground), not at a
+   wireframe mid-grey: the surface ladder (ground / recessed child / raised control) carries the
+   structural separation, and a border that shouts over it reads as a debug overlay.  The loud
+   line is BORDER's HOT/ACTIVE accent, reserved for focus and engagement. */
 #define THEME_PALETTE_DARK \
     .palette = { \
         .seed = { \
             [ GUI_SEED_SURFACE ] = GUI_COLOR( 0x24,0x24,0x24,0xFF ), \
             [ GUI_SEED_CONTROL ] = GUI_COLOR( 0x40,0x40,0x40,0xFF ), \
             [ GUI_SEED_INK     ] = GUI_COLOR( 0xF0,0xF0,0xF0,0xFF ), \
-            [ GUI_SEED_LINE    ] = GUI_COLOR( 0x80,0x80,0x80,0xFF ), \
+            [ GUI_SEED_LINE    ] = GUI_COLOR( 0x52,0x52,0x52,0xFF ), \
             [ GUI_SEED_ACCENT  ] = GUI_COLOR( 0x20,0x90,0xD0,0xFF ), \
             [ GUI_SEED_MARK    ] = GUI_COLOR( 0x18,0xE6,0x48,0xFF ), \
             [ GUI_SEED_GRAB    ] = GUI_COLOR( 0xC8,0xCD,0xD4,0xFF ), \
         }, \
         .ramp = { \
-            [ GUI_RAMP_HOVER  ] = 0.60f, \
-            [ GUI_RAMP_PRESS  ] = 0.75f, \
+            [ GUI_RAMP_HOVER  ] = 0.08f, \
+            [ GUI_RAMP_PRESS  ] = 0.30f, \
             [ GUI_RAMP_FADE   ] = 0.45f, \
             [ GUI_RAMP_RECESS ] = 0.22f, \
             [ GUI_RAMP_STEP   ] = 0.18f, \
@@ -176,6 +181,7 @@ var_is_pixels( u8 cls )
             [ GUI_EXT_OK    ] = GUI_COLOR( 0x5C,0xC8,0x64,0xFF ), \
             [ GUI_EXT_WARN  ] = GUI_COLOR( 0xE8,0xB8,0x40,0xFF ), \
             [ GUI_EXT_ERROR ] = GUI_COLOR( 0xE8,0x5C,0x4C,0xFF ), \
+            [ GUI_EXT_DROP  ] = GUI_COLOR( 0x30,0xC8,0xB0,0xFF ), \
         }, \
     }
 
@@ -186,24 +192,23 @@ var_is_pixels( u8 cls )
 
    Its ramp is the gentler of the two, and every difference is the same fact seen from a
    different angle: moves are LOUDER near white.  A 0.22 sink that reads as a subtle inset well
-   at 0x24 reads as a dirty smear at 0xE2, so recess drops to 0.08 -- and since a wash toward
-   this accent already darkens (the accent is darker than the control here, where on the dark
-   theme it is brighter), the hover and the lift step both come down too or a hovered button
-   lands halfway to navy. */
+   at 0x24 reads as a dirty smear at 0xE2, so recess drops to 0.08, and the lift step comes down
+   with it.  LINE follows the dark family's rule from the other side: a hairline just under the
+   surfaces (0xC6 on 0xEC controls), structure carried by the surface ladder. */
 #define THEME_PALETTE_LIGHT \
     .palette = { \
         .seed = { \
             [ GUI_SEED_SURFACE ] = GUI_COLOR( 0xE2,0xE2,0xE6,0xFF ), \
             [ GUI_SEED_CONTROL ] = GUI_COLOR( 0xEC,0xEC,0xF0,0xFF ), \
             [ GUI_SEED_INK     ] = GUI_COLOR( 0x20,0x22,0x26,0xFF ), \
-            [ GUI_SEED_LINE    ] = GUI_COLOR( 0xB4,0xB5,0xBC,0xFF ), \
+            [ GUI_SEED_LINE    ] = GUI_COLOR( 0xC6,0xC7,0xCC,0xFF ), \
             [ GUI_SEED_ACCENT  ] = GUI_COLOR( 0x44,0x6C,0xA6,0xFF ), \
             [ GUI_SEED_MARK    ] = GUI_COLOR( 0x2E,0x9E,0x54,0xFF ), \
             [ GUI_SEED_GRAB    ] = GUI_COLOR( 0x3A,0x40,0x4A,0xFF ), \
         }, \
         .ramp = { \
-            [ GUI_RAMP_HOVER  ] = 0.50f, \
-            [ GUI_RAMP_PRESS  ] = 0.72f, \
+            [ GUI_RAMP_HOVER  ] = 0.06f, \
+            [ GUI_RAMP_PRESS  ] = 0.25f, \
             [ GUI_RAMP_FADE   ] = 0.40f, \
             [ GUI_RAMP_RECESS ] = 0.08f, \
             [ GUI_RAMP_STEP   ] = 0.12f, \
@@ -214,6 +219,7 @@ var_is_pixels( u8 cls )
             [ GUI_EXT_OK    ] = GUI_COLOR( 0x2A,0x84,0x40,0xFF ), \
             [ GUI_EXT_WARN  ] = GUI_COLOR( 0xA8,0x70,0x10,0xFF ), \
             [ GUI_EXT_ERROR ] = GUI_COLOR( 0xC0,0x38,0x2C,0xFF ), \
+            [ GUI_EXT_DROP  ] = GUI_COLOR( 0x12,0x88,0x78,0xFF ), \
         }, \
     }
 

@@ -379,7 +379,7 @@ typedef enum
     GRAB     knob / thumb      hovered knob         dragged knob           unused
 
    PANEL/HOT, CHILD/HOT and TITLE/HOT (the band, not the chip) share one formula: a wash toward
-   the GUI_EXT_INFO hue, read while a drag gesture is in flight and this surface is the computed
+   the GUI_EXT_DROP hue, read while a drag gesture is in flight and this surface is the computed
    landing target -- a frame-level fact, not a cursor-over-pixel one, which is why it stays IDLE
    under an ordinary mouse-over.  Two independent gestures feed it, and a surface can answer to
    either without knowing which: PANEL and the TITLE band also read window_route_is_drop_target
@@ -562,7 +562,7 @@ typedef enum
     GUI_SEED_CONTROL,       // control face base: button, input field, check box, track
     GUI_SEED_INK,           // text base -- every glyph and the caret
     GUI_SEED_LINE,          // frame line base: borders, rules, resize edges
-    GUI_SEED_ACCENT,        // THE hue: value fills, hover wash, focus ring, nav highlight
+    GUI_SEED_ACCENT,        // THE hue: value fills, selection wash, press wash, focus ring, nav highlight
     GUI_SEED_MARK,          // the affirmative indicator hue: check, radio dot
     GUI_SEED_GRAB,          // the contrast anchor: knobs and thumbs, opposite the theme
 
@@ -581,8 +581,8 @@ typedef enum
 
 typedef enum
 {
-    GUI_RAMP_HOVER = 0,   // how far a surface washes toward the accent when hot
-    GUI_RAMP_PRESS,       // how far it washes when pressed / selected -- deeper than hover
+    GUI_RAMP_HOVER = 0,   // accent tinge on a hovered control face -- a whisper: hover is a lift, not a hue change
+    GUI_RAMP_PRESS,       // how far a pressed face washes toward the accent -- the deeper, engaged wash
     GUI_RAMP_FADE,        // how far an inert cell fades toward the surface (the INERT phase)
     GUI_RAMP_RECESS,      // how far a recessed surface / empty track sinks below its base
     GUI_RAMP_STEP,        // one lift notch for the accent, border and anchor ramps
@@ -594,9 +594,10 @@ typedef enum
 /* GUI_STYLE -- the EXTENDED palette: flat, unramped colours a theme authors and a caller reaches
    by name, for a signal that is a standing fact rather than an interaction state -- no phase, no
    bake, no per-set derivation cost.  The reserved slots below are the severity ladder that used
-   to live in GUI_ROLE_INFO/OK/WARN/ERROR; a kit registers its own beyond them at runtime with
-   gui_style_ext_add (style/gui_style.h), mirroring gui_style_brush_add's per-set pool exactly --
-   a handle only means something inside the set that issued it, and costs that set alone.
+   to live in GUI_ROLE_INFO/OK/WARN/ERROR, plus the instrument colours; a kit registers its own
+   beyond them at runtime with gui_style_ext_add (style/gui_style.h), mirroring
+   gui_style_brush_add's per-set pool exactly -- a handle only means something inside the set
+   that issued it, and costs that set alone.
 
    style_ext( id ) is the resolved read; push_style_ext / pop_style_ext override a slot for a
    scope exactly like push_style_var does, since there is no ramp to re-derive on push -- a flat
@@ -608,6 +609,8 @@ typedef enum
     GUI_EXT_OK,         // status hue: healthy / passing
     GUI_EXT_WARN,       // status hue: near a limit
     GUI_EXT_ERROR,      // status hue: failed / over a limit
+    GUI_EXT_DROP,       // instrument hue: "a drop can land here" -- every drag-and-drop cue
+                        // (dock overlay, drop hint / ring, PANEL / CHILD / TITLE HOT wash)
 
     GUI_EXT_RESERVED_COUNT   // the engine-authored slots -- part of every theme's palette
 
@@ -617,7 +620,7 @@ typedef enum
    kit needing more named colours than this is describing per-widget tokens, not a theme. */
 #define GUI_STYLE_EXT_MAX 16u
 
-/* The authored half of a style, in full: seven colours, six numbers and four status colours, 68
+/* The authored half of a style, in full: seven colours, six numbers and five extended colours, 72
    bytes.  Small enough that a theme is worth having dozens of, or deriving live from a single
    accent the user picked. */
 
@@ -625,7 +628,7 @@ typedef struct gui_palette_s
 {
     u32 seed[ GUI_SEED_COUNT ];             // the source colours
     f32 ramp[ GUI_RAMP_COUNT ];             // how far each derivation travels
-    u32 ext [ GUI_EXT_RESERVED_COUNT ];     // the standard extended-palette colours (severity)
+    u32 ext [ GUI_EXT_RESERVED_COUNT ];     // the standard extended-palette colours (severity + instruments)
 
 } gui_palette_t;
 

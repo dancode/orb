@@ -1789,7 +1789,7 @@ typedef struct gui_api_s
 
     /* The extended-palette read: style_color's sibling with no phase to pass, resolving a flat
        gui_style_ext_t slot the same way -- installed value, any push_style_ext override already
-       applied.  GUI_EXT_INFO/OK/WARN/ERROR are always valid; a kit's own registered id
+       applied.  GUI_EXT_INFO/OK/WARN/ERROR/DROP are always valid; a kit's own registered id
        (style_ext_add) is valid only in the set that registered it, this landing. */
     u32 ( *style_ext )( gui_style_ext_t ext );
 
