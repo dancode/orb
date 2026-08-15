@@ -291,6 +291,15 @@ void field_geom_split( gui_rect_t cell, gui_label_side_t side, f32 control_u, f3
 bool field_skip_take( void );
 
 void extent_track   ( layout_frame_t* f, f32 x, f32 y );
+
+/* Footprint claim watcher (flow/gui_layout_core.c) -- the volatile block's measurement tap
+   (chrome/widgets/gui_volatile.c).  While open, every placement folds the FULL cell it claimed
+   into a running max, including track-filling cells the region highwater deliberately
+   under-reports (line_place_cell's scrollbar rule).  One watcher, never nested: at most one
+   volatile block is mid-emit at a time. */
+void layout_claim_begin( f32 x, f32 y );             /* open at the block's cell origin        */
+void layout_claim_end  ( f32* out_w, f32* out_h );   /* extent claimed since begin, and close  */
+
 f32  layout_next_y  ( layout_frame_t* f );
 void layout_pen_jump( layout_frame_t* f, f32 y );
 void layout_row_break( layout_frame_t* f );

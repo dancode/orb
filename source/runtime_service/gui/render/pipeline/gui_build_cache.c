@@ -644,13 +644,22 @@ cache_diff_windows( void )
     record) into an emission-order permutation and hands it to tess_dispatch.  Emission order IS
     paint order, so overpaint relationships (titlebar chrome over scrolled content) hold without
     any per-clip care -- and since the clip rides the vertex (gui.h, the clip band), equal-clip
-    commands no longer need to be adjacent to share a draw call.  A clip-grouping counting sort
-    used to live here for exactly that adjacency; the fragment-side clip made it dead weight.
+    commands never need to be adjacent to share a draw call.
+
+    The one reorder left: a CONFINED volatile range emits at the TAIL, after every plain command.
+    A block owns its GPU command(s) either way (a patch must be able to rewrite their elem_counts),
+    so mid-body it cuts the window into three draw calls; at the tail the body on both sides of it
+    merges back into one, and its reservation padding sits at the slot's end.  Painting it last is
+    safe precisely because it is confined -- volatile_cb_close scissored the range to its own
+    layout cell, so it cannot overpaint chrome or a sibling no matter where in the order it lands.
+    An UNCONFINED range (its callback never opened the footprint probe) keeps its emission
+    position: nothing bounds where it paints.
 
     Only commands whose clip is EMPTY are dropped: they can paint nothing (a fully scrolled-out
     child, a hidden volatile range), and dropping them here is what keeps them out of the
     geometry buffers entirely.  Volatile ranges stay contiguous in emission order minus those
-    holes, which is what tess_dispatch's range tracking brackets.
+    holes, which is what tess_dispatch's range tracking brackets -- the tail pass appends whole
+    ranges in emission order, so contiguity survives the hoist.
 
     z is NOT sorted here -- a window occupies one slot whose dispatch z is its max segment z,
     keeping all of a window's geometry contiguous; cache_build_frame z-sorts the slots after.
@@ -666,11 +675,34 @@ cache_tess_window( const render_win_hash_t* wh )
 {
     const gui_cmd_seg_t* segs = s_draw.segs;
 
-    u32 n = 0;
+    /* Pass 1: plain commands (and any unconfined volatile range) in emission order. */
+    u32  n       = 0;
+    bool any_vol = false;
     for ( u16 si = wh->seg_head; si != SEG_CHAIN_END; si = s_seg_next[ si ] )
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
-            if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
-                s_win_order[ n++ ] = (u16)i;
+        {
+            if ( rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
+                continue;
+            gui_id_t vid = s_draw.cmd_volatile_id[ i ];
+            if ( vid != GUI_ID_NONE && volatile_row_confined( vid ) )
+            {
+                any_vol = true;
+                continue;
+            }
+            s_win_order[ n++ ] = (u16)i;
+        }
+
+    /* Pass 2: confined volatile ranges, whole and in emission order, at the tail. */
+    if ( any_vol )
+        for ( u16 si = wh->seg_head; si != SEG_CHAIN_END; si = s_seg_next[ si ] )
+            for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
+            {
+                if ( rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
+                    continue;
+                gui_id_t vid = s_draw.cmd_volatile_id[ i ];
+                if ( vid != GUI_ID_NONE && volatile_row_confined( vid ) )
+                    s_win_order[ n++ ] = (u16)i;
+            }
 
     tess_dispatch( s_draw.cmds, s_win_order, n, wh->win );
 }

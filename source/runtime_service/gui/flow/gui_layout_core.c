@@ -122,11 +122,51 @@ static f32 mod_gap_y( const layout_frame_t* f ) { return ( f->mod.gap_y > 0.0f )
    either axis, in place of the per-axis, per-mode inline updates the emitters used to do.  Does not
    touch the pen; content_reach moves both, cell_reach grows the x highwater alone. */
 
+/* Footprint claim watcher -- the volatile block's measurement tap (chrome/widgets/gui_volatile.c;
+   declared in flow/gui_flow.h).  While open, every placement folds the corner it claimed into a
+   running max: extent_track and cell_reach feed it every highwater grow, and line_place_cell adds
+   the full seated cell, which the region highwater deliberately under-reports for a track-filling
+   cell (the scrollbar rule at its x_reach) -- a block that claims a whole track may paint across
+   it, so its footprint must count the track even though the region's content measure must not.
+   One watcher, never nested: at most one volatile block is mid-emit at a time. */
+static struct
+{
+    f32  x0, y0;   // cell origin the watcher opened at
+    f32  x1, y1;   // far corner claimed so far
+    bool open;
+
+} s_claim;
+
+void
+layout_claim_begin( f32 x, f32 y )
+{
+    s_claim.x0 = s_claim.x1 = x;
+    s_claim.y0 = s_claim.y1 = y;
+    s_claim.open = true;
+}
+
+static void
+claim_note( f32 x, f32 y )
+{
+    if ( !s_claim.open ) return;
+    if ( x > s_claim.x1 ) s_claim.x1 = x;
+    if ( y > s_claim.y1 ) s_claim.y1 = y;
+}
+
+void
+layout_claim_end( f32* out_w, f32* out_h )
+{
+    *out_w = s_claim.x1 - s_claim.x0;
+    *out_h = s_claim.y1 - s_claim.y0;
+    s_claim.open = false;
+}
+
 void
 extent_track( layout_frame_t* f, f32 x, f32 y )
 {
     if ( x > f->high_x ) f->high_x = x;
     if ( y > f->high_y ) f->high_y = y;
+    claim_note( x, y );
 }
 
 /* The x-only face of extent_track, for a leaf widget reporting it drew out to right_x -- wider than
@@ -138,6 +178,7 @@ void
 cell_reach( f32 right_x )
 {
     if ( right_x > lf()->high_x ) lf()->high_x = right_x;
+    claim_note( right_x, s_claim.y0 );   /* x-only: an overflowing run widens the claim too */
 }
 
 /* A forward flow step: content now reaches corner (x, y), so drop the pen to it and lift the
@@ -1057,6 +1098,9 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
        the measure collapses the frame the wide content disappears.  Left-aligned the two spellings
        are identical. */
     f32 x_reach = ( r.w < f->tmpl.cellw[ c ] ) ? f->tmpl.cellx[ c ] + r.w : f->tmpl.cellx[ c ];
+    claim_note( r.x + r.w, r.y + r.h );   /* footprint watcher counts the full seated cell --
+                                             a filled track is claimed space even though the
+                                             region's content measure above must ignore it */
     content_reach( f, x_reach, r.y + r.h );
 
     if ( ++f->line.col >= f->tmpl.ncols )

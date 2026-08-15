@@ -118,7 +118,7 @@ show_demo_window(bool* p_open)
     window_flags |= GUI_WIN_CAN_AUTOSIZE;  // Add a menu bar to the window
     
     // We demonstrate using the full window_begin() API
-    gui()->window_set_next_size( 640.0f, 640.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 640.0f, 640.0f + 220.0f, GUI_COND_ONCE );
     static bool show_another_window = false;
     if (gui()->window_begin("Basic Gui Demo", window_flags))
     {

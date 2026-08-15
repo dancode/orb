@@ -39,8 +39,8 @@
     caller's callback with volatile_cb_open/_close (this file), which record the command range
     it produced and tag it with the row id; volatile_stamp (called from inside the callback by
     gui_volatile_begin) records the window/z/vp/font/clip context, the ambient
-    alpha/rounding/text-clip scalars a raw draw_ call reads directly, and the layout cursor
-    position.  When the window tessellates, tess_dispatch (gui_build_tess.c) calls
+    alpha/rounding/text-clip scalars a raw draw_ call reads directly, the layout cursor
+    position, and the owning region's view/pad (reinstalled on the replay layout frame).  When the window tessellates, tess_dispatch (gui_build_tess.c) calls
     volatile_range_close (this file), which reserves the padded region, pads the slot's GPU
     command run with dormant commands, and stamps the slot generation.
 
@@ -70,7 +70,7 @@
     Included by gui_render.c after gui_build_tess.c (needs s_tess, tess_dispatch, and
     s_volatile_patching, defined there) and before gui_build_cache.c (which defines the
     cache_* helpers forward-declared below and calls volatile_row_needs_capture /
-    volatile_patch_reused_window; gui_render_flush uploads the patched spans for free since a
+    volatile_row_confined / volatile_patch_reused_window; gui_render_flush uploads the patched spans for free since a
     slot's upload range covers its reservations).
 
 ==============================================================================================*/
@@ -107,6 +107,9 @@ typedef struct
 {
     gui_id_t         id, win;
     f32              x, y, w;          // layout cursor stamp at gui_volatile_begin
+    gui_rect_t       view;             // owning region's view rect at stamp -- the replay frame's view
+    gui_pad_t        pad;              // owning region's pad at stamp (text self-fit reads it)
+    bool             stamped;          // gui_volatile_begin ran -- without it the row cannot replay
     gui_volatile_fn  fn;
     u32              tess_gen;         // owning slot's tessellation generation at capture
     u16              cmd_lo, cmd_hi;   // live s_draw command range from this frame's real emit
@@ -117,6 +120,8 @@ typedef struct
     u8               clip_idx;
     bool             active;           // a capture exists (retired on patch failure until recaptured)
     bool             hidden;           // whole range was clip-empty at emit -- nothing on screen
+    bool             confined;         // volatile_cb_close scissored the range to its cell -- the
+                                       //   licence cache_tess_window needs to emit it at the tail
 
     /* Layout footprint: the extent the block claimed at its last REAL emit, measured by the probe
        in gui_volatile_cb (chrome/widgets/gui_volatile.c).  Idle replays measure their own the same
@@ -209,10 +214,12 @@ volatile_cb_open( gui_id_t id )
 }
 
 /* Called by gui_volatile_begin (chrome/widgets/gui_volatile.c), from inside the callback body during
-   real emit -- stamps the emit context (window/z/vp/font/clip) and the layout cursor position
-   (x, y, w) the callback started at, so replay can reconstruct a matching scope later. */
+   real emit -- stamps the emit context (window/z/vp/font/clip), the layout cursor position
+   (x, y, w) the callback started at, and the owning region's view/pad, so replay can reconstruct
+   a matching scope later (the replay layout frame installs view/pad verbatim -- widgets read them
+   mid-emit for self-fit decisions). */
 void
-volatile_stamp( f32 x, f32 y, f32 w )
+volatile_stamp( f32 x, f32 y, f32 w, const gui_rect_t* view, gui_pad_t pad )
 {
     if ( s_open_id == GUI_ID_NONE ) return;
     gui_volatile_slot_t* row = volatile_find( s_open_id );
@@ -223,6 +230,9 @@ volatile_stamp( f32 x, f32 y, f32 w )
     row->font     = (u16)s_draw.cur_font;
     row->clip_idx = s_draw.cur_clip_idx;
     row->x = x; row->y = y; row->w = w;
+    row->view     = *view;
+    row->pad      = pad;
+    row->stamped  = true;
     row->alpha        = s_draw.alpha;
     row->rounding     = s_draw.rounding;
     row->text_clip_x0 = s_draw.text_clip_x0;
@@ -312,18 +322,18 @@ volatile_footprint_reflow( gui_volatile_slot_t* row, f32 w, f32 h )
    Two things come of it, and the second is why this exists at all:
 
      - A block can no longer paint outside its own cell.  It never should have -- gui.h's
-       fixed-footprint contract says so and volatile_footprint asserts on it -- but until now the
-       only thing stopping a block scrolled under a title bar from covering it was the chrome
-       being drawn afterwards (window_open_body: one clip for the whole window, scroll-out
-       resolved by OVERPAINT rather than by scissor).  Now it is scissored, which is also strictly
-       cheaper than shading pixels that get painted over.
-     - That new clip rect is a distinct CLIP GROUP, and cache_tess_window lays groups out in
-       first-seen order with each one contiguous.  The window's own clip is group 0 (first seen at
-       the background), so the block sorts into a later group and lands after ALL of it -- chrome
-       included, safely, per the point above -- while the content that used to sit on either side
-       of the block merges into ONE draw call instead of being cut in two by it.  The block was
-       always going to be its own command (a patch must be able to rewrite its elem_counts); what
-       it no longer costs is a second command for everything that follows it.
+       fixed-footprint contract says so and volatile_footprint asserts on it -- but without the
+       cut the only thing stopping a block scrolled under a title bar from covering it is the
+       chrome being drawn afterwards (window_open_body: one clip for the whole window, scroll-out
+       resolved by OVERPAINT rather than by clipping).  Cutting is also strictly cheaper than
+       shading pixels that get painted over.
+     - The cut is the LICENCE to paint the block last.  A block was always going to own its GPU
+       command(s) (a patch must be able to rewrite their elem_counts), so a block sitting mid-body
+       cuts the window into three draw calls -- content before, block, content after.  Because a
+       confined block provably cannot touch anything outside its own cell, cache_tess_window may
+       emit its range at the TAIL of the window's permutation (`confined` is that gate), where the
+       content on either side of it merges back into one command and the reservation padding sits
+       at the slot's end instead of mid-body.
 
    Also computes `hidden`: a range whose every command sits in an empty clip (scrolled out of a
    container) produces no geometry when the window tessellates, so there is nothing to capture or
@@ -372,12 +382,23 @@ volatile_cb_close( gui_volatile_fn fn, const gui_rect_t* cell )
         if ( cell && hi > lo )
             row->clip_idx = s_draw.cmds[ lo ].clip_idx;
 
-        row->cmd_lo = (u16)lo;
-        row->cmd_hi = (u16)hi;
-        row->fn     = fn;
-        row->hidden = !any_visible;
+        row->cmd_lo   = (u16)lo;
+        row->cmd_hi   = (u16)hi;
+        row->fn       = fn;
+        row->hidden   = !any_visible;
+        row->confined = ( cell != NULL );
     }
     s_open_id = GUI_ID_NONE;
+}
+
+/* True when `id`'s live command range is confined to its cell (forward gate for
+   cache_tess_window's tail emission -- an unconfined range must keep its emission position, since
+   nothing bounds where it paints). */
+static bool
+volatile_row_confined( gui_id_t id )
+{
+    gui_volatile_slot_t* row = volatile_find( id );
+    return row && row->confined;
 }
 
 /* Called from cache_diff_windows (gui_build_cache.c) for every volatile-tagged command -- true
@@ -678,8 +699,9 @@ volatile_update( void )
     for ( u32 i = 0; i < s_volatile_count; ++i )
     {
         gui_volatile_slot_t* row = &s_volatile[ i ];
-        if ( !row->active || row->hidden || !row->fn )
-            continue;
+        if ( !row->active || row->hidden || !row->fn || !row->stamped )
+            continue;   /* !stamped: the callback never ran gui_volatile_begin, so there is no
+                           cursor/scope stamp to replay under -- the block simply never animates */
 
         /* Resolve the owning window's current slot BEFORE replaying -- a row that cannot be
            patched (window gone, or rebuilt without it) skips the callback entirely. */
@@ -737,7 +759,7 @@ volatile_update( void )
         s_draw.clip_idx_stack[ 0 ] = row->clip_idx;
         s_draw.clip_depth          = 1;
 
-        replay_scope_enter( row->id, row->x, row->y, row->w );
+        replay_scope_enter( row->id, row->x, row->y, row->w, &row->view, row->pad );
         row->fn( row->id, true );
         u32 cmd_hi = s_draw.cmd_count;
 

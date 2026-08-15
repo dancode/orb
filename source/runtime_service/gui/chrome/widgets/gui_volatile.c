@@ -46,12 +46,12 @@
     Volatile widget callback -- see gui.h (gui_volatile_fn) for the full contract.
 ==============================================================================================*/
 
-/* Layout-footprint probe -- the state gui_volatile_begin parks so gui_volatile_cb can read back
-   the extent the block claimed and hand it to the backend (volatile_footprint).  File scope
-   for the same reason the backend's s_open_id is: exactly one gui_volatile_cb invocation is ever
-   in flight, nesting is not supported. */
+/* Layout-footprint probe -- the state gui_volatile_begin arms so gui_volatile_cb can read back
+   the extent the block claimed (via the flow unit's claim watcher, layout_claim_begin/_end) and
+   hand it to the backend (volatile_footprint).  File scope for the same reason the backend's
+   s_open_id is: exactly one gui_volatile_cb invocation is ever in flight, nesting is not
+   supported. */
 static f32  s_foot_x, s_foot_y;             // cell origin the open block was stamped at
-static f32  s_foot_high_x, s_foot_high_y;   // caller's highwater, parked for the block's duration
 static bool s_foot_open;                    // gui_volatile_begin ran for the block now emitting
 
 /* Margin the measured cell is grown by before it becomes the block's clip -- see gui_volatile_cb.
@@ -71,26 +71,28 @@ gui_volatile_cb( const char* label, gui_volatile_fn fn )
 {
     gui_id_t id = id_combine( id_seed(), id_hash( label ) );
     volatile_cb_open( id );
+    s_foot_open = false;   /* armed only by this callback's own gui_volatile_begin -- a replay
+                              that ran between real emits must not leave a stale probe behind */
     fn( id, false );
 
-    /* Close the footprint probe gui_volatile_begin opened: report the extent this block claimed
-       relative to its cell origin -- the same terms replay_scope_measure reports a replay in,
-       so the backend can compare the two and buy a real frame when they diverge -- then merge the
-       caller's parked highwater back as a max, leaving the region measuring exactly what it would
-       have without the probe.  A callback that never called gui_volatile_begin leaves the probe
-       closed and reports nothing; the row has no cursor stamp either, so it never replays. */
+    /* Close the footprint probe gui_volatile_begin opened: read the extent this block CLAIMED
+       from the flow unit's claim watcher -- the same terms replay_scope_measure reports a replay
+       in, so the backend can compare the two and buy a real frame when they diverge.  The watcher,
+       not the region highwater: a cell that fills its track (a canvas, a separator) deliberately
+       grows high_x by nothing (line_place_cell's scrollbar rule), so a highwater-based measure
+       reads a track-filling block as 0 wide and the confinement below cuts it to its ink margin.
+       A callback that never called gui_volatile_begin reports nothing; the row has no cursor
+       stamp either, so it never replays. */
     gui_rect_t  cell;
     gui_rect_t* cellp = NULL;
 
     if ( s_foot_open )
     {
-        layout_frame_t* f  = lf();
-        f32             fw = f->high_x - s_foot_x;
-        f32             fh = f->high_y - s_foot_y;
+        layout_frame_t* f = lf();
+        f32             fw, fh;
+        layout_claim_end( &fw, &fh );
 
         volatile_footprint( fw, fh );
-        if ( s_foot_high_x > f->high_x ) f->high_x = s_foot_high_x;
-        if ( s_foot_high_y > f->high_y ) f->high_y = s_foot_high_y;
         s_foot_open = false;
 
         /* The cell the block just claimed, cut to the region's VIEW -- the clip the block hands
@@ -160,19 +162,17 @@ gui_volatile_begin( void )
         w = f->tmpl.cellw[ c ];
         y = ( c == 0 ) ? layout_next_y( f ) : f->line.cross;
     }
-    volatile_stamp( x, y, w );
+    volatile_stamp( x, y, w, &f->view, f->pad );
 
-    /* Open the footprint probe: rebase the frame's highwater onto this block's own cell origin so
-       gui_volatile_cb reads back the extent THIS block claimed.  The highwater is a running max
-       over the whole region, so leaving the caller's value in place would report the block only
-       on the frames it happens to be the widest/lowest thing in the region.  Safe to move: nothing
-       reads high_x/high_y mid-emit -- layout_pop_region (flow/gui_scroll.c) and the split band
-       close (flow/gui_split.c) are the only readers, both at pop time -- and gui_volatile_cb
-       merges the parked value back as a max before anything can observe it. */
-    s_foot_x      = x;          s_foot_y      = y;
-    s_foot_high_x = f->high_x;  s_foot_high_y = f->high_y;
-    f->high_x     = x;          f->high_y     = y;
-    s_foot_open   = true;
+    /* Open the footprint probe: the flow unit's claim watcher folds every cell the callback
+       claims into a running max from this origin -- including cells that FILL their track, which
+       the region highwater deliberately does not count (line_place_cell).  On an idle replay this
+       re-begin is redundant but harmless: replay_scope_enter already opened the watcher at the
+       identical stamped origin (the minimal replay frame reproduces this cell resolution). */
+    s_foot_x = x;
+    s_foot_y = y;
+    layout_claim_begin( x, y );
+    s_foot_open = true;
 }
 
 void
@@ -191,24 +191,35 @@ gui_volatile_end( void )
     replay frame never opens a grid.
 ==============================================================================================*/
 
+/* Zeroed scroll link for the replay frame: the stamped (x, y) already carries the real emit's
+   scroll bias, so the replay is anchored at scroll 0, and every f->scroll deref stays valid. */
+static gui_scroll_link_t s_replay_scroll;
+
 static void
-volatile_layout_push( f32 x, f32 y, f32 w )
+volatile_layout_push( f32 x, f32 y, f32 w, const gui_rect_t* view, gui_pad_t pad )
 {
     layout_frame_t* f = layout_frame_push();
 
-    f->content_x     = x;
-    f->pen_y     = y;
-    f->content_w     = w;
-    f->high_x = x;
-    f->high_y = y;
-    f->band_bottom = y + 1.0e6f;
+    /* The stack slot is reused memory -- at this depth it still holds whatever region last
+       occupied it (typically the LAST window of the previous real frame).  Zero the whole frame
+       rather than fill a subset: any field a widget reads mid-emit -- view/pad for text's
+       self-fit ellipsis (gui_view_avail), the scroll link, gap_pending -- must be THIS scope's,
+       or the replay lays out against another window's geometry (a narrow debug overlay's view
+       once ellipsized a replayed text run mid-string). */
+    *f = ( layout_frame_t ){ 0 };
 
-    /* The stack slot is reused memory and layout_set_default resets only the template/modifier
-       state -- a stale gap_pending left by an earlier build would open the first line at
-       pen_y + gap, but the stamped y is absolute (the real emit's gap is already applied in it),
-       so the replay must open flush at the pen. */
-    f->gap_pending  = false;
-    f->nav_line_pin = false;
+    f->content_x   = x;
+    f->pen_y       = y;
+    f->content_w   = w;
+    f->high_x      = x;
+    f->high_y      = y;
+    f->band_bottom = y + 1.0e6f;   /* far below: a replay frame never opens a grid */
+    f->view        = *view;        /* the region view stamped at real emit (volatile_stamp) */
+    f->outer       = *view;
+    f->pad         = pad;
+    f->origin_x    = x;
+    f->origin_y    = y;
+    f->scroll      = &s_replay_scroll;
 
     layout_set_default( f );
 }
@@ -229,31 +240,24 @@ volatile_layout_pop( void )
     ctx_begin/ctx_new_frame or touching anything else about the real frame's UI state.
 ==============================================================================================*/
 
-/* Origin of the minimal replay frame, so replay_scope_measure can report the extent the
-   replayed callback claimed relative to it (volatile_layout_push seeds the highwater there). */
-static f32 s_replay_x, s_replay_y;
-
 void
-replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w )
+replay_scope_enter( gui_id_t id, f32 x, f32 y, f32 w, const gui_rect_t* view, gui_pad_t pad )
 {
     id_push( id );
-    volatile_layout_push( x, y, w );
-    s_replay_x    = x;
-    s_replay_y    = y;
+    volatile_layout_push( x, y, w, view, pad );
+    layout_claim_begin( x, y );
     replay_mode_enter();
 }
 
 /* Read back the layout extent the replayed callback just claimed, in the same terms
-   gui_volatile_cb reports a real emit in (relative to the block's cell origin, highwater seeded
-   there).  Called by volatile_update after the callback returns and before _exit pops the
-   frame; the backend compares it against the real emit's footprint and forces one real frame when
-   they diverge, since the neighbours a grown block now overlaps are frozen cached geometry. */
+   gui_volatile_cb reports a real emit in (the claim watcher, opened at the block's cell origin).
+   Called by volatile_update after the callback returns and before _exit pops the frame; the
+   backend compares it against the real emit's footprint and forces one real frame when they
+   diverge, since the neighbours a grown block now overlaps are frozen cached geometry. */
 void
 replay_scope_measure( f32* out_w, f32* out_h )
 {
-    layout_frame_t* f = lf();
-    *out_w = f->high_x - s_replay_x;
-    *out_h = f->high_y - s_replay_y;
+    layout_claim_end( out_w, out_h );
 }
 
 void

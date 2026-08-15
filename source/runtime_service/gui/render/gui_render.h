@@ -419,7 +419,8 @@ void                build_dump_geometry     ( void );
 ==============================================================================================*/
 
 void     volatile_cb_open   ( gui_id_t id );                    // (re)open row `id`; cmd_lo = current cmd_count
-void     volatile_stamp     ( f32 x, f32 y, f32 w );            // fill win/z/vp/font/clip + cursor stamp for the open row
+void     volatile_stamp     ( f32 x, f32 y, f32 w,              // fill win/z/vp/font/clip + cursor stamp for the open
+                              const gui_rect_t* view, gui_pad_t pad );   //   row, plus the region view/pad the replay frame installs
 void     volatile_footprint ( f32 w, f32 h );                   // layout extent this real emit claimed, for the reflow check
 void     volatile_cb_close  ( gui_volatile_fn fn, const gui_rect_t* cell );   // cmd_hi + fn; tags + confines the range
 void     volatile_update    ( void );
@@ -427,8 +428,10 @@ u32      volatile_row_count ( void );                           // registered re
 bool     gui_volatile_live  ( void );                           // any row patchable RIGHT NOW -- gui_boot_pace must keep
                                                                 //   presenting at cadence instead of block-waiting on input
 
-/* Implemented in chrome/widgets/gui_volatile.c; called only from volatile_update. */
-void     replay_scope_enter  ( gui_id_t id, f32 x, f32 y, f32 w );
+/* Implemented in chrome/widgets/gui_volatile.c; called only from volatile_update.  view/pad are
+   the stamped region context the replay layout frame installs (see volatile_stamp). */
+void     replay_scope_enter  ( gui_id_t id, f32 x, f32 y, f32 w,
+                               const gui_rect_t* view, gui_pad_t pad );
 void     replay_scope_measure( f32* out_w, f32* out_h );    // extent the replay claimed, in volatile_footprint terms
 void     replay_scope_exit   ( bool force_redraw );
 
