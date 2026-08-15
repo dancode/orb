@@ -2,12 +2,14 @@
 
     sandbox/gui/sb_gui_style/st.h -- Shared contract for the style + look customization bench.
 
-    sb_gui_style is the "make the engine look like your game" bench.  Four windows, one pipeline:
+    sb_gui_style is the "make the engine look like your game" bench.  Five windows, one pipeline:
 
         Style Editor  -- tune the live style: seeds + ramp, the derived colour grid, every
                          metric / skin / shape var.  This is where a look is FOUND.
         Look Gallery  -- a wide sweep of stock widgets under whatever the editor just did, so a
                          knob's effect is visible on something other than the editor itself.
+        Window Lab    -- gui_win_flags_t toggles driving a live subject window, so window chrome
+                         combinations (title, scrollbars, autosize, ...) are judged per theme.
         Style Export  -- emit the live style as C source: a gui_theme_t table entry, or a runtime
                          setup function.  This is where a look is KEPT.
         Font Tool     -- find / bake / preview / export the FACE, the other half of a look

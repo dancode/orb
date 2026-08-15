@@ -61,6 +61,7 @@ st_begin( const char* title, f32 w, f32 h )
 
 #include "st_editor.c"
 #include "st_gallery.c"
+#include "st_window_lab.c"
 #include "st_export.c"
 #include "st_font.c"
 
@@ -73,6 +74,7 @@ static st_window_t s_windows[] =
     /* menu item       window title     description                                            fn                 open */
     { "Style Editor",  "Style Editor",  "seeds + ramp, the colour grid, every metric var",     st_editor_window,  true  },
     { "Look Gallery",  "Look Gallery",  "the widget vocabulary under the live style",          st_gallery_window, true  },
+    { "Window Lab",    "Window Lab",    "window flag combinations against the live style",     st_window_lab_window, false },
     { "Style Export",  "Style Export",  "emit the live style as a theme entry or setup code",  st_export_window,  false },
     { "Font Tool",     "Font Tool",     "find / bake / preview / export the face",             st_font_window,    false },
 };
