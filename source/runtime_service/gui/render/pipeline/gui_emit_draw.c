@@ -268,6 +268,7 @@ draw_reset( i32 display_w, i32 display_h )
     /* Seed the clip table: slot 0 = full display rect.  clip_idx_stack[0] and cur_clip_idx both
        start at 0 so every emitter finds the root clip without a push being required first.
        The hash folds (rect, radius) exactly as clip_append's does, or slot 0 could never dedup. */
+
     s_draw.clip_table[ 0 ]      = ( gui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
     s_draw.clip_radius[ 0 ]     = 0.0f;
     s_draw.clip_hash_cache[ 0 ] = fnv1a( 2166136261u, &s_draw.clip_table[ 0 ], sizeof( gui_rect_t ) );
@@ -278,18 +279,19 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.cur_clip_idx         = 0;
     s_draw.clip_depth           = 1;
 
-    s_draw.alpha        = 1.0f;
-    s_draw.rounding     = 0.0f;            /* square until a seam sets the resolved radius */
-    s_draw.text_clip_x0 = -GUI_TEXT_NO_CLIP;  /* unclipped until a seam sets a window */
-    s_draw.text_clip_x1 =  GUI_TEXT_NO_CLIP;
-    s_draw.text_edge    = 0u;                 /* plain runs until a caller asks for an edge */
+    s_draw.alpha                = 1.0f;
+    s_draw.rounding             = 0.0f;                 /* square until a seam sets the resolved radius */
+    s_draw.text_clip_x0         = -GUI_TEXT_NO_CLIP;    /* unclipped until a seam sets a window */
+    s_draw.text_clip_x1         =  GUI_TEXT_NO_CLIP;
+    s_draw.text_edge            = 0u;                   /* plain runs until a caller asks for an edge */
 
 #ifdef GUI_CMD_STEPPER
-    s_draw.cur_owner = 0;   /* background/chrome until the first widget stamps */
+    s_draw.cur_owner = 0;       /* background/chrome until the first widget stamps */
 #endif
 
     /* Command stepper: while a frozen frame is replayed, pre-load the frozen command prefix and
        pools over the empty frame just seeded.  A no-op unless GUI_CMD_STEPPER and frozen. */
+
     STEP_RESTORE_EMIT();
 }
 
