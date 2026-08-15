@@ -794,6 +794,16 @@ gui_style_var_class( gui_style_var_t v )
     return ( (u32)v < GUI_VAR_COUNT ) ? (gui_style_class_t)k_var[ v ].cls : GUI_CLASS_SHAPE;
 }
 
+/* The var's tuning ceiling (px at em=12; a RATIO's is 1, a SHAPE's its last variant ordinal) --
+   the top of an editor's slider, not a legality clamp on the stored value.  Authored per var in
+   the schema table because a per-class ceiling wastes most of a slider's travel on the vars
+   whose useful range is a fraction of their neighbours'. */
+f32
+gui_style_var_max( gui_style_var_t v )
+{
+    return ( (u32)v < GUI_VAR_COUNT ) ? k_var[ v ].max : 0.0f;
+}
+
 /*==============================================================================================
     The installed layer -- how a set gets filled, and the two refresh steps over it.
 ==============================================================================================*/

@@ -1884,6 +1884,7 @@ typedef struct gui_api_s
     const char*       ( *style_ramp_name  )( gui_style_ramp_t ramp );
     const char*       ( *style_var_name   )( gui_style_var_t var );
     gui_style_class_t ( *style_var_class  )( gui_style_var_t var );
+    f32               ( *style_var_max    )( gui_style_var_t var );   // tuning-slider ceiling, not a clamp
     const char*       ( *style_class_name )( gui_style_class_t cls );
     const char*       ( *style_ext_name   )( gui_style_ext_t ext );   // "?" past the reserved four
 

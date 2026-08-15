@@ -47,47 +47,53 @@ u32 style_font_size( void ) { return s_font_size; }
 /*==============================================================================================
     The var schema -- ONE table describing every scalar the style has.
 
-    Display name + class, designated by index so an entry cannot slide out of alignment.  This
-    is the whole description of a var: metrics_compute reads the class to decide scaling and
-    snapping, gui_style_var_name / _class publish both, and a style editor groups its sliders
-    from them instead of keeping a parallel list.  Adding a var is one line HERE plus one in the
-    enum -- there is no third place that has to be remembered.
-==============================================================================================*/
+    Display name + class + editing ceiling, designated by index so an entry cannot slide out of
+    alignment.  This is the whole description of a var: metrics_compute reads the class to decide
+    scaling and snapping, gui_style_var_name / _class / _max publish all three, and a style editor
+    groups its sliders and ranges them from the schema instead of keeping a parallel list.  Adding
+    a var is one line HERE plus one in the enum -- there is no third place that has to be
+    remembered.
 
-typedef struct { const char* name; u8 cls; } style_var_info_t;
+    `max` is the top of a tuning slider, not a legality bound: nothing clamps an installed value
+    to it, and push_style_var may exceed it freely.  It is authored per var (px at em=12) because
+    one ceiling per CLASS buries the useful travel -- a border is unreadable past a few px while a
+    row height is only getting started, and sharing a 64px track parks the border slider's whole
+    real range in its first tenth.  A SHAPE's max is its last variant ordinal. */
+
+typedef struct { const char* name; u8 cls; f32 max; } style_var_info_t;
 
 static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
 {
-    [ GUI_VAR_ROW             ] = { "Row Height",      GUI_CLASS_METRIC },
-    [ GUI_VAR_PAD             ] = { "Padding",         GUI_CLASS_METRIC },
-    [ GUI_VAR_GAP             ] = { "Gap",             GUI_CLASS_METRIC },
-    [ GUI_VAR_INDICATOR       ] = { "Indicator Size",  GUI_CLASS_METRIC },
-    [ GUI_VAR_GUTTER          ] = { "Knob / Gutter",   GUI_CLASS_METRIC },
-    [ GUI_VAR_MIN_CELL        ] = { "Min Cell Width",  GUI_CLASS_METRIC },
-    [ GUI_VAR_TITLE_H         ] = { "Title Height",    GUI_CLASS_METRIC },
+    [ GUI_VAR_ROW             ] = { "Row Height",      GUI_CLASS_METRIC, 48 },
+    [ GUI_VAR_PAD             ] = { "Padding",         GUI_CLASS_METRIC, 24 },
+    [ GUI_VAR_GAP             ] = { "Gap",             GUI_CLASS_METRIC, 16 },
+    [ GUI_VAR_INDICATOR       ] = { "Indicator Size",  GUI_CLASS_METRIC, 32 },
+    [ GUI_VAR_GUTTER          ] = { "Knob / Gutter",   GUI_CLASS_METRIC, 32 },
+    [ GUI_VAR_MIN_CELL        ] = { "Min Cell Width",  GUI_CLASS_METRIC, 96 },
+    [ GUI_VAR_TITLE_H         ] = { "Title Height",    GUI_CLASS_METRIC, 48 },
 
-    [ GUI_VAR_BORDER          ] = { "Border Width",    GUI_CLASS_STROKE },
+    [ GUI_VAR_BORDER          ] = { "Border Width",    GUI_CLASS_STROKE, 8  },
 
-    [ GUI_VAR_ROUND           ] = { "Widget Rounding", GUI_CLASS_SKIN   },
-    [ GUI_VAR_PANEL_ROUND     ] = { "Panel Rounding",  GUI_CLASS_SKIN   },
-    [ GUI_VAR_SHADOW          ] = { "Shadow Width",    GUI_CLASS_SKIN   },
+    [ GUI_VAR_ROUND           ] = { "Widget Rounding", GUI_CLASS_SKIN,   16 },
+    [ GUI_VAR_PANEL_ROUND     ] = { "Panel Rounding",  GUI_CLASS_SKIN,   24 },
+    [ GUI_VAR_SHADOW          ] = { "Shadow Width",    GUI_CLASS_SKIN,   48 },
 
-    [ GUI_VAR_GRID_Q          ] = { "Grid Quantum",    GUI_CLASS_PITCH  },
+    [ GUI_VAR_GRID_Q          ] = { "Grid Quantum",    GUI_CLASS_PITCH,  32 },
 
-    [ GUI_VAR_DISABLED_ALPHA  ] = { "Disabled Alpha",  GUI_CLASS_RATIO  },
+    [ GUI_VAR_DISABLED_ALPHA  ] = { "Disabled Alpha",  GUI_CLASS_RATIO,  1  },
 
-    [ GUI_VAR_ANIM_HOT        ] = { "Hover Rate",      GUI_CLASS_RATE   },
-    [ GUI_VAR_ANIM_ACTIVE     ] = { "Press Rate",      GUI_CLASS_RATE   },
-    [ GUI_VAR_ANIM_SELECT     ] = { "Select Rate",     GUI_CLASS_RATE   },
-    [ GUI_VAR_ANIM_SIZE       ] = { "Size Rate",       GUI_CLASS_RATE   },
+    [ GUI_VAR_ANIM_HOT        ] = { "Hover Rate",      GUI_CLASS_RATE,   40 },
+    [ GUI_VAR_ANIM_ACTIVE     ] = { "Press Rate",      GUI_CLASS_RATE,   40 },
+    [ GUI_VAR_ANIM_SELECT     ] = { "Select Rate",     GUI_CLASS_RATE,   40 },
+    [ GUI_VAR_ANIM_SIZE       ] = { "Size Rate",       GUI_CLASS_RATE,   40 },
 
-    [ GUI_VAR_CHECK_SHAPE     ] = { "Check Shape",     GUI_CLASS_SHAPE  },
-    [ GUI_VAR_BULLET_SHAPE    ] = { "Bullet Shape",    GUI_CLASS_SHAPE  },
-    [ GUI_VAR_ARROW_SHAPE     ] = { "Arrow Shape",     GUI_CLASS_SHAPE  },
-    [ GUI_VAR_SEPARATOR_SHAPE ] = { "Separator Shape", GUI_CLASS_SHAPE  },
-    [ GUI_VAR_PROGRESS_SHAPE  ] = { "Progress Shape",  GUI_CLASS_SHAPE  },
-    [ GUI_VAR_KNOB_SHAPE      ] = { "Knob Shape",      GUI_CLASS_SHAPE  },
-    [ GUI_VAR_MENU_CHECK      ] = { "Menu Check",      GUI_CLASS_SHAPE  },
+    [ GUI_VAR_CHECK_SHAPE     ] = { "Check Shape",     GUI_CLASS_SHAPE,  GUI_CHECK_CROSS      },
+    [ GUI_VAR_BULLET_SHAPE    ] = { "Bullet Shape",    GUI_CLASS_SHAPE,  GUI_BULLET_SQUARE    },
+    [ GUI_VAR_ARROW_SHAPE     ] = { "Arrow Shape",     GUI_CLASS_SHAPE,  GUI_ARROW_CHEVRON    },
+    [ GUI_VAR_SEPARATOR_SHAPE ] = { "Separator Shape", GUI_CLASS_SHAPE,  GUI_SEPARATOR_DASHED },
+    [ GUI_VAR_PROGRESS_SHAPE  ] = { "Progress Shape",  GUI_CLASS_SHAPE,  GUI_PROGRESS_GRADIENT},
+    [ GUI_VAR_KNOB_SHAPE      ] = { "Knob Shape",      GUI_CLASS_SHAPE,  GUI_SLIDER_KNOB_CIRCLE },
+    [ GUI_VAR_MENU_CHECK      ] = { "Menu Check",      GUI_CLASS_SHAPE,  GUI_MENU_CHECK_BOX   },
 };
 
 /* The palette axes, named for the same reason the var axis is: a style editor walks the schema

@@ -352,12 +352,15 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
             if ( dc->elem_count == 0 )
                 continue;
 
-            // Scissor to the command's clip rect.  Floor the origin and ceil the far edge so a
-            // fractional clip never rounds inward and shaves a pixel off visible content.
-            i32 sx0 = (i32)floorf( dc->clip_rect.x );
-            i32 sy0 = (i32)floorf( dc->clip_rect.y );
-            i32 sx1 = (i32)ceilf ( dc->clip_rect.x + dc->clip_rect.w );
-            i32 sy1 = (i32)ceilf ( dc->clip_rect.y + dc->clip_rect.h );
+            // Scissor to the command's clip rect, each edge rounded to the nearest pixel -- the
+            // same grid tess_snap_px puts fill edges on, and the pixel-center rule an unsnapped
+            // edge rasterizes by.  A floor/ceil expansion instead would admit up to one extra
+            // pixel row past a fractional clip edge, letting a child's content paint one pixel
+            // below the parent panel's own drawn bottom edge.
+            i32 sx0 = (i32)floorf( dc->clip_rect.x + 0.5f );
+            i32 sy0 = (i32)floorf( dc->clip_rect.y + 0.5f );
+            i32 sx1 = (i32)floorf( dc->clip_rect.x + dc->clip_rect.w + 0.5f );
+            i32 sy1 = (i32)floorf( dc->clip_rect.y + dc->clip_rect.h + 0.5f );
 
             // Clamp to framebuffer bounds (Vulkan requires offset >= 0 and extent within the surface).
             if ( sx0 < 0 ) sx0 = 0;

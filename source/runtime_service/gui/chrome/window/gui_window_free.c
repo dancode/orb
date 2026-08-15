@@ -685,6 +685,7 @@ window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 ti
    Strength is banded by elevation -- overlays strongest, free floaters lighter -- and the flush
    chrome the caller filters out (docked, maximized, native, frame-only shells) casts none.
    A theme opts out entirely with GUI_VAR_SHADOW 0 or an alpha-0 GUI_EXT_SHADOW. */
+
 static void
 window_draw_elevation( const gui_window_t* win, f32 disp_h )
 {

@@ -365,6 +365,7 @@ const gui_api_t g_gui_api_struct =
     .style_ramp_name                    = gui_style_ramp_name,
     .style_var_name                     = gui_style_var_name,
     .style_var_class                    = gui_style_var_class,
+    .style_var_max                      = gui_style_var_max,
     .style_class_name                   = gui_style_class_name,
     .style_ext_name                     = gui_style_ext_name,
     .scale_push                         = gui_scale_push,

@@ -52,6 +52,35 @@ se_f32( const char* label, f32* field, f32 lo, f32 hi )
     return gui()->slider_float( label, field, lo, hi );
 }
 
+/* One px-unit scalar -> an INTEGER slider bound to the f32 field.  Pixel metrics are authored
+   as whole pixels at em=12 (the lattice snaps them anyway), so a float track only makes the
+   values people actually want -- 4, 8, 16 -- hard to land on. */
+static bool
+se_px( const char* label, f32* field, i32 lo, i32 hi )
+{
+    i32 v = (i32)( *field + 0.5f );
+    if ( gui()->slider_int( label, &v, lo, hi ) )
+    {
+        *field = (f32)v;
+        return true;
+    }
+    return false;
+}
+
+/* One px-unit scalar -> an integer drag field bound to the f32 field -- se_px's drag twin, for
+   the density-ramp triples where a slider per cell would crowd the row. */
+static bool
+se_px_drag( const char* label, f32* field )
+{
+    i32 v = (i32)( *field + 0.5f );
+    if ( gui()->drag_int( label, &v, 0.25f, 0, 64, NULL ) )
+    {
+        *field = (f32)v;
+        return true;
+    }
+    return false;
+}
+
 /* One enum-valued var -> a combo of named variants. */
 static bool
 se_shape( gui_style_var_t var, f32* vars, const char* const* names, i32 count )
@@ -205,15 +234,23 @@ st_editor_window( void )
     {
         if ( c == GUI_CLASS_SHAPE ) continue;
 
-        /* Range comes off the CLASS too -- a ratio is 0..1, a pixel value 0..64.  One more thing
-           the editor asks the engine rather than tabulating per var. */
-        f32 hi = ( c == GUI_CLASS_RATIO ) ? 1.0f : 64.0f;
+        /* UNIT comes off the CLASS (px classes -- metric, stroke, skin, pitch -- edit as whole
+           pixels on an integer slider; ratio and rate stay float), the RANGE off the var's own
+           schema ceiling (style_var_max), so a border slider spans the few px a border can be
+           rather than a shared 64px track.  Both asked of the engine, tabulated nowhere here. */
+        bool px = ( c == GUI_CLASS_METRIC || c == GUI_CLASS_STROKE
+                 || c == GUI_CLASS_SKIN   || c == GUI_CLASS_PITCH );
 
         gui()->separator_text( gui()->style_class_name( ( gui_style_class_t )c ) );
         for ( u32 v = 0; v < GUI_VAR_COUNT; ++v )
             if ( gui()->style_var_class( ( gui_style_var_t )v ) == ( gui_style_class_t )c )
-                changed |= se_f32( gui()->style_var_name( ( gui_style_var_t )v ),
-                                   &work.var[ v ], 0.0f, hi );
+            {
+                f32 hi = gui()->style_var_max( ( gui_style_var_t )v );
+                changed |= px ? se_px ( gui()->style_var_name( ( gui_style_var_t )v ),
+                                        &work.var[ v ], 0, (i32)hi )
+                              : se_f32( gui()->style_var_name( ( gui_style_var_t )v ),
+                                        &work.var[ v ], 0.0f, hi );
+            }
     }
 
     gui()->separator_text( gui()->style_class_name( GUI_CLASS_SHAPE ) );
@@ -239,9 +276,9 @@ st_editor_window( void )
         gui()->push_id( nm_scale[ s ] );
         gui()->row_cols( 0.0f, (f32[]){ step_w, 1.0f, 1.0f, 1.0f, GUI_END } );
         gui()->text( nm_scale[ s ] );
-        changed |= gui()->drag_float( "##row", &work.scales[ s ].row, 0.25f, 0.0f, 64.0f, NULL );
-        changed |= gui()->drag_float( "##pad", &work.scales[ s ].pad, 0.25f, 0.0f, 64.0f, NULL );
-        changed |= gui()->drag_float( "##gap", &work.scales[ s ].gap, 0.25f, 0.0f, 64.0f, NULL );
+        changed |= se_px_drag( "##row", &work.scales[ s ].row );
+        changed |= se_px_drag( "##pad", &work.scales[ s ].pad );
+        changed |= se_px_drag( "##gap", &work.scales[ s ].gap );
         gui()->pop_id();
     }
     gui()->stack();

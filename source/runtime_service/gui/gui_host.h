@@ -505,6 +505,7 @@ const char*       gui_style_seed_name ( gui_style_seed_t seed );
 const char*       gui_style_ramp_name ( gui_style_ramp_t ramp );
 const char*       gui_style_var_name  ( gui_style_var_t var );
 gui_style_class_t gui_style_var_class ( gui_style_var_t var );
+f32               gui_style_var_max   ( gui_style_var_t var );
 const char*       gui_style_class_name( gui_style_class_t cls );
 const char*       gui_style_ext_name  ( gui_style_ext_t ext );
 

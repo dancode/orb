@@ -290,18 +290,19 @@ main( int argc, char** argv )
         // the usual door -- every role fed by the seed moves together and keeps its ramp.
 
         // u32 blue = GUI_COLOR( 32, 32, 192, 255 );        
-        u32 pane = GUI_COLOR( 96, 96, 96, 255 );
+        u32 pane = GUI_COLOR( 48, 48, 48, 255 );
+        u32 line = GUI_COLOR( 96, 96, 96, 255 );
         u32 ink = GUI_COLOR( 224, 224, 224, 255 );
-        u32 accent = GUI_COLOR( 128, 128, 128, 255 );
-        u32 pop = GUI_COLOR( 192, 32, 32, 255 );
+        // u32 accent = GUI_COLOR( 128, 128, 128, 255 );
+        u32 pop = GUI_COLOR( 32, 160, 32, 255 );
 
         style->palette.seed[GUI_SEED_SURFACE]   = pane;
         style->palette.seed[GUI_SEED_CONTROL]   = pane;
         style->palette.seed[GUI_SEED_INK]       = ink;
-        style->palette.seed[GUI_SEED_LINE]      = pane;
+        style->palette.seed[GUI_SEED_LINE]      = line;
         style->palette.seed[GUI_SEED_ACCENT]    = pop;
-        style->palette.seed[GUI_SEED_MARK]      = accent;
-        style->palette.seed[GUI_SEED_GRAB]      = accent;
+        style->palette.seed[GUI_SEED_MARK]      = pop;
+        style->palette.seed[GUI_SEED_GRAB]      = line;
         
         // Recolor by RAMP: change how far a derivation travels, not the color it travels from.
         // A deeper HOVER wash reads as a punchier, more reactive theme off the same seeds.
