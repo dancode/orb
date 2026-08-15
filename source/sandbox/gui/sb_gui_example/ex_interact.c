@@ -489,13 +489,12 @@ ex_dd_list_column( i32 list )
             gui()->drag_source_end();
         }
 
-        /* Target: dropping another row here inserts it before this row.  drag_hint outlines every
-           row the instant a DD_ITEM drag starts, so the user sees every legal drop point without
-           having to sweep the cursor over each one first; drag_target_begin's own ring (inside
-           drag_payload_accept) still bolds whichever row the cursor is actually over. */
-
-        // gui()->drag_hint( "DD_ITEM" );
-
+        /* Target: dropping another row here inserts it before this row.  No per-row drag_hint --
+           with a whole scrollable list of rows that reads as noise, one outline per row.  The
+           list's own child_begin (##list_a / ##list_b below) carries GUI_WIN_DRAG_TARGET instead,
+           so the ambient "you can drop somewhere in here" cue is one outline on the list's own
+           border; drag_target_begin's own ring (inside drag_payload_accept) still bolds the
+           specific row the cursor is over. */
         if ( gui()->drag_target_begin() )
         {
             const gui_drag_payload_t* p = gui()->drag_payload_accept( "DD_ITEM", GUI_DRAG_NONE );
@@ -512,7 +511,6 @@ ex_dd_list_column( i32 list )
     }
 
     gui()->small_button( "( drop to append )" );
-    gui()->drag_hint( "DD_ITEM" );
     if ( gui()->drag_target_begin() )
     {
         const gui_drag_payload_t* p = gui()->drag_payload_accept( "DD_ITEM", GUI_DRAG_NONE );
@@ -552,10 +550,10 @@ ex_interact_reorder( void )
         gui()->separator();
 
         gui()->row2( 0.5f, 0.5f );
-        gui()->child_begin( "##list_a", 0.0f, 220.0f, GUI_WIN_NONE );
+        gui()->child_begin( "##list_a", 0.0f, 220.0f, GUI_WIN_DRAG_TARGET );
         ex_dd_list_column( 0 );
         gui()->child_end();
-        gui()->child_begin( "##list_b", 0.0f, 220.0f, GUI_WIN_NONE );
+        gui()->child_begin( "##list_b", 0.0f, 220.0f, GUI_WIN_DRAG_TARGET );
         ex_dd_list_column( 1 );
         gui()->child_end();
 

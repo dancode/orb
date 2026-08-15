@@ -220,6 +220,14 @@ typedef struct
     u8              child_resize_edge;       // hot/armed resize edges for this child (0 = none)
     u8              child_resize_saved_hot;  // s_scope.resize_hot to restore at child_end
 
+    /* Child drag-target border (child_begin GUI_WIN_DRAG_TARGET): child_begin computes
+       child_standing_phase once (before the child's own content can move the drag state) and
+       stashes it here so child_end's deferred border draw reads the SAME phase the body fill
+       used, rather than recomputing it against whatever the drag looks like by the time the
+       child's content has finished emitting. */
+    u8              child_body_phase;        // this child's PANEL_CHILD phase this frame
+    bool            child_drag_target;       // GUI_WIN_DRAG_TARGET was set at child_begin
+
 } layout_frame_t;
 
 /* Layout-frame stack -- storage is private to the flow unit (flow/gui_layout_core.c); this
@@ -394,7 +402,7 @@ void scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
                        f32 content, f32 view, f32* scroll );
 
 void draw_child_bg        ( gui_rect_t r, u8 phase );
-void draw_child_border    ( gui_rect_t r );
+void draw_child_border    ( gui_rect_t r, u8 phase, bool drag_candidate );
 void draw_resize_highlight( gui_rect_t r, u8 edges );
 
 /* item_flags_resolve / item_flags_chrome_reset (stock/gui_adornment.c) -- the per-item

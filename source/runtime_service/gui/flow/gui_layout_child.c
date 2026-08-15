@@ -258,6 +258,8 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     layout_frame_t* f         = lf();
     f->child_resize_edge      = resize_hot;   /* live edges: dragged mid-drag, else hot under cursor */
     f->child_resize_saved_hot = s_scope.resize_hot;
+    f->child_body_phase       = body_phase;
+    f->child_drag_target      = ( flags & GUI_WIN_DRAG_TARGET ) != 0;
     if ( f->child_resize_edge ) s_scope.resize_hot = f->child_resize_edge;
 
     /* No collapse concept for a child: always returns true, always pair with child_end. */
@@ -275,12 +277,20 @@ gui_child_end( void )
     gui_rect_t    box   = f->outer;
     u8              edges = f->child_resize_edge;
     u8              saved = f->child_resize_saved_hot;
+    u8              phase = f->child_body_phase;
+    bool            drag_target = f->child_drag_target;
 
     layout_pop_region();
 
     s_scope.resize_hot = saved;   /* lift the body-widget suppression this child raised */
 
-    draw_child_border( box );
+    /* drag_candidate re-reads gui_drag_active() now rather than trusting a child_begin snapshot:
+       a drag can start or end while this child's own content was emitting (a source widget
+       inside it, say), and the border should track the CURRENT frame state, not a stale one from
+       before the child's content ran -- unlike child_body_phase, which intentionally freezes at
+       child_begin (see the field comment, gui_flow.h). */
+    bool drag_candidate = drag_target && gui_drag_active();
+    draw_child_border( box, phase, drag_candidate );
 
     /* Resize affordance: bold the hot/armed edge so the border reads as draggable. */
     if ( edges )

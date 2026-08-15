@@ -404,11 +404,13 @@ typedef enum
    can find the live surface without the fill competing with the content painted over it -- PANEL
    reads the window's own focus (nav.focused_win), CHILD reads whether the focused widget is
    scoped to THIS child specifically (s_interaction.focused_win, which pane_tag stamps to the
-   child's id on entry, not the enclosing window's) -- while TITLE/ACTIVE is authored as the bare
-   window BODY colour in every built-in theme, which is what makes a live tab merge into the panel
-   it owns.  BORDER/ACTIVE carries the strongest version of the window-level fact (a full focus
-   ring) -- three surfaces, one signal, weighted so the ring does the convincing and the other two
-   do not have to fight it for attention.
+   child's id on entry, not the enclosing window's) -- while TITLE/ACTIVE is authored as the full
+   lifted, accented band (the same one HOT washes further): the focused window's bar, or a live
+   tab, is meant to be the vivid one that draws the eye first, with TITLE/IDLE the bare ground so
+   an unfocused window or a background tab recedes instead of outshining it.  BORDER/ACTIVE
+   carries the strongest version of the window-level fact (a full focus ring) -- three surfaces,
+   one signal, weighted so the ring does the convincing and the other two do not have to fight it
+   for attention.
 
    INERT is at least four unrelated ideas wearing one column, and no single word covers all of
    them honestly -- "inert" is the least wrong:

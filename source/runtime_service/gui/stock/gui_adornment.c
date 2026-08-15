@@ -172,8 +172,26 @@ draw_drop_hint( gui_rect_t r )
 
 /* Child box chrome (flow/gui_layout_child.c invokes these around its region): the body
    fill under the region clips at child_begin, the border over the bar tracks at child_end. */
-void draw_child_bg    ( gui_rect_t r, u8 phase ) { draw_face( r, GUI_ROLE_PANEL_CHILD, phase ); }
-void draw_child_border( gui_rect_t r ) { draw_outline( r, WIN_BORDER, COL_BORDER_IDLE ); }
+void draw_child_bg( gui_rect_t r, u8 phase ) { draw_face( r, GUI_ROLE_PANEL_CHILD, phase ); }
+
+/* The child's own border, one of three reads (child_end passes back the SAME phase child_begin's
+   body fill used, plus whether GUI_WIN_DRAG_TARGET was set -- see child_body_phase,
+   flow/gui_flow.h): phase HOT bolds it into the drop-accepted ring (draw_drop_ring's geometry, but
+   the GUI_EXT_INFO hue instead of MARK -- this is the same "you can drop here" signal PANEL_CHILD's
+   own HOT wash is already carrying on the fill, not the widget-level accept ring's family); not
+   hot but still a live drag candidate gets the thin ambient hint (draw_drop_hint) so a
+   GUI_WIN_DRAG_TARGET child reads as a candidate the moment a compatible drag starts, not only
+   once hovered; otherwise the plain idle frame. */
+void
+draw_child_border( gui_rect_t r, u8 phase, bool drag_candidate )
+{
+    if ( phase == GUI_PHASE_HOT )
+        draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, style_ext( GUI_EXT_INFO ) );
+    else if ( drag_candidate )
+        draw_drop_hint( r );
+    else
+        draw_outline( r, WIN_BORDER, COL_BORDER_IDLE );
+}
 
 /* Paint a bold line over each hot edge of an outline so it is obvious that the border is
    grabbable and which side will move.  Drawn just inside the rect, over the thin border.

@@ -336,7 +336,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
 
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.35f, p->ext[ GUI_EXT_INFO ] );
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_lift( ground, step * 0.25f, pole );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_lift( ground, step * 0.1f, pole );
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_INERT  ] = bake_recess( ground, recess );
 
     /* PANEL_CHILD -- a nested container: scroll region, embedded child panel.  Same shape and the
@@ -356,20 +356,21 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
 
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_IDLE   ] = child_ground;
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_HOT    ] = bake_wash( child_ground, hover * 0.35f, p->ext[ GUI_EXT_INFO ] );
-    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_ACTIVE ] = bake_lift( child_ground, step * 0.25f, pole );
+    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_ACTIVE ] = bake_lift( child_ground, step * 0.1f, pole );
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_INERT  ] = bake_recess( child_ground, recess );
 
     /* TITLE -- a caption band is a LIFTED ground, which is why it needs no seed of its own.  Phase
-       mirrors PANEL's standing-based reading, not the cursor: IDLE is an inactive bar or
-       background tab; ACTIVE is the bare ground -- a live tab IS its panel, merging into the body
-       it owns, which already doubles as "this window has focus".  HOT is freed from hover for the
-       same drop-target cue PANEL's HOT carries -- a title bar is as valid a landing zone to
-       highlight as the body under it.  INERT is read only for a maximized window's titlebar
+       mirrors PANEL's standing-based reading, not the cursor: ACTIVE is the full band -- the
+       focused window's bar, or a live tab, is the vivid one, the eye's first landing point; IDLE
+       is the bare ground -- an inactive bar or a background tab sits flush and recedes, rather
+       than outshining the window that actually has focus.  HOT is freed from hover for the same
+       drop-target cue PANEL's HOT carries -- a title bar is as valid a landing zone to highlight
+       as the body under it.  INERT is read only for a maximized window's titlebar
        (gui_window_end.c). */
 
-    col[ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = band;
+    col[ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = ground;
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_wash( band, hover * 0.35f, p->ext[ GUI_EXT_INFO ] );
-    col[ GUI_ROLE_TITLE ][ GUI_PHASE_ACTIVE ] = ground;
+    col[ GUI_ROLE_TITLE ][ GUI_PHASE_ACTIVE ] = band;
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_INERT  ] = bake_fade( band, fade, ground );
 
     /* BG -- the control face.  Hot comes forward, active sinks back: that pair IS the pressed
