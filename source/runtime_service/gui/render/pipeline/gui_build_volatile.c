@@ -587,6 +587,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
         u32 abs_ib = slot_ib + row->local_idx_base;
         u32 abs_cb = slot_cb + row->local_cmd_base;
 
+        ++s_geo_gen;   /* live arena bytes change: in-flight upload regions go stale */
         memcpy( &s_tess.verts  [ abs_vb ], &s_tess.verts  [ vert_ck ], nv * sizeof( gui_draw_vert_t ) );
         memcpy( &s_tess.indices[ abs_ib ], &s_tess.indices[ idx_ck  ], ni * sizeof( u16 ) );
 

@@ -133,7 +133,7 @@ show_demo_window(bool* p_open)
         gui()->slider_float("float", &f, 0.0f, 1.0f);
         gui()->separator_text("Inline color editor");
         gui()->text("Color widget:");
-        gui()->stack_same_line(0.0f); 
+        gui()->stack_same_line(0.0f);
         gui()->help_marker("Click on the color square to open a color picker.\nCtrl+Click on individual component to input value.\n");
         static f32 color[4] = { 0.4f, 0.7f, 0.0f, 1.0f };
         gui()->color_edit3("MyColor##1", color, GUI_COLOR_EDIT_NONE);

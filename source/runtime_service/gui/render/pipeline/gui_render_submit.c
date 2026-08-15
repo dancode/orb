@@ -225,9 +225,21 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
     u32 up_batches = 0;   // how many buffer_write calls this flush issued (0, 1, or 2)
     u32 up_bytes = 0;     // total bytes those writes moved
 
+    /* Geometry-generation skip: if this (frame, viewport) region already holds the current
+       arena generation (s_geo_gen, gui_build_tess.c), its bytes are identical to what these
+       spans would upload -- a presented-but-unchanged frame (fx animation, reused real frame)
+       moves nothing.  Any live-byte change bumped the generation, so the first flush after it
+       re-uploads and re-stamps. */
+    static u32 s_region_geo_gen[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
+
+    u32  clip_region = frame * (u32)GUI_MAX_VIEWPORTS + (u32)vp_index;
+    bool geo_dirty   = s_region_geo_gen[ clip_region ] != s_geo_gen;
+    if ( geo_dirty )
+        s_region_geo_gen[ clip_region ] = s_geo_gen;
+
     // Upload the vertex span, then the index span -- each only if this surface actually
-    // touched geometry in that range.
-    if ( vtx_hi > vtx_lo )
+    // touched geometry in that range (and the region is stale at all).
+    if ( geo_dirty && vtx_hi > vtx_lo )
     {
         u32 bytes = ( vtx_hi - vtx_lo ) * sizeof( gui_draw_vert_t );
         rhi()->buffer_write( vb,
@@ -237,7 +249,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         up_batches++;
         up_bytes += bytes;
     }
-    if ( idx_hi > idx_lo )
+    if ( geo_dirty && idx_hi > idx_lo )
     {
         u32 bytes = ( idx_hi - idx_lo ) * sizeof( u16 );
         rhi()->buffer_write( ib,
@@ -262,8 +274,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        into the clip band -- so a slab only re-uploads when its content changed
        (s_clip_slab_pending, set by tess_clip_local on append).  A stable frame uploads nothing;
        nothing per-slot reaches the push constants. */
-    u32 clip_region = frame * (u32)GUI_MAX_VIEWPORTS + (u32)vp_index;
-    u8  region_bit  = (u8)( 1u << clip_region );
+    u8 region_bit = (u8)( 1u << clip_region );
     for ( u32 d = 0; d < s_dispatch_count; ++d )
     {
         const win_geo_slot_t* sl = s_dispatch[ d ];

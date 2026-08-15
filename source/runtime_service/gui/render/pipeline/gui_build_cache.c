@@ -904,6 +904,8 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     u32 tail_v = s_tess.vert_count;   /* invariant: the write head is past every live reservation */
     u32 tail_i = s_tess.idx_count;
 
+    ++s_geo_gen;   /* live arena bytes are about to change: in-flight upload regions go stale */
+
     slot->vert_base       = tail_v;
     slot->idx_base        = tail_i;
     slot->cmd_base        = s_tess.cmd_count;

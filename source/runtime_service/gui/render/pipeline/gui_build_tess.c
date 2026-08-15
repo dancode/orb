@@ -122,6 +122,16 @@ static struct
     overlay; overflow itself stays in s_tess because it is written per-primitive on buffer-full.
 ==============================================================================================*/
 
+/* Geometry generation -- bumped whenever bytes inside the live arena change (a window
+   tessellates, relocates or repacks: cache_slot_tessellate; a volatile patch applies:
+   volatile_patch).  Each (frame-in-flight, viewport) upload region remembers the generation it
+   was last filled with (gui_render_submit.c), so a flush whose region already holds the current
+   generation skips the vertex + index uploads entirely -- the common presented-but-unchanged
+   frame (fx animation, reused real frame) moves zero geometry bytes.  Pure command-side changes
+   (z reorder, a window vanishing) deliberately do not bump: draws re-record every flush and
+   never reference bytes outside their own slots' spans. */
+static u32 s_geo_gen = 1;
+
 static struct
 {
     u32  vert_hwm, idx_hwm;   /* lifetime peak of the TOTAL write head (both bands) */
