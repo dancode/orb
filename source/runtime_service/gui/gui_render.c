@@ -126,7 +126,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>       // floorf / ceilf -- pixel-grid snapping in draw + scissor
+#include <math.h>
 
 #include "orb.h"
 #include "base/fmt.h"   // fmt_snprintf / fmt_vsnprintf -- CRT-free formatting on the per-frame text paths

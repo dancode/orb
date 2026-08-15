@@ -260,19 +260,24 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         up_bytes += bytes;
     }
 
-    /* Volatile-patch dirty spans (gui_build_tess.c, s_patch_pending): a full upload above
-       covered every patched byte of this surface, so it just clears the entry; a generation-
-       matching flush uploads only the patched ranges -- a live volatile widget costs its own
-       few hundred bytes per present, not the whole span. */
-    if ( geo_dirty )
+    /* Fine dirty spans (gui_build_tess.c, s_patch_pending), one per arena band so a changed app
+       window and a changed overlay never union across the gap between them: a full upload above
+       covered every accumulated byte of this surface, so it just clears the entries; a
+       generation-matching flush uploads only the accumulated ranges -- a changed window or a
+       live volatile widget costs its own bytes per present, not the whole span. */
+    u32 up_overlay = geo_dirty ? overlay_bytes : 0;   // debug-band share of what this flush moved
+    for ( u32 b = 0; b < 2; ++b )
     {
-        s_patch_pending[ clip_region ].v_lo = s_patch_pending[ clip_region ].v_hi = 0;
-        s_patch_pending[ clip_region ].i_lo = s_patch_pending[ clip_region ].i_hi = 0;
-    }
-    else
-    {
-        u32 pv_lo = s_patch_pending[ clip_region ].v_lo, pv_hi = s_patch_pending[ clip_region ].v_hi;
-        u32 pi_lo = s_patch_pending[ clip_region ].i_lo, pi_hi = s_patch_pending[ clip_region ].i_hi;
+        u32 pv_lo = s_patch_pending[ clip_region ][ b ].v_lo;
+        u32 pv_hi = s_patch_pending[ clip_region ][ b ].v_hi;
+        u32 pi_lo = s_patch_pending[ clip_region ][ b ].i_lo;
+        u32 pi_hi = s_patch_pending[ clip_region ][ b ].i_hi;
+
+        s_patch_pending[ clip_region ][ b ].v_lo = s_patch_pending[ clip_region ][ b ].v_hi = 0;
+        s_patch_pending[ clip_region ][ b ].i_lo = s_patch_pending[ clip_region ][ b ].i_hi = 0;
+        if ( geo_dirty )
+            continue;   // the full spans above already carried these bytes
+
         if ( pv_hi > pv_lo )
         {
             u32 bytes = ( pv_hi - pv_lo ) * sizeof( gui_draw_vert_t );
@@ -280,7 +285,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
                                  vb_off + pv_lo * (u32)sizeof( gui_draw_vert_t ) );
             up_batches++;
             up_bytes += bytes;
-            s_patch_pending[ clip_region ].v_lo = s_patch_pending[ clip_region ].v_hi = 0;
+            if ( b != 0 ) up_overlay += bytes;
         }
         if ( pi_hi > pi_lo )
         {
@@ -289,7 +294,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
                                  ib_off + pi_lo * (u32)sizeof( u16 ) );
             up_batches++;
             up_bytes += bytes;
-            s_patch_pending[ clip_region ].i_lo = s_patch_pending[ clip_region ].i_hi = 0;
+            if ( b != 0 ) up_overlay += bytes;
         }
     }
 
@@ -297,7 +302,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
     // what the app drew, not the tooling drawn on top of it.
     if ( up_batches > 0 )
     {
-        u32 actual_bytes = up_bytes > overlay_bytes ? up_bytes - overlay_bytes : 0;
+        u32 actual_bytes = up_bytes > up_overlay ? up_bytes - up_overlay : 0;
         u32 actual_batches = actual_bytes > 0 ? up_batches : 0;
         cache_count_upload( actual_batches, actual_bytes );
     }

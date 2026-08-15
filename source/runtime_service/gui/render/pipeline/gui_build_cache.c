@@ -309,15 +309,20 @@ cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base, u
     return false;
 }
 
-/* A window's CURRENT viewport by id (forward-declared in gui_build_volatile.c): a volatile
-   patch tags its dirty spans with the viewport whose flush must re-upload them.  Same s_slots
-   view as cache_slot_lookup; GUI_VP_INVALID when the window has no live slot. */
+/* A window's CURRENT viewport + arena band by id (forward-declared in gui_build_volatile.c): a
+   volatile patch tags its dirty spans with the viewport whose flush must re-upload them and the
+   band whose stats they belong to.  Same s_slots view as cache_slot_lookup; GUI_VP_INVALID when
+   the window has no live slot. */
 static u8
-cache_slot_vp( gui_id_t win )
+cache_slot_vp( gui_id_t win, u8* out_band )
 {
     for ( u32 i = 0; i < s_slot_count; ++i )
         if ( s_slots[ i ].win == win && s_slots[ i ].valid )
+        {
+            *out_band = s_slots[ i ].band;
             return s_slots[ i ].vp;
+        }
+    *out_band = 0;
     return (u8)GUI_VP_INVALID;
 }
 
@@ -1004,7 +1009,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
        than bumping s_geo_gen -- a steadily-changing window (the focused one, a stats overlay)
        costs its own span per present, not the whole arena.  The repack retry bumps the
        generation instead (cache_build_frame): there every slot moves. */
-    patch_span_union( slot->vp, slot->vert_base, slot->vert_base + slot->vert_count,
+    patch_span_union( slot->vp, slot->band, slot->vert_base, slot->vert_base + slot->vert_count,
                       slot->idx_base, slot->idx_base + slot->idx_count );
 
     /* Write GPU commands into the stable cache for reuse next retained frame.  A run that exceeds

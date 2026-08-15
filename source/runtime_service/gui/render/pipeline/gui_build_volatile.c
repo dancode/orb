@@ -166,7 +166,7 @@ static u32                 s_volatile_count;
 static void cache_count_volatile_patch( u32 n );
 static bool cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base,
                                u32* tess_gen );
-static u8   cache_slot_vp( gui_id_t win );
+static u8   cache_slot_vp( gui_id_t win, u8* out_band );
 static bool cache_slot_clips_bind( gui_id_t win );
 static void cache_invalidate_window( gui_id_t win );
 #if !RELEASE
@@ -592,7 +592,9 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
 
         /* Fine dirty spans, not a generation bump: only these ranges changed, so a
            generation-matching flush re-uploads just them (gui_build_tess.c, s_patch_pending). */
-        patch_span_union( cache_slot_vp( row->win ), abs_vb, abs_vb + nv, abs_ib, abs_ib + ni );
+        u8 row_band;
+        u8 row_vp = cache_slot_vp( row->win, &row_band );
+        patch_span_union( row_vp, row_band, abs_vb, abs_vb + nv, abs_ib, abs_ib + ni );
         memcpy( &s_tess.verts  [ abs_vb ], &s_tess.verts  [ vert_ck ], nv * sizeof( gui_draw_vert_t ) );
         memcpy( &s_tess.indices[ abs_ib ], &s_tess.indices[ idx_ck  ], ni * sizeof( u16 ) );
 

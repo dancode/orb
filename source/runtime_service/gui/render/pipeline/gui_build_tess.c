@@ -139,12 +139,16 @@ static u32 s_geo_gen = 1;
    viewport, and a generation-matching flush uploads just its region's accumulated spans and
    clears them (gui_render_submit.c).  A generation-stale flush's full upload covers every
    accumulated byte of its surface, so it clears the entry too. */
+/* Kept per ARENA BAND as well as per region: debug-band slots pack at the arena tail, so a
+   single union would bridge from a changed app window to a changed overlay and drag the whole
+   arena between them.  Separate spans keep the two-band isolation contract intact -- and let
+   the flush attribute band-1 upload bytes to the overlay in the stats it displays. */
 static struct
 {
     u32 v_lo, v_hi;   // pending vertex range, arena-absolute (empty when v_lo >= v_hi)
     u32 i_lo, i_hi;   // pending index range, arena-absolute
 
-} s_patch_pending[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
+} s_patch_pending[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ][ 2 ];
 
 static void
 patch_range_union( u32* lo, u32* hi, u32 nlo, u32 nhi )
@@ -157,15 +161,18 @@ patch_range_union( u32* lo, u32* hi, u32 nlo, u32 nhi )
 }
 
 static void
-patch_span_union( u8 vp, u32 v_lo, u32 v_hi, u32 i_lo, u32 i_hi )
+patch_span_union( u8 vp, u8 band, u32 v_lo, u32 v_hi, u32 i_lo, u32 i_hi )
 {
     if ( vp >= GUI_MAX_VIEWPORTS )
         return;
+    u32 b = band != 0 ? 1u : 0u;
     for ( u32 f = 0; f < RHI_MAX_FRAMES_IN_FLIGHT; ++f )
     {
         u32 r = f * GUI_MAX_VIEWPORTS + vp;
-        patch_range_union( &s_patch_pending[ r ].v_lo, &s_patch_pending[ r ].v_hi, v_lo, v_hi );
-        patch_range_union( &s_patch_pending[ r ].i_lo, &s_patch_pending[ r ].i_hi, i_lo, i_hi );
+        patch_range_union( &s_patch_pending[ r ][ b ].v_lo, &s_patch_pending[ r ][ b ].v_hi,
+                           v_lo, v_hi );
+        patch_range_union( &s_patch_pending[ r ][ b ].i_lo, &s_patch_pending[ r ][ b ].i_hi,
+                           i_lo, i_hi );
     }
 }
 
