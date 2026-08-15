@@ -758,6 +758,7 @@ static const char* const k_ext_name[ GUI_EXT_RESERVED_COUNT ] =
     [ GUI_EXT_WARN  ] = "Warn",
     [ GUI_EXT_ERROR ] = "Error",
     [ GUI_EXT_DROP  ] = "Drop",
+    [ GUI_EXT_SHADOW] = "Shadow",
 };
 
 static const char* const k_phase_name[ GUI_PHASE_COUNT ] =

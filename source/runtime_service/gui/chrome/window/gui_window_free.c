@@ -671,6 +671,38 @@ window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 ti
     }
 }
 
+/* The elevation shadow's two banded treatments: an overlay (popup / menu / tooltip / modal)
+   floats highest and casts the widest shadow at the theme's full strength; a free-floating
+   window sits lower, so its shadow is the authored width at reduced strength. */
+#define WIN_SHADOW_OVERLAY_SPREAD  1.5f     /* overlay-band feather multiplier             */
+#define WIN_SHADOW_FLOAT_ALPHA     0.7f     /* window-band fraction of the theme's alpha   */
+#define WIN_SHADOW_DROP            0.15f    /* downward offset, as a fraction of the feather */
+
+/* One soft SDF plate under floating chrome -- the ambient shadow that separates a floater from
+   the ground plane.  Emitted as this window's FIRST geometry, at its own sort key and under the
+   ROOT clip (the falloff skirt lives outside the window rect, which the window clip would cut):
+   the render's stable z-sort keeps it behind the window's own body but above every window below.
+   Strength is banded by elevation -- overlays strongest, free floaters lighter -- and the flush
+   chrome the caller filters out (docked, maximized, native, frame-only shells) casts none.
+   A theme opts out entirely with GUI_VAR_SHADOW 0 or an alpha-0 GUI_EXT_SHADOW. */
+static void
+window_draw_elevation( const gui_window_t* win, f32 disp_h )
+{
+    f32 feather = WIN_SHADOW;
+    u32 col     = style_ext( GUI_EXT_SHADOW );
+    if ( feather <= 0.0f || ( col >> 24 ) == 0u )
+        return;
+
+    if ( win->overlay )
+        feather *= WIN_SHADOW_OVERLAY_SPREAD;
+    else
+        col = ( col & 0x00FFFFFFu )
+            | ( (u32)( (f32)( col >> 24 ) * WIN_SHADOW_FLOAT_ALPHA ) << 24 );
+
+    draw_push_shadow( win->x, win->y + feather * WIN_SHADOW_DROP, win->w, disp_h,
+                      ROUND_WIN, feather, col );
+}
+
 /* Open the window body -- or, when collapsed, just seed the collapse-arrow clip.  Expanded: push the
    one clip rect the whole window shares, fill the body background (skipped for a frame-only shell so
    the borderless viewport shows through), reserve the menu-bar strip, and open the body scroll
@@ -1056,6 +1088,13 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     /* Window chrome (background, titlebar, border) is not an item: clear any disabled latch a prior
        window's trailing widget left, so this window paints opaque and its chrome interacts. */
     item_flags_chrome_reset();
+
+    /* Elevation shadow, under everything this window draws.  Only chrome that actually FLOATS
+       casts one: a maximized window is flush with its surface, and a native window (frame-only
+       shell or detached floater) fills its own OS surface edge-to-edge, so the skirt would be
+       clipped at the surface bounds and read as a dark rim. */
+    if ( !native && !frame_only && !win->maximized )
+        window_draw_elevation( win, disp_h );
 
     /* Commit window chrome state for the widgets and window_end (id + interaction scope were
        committed by pane_tag above).  The layout pen, content column, scroll, and scrollbars

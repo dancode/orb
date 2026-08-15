@@ -100,6 +100,7 @@ f32 style_scale( gui_scale_t s, u32 field );
 
 #define ROUND_WIDGET  style_var( GUI_VAR_ROUND       )   /* control frames, knobs, grabs */
 #define ROUND_WIN     style_var( GUI_VAR_PANEL_ROUND )   /* windows, children, popups    */
+#define WIN_SHADOW    style_var( GUI_VAR_SHADOW      )   /* elevation feather; 0 = flat  */
 
 /* The disabled dim, as a style value like any other -- so a kit can soften or disable it, and
    push_style_var can scope it.  Living in the schema keeps the one number every disabled widget

@@ -80,6 +80,7 @@ static const char* const k_ext_id[ GUI_EXT_RESERVED_COUNT ] =
     [ GUI_EXT_WARN  ] = "GUI_EXT_WARN",
     [ GUI_EXT_ERROR ] = "GUI_EXT_ERROR",
     [ GUI_EXT_DROP  ] = "GUI_EXT_DROP",
+    [ GUI_EXT_SHADOW] = "GUI_EXT_SHADOW",
 };
 
 static const char* const k_ramp_id[ GUI_RAMP_COUNT ] =
@@ -105,6 +106,7 @@ static const char* const k_var_id[ GUI_VAR_COUNT ] =
     [ GUI_VAR_GRID_Q          ] = "GUI_VAR_GRID_Q",
     [ GUI_VAR_ROUND           ] = "GUI_VAR_ROUND",
     [ GUI_VAR_PANEL_ROUND     ] = "GUI_VAR_PANEL_ROUND",
+    [ GUI_VAR_SHADOW          ] = "GUI_VAR_SHADOW",
     [ GUI_VAR_CHECK_SHAPE     ] = "GUI_VAR_CHECK_SHAPE",
     [ GUI_VAR_BULLET_SHAPE    ] = "GUI_VAR_BULLET_SHAPE",
     [ GUI_VAR_ARROW_SHAPE     ] = "GUI_VAR_ARROW_SHAPE",

@@ -294,16 +294,14 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_IDLE   ] = bake_ink_on( ink, ground, BAKE_INK_DELTA );
     col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_HOT    ] = BAKE_UNUSED;
     col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_ACTIVE ] = BAKE_UNUSED;
-    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_INERT  ] = bake_ink_on( bake_fade( ink, fade, ground ), ground,
-                                                                    BAKE_DIM_DELTA );
+    col[ GUI_ROLE_TEXT_PRIMARY ][ GUI_PHASE_INERT  ] = bake_ink_on( bake_fade( ink, fade, ground ), ground, BAKE_DIM_DELTA );
 
     /* TEXT_SECONDARY -- a permanently quieter ink, not a reaction to interaction: hints,
        captions, shortcuts, inactive labels.  Only IDLE is ever read (input hints, non-current tab
        ink) -- nothing sits secondary text on a hot or pressed face today, and nothing asks for a
        doubly-quiet secondary ink either, so HOT/ACTIVE/INERT all bake to BAKE_UNUSED. */
 
-    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_IDLE   ] = bake_ink_on( bake_fade( ink, fade, ground ), ground,
-                                                                      BAKE_DIM_DELTA );
+    col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_IDLE   ] = bake_ink_on( bake_fade( ink, fade, ground ), ground, BAKE_DIM_DELTA );
     col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_HOT    ] = BAKE_UNUSED;
     col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_ACTIVE ] = BAKE_UNUSED;
     col[ GUI_ROLE_TEXT_SECONDARY ][ GUI_PHASE_INERT  ] = BAKE_UNUSED;

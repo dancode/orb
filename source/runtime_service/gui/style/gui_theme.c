@@ -70,6 +70,7 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
 
     [ GUI_VAR_ROUND           ] = { "Widget Rounding", GUI_CLASS_SKIN   },
     [ GUI_VAR_PANEL_ROUND     ] = { "Panel Rounding",  GUI_CLASS_SKIN   },
+    [ GUI_VAR_SHADOW          ] = { "Shadow Width",    GUI_CLASS_SKIN   },
 
     [ GUI_VAR_GRID_Q          ] = { "Grid Quantum",    GUI_CLASS_PITCH  },
 
@@ -150,23 +151,28 @@ var_is_pixels( u8 cls )
 ==============================================================================================*/
 
 /* The dark family -- shared by "dark", "rounded", and "quantum" (they diverge only in metrics /
-   skin, never in colour).  A near-black desktop, a steel-blue accent, a green affirmative, and a
-   near-white anchor for the knobs.
+   skin, never in colour).  A near-black desktop, a muted steel-blue accent, a calm affirmative
+   green, and a restrained light-grey anchor for the knobs.
 
    LINE sits just above the control face (0x52 on 0x40 controls / 0x24 ground), not at a
    wireframe mid-grey: the surface ladder (ground / recessed child / raised control) carries the
    structural separation, and a border that shouts over it reads as a debug overlay.  The loud
-   line is BORDER's HOT/ACTIVE accent, reserved for focus and engagement. */
+   line is BORDER's HOT/ACTIVE accent, reserved for focus and engagement.
+
+   The chromatic seeds stay mid-saturation on purpose -- a high-chroma hue at rest reads as a
+   permanent alert.  GRAB rests quiet (its bake ramp lifts it hardest of any role, so an engaged
+   knob still lands near white) but keeps ~50 luma over the accent fill and the hovered track,
+   the two neighbours a knob must never vanish into. */
 #define THEME_PALETTE_DARK \
     .palette = { \
         .seed = { \
             [ GUI_SEED_SURFACE ] = GUI_COLOR( 0x24,0x24,0x24,0xFF ), \
             [ GUI_SEED_CONTROL ] = GUI_COLOR( 0x40,0x40,0x40,0xFF ), \
-            [ GUI_SEED_INK     ] = GUI_COLOR( 0xF0,0xF0,0xF0,0xFF ), \
+            [ GUI_SEED_INK     ] = GUI_COLOR( 0xE0,0xE2,0xE5,0xFF ), \
             [ GUI_SEED_LINE    ] = GUI_COLOR( 0x52,0x52,0x52,0xFF ), \
-            [ GUI_SEED_ACCENT  ] = GUI_COLOR( 0x20,0x90,0xD0,0xFF ), \
-            [ GUI_SEED_MARK    ] = GUI_COLOR( 0x18,0xE6,0x48,0xFF ), \
-            [ GUI_SEED_GRAB    ] = GUI_COLOR( 0xC8,0xCD,0xD4,0xFF ), \
+            [ GUI_SEED_ACCENT  ] = GUI_COLOR( 0x3A,0x84,0xC4,0xFF ), \
+            [ GUI_SEED_MARK    ] = GUI_COLOR( 0x46,0xC0,0x66,0xFF ), \
+            [ GUI_SEED_GRAB    ] = GUI_COLOR( 0xA2,0xA8,0xB0,0xFF ), \
         }, \
         .ramp = { \
             [ GUI_RAMP_HOVER  ] = 0.08f, \
@@ -182,6 +188,7 @@ var_is_pixels( u8 cls )
             [ GUI_EXT_WARN  ] = GUI_COLOR( 0xE8,0xB8,0x40,0xFF ), \
             [ GUI_EXT_ERROR ] = GUI_COLOR( 0xE8,0x5C,0x4C,0xFF ), \
             [ GUI_EXT_DROP  ] = GUI_COLOR( 0x30,0xC8,0xB0,0xFF ), \
+            [ GUI_EXT_SHADOW] = GUI_COLOR( 0x00,0x00,0x00,0x98 ), \
         }, \
     }
 
@@ -220,6 +227,7 @@ var_is_pixels( u8 cls )
             [ GUI_EXT_WARN  ] = GUI_COLOR( 0xA8,0x70,0x10,0xFF ), \
             [ GUI_EXT_ERROR ] = GUI_COLOR( 0xC0,0x38,0x2C,0xFF ), \
             [ GUI_EXT_DROP  ] = GUI_COLOR( 0x12,0x88,0x78,0xFF ), \
+            [ GUI_EXT_SHADOW] = GUI_COLOR( 0x18,0x1C,0x24,0x50 ), \
         }, \
     }
 
@@ -252,6 +260,7 @@ var_is_pixels( u8 cls )
         /* 2. SKIN */ \
         [ GUI_VAR_ROUND           ] = ( ROUND ), \
         [ GUI_VAR_PANEL_ROUND     ] = ( PANEL_ROUND ), \
+        [ GUI_VAR_SHADOW          ] = 16, \
         [ GUI_VAR_GRID_Q          ] = ( GRID_Q ), \
         /* 3. RATIOS -- unitless */ \
         [ GUI_VAR_DISABLED_ALPHA  ] = 0.5f, \

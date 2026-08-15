@@ -611,6 +611,8 @@ typedef enum
     GUI_EXT_ERROR,      // status hue: failed / over a limit
     GUI_EXT_DROP,       // instrument hue: "a drop can land here" -- every drag-and-drop cue
                         // (dock overlay, drop hint / ring, PANEL / CHILD / TITLE HOT wash)
+    GUI_EXT_SHADOW,     // instrument hue: the elevation shadow under floating chrome -- black at
+                        // the theme's chosen alpha (alpha 0 = a theme with no shadows at all)
 
     GUI_EXT_RESERVED_COUNT   // the engine-authored slots -- part of every theme's palette
 
@@ -620,7 +622,7 @@ typedef enum
    kit needing more named colours than this is describing per-widget tokens, not a theme. */
 #define GUI_STYLE_EXT_MAX 16u
 
-/* The authored half of a style, in full: seven colours, six numbers and five extended colours, 72
+/* The authored half of a style, in full: seven colours, six numbers and six extended colours, 76
    bytes.  Small enough that a theme is worth having dozens of, or deriving live from a single
    accent the user picked. */
 
@@ -706,6 +708,7 @@ typedef enum
 
     GUI_VAR_ROUND,          // corner radius: control frames, slider knobs, scrollbar grabs
     GUI_VAR_PANEL_ROUND,    // corner radius: windows / children / popups; 0 = square
+    GUI_VAR_SHADOW,         // elevation-shadow feather under floating chrome (px; overlays widen it); 0 = flat
     GUI_VAR_CHECK_SHAPE,    // checkbox/menu indicator: 0 = 'v' tick, 1 = disc, 2 = 'X' (gui_check_style_t)
     GUI_VAR_BULLET_SHAPE,   // bullet glyph: 0 = disc, 1 = square (gui_bullet_style_t)
     GUI_VAR_ARROW_SHAPE,    // directional arrow: 0 = triangle, 1 = chevron (gui_arrow_style_t)
