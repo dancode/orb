@@ -359,9 +359,11 @@ typedef enum
 
     role     IDLE              HOT                  ACTIVE                 INERT
     -------  ----------------  -------------------  ---------------------  ------------------
+
     PANEL    window body       hovered surface      pressed surface        inert backdrop
     CHILD    recessed surface  hovered child        pressed child          inert child
-    TITLE    bar, inactive tab hovered tab          focused bar, live tab  de-emphasized bar
+    TITLE    bar, inactive tab hovered chip/band    live tab (chip)         de-emphasized bar
+
     BG       control face      hovered face         pressed / focused      plot backdrop
     BORDER   frame line        hovered / resize     focused window ring    subdued frame
     TEXT_PRI body text, caret  unused               unused                 disabled-text ink
@@ -371,7 +373,14 @@ typedef enum
     GRAB     knob / thumb      hovered knob         dragged knob           unused
     
     status   the signal        hovered signal       pressed signal         the FIELD (banner)
-    
+
+   TITLE/HOT is two different reads depending on what is spending it.  A tab chip (col_tab_bg)
+   still reads it as plain cursor hover, same as every other role.  The band behind the chips --
+   a free window's own title bar, a docked node's strip -- has no per-chip hover of its own, so
+   it reads HOT as "this window holds keyboard focus" instead: BORDER/ACTIVE already answers "is
+   the cursor over this window" on the same frame, so a second hover-driven read on TITLE would
+   just repeat that cue rather than add one.
+
    INERT is at least three unrelated ideas wearing one column, and no single word covers all of
    them honestly -- "inert" is the least wrong:
 
