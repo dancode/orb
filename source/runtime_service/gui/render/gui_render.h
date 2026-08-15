@@ -344,7 +344,7 @@ typedef struct
 
 } gui_clip_entry_t;
 
-#define GUI_WIN_CLIP_MAX  64    // distinct clips per window slot -- the clip band's 6 bits
+#define GUI_WIN_CLIP_MAX  16    // distinct clips per window slot -- fits the clip band's 6 bits
 
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
    The frame's semantic list is tessellated + z-sorted exactly once (lazily, on the first

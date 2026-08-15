@@ -202,7 +202,7 @@ tess_set_tex( u32 tex_idx )
    indices: the property that lets cached vertices bake the six clip-band bits while the
    per-frame GLOBAL clip table reassigns its indices freely.  The memo serves the common run of
    consecutive same-clip commands.  A slot past GUI_WIN_CLIP_MAX distinct clips falls back to
-   entry 0 (asserted -- 64 distinct clips in one window is a bug, not a budget). */
+   entry 0 (asserted -- 16 distinct clips in one window is a bug, not a budget). */
 static u32
 tess_clip_local( u8 ci )
 {
