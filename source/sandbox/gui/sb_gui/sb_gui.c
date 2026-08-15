@@ -147,6 +147,7 @@ show_demo_window(bool* p_open)
         static int counter = 0;
         if (gui()->button("Button"))
             counter++;
+
         gui()->same_line( -1 );
         gui()->textf("counter = %d", counter);
 

@@ -2,6 +2,9 @@
 
     runtime_service/gui/gui_render.c -- GUI_RENDER translation unit: the RENDER SERVER.
 
+    ------------------------------------------------------------------------------------------------
+    Overview:
+
     This is the part of the GUI that actually puts pixels on the screen. It is a small,
     general-purpose 2d renderer -- rectangles, lines, and text turned into batches of triangles
     -- that has no idea what a "widget" is. Everything above it (layout, style, widgets)
@@ -36,33 +39,87 @@
     each snapshot the pipeline's internal state for some outside consumer -- the debug
     dashboard, text selection, the frame stepper -- that is not allowed to reach into the
     pipeline directly.
+    
+    ------------------------------------------------------------------------------------------------
+    Resource:
 
     resource/gui_atlas.h/.c         -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
     resource/gui_res_atlas.h/.c     -- the TWO resource atlases over one packer: the R8 COVERAGE atlas
                                         (one texture, one bindless slot) fonts and icons pack into so
                                         all core UI draws batch together, and the RGBA SPRITE atlas
-                                        for authored art, created lazily on its first registration
+                                        for authored art, created lazily on its first registration    
+    ------------------------------------------------------------------------------------------------
+    Pipeline:
 
     pipeline/gui_shader.h           -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
     pipeline/gui_emit_draw.c        -- EMIT: CPU draw list: draw_reset, draw_push_* (incl. draw_push_icon), s_draw
-    pipeline/gui_emit_path.c        -- EMIT: line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
+    pipeline/gui_emit_path.c        -- EMIT: line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)    
     pipeline/gui_build_tess.c       -- BUILD: CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
     pipeline/gui_build_volatile.c   -- BUILD: volatile-widget inline-emit replay (see gui_render.h)
-    pipeline/gui_build_cache.c      -- BUILD: retained frame-geometry cache: cache_build_frame, s_cache, s_dispatch,
-                                        the build_* seam
+    pipeline/gui_build_cache.c      -- BUILD: retained frame-geometry cache: cache_build_frame, s_cache, s_dispatch, the build_* seam.    
     pipeline/gui_render_init.c      -- RENDER: shared GPU resources, created once: pipeline, samplers,
                                         the push-constant layout (render_init/shutdown, TU-local)
     pipeline/gui_render_submit.c    -- RENDER: per-surface GPU submit: surface_geo_create/destroy,
                                         gui_render_flush, the debug-mode/time setters
+    ------------------------------------------------------------------------------------------------
+    Utility:
 
     gui_debug_overlay.c             -- DEBUG OVERLAY: bolt-on second draw list, flushed on top (Debug only).  Stays
                                         at the render/ root -- it reads resource/ AND pipeline/ internals plus the
                                         frontend's DBG_* capture calls, so it does not belong to either subfolder.
+
     gui_dash_capture.c              -- CAPTURE: pipeline snapshot for the dashboard shell (GUI_PIPELINE_DASHBOARD)
     gui_select_capture.c            -- CAPTURE: flagged windows' text runs, for chrome's selection controller
     gui_step_capture.c              -- CAPTURE: band-0 command list + the frozen-frame reload (GUI_CMD_STEPPER)
+
     gui_render_mem.c                -- MEMORY ACCOUNTING: backend_memory sizeof-sums every backend static;
                                         must be included last so it sees them all.
+    ------------------------------------------------------------------------------------------------
+    Frame Overview:
+
+    Step 1 — Write the shopping list (EMIT).
+
+    * Every widget you call (button, text, ...) doesn't draw anything.
+    * It just writes a line on a list: "rectangle here, this color", "text there, clipped to this".
+    * This is essentially a list of shapes.
+    * This only happens on a real frame, but if you didn't touch anything and nothing animated,
+      we don't even write the list, we just reuse the previous frame's triangles.
+
+    Step 2 — Compare with the previous shape list (BUILD: diff).
+
+    * For each window we hash its lines and compare with last frame. 
+      "Same as before? Great, don't redo your work."
+    * Only windows whose list actually changed go to step 3. 
+    * On a totally idle frame, this whole step is skipped too!
+
+    Step 3 — Cut the shapes into triangles (BUILD: tessellate).
+
+    * Changed windows get turned into actual triangles (vertices + indices) in one big CPU-side arena. 
+    * Unchanged windows keep the triangles they already had, sitting exactly where they were 
+      last frame — nothing moves, nothing is repacked.
+    * While cutting, each triangle's vertices get stamped with a little tag: "clip me with rect #N".
+    * N is a permanent address: this window's fixed shelf in the clip cupboard
+      (its cache slot x 16 + which clip). 
+    * Because the address is permanent, cached triangles stay correct forever.
+
+    Step 4 — Ship it (RENDER: flush, every presented frame).
+
+    * This is the part that talks to the GPU, and here's exactly what gets uploaded now:
+    * Vertices: the live span of the arena, copied into this frame's buffer region. Same as always — 
+      the GPU rotates between 2 regions, so each frame's region must contain everything, changed or not.
+    * Indices: same deal, the live span, copied as-is. No rewriting, no rebasing — we kept that off the table.
+    * Clip rects: usually nothing at all. Each window's clips live on its fixed shelf in the GPU cupboard. 
+      A shelf is re-sent only if a little "stale" flag says its contents changed (max 512 bytes per shelf). 
+      Stable frame = zero clip bytes.
+    * Push constants: one single push per surface — matrix, samplers, clock, and "the cupboard starts here". 
+      The old "re-push per window" is gone, because every vertex already knows its exact shelf address.
+
+    * Then one draw call per window, back to front, and the fragment shader does the clipping itself by 
+      reading the shelf each pixel's vertex named.
+
+    * So per frame: vertices + indices always (that's the frames-in-flight tax, unchanged), 
+      clips almost never, push constants once. And if the app is fully idle and nothing presents
+      — nothing at all.
 
 ==============================================================================================*/
 
