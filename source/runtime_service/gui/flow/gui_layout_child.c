@@ -62,6 +62,25 @@ child_con_clamp( f32 v, f32 mn, f32 mx )
     return v;
 }
 
+/* PANEL_CHILD's phase (see gui_bake.c and window_standing_phase, chrome/window/gui_window.c):
+   the child's own standing, same shape as a window's.  INERT while an active modal fences this
+   child off (focus_allowed() false -- true for any child that is not the modal itself, since a
+   child's id can never equal g_ctx->modal.win_id, exactly as it already gates that child's own
+   widgets at the item level); ACTIVE while the keyboard cursor is scoped inside THIS child
+   (s_interaction.focused_win, stamped to the child's id by pane_tag on entry, not the enclosing
+   window's focus); HOT is reserved for the same drag-and-drop landing cue PANEL/HOT carries, no
+   query wired yet -- a child is not part of the dock tree, so it needs a generic drag-payload
+   target check that does not exist yet; IDLE otherwise. */
+static u8
+child_standing_phase( gui_id_t id )
+{
+    if ( !focus_allowed( id ) )
+        return GUI_PHASE_INERT;
+    if ( s_interaction.focused_win == id )
+        return GUI_PHASE_ACTIVE;
+    return GUI_PHASE_IDLE;
+}
+
 bool
 gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
 {
@@ -211,10 +230,12 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     /* Child body fill, drawn under the parent clip before the region clips in.  The border is
        deferred to child_end (after the scrollbars) so the bar tracks cannot overdraw it -- the
        same deferral window_end uses for the window frame.  Paint policy lives with the skin
-       (draw_child_bg / draw_child_border, stock/gui_adornment.c).  Phase rides the same edge
-       signal resize_item already computed above: a live drag reads ACTIVE, a hot resize edge
-       reads HOT, otherwise the child sits at its resting IDLE recess. */
-    u8 body_phase = dragging ? GUI_PHASE_ACTIVE : resize_hot ? GUI_PHASE_HOT : GUI_PHASE_IDLE;
+       (draw_child_bg / draw_child_border, stock/gui_adornment.c).  Phase mirrors PANEL's own
+       standing-based reading (gui_bake.c), not the resize edge -- that already has its own
+       signal (draw_resize_highlight, over the border, at child_end) and would just repeat it
+       here.  A child is its own nav scope (pane_tag re-tags s_scope.win on entry), so ACTIVE
+       reads "the keyboard cursor is inside THIS child" rather than the window's own focus. */
+    u8 body_phase = child_standing_phase( id );
     draw_child_bg( box, body_phase );
 
     layout_push_region( id, box, REGION_PAD_DEFAULT, flags, &rg->scroll,

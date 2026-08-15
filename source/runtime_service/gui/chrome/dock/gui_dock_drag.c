@@ -471,6 +471,28 @@ dock_drag_commit( gui_id_t win_id, const char* title )
     s_dock_drag.active = false;
 }
 
+/* True while win_id is the drop-landing surface for the drag in progress -- read by the window
+   chrome (route seam) so its body/title bakes the HOT drop-target tint.  A floating drop
+   (tab-onto-window) names the target window directly; a dockspace drop names a leaf node, so every
+   window tabbed into that leaf answers true, not just the one under the cursor.  An outer edge
+   drop spans the whole viewport tree rather than landing inside one existing pane, so nothing
+   lights up for it. */
+static bool
+dock_drag_win_is_target( gui_id_t win_id )
+{
+    if ( !s_dock_drag.active )
+        return false;
+
+    if ( s_dock_drag.float_join || s_dock_drag.float_new )
+        return s_dock_drag.float_win == win_id;
+
+    if ( s_dock_drag.outer )
+        return false;
+
+    gui_dock_node_t* node = dock_find_window_node( win_id );
+    return node && node->id == s_dock_drag.target;
+}
+
 /* Remove a window from its node by id -- the undock-by-drag path's form of dock_node_remove_window
    (gui_dock_core.c), which gui_dock_undock also uses from the title-string API. */
 static void
@@ -588,7 +610,7 @@ dock_window_chrome( gui_dock_node_t* node )
     f32 th = s_build.win.title_h;   /* tab-strip height (= WIN_TITLE_H, clamped for a tiny node) */
 
     draw_set_rounding( 0.0f );   /* the strip is a flat band behind the tabs */
-    u8 strip_phase = ( s_build.win.id == g_ctx->nav.focused_win ) ? GUI_PHASE_HOT : GUI_PHASE_IDLE;
+    u8 strip_phase = window_standing_phase( s_build.win.id );
     draw_push_rect_filled( x, y, w, th, 0, 0, 1, 1, 0, style_col( GUI_ROLE_TITLE, strip_phase ) );
 
     f32 tx = x;

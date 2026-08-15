@@ -318,36 +318,49 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
 
     const u32 band = bake_wash( bake_lift( ground, step * 0.50f, pole ), hover * 0.25f, accent );
 
-    /* PANEL -- the window body.  A fifth of the hover and no lift at all: background should tint,
-       not move.  Pressed is the full wash, sunk half a step so a held surface reads as pressed
-       rather than merely coloured.  INERT is the permanently non-interactive reading
-       (gui_stock_panel's framed backdrop, an empty dock-leaf placeholder), not a recess -- a
-       nested child region has its own role below. */
+    /* PANEL -- the window body.  Phase here does not track the cursor at all: a window's body
+       covers too much screen for a per-pixel hover to tint without reading as noise.  Instead it
+       tracks the window's OWN standing -- IDLE is any open, unfocused window; ACTIVE is the
+       focused/foreground one, a faint lift so the eye can tell which surface owns input without
+       the fill competing with content; HOT is freed from hover and repurposed as the drag-and-drop
+       landing cue -- a window becomes a valid drop target only during a drag, a frame-level state,
+       not a cursor-over-pixel one, so a wash toward the INFO hue reuses the same signal the drop
+       overlay already carries.  INERT is a window sitting behind an active modal fence -- non-
+       interactive by definition, same recess gui_stock_panel's framed backdrop and an empty
+       dock-leaf placeholder already read; a nested child region has its own role below. */
 
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.25f, accent );
-    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( ground, press, accent ), step * 0.50f );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_HOT    ] = bake_wash( ground, hover * 0.35f, p->ext[ GUI_EXT_INFO ] );
+    col[ GUI_ROLE_PANEL ][ GUI_PHASE_ACTIVE ] = bake_lift( ground, step * 0.25f, pole );
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_INERT  ] = bake_recess( ground, recess );
 
-    /* PANEL_CHILD -- a nested container: scroll region, embedded child panel.  Same shape as
-       PANEL, seeded from a recessed ground instead of the bare one, so a child reads sunk into
-       its parent AT REST and still carries its own hover/press feedback on top.  INERT recesses
-       once further -- no caller reaches for it yet, but it exists for symmetry with PANEL's own
-       INERT cell rather than leaving the fourth phase a hole. */
+    /* PANEL_CHILD -- a nested container: scroll region, embedded child panel.  Same shape and the
+       same standing-based reading as PANEL (see above), seeded from a recessed ground instead of
+       the bare one so a child reads sunk into its parent AT REST: IDLE is open; HOT is the
+       drop-target wash (child_standing_phase, flow/gui_layout_child.c -- no query wired to it
+       yet, so it never fires today, same as an unclaimed cell used to sit before this role
+       carried real behaviour); ACTIVE is a faint lift while the keyboard cursor is scoped inside
+       THIS child, not the window; INERT is a further recess while an active modal fences the
+       child off.  The resize edge has its own signal (BORDER, draw_resize_highlight) and does
+       not touch this role at all. */
 
     const u32 child_ground = bake_recess( ground, recess );
 
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_IDLE   ] = child_ground;
-    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_HOT    ] = bake_wash( child_ground, hover * 0.25f, accent );
-    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_ACTIVE ] = bake_recess( bake_wash( child_ground, press, accent ), step * 0.50f );
+    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_HOT    ] = bake_wash( child_ground, hover * 0.35f, p->ext[ GUI_EXT_INFO ] );
+    col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_ACTIVE ] = bake_lift( child_ground, step * 0.25f, pole );
     col[ GUI_ROLE_PANEL_CHILD ][ GUI_PHASE_INERT  ] = bake_recess( child_ground, recess );
 
-    /* TITLE -- a caption band is a LIFTED ground, which is why it needs no seed of its own.
-       ACTIVE is the bare ground: a live tab IS its panel, merging into the body it owns.  INERT
-       is read only for a maximized window's titlebar (gui_window_end.c). */
+    /* TITLE -- a caption band is a LIFTED ground, which is why it needs no seed of its own.  Phase
+       mirrors PANEL's standing-based reading, not the cursor: IDLE is an inactive bar or
+       background tab; ACTIVE is the bare ground -- a live tab IS its panel, merging into the body
+       it owns, which already doubles as "this window has focus".  HOT is freed from hover for the
+       same drop-target cue PANEL's HOT carries -- a title bar is as valid a landing zone to
+       highlight as the body under it.  INERT is read only for a maximized window's titlebar
+       (gui_window_end.c). */
 
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_IDLE   ] = band;
-    col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_lift( bake_wash( ground, hover, accent ), step, pole );
+    col[ GUI_ROLE_TITLE ][ GUI_PHASE_HOT    ] = bake_wash( band, hover * 0.35f, p->ext[ GUI_EXT_INFO ] );
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_ACTIVE ] = ground;
     col[ GUI_ROLE_TITLE ][ GUI_PHASE_INERT  ] = bake_fade( band, fade, ground );
 

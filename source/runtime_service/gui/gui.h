@@ -310,14 +310,17 @@ typedef void ( *gui_wait_events_fn )( i32 timeout_ms );
    PANEL vs PANEL_CHILD is the same "a ramp must describe one surface" rule ACCENT/MARK and
    TEXT_PRIMARY/SECONDARY were split for.  A window body and a nested scroll region both sit on
    PANEL's plane, but they are not one surface: the window body is flush with the page, while a
-   child region is recessed AT REST and still needs its own HOT/ACTIVE for a hovered or dragged
-   (resize) child to read back to the user.  Folding "recessed" into PANEL's INERT cell, as a
-   single early build did, cost every child region its hover and press feedback -- INERT is one
-   cell, not a phase, so a recessed panel could never also show as hot.  Split, PANEL's INERT cell
-   goes back to being the one thing every other role's INERT cell already was -- a permanently
-   non-interactive surface's look (gui_stock_panel's decorative backdrop, an empty dock-leaf
-   placeholder) -- and PANEL_CHILD carries its own full IDLE/HOT/ACTIVE/INERT ramp, seeded from a
-   recessed ground.
+   child region is recessed AT REST and still needs its own standing-based HOT/ACTIVE -- a drop
+   target and a scoped focus are as real for a child as for the window it lives in, independent of
+   the window's own reading (child_standing_phase, flow/gui_layout_child.c).  Folding "recessed"
+   into PANEL's INERT cell, as a single early build did, cost every child region that reading
+   entirely -- INERT is one cell, not a phase, so a recessed panel could never also show as hot.
+   Split, PANEL's INERT cell
+   goes back to being the one thing every other role's INERT cell already was -- a non-interactive
+   surface's look, permanent (gui_stock_panel's decorative backdrop, an empty dock-leaf
+   placeholder) or temporary (a window fenced off by an active modal -- see the phase table below)
+   -- and PANEL_CHILD carries its own full IDLE/HOT/ACTIVE/INERT ramp, seeded from a recessed
+   ground.
 
    There is no STATUS row here.  INFO / OK / WARN / ERROR used to be four roles wearing the same
    ramp shape as everything above, but a severity signal is not a surface a widget hovers or
@@ -348,21 +351,24 @@ typedef enum
    not a state, because gui_item_state_t is the interact server's flag set and GUI_STATE_* is the
    retained per-id pool: a phase is what item_phase() DISTILLS a state into for the style.
 
-   The same three interaction steps mean the analogous thing for every role -- INERT, the fourth
-   column, does not: it is a genuinely different reading per role, confirmed by auditing every
-   real call site in the widget set (2026-08-14), not a uniform fourth interaction step:
+   The same three interaction steps mean the analogous thing for every WIDGET role -- INERT, the
+   fourth column, does not: it is a genuinely different reading per role, confirmed by auditing
+   every real call site in the widget set (2026-08-14).  PANEL and TITLE are the one further
+   exception, and the reason they need one: a window's body and caption band cover far too much
+   screen for a per-pixel cursor read to mean anything there, so their whole ramp answers "what is
+   this WINDOW's standing" instead of "what is the cursor doing to this widget" (2026-08-14):
 
-   IDLE     = AT REST
-   HOT      = HOVER || NAV
-   ACTIVE   = PRESSED / CAPTURED / FOCUSED
+   IDLE     = AT REST                                       | PANEL/TITLE: open, unfocused
+   HOT      = HOVER || NAV                                  | PANEL/TITLE: a drag would land here
+   ACTIVE   = PRESSED / CAPTURED / FOCUSED                  | PANEL/TITLE: this window holds focus
    INERT    = Non-Interact / Empty Value / Caller Decides
 
     role     IDLE              HOT                  ACTIVE                 INERT
     -------  ----------------  -------------------  ---------------------  ------------------
 
-    PANEL    window body       hovered surface      pressed surface        inert backdrop
-    CHILD    recessed surface  hovered child        pressed child          inert child
-    TITLE    bar, inactive tab hovered chip/band    live tab (chip)         de-emphasized bar
+    PANEL    open, unfocused   valid drop target    focused / foreground   behind modal fence
+    CHILD    recessed surface  valid drop target    focus inside child     behind modal fence
+    TITLE    bar, inactive tab chip hov / drop      focused bar, live tab  de-emphasized bar
 
     BG       control face      hovered face         pressed / focused      plot backdrop
     BORDER   frame line        hovered / resize     focused window ring    subdued frame
@@ -371,17 +377,32 @@ typedef enum
     ACCENT   value fill        engaged fill         dragged fill           empty track
     MARK     check, radio dot  nav ring             captured-nav ring      unused
     GRAB     knob / thumb      hovered knob         dragged knob           unused
-    
+
     status   the signal        hovered signal       pressed signal         the FIELD (banner)
 
-   TITLE/HOT is two different reads depending on what is spending it.  A tab chip (col_tab_bg)
-   still reads it as plain cursor hover, same as every other role.  The band behind the chips --
-   a free window's own title bar, a docked node's strip -- has no per-chip hover of its own, so
-   it reads HOT as "this window holds keyboard focus" instead: BORDER/ACTIVE already answers "is
-   the cursor over this window" on the same frame, so a second hover-driven read on TITLE would
-   just repeat that cue rather than add one.
+   PANEL/HOT, CHILD/HOT and TITLE/HOT (the band, not the chip) share one formula: a wash toward
+   the GUI_EXT_INFO hue, read while a drag gesture is in flight and this surface is the computed
+   landing target -- a frame-level fact, not a cursor-over-pixel one, which is why it stays IDLE
+   under an ordinary mouse-over.  Only the window path is wired today: PANEL and the TITLE band
+   read window_route_is_drop_target (chrome/dock/gui_dock_route.c), true only for a drag-to-dock
+   gesture.  CHILD has no query wired to it yet -- a child is not part of the dock tree, so
+   lighting one up needs a generic drag-payload target check that does not exist yet -- so its
+   HOT cell is baked and ready but never read until that lands.  A tab CHIP (col_tab_bg) is the
+   one place under TITLE that still reads HOT as plain cursor hover, same as every other role: it
+   is a small, individually-hoverable target the way a button is, unlike the band it sits on.
 
-   INERT is at least three unrelated ideas wearing one column, and no single word covers all of
+   PANEL/ACTIVE, CHILD/ACTIVE and TITLE/ACTIVE all read "the keyboard cursor is scoped to this
+   surface", by different means: PANEL and CHILD both lift their ground a faint step so the eye
+   can find the live surface without the fill competing with the content painted over it -- PANEL
+   reads the window's own focus (nav.focused_win), CHILD reads whether the focused widget is
+   scoped to THIS child specifically (s_interaction.focused_win, which pane_tag stamps to the
+   child's id on entry, not the enclosing window's) -- while TITLE/ACTIVE is authored as the bare
+   window BODY colour in every built-in theme, which is what makes a live tab merge into the panel
+   it owns.  BORDER/ACTIVE carries the strongest version of the window-level fact (a full focus
+   ring) -- three surfaces, one signal, weighted so the ring does the convincing and the other two
+   do not have to fight it for attention.
+
+   INERT is at least four unrelated ideas wearing one column, and no single word covers all of
    them honestly -- "inert" is the least wrong:
 
      - an empty VALUE: ACCENT's track has nothing in it yet (progress bar, scrollbar, slider
@@ -390,7 +411,11 @@ typedef enum
        empty dock-leaf placeholder, BORDER's matching frame around either, and a plot's own
        backdrop (BG) -- these never react to the mouse because nothing behind them is an item,
        not because anything disabled them
-     - a CALLER'S OWN one-off pick: TITLE/INERT is read only for a maximized window's titlebar;
+     - a TEMPORARILY fenced-off surface: PANEL/INERT and TITLE/INERT also read for a window
+       sitting behind an active GUI_WIN_MODAL's hover/focus fence (focus_allowed() false,
+       core/gui_focus.c) -- a live, otherwise-ordinary window the modal holds exclusive input over
+       for as long as it stays open, not a decorative one that was never interactive to begin with
+     - a CALLER'S OWN one-off pick: TITLE/INERT is also read for a maximized window's titlebar;
        TEXT_PRIMARY/INERT is read only by gui_text_disabled, a hand-chosen ink -- see below
 
    INERT is NOT a widget-disabled colour, for any role, anywhere.  A disabled item is handled by
@@ -409,18 +434,14 @@ typedef enum
    Note what is NOT on this axis: whether the item is SELECTED.  Selection persists across
    frames; a phase does not -- so folding SELECTED into ACTIVE would cost every list row its
    hover feedback (a selected row could never also show as hovered).  Selection lives on its own
-   axis, the look axis below.
-
-   TITLE[ACTIVE] is authored as the window BODY colour in every built-in theme, which is what
-   makes a live tab merge into the panel it owns.  A focused WINDOW is signalled by its border
-   (BORDER[ACTIVE]), not by its caption, so the two do not fight. */
+   axis, the look axis below. */
 
 typedef enum
 {
     GUI_PHASE_IDLE = 0,   // at rest
     GUI_PHASE_HOT,        // cursor over / keyboard nav on the item
     GUI_PHASE_ACTIVE,     // pressed / captured / focused
-    GUI_PHASE_INERT,      // empty value, permanently non-interactive surface, or a caller's own pick -- never "disabled"
+    GUI_PHASE_INERT,      // empty value, non-interactive or fenced-off surface, or a caller's own pick -- never "disabled"
     GUI_PHASE_COUNT,
 
     /* Not a cell -- the "whole row" selector push_style_color takes, so recoloring TEXT or BORDER

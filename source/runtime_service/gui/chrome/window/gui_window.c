@@ -92,6 +92,26 @@ window_raise_on_press( void )
 }
 
 /*==============================================================================================
+    window_standing_phase -- PANEL/TITLE's phase (see gui_bake.c's PANEL comment): the window's
+    own standing, not the cursor.  INERT behind an active modal fence (outranks everything else --
+    a fenced window cannot itself be a live drop target); HOT while a drag in progress would land
+    here; ACTIVE while this window holds focus; IDLE otherwise.  Shared by the free/docked body
+    fill and window_end's title bar so the three readings never drift apart.
+==============================================================================================*/
+
+u8
+window_standing_phase( gui_id_t id )
+{
+    if ( !focus_allowed( id ) )
+        return GUI_PHASE_INERT;
+    if ( window_route_is_drop_target( id ) )
+        return GUI_PHASE_HOT;
+    if ( g_ctx->nav.focused_win == id )
+        return GUI_PHASE_ACTIVE;
+    return GUI_PHASE_IDLE;
+}
+
+/*==============================================================================================
     window_set_drag -- select the global drag mode; call between frames.
 ==============================================================================================*/
 

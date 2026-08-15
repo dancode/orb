@@ -99,9 +99,7 @@ window_end_titlebar( gui_window_t* win, bool native )
         bool maxed = win && win->maximized && !s_build.win.minimized;
         if ( maxed )
             draw_set_rounding( 0.0f );
-        u8 title_phase = maxed ? GUI_PHASE_INERT
-                        : ( s_build.win.id == g_ctx->nav.focused_win ) ? GUI_PHASE_HOT
-                                                                        : GUI_PHASE_IDLE;
+        u8 title_phase = maxed ? GUI_PHASE_INERT : window_standing_phase( s_build.win.id );
         draw_face( ( gui_rect_t ){ s_build.win.x, s_build.win.y, s_build.win.w, title_h },
                    GUI_ROLE_TITLE, title_phase );
 

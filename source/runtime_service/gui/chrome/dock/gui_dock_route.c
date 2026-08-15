@@ -93,6 +93,15 @@ window_route_chrome( gui_dock_node_t* node )
     dock_window_chrome( node );
 }
 
+/* Would a drop land on this window right now?  Read by window/ each frame to bake the body and
+   title's HOT (drop-target) phase -- s_dock_drag is private to the dock files, so this is the
+   only way out. */
+static bool
+window_route_is_drop_target( gui_id_t id )
+{
+    return dock_drag_win_is_target( id );
+}
+
 /* The dock exception to raise-on-press: a docked tile is placed by its node and a click must
    never reorder it, while a FLOATING tab group stacks like a free window and raises as a whole
    (its node carries the z all its tabs draw at).  Returns true when the window is dock-managed

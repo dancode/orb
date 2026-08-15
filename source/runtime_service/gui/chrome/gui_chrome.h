@@ -183,6 +183,7 @@ static void            ORB_UNUSED_FN window_route_drag   ( gui_id_t id, gui_wind
 static void            ORB_UNUSED_FN window_route_commit ( gui_id_t id, const char* title );
 static void            ORB_UNUSED_FN window_route_chrome ( gui_dock_node_t* node );
 static bool            ORB_UNUSED_FN window_route_raise  ( gui_id_t id );
+static bool            ORB_UNUSED_FN window_route_is_drop_target( gui_id_t id );
 
 // clang-format on
 /*============================================================================================*/
