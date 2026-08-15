@@ -337,6 +337,8 @@ gui_main_menu_bar_end( void )
 
 static gui_scroll_link_t s_menubar_sink;     /* scroll / content-measure sink: the strip never scrolls */
 static f32          s_menubar_saved_cursor;  /* body pen to restore after the strip region pops        */
+static f32          s_menubar_saved_high_x;  /* body highwater to restore after the pop -- the strip   */
+static f32          s_menubar_saved_high_y;  /*   is outside the body flow and must not count as content */
 static gui_rect_t s_menubar_saved_clip;    /* body hit-test clip to restore after the strip region pops */
 
 bool
@@ -354,8 +356,11 @@ gui_menu_bar_begin( void )
     draw_face( bar, GUI_ROLE_TITLE, GUI_PHASE_IDLE );
     draw_set_rounding( save_round );
 
-    /* Save the body pen: the strip is drawn outside the body flow, so the body resumes from here. */
+    /* Save the body pen and highwater: the strip is drawn outside the body flow, so the body
+       resumes from here and measures none of it. */
     s_menubar_saved_cursor = lf()->pen_y;
+    s_menubar_saved_high_x = lf()->high_x;
+    s_menubar_saved_high_y = lf()->high_y;
 
     /* The strip sits ABOVE the body region that is currently on the stack, so the live interaction clip (s_scope.clip)
        (the body's, which starts below the strip) excludes it entirely.  layout_push_region with
@@ -387,11 +392,16 @@ gui_menu_bar_end( void )
     layout_pop_region();
     s_scope.clip = s_menubar_saved_clip;   /* restore the body hit-test clip (pop left it at the window rect) */
 
-    /* Undo the strip pop's body-pen advance: the strip lives outside the body flow, so the body
-       resumes exactly where it stood -- pen authoritative (no gap owed), and the strip box must
-       not linger as a same_line anchor. */
+    /* Undo the strip pop's body-pen advance AND its highwater fold: the strip lives outside the
+       body flow, so the body resumes exactly where it stood -- pen authoritative (no gap owed),
+       and the strip box must not linger as a same_line anchor.  The highwater needs an explicit
+       restore because it only ever climbs: the pop folded the strip's full-window-width box into
+       it, which reads as body content one border wider than the view -- a phantom horizontal
+       scroll range, and under ALWAYS_AUTOSIZE a fit that chases its own strip wider every frame. */
     layout_pen_jump( lf(), s_menubar_saved_cursor );
     lf()->line.prev_item = ( gui_rect_t ){ 0 };
+    lf()->high_x = s_menubar_saved_high_x;
+    lf()->high_y = s_menubar_saved_high_y;
 }
 
 // clang-format on

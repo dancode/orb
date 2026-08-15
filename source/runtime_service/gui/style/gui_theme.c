@@ -100,6 +100,7 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
    instead of keeping a table in step with enums it does not own.  Designated by index, so an
    entry cannot slide out of alignment; an unnamed addition reads "?" rather than misreporting a
    neighbour. */
+
 static const char* const k_seed_name[ GUI_SEED_COUNT ] =
 {
     [ GUI_SEED_SURFACE ] = "Surface",
@@ -122,6 +123,7 @@ static const char* const k_ramp_name[ GUI_RAMP_COUNT ] =
 };
 
 /* Section labels for the classes above -- an editor's group headings. */
+
 static const char* const k_class_name[ GUI_CLASS_COUNT ] =
 {
     [ GUI_CLASS_METRIC ] = "Metrics",
@@ -136,6 +138,7 @@ static const char* const k_class_name[ GUI_CLASS_COUNT ] =
 /* The three px classes: everything the em rescale multiplies.  A PITCH is a raw lattice count,
    a RATIO is a unitless fraction and a SHAPE is an enum -- scaling any of them would be
    meaningless, not merely wrong. */
+
 static bool
 var_is_pixels( u8 cls )
 {
@@ -150,10 +153,10 @@ var_is_pixels( u8 cls )
     derivations, and they live once in style/gui_bake.c rather than once per theme in hex.
     gui_theme_set bakes the grid on the way in (theme_install below).
 
-    The ramps differ between the families, and that is the point rather than an oversight: a
-    fixed fraction toward black is a gentle inset on a near-black surface and a bruise on a
-    near-white one, so "light" recesses at 0.08 where "dark" recesses at 0.22.  Everything else
-    they agree on, which is what says the two looks really are one system.
+    The ramps differ between the families, and that is the point rather than an oversight: 
+    a fixed fraction toward black is a gentle inset on a near-black surface and a bruise on
+    a near-white one, so "light" recesses at 0.08 where "dark" recesses at 0.22. 
+    Everything else they agree on, which is what says the two looks really are one system.
 ==============================================================================================*/
 
 /* The dark family -- shared by "dark", "rounded", and "quantum" (they diverge only in metrics /

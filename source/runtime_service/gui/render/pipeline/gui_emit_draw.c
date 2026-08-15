@@ -856,6 +856,7 @@ draw_hash_cmd( const gui_cmd_t* c )
    below because the pool-backed pushes cannot use that function's preamble (their pool copy has
    to succeed before a slot is spent, and their cull is not an axis-aligned box test) but they owe
    the identical stamp.  Seven sites open-coded these four lines before it had a name. */
+
 static gui_cmd_t*
 draw_cmd_claim( u8 type )
 {
