@@ -122,15 +122,52 @@ static struct
     overlay; overflow itself stays in s_tess because it is written per-primitive on buffer-full.
 ==============================================================================================*/
 
-/* Geometry generation -- bumped whenever bytes inside the live arena change (a window
-   tessellates, relocates or repacks: cache_slot_tessellate; a volatile patch applies:
-   volatile_patch).  Each (frame-in-flight, viewport) upload region remembers the generation it
-   was last filled with (gui_render_submit.c), so a flush whose region already holds the current
-   generation skips the vertex + index uploads entirely -- the common presented-but-unchanged
-   frame (fx animation, reused real frame) moves zero geometry bytes.  Pure command-side changes
-   (z reorder, a window vanishing) deliberately do not bump: draws re-record every flush and
-   never reference bytes outside their own slots' spans. */
+/* Geometry generation -- bumped ONLY when the whole arena layout moves: the repack retry
+   (cache_build_frame), where every slot relocates at once.  Each (frame-in-flight, viewport)
+   upload region remembers the generation it was last filled with (gui_render_submit.c); a
+   mismatch forces the full span upload.  Everything finer goes through the dirty spans below:
+   a single window's retess or a volatile patch touches only its own slot's bytes, so it unions
+   a span instead.  Pure command-side changes (z reorder, a window vanishing) record nothing at
+   all: draws re-record every flush and never reference bytes outside their own slots' spans. */
 static u32 s_geo_gen = 1;
+
+/* Fine dirty spans -- the per-change companion to s_geo_gen.  A window's in-place retess
+   (cache_slot_tessellate) and a volatile patch (volatile_patch) each rewrite bytes inside one
+   slot; forcing the full span for that would re-upload the whole arena every presented frame
+   anything changes (and a stats overlay observing uploads would cause them).  Instead the
+   writer unions its rewritten vertex/index ranges into every in-flight region of the window's
+   viewport, and a generation-matching flush uploads just its region's accumulated spans and
+   clears them (gui_render_submit.c).  A generation-stale flush's full upload covers every
+   accumulated byte of its surface, so it clears the entry too. */
+static struct
+{
+    u32 v_lo, v_hi;   // pending vertex range, arena-absolute (empty when v_lo >= v_hi)
+    u32 i_lo, i_hi;   // pending index range, arena-absolute
+
+} s_patch_pending[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
+
+static void
+patch_range_union( u32* lo, u32* hi, u32 nlo, u32 nhi )
+{
+    if ( nlo >= nhi )
+        return;
+    if ( *lo >= *hi ) { *lo = nlo; *hi = nhi; return; }
+    if ( nlo < *lo )  *lo = nlo;
+    if ( nhi > *hi )  *hi = nhi;
+}
+
+static void
+patch_span_union( u8 vp, u32 v_lo, u32 v_hi, u32 i_lo, u32 i_hi )
+{
+    if ( vp >= GUI_MAX_VIEWPORTS )
+        return;
+    for ( u32 f = 0; f < RHI_MAX_FRAMES_IN_FLIGHT; ++f )
+    {
+        u32 r = f * GUI_MAX_VIEWPORTS + vp;
+        patch_range_union( &s_patch_pending[ r ].v_lo, &s_patch_pending[ r ].v_hi, v_lo, v_hi );
+        patch_range_union( &s_patch_pending[ r ].i_lo, &s_patch_pending[ r ].i_hi, i_lo, i_hi );
+    }
+}
 
 static struct
 {

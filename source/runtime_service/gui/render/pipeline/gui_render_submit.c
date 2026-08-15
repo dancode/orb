@@ -222,7 +222,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         if ( sl->idx_base  + sl->idx_count     > idx_hi ) idx_hi = sl->idx_base  + sl->idx_count;
     }
 
-    u32 up_batches = 0;   // how many buffer_write calls this flush issued (0, 1, or 2)
+    u32 up_batches = 0;   // geometry buffer_write calls this flush issued (full spans or patch spans)
     u32 up_bytes = 0;     // total bytes those writes moved
 
     /* Geometry-generation skip: if this (frame, viewport) region already holds the current
@@ -258,6 +258,39 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
                              ib_off + idx_lo * (u32)sizeof( u16 ) );
         up_batches++;
         up_bytes += bytes;
+    }
+
+    /* Volatile-patch dirty spans (gui_build_tess.c, s_patch_pending): a full upload above
+       covered every patched byte of this surface, so it just clears the entry; a generation-
+       matching flush uploads only the patched ranges -- a live volatile widget costs its own
+       few hundred bytes per present, not the whole span. */
+    if ( geo_dirty )
+    {
+        s_patch_pending[ clip_region ].v_lo = s_patch_pending[ clip_region ].v_hi = 0;
+        s_patch_pending[ clip_region ].i_lo = s_patch_pending[ clip_region ].i_hi = 0;
+    }
+    else
+    {
+        u32 pv_lo = s_patch_pending[ clip_region ].v_lo, pv_hi = s_patch_pending[ clip_region ].v_hi;
+        u32 pi_lo = s_patch_pending[ clip_region ].i_lo, pi_hi = s_patch_pending[ clip_region ].i_hi;
+        if ( pv_hi > pv_lo )
+        {
+            u32 bytes = ( pv_hi - pv_lo ) * sizeof( gui_draw_vert_t );
+            rhi()->buffer_write( vb, &s_tess.verts[ pv_lo ], bytes,
+                                 vb_off + pv_lo * (u32)sizeof( gui_draw_vert_t ) );
+            up_batches++;
+            up_bytes += bytes;
+            s_patch_pending[ clip_region ].v_lo = s_patch_pending[ clip_region ].v_hi = 0;
+        }
+        if ( pi_hi > pi_lo )
+        {
+            u32 bytes = ( pi_hi - pi_lo ) * sizeof( u16 );
+            rhi()->buffer_write( ib, &s_tess.indices[ pi_lo ], bytes,
+                                 ib_off + pi_lo * (u32)sizeof( u16 ) );
+            up_batches++;
+            up_bytes += bytes;
+            s_patch_pending[ clip_region ].i_lo = s_patch_pending[ clip_region ].i_hi = 0;
+        }
     }
 
     // Report upload stats net of the debug overlay's own geometry, so the dashboard reflects

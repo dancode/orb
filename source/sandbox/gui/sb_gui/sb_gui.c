@@ -177,10 +177,12 @@ show_demo_window(bool* p_open)
            true forever and defeat the idle-skip entirely (the exact problem volatile widgets exist
            to route around; see demo_volatile_pulse_cb above for the widget that keeps animating anyway). */
         // gui()->textf("Application average %.3f ms/frame (%.1f FPS)", 6.061f, 165.0f);
-
-        gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );
-        gui()->text( "<- volatile widget: keeps pulsing on idle frames, no full rebuild" );
-
+        bool emit_volatile = false;
+        if ( emit_volatile )
+        {
+            gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );
+        }
+        gui()->text( "<- volatile widget: keeps pulsing on idle frames, no full rebuild" );        
         for ( int i = 0; i < 40; i++ )
         {
             gui()->textf( "Line %d", i );

@@ -309,6 +309,18 @@ cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base, u
     return false;
 }
 
+/* A window's CURRENT viewport by id (forward-declared in gui_build_volatile.c): a volatile
+   patch tags its dirty spans with the viewport whose flush must re-upload them.  Same s_slots
+   view as cache_slot_lookup; GUI_VP_INVALID when the window has no live slot. */
+static u8
+cache_slot_vp( gui_id_t win )
+{
+    for ( u32 i = 0; i < s_slot_count; ++i )
+        if ( s_slots[ i ].win == win && s_slots[ i ].valid )
+            return s_slots[ i ].vp;
+    return (u8)GUI_VP_INVALID;
+}
+
 /* Point s_tess at the window slot's LOCAL clip table (forward-declared in gui_build_volatile.c):
    a volatile patch's scratch tessellation resolves its clip-band indices against the table the
    capture built, so an unchanged clip patches to the same band bits.  Same s_slots view as
@@ -904,8 +916,6 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     u32 tail_v = s_tess.vert_count;   /* invariant: the write head is past every live reservation */
     u32 tail_i = s_tess.idx_count;
 
-    ++s_geo_gen;   /* live arena bytes are about to change: in-flight upload regions go stale */
-
     slot->vert_base       = tail_v;
     slot->idx_base        = tail_i;
     slot->cmd_base        = s_tess.cmd_count;
@@ -988,6 +998,14 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
         s_tess.vert_count = slot->vert_base + slot->vert_alloc;
         s_tess.idx_count  = slot->idx_base  + slot->idx_alloc;
     }
+
+    /* Only THIS slot's bytes changed (both the in-place and the fresh-tail placement leave every
+       other slot untouched), so union its final span into the upload regions' dirty spans rather
+       than bumping s_geo_gen -- a steadily-changing window (the focused one, a stats overlay)
+       costs its own span per present, not the whole arena.  The repack retry bumps the
+       generation instead (cache_build_frame): there every slot moves. */
+    patch_span_union( slot->vp, slot->vert_base, slot->vert_base + slot->vert_count,
+                      slot->idx_base, slot->idx_base + slot->idx_count );
 
     /* Write GPU commands into the stable cache for reuse next retained frame.  A run that exceeds
        the cache must NOT be truncated: dropping trailing commands blanks the window's deferred
@@ -1222,7 +1240,12 @@ cache_build_frame( void )
                || ( dead_i >= GUI_REPACK_FRAG_FLOOR && dead_i * 100u >= s_tess.idx_count  * GUI_REPACK_FRAG_PCT );
 
     if ( s_tess.overflow || frag )
+    {
+        /* Every slot relocates: fine dirty spans cannot describe this, so the geometry
+           generation bumps and every in-flight upload region goes stale (full re-upload). */
+        ++s_geo_gen;
         cache_place_slots( false, &ps );
+    }
 
     /* Deferred volatile patches for reused windows: every slot is now placed and s_tess.vert_count
        is the true tail, so volatile_patch's scratch tessellation lands past all live geometry

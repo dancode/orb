@@ -154,6 +154,8 @@ static u32                 s_volatile_count;
      cache_count_volatile_patch -- stats: rows patched in place this frame.
      cache_slot_lookup          -- resolve a window's CURRENT slot position + tessellation
                                    generation by id; false if the window has no live slot.
+     cache_slot_vp              -- the window's current viewport, tagging a patch's dirty spans
+                                   (patch_span_union) with the flush that must re-upload them.
      cache_slot_clips_bind      -- point s_tess at the window slot's LOCAL clip table so a
                                    patch's scratch tessellation resolves (and, for genuinely new
                                    rects, appends) the same local clip indices the capture baked.
@@ -164,6 +166,7 @@ static u32                 s_volatile_count;
 static void cache_count_volatile_patch( u32 n );
 static bool cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base,
                                u32* tess_gen );
+static u8   cache_slot_vp( gui_id_t win );
 static bool cache_slot_clips_bind( gui_id_t win );
 static void cache_invalidate_window( gui_id_t win );
 #if !RELEASE
@@ -587,7 +590,9 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
         u32 abs_ib = slot_ib + row->local_idx_base;
         u32 abs_cb = slot_cb + row->local_cmd_base;
 
-        ++s_geo_gen;   /* live arena bytes change: in-flight upload regions go stale */
+        /* Fine dirty spans, not a generation bump: only these ranges changed, so a
+           generation-matching flush re-uploads just them (gui_build_tess.c, s_patch_pending). */
+        patch_span_union( cache_slot_vp( row->win ), abs_vb, abs_vb + nv, abs_ib, abs_ib + ni );
         memcpy( &s_tess.verts  [ abs_vb ], &s_tess.verts  [ vert_ck ], nv * sizeof( gui_draw_vert_t ) );
         memcpy( &s_tess.indices[ abs_ib ], &s_tess.indices[ idx_ck  ], ni * sizeof( u16 ) );
 
