@@ -232,6 +232,29 @@ gui_drag_target_end( void )
     s_drag.target_open = false;
 }
 
+/* Advertise the item just emitted as a potential landing spot for a payload of `type`, whether or
+   not the cursor is anywhere near it yet -- a thin outline (draw_drop_hint, stock/gui_adornment.c)
+   so a user can see every place a compatible drag could land the moment it starts, not just
+   discover targets one at a time by sweeping the cursor over them.  Distinct from
+   drag_target_begin: this never gates accepting the payload and does not require hover, only that
+   a drag of the matching type is in flight -- call it unconditionally beside (or instead of) a
+   drag_target_begin / drag_payload_accept bracket, which still owns the bold "accepted here" ring
+   once the cursor actually arrives. */
+void
+gui_drag_hint( const char* type )
+{
+    if ( !gui_drag_active() || !type )
+        return;
+    if ( strncmp( type, s_drag.type, GUI_DRAG_TYPE_CAP ) != 0 )
+        return;
+
+    gui_id_t id = s_scope.last_id;
+    if ( id == GUI_ID_NONE || id == s_drag.source_id )
+        return;   /* an item is never its own drop target */
+
+    draw_drop_hint( s_scope.last_rect );
+}
+
 /* True while a payload-carrying drag is in flight anywhere -- for ambient reactions (dim
    non-target panels, change the cursor) outside any source/target bracket. */
 bool

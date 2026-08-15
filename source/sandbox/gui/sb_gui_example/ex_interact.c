@@ -63,6 +63,7 @@ ex_interact_dragdrop( void )
             gui_rect_t cell = gui()->empty( 0.0f, 40.0f );
             gui()->draw_frame( cell, slots[ i ], 0xFF606060u, 1.0f );
             gui()->invisible_button( "slot", cell );
+            gui()->drag_hint( "EX_COLOR" );   /* thin outline on every slot once a color drag starts */
             if ( gui()->drag_target_begin() )
             {
                 const gui_drag_payload_t* p = gui()->drag_payload_accept( "EX_COLOR", acc_flags );
@@ -488,7 +489,13 @@ ex_dd_list_column( i32 list )
             gui()->drag_source_end();
         }
 
-        /* Target: dropping another row here inserts it before this row. */
+        /* Target: dropping another row here inserts it before this row.  drag_hint outlines every
+           row the instant a DD_ITEM drag starts, so the user sees every legal drop point without
+           having to sweep the cursor over each one first; drag_target_begin's own ring (inside
+           drag_payload_accept) still bolds whichever row the cursor is actually over. */
+
+        // gui()->drag_hint( "DD_ITEM" );
+
         if ( gui()->drag_target_begin() )
         {
             const gui_drag_payload_t* p = gui()->drag_payload_accept( "DD_ITEM", GUI_DRAG_NONE );
@@ -505,6 +512,7 @@ ex_dd_list_column( i32 list )
     }
 
     gui()->small_button( "( drop to append )" );
+    gui()->drag_hint( "DD_ITEM" );
     if ( gui()->drag_target_begin() )
     {
         const gui_drag_payload_t* p = gui()->drag_payload_accept( "DD_ITEM", GUI_DRAG_NONE );

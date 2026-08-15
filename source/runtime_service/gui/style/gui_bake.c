@@ -323,10 +323,15 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
        tracks the window's OWN standing -- IDLE is any open, unfocused window; ACTIVE is the
        focused/foreground one, a faint lift so the eye can tell which surface owns input without
        the fill competing with content; HOT is freed from hover and repurposed as the drag-and-drop
-       landing cue -- a window becomes a valid drop target only during a drag, a frame-level state,
-       not a cursor-over-pixel one, so a wash toward the INFO hue reuses the same signal the drop
-       overlay already carries.  INERT is a window sitting behind an active modal fence -- non-
-       interactive by definition, same recess gui_stock_panel's framed backdrop and an empty
+       landing cue, either kind -- a window title-dragged over a dockspace (the dock's own
+       gesture: the window genuinely IS the target, so no opt-in needed) or a generic
+       drag_source_begin payload hovering a window opened with GUI_WIN_DRAG_TARGET (gui.h) --
+       explicit, because most windows are scenery a drag passes over on its way to a widget target
+       inside them, and lighting up every window under the cursor would claim "drop anywhere in
+       me" for windows that mean nothing of the kind.  Either way it is a frame-level state, not a
+       cursor-over-pixel one, so a wash toward the INFO hue reuses the same signal the dock's own
+       drop overlay already carries.  INERT is a window sitting behind an active modal fence --
+       non-interactive by definition, same recess gui_stock_panel's framed backdrop and an empty
        dock-leaf placeholder already read; a nested child region has its own role below. */
 
     col[ GUI_ROLE_PANEL ][ GUI_PHASE_IDLE   ] = ground;
@@ -336,13 +341,16 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
 
     /* PANEL_CHILD -- a nested container: scroll region, embedded child panel.  Same shape and the
        same standing-based reading as PANEL (see above), seeded from a recessed ground instead of
-       the bare one so a child reads sunk into its parent AT REST: IDLE is open; HOT is the
-       drop-target wash (child_standing_phase, flow/gui_layout_child.c -- no query wired to it
-       yet, so it never fires today, same as an unclaimed cell used to sit before this role
-       carried real behaviour); ACTIVE is a faint lift while the keyboard cursor is scoped inside
-       THIS child, not the window; INERT is a further recess while an active modal fences the
-       child off.  The resize edge has its own signal (BORDER, draw_resize_highlight) and does
-       not touch this role at all. */
+       the bare one so a child reads sunk into its parent AT REST: IDLE is open; HOT is the same
+       drop-target wash, gated the same way PANEL's generic path is -- only a child opened with
+       GUI_WIN_DRAG_TARGET lights up while a payload hovers it (a reorderable list body, say); a
+       plain child holding its own individually-targetable widgets (colour swatches, tree rows)
+       stays flat and lets THEM ring instead (child_standing_phase, flow/gui_layout_child.c).
+       There is no dock equivalent for a child -- it is not part of the dock tree -- so the flag is
+       its only HOT source.  ACTIVE is a faint lift while the keyboard cursor is scoped inside THIS
+       child, not the window; INERT is a further recess while an active modal fences the child off.
+       The resize edge has its own signal (BORDER, draw_resize_highlight) and does not touch this
+       role at all. */
 
     const u32 child_ground = bake_recess( ground, recess );
 

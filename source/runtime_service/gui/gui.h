@@ -383,13 +383,21 @@ typedef enum
    PANEL/HOT, CHILD/HOT and TITLE/HOT (the band, not the chip) share one formula: a wash toward
    the GUI_EXT_INFO hue, read while a drag gesture is in flight and this surface is the computed
    landing target -- a frame-level fact, not a cursor-over-pixel one, which is why it stays IDLE
-   under an ordinary mouse-over.  Only the window path is wired today: PANEL and the TITLE band
-   read window_route_is_drop_target (chrome/dock/gui_dock_route.c), true only for a drag-to-dock
-   gesture.  CHILD has no query wired to it yet -- a child is not part of the dock tree, so
-   lighting one up needs a generic drag-payload target check that does not exist yet -- so its
-   HOT cell is baked and ready but never read until that lands.  A tab CHIP (col_tab_bg) is the
-   one place under TITLE that still reads HOT as plain cursor hover, same as every other role: it
-   is a small, individually-hoverable target the way a button is, unlike the band it sits on.
+   under an ordinary mouse-over.  Two independent gestures feed it, and a surface can answer to
+   either without knowing which: PANEL and the TITLE band also read window_route_is_drop_target
+   (chrome/dock/gui_dock_route.c), true only for a window being title-dragged over a dockspace --
+   no opt-in needed, the window genuinely IS the target there.  The other path is a generic
+   drag_source_begin payload (interact/gui_drag.c) hovering a window or child opened with
+   GUI_WIN_DRAG_TARGET (gui.h) -- explicit, on purpose: most windows and children are scenery a
+   drag happens to pass over on its way to a widget target inside them (a specific list row, a
+   colour swatch), and those widgets already ring on their own via drag_payload_accept
+   (draw_drop_ring) the moment they call drag_target_begin, with or without this flag anywhere
+   above them.  GUI_WIN_DRAG_TARGET is for the coarser case -- a reorderable list whose body
+   accepts a drop anywhere in it, not just on an existing row -- so the CALLER decides which
+   containers read as "you can drop somewhere in here" instead of every window a drag happens to
+   cross lighting up.  A tab CHIP (col_tab_bg) is the one place under
+   TITLE that still reads HOT as plain cursor hover, same as every other role: it is a small,
+   individually-hoverable target the way a button is, unlike the band it sits on.
 
    PANEL/ACTIVE, CHILD/ACTIVE and TITLE/ACTIVE all read "the keyboard cursor is scoped to this
    surface", by different means: PANEL and CHILD both lift their ground a faint step so the eye
@@ -2568,6 +2576,18 @@ typedef enum
        less console (the wheel and scroll_by still drive it). */
 
     GUI_WIN_ANCHOR_BOTTOM     = 1 << 27,
+
+    /* This surface's whole body is a drag-and-drop landing zone (PANEL/PANEL_CHILD's HOT --
+       gui_bake.c), for a generic drag_source_begin payload (interact/gui_drag.c): a dragged row
+       that reorders anywhere inside a list, a folder that accepts a drop anywhere in its body.
+       Explicit opt-in on purpose -- without it, a payload dragged over a window or child never
+       lights up that surface, no matter how many acceptable targets sit inside it: it is the
+       CALLER's call which containers read as "you can drop somewhere in here" and which are just
+       scenery the drag happens to pass over (individual widget targets still ring on their own
+       via drag_payload_accept / draw_drop_ring regardless of this flag).  A window carrying it
+       lights up for this OR for a title-drag over a dockspace (window_route_is_drop_target); a
+       child has no dock equivalent, so this flag is its only HOT source. */
+    GUI_WIN_DRAG_TARGET       = 1 << 28,
 
     /* Convenience composites -- common flag bundles named for intent (the ImGuiWindowFlags_NoXxx
        shorthands).  Plain ORs of the bits above, so they compose with extra flags as usual

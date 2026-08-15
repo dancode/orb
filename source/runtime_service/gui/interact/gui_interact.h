@@ -59,13 +59,15 @@ void drag_new_frame( void );
 /*==============================================================================================
     Upward seams -- the unit's documented exceptions, mirroring core's block (gui_core.h).
     Do not add more.
-      - draw_drop_ring (stock/gui_adornment.c): the ONE adornment paint
-        this unit invokes -- the accept ring must land in the same call that decides the
-        accept (gui_drag_payload_accept), exactly like core's draw_nav_ring.
+      - draw_drop_ring / draw_drop_hint (stock/gui_adornment.c): the two adornment paints this
+        unit invokes, one call each -- the accept ring must land in the same call that decides
+        the accept (gui_drag_payload_accept), exactly like core's draw_nav_ring, and the hint
+        outline the same way in the call that decides candidacy (gui_drag_hint).
       - gui_tooltip_begin/end + gui_stack (chrome, via gui_host.h): the drag preview body.
       - WIN_BORDER (style vocabulary) in the resize bands above: geometry, not paint.
 ==============================================================================================*/
 void draw_drop_ring( gui_rect_t r );
+void draw_drop_hint( gui_rect_t r );
 
 /* the feat_* kit's internals the stock recipe rides (interact/gui_feature.c): the 3-state pin
    core, the collapse liveness peek, and the shared window-feel constants. */

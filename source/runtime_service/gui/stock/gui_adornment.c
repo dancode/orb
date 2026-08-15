@@ -156,6 +156,20 @@ draw_drop_ring( gui_rect_t r )
     draw_push_rect_outline( r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f, 2.0f, COL_MARK_HOT );
 }
 
+/* Drag-and-drop candidate hint: a thin outline around EVERY potential target the moment a
+   compatible payload starts dragging, not just the one under the cursor -- so a user can see
+   every place a drag could land before their cursor gets there.  Flush with the rect and one
+   frame-line wide (WIN_BORDER) rather than draw_drop_ring's bold offset outline, and washed in
+   the same GUI_EXT_INFO hue PANEL/PANEL_CHILD/TITLE's own drop-target HOT reads toward
+   (gui_bake.c), so "you can drop here" is one signal at every scale, graduating from this thin
+   candidate ring to draw_drop_ring's bold accepted one as the cursor arrives.  gui_drag_hint
+   (interact/gui_drag.c) invokes it across that unit's drop-paint seam. */
+void
+draw_drop_hint( gui_rect_t r )
+{
+    draw_push_rect_outline( r.x, r.y, r.w, r.h, WIN_BORDER, style_ext( GUI_EXT_INFO ) );
+}
+
 /* Child box chrome (flow/gui_layout_child.c invokes these around its region): the body
    fill under the region clips at child_begin, the border over the bar tracks at child_end. */
 void draw_child_bg    ( gui_rect_t r, u8 phase ) { draw_face( r, GUI_ROLE_PANEL_CHILD, phase ); }

@@ -184,6 +184,7 @@ const gui_api_t g_gui_api_struct =
     .drag_target_end                    = gui_drag_target_end,
     .drag_active                        = gui_drag_active,
     .drag_payload_peek                  = gui_drag_payload_peek,
+    .drag_hint                          = gui_drag_hint,
 
     /* multi-select -- clicks + modifiers -> one range action */
 

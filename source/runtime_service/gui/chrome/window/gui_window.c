@@ -95,8 +95,15 @@ window_raise_on_press( void )
     window_standing_phase -- PANEL/TITLE's phase (see gui_bake.c's PANEL comment): the window's
     own standing, not the cursor.  INERT behind an active modal fence (outranks everything else --
     a fenced window cannot itself be a live drop target); HOT while a drag in progress would land
-    here; ACTIVE while this window holds focus; IDLE otherwise.  Shared by the free/docked body
-    fill and window_end's title bar so the three readings never drift apart.
+    here, either kind -- a window being title-dragged over a dockspace (window_route_is_drop_target,
+    the dock's own gesture, no opt-in needed: the window genuinely IS the target) or a generic
+    drag_source_begin payload hovering a window that opted in with GUI_WIN_DRAG_TARGET
+    (gui_drag_active, interact/gui_drag.c) -- the flag matters here: most windows are scenery a
+    drag happens to pass over on the way to a widget target inside them (drag_payload_accept rings
+    that widget on its own), and lighting up every window under the cursor would say "drop
+    anywhere in me" for windows that mean nothing of the kind.  ACTIVE while this window holds
+    focus; IDLE otherwise.  Shared by the free/docked body fill and window_end's title bar so the
+    readings never drift apart.
 ==============================================================================================*/
 
 u8
@@ -104,7 +111,10 @@ window_standing_phase( gui_id_t id )
 {
     if ( !focus_allowed( id ) )
         return GUI_PHASE_INERT;
-    if ( window_route_is_drop_target( id ) )
+    gui_window_t* win = window_find( id );
+    if ( window_route_is_drop_target( id )
+      || ( win && ( win->flags & GUI_WIN_DRAG_TARGET ) && gui_drag_active()
+        && s_interaction.hover_win == id ) )
         return GUI_PHASE_HOT;
     if ( g_ctx->nav.focused_win == id )
         return GUI_PHASE_ACTIVE;

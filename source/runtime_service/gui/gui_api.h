@@ -972,7 +972,18 @@ typedef struct gui_api_s
        drag_payload_accept highlights the target while the types match and returns the payload on
        the release frame (or every hover frame with GUI_DRAG_ACCEPT_PEEK).  drag_active reports a
        drag in flight anywhere; drag_payload_peek inspects it without being a target.  The dock
-       tab-strip publishes its tab drags as type "gui.dock_tab" (payload: the window's gui_id_t). */
+       tab-strip publishes its tab drags as type "gui.dock_tab" (payload: the window's gui_id_t).
+
+       drag_hint -- call right after ANY widget that could receive this type of drop, hovered or
+       not, to give it a thin candidate outline the instant a matching drag starts:
+           gui()->invisible_button( "slot", cell );
+           gui()->drag_hint( "ASSET" );                          // every compatible slot, always
+           if ( gui()->drag_target_begin() ) { ... }             // this one, only once hovered
+
+       It never gates accepting the payload -- that is still drag_target_begin / drag_payload_accept,
+       which owns the bolder "accepted here" ring once the cursor actually arrives.  Skip it for a
+       target whose candidacy is not worth advertising ahead of time (a widget-to-widget drop where
+       only one exact target ever makes sense). */
 
     bool                      ( *drag_source_begin   )( gui_drag_flags_t flags );
     void                      ( *drag_source_end     )( void );
@@ -982,6 +993,7 @@ typedef struct gui_api_s
     void                      ( *drag_target_end     )( void );
     bool                      ( *drag_active         )( void );
     const gui_drag_payload_t* ( *drag_payload_peek   )( void );
+    void                      ( *drag_hint           )( const char* type );
 
     /*==========================  multi-select -- clicks + modifiers -> one range action  =======================*/
 

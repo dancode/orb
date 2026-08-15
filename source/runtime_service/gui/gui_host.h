@@ -262,6 +262,7 @@ const gui_drag_payload_t* gui_drag_payload_accept( const char* type, gui_drag_fl
 void gui_drag_target_end( void );
 bool gui_drag_active( void );
 const gui_drag_payload_t* gui_drag_payload_peek( void );
+void gui_drag_hint( const char* type );
 
 /* multi-select protocol (interact/gui_msel.c) -- scope bracket + row feed resolving clicks /
    modifiers / keyboard into one index-range action for caller-owned selection storage; apply
