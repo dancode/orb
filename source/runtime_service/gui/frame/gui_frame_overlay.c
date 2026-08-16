@@ -461,8 +461,10 @@ overlay_fonts( void )
         }
         gui_textf( "Fonts %u/%u slots  %u kB resident",
                    used, (u32)GUI_FONT_REGISTRY_MAX, ( resident + 1023u ) / 1024u );
+        /* Flag key.  The "key:" prefix matters: without it this line reads as a live status
+           message ("! upload failed") rather than a legend for the row flags below. */
         gui_text_colored( COL_TEXT_SECONDARY_IDLE,
-                          "* active  G font_get  S/L role  v<N> dpi  ! upload failed" );
+                          "key:  *=active  G=font_get  S/L=role  vN=dpi  !=upload-failed" );
         gui_new_line( 2.0f );
 
         /* One row per loaded slot.  Glyph coverage = the dense ASCII tier plus the extended
