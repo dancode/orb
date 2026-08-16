@@ -711,10 +711,15 @@ window_draw_elevation( const gui_window_t* win, gui_id_t id, f32 disp_h )
             | ( (u32)( (f32)( col >> 24 ) * WIN_SHADOW_FLOAT_ALPHA ) << 24 );
 
     /* Ask the body cell what it will actually paint, rather than assuming the built-in themes'
-       opaque surface: hollow is a claim about the cover, so it has to be read from the cover. */
+       opaque surface: hollow is a claim about the cover, so it has to be read from the cover.
+       Only the plain-colour path can answer it -- an authored FACE is a brush whose coverage may
+       be a gradient stop or a sprite's own alpha, which is not knowable from here, so a skinned
+       panel keeps the solid plate rather than risk cutting a hole in a shadow it shows through. */
+    u8  phase  = window_standing_phase( id );
     f32 drop   = feather * WIN_SHADOW_DROP;
-    u32 body   = style_col( GUI_ROLE_PANEL, window_standing_phase( id ) );
-    f32 hollow = ( ( body >> 24 ) == 0xFFu ) ? drop + WIN_SHADOW_COVER_SLACK : 0.0f;
+    bool solid = !style_face( GUI_ROLE_PANEL, phase )
+              && ( style_col( GUI_ROLE_PANEL, phase ) >> 24 ) == 0xFFu;
+    f32 hollow = solid ? drop + WIN_SHADOW_COVER_SLACK : 0.0f;
 
     draw_push_shadow( win->x, win->y + drop, win->w, disp_h,
                       ROUND_WIN, feather, hollow, col );
