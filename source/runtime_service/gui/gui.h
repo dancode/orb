@@ -9,8 +9,8 @@
     GUI is ORB's in-house immediate-mode 2D interaction renderer, built from two servers
     that never see each other:
 
-    1. An INTERACT SERVER that tracks what the user is doing (hover, click, focus, drag).
-    2. A RENDER SERVER that turns draw commands into GPU triangles.
+    1. INTERACT SERVER: that tracks what the user is doing (hover, click, focus, drag).
+    2. RENDER SERVER:   that turns draw commands into GPU triangles.
 
     Everything else -- layout, style, stock widgets, window chrome -- is a library layered
     on top of those two, in the strata order the section banners below follow. Chrome

@@ -2,25 +2,24 @@
 
     runtime_service/gui/render/pipeline/gui_render_init.c -- Shared GPU resources
 
-    The RENDER phase's one-time setup, shared by every surface for the life of the run: the
-    compiled pipeline (+ wireframe twin), the two bindless samplers (font/coverage + image), and
-    the push-constant layout they're built against.  render_init creates them; render_shutdown
-    tears them down and logs the run's peak draw-list / draw-call / per-draw-state figures.
+    The RENDER phase's one-time setup, shared by every surface for the life of the run: 
+    The compiled pipeline (+ wireframe twin), the two bindless samplers (font/coverage + image),
+    and the push-constant layout they're built against.  
+    
+    render_init creates them; render_shutdown tears them down and logs the run's peak
+    draw-list / draw-call / per-draw-state figures.
 
         EMIT    gui_emit_draw.c    widgets -> s_draw semantic command list
         BUILD   gui_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
-        RENDER  this file          shared GPU resources (once) -- gui_render_submit.c submits per surface
+        RENDER  this file          shared GPU resources (once) -> submits per surface
 
     Per-surface state -- a surface's own geometry buffers and the flush that uploads and draws
     them -- lives next door in pipeline/gui_render_submit.c, which reads s_render (this file's static)
     as a shared constant and never writes it.
 
-    Included by gui_render.c right after gui_build_cache.c and before gui_render_submit.c, which depends
-    on the gui_push_t layout and s_render defined here.
-
 ==============================================================================================*/
-#include "engine/sys/sys_host.h"                // sys_exe_dir -- probe for cooked .oshd shaders
-                                                //   (gui is a static lib: sys is always in the host)
+#include "engine/sys/sys_host.h"  // sys_exe_dir -- probe for cooked .oshd shaders
+                                  // (gui is a static lib: sys is always in the host)
 
 // clang-format off
 /*==============================================================================================
@@ -40,7 +39,7 @@ typedef struct
     u32 prim_buf;       // bindless slot: primitive records 4 bytes (0 = no records bound)
     u32 prim_base;      // the SLOT's first record          4 bytes
 
-} gui_push_t;         // total 100 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;           // total 100 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved into the vertex (gui.h): the fragment
@@ -97,7 +96,7 @@ typedef struct
    yet it still has to name a texture -- the atlas slot, which is only known at flush time -- so
    "carry index 0 and inherit" was never available to it.  One entry at the top of every region,
    written by dbg_flush, is the whole cost. */
-#define GUI_PRIM_OVERLAY_ENTRY GUI_MAX_PRIMS
+#define GUI_PRIM_OVERLAY_ENTRY   GUI_MAX_PRIMS
 #define GUI_PRIM_REGION_MAX    ( GUI_MAX_PRIMS + 1u )                    /* records per region */
 #define GUI_PRIM_REGION_BYTES  ( GUI_PRIM_REGION_MAX * GUI_PRIM_BYTES )
 #define GUI_PRIM_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
@@ -112,12 +111,16 @@ ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF % 4 == 0 && GUI_PUSH_TAIL_SIZE % 4 == 0,
 /*==============================================================================================
     Shared GPU resources -- created once in render_init, destroyed in render_shutdown.
 
-    Immutable across frames and shared by every viewport (and the debug overlay), so never a
-    per-viewport or per-frame bottleneck.  Per-viewport surfaces own only their vb/ib (in
-    gui_viewport_t, core/gui_ctx.h); a viewport is a render TARGET that windows are dispatched to, not an owner of
+    Immutable across frames and shared by every viewport (and the debug overlay), so never 
+    a per-viewport or per-frame bottleneck.
+    
+    Per-viewport surfaces own only their vb/ib (in gui_viewport_t, core/gui_ctx.h); 
+    a viewport is a render TARGET that windows are dispatched to, not an owner of
     windows -- the one context emits every window and flush routes each window's geometry to the
-    viewport hosting it.  The viewport list lives in the bound context (core/gui_ctx.c), so
-    this file only ever touches a surface through the GPU pieces passed to it.
+    viewport hosting it.  
+    
+    The viewport list lives in the bound context (core/gui_ctx.c), so this file only ever 
+    touches a surface through the GPU pieces passed to it.
 ==============================================================================================*/
 
 static struct
@@ -134,6 +137,7 @@ static struct
        sampled glyph atlas with a filtered image.  The model answers the question on its own:
        coverage is glyphs and icons, which must stay point-sampled to render crisp, and everything
        else is a picture or a field, which must filter. */
+
     rhi_sampler_t   image_sampler;      // sampler for RGBA images (bilinear clamp)
     u32             image_sampler_idx;  // bindless slot for image_sampler
 
@@ -142,26 +146,30 @@ static struct
        clip entries into its own region, so no surface's upload can overwrite entries another
        surface's in-flight draws still read.  Registered bindless once; the slot index rides
        pc.clip_buf every flush. */
+
     rhi_buffer_t    clip_buf;           // storage buffer: all clip regions
     u32             clip_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
     /* The primitive record table (gui.h, gui_prim_t) -- one region per (frame-in-flight,
        viewport), written per window slot by the flush.  Registered bindless once; the slot index
        rides pc.prim_buf and the window's own record base rides pc.prim_base. */
+
     rhi_buffer_t    prim_buf;           // storage buffer: all record regions
     u32             prim_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
-    gui_render_mode_t debug_mode;     // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
+    gui_render_mode_t debug_mode;       // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
 
     /* The frame clock handed down by the orchestrator (gui_render_set_time), already wrapped.
        Held here rather than read from the IO snapshot because s_io lives in the frontend unit and
        this server cannot see it -- the same one-way seam gui_render_set_mode crosses. */
-    f32 fx_time;                      // seconds since the first frame, wrapped; -> pc.time
+
+    f32 fx_time;                        // seconds since the first frame, wrapped; -> pc.time
 
     /* Lifetime per-draw-state totals from gui_render_flush, reported at shutdown.  The scissor
        filter is invisible by construction -- it changes no pixel -- so without a count there is no
        way to tell whether it is earning anything on a real UI.  The push figure is no longer a
        filter yield but a cost: the tail is per-FLUSH now, so state_flushes is its denominator. */
+
     u64 state_draws;                  // draw calls walked (the scissor filter's denominator)
     u64 state_flushes;                // surface flushes walked (the push denominator)
     u64 state_pushes;                 // push-constant writes issued (1 whole block per flush + tail re-pushes)
