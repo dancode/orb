@@ -1,10 +1,11 @@
 /*==============================================================================================
 
-    sandbox/gui/sb_gui_test/test_pack.c -- vertex-level packing: f16, UV, effect coord, tex word.
+    sandbox/gui/sb_gui_test/test_pack.c -- the vertex, and the record it points at.
 
-    These four run on EVERY vertex the gui emits, and all four fail silently: a wrong half-float
-    misplaces an SDF edge by a fraction of a pixel, a swapped UV half samples the wrong row of
-    the atlas, a wrong tex-mode nibble picks the wrong sampling model entirely.
+    The packings run on EVERY vertex the gui emits and fail silently: a wrong half-float misplaces
+    an SDF edge by a fraction of a pixel, a swapped UV half samples the wrong row of the atlas.
+    The record has no packing to get wrong -- what it has is a LAYOUT the shaders index by literal
+    row, which is the other thing here.
 
     gui_f16_from_f32 carries a comment saying it was "verified against Python's binary16 packing
     across the range and every boundary" -- once, by hand, at the time it was written.  This is
@@ -166,102 +167,6 @@ test_fxc_pack( void )
 }
 
 /*==============================================================================================
-    The tex word -- sampling model in the top nibble, bindless slot below.
-==============================================================================================*/
-
-static void
-test_tex_word( void )
-{
-    /* These shifts ARE the shader contract: they must equal TEX_MODE_SHIFT / TEX_CLIP_SHIFT in
-       gui.frag / gui.ps.hlsl and the paraphrase in gui_shader.h.  Changing one without
-       resplicing the SPIR-V samples the wrong texture (or cuts with the wrong clip) with no
-       compile error anywhere -- so the constants are pinned here deliberately, and a failure
-       means "go re-cook the shaders too". */
-    test_equal( 28u, GUI_TEX_MODE_SHIFT );
-    test_equal( 0xF0000000u, GUI_TEX_MODE_MASK );
-    test_equal( 19u, GUI_TEX_CLIP_SHIFT );
-    test_equal( 0x0FF80000u, GUI_TEX_CLIP_MASK );
-    test_equal( 18u, GUI_TEX_SELF_SHIFT );
-    test_equal( 0x00040000u, GUI_TEX_SELF_BIT );
-    test_equal( 0x00030000u, GUI_TEX_RESERVED_MASK );
-    test_equal( 12u, GUI_TEX_OP_SHIFT );
-    test_equal( 0x0000F000u, GUI_TEX_OP_MASK );
-    test_equal( 0x00001000u, GUI_TEX_OP_BAND );
-    test_equal( 0x00002000u, GUI_TEX_OP_CUT );
-    test_equal( 0x00004000u, GUI_TEX_OP_INSET );
-    test_equal( 0x00008000u, GUI_TEX_OP_PULSE );
-
-    /* Every field tiles the word without overlapping, and the slot half still holds 4K against
-       the RHI's 2048 (rhi/vk_state.c, VK_MAX_TEXTURES) -- the property that makes the op band's
-       bits free rather than borrowed.  Stated as the smallest op bit so the assertion tightens
-       automatically if the band ever widens again. */
-    test_equal( 0u, GUI_TEX_MODE_MASK & GUI_TEX_CLIP_MASK );
-    test_equal( 0u, GUI_TEX_CLIP_MASK & GUI_TEX_SELF_BIT );
-    test_equal( 0u, GUI_TEX_SELF_BIT  & GUI_TEX_OP_MASK  );
-    test_equal( 0u, GUI_TEX_CLIP_MASK & GUI_TEX_OP_MASK  );
-    test_equal( 0u, GUI_TEX_RESERVED_MASK & ( GUI_TEX_MODE_MASK | GUI_TEX_CLIP_MASK
-                                            | GUI_TEX_SELF_BIT  | GUI_TEX_OP_MASK ) );
-    test_true ( 2048u < GUI_TEX_OP_BAND );
-
-    /* The whole word is accounted for: every bit belongs to exactly one field.  Without this the
-       reserved pair could silently drift into a neighbour and nothing would notice until a vertex
-       came back wrong. */
-    test_equal( 0xFFFFFFFFu, GUI_TEX_MODE_MASK | GUI_TEX_CLIP_MASK | GUI_TEX_SELF_BIT
-                           | GUI_TEX_RESERVED_MASK | GUI_TEX_OP_MASK | 0x00000FFFu );
-
-    /* The clip band addresses exactly the resident set -- RENDER_MAX_WIN * GUI_WIN_CLIP_MAX in
-       every build.  gui_render.h static-asserts the same relation; this pins the band's size so a
-       widened window pool cannot quietly outgrow it here first. */
-    test_equal( 512u, ( GUI_TEX_CLIP_MASK >> GUI_TEX_CLIP_SHIFT ) + 1u );
-
-    /* The four ops are distinct single bits, so they COMPOSE -- an op that shared a bit with
-       another would silently turn its neighbour on.  (BAND and PULSE still cannot combine, but
-       that is the effect word's border field being spent twice, not a tex-word collision.) */
-    test_equal( GUI_TEX_OP_MASK, GUI_TEX_OP_BAND | GUI_TEX_OP_CUT
-                               | GUI_TEX_OP_INSET | GUI_TEX_OP_PULSE );
-
-    /* Every op must live inside the band it is declared in -- an op bit that drifted out of the
-       mask would survive gui_tex_index and be read as part of the bindless slot. */
-    test_equal( GUI_TEX_OP_BAND,  GUI_TEX_OP_BAND  & GUI_TEX_OP_MASK );
-    test_equal( GUI_TEX_OP_CUT,   GUI_TEX_OP_CUT   & GUI_TEX_OP_MASK );
-    test_equal( GUI_TEX_OP_INSET, GUI_TEX_OP_INSET & GUI_TEX_OP_MASK );
-    test_equal( GUI_TEX_OP_PULSE, GUI_TEX_OP_PULSE & GUI_TEX_OP_MASK );
-
-    /* The mode field is the same width as the fx mode field -- they grow by the same rule. */
-    test_true( (u32)GUI_TEX_SDF < ( 1u << GUI_FX_MODE_BITS ) );
-
-    /* Split round-trips for every live model at both ends of the bindless range. */
-    static const gui_tex_mode_t modes[] = { GUI_TEX_COVERAGE, GUI_TEX_RGBA, GUI_TEX_SDF };
-    static const u32            idxs [] = { 0u, 1u, 127u, 2047u };
-
-    for ( u32 m = 0; m < ARRAY_COUNT( modes ); ++m )
-    {
-        for ( u32 i = 0; i < ARRAY_COUNT( idxs ); ++i )
-        {
-            u32 word = GUI_TEX_MODE( modes[ m ] ) | idxs[ i ];
-            test_equal( modes[ m ], gui_tex_mode ( word ) );
-            test_equal( idxs [ i ], gui_tex_index( word ) );
-        }
-    }
-
-    /* COVERAGE is 0, so a plain index with no mode bits must decode as COVERAGE -- that is what
-       makes a solid white-texel fill work without naming a model. */
-    test_equal( GUI_TEX_COVERAGE, gui_tex_mode( 5u ) );
-    test_equal( 5u, gui_tex_index( 5u ) );
-
-    /* The self bit must not leak into the slot: a self-sampled vertex still names a VALID texture
-       (the fragment samples it and throws the result away), so a bit bleeding through here would
-       index 64K into a 2048-entry array rather than merely wasting a fetch. */
-    for ( u32 i = 0; i < ARRAY_COUNT( idxs ); ++i )
-    {
-        u32 word = GUI_TEX_MODE( GUI_TEX_COVERAGE ) | GUI_TEX_SELF_BIT
-                 | GUI_TEX_OP_MASK | GUI_TEX_RESERVED_MASK | idxs[ i ];
-        test_equal( idxs[ i ], gui_tex_index( word ) );
-        test_equal( GUI_TEX_COVERAGE, gui_tex_mode( word ) );
-    }
-}
-
-/*==============================================================================================
     The vertex constructors -- the ONLY supported way to build a gui_draw_vert_t.
 ==============================================================================================*/
 
@@ -275,12 +180,10 @@ test_vert_ctors( void )
     test_equal( 0xFF204060u, v.abgr );
     test_equal( gui_uv_pack( 0.0f, 1.0f ), v.uv );
 
-    /* The clear is the contract: a plain vertex must carry fx == 0 so the fragment's first
-       compare decodes GUI_FX_NONE.  A constructor that left the ambient effect word in place
-       would make every square fill inherit whatever shape was drawn before it. */
-    test_equal( 0u, v.fx  );
+    /* The clear is the contract: a plain vertex must name record 0 and carry no effect
+       coordinate.  A constructor that left ambient state in place would make every square fill
+       inherit whatever shape was drawn before it. */
     test_equal( 0u, v.fxc );
-    test_equal( 0u, v.tex );
 
     /* The fxc variant differs in exactly one field. */
     gui_draw_vert_t f = gui_vert_fxc( 10.0f, 20.0f, 0.0f, 1.0f, 0xFF204060u, -4.0f, 6.0f );
@@ -288,13 +191,11 @@ test_vert_ctors( void )
     test_true( f.x == v.x && f.y == v.y );
     test_equal( v.uv,   f.uv   );
     test_equal( v.abgr, f.abgr );
-    test_equal( 0u,     f.fx   );
-    test_equal( 0u,     f.tex  );
     test_equal( gui_fxc_pack( -4.0f, 6.0f ), f.fxc );
 
-    /* The record index clears with the other two ambient words, and for the same reason: the
-       tessellator's commit point stamps it, so a constructor that left one behind would point a
-       fresh primitive at whatever shape happened to be built before it. */
+    /* The record index clears too, and for the same reason: the tessellator's commit point stamps
+       it, so a constructor that left one behind would point a fresh primitive at whatever shape
+       happened to be built before it. */
     test_equal( 0u, v.prim );
     test_equal( 0u, f.prim );
 }

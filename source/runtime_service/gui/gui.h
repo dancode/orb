@@ -1648,33 +1648,29 @@ typedef enum
     Mode 0 (GUI_FX_NONE) is what every other primitive writes, and the fragment tests it first:
     text, lines, sprites and square fills pay one compare and are byte-for-byte unchanged.
 
-    Vertex attribute layout (matches the gui pipeline), 32 bytes, single interleaved binding:
+    Vertex attribute layout (matches the gui pipeline), 24 bytes, single interleaved binding:
         location 0 : FLOAT2     (x, y)      offset  0   -- pixel-space position
         location 1 : UNORM16X2  (uv u32)    offset  8   -- texture UV, [0,1] at 1/65535
         location 2 : UNORM8X4   (abgr u32)  offset 12   -- packed color, R8G8B8A8_UNORM
         location 3 : HALF2      (fxc u32)   offset 16   -- effect coordinate (see below)
-        location 4 : UINT       (fx u32)    offset 20   -- packed effect word (flat)
-        location 5 : UINT       (tex u32)   offset 24   -- sampling model + bindless slot (flat)
-        location 6 : UINT       (prim u32)  offset 28   -- primitive record index (flat)
+        location 4 : UINT       (prim u32)  offset 20   -- primitive record index (flat)
 
-    Locations 4 and 5 are LIVE BUT DOOMED: the primitive record above carries the same two words
-    unpacked, and they stay only while the record path is being stood up -- the vertex shader does
-    not declare location 6 yet, and an attribute no shader input reads is legal and ignored.
+    The packed effect word and the packed texture word used to sit here, 8 bytes repeated on every
+    vertex of every primitive.  They are the record now (above), and what is left is exactly the
+    four quantities that genuinely VARY across a primitive plus the one number naming the rest.
 
-    FOUR of those six are packed, and the shader is unaware of it: the fetch unit widens every
+    THREE of those five are packed, and the shader is unaware of it: the fetch unit widens every
     normalized and half format to float, so the vertex stage still declares vec2 / vec4 and reads
-    the same values it would if all six fields were 32-bit.  The packed layout is 28 bytes against
-    36 unpacked (-22%), for no shader change and no visible precision loss -- the two decisions
-    worth recording are WHY each packing is safe, because both have a failure mode that is
-    invisible until it is not:
+    the same values it would if every field were 32-bit.  The two decisions worth recording are WHY
+    each packing is safe, because both have a failure mode that is invisible until it is not:
 
       uv as UNORM16X2 -- 1/65535, against a largest atlas of 1024 px, is 64 steps per texel, so a
         glyph's sample lands where it did.  What it cannot represent is U OUTSIDE [0,1], and one
         primitive needs that: a dashed line spans U 0..len/period and lets the sampler's REPEAT
         tile the atlas stipple row.  That is what GUI_FX_TILE_U exists for -- the repeat count
-        moves into the effect word and the VERTEX stage multiplies, so the stored UV stays inside
-        [0,1] and the interpolated one is unchanged.  Any future primitive that wants to tile does
-        the same; storing U > 1 directly would silently CLAMP.
+        lives in the record and the FRAGMENT multiplies, so the stored UV stays inside [0,1] and
+        the sampled one is unchanged.  Any future primitive that wants to tile does the same;
+        storing U > 1 directly would silently CLAMP.
 
       fxc as HALF2 -- half is only ~3 decimal digits, and the effect coordinate reaches hundreds of
         pixels at the centre of a large panel, where its ulp is half a pixel.  It is safe anyway,
@@ -1687,16 +1683,15 @@ typedef enum
         everywhere) despite sounding safer: what matters is precision where the field is zero, not
         precision on average.
 
-    THE TEXTURE TRAVELS PER VERTEX, for the same reason the effect word does: so it cannot split
-    a batch.  Coverage, SDF and sprite art are a pixel format and a sampler apart, so they cannot
-    share a texture -- if the texture rode per-DRAW instead of per-vertex, they could not share a
-    draw call either, and a window's background fill, its SDF label and an icon would be three
-    draws alternating by z-order.  Carried per vertex, the only thing that opens a new draw call
-    is a clip-rect change.
+    THE TEXTURE TRAVELS PER PRIMITIVE, for the same reason the shape does: so it cannot split a
+    batch.  Coverage, SDF and sprite art are a pixel format and a sampler apart, so they cannot
+    share a texture -- if the texture rode per-DRAW, they could not share a draw call either, and a
+    window's background fill, its SDF label and an icon would be three draws alternating by
+    z-order.  Named by the record, NOTHING opens a new draw call but a viewport change.
 
     This is the one place the design leans on being bindless.  Slate must batch by texture because
     it binds a descriptor per batch; here the fragment indexes a 2048-entry array, so the slot is
-    just a number and a number can live in a vertex.  The fragment indexes with nonuniformEXT since
+    just a number and a number can live in a record.  The fragment indexes with nonuniformEXT since
     neighbouring primitives in one draw legitimately name different textures.
 ==============================================================================================*/
 
@@ -1708,11 +1703,11 @@ typedef enum
     GUI_FX_BOX       = 1,  /* filled rounded box: coverage 1 inside the boundary, feathered across it */
 
     /* 2 and 3 are unnamed.  They were RING and PULSE, which are a BOX plus a post-op rather than
-       shapes of their own -- see GUI_TEX_OP_BAND / GUI_TEX_OP_PULSE, which is where they live now. */
+       shapes of their own -- see GUI_OP_BAND / GUI_OP_PULSE, which is where they live now. */
 
     /* The two modes that are not SHAPES.  Both leave coverage at 1 and act somewhere else in the
        pipeline -- proof the word is really "what the fragment does", not "which SDF to evaluate". */
-    GUI_FX_TILE_U    = 4,  /* VERTEX stage: multiply u by a repeat count (see GUI_FX_TILE_MAX)  */
+    GUI_FX_TILE_U    = 4,  /* FRAGMENT: multiply u by the record's repeat count before sampling */
     GUI_FX_TEXT_EDGE = 5,  /* SDF text drawn with a second colour OUTSIDE the glyph boundary    */
 
     GUI_FX_SEG       = 6,  /* CAPSULE: a line segment `radius` px thick, with round caps        */
@@ -1723,7 +1718,7 @@ typedef enum
     GUI_FX_ARC       = 7,  /* annular sector: a band of `tube` px centred on radius ra, round caps */
     GUI_FX_PIE       = 8,  /* filled wedge: the disc of radius ra cut to the aperture, sharp edges */
 
-    /* The SELF-SAMPLED sector modes.  Both emit with GUI_TEX_SELF_BIT set, which is what frees the
+    /* The SELF-SAMPLED sector modes.  Both emit with GUI_OP_SELF set, which is what frees the
        vertex's 32-bit uv word to carry mode-specific parameters instead of texcoords.  The same ARC
        word partition (ra | tube | aperture) still applies; only the uv payload differs. */
     GUI_FX_ARC_DASH  = 9,  /* ARC whose coverage is cut by an angular dash pattern: uv.x = the dash
@@ -1744,7 +1739,7 @@ typedef enum
                               Phase rides the uv word as a per-axis fraction of the cell        */
 
     /* 13 is unnamed.  It was SKIRT -- a BOX with its interior cut away -- which is now
-       GUI_TEX_OP_CUT, the exact mirror of the inset op it used to sit opposite. */
+       GUI_OP_CUT, the exact mirror of the inset op it used to sit opposite. */
 
 } gui_fx_mode_t;
 
@@ -1795,15 +1790,6 @@ typedef enum
    and invisible; by 512 px it is 0.25 px.  Arcs that large are not a UI shape, but that is where
    the limit is and it is not the same limit the box has. */
 
-/* The packed effect word.  Every field is a fixed-point pixel quantity sized to its physical
-   range: a corner radius can be half a panel, a shadow's falloff is tens of pixels, a border is
-   single digits.  Quantization is 1/8 px on radius and border and 1/4 px on feather -- all finer
-   than the rasterizer can show. */
-#define GUI_FX_MODE_BITS     4
-#define GUI_FX_RADIUS_MAX    511.875f    /* 12 bits at 1/8 px */
-#define GUI_FX_FEATHER_MAX   127.75f     /*  9 bits at 1/4 px */
-#define GUI_FX_BORDER_MAX    15.875f     /*  7 bits at 1/8 px */
-
 /* THE FRAME CLOCK the fragment sees, in seconds, wrapped to GUI_FX_TIME_WRAP.  It rides the PUSH
    CONSTANT, not the vertex, and that is the whole point: time is the same number for every shape
    in the frame, so spending 4 bytes per vertex to repeat it would tax every glyph on screen to say
@@ -1819,172 +1805,6 @@ typedef enum
    period divides 1024 s -- every power-of-two fraction of a second -- runs continuously across it.
    Any other period sees one discontinuity every ~17 minutes. */
 #define GUI_FX_TIME_WRAP     1024.0
-
-/* Clamp a fixed-point field into the range its bit width can hold, BEFORE the shift.  Every packer
-   below goes through it, because the alternative -- masking after the shift -- turns an
-   out-of-range value into a WRAPPED one instead of a clamped one: a 600 px corner radius (a
-   "fully round" pill on a tall panel, the idiom being `draw_set_rounding( 9999 )` clamped to half
-   the short side) would wrap to 88 px, and the shape would simply look wrong with nothing to
-   point at.  Saturating is not merely safer, it is the only answer that is ever wanted:
-   every one of these fields is a physical pixel quantity whose max is past what the rasterizer can
-   show, so a value beyond it means "as much as you have".  Negatives clamp to 0 for a second
-   reason -- converting a negative float to unsigned is undefined behaviour in C. */
-static inline u32
-gui_fx_fixed( f32 v, f32 scale, u32 max_q )
-{
-    if ( !( v > 0.0f ) ) return 0u;                    /* also catches NaN */
-    f32 q = v * scale + 0.5f;
-    return ( q >= (f32)max_q ) ? max_q : (u32)q;
-}
-
-/* mode | radius (1/8 px) | feather (1/4 px) | border (1/8 px).  Each field saturates at its own
-   maximum (GUI_FX_*_MAX above) rather than wrapping -- see gui_fx_fixed.  `border` is read only
-   under GUI_TEX_OP_BAND; every other box primitive packs 0 there. */
-static inline u32
-gui_fx_pack( gui_fx_mode_t mode, f32 radius, f32 feather, f32 border )
-{
-    u32 r = gui_fx_fixed( radius,  8.0f, 0xFFFu );
-    u32 f = gui_fx_fixed( feather, 4.0f, 0x1FFu );
-    u32 b = gui_fx_fixed( border,  8.0f, 0x7Fu  );
-    return ( (u32)mode & 0xFu ) | ( r << 4 ) | ( f << 16 ) | ( b << 25 );
-}
-
-/* The word a BOX carrying GUI_TEX_OP_PULSE writes.  It re-partitions the same 28 bits rather than
-   asking for a wider word: radius and feather keep their positions -- the shape is still a BOX and
-   the fragment decodes them with the same two shifts -- and the top 7 bits, which are `border`
-   under GUI_TEX_OP_BAND, become rate + depth instead.
-     rate  -- 4 bits at 1/4 Hz.  Quantized to quarters ON PURPOSE: rate * GUI_FX_TIME_WRAP is then
-              always a whole number of cycles, so every pulse crosses the clock wrap seamlessly.
-     depth -- 3 bits over 0..1.  The fraction of alpha the pulse removes at its trough; 0 is a
-              still box, 1 fades fully out and back.
-   Sharing those 7 bits is why PULSE and BAND are the one op pair that cannot combine: the word has
-   room for a band width or a wave, not both.  Every other pairing composes. */
-#define GUI_FX_RATE_MAX      3.75f       /* 4 bits at 1/4 Hz */
-#define GUI_FX_DEPTH_STEPS   7.0f        /* 3 bits over 0..1 */
-
-static inline u32
-gui_fx_pack_pulse( f32 radius, f32 feather, f32 rate, f32 depth )
-{
-    u32 r  = gui_fx_fixed( radius,  8.0f, 0xFFFu );
-    u32 f  = gui_fx_fixed( feather, 4.0f, 0x1FFu );
-    u32 hz = gui_fx_fixed( rate,    4.0f, 0xFu   );
-    u32 dp = gui_fx_fixed( depth, GUI_FX_DEPTH_STEPS, 0x7u );
-    return (u32)GUI_FX_BOX | ( r << 4 ) | ( f << 16 ) | ( hz << 25 ) | ( dp << 29 );
-}
-
-/* TILE_U spends the whole parameter field on one number: how many times the source U span repeats
-   across the primitive.  The stored UV then stays in [0,1] (which is all UNORM16X2 can hold) and
-   the VERTEX stage multiplies, so the value the fragment interpolates is exactly what a wide U
-   would have given -- the two ends are stored exactly, and everything between is a lerp either way.
-   24 bits at 1/16 covers any line on any display; the quantization is a sub-sixteenth of a period
-   of phase at the far end of a stipple, which has no correct value to begin with. */
-#define GUI_FX_TILE_MAX      1048575.9375f   /* 24 bits at 1/16 */
-
-/* TEXT_EDGE re-partitions the word the way PULSE did, and can spend ALL 28 bits because it is the
-   first mode whose SHAPE does not come from (ex, ey) -- an SDF glyph's boundary is in the texture,
-   so radius and feather have nothing to say.  What it buys is Slate's SecondaryColor without
-   Slate's vertex field: a second colour outside the glyph edge, from ONE quad and one draw.
-     width -- 8 bits at 1/8 px, 0..31.875.  Limited in practice by the SPREAD baked into the SDF
-              atlas (gui_font_t.sdf_range): the field saturates past it, so the outline simply
-              stops growing rather than tearing.  Scale the width with the text.
-     colour -- RGBA at 5 bits each.  Coarse on purpose, and it costs nothing where it is used:
-              black and white are exact, and an outline is a pixel or two wide, which is not enough
-              area to show a 1/32 step in a hue. */
-#define GUI_FX_EDGE_MAX      31.875f         /* 8 bits at 1/8 px */
-
-static inline u32
-gui_fx_pack_tile_u( f32 repeats )
-{
-    u32 n = gui_fx_fixed( repeats, 16.0f, 0xFFFFFFu );
-    return (u32)GUI_FX_TILE_U | ( n << 4 );
-}
-
-/* ARC / PIE re-partition the word one more time, and they are the first modes to spend the whole 28
-   bits on GEOMETRY.  There is no feather field: a sector is a stroke, a stroke wants exactly one
-   pixel of antialiasing, and the 9 bits a feather would cost buy the aperture instead -- which is
-   the parameter without which the shape does not exist at all.  The fragment hardcodes the 1 px
-   band (see gui.frag); tess_fx_arc sizes its skirt from the same constant.
-     ra       -- 12 bits at 1/8 px, the sector's own radius: the CENTRELINE for an ARC, the outer
-                 edge for a PIE.  Shares GUI_FX_RADIUS_MAX with the box modes.
-     tube     --  7 bits at 1/8 px, HALF the stroke thickness, so the band spans ra +/- tube.  PIE
-                 packs 0.  A thickness past 2 * GUI_FX_ARC_TUBE_MAX is a hoop rather than a stroke
-                 and the symbol layer keeps the polyline for it, exactly as draw_circle does.
-     aperture --  9 bits over 0..pi: HALF the swept angle, measured from the bisector.  Half rather
-                 than the full sweep because the CPU has already rotated the coordinate to put the
-                 bisector on +y, which buys the symmetry that turns two absolute angles into one
-                 number.  512 steps over pi is 0.35 degrees -- finer than a progress readout at any
-                 radius a UI draws. */
-#define GUI_FX_ARC_TUBE_MAX        15.875f   /* 7 bits at 1/8 px: max HALF-thickness */
-#define GUI_FX_ARC_APERTURE_STEPS  511.0f    /* 9 bits over 0..pi */
-#define GUI_FX_PI                  3.14159265358979f
-
-static inline u32
-gui_fx_pack_arc( gui_fx_mode_t mode, f32 ra, f32 tube, f32 aperture )
-{
-    u32 r = gui_fx_fixed( ra,   8.0f, 0xFFFu );
-    u32 t = gui_fx_fixed( tube, 8.0f, 0x7Fu  );
-    u32 a = gui_fx_fixed( aperture, GUI_FX_ARC_APERTURE_STEPS / GUI_FX_PI, 0x1FFu );
-    return ( (u32)mode & 0xFu ) | ( r << 4 ) | ( t << 16 ) | ( a << 23 );
-}
-
-/* CHECKER / GRID -- the framebuffer-tiling patterns.  Both spend the 12 bits the box modes give
-   the radius on the CELL pitch instead, at 1/4 px (a pattern pitch is authored in whole pixels;
-   1023.75 px caps well past any backdrop cell).  What remains differs per mode:
-     CHECKER -- phase_x / phase_y, 8 bits each: the box origin's offset into the TWO-cell colour
-                period, as a fraction of that period, so the fragment re-anchors cell PARITY to
-                the shape (one cell of phase would swap the two colours).  1/256 of a period is
-                1/8 px on a 16 px cell -- under the rasterizer's floor.  col_b rides the uv word
-                in the ARC_GRAD lanes.
-     GRID    -- thickness, 7 bits at 1/8 px (the border field's own partition): the full line
-                width, straddling the lattice line.  The phase pair moves to the uv word (one
-                unorm16 per axis, fraction of ONE cell -- lines repeat per cell, so parity does
-                not exist) because a grid has one colour and it is the vertex colour, which
-                leaves the whole uv word free.  The nine bits CHECKER spends on its phase are
-                free here and carry the lattice's ORIENTATION instead:
-                  angle   -- 8 bits over 0..pi (bits 23..30), the whole lattice turned about the
-                             anchor.  0.7 degrees a step, which is a decorative pattern's floor.
-                  stripes -- bit 31: cut on ONE axis instead of both, which turns the lattice into
-                             a stripe field.  Stripes + angle is the diagonal HATCH, and it is
-                             the reason the angle is here: the hatch used to be up to 512 stroked
-                             line commands under a clip, and it is now this one quad. */
-#define GUI_FX_CELL_MAX          1023.75f    /* 12 bits at 1/4 px */
-#define GUI_FX_GRID_ANGLE_STEPS  255.0f      /*  8 bits over 0..pi */
-#define GUI_FX_GRID_STRIPES_BIT  ( 1u << 31 )
-
-static inline u32
-gui_fx_pack_checker( f32 cell, f32 phase_x, f32 phase_y )   /* phases: fraction of 2*cell, [0,1) */
-{
-    u32 c  = gui_fx_fixed( cell,    4.0f,   0xFFFu );
-    u32 px = gui_fx_fixed( phase_x, 255.0f, 0xFFu  );
-    u32 py = gui_fx_fixed( phase_y, 255.0f, 0xFFu  );
-    return (u32)GUI_FX_CHECKER | ( c << 4 ) | ( px << 16 ) | ( py << 24 );
-}
-
-/* `angle` must already be WRAPPED into [0, pi) -- a lattice at a and at a + pi are the same
-   lattice, so the caller wraps rather than letting gui_fx_fixed saturate, which would stick an
-   animated rotation at pi.  tess_grid is the one caller and wraps there, where the same wrapped
-   value also drives the phase (the two must agree or the pattern slides off its anchor). */
-static inline u32
-gui_fx_pack_grid( f32 cell, f32 thickness, f32 angle, bool stripes )
-{
-    u32 c = gui_fx_fixed( cell,      4.0f, 0xFFFu );
-    u32 t = gui_fx_fixed( thickness, 8.0f, 0x7Fu  );
-    u32 a = gui_fx_fixed( angle, GUI_FX_GRID_ANGLE_STEPS / GUI_FX_PI, 0xFFu );
-    return (u32)GUI_FX_GRID | ( c << 4 ) | ( t << 16 ) | ( a << 23 )
-         | ( stripes ? GUI_FX_GRID_STRIPES_BIT : 0u );
-}
-
-/* abgr is the same R-in-the-low-byte word every other colour here uses (R8G8B8A8_UNORM order). */
-static inline u32
-gui_fx_pack_text_edge( f32 width, u32 abgr )
-{
-    u32 w = gui_fx_fixed( width, 8.0f, 0xFFu );
-    u32 r = ( ( abgr       ) & 0xFFu ) >> 3;
-    u32 g = ( ( abgr >>  8 ) & 0xFFu ) >> 3;
-    u32 b = ( ( abgr >> 16 ) & 0xFFu ) >> 3;
-    u32 a = ( ( abgr >> 24 ) & 0xFFu ) >> 3;
-    return (u32)GUI_FX_TEXT_EDGE | ( w << 4 ) | ( r << 12 ) | ( g << 17 ) | ( b << 22 ) | ( a << 27 );
-}
 
 /*==============================================================================================
     GUI_DRAW -- the primitive record: per-shape constants, stored once instead of per vertex.
@@ -2100,8 +1920,6 @@ typedef struct
     u32 uv;       // texture UV, two unorm16 over [0,1] (gui_uv_pack)
     u32 abgr;     // packed color
     u32 fxc;      // effect coordinate |p| - c as two halves (GUI_FX_NONE ignores it)
-    u32 fx;       // packed effect word (gui_fx_pack); low nibble 0 = no effect
-    u32 tex;      // sampling model + bindless slot (GUI_TEX_MODE | index) -- see above
     u32 prim;     // primitive record index, SLOT-LOCAL (gui_prim_t; + the flush's prim_base)
 
 } gui_draw_vert_t;
@@ -2169,15 +1987,14 @@ gui_fxc_pack( f32 ex, f32 ey )
 static inline gui_draw_vert_t
 gui_vert( f32 x, f32 y, f32 u, f32 v, u32 abgr )
 {
-    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, 0u, 0u, 0u, 0u };
+    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, 0u, 0u };
 }
 
-/* The same, carrying the per-corner effect coordinate.  The effect WORD is ambient (above). */
+/* The same, carrying the per-corner effect coordinate.  The RECORD is ambient (above). */
 static inline gui_draw_vert_t
 gui_vert_fxc( f32 x, f32 y, f32 u, f32 v, u32 abgr, f32 ex, f32 ey )
 {
-    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr,
-                                gui_fxc_pack( ex, ey ), 0u, 0u, 0u };
+    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, gui_fxc_pack( ex, ey ), 0u };
 }
 
 /*==============================================================================================
@@ -2249,7 +2066,7 @@ typedef enum
     GUI_CMD_RECT_FILLED,     // filled rectangle or textured quad (glyph); rounding > 0 makes it
                              //   an SDF surface -- a filled DISC is this command at radius ==
                              //   half-extent (draw_push_circle_filled), not a type of its own
-    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads (a BOX under GUI_TEX_OP_BAND
+    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads (a BOX under GUI_OP_BAND
                              //   when rounded)
     GUI_CMD_TRIANGLE,        // solid triangle
     GUI_CMD_TEXT,            // glyph run from the font atlas
@@ -2285,124 +2102,28 @@ typedef enum
    the tessellator's clip test never triggers and the whole-run fast path is taken. */
 #define GUI_TEXT_NO_CLIP 1e30f
 
-/* THE SAMPLING MODEL -- the top 4 bits of a rect command's tex_idx.  What a texel MEANS to the
-   fragment: the one axis the shader branches on, and the axis the two atlases are already split
-   along (render/resource/gui_res_atlas.h).
+/* THE SAMPLING MODEL -- the top 4 bits of a tex_idx.  What a texel MEANS to the fragment: the one
+   axis the shader branches on, and the axis the two atlases are already split along
+   (render/resource/gui_res_atlas.h).
 
    It rides the tex_idx rather than taking a field of its own because it is a property of the
    TEXTURE, not of the shape drawn with it -- so wherever the slot goes, the model goes with it for
-   free.  That is what lets both of them live in the VERTEX (see gui_draw_vert_t) without widening
-   anything: one u32 carries the pair, so models MIX freely inside one draw call instead of needing
-   to be kept apart.  The SAMPLER is DERIVED from the mode in the fragment and never carried per
-   command: coverage must stay point-sampled or glyphs stop being crisp, colour must filter or it
-   blocks up the moment it is stretched.
+   free.  The SAMPLER is DERIVED from the mode in the fragment and never carried: coverage must
+   stay point-sampled or glyphs stop being crisp, colour must filter or it blocks up the moment it
+   is stretched.
 
    That derivation is the whole reason this is a MODE rather than a bool: a third sampling model
    (SDF) is one more value, not a format change.  Three of the sixteen are spent; the rest stay
-   unnamed until something emits them, the same rule the effect band's spare modes follow.
+   unnamed until something emits them.
 
-   FOUR bits, matching GUI_FX_MODE_BITS -- the two mode fields answer the same kind of question and
-   grow by the same rule.  The bits come out of the INDEX half, which never needed them: the RHI's
-   bindless array is 2048 entries (11 bits) and the low 12 still hold 4K.  This word is the shader
-   contract: the shifts below must equal TEX_MODE_SHIFT / TEX_CLIP_SHIFT in gui.frag / gui.ps.hlsl
-   (and the paraphrase in gui_shader.h) -- change one, change all, resplice the SPIR-V.
-
-   THE CLIP BAND -- bits 19..27, between the model and the index: which clip rect cuts this
-   vertex's fragments, as an ABSOLUTE entry index into the frame clip region -- the window's fixed
-   slab (its stable cache slot * GUI_WIN_CLIP_MAX) plus a local first-seen index within it
-   (win_geo_slot_t).  The fragment resolves it against the frame clip table (gui_shader.h,
-   clip_coverage), which is what lets a clip change ride the vertex instead of cutting a draw call
-   -- the same move the texture and the effect word made.  Keyed by the stable cache slot on
-   purpose: cached geometry bakes these bits, and both halves survive as long as the window does --
-   the slot is id-keyed, and the window's own first-seen clip order is reproducible from its
-   (hashed) commands where a per-frame table's assignment order is not.
-
-   NINE bits -- 512 entries, which is RENDER_MAX_WIN * GUI_WIN_CLIP_MAX exactly in every build.
-   The band is sized to what is RESIDENT, not to what could ever exist: a slab is per stable cache
-   SLOT, slots are recycled, and a window past the cap degrades within itself (tess_clip_local
-   falls back to its own slab entry 0) rather than borrowing another window's rect.  Most windows
-   use one clip and four is already heavy, so the product is generous at both ends -- and the two
-   bits this gave back are the op band's growth room.  Stamped by tess_verts_commit from ambient
-   state, like the two words below it; nothing outside the tessellator sets it. */
+   The word travels from the emit site into the primitive record's `tex` member (gui_prim_t), and
+   the model's shift is the one bit-layout contract the shaders still share with this header --
+   TEX_MODE_SHIFT in gui.frag / gui.ps.hlsl, and the paraphrase in gui_shader.h.  The clip band,
+   the self bit and the op band that used to sit under it are gone: all three are plain members of
+   the record now, so the low 28 bits are the bindless index and nothing else. */
 #define GUI_TEX_MODE_SHIFT  28u
 #define GUI_TEX_MODE_MASK   ( 0xFu << GUI_TEX_MODE_SHIFT )
 #define GUI_TEX_MODE( m )   ( (u32)( m ) << GUI_TEX_MODE_SHIFT )
-
-#define GUI_TEX_CLIP_SHIFT  19u
-#define GUI_TEX_CLIP_MASK   ( 0x1FFu << GUI_TEX_CLIP_SHIFT )
-
-/* THE SELF-SAMPLED BIT -- bit 18, directly under the clip band.  Set, it tells the
-   fragment not to consult the texel at all: coverage is forced to 1, and the vertex's 32-bit uv
-   word is a mode PAYLOAD rather than a texture coordinate (the fragment still samples, at a
-   garbage location of a valid texture, because that is cheaper than a divergent skip).
-
-   It is a BIT and not a range of mode numbers because it describes the PRIMITIVE, not the shape.
-   Solid colour is what makes the uv word free, and whether a shape is solid colour is decided at
-   the emit site: a rounded box drawn as a fill has nothing to say in its uv, while the same mode
-   drawn through draw_texture_in carries real texcoords.  Keyed off the mode instead, one of those
-   two would have to be a second mode -- which is how a 4-bit enum runs out while the parameter
-   bits it is trying to buy sit unused.
-
-   The payoff is the parameter budget.  A shape mode partitions 28 bits of the effect word; a
-   SELF-SAMPLED one partitions those 28 plus the whole uv word, because unorm16 round-trips
-   k/65535 exactly and the quad stamps the same value on all four corners (flat interpolation).
-   That is 60 bits for any shape willing to be one colour, which is most UI chrome. */
-#define GUI_TEX_SELF_SHIFT  18u
-#define GUI_TEX_SELF_BIT    ( 1u << GUI_TEX_SELF_SHIFT )
-
-/* Bits 17..16 are RESERVED and must read 0.  They sit directly above the op band so it can widen
-   from four bits to six without moving anything else -- the only unallocated real estate in the
-   whole vertex, and the reason the clip band was narrowed to what is actually resident. */
-#define GUI_TEX_RESERVED_MASK  ( 0x3u << 16 )
-
-/* THE OP BAND -- bits 12..15, post-ops that MODIFY whatever shape the effect word named.
-
-   They live here rather than in the effect word for one reason, and it is the reason the mode
-   nibble kept running out: every fx mode re-partitions its own 28 bits differently, so there is no
-   bit position that means the same thing across modes.  BOX leaves 25..31 free, a pulse spends
-   them on rate + depth, ARC spends them on the aperture -- a flag placed there is a flag that
-   works for some shapes and corrupts others.  The tex word has no such partitioning: these bits
-   are free whatever the shape is, so an op composes with any of them and with each other.
-
-   An op is not a shape and must never become one.  If a thing needs its own field, its own
-   parameters, or its own branch in the sector decode, it is a MODE; an op is a modifier on a
-   coverage the fragment already computed.  Ops apply to the box-family modes only -- the sector
-   and pattern modes return their coverage before the shared box decode the ops act on -- which
-   means BOX and SEG both take all four, and a stroked capsule costs no mode of its own.
-
-   The four bits come out of the INDEX half, which has them to spare: the RHI's bindless array is
-   2048 entries (rhi/vk_state.c, VK_MAX_TEXTURES) and 12 bits still hold 4096.  Every op below is
-   also a coverage modifier, never a colour one -- a colour post-op has to reach main() after the
-   sampling model is resolved, which is a different seam entirely (GUI_FX_TEXT_EDGE). */
-#define GUI_TEX_OP_SHIFT    12u
-#define GUI_TEX_OP_MASK     ( 0xFu << GUI_TEX_OP_SHIFT )
-
-/* Bend the field into a BAND of `border` px lying inside the boundary, instead of filling it: the
-   rounded outline every panel and widget frame is drawn with.  A band is derived from ONE
-   boundary, so a rect whose four corners want different radii is not a shape this can describe. */
-#define GUI_TEX_OP_BAND     ( 1u << 12 )
-
-/* Cut the interior away at the boundary: same radius, same feather, same outward falloff, but
-   coverage is exactly 0 anywhere inside the shape.  The elevation shadow under floating chrome,
-   which must not tint what it sits behind -- a translucent panel shows the ground through it, not
-   a dark plate.  The cut leaves a step at the boundary (half coverage outside, none inside) and
-   that is the shape, not an artifact: it is where the object the shadow belongs to begins.
-   Emitting nothing inside also makes the interior hole in tess_fx_box_core unconditional, so a cut
-   surface is a band of quads around the frame at any size, with no claim about what covers it. */
-#define GUI_TEX_OP_CUT      ( 1u << 13 )
-
-/* Run the falloff INWARD from the boundary instead of across it: full strength against the edge,
-   gone `feather` px in, nothing outside.  The inner shadow / pressed well -- and OP_CUT's exact
-   mirror: a cut keeps the outward half of the falloff and drops the core, an inset keeps an inward
-   falloff and drops everything past the edge. */
-#define GUI_TEX_OP_INSET    ( 1u << 14 )
-
-/* Breathe the coverage on pc.time -- the band's only clock reader.  rate and depth replace the
-   `border` field in the effect word (gui_fx_pack_pulse), which is what makes this the one op that
-   cannot combine with OP_BAND; it composes with the other two freely.  Geometrically it is a still
-   box, so the vertices stay correct for every frame it runs and the retained slot never
-   invalidates -- the breathing costs no re-tessellation and no batch split. */
-#define GUI_TEX_OP_PULSE    ( 1u << 15 )
 
 typedef enum
 {
@@ -2418,9 +2139,7 @@ typedef enum
 
 } gui_tex_mode_t;
 
-/* Split a command's tex_idx into its parts: the model, and the bindless slot to sample.  The clip
-   band and the self-sampled bit are stamped later (tess_verts_commit) and are not a command's to
-   carry, but both are masked out here so a word read back off a VERTEX splits the same way. */
+/* Split a tex_idx into its parts: the model, and the bindless slot to sample. */
 static inline gui_tex_mode_t
 gui_tex_mode( u32 tex_idx )
 {
@@ -2430,8 +2149,7 @@ gui_tex_mode( u32 tex_idx )
 static inline u32
 gui_tex_index( u32 tex_idx )
 {
-    return tex_idx & ~( GUI_TEX_MODE_MASK | GUI_TEX_CLIP_MASK | GUI_TEX_SELF_BIT
-                        | GUI_TEX_RESERVED_MASK | GUI_TEX_OP_MASK );
+    return tex_idx & ~GUI_TEX_MODE_MASK;
 }
 
 /* One semantic draw command.  The 4-byte header carries the command type, the index of the active
@@ -2459,11 +2177,12 @@ typedef struct
            last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
            sentinel (clip_x0 = -GUI_TEXT_NO_CLIP, clip_x1 = +GUI_TEXT_NO_CLIP) means unclipped
            and takes the original whole-run fast path. */
-        /* edge is the ambient TEXT_EDGE word at emit time (0 = none): a second colour painted
-           outside the glyph boundary, resolved by the fragment from the SAME quad, so an outlined
-           or shadowed run costs no extra geometry, no second pass, and no batch split.  It rides
-           the command rather than being re-read at tessellation because the ambient can have moved
-           on by then -- a retained window re-tessellates long after its emit. */
+        /* edge_w / edge_col are the ambient TEXT_EDGE at emit time (width 0 = none): a second
+           colour painted outside the glyph boundary, resolved by the fragment from the SAME quad,
+           so an outlined or shadowed run costs no extra geometry, no second pass, and no batch
+           split.  They ride the command rather than being re-read at tessellation because the
+           ambient can have moved on by then -- a retained window re-tessellates long after its
+           emit. */
         /* font is the registry id whose glyph metrics and atlas UVs this run resolves from -- the
            ONLY thing the font decides.  It rides the command rather than the command SEGMENT
            because a segment is the backend's batch-dispatch unit and the font is not a batch key:
@@ -2471,8 +2190,8 @@ typedef struct
            when it does the texture rides the vertex and cannot cut a draw call either.  Tagging a
            batch unit with a per-command property would force a segment split just for a lookup --
            see draw_set_font. */
-        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr; u32 edge;
-                 u16 font; } text;
+        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr;
+                 f32 edge_w; u32 edge_col; u16 font; } text;
         /* The same glyph run under a uniform SCALE and a ROTATION about (x, y) -- (x, y) is both
            the run's top-left in its own space and the pivot, so a caller places any other pivot by
            moving the origin.  rot is radians in screen space (the angle algebra above: 0 points
@@ -2484,8 +2203,8 @@ typedef struct
            rotation.  A separate type is what lets both of them skip a transformed run cleanly
            instead of measuring it wrong.  No clip window: the GPU scissor is its only clip.
            Nothing here is snapped to the pixel grid -- see tess_text_xf. */
-        struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr; u32 edge;
-                 u16 font; } text_xf;
+        struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr;
+                 f32 edge_w; u32 edge_col; u16 font; } text_xf;
         struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
         struct { u32 pt_offset; u32 pt_count; f32 thickness;
                  gui_stroke_align_t align; bool closed;         u32 abgr; } polyline;
@@ -2525,13 +2244,13 @@ typedef struct
            every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap.
            `variant` picks which of the three fills this is, all sharing the one geometry:
              0 BOX    -- the filled surface: a glow or halo MEANT to be seen through its subject.
-             1 SKIRT  -- the interior cut away (GUI_TEX_OP_CUT), same outward falloff, painting
+             1 SKIRT  -- the interior cut away (GUI_OP_CUT), same outward falloff, painting
                          nothing inside the boundary.  What a DROP shadow wants: the core of a
                          filled one is only ever seen through whatever it sits behind, which is a
                          translucent panel dimming itself.
-             2 INSET  -- the falloff turned INWARD (GUI_TEX_OP_INSET), painting from the boundary
+             2 INSET  -- the falloff turned INWARD (GUI_OP_INSET), painting from the boundary
                          `feather` px in and nothing outside.  The inner shadow / pressed well.
-           A non-zero `rate` adds GUI_TEX_OP_PULSE on top of whichever variant is set, so a cut or
+           A non-zero `rate` adds GUI_OP_PULSE on top of whichever variant is set, so a cut or
            inset surface can breathe as readily as a filled one. */
         struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr, variant; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
@@ -2543,7 +2262,7 @@ typedef struct
            The field order IS the quadrant order the tessellator walks (top-left, top-right,
            bottom-right, bottom-left), so the two cannot drift apart.
            Filled and solid-colour only.  The stroked form stays a perimeter polyline:
-           GUI_TEX_OP_BAND derives its interior hole from a single radius, and generalizing that is
+           GUI_OP_BAND derives its interior hole from a single radius, and generalizing that is
            not worth it for a shape whose outline the polyline already draws correctly.
            `feather` is the falloff band exactly as fx_box carries it -- 0 gets the standard 1 px
            AA, wider makes the per-corner SOFT SHADOW (the tab / asymmetric-card drop shadow); the
@@ -3215,7 +2934,7 @@ typedef struct
    to spare -- quads run 6 idx per 4 verts (1.5:1) and AA paths / arcs stay under 2:1 --
    so geometry that would exceed it overflows a frame's tessellation, not the buffer
    sizing.  The per-frame region sizes that fall out of these (VB 896 KB at the packed
-   28-byte vertex, IB 192 KB) are both 256-byte aligned, so each frame-in-flight region
+   24-byte vertex, IB 192 KB) are both 256-byte aligned, so each frame-in-flight region
    stays independently addressable -- note that this only matters if the VB/IB are ever
    moved off HOST_COHERENT memory, in which case regions would need rounding up to
    nonCoherentAtomSize to flush apart. */

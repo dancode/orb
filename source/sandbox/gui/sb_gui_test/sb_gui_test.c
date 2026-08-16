@@ -22,8 +22,7 @@
     Exit code: 0 = all cases passed, non-zero = the failure count.
 
     Constituents, in include order:
-        test_fx.c    -- the packed effect word: 11 modes over one u32, saturation, field isolation
-        test_pack.c  -- vertex packing: binary16, UV, effect coord, the tex mode/index split
+        test_pack.c  -- vertex packing: binary16, UV, effect coord; the primitive record layout
         test_rect.c  -- the GUI_RECT leaf kit: rectcut, containment, alignment, colour blend
         test_log.c   -- the GUI_LOG sink contract + the GUI_WARN_ONCE latch
         test_font.c  -- the two-tier glyph lookup: ASCII dense tier, ext binary search, '?' miss
@@ -72,7 +71,6 @@ cstr_equal( const char* a, const char* b )
     Unity build -- each constituent is a set of test_* case functions, registered below.
 ==============================================================================================*/
 
-#include "sandbox/gui/sb_gui_test/test_fx.c"
 #include "sandbox/gui/sb_gui_test/test_pack.c"
 #include "sandbox/gui/sb_gui_test/test_rect.c"
 #include "sandbox/gui/sb_gui_test/test_log.c"
@@ -88,25 +86,13 @@ main( int argc, char* argv[] )
     UNUSED( argc );
     UNUSED( argv );
 
-    /* GUI_FX -- the packed effect word */
-    test_register( "fx_fixed",            test_fx_fixed );
-    test_register( "fx_pack_box",         test_fx_pack_box );
-    test_register( "fx_no_wrap_regress",  test_fx_no_wrap_regression );
-    test_register( "fx_pack_pulse",       test_fx_pack_pulse );
-    test_register( "fx_pack_tile_u",      test_fx_pack_tile_u );
-    test_register( "fx_pack_arc",         test_fx_pack_arc );
-    test_register( "fx_pack_grid",        test_fx_pack_grid );
-    test_register( "fx_pack_text_edge",   test_fx_pack_text_edge );
-    test_register( "fx_mode_nibble",      test_fx_mode_nibble );
-
-    /* Vertex packing */
+    /* Vertex packing + the primitive record */
     test_register( "f16_exact",           test_f16_exact );
     test_register( "f16_saturation",      test_f16_saturation );
     test_register( "f16_round_half_up",   test_f16_round_half_up );
     test_register( "f16_round_trip",      test_f16_round_trip );
     test_register( "uv_pack",             test_uv_pack );
     test_register( "fxc_pack",            test_fxc_pack );
-    test_register( "tex_word",            test_tex_word );
     test_register( "vert_ctors",          test_vert_ctors );
     test_register( "prim_layout",         test_prim_layout );
     test_register( "prim_ops",            test_prim_ops );

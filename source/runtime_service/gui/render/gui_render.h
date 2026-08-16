@@ -135,8 +135,7 @@ f32  draw_get_alpha             ( void );           // ...read back, so a nested
 void draw_set_rounding          ( f32 r );          // corner radius folded into every pushed filled/outline rect
 f32  draw_rounding              ( void );           // current ambient radius (save/restore around a sub-element)
 void draw_set_text_edge         ( f32 width, u32 abgr ); // second colour outside the glyph edge (SDF fonts)
-u32  draw_text_edge             ( void );           // current ambient edge word (save/restore around a run)
-void draw_set_text_edge_raw     ( u32 edge );       // ...restore one verbatim (no re-quantization)
+void draw_text_edge             ( f32* width, u32* abgr );  // read it back (save/restore around a run)
 void draw_set_text_clip_x       ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run
 void draw_clear_text_clip       ( void );           // restore the no-clip sentinel (unbounded text)
 void draw_set_sort_key          ( u32 z );          // paint order stamped on new commands (window z)
@@ -253,8 +252,8 @@ void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
 /* Push a circular sector -- a stroked arc with round caps, or a filled wedge with sharp radial
    edges.  Angles are radians in screen space (0 points +x, positive turns clockwise); a reversed
    range or a sweep past a full turn is normalized at tessellation.  One quad either way.
-   draw_push_arc's thickness is bounded by 2 * GUI_FX_ARC_TUBE_MAX -- past that the caller keeps a
-   polyline, exactly as draw_circle does for a fat ring. */
+   draw_push_arc's thickness is unbounded: the record's tube is a plain float, so a fat arc no
+   longer falls back to a stroked polyline the way it did under the packed word's 15.875 px cap. */
 void draw_push_arc              ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr );
 void draw_push_pie              ( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr );
 
@@ -352,12 +351,12 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
 #define SLOT_PRIM_PAD     8u    // per-slot record headroom; records are per state change, not
                                 //   per primitive, so a window holds few and grows by few
 
-/* One entry of a window slot's LOCAL clip table: the rects this window's cached vertices name
-   through the tex word's clip band (gui.h, GUI_TEX_CLIP_SHIFT).  Vertices bake ABSOLUTE frame-
-   region entry indices -- the window's fixed slab (its id-keyed cache slot * GUI_WIN_CLIP_MAX)
-   plus a local first-seen index -- so the flush uploads each slab at its fixed offset, and only
-   when its content changed (s_clip_slab_pending).  The fragment resolves them against the frame
-   clip buffer (gui_shader.h, clip_coverage) with clip_base flush-constant at the region origin.
+/* One entry of a window slot's LOCAL clip table: the rects this window's primitive records name
+   through their `clip` member (gui.h, gui_prim_t).  Records hold ABSOLUTE frame-region entry
+   indices -- the window's fixed slab (its id-keyed cache slot * GUI_WIN_CLIP_MAX) plus a local
+   first-seen index -- so the flush uploads each slab at its fixed offset, and only when its
+   content changed (s_clip_slab_pending).  The fragment resolves them against the frame clip
+   buffer (gui_shader.h, clip_coverage) with clip_base flush-constant at the region origin.
    Lives beside the slot's cached geometry so a cache-hit frame replays baked indices against the
    exact rects they meant, however the per-frame global clip table shuffled its indices. */
 typedef struct
@@ -367,20 +366,12 @@ typedef struct
 
 } gui_clip_entry_t;
 
-/* Distinct clips per window slot.  The product with RENDER_MAX_WIN is what the tex word's 9-bit
-   clip band has to address (512), so the two trade against each other: the shipping build spends
-   its budget on 16 clips across 32 windows, the stress bench on 4 across 128.  Four is not tight
-   in practice -- most windows use ONE clip and a scrolled child adds one more -- and a window that
-   does exceed it degrades inside its own slab (tess_clip_local), never into a neighbour's. */
-#ifdef GUI_STRESS_TEST
-#define GUI_WIN_CLIP_MAX  4
-#else
+/* Distinct clips per window slot.  This used to trade against RENDER_MAX_WIN, because the product
+   of the two had to fit a 9-bit band in the vertex's tex word -- which is why the stress bench ran
+   on 4 clips per window while the shipping build had 16.  The record's `clip` is a full 32-bit
+   member, so there is no band to fit and no trade to make: both builds get 16, and the only cost
+   of raising it further is the clip region's own size. */
 #define GUI_WIN_CLIP_MAX  16
-#endif
-
-ORB_STATIC_ASSERT( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX
-                       <= ( GUI_TEX_CLIP_MASK >> GUI_TEX_CLIP_SHIFT ) + 1,
-                   "every window's fixed clip slab must be addressable by the tex word's clip band" );
 
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
    The frame's semantic list is tessellated + z-sorted exactly once (lazily, on the first

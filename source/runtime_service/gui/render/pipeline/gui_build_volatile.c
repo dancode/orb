@@ -144,7 +144,8 @@ typedef struct
        replay call so the callback sees the same ambient values it drew with at real emit,
        whatever the idle frame's leftover s_draw state happens to be. */
     f32              alpha, rounding, text_clip_x0, text_clip_x1;
-    u32              text_edge;
+    f32              text_edge_w;
+    u32              text_edge_col;
 
 } gui_volatile_slot_t;
 
@@ -246,7 +247,8 @@ volatile_stamp( f32 x, f32 y, f32 w, const gui_rect_t* view, gui_pad_t pad )
     row->rounding     = s_draw.rounding;
     row->text_clip_x0 = s_draw.text_clip_x0;
     row->text_clip_x1 = s_draw.text_clip_x1;
-    row->text_edge    = s_draw.text_edge;
+    row->text_edge_w   = s_draw.text_edge_w;
+    row->text_edge_col = s_draw.text_edge_col;
 }
 
 static bool
@@ -794,7 +796,8 @@ volatile_update( void )
         f32        rounding_ck   = s_draw.rounding;
         f32        tclip_x0_ck   = s_draw.text_clip_x0;
         f32        tclip_x1_ck   = s_draw.text_clip_x1;
-        u32        tedge_ck      = s_draw.text_edge;
+        f32        tedge_w_ck    = s_draw.text_edge_w;
+        u32        tedge_col_ck  = s_draw.text_edge_col;
 
         /* Mixed DPI: land the bake of the viewport this row's window sits on, exactly as
            window_begin does before the real emit (gui_frame_dpi.c).  The idle frame's ambient
@@ -821,7 +824,8 @@ volatile_update( void )
         s_draw.rounding     = row->rounding;
         s_draw.text_clip_x0 = row->text_clip_x0;
         s_draw.text_clip_x1 = row->text_clip_x1;
-        s_draw.text_edge    = row->text_edge;
+        s_draw.text_edge_w   = row->text_edge_w;
+        s_draw.text_edge_col = row->text_edge_col;
 
         /* draw_cull_box (gui_emit_draw.c) tests against clip_stack[clip_depth-1], NOT
            cur_clip_idx -- cur_clip_idx alone is not enough to reproduce the real-emit clip. Force
@@ -879,7 +883,8 @@ volatile_update( void )
         s_draw.rounding             = rounding_ck;
         s_draw.text_clip_x0         = tclip_x0_ck;
         s_draw.text_clip_x1         = tclip_x1_ck;
-        s_draw.text_edge            = tedge_ck;
+        s_draw.text_edge_w          = tedge_w_ck;
+        s_draw.text_edge_col        = tedge_col_ck;
 
         /* The active font stays this row's stamped font until the tail below: re-activating an
            unrelated font here would trip the DPI landing's lineage guard for the next row. */

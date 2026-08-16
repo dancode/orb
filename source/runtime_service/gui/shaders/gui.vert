@@ -13,29 +13,22 @@ layout(push_constant) uniform PC {
     uint prim_base;  // this window slot's first record (fragment-only)
 } pc;
 
-// FOUR of these attributes are PACKED in memory (gui.h): uv is two unorm16, color is four unorm8,
+// THREE of these attributes are PACKED in memory (gui.h): uv is two unorm16, color is four unorm8,
 // and the effect coord is two halves.  None of that appears here, and that is the point -- vertex
 // fetch widens normalized and half formats to 32-bit float before the shader sees them, so the
 // declarations below are what they were when every field was full width.
-//
-// in_fx and in_tex are DEAD WEIGHT: the primitive record (gui.h) carries both unpacked and the
-// fragment reads them from there.  They ride one stage longer so the switch-over is isolated.
 layout(location = 0) in vec2 in_pos;
 layout(location = 1) in vec2 in_uv;
 layout(location = 2) in vec4 in_color;
 layout(location = 3) in vec2 in_fx_coord;   // effect coord: |p| - c, shape-local pixels
-layout(location = 4) in uint in_fx;         // dead: superseded by the record
-layout(location = 5) in uint in_tex;        // dead: superseded by the record
-layout(location = 6) in uint in_prim;       // primitive record index, slot-local
+layout(location = 4) in uint in_prim;       // primitive record index, slot-local
 
 layout(location = 0) out vec4 v_color;
 layout(location = 1) out vec2 v_uv;
 layout(location = 2) out vec2 v_fx_coord;
-layout(location = 3) flat out uint v_fx;
-layout(location = 4) flat out uint v_tex;
-// flat, and more sharply than the two above ever needed: this is an index into a storage buffer,
-// and interpolating it would name a different shape on every pixel of the primitive.
-layout(location = 5) flat out uint v_prim;
+// flat: this is an index into a storage buffer, and interpolating it would name a different shape
+// on every pixel of the primitive.
+layout(location = 3) flat out uint v_prim;
 
 // Decode an sRGB-encoded color to linear light.  UI colors are authored in sRGB (the values you
 // type as hex / pick in a color picker), but the swapchain is a _SRGB format, so the GPU blends in
@@ -74,7 +67,5 @@ void main()
     // sampler's REPEAT is still what tiles the atlas stipple row.
     v_uv       = in_uv;
     v_fx_coord = in_fx_coord;
-    v_fx       = in_fx;
-    v_tex      = in_tex;
     v_prim     = in_prim;
 }

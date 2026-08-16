@@ -743,17 +743,16 @@ typedef struct gui_api_s
        widen and ignores this.  Useful width is bounded by the baked spread, past which the field is
        flat and the outline stops growing rather than tearing.  A width of 0 clears it.
 
-       Ambient like the radius above, and saved/restored the same way -- but through the RAW pair,
-       since re-packing a width and a colour would re-quantize both on each nesting level:
+       Ambient like the radius above, and saved/restored the same way -- reading the pair back and
+       setting it again is exact, so there is no separate raw setter:
 
-           u32 save = gui()->draw_text_edge();
+           f32 sw; u32 sc; gui()->draw_text_edge( &sw, &sc );
            gui()->draw_set_text_edge( 2.0f, 0xFF000000u );   // 2 px black outline
            gui()->draw_text( x, y, 0xFFFFFFFFu, "Title" );
-           gui()->draw_set_text_edge_raw( save ); */
+           gui()->draw_set_text_edge( sw, sc ); */
 
-    void ( *draw_set_text_edge     )( f32 width, u32 abgr );
-    u32  ( *draw_text_edge         )( void );
-    void ( *draw_set_text_edge_raw )( u32 edge );
+    void ( *draw_set_text_edge )( f32 width, u32 abgr );
+    void ( *draw_text_edge     )( f32* width, u32* abgr );
 
     /* Font atlas access -- the bindless index + pixel size backing a loaded font id, for previewing
        its live GPU atlas through image_texture / draw_texture_in above (0 / {0,0} if empty). */
@@ -842,7 +841,7 @@ typedef struct gui_api_s
        window's retained geometry stays valid and the animation re-tessellates nothing -- unlike
        easing the color yourself, which dirties the window's hash on every frame it moves and
        throws that window's geometry away.  (The per-frame vertex UPLOAD is unaffected either way:
-       the frame's region is written whole regardless of what was retained.)  `rate` is in Hz (quantized to 1/4 Hz, max GUI_FX_RATE_MAX) and
+       the frame's region is written whole regardless of what was retained.)  `rate` is in Hz and
        `depth` the 0..1 fraction of alpha taken at the trough.  Honors the ambient rounding.
        The clock advancing does not schedule a frame: call request_redraw while the pulse is
        live, the same contract a volatile widget has. */

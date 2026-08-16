@@ -49,9 +49,7 @@ struct ps_in_t
     float4                  color    : COLOR0;
     float2                  uv       : TEXCOORD0;
     float2                  fx_coord : TEXCOORD1;
-    nointerpolation uint    fx       : TEXCOORD2;   // dead: superseded by the record
-    nointerpolation uint    tex      : TEXCOORD3;   // dead: superseded by the record
-    nointerpolation uint    prim     : TEXCOORD4;   // primitive record index, slot-local
+    nointerpolation uint    prim     : TEXCOORD2;   // primitive record index, slot-local
 };
 
 // The record this fragment's primitive named, resolved once at the top of main().  Row 0 is what

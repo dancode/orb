@@ -239,7 +239,7 @@ round_rect_perimeter_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, gui_v
    quadrant quad already covers exactly one corner, so four radii cost four packed words and no
    extra geometry.  It used to fan the sampled perimeter into up to 62 separate TRIANGLE commands
    with a polygonal, unantialiased edge.  STROKED still walks the perimeter: an outline of four
-   different radii is not a shape GUI_TEX_OP_BAND can describe (its band is derived from one), and the
+   different radii is not a shape GUI_OP_BAND can describe (its band is derived from one), and the
    closed antialiased polyline draws it correctly already. */
 void
 draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
@@ -287,7 +287,7 @@ draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness
        ring r = 100  256 verts / 1152 idx -> 32 / 48
 
    A ring is a rounded rect whose radius reached its half-extent, which is why it needs no shape of
-   its own: GUI_TEX_OP_BAND already paints a band `border` px wide lying INSIDE the boundary.  Two
+   its own: GUI_OP_BAND already paints a band `border` px wide lying INSIDE the boundary.  Two
    details make it match what the polyline drew:
      - GUI_STROKE_CENTER centres the band ON radius r, so the band spans [r - t/2, r + t/2].  The
        SDF band hangs inside its boundary, so the boundary is r + t/2.
@@ -304,30 +304,17 @@ draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
 
     thickness = sym_thick( thickness );
 
-    /* A band wider than the packed word's border field cannot be described to the fragment, so the
-       heavy case keeps the polyline rather than silently drawing a thinner ring.  At 15.875 px this
-       is a hoop, not an outline, and nothing in the library asks for one. */
-    if ( thickness <= GUI_FX_BORDER_MAX )
-    {
-        f32 outer = r + thickness * 0.5f;
-        /* draw_push_rect_outline takes its radius from the AMBIENT rounding, clamped to half the
-           extent -- so asking for the full half-extent is how a square becomes a circle here. */
-        f32 save = draw_rounding();
-        draw_set_rounding( outer );
-        draw_push_rect_outline( cx - outer, cy - outer, outer * 2.0f, outer * 2.0f,
-                                thickness, col );
-        draw_set_rounding( save );
-        return;
-    }
-
-    u32 segs = sym_arc_segs( r, SYM_TAU );
-    gui_vec2_t pts[ 64 ];
-    for ( u32 i = 0; i < segs; ++i )
-    {
-        f32 a = SYM_TAU * ( (f32)i / (f32)segs );
-        pts[ i ] = sv2( cx + cosf( a ) * r, cy + sinf( a ) * r );
-    }
-    gui_draw_polyline( pts, segs, thickness, GUI_STROKE_CENTER, true, col );
+    /* EVERY thickness takes the ring now.  This used to be gated at 15.875 px -- what the packed
+       word's border field could describe -- with anything fatter falling back to a stroked polyline
+       of up to 64 segments.  The record's border is a plain float, so the gate has nothing left to
+       catch and the fallback is gone with it. */
+    f32 outer = r + thickness * 0.5f;
+    /* draw_push_rect_outline takes its radius from the AMBIENT rounding, clamped to half the
+       extent -- so asking for the full half-extent is how a square becomes a circle here. */
+    f32 save = draw_rounding();
+    draw_set_rounding( outer );
+    draw_push_rect_outline( cx - outer, cy - outer, outer * 2.0f, outer * 2.0f, thickness, col );
+    draw_set_rounding( save );
 }
 
 /* Stroked arc from a0 to a1 (radians) -- a spinner sweep, a knob track, a radial-menu rim.
@@ -340,17 +327,10 @@ draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )
 {
     thickness = sym_thick( thickness );
 
-    /* A band wider than the packed word's tube field cannot be described to the fragment, so the
-       heavy case keeps the polyline rather than silently drawing a thinner arc -- the same rule and
-       the same reason as draw_circle's fat ring. */
-    if ( thickness * 0.5f <= GUI_FX_ARC_TUBE_MAX )
-    {
-        draw_push_arc( cx, cy, r, thickness, a0, a1, col );
-        return;
-    }
-    gui_vec2_t pts[ 66 ];
-    u32 n = sym_arc( cx, cy, r, a0, a1, pts );
-    gui_draw_polyline( pts, n, thickness, GUI_STROKE_CENTER, false, col );
+    /* Every thickness takes the SDF arc, for the same reason draw_circle's ring does: the tube is a
+       plain float in the record, so the 15.875 px ceiling that used to send fat arcs down the
+       stroked-polyline path is gone, and so is that path. */
+    draw_push_arc( cx, cy, r, thickness, a0, a1, col );
 }
 
 /* Filled pie / wedge from a0 to a1 (radians): knobs, radial menus, donut segments.  A full sweep

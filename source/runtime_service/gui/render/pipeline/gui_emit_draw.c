@@ -148,7 +148,8 @@ static struct
     /* Ambient TEXT_EDGE word folded into every pushed text run; 0 (the default) is a plain run.
        Stamped onto the command at push time rather than read at tessellation, because a retained
        window re-tessellates long after the ambient has moved on. */
-    u32 text_edge;
+    f32 text_edge_w;
+    u32 text_edge_col;
 
 } s_draw;
 
@@ -283,7 +284,8 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.rounding             = 0.0f;                 /* square until a seam sets the resolved radius */
     s_draw.text_clip_x0         = -GUI_TEXT_NO_CLIP;    /* unclipped until a seam sets a window */
     s_draw.text_clip_x1         =  GUI_TEXT_NO_CLIP;
-    s_draw.text_edge            = 0u;                   /* plain runs until a caller asks for an edge */
+    s_draw.text_edge_w          = 0.0f;                 /* plain runs until a caller asks for an edge */
+    s_draw.text_edge_col        = 0u;
 
 #ifdef GUI_CMD_STEPPER
     s_draw.cur_owner = 0;       /* background/chrome until the first widget stamps */
@@ -672,8 +674,8 @@ draw_rounding( void )
     Text edge -- the ambient second colour painted OUTSIDE the glyph boundary.
 
     An outline and a drop shadow are the same thing to the fragment: widen the glyph's own distance
-    field by `width` pixels and fill the band that opens up.  So this costs one packed word on the
-    text command and nothing else -- no second run, no offset copy of the geometry, no extra draw.
+    field by `width` pixels and fill the band that opens up.  So this costs a width and a colour on
+    the text command and nothing else -- no second run, no offset copy, no extra draw.
 
     It needs a DISTANCE FIELD to widen, so it applies to SDF fonts only (gui_font_t.sdf_range > 0);
     a coverage font has no signed distance to offset and simply ignores the word.  Practical width
@@ -684,21 +686,27 @@ draw_rounding( void )
 void
 draw_set_text_edge( f32 width, u32 abgr )
 {
-    s_draw.text_edge = ( width > 0.0f ) ? gui_fx_pack_text_edge( width, abgr ) : 0u;
+    s_draw.text_edge_w   = ( width > 0.0f ) ? width : 0.0f;
+    s_draw.text_edge_col = ( width > 0.0f ) ? abgr  : 0u;
 }
 
-u32
-draw_text_edge( void )
+/* Does the ambient edge paint anything?  Both halves matter: a zero width has no band to fill, and
+   a transparent colour fills it with nothing.  Read by the transparent-fill drop, which must keep
+   an outline-only run alive. */
+static bool
+draw_text_edge_visible( void )
 {
-    return s_draw.text_edge;
+    return s_draw.text_edge_w > 0.0f && ( s_draw.text_edge_col >> 24 ) != 0u;
 }
 
-/* Restore a previously read word verbatim -- the save/restore twin.  Round-tripping through
-   draw_set_text_edge would re-quantize the width and the colour on every nesting level. */
+/* Read the ambient pair back, for bracketed save/restore.  It used to be one packed word plus a
+   _raw setter that put it back without re-quantizing; the record stores a plain width and colour,
+   so a round trip through draw_set_text_edge is now exact and the second setter is gone. */
 void
-draw_set_text_edge_raw( u32 edge )
+draw_text_edge( f32* out_width, u32* out_abgr )
 {
-    s_draw.text_edge = edge;
+    if ( out_width ) *out_width = s_draw.text_edge_w;
+    if ( out_abgr  ) *out_abgr  = s_draw.text_edge_col;
 }
 
 /*==============================================================================================
@@ -836,7 +844,8 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &c->text.clip_x0, sizeof c->text.clip_x0 );
             h = fnv1a( h, &c->text.clip_x1, sizeof c->text.clip_x1 );
             h = fnv1a( h, &c->text.abgr,    sizeof c->text.abgr );
-            h = fnv1a( h, &c->text.edge,    sizeof c->text.edge );
+            h = fnv1a( h, &c->text.edge_w,   sizeof c->text.edge_w );
+            h = fnv1a( h, &c->text.edge_col, sizeof c->text.edge_col );
             h = fnv1a( h, &c->text.font,    sizeof c->text.font );
             h = fnv1a( h, s_draw.text_pool + c->text.off, c->text.len );   /* content while L1-hot */
             break;
@@ -850,7 +859,8 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &c->text_xf.scale, sizeof c->text_xf.scale );
             h = fnv1a( h, &c->text_xf.rot,   sizeof c->text_xf.rot );
             h = fnv1a( h, &c->text_xf.abgr,  sizeof c->text_xf.abgr );
-            h = fnv1a( h, &c->text_xf.edge,  sizeof c->text_xf.edge );
+            h = fnv1a( h, &c->text_xf.edge_w,   sizeof c->text_xf.edge_w );
+            h = fnv1a( h, &c->text_xf.edge_col, sizeof c->text_xf.edge_col );
             h = fnv1a( h, &c->text_xf.font,  sizeof c->text_xf.font );
             h = fnv1a( h, s_draw.text_pool + c->text_xf.off, c->text_xf.len );
             break;
@@ -1200,7 +1210,7 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
     vertex it merges into whatever GPU batch is already open -- a shadow behind every floating
     panel costs no draw calls.
 
-    draw_push_skirt is the same surface with its interior cut away (GUI_TEX_OP_CUT) -- identical
+    draw_push_skirt is the same surface with its interior cut away (GUI_OP_CUT) -- identical
     outward falloff, nothing painted inside the boundary.  That is what a DROP shadow is: the core
     of a filled one can only ever be seen through the thing casting it, so on a translucent panel
     it reads as the panel dimming itself.  Cutting it also makes the tessellator's interior hole
@@ -1210,7 +1220,7 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
     A pulse is the surface whose alpha breathes on pc.time in the FRAGMENT.  Geometrically it is
     a plain rounded fill, and that identity is the feature: the command's bytes never change, so
     its hash never changes, so the window's cached geometry stays valid and the pulse costs zero
-    re-tessellation while it runs.  `rate` is in Hz (quantized to 1/4 Hz, gui_fx_pack_pulse),
+    re-tessellation while it runs.  `rate` is in Hz,
     `depth` the 0..1 fraction of alpha removed at the trough.  The caller still owes one
     request_redraw per frame: the clock advancing is not what schedules a frame (GUI_FX_TIME_WRAP).
 ==============================================================================================*/
@@ -1266,7 +1276,7 @@ draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr
     draw_fx_box_cmd( x, y, w, h, rounding, feather, 1u, 0.0f, 0.0f, 0.0f, abgr );
 }
 
-/* The inner shadow: the same surface with its falloff turned inward (GUI_TEX_OP_INSET), painting
+/* The inner shadow: the same surface with its falloff turned inward (GUI_OP_INSET), painting
    from the boundary `depth` px in and nothing outside it.  A pressed well, a recessed field, the
    inner edge of a scroll area -- the shapes a drop shadow cannot make because they belong to the
    inside of their subject rather than to the ground under it. */
@@ -1401,6 +1411,8 @@ draw_push_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr )
     the draw_push_rect_gradient rule.
 ==============================================================================================*/
 
+#define DRAW_TAU  6.28318530717959f
+
 void
 draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
                       f32 dash, f32 gap, u32 abgr )
@@ -1411,7 +1423,7 @@ draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     /* Angular period from the pixel vocabulary, then snapped so N whole cycles fit the sweep. */
     f32 sweep = a1 - a0;
     if ( sweep < 0.0f ) sweep = -sweep;
-    if ( sweep > 2.0f * GUI_FX_PI ) sweep = 2.0f * GUI_FX_PI;
+    if ( sweep > DRAW_TAU ) sweep = DRAW_TAU;
     f32 period = ( dash + ( gap > 0.0f ? gap : dash ) ) / r;
     f32 n      = floorf( sweep / period + 0.5f );
     if ( n < 1.0f ) n = 1.0f;
@@ -1539,7 +1551,7 @@ draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 angle, bool stri
 void
 draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 {
-    /* Rounded outlines become GUI_TEX_OP_BAND surfaces with an AA skirt past the authored rect --
+    /* Rounded outlines become GUI_OP_BAND surfaces with an AA skirt past the authored rect --
        the same 1 px cull slack the rounded fill takes (see draw_rect_cmd). */
     f32 rounding = draw_clamp_rounding( w, h );
     f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
@@ -1628,11 +1640,11 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
 
     /* Transparent drop (the draw_cmd_open rule): a run whose folded fill alpha is 0 lights no
        pixel, so alpha doubles as a free visibility toggle -- a hidden label costs no command
-       slot, no pool copy, no hash.  The one exception is a visible TEXT_EDGE (its packed alpha
-       lives in bits 27+): the edge band paints OUTSIDE the glyph boundary, so outline-only text
-       over a transparent fill is a real shape and must survive. */
+       slot, no pool copy, no hash.  The one exception is a visible TEXT_EDGE: the edge band paints
+       OUTSIDE the glyph boundary, so outline-only text over a transparent fill is a real shape and
+       must survive. */
     u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u && ( s_draw.text_edge >> 27 ) == 0u )
+    if ( ( col >> 24 ) == 0u && !draw_text_edge_visible() )
         return;
 
     /* Vertical cull: a glyph run lights pixels within roughly one line height of y, so if that band
@@ -1661,7 +1673,8 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     c->text.clip_x0 = clip_x0;
     c->text.clip_x1 = clip_x1;
     c->text.abgr    = col;
-    c->text.edge    = s_draw.text_edge;
+    c->text.edge_w  = s_draw.text_edge_w;
+    c->text.edge_col = s_draw.text_edge_col;
     c->text.font    = (u16)s_draw.cur_font;
     draw_cmd_seal();   /* text bytes are L1-hot here */
 }
@@ -1702,7 +1715,7 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
 
     /* Transparent drop, with the same TEXT_EDGE exception as draw_push_text_clip_n. */
     u32 col = draw_apply_alpha( abgr );
-    if ( ( col >> 24 ) == 0u && ( s_draw.text_edge >> 27 ) == 0u )
+    if ( ( col >> 24 ) == 0u && !draw_text_edge_visible() )
         return;
     if ( rect_empty( clip_current() ) )
         return;
@@ -1720,7 +1733,8 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
     c->text_xf.scale = scale;
     c->text_xf.rot   = rot;
     c->text_xf.abgr  = col;
-    c->text_xf.edge  = s_draw.text_edge;
+    c->text_xf.edge_w   = s_draw.text_edge_w;
+    c->text_xf.edge_col = s_draw.text_edge_col;
     c->text_xf.font  = (u16)s_draw.cur_font;
     draw_cmd_seal();
 }

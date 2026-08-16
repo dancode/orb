@@ -468,10 +468,10 @@ panel_edge( void )
 
     for ( u32 i = 0; i < 3; ++i )
     {
-        u32 save = gui()->draw_text_edge();
+        f32 sw; u32 sc; gui()->draw_text_edge( &sw, &sc );
         gui()->draw_set_text_edge( w, k_edge[ i ].edge );
         gui()->draw_text_xf( x, row, k_edge[ i ].fill, k_edge[ i ].label, s_edge_sc, 0.0f );
-        gui()->draw_set_text_edge_raw( save );
+        gui()->draw_set_text_edge( sw, sc );
         row += 26.0f * s_edge_sc + 8.0f;
     }
 
@@ -479,12 +479,12 @@ panel_edge( void )
        with the outline off.  That is the ignore, not a bug. */
     if ( s_font_cov )
     {
-        u32 save = gui()->draw_text_edge();
+        f32 sw; u32 sc; gui()->draw_text_edge( &sw, &sc );
         gui()->font_use( s_font_cov );
         gui()->draw_set_text_edge( w, GUI_COLOR( 0x00, 0x00, 0x00, 0xFF ) );
         gui()->draw_text_xf( cell.x + cell.w * 0.55f, cell.y + 46.0f,
                              GUI_COLOR( 0xF4, 0xEC, 0xDC, 0xFF ), "coverage", s_edge_sc, 0.0f );
-        gui()->draw_set_text_edge_raw( save );
+        gui()->draw_set_text_edge( sw, sc );
     }
 
     gui()->font_use( 0 );

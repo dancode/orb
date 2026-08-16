@@ -26,35 +26,28 @@ struct gui_pc_t
 };
 [[vk::push_constant]] gui_pc_t pc;
 
-// FOUR of these attributes are PACKED in memory (gui.h): uv is two unorm16, color is four unorm8,
+// THREE of these attributes are PACKED in memory (gui.h): uv is two unorm16, color is four unorm8,
 // and the effect coord is two halves.  None of that appears here, and that is the point -- vertex
 // fetch widens normalized and half formats to 32-bit float before the shader sees them, so the
 // declarations below are what they were when every field was full width.
-//
-// fx and tex are DEAD WEIGHT: the primitive record (gui.h) carries both unpacked and the fragment
-// reads them from there.  They ride one stage longer so the switch-over is isolated.
 struct vs_in_t
 {
     [[vk::location( 0 )]] float2 pos      : POSITION;
     [[vk::location( 1 )]] float2 uv       : TEXCOORD0;
     [[vk::location( 2 )]] float4 color    : COLOR0;      // UNORM4 attrib -> normalized float4
     [[vk::location( 3 )]] float2 fx_coord : TEXCOORD1;    // effect coord: |p| - c, shape-local px
-    [[vk::location( 4 )]] uint   fx       : TEXCOORD2;    // dead: superseded by the record
-    [[vk::location( 5 )]] uint   tex      : TEXCOORD3;    // dead: superseded by the record
-    [[vk::location( 6 )]] uint   prim     : TEXCOORD4;    // primitive record index, slot-local
+    [[vk::location( 4 )]] uint   prim     : TEXCOORD2;    // primitive record index, slot-local
 };
 
-// nointerpolation on prim, and more sharply than the two dead words ever needed: it is an index
-// into a storage buffer, and interpolating it would name a different shape on every pixel.
+// nointerpolation on prim: it is an index into a storage buffer, and interpolating it would name a
+// different shape on every pixel.
 struct vs_out_t
 {
     float4                  sv_pos   : SV_Position;
     float4                  color    : COLOR0;
     float2                  uv       : TEXCOORD0;
     float2                  fx_coord : TEXCOORD1;
-    nointerpolation uint    fx       : TEXCOORD2;
-    nointerpolation uint    tex      : TEXCOORD3;
-    nointerpolation uint    prim     : TEXCOORD4;
+    nointerpolation uint    prim     : TEXCOORD2;
 };
 
 // Decode an sRGB-encoded color to linear light.  UI colors are authored in sRGB (the values you
@@ -95,8 +88,6 @@ vs_out_t main( vs_in_t v )
     // sampler's REPEAT is still what tiles the atlas stipple row.
     o.uv       = v.uv;
     o.fx_coord = v.fx_coord;
-    o.fx       = v.fx;
-    o.tex      = v.tex;
     o.prim     = v.prim;
     return o;
 }

@@ -110,7 +110,6 @@ const gui_api_t g_gui_api_struct =
     .draw_rounding                      = gui_draw_rounding,
     .draw_set_text_edge                 = gui_draw_set_text_edge,
     .draw_text_edge                     = gui_draw_text_edge,
-    .draw_set_text_edge_raw             = gui_draw_set_text_edge_raw,
     .font_atlas_idx                     = gui_font_atlas_idx,
     .font_atlas_size                    = gui_font_atlas_size,
     .draw_check_mark                    = gui_draw_check_mark,

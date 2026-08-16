@@ -27,9 +27,7 @@ layout(push_constant) uniform PC {
 layout(location = 0) in  vec4 v_color;
 layout(location = 1) in  vec2 v_uv;
 layout(location = 2) in  vec2 v_fx_coord;
-layout(location = 3) flat in uint v_fx;    // DEAD: superseded by the record, kept one stage longer
-layout(location = 4) flat in uint v_tex;   // DEAD: superseded by the record, kept one stage longer
-layout(location = 5) flat in uint v_prim;  // primitive record index, slot-local
+layout(location = 3) flat in uint v_prim;  // primitive record index, slot-local
 layout(location = 0) out vec4 out_color;
 
 // Mirrors gui.h: the record's op bits and the sampling model in its `tex` field.  Keep gui.h,

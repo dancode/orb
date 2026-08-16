@@ -763,7 +763,7 @@ panel_surface( void )
 
     A pulse is the case where nothing moved.  The rect is the same rect, frame after frame; only
     its alpha is different, and alpha is something the fragment shader can work out for itself if
-    you hand it the clock.  So GUI_TEX_OP_PULSE does: the command's bytes are byte-identical every
+    you hand it the clock.  So GUI_OP_PULSE does: the command's bytes are byte-identical every
     frame, the window's hash never changes, and the breathing costs zero re-tessellation for as
     long as it runs.  (The vertex upload is unchanged -- retention saves the tessellation, not
     the buffer write.)

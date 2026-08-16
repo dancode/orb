@@ -338,18 +338,15 @@ dbg_expand_quad( f32 wu, f32 wv, f32 x, f32 y, f32 w, f32 h, u32 abgr,
     y = floorf( y + 0.5f );
 
     /* The overlay is entirely coverage-atlas geometry (white texel + glyphs), so every vertex
-       names the same texture -- but it has to NAME it now: the texture rides the vertex rather
-       than the push constant (gui.h), and slot 0 is the empty bindless descriptor, not a default. */
-    u32 tex = res_atlas_idx() | GUI_TEX_MODE( GUI_TEX_COVERAGE );
-
+       names the same primitive record -- index 0 against the base dbg_flush pushes, which is the
+       one record it writes (the atlas slot is only known at flush time).  gui_vert already zeroes
+       the index, so there is nothing to stamp here. */
     u16 base = (u16)*vc;
     gui_draw_vert_t* v = &s_dbg.scratch_verts[ *vc ];
     v[ 0 ] = gui_vert( x,     y,     wu, wv, abgr );
     v[ 1 ] = gui_vert( x + w, y,     wu, wv, abgr );
     v[ 2 ] = gui_vert( x + w, y + h, wu, wv, abgr );
     v[ 3 ] = gui_vert( x,     y + h, wu, wv, abgr );
-    for ( u32 i = 0; i < 4; ++i )
-        v[ i ].tex = tex;
     *vc += 4;
 
     u16* idx = &s_dbg.scratch_idx[ *ic ];
