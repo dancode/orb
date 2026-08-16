@@ -264,6 +264,7 @@ main( int argc, char** argv )
         goto shutdown;
     }
 
+    // gui()->dpi_set( GUI_DPI_MANUAL, 0.0f );
     gui()->debug_enable( true );
 
     /* ------------------------------------------------------------------------------ */

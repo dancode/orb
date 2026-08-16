@@ -561,6 +561,7 @@ ex_style_font_sizes( void )
         gui()->scale_push_font( GUI_SCALE_DENSE, GUI_TYPE_SMALL );
         if ( gui()->child_begin( "dense_small", 0, gui()->sz_child_rows_h( 4 ), GUI_WIN_NONE ) )
         {
+            gui()->stack();
             static bool s_dense_on[ 4 ];
             for ( i32 i = 0; i < 4; ++i )
             {
