@@ -186,6 +186,13 @@ resolve_evict_one( void )
         if ( m->id == font_active_id() || m->id == draw_get_font() )
             continue;
 
+        /* A slot still waiting for its first atlas upload is mid-arrival, not stale --
+           evicting it would drop pixels loaded this very frame (a prewarm bake for another
+           viewport lands unpinned until that surface's own resolve). */
+        font_slot_t* slot = font_slot_ptr( m->id );
+        if ( slot && slot->needs_upload )
+            continue;
+
         u32 id = m->id;
         font_slot_release( id );
         for ( u32 j = 0; j < s_resolver.memo_count; )
@@ -583,6 +590,17 @@ u32
 font_resolve_generation( void )
 {
     return s_resolver.generation;
+}
+
+/* One stale-font eviction on demand -- the atlas packer's pressure valve.  res_place
+   (render/resource/gui_res_atlas.c) calls this upward when a tenant set stops fitting:
+   retiring a stale font frees its tenant so the packer can re-trial at the CURRENT texture
+   size, and the atlas takes a growth rung only when nothing stale remains.  True = a font
+   was released (try again); false = every resident font is live, pinned, or mid-upload. */
+bool
+font_resolve_evict_stale( void )
+{
+    return resolve_evict_one();
 }
 
 /* Advance the immediate-mode retention clock -- called once per EMITTED frame (gui_frame_end,

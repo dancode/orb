@@ -60,9 +60,10 @@ font_atlas_sync( void )
     The release spans both halves the way font_shutdown does: only the render side may touch the
     atlas (the font/ leaf never does), the font side owns the slot.  The tenant's rect is
     abandoned in place -- the next pressure repack reclaims the hole -- so no generation bump and
-    no surviving UV goes stale.  Id 0 (the default / DPI slot) and empty ids are no-ops.  The one
-    caller today is the type ramp's eviction (frame/gui_frame_type.c), which mints and retires
-    sizes as the style moves.
+    no surviving UV goes stale.  Id 0 (the default / DPI slot) and empty ids are no-ops.  The
+    caller is the font resolver's eviction (frame/gui_frame_resolve.c), which retires stale
+    fonts under registry pressure and, via the atlas packer's pressure valve, before the
+    atlas takes a growth rung.
 ==============================================================================================*/
 
 void

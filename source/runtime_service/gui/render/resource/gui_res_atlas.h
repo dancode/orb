@@ -56,8 +56,11 @@
     and otherwise lives until shutdown: a live font reload mutates pixels within the persistent
     texture rather than churning the bindless slot per reload.
 
-    GROWTH: an atlas starts at its boot dimensions and doubles (smaller dimension first) whenever
-    the tenant set no longer fits, up to GUI_RES_ATLAS_DIM_CAP (RGBA sprite: GUI_SPR_ATLAS_DIM_CAP).
+    GROWTH: an atlas starts at its boot dimensions and grows only as a LAST resort: when the
+    tenant set stops fitting, stale fonts (immediate-mode retention lapsed, gui_frame_resolve.c)
+    are retired one at a time and the set re-trialed at the current size first; only when
+    nothing stale remains does the atlas double (smaller dimension first), up to
+    GUI_RES_ATLAS_DIM_CAP (RGBA sprite: GUI_SPR_ATLAS_DIM_CAP).
     Every repack is TRANSACTIONAL -- placements are trialed in a scratch packer first, and on any
     failure the master packer, every tenant origin and the pixel buffer are untouched.  Only a
     tenant set that cannot fit the fully-grown atlas fails, loudly, with occupancy numbers.

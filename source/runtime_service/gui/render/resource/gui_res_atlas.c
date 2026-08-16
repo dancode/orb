@@ -300,12 +300,19 @@ res_repack_commit( res_atlas_t* a, const u32* order, u32 n, const u32* nx, const
 }
 
 /*==============================================================================================
-    Growth -- the pressure valve.  res_place makes the current tenant set fit: trial at the
-    current dimensions, then at successively larger ones (doubling the smaller dimension), and
-    commit at the first size that fits -- swapping in a larger texture when that size is not the
-    current one.  Fully transactional: on false NOTHING has moved, and the one failure left is a
-    tenant set the fully-grown atlas cannot hold, reported loudly with occupancy numbers.
+    Growth -- the pressure valve.  res_place makes the current tenant set fit, cheapest remedy
+    first: trial at the current dimensions; on failure retire STALE FONTS one at a time (their
+    freed tenants often make the set fit without growing at all); only when nothing stale
+    remains take a growth rung (doubling the smaller dimension) and trial again.  Commit at the
+    first size that fits -- swapping in a larger texture when that size is not the current one.
+    Fully transactional: on false NOTHING has moved, and the one failure left is a tenant set
+    the fully-grown atlas cannot hold, reported loudly with occupancy numbers.
 ==============================================================================================*/
+
+/* Upward seam: the font resolver's stale-font eviction (frame/gui_frame_resolve.c).  Retiring
+   a stale font re-enters this unit only through res_atlas_remove / res_sdf_remove -- safe
+   between trials, since the abandoned rect is reclaimed by the very next trial repack. */
+bool font_resolve_evict_stale( void );
 
 /* Percent of the packable region covered by packed cells (tenant + pad), and the live count. */
 static void
@@ -365,6 +372,13 @@ res_place( res_atlas_t* a, u32 want_w, u32 want_h )
         u32 try_pack_h = a->assist ? try_h - RES_ASSIST_ROWS : try_h;
         if ( res_repack_trial( a, try_w, try_pack_h, order, &n, nx, ny ) )
             break;
+
+        /* Cheapest remedy first: retire one stale font (immediate-mode retention lapsed) and
+           re-trial at the SAME dimensions -- growth is the last resort, not the first.  Only
+           the R8 atlases host fonts (coverage + SDF); the sprite atlas has nothing to retire.
+           Bounded: each true releases one registry slot, so the ladder runs dry in <= 15. */
+        if ( a->bpp == 1 && font_resolve_evict_stale() )
+            continue;
 
         /* Next rung: double the smaller dimension (width first when square). */
         if ( try_w <= try_h && try_w < a->max_w )
