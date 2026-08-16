@@ -458,21 +458,18 @@ ex_style_fonts( void )
 static void
 ex_style_font_sizes( void )
 {
-    /* The boot face at four sizes, resolved once.  A size is a REQUEST: font_get_builtin
-       finds a shipped bake or asks the installed baker, and never activates -- no save /
-       restore dance around the batch. */
+    /* The boot face at four sizes, requested EVERY frame -- immediate-mode retention: the
+       per-frame font_get IS the hold (steady-state it is a memo probe), and the fonts stay
+       loaded exactly as long as this demo keeps emitting.  Close the demo and they go stale;
+       reopen it and they reload from the bake cache.  Never activates -- no save / restore
+       dance around the batch. */
     static const u32 k_sizes[ 4 ] = { 12, 16, 20, 24 };
 
     static const char* k_size_name[ 4 ] = { "12 px", "16 px", "20 px", "24 px" };
-    static u32  s_size_id[ 4 ];
-    static bool s_loaded = false;
+    u32 size_id[ 4 ];
 
-    if ( !s_loaded )
-    {
-        for ( i32 i = 0; i < 4; ++i )
-            s_size_id[ i ] = gui()->font_get_builtin( GUI_FONT_JETBRAINS, k_sizes[ i ] );
-        s_loaded = true;
-    }
+    for ( i32 i = 0; i < 4; ++i )
+        size_id[ i ] = gui()->font_get_builtin( GUI_FONT_JETBRAINS, k_sizes[ i ] );
 
     if ( ex_begin( "Font Sizes", 500, 680, GUI_WIN_NONE ) )
     {
@@ -493,7 +490,7 @@ ex_style_font_sizes( void )
             if ( i < 3 ) gui()->same_line( -1.0f );
         }
 
-        gui()->push_font( s_size_id[ pick ] );
+        gui()->push_font( size_id[ pick ] );
         static bool s_check = true;
         static f32  s_val   = 0.35f;
         gui()->textf( "line height %.1f px", gui()->sz_line_h() );
@@ -509,7 +506,7 @@ ex_style_font_sizes( void )
         gui()->separator_text( "bracket one widget" );
         gui()->button( "normal" );
         gui()->same_line( -1.0f );
-        gui()->push_font( s_size_id[ 3 ] );
+        gui()->push_font( size_id[ 3 ] );
         gui()->button( "24 px" );
         gui()->pop_font();
         gui()->same_line( -1.0f );

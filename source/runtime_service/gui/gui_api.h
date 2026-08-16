@@ -141,8 +141,12 @@ typedef struct gui_api_s
               activating it.  `family` is a file in assets/font_source, an OS-installed
               face name, or a shipped file stem; the resolver finds a shipped bake,
               asks the installed baker, or degrades to the nearest in-family size
-              (warn-once), never below the default font.  The id is stable for the
-              session (cache it; apply with font_use / push_font).
+              (warn-once), never below the default font.  IMMEDIATE-MODE retention:
+              call it every frame the font is in use (steady-state = a memo probe) and
+              apply the id with font_use / push_font -- the request IS the hold, like
+              any other per-frame widget state.  A font not requested for an emitted
+              frame goes stale and may be reclaimed under registry pressure; requesting
+              it again reloads from the bake cache.
 
         font_get_builtin()
             : font_get for a curated family (gui_font_family_t) -- no name plumbing

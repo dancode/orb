@@ -90,9 +90,12 @@ gui_font_load( const char* path )
 
 /* Resolve a font by request -- family + pixel size -- WITHOUT activating it.  The resolver
    finds a shipped bake, asks the installed baker, or degrades to the nearest in-family size
-   (warn-once); the returned id is HELD (never evicted -- callers cache it in statics) and is
-   applied with font_use / push_font.  Never 0-fails into nothing: worst case the answer is
-   the default font, id 0. */
+   (warn-once); apply the id with font_use / push_font.  Retention is IMMEDIATE-MODE: call
+   this every frame the font is in use (steady-state it is a memo probe), and the request
+   itself is the hold.  A font not requested for an emitted frame goes stale and its slot may
+   be reclaimed under registry pressure -- do NOT park the id in a static and stop asking;
+   re-requesting after a lapse just reloads from the bake cache.  Never 0-fails into nothing:
+   worst case the answer is the default font, id 0. */
 
 u32
 gui_font_get( const char* family, u32 size_px )

@@ -95,6 +95,7 @@ void           font_resolve_boot      ( gui_font_family_t fam, u32 size_px, u32*
 void           font_resolve_adopt_default( gui_font_family_t fam, u32 landed_px );
 bool           font_resolve_fresh_take( void );
 u32            font_resolve_generation( void );
+void           font_resolve_frame_tick( void );
 void           font_resolve_pin       ( u32 pin_slot, u32 id );
 void           font_resolve_clear     ( void );
 

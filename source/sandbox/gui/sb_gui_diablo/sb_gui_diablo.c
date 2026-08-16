@@ -641,16 +641,19 @@ main( int argc, char** argv )
 
     // gui()->set_force_redraw( true );
 
-    /* Second font for the F1/F2 basis-unit test.  boot() put Roboto 16 in registry slot 0;
-       font_get_builtin resolves a request into a NEW registry id without activating it, so
-       slot 0 stays the live font.  Worst case the resolver degrades to the default font --
-       F2 then just reselects slot 0. */
-    u32 font_big = gui()->font_get_builtin( GUI_FONT_CASCADIA_MONO, 20 );
     ui_kit_install();   /* the kit owns the element look -- install after every font landing */
 
     f32 dt = 0.0f;
     while ( !s_quit && gui()->boot_poll( &dt ) )
     {
+        /* Second font for the F1/F2 basis-unit test, requested EVERY frame -- immediate-mode
+           retention: the per-frame font_get IS the hold (steady-state a memo probe), so the
+           id stays valid exactly as long as the loop keeps asking.  boot() put Roboto 16 in
+           registry slot 0; font_get_builtin resolves into a NEW id without activating, so
+           slot 0 stays the live font.  Worst case the resolver degrades to the default font
+           -- F2 then just reselects slot 0. */
+        u32 font_big = gui()->font_get_builtin( GUI_FONT_CASCADIA_MONO, 20 );
+
         /* font selection is frame-global state: switch BETWEEN frames (pre frame_begin), and
            read the key from app()'s snapshot -- gui's io snapshot belongs to the frame scope.
            F1/F2 and the OPTIONS form drive the same choice: keys set s_font_req too, so the

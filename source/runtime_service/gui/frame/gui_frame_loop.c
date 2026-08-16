@@ -421,6 +421,12 @@ gui_frame_end( void )
     if ( !s_frame_dirty )
         volatile_update();
 
+    /* Age the font resolver's immediate-mode holds -- ONLY on frames that emitted widgets.
+       A clean frame runs no host UI code, so the per-frame font_get that would re-stamp an
+       entry never had a chance to run; ticking here would age fonts out during idle. */
+    if ( s_frame_dirty )
+        font_resolve_frame_tick();
+
     /* Build cost concludes here: latch emit_ms for the perf overlay (render is timed separately). */
     perf_frame_end();
 
