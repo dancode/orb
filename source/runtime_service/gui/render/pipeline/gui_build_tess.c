@@ -52,9 +52,10 @@ static struct
 {
     gui_draw_vert_t verts    [ GUI_MAX_VERTS ];    // geometry buffer
     u16             indices  [ GUI_MAX_IDX   ];    // geometry buffer
+    gui_prim_t      prims    [ GUI_MAX_PRIMS ];    // primitive records (gui.h) -- the third arena
     tess_gpu_cmd_t  gpu_cmds [ GUI_MAX_CMDS  ];    // gpu draw commands (AOS: cmd + vp/vbase/ibase)
 
-    u32 vert_count, idx_count, cmd_count;           // write head cursors
+    u32 vert_count, idx_count, prim_count, cmd_count;   // write head cursors
 
     gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
     u32         cur_clip_local; /* the same clip as an ABSOLUTE frame-region entry index (the slot's
@@ -66,10 +67,24 @@ static struct
     u32         cur_fx;     /* packed effect word stamped into every vertex committed.  CLEARED at
                                the top of each semantic command (tess_dispatch), so a primitive
                                that wants one sets it and nothing can inherit it afterwards.      */
-    u32         cur_tex_bits; /* GUI_TEX_SELF_BIT | GUI_TEX_OP_* -- the per-primitive flags OR'd
-                               into the tex word by tess_verts_commit.  Cleared per semantic
-                               command exactly like cur_fx: leaking a self bit would blank a
-                               textured quad, and leaking an op would reshape the next fill. */
+    u32         cur_ops;    /* GUI_OP_* -- the per-primitive modifiers (gui.h).  Cleared per
+                               semantic command exactly like cur_fx: leaking a self flag would
+                               blank a textured quad, and leaking an op would reshape the next
+                               fill.  tess_verts_commit maps these onto the tex word's op band
+                               while that word still exists, and copies them into the record. */
+
+    /* The ambient PRIMITIVE RECORD -- the unpacked twin of cur_fx / cur_tex / cur_ops, filled by
+       whichever tess_* emitter is running and appended (deduplicated) by tess_verts_commit.  Only
+       the fields the ambient FIELD actually reads are written; the rest stay zero, which is what
+       lets consecutive flat fills collapse onto one record (tess_prim_local).  Cleared per
+       semantic command, alongside cur_fx.
+
+       cur_prim_local is the slot-local index of the record the last commit resolved to, and
+       prim_memo_valid says whether the record at prim_count-1 is that record and therefore
+       reusable -- the memo that keeps a glyph run to one entry. */
+    gui_prim_t  cur_prim;
+    u32         cur_prim_local;
+    bool        prim_memo_valid;
 
     /* per-slot tesellation context */
 
@@ -88,6 +103,12 @@ static struct
     u32 slot_idx_base;
     u32 slot_cmd_base;
     u32 slot_tess_gen;
+
+    /* Record base of the window slot being tessellated -- the counterpart of slot_vert_base for
+       the third arena.  Records bake SLOT-LOCAL indices (prim_count - slot_prim_base) and the
+       flush adds this base back through pc.prim_base, so a repack that moves the slot's records
+       leaves every cached vertex's index correct. */
+    u32 slot_prim_base;
 
     /* The slot's LOCAL clip table, written while its commands tessellate: first-seen distinct
        clip rects, appended by tess_clip_local and stored on the slot record itself so cache-hit
@@ -182,8 +203,8 @@ patch_span_union( u8 vp, u8 band, u32 v_lo, u32 v_hi, u32 i_lo, u32 i_hi )
 
 static struct
 {
-    u32  vert_hwm, idx_hwm;   /* lifetime peak of the TOTAL write head (both bands) */
-    bool overflow_ever;       /* sticky: any frame this run overflowed a buffer     */
+    u32  vert_hwm, idx_hwm, prim_hwm;   /* lifetime peak of the TOTAL write head (both bands) */
+    bool overflow_ever;                 /* sticky: any frame this run overflowed a buffer     */
 
     /* Arena band boundary: the write head right after the last MAIN-band slot placed this frame
        (band-major placement packs every debug-band slot after it).  The dashboard's memory map
@@ -238,11 +259,15 @@ tess_reset( void )
 {
     s_tess.vert_count      = 0;
     s_tess.idx_count       = 0;
+    s_tess.prim_count      = 0;
     s_tess.cmd_count       = 0;
     s_tess.slot_vert_base  = 0;
     s_tess.slot_idx_base   = 0;
     s_tess.slot_cmd_base   = 0;
+    s_tess.slot_prim_base  = 0;
     s_tess.slot_tess_gen   = 0;
+    s_tess.cur_prim_local  = 0;
+    s_tess.prim_memo_valid = false;
     s_tess.slot_clips        = NULL;
     s_tess.slot_clip_count   = NULL;
     s_tess.slot_clip_pending = NULL;
@@ -348,6 +373,128 @@ tess_ensure_gpu_cmd( void )
     return true;
 }
 
+/* The modifier bits (GUI_OP_*, gui.h) projected onto the tex word's op band.  The two encodings
+   coexist only while both the packed words and the primitive record are live: ops are ambient in
+   GUI_OP_* form, the record stores them verbatim, and this is the single place the doomed packed
+   spelling is derived.  GUI_OP_STRIPES has no tex-word home -- it rode the effect word's bit 31 --
+   so it does not appear here. */
+static u32
+tess_ops_to_tex_bits( u32 ops )
+{
+    u32 bits = 0u;
+    if ( ops & GUI_OP_BAND  ) bits |= GUI_TEX_OP_BAND;
+    if ( ops & GUI_OP_CUT   ) bits |= GUI_TEX_OP_CUT;
+    if ( ops & GUI_OP_INSET ) bits |= GUI_TEX_OP_INSET;
+    if ( ops & GUI_OP_PULSE ) bits |= GUI_TEX_OP_PULSE;
+    if ( ops & GUI_OP_SELF  ) bits |= GUI_TEX_SELF_BIT;
+    return bits;
+}
+
+/* Resolve the ambient primitive record to a SLOT-LOCAL index in the frame's record arena,
+   appending a new entry when the ambient state has moved.  The counterpart of tess_clip_local, and
+   deliberately the same shape -- but keyed on CONTENT rather than on a table index, because the
+   record is assembled from half a dozen ambient fields and nothing upstream has a name for the
+   combination.
+
+   The memo is the whole performance story.  A glyph run is one semantic command emitting hundreds
+   of quads under one unchanging record, and a run of flat fills sharing a texture and a clip is
+   the same: comparing against the last appended record collapses each to ONE entry.  That only
+   works because emitters leave the fields their field does not read at zero (gui.h) -- a writer
+   that stamped its rect into a GUI_FX_NONE record would give every fill an entry of its own.
+
+   Past the arena a slot degrades to its own first record, mirroring tess_clip_local's fallback to
+   slab entry 0: a wrong shape is bad, but a wild index into a storage buffer is worse.  The sticky
+   overflow flag is what actually reports it, the same way a full vertex buffer does. */
+static u32
+tess_prim_local( void )
+{
+    if ( s_tess.prim_memo_valid && s_tess.prim_count > s_tess.slot_prim_base
+      && memcmp( &s_tess.prims[ s_tess.prim_count - 1 ], &s_tess.cur_prim,
+                 sizeof( gui_prim_t ) ) == 0 )
+        return s_tess.cur_prim_local;
+
+    if ( s_tess.prim_count >= GUI_MAX_PRIMS )
+    {
+        s_tess.overflow        = true;
+        s_tess.prim_memo_valid = false;
+        return s_tess.cur_prim_local = 0u;
+    }
+
+    s_tess.prims[ s_tess.prim_count ] = s_tess.cur_prim;
+    s_tess.cur_prim_local             = s_tess.prim_count - s_tess.slot_prim_base;
+    s_tess.prim_count++;
+    s_tess.prim_memo_valid = true;
+    return s_tess.cur_prim_local;
+}
+
+#if !RELEASE
+/* Debug cross-check: the ambient record must re-pack to the ambient effect word, bit for bit.
+
+   While both representations are live this is the whole safety net.  The record is written by hand
+   at a dozen emit sites and read by nobody yet, so a field left out or a parameter put in the wrong
+   lane would sit silent until the fragment switched over and a shape came back wrong -- with the
+   shader edit as the obvious suspect and the emit site as the actual cause.  Re-deriving the word
+   the pipeline still renders from catches it at the primitive that made it.
+
+   The per-corner box is the one case that opts out: it commits four quadrants under four different
+   packed radii against one record carrying all four, which is exactly the redundancy this wave
+   removes, so there is no single word to compare against. */
+static void
+tess_prim_verify( void )
+{
+    const gui_prim_t* p    = &s_tess.cur_prim;
+    u32               want = s_tess.cur_fx;
+
+    switch ( (gui_fx_mode_t)p->field )
+    {
+        case GUI_FX_NONE:
+            ORB_ASSERT( want == 0u );
+            return;
+
+        case GUI_FX_BOX:
+            if ( p->r_tl != p->r_tr || p->r_tl != p->r_br || p->r_tl != p->r_bl )
+                return;                                  /* four words, one record -- see above */
+            ORB_ASSERT( want == ( ( s_tess.cur_ops & GUI_OP_PULSE )
+                                  ? gui_fx_pack_pulse( p->r_tl, p->feather, p->param_a, p->param_b )
+                                  : gui_fx_pack( GUI_FX_BOX, p->r_tl, p->feather, p->border ) ) );
+            return;
+
+        case GUI_FX_SEG:
+            ORB_ASSERT( want == gui_fx_pack( GUI_FX_SEG, p->r_tl, p->feather, 0.0f ) );
+            return;
+
+        case GUI_FX_ARC:
+        case GUI_FX_PIE:
+        case GUI_FX_ARC_DASH:
+        case GUI_FX_ARC_GRAD:
+            ORB_ASSERT( want == gui_fx_pack_arc( (gui_fx_mode_t)p->field,
+                                                 p->param_a, p->param_b, p->param_c ) );
+            return;
+
+        case GUI_FX_CHECKER:
+            ORB_ASSERT( want == gui_fx_pack_checker( p->param_a, p->param_b, p->param_c ) );
+            return;
+
+        case GUI_FX_GRID:
+            ORB_ASSERT( want == gui_fx_pack_grid( p->param_a, p->param_b, p->param_c,
+                                                  ( s_tess.cur_ops & GUI_OP_STRIPES ) != 0u ) );
+            return;
+
+        case GUI_FX_TILE_U:
+            ORB_ASSERT( want == gui_fx_pack_tile_u( p->param_a ) );
+            return;
+
+        case GUI_FX_TEXT_EDGE:
+            ORB_ASSERT( want == gui_fx_pack_text_edge( p->param_a, p->col_b ) );
+            return;
+
+        default:
+            ORB_ASSERT( false );   /* a field with no record writer is a field nobody filled in */
+            return;
+    }
+}
+#endif
+
 /* Take `n` vertices written at s_tess.verts[vert_count] into the buffer, stamping each with the
    active texture and effect word.
 
@@ -368,13 +515,27 @@ tess_verts_commit( u32 n )
     ORB_ASSERT( ( s_tess.cur_tex & GUI_TEX_CLIP_MASK ) == 0u );
     ORB_ASSERT( ( s_tess.cur_tex & ( GUI_TEX_SELF_BIT | GUI_TEX_OP_MASK ) ) == 0u );
     ORB_ASSERT( s_tess.cur_clip_local < ( GUI_TEX_CLIP_MASK >> GUI_TEX_CLIP_SHIFT ) + 1u );
-    u32 tex = s_tess.cur_tex | s_tess.cur_tex_bits | ( s_tess.cur_clip_local << GUI_TEX_CLIP_SHIFT );
+    u32 tex = s_tess.cur_tex | tess_ops_to_tex_bits( s_tess.cur_ops )
+            | ( s_tess.cur_clip_local << GUI_TEX_CLIP_SHIFT );
+
+    /* The record's three AMBIENT fields are folded in here rather than at the emitters, for the
+       same reason the words are: an emitter that has to remember them is an emitter that can
+       forget.  What an emitter does set is its FIELD and the geometry that field reads. */
+    s_tess.cur_prim.tex  = s_tess.cur_tex;
+    s_tess.cur_prim.ops  = s_tess.cur_ops;
+    s_tess.cur_prim.clip = s_tess.cur_clip_local;
+
+#if !RELEASE
+    tess_prim_verify();
+#endif
+    u32 prim = tess_prim_local();
 
     gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     for ( u32 i = 0; i < n; ++i )
     {
-        v[ i ].tex = tex;
-        v[ i ].fx  = s_tess.cur_fx;
+        v[ i ].tex  = tex;
+        v[ i ].fx   = s_tess.cur_fx;
+        v[ i ].prim = prim;
     }
     s_tess.vert_count += n;
 }
@@ -756,8 +917,8 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
    bleed into its atlas neighbour where the coverage has already faded to nothing.
 
    The surface is always GUI_FX_BOX; which of the four ops it carries comes in on ambient state
-   (s_tess.cur_tex_bits), set by the caller BEFORE this runs because the interior hole is sized from
-   it.  GUI_TEX_OP_CUT and GUI_TEX_OP_INSET take no parameter of their own -- they read radius and
+   (s_tess.cur_ops), set by the caller BEFORE this runs because the interior hole is sized from
+   it.  GUI_OP_CUT and GUI_OP_INSET take no parameter of their own -- they read radius and
    feather exactly as a plain fill does and differ only in the hole below and one line in the
    fragment.
 
@@ -911,7 +1072,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     if ( feather < 0.0f ) feather = 0.0f;
     if ( feather > GUI_FX_FEATHER_MAX ) feather = GUI_FX_FEATHER_MAX;
     if ( border  < 0.0f ) border  = 0.0f;
-    if ( ( s_tess.cur_tex_bits & GUI_TEX_OP_BAND ) && border > GUI_FX_BORDER_MAX )
+    if ( ( s_tess.cur_ops & GUI_OP_BAND ) && border > GUI_FX_BORDER_MAX )
         border = GUI_FX_BORDER_MAX;
     if ( rate    < 0.0f ) rate  = 0.0f;
     if ( rate    > GUI_FX_RATE_MAX ) rate = GUI_FX_RATE_MAX;
@@ -955,6 +1116,27 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     f32 rcs = 1.0f, rsn = 0.0f;                   /* the rotation, hoisted out of the corner loop */
     if ( rot != 0.0f ) { rcs = cosf( rot ); rsn = sinf( rot ); }
 
+    /* The record: the AUTHORED shape, after the clamps and the grid snap above but before the
+       geometry grows by `pad`.  The skirt is a rasterization detail -- the field the fragment
+       resolves is measured from the real boundary, so the record must state that one.  All four
+       radii travel, which is why the four quadrants below share a single record even when their
+       packed words differ. */
+    s_tess.cur_prim.field   = (u32)GUI_FX_BOX;
+    s_tess.cur_prim.cx      = cx;
+    s_tess.cur_prim.cy      = cy;
+    s_tess.cur_prim.hw      = hx;
+    s_tess.cur_prim.hh      = hy;
+    s_tess.cur_prim.r_tl    = rq[ 0 ];
+    s_tess.cur_prim.r_tr    = rq[ 1 ];
+    s_tess.cur_prim.r_br    = rq[ 2 ];
+    s_tess.cur_prim.r_bl    = rq[ 3 ];
+    s_tess.cur_prim.feather = feather;
+    s_tess.cur_prim.border  = ( s_tess.cur_ops & GUI_OP_BAND ) ? border : 0.0f;
+    s_tess.cur_prim.rot_cos = rcs;
+    s_tess.cur_prim.rot_sin = rsn;
+    s_tess.cur_prim.param_a = ( s_tess.cur_ops & GUI_OP_PULSE ) ? rate  : 0.0f;
+    s_tess.cur_prim.param_b = ( s_tess.cur_ops & GUI_OP_PULSE ) ? depth : 0.0f;
+
     /* `reach`: how deep past the boundary this surface paints nothing, so the geometry need not
        reach there either.  A BAND stops at the far side of its border; a CUT stops at the boundary
        itself, since its coverage is zero inside (a pixel of slack keeps the hole clear of the
@@ -973,9 +1155,9 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        small would notch the frame, which is visible.  Each op alone still lands on exactly the
        number it had as a mode. */
     f32 reach = 0.0f;
-    if ( s_tess.cur_tex_bits & GUI_TEX_OP_BAND )  reach = border + feather * 0.5f;
-    if ( s_tess.cur_tex_bits & GUI_TEX_OP_INSET ) reach = ( feather > reach ) ? feather : reach;
-    if ( s_tess.cur_tex_bits & GUI_TEX_OP_CUT )   reach = ( reach > 1.0f )    ? reach : 1.0f;
+    if ( s_tess.cur_ops & GUI_OP_BAND )  reach = border + feather * 0.5f;
+    if ( s_tess.cur_ops & GUI_OP_INSET ) reach = ( feather > reach ) ? feather : reach;
+    if ( s_tess.cur_ops & GUI_OP_CUT )   reach = ( reach > 1.0f )    ? reach : 1.0f;
 
     /* The per-quadrant coverage, in quadrant-local |p| space: one box normally, two forming an L
        when there is an interior worth skipping.
@@ -1034,10 +1216,10 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         /* Both packers write GUI_FX_BOX -- they differ only in what the top 7 bits mean, which is
            the one field PULSE and BAND cannot both have (gui.h).  Everything else the surface does
            rides the op band, so the mode is a constant here. */
-        u32 fx = ( s_tess.cur_tex_bits & GUI_TEX_OP_PULSE )
+        u32 fx = ( s_tess.cur_ops & GUI_OP_PULSE )
                      ? gui_fx_pack_pulse( rq[ q ], feather, rate, depth )
                      : gui_fx_pack( GUI_FX_BOX, rq[ q ], feather,
-                                    ( s_tess.cur_tex_bits & GUI_TEX_OP_BAND ) ? border : 0.0f );
+                                    ( s_tess.cur_ops & GUI_OP_BAND ) ? border : 0.0f );
 
         for ( u32 k = 0; k < nbox; ++k, ++n )
         {
@@ -1250,7 +1432,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
             /* The same shape draw_circle's unfilled path asks for, measured from the OUTER boundary
                inward -- so the band still straddles r. */
             f32 outer = r + thickness * 0.5f;
-            s_tess.cur_tex_bits |= GUI_TEX_OP_BAND;
+            s_tess.cur_ops |= GUI_OP_BAND;
             tess_fx_box( pcx - outer, pcy - outer, outer * 2.0f, outer * 2.0f,
                          outer, TESS_FX_AA, thickness, 0.0f, 0.0f, 0.0f,
                          0, 0, 1, 1, 0, abgr );
@@ -1292,6 +1474,17 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
 
     s_tess.cur_fx = gui_fx_pack_arc( mode, ra, rb, ap );
 
+    /* The record.  (cm, sm) is the sector's own frame -- the bisector direction the local
+       coordinate above is expressed in -- so it goes where every other field's turn goes. */
+    s_tess.cur_prim.field   = (u32)mode;
+    s_tess.cur_prim.cx      = pcx;
+    s_tess.cur_prim.cy      = pcy;
+    s_tess.cur_prim.rot_cos = cm;
+    s_tess.cur_prim.rot_sin = sm;
+    s_tess.cur_prim.param_a = ra;
+    s_tess.cur_prim.param_b = rb;
+    s_tess.cur_prim.param_c = ap;
+
     /* These two carry their parameter pair in the uv lanes instead of texcoords, which is what the
        self-sampled bit announces: the fragment forces coverage to 1 and never reads the texel, so
        the white texel is not needed and the atlas stays bound only to keep the index valid. */
@@ -1299,7 +1492,23 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     {
         wu = uvx;
         wv = uvy;
-        s_tess.cur_tex_bits |= GUI_TEX_SELF_BIT;
+        s_tess.cur_ops |= GUI_OP_SELF;
+
+        /* Unpacked, the pair stops being a uv payload: a dash is a period and a duty, a gradient
+           is a second colour.  Both come in already encoded the way the uv lanes wanted them --
+           the emit side owns that encoding until the packed path goes (gui_emit_draw.c). */
+        if ( mode == GUI_FX_ARC_DASH )
+        {
+            s_tess.cur_prim.r_tl = uvx;                       /* period, as a fraction of a turn */
+            s_tess.cur_prim.r_tr = uvy;                       /* on-duty fraction                */
+        }
+        else
+        {
+            u32 bu = (u32)( uvx * 65535.0f + 0.5f );
+            u32 bv = (u32)( uvy * 65535.0f + 0.5f );
+            s_tess.cur_prim.col_b = ( bu & 0xFFu ) | ( ( bu >> 8 ) << 8 )
+                                  | ( ( bv & 0xFFu ) << 16 ) | ( ( bv >> 8 ) << 24 );
+        }
     }
 
     static const f32 lsx[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };
@@ -1360,10 +1569,16 @@ tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
 
     s_tess.cur_fx = gui_fx_pack_checker( cell, phx, phy );
 
+    s_tess.cur_prim.field   = (u32)GUI_FX_CHECKER;
+    s_tess.cur_prim.param_a = cell;
+    s_tess.cur_prim.param_b = phx;
+    s_tess.cur_prim.param_c = phy;
+    s_tess.cur_prim.col_b   = col_b;
+
     /* col_b in the ARC_GRAD uv lanes; the fragment never samples there (self-sampled, gui.h). */
     wu = (f32)(   col_b         & 0xFFFFu ) / 65535.0f;
     wv = (f32)( ( col_b >> 16 ) & 0xFFFFu ) / 65535.0f;
-    s_tess.cur_tex_bits |= GUI_TEX_SELF_BIT;
+    s_tess.cur_ops |= GUI_OP_SELF;
 
     v[ 0 ] = gui_vert( x,     y,     wu, wv, col_a );
     v[ 1 ] = gui_vert( x + w, y,     wu, wv, col_a );
@@ -1410,11 +1625,20 @@ tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness,
 
     s_tess.cur_fx = gui_fx_pack_grid( cell, thickness, angle, stripes );
 
+    s_tess.cur_prim.field   = (u32)GUI_FX_GRID;
+    s_tess.cur_prim.param_a = cell;
+    s_tess.cur_prim.param_b = thickness;
+    s_tess.cur_prim.param_c = angle;
+    s_tess.cur_prim.r_tl    = phx;
+    s_tess.cur_prim.r_tr    = phy;
+    if ( stripes )
+        s_tess.cur_ops |= GUI_OP_STRIPES;
+
     /* The lattice is one colour -- the vertex colour -- so the uv word is free to carry the
        per-axis phase instead of texcoords (self-sampled, gui.h). */
     wu = phx;
     wv = phy;
-    s_tess.cur_tex_bits |= GUI_TEX_SELF_BIT;
+    s_tess.cur_ops |= GUI_OP_SELF;
 
     v[ 0 ] = gui_vert( x,     y,     wu, wv, abgr );
     v[ 1 ] = gui_vert( x + w, y,     wu, wv, abgr );
@@ -1422,6 +1646,27 @@ tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness,
     v[ 3 ] = gui_vert( x,     y + h, wu, wv, abgr );
     tess_quad_idx( idx, base );
     tess_prim_commit( 4u, 6u );
+}
+
+/* Unpack the ambient TEXT_EDGE word into the record.  The emit layer stores the outline as an
+   already-packed effect word (draw_set_text_edge) and hands it through the command, so this is the
+   one field whose record has to be reconstructed rather than stated -- until the emit side carries
+   a plain width and colour, which is what removing the packers is for.  Colour channels widen from
+   the word's 5 bits back to 8 the same way the fragment does, so both paths agree exactly. */
+static void
+tess_text_edge_prim( u32 edge )
+{
+    if ( ( edge & 0xFu ) != (u32)GUI_FX_TEXT_EDGE )
+        return;
+
+    u32 r = ( ( edge >> 12 ) & 0x1Fu ) * 255u / 31u;
+    u32 g = ( ( edge >> 17 ) & 0x1Fu ) * 255u / 31u;
+    u32 b = ( ( edge >> 22 ) & 0x1Fu ) * 255u / 31u;
+    u32 a = ( ( edge >> 27 ) & 0x1Fu ) * 255u / 31u;
+
+    s_tess.cur_prim.field   = (u32)GUI_FX_TEXT_EDGE;
+    s_tess.cur_prim.param_a = (f32)( ( edge >> 4 ) & 0xFFu ) * 0.125f;
+    s_tess.cur_prim.col_b   = r | ( g << 8 ) | ( b << 16 ) | ( a << 24 );
 }
 
 /* Tessellate a glyph run from the font atlas into s_tess, hard-clipped to the horizontal pixel
@@ -1591,7 +1836,10 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
        the packed UV cannot hold a coordinate past 1, and the sampler's REPEAT-U is what tiles the
        atlas dash row (gui.h, GUI_FX_TILE_U).  Interpolation is unaffected -- both ends are stored
        exactly and a lerp commutes with the scale. */
-    s_tess.cur_fx = gui_fx_pack_tile_u( umax );
+    s_tess.cur_fx           = gui_fx_pack_tile_u( umax );
+    s_tess.cur_prim.field   = (u32)GUI_FX_TILE_U;
+    s_tess.cur_prim.param_a = umax;
+
     v[ 0 ] = gui_vert( x0 + nx * half, y0 + ny * half, 0.0f, vv, abgr );
     v[ 1 ] = gui_vert( x1 + nx * half, y1 + ny * half, 1.0f, vv, abgr );
     v[ 2 ] = gui_vert( x1 - nx * half, y1 - ny * half, 1.0f, vv, abgr );
@@ -1780,6 +2028,18 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
         return;
     s_tess.cur_fx = gui_fx_pack( GUI_FX_SEG, r, TESS_FX_AA, 0.0f );
 
+    /* The record states the capsule outright: midpoint, half-length, the axis as the shape's turn,
+       and the radius in the corner-radius lane.  Everything the two-quad fold above exists to
+       precompute is derivable from those five numbers. */
+    s_tess.cur_prim.field   = (u32)GUI_FX_SEG;
+    s_tess.cur_prim.cx      = mx;
+    s_tess.cur_prim.cy      = my;
+    s_tess.cur_prim.hw      = hl;
+    s_tess.cur_prim.r_tl    = r;
+    s_tess.cur_prim.feather = TESS_FX_AA;
+    s_tess.cur_prim.rot_cos = ux;
+    s_tess.cur_prim.rot_sin = uy;
+
     /* Corner of one quad in its own half: `a` runs 0 -> ea away from the midpoint (so |along| is
        simply a, and its sign is constant over the quad -- the whole reason for the split), `b`
        spans the full width signed. */
@@ -1810,7 +2070,8 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
    TU) and set by volatile_patch around its scratch re-tessellation so the range tracking below
    stays inert during a patch -- a patch must never look like a fresh capture. */
 static bool s_volatile_patching;
-static void volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 cmd_open );
+static void volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 pb_open,
+                                  u32 cmd_open );
 
 /* Tessellate one frame's semantic command list into s_tess geometry.
 
@@ -1844,7 +2105,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
        independently rewritable by a later patch.  Tracking is inert during a patch's own scratch
        re-tessellation (s_volatile_patching). */
     gui_id_t open_vid = GUI_ID_NONE;
-    u32      vb_open = 0, ib_open = 0, cmd_open = 0;
+    u32      vb_open = 0, ib_open = 0, pb_open = 0, cmd_open = 0;
     (void)win;
 
     for ( u32 oi = 0; oi < count; ++oi )
@@ -1856,14 +2117,21 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
         if ( vid != open_vid )
         {
             if ( open_vid != GUI_ID_NONE )
-                volatile_range_close( open_vid, vb_open, ib_open, cmd_open );
+                volatile_range_close( open_vid, vb_open, ib_open, pb_open, cmd_open );
             open_vid = vid;
             if ( vid != GUI_ID_NONE )
             {
                 s_tess.force_new_cmd = true;   /* block owns its GPU commands from the first primitive */
                 vb_open  = s_tess.vert_count;
                 ib_open  = s_tess.idx_count;
+                pb_open  = s_tess.prim_count;
                 cmd_open = s_tess.cmd_count;
+
+                /* Cold memo, so the block's first primitive appends a record INSIDE its own range
+                   instead of reusing the window's preceding one.  A reused record would sit outside
+                   the reservation the patch is allowed to rewrite, and the patch -- which always
+                   starts cold -- would then disagree with the capture about how many it needs. */
+                s_tess.prim_memo_valid = false;
             }
         }
 
@@ -1876,8 +2144,13 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
            can be ambient at all -- it lets an outline reach every glyph of a run, and a shape's
            word reach all 16 of its quadrant vertices, without threading a parameter through
            tess_rect_filled, which every fill in the library shares. */
-        s_tess.cur_fx       = 0u;
-        s_tess.cur_tex_bits = 0u;
+        s_tess.cur_fx  = 0u;
+        s_tess.cur_ops = 0u;
+
+        /* The record is cleared WHOLE for the same reason, and it matters more here than for the
+           words: a leftover rect or radius does not merely paint wrong, it defeats the memo -- a
+           run of flat fills carrying stale geometry would take one record each. */
+        s_tess.cur_prim = ( gui_prim_t ){ 0 };
 
         switch ( c->type )
         {
@@ -1902,7 +2175,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_RECT_OUTLINE:
                 if ( c->rect_outline.rounding > 0.0f )
                 {
-                    s_tess.cur_tex_bits |= GUI_TEX_OP_BAND;
+                    s_tess.cur_ops |= GUI_OP_BAND;
                     tess_fx_box( c->rect_outline.x, c->rect_outline.y,
                                  c->rect_outline.w, c->rect_outline.h,
                                  c->rect_outline.rounding, TESS_FX_AA, c->rect_outline.t,
@@ -1926,9 +2199,9 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                    one, which is what lets a cut or inset surface breathe -- as a mode number the
                    pulse had to displace whichever shape it was applied to.  Set before the
                    tessellator runs because the interior hole is sized from them (see `reach`). */
-                if ( c->fx_box.variant == 1u )   s_tess.cur_tex_bits |= GUI_TEX_OP_CUT;
-                if ( c->fx_box.variant == 2u )   s_tess.cur_tex_bits |= GUI_TEX_OP_INSET;
-                if ( c->fx_box.rate    > 0.0f )  s_tess.cur_tex_bits |= GUI_TEX_OP_PULSE;
+                if ( c->fx_box.variant == 1u )   s_tess.cur_ops |= GUI_OP_CUT;
+                if ( c->fx_box.variant == 2u )   s_tess.cur_ops |= GUI_OP_INSET;
+                if ( c->fx_box.rate    > 0.0f )  s_tess.cur_ops |= GUI_OP_PULSE;
                 tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
                              c->fx_box.rounding, c->fx_box.feather, 0.0f,
                              c->fx_box.rate, c->fx_box.depth, c->fx_box.rot,
@@ -2020,6 +2293,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 if ( c->text.font != cur_font )
                     font_use( cur_font = c->text.font );
                 s_tess.cur_fx = c->text.edge;
+                tess_text_edge_prim( c->text.edge );
                 tess_text_n( c->text.x, c->text.y, c->text.abgr, s_draw.text_pool + c->text.off,
                              c->text.len, c->text.clip_x0, c->text.clip_x1 );
                 break;
@@ -2028,6 +2302,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 if ( c->text_xf.font != cur_font )
                     font_use( cur_font = c->text_xf.font );
                 s_tess.cur_fx = c->text_xf.edge;
+                tess_text_edge_prim( c->text_xf.edge );
                 tess_text_xf( c->text_xf.x, c->text_xf.y, c->text_xf.abgr,
                               s_draw.text_pool + c->text_xf.off, c->text_xf.len,
                               c->text_xf.scale, c->text_xf.rot );
@@ -2081,7 +2356,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
     }
 
     if ( open_vid != GUI_ID_NONE )
-        volatile_range_close( open_vid, vb_open, ib_open, cmd_open );
+        volatile_range_close( open_vid, vb_open, ib_open, pb_open, cmd_open );
 
     /* Leave the global font state as we found it -- the next frame's emit/layout depends on it. */
     if ( cur_font != saved_font )

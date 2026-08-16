@@ -440,6 +440,24 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     push.clip_base  = 0u;
     push.time       = s_render.fx_time;   /* overlay geometry is fx-free, but the block must be
                                              fully initialized -- this field used to be garbage */
+
+    /* The overlay's single primitive record, refreshed every flush because the one thing in it
+       that is not a constant -- the atlas bindless slot -- can move when the atlas is rebuilt.
+       Every overlay vertex carries index 0 against this base, so one entry serves the whole
+       surface.  It sits past the arena in each region (GUI_PRIM_OVERLAY_ENTRY) and therefore
+       cannot collide with a window's records however full the arena is. */
+    u32        prim_region = frame * GUI_MAX_VIEWPORTS + (u32)vp;
+    gui_prim_t overlay_rec = {
+        .field = (u32)GUI_FX_NONE,
+        .tex   = res_atlas_idx() | GUI_TEX_MODE( GUI_TEX_COVERAGE ),
+    };
+    rhi()->buffer_write( s_render.prim_buf, &overlay_rec, (u32)GUI_PRIM_BYTES,
+                         prim_region * (u32)GUI_PRIM_REGION_BYTES
+                             + GUI_PRIM_OVERLAY_ENTRY * (u32)GUI_PRIM_BYTES );
+
+    push.prim_buf  = s_render.prim_buf_idx;
+    push.prim_base = prim_region * (u32)GUI_PRIM_REGION_MAX + GUI_PRIM_OVERLAY_ENTRY;
+
     rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
 
     rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){

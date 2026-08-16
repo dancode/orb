@@ -37,8 +37,10 @@ typedef struct
     f32 time;           // frame clock, wrapped seconds     4 bytes
     u32 clip_buf;       // bindless slot: frame clip table  4 bytes (0 = no table, no clipping)
     u32 clip_base;      // draw's first clip-table entry    4 bytes
+    u32 prim_buf;       // bindless slot: primitive records 4 bytes (0 = no records bound)
+    u32 prim_base;      // the SLOT's first record          4 bytes
 
-} gui_push_t;         // total 92 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;         // total 100 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved into the vertex (gui.h): the fragment
@@ -46,10 +48,12 @@ typedef struct
     remains in this block is per-FRAME state only.  In normal rendering nothing in the tail changes
     across a whole flush -- the redundancy filter below pushes it once and then goes quiet.  */
 
-/*  The whole block is written ONCE per flush, before the dispatch walk -- everything in it is
-    frame-constant now.  The tail offset below survives for the ONE consumer that still rewrites
-    mid-walk: the BATCH debug view, whose per-draw tint is deliberately different per draw call
-    (see gui_render_flush).
+/*  The block is written ONCE per flush, before the dispatch walk, and re-pushed from the tail by
+    the two consumers that genuinely vary below that granularity: prim_base, which is per WINDOW
+    SLOT because the record arena is packed rather than slabbed, and the BATCH debug view's tint,
+    which is deliberately different per draw call (see gui_render_flush).  Both go through the
+    tail, and both are filtered against the last value pushed, so a normal frame with one window
+    still pushes exactly once.
 
     Vulkan leaves push constants undefined until written, and the head is written after this
     flush's cmd_bind_pipeline, so a scene pass that bound its own pipeline earlier in the command
@@ -77,6 +81,26 @@ typedef struct
 #define GUI_CLIP_REGION_MAX    ( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX )     /* entries per region */
 #define GUI_CLIP_REGION_BYTES  ( GUI_CLIP_REGION_MAX * GUI_CLIP_ENTRY_BYTES )
 #define GUI_CLIP_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
+
+/*==============================================================================================
+    Primitive record region sizing -- the storage buffer the fragment resolves a shape from.
+
+    Same region scheme as the clip table above and for the same in-flight reason, but the layout
+    inside a region differs in the one way that matters: records are PACKED, not slabbed.  A
+    window's records sit wherever the arena placed them (win_geo_slot_t.prim_base), so an upload
+    lands at a moving offset and the flush pushes that offset per slot -- where a clip slab sits at
+    a fixed multiple and needs no per-slot constant at all.
+==============================================================================================*/
+
+/* One past the arena, because the DEBUG OVERLAY needs a record of its own and has no window slot
+   to get one from.  It builds its vertices through gui_vert() outside the tessellator entirely,
+   yet it still has to name a texture -- the atlas slot, which is only known at flush time -- so
+   "carry index 0 and inherit" was never available to it.  One entry at the top of every region,
+   written by dbg_flush, is the whole cost. */
+#define GUI_PRIM_OVERLAY_ENTRY GUI_MAX_PRIMS
+#define GUI_PRIM_REGION_MAX    ( GUI_MAX_PRIMS + 1u )                    /* records per region */
+#define GUI_PRIM_REGION_BYTES  ( GUI_PRIM_REGION_MAX * GUI_PRIM_BYTES )
+#define GUI_PRIM_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
 
 ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
                    "the mvp must lead gui_push_t -- the per-draw push writes everything after it" );
@@ -120,6 +144,12 @@ static struct
        pc.clip_buf every flush. */
     rhi_buffer_t    clip_buf;           // storage buffer: all clip regions
     u32             clip_buf_idx;       // bindless buffer slot (never 0 after a successful init)
+
+    /* The primitive record table (gui.h, gui_prim_t) -- one region per (frame-in-flight,
+       viewport), written per window slot by the flush.  Registered bindless once; the slot index
+       rides pc.prim_buf and the window's own record base rides pc.prim_base. */
+    rhi_buffer_t    prim_buf;           // storage buffer: all record regions
+    u32             prim_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
     gui_render_mode_t debug_mode;     // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
 
@@ -221,32 +251,41 @@ render_init( void )
     }
 
     // Vertex layout: FLOAT2 pos @0, UNORM16X2 uv @8, UNORM8X4 color @12, HALF2 fx coord @16,
-    // UINT fx word @20, UINT tex word @24, stride=28.  Locations 3/4 are the effect band (gui.h):
-    // every primitive that is not an SDF surface leaves the word 0, and the fragment tests that
-    // first.  Location 5 is the sampling model + bindless slot, which rides the vertex so that a
-    // texture change cannot open a draw call.
+    // UINT fx word @20, UINT tex word @24, UINT prim record @28, stride=32.  Locations 3/4 are the
+    // effect band (gui.h): every primitive that is not an SDF surface leaves the word 0, and the
+    // fragment tests that first.  Location 5 is the sampling model + bindless slot, which rides
+    // the vertex so that a texture change cannot open a draw call.
     //
-    // FOUR of the six are packed formats, and the shaders declare all four as plain floats: vertex
-    // fetch widens normalized and half attributes on the way in, so the packing is invisible above
-    // this line.  It is validated, not assumed -- pipeline_create checks every attribute against
-    // the reflected shader input for numeric class and component count, and rejects the pipeline
-    // (rather than fetching garbage) if the device cannot read one of these formats at all.
-    rhi_vertex_attrib_t attribs[ 6 ] = {
+    // Location 6 is the primitive record index, and it is fed but not yet READ: the vertex shader
+    // does not declare a matching input while the packed words are still authoritative.  That is
+    // legal by design -- pipeline_create requires every shader input to be fed, not every
+    // attribute to be consumed -- and it is what lets the record path stand up without a shader
+    // edit, so a regression at this stage is provably in the plumbing.
+    //
+    // FOUR of the seven are packed formats, and the shaders declare all four as plain floats:
+    // vertex fetch widens normalized and half attributes on the way in, so the packing is
+    // invisible above this line.  It is validated, not assumed -- pipeline_create checks every
+    // attribute against the reflected shader input for numeric class and component count, and
+    // rejects the pipeline (rather than fetching garbage) if the device cannot read one of these
+    // formats at all.
+    rhi_vertex_attrib_t attribs[ 7 ] = {
         { .binding = 0, .location = 0, .offset =  0, .format = RHI_VERTEX_FORMAT_FLOAT2     },
         { .binding = 0, .location = 1, .offset =  8, .format = RHI_VERTEX_FORMAT_UNORM16X2  },
         { .binding = 0, .location = 2, .offset = 12, .format = RHI_VERTEX_FORMAT_UNORM8X4   },
         { .binding = 0, .location = 3, .offset = 16, .format = RHI_VERTEX_FORMAT_HALF2      },
         { .binding = 0, .location = 4, .offset = 20, .format = RHI_VERTEX_FORMAT_UINT       },
         { .binding = 0, .location = 5, .offset = 24, .format = RHI_VERTEX_FORMAT_UINT       },
+        { .binding = 0, .location = 6, .offset = 28, .format = RHI_VERTEX_FORMAT_UINT       },
     };
 
     /* The layout above is spelled in literal offsets, so pin it to the struct it must mirror --
        a field inserted into gui_draw_vert_t would otherwise shift every attribute silently. */
-    ORB_STATIC_ASSERT( sizeof( gui_draw_vert_t ) == 28, "gui vertex layout is stated in literal offsets" );
-    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, uv  ) ==  8, "uv attribute offset drifted" );
-    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, fxc ) == 16, "fx coord attribute offset drifted" );
-    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, fx  ) == 20, "fx attribute offset drifted" );
-    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, tex ) == 24, "tex attribute offset drifted" );
+    ORB_STATIC_ASSERT( sizeof( gui_draw_vert_t ) == 32, "gui vertex layout is stated in literal offsets" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, uv   ) ==  8, "uv attribute offset drifted" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, fxc  ) == 16, "fx coord attribute offset drifted" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, fx   ) == 20, "fx attribute offset drifted" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, tex  ) == 24, "tex attribute offset drifted" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, prim ) == 28, "prim attribute offset drifted" );
 
     // Alpha blend: out = src_rgb*src_a + dst_rgb*(1-src_a).
     rhi_color_target_t color_target = {
@@ -266,9 +305,9 @@ render_init( void )
     rhi_pipeline_desc_t pdesc = {
         .vert               = vert,
         .frag               = frag,
-        .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ],
-                                attribs[ 3 ], attribs[ 4 ], attribs[ 5 ] },
-        .attrib_count       = 6,
+        .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ], attribs[ 3 ],
+                                attribs[ 4 ], attribs[ 5 ], attribs[ 6 ] },
+        .attrib_count       = 7,
         .vertex_stride      = sizeof( gui_draw_vert_t ),
         .cull               = RHI_CULL_NONE,
         .polygon_mode       = RHI_POLYGON_FILL,
@@ -348,6 +387,23 @@ render_init( void )
         return false;
     }
 
+    /* The primitive record table.  REQUIRED for the same reason the clip table is: once the
+       fragment resolves its shape from a record, a frame without one has nothing to draw. */
+    s_render.prim_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+        .size       = GUI_PRIM_REGION_COUNT * GUI_PRIM_REGION_BYTES,
+        .usage      = RHI_BUFFER_USAGE_STORAGE,
+        .memory     = RHI_MEMORY_CPU_TO_GPU,
+        .debug_name = "gui_prim_table",
+    } );
+    if ( rhi_handle_valid( s_render.prim_buf ) )
+        s_render.prim_buf_idx = rhi()->register_buffer( s_render.prim_buf );
+    if ( s_render.prim_buf_idx == 0 )
+    {
+        gui_log( GUI_LOG_ERROR, "primitive record buffer unavailable -- gui render disabled" );
+        render_shutdown();
+        return false;
+    }
+
     /* Fonts boot in the DRAW unit now (gui_draw_boot, after the whole server stands up) --
        the shared atlas carries the opaque white texel solid-color draws sample, so solids
        and text still share one texture and merge into one draw. */
@@ -358,18 +414,22 @@ static void
 render_shutdown( void )
 {
     // Peak draw-list usage over the run, so the caps can be tuned with real numbers.
-    gui_log( GUI_LOG_INFO, "peak draw-list usage: verts %u/%u (%.1f%%), idx %u/%u (%.1f%%)%s",
+    gui_log( GUI_LOG_INFO,
+             "peak draw-list usage: verts %u/%u (%.1f%%), idx %u/%u (%.1f%%), "
+             "records %u/%u (%.1f%%)%s",
              s_tess_stats.vert_hwm, GUI_MAX_VERTS, 100.0f * s_tess_stats.vert_hwm / (f32)GUI_MAX_VERTS,
              s_tess_stats.idx_hwm,  GUI_MAX_IDX,   100.0f * s_tess_stats.idx_hwm  / (f32)GUI_MAX_IDX,
+             s_tess_stats.prim_hwm, GUI_MAX_PRIMS, 100.0f * s_tess_stats.prim_hwm / (f32)GUI_MAX_PRIMS,
              s_tess_stats.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
 
     // Peak draw calls in a single frame -- a measure of batching effectiveness.
     gui_log( GUI_LOG_INFO, "peak draw calls in a frame: %u", cache_draw_call_hwm() );
 
     /* Per-draw state cost.
-         pushes   -- tail writes: the full block once per flush, plus a small tail per slot whose
-                     clip_base moved, plus one per draw in the BATCH debug view.  Quoted against
-                     flushes; a normal run reads a little above 1.00.
+         pushes   -- tail writes: the full block once per flush, plus one tail per dispatched
+                     window slot (prim_base, the only per-slot constant), plus one per draw in the
+                     BATCH debug view.  Quoted against flushes, so a normal run reads roughly
+                     1 + the number of windows on the surface.
          scissors -- exactly one full-surface set per flush now: clipping is per-fragment (the
                      clip band), so scissor state never changes mid-walk. */
     if ( s_render.state_draws )
@@ -402,6 +462,11 @@ render_shutdown( void )
         rhi()->unregister_buffer( s_render.clip_buf_idx );
     if ( rhi_handle_valid( s_render.clip_buf ) )
         rhi()->buffer_destroy( s_render.clip_buf );
+
+    if ( s_render.prim_buf_idx )
+        rhi()->unregister_buffer( s_render.prim_buf_idx );
+    if ( rhi_handle_valid( s_render.prim_buf ) )
+        rhi()->buffer_destroy( s_render.prim_buf );
 
     if ( rhi_handle_valid( s_render.pipeline_wire ) )
         rhi()->pipeline_destroy( s_render.pipeline_wire );

@@ -32,6 +32,16 @@ backend_memory( u32 live_viewports )
     /* Sprite and SDF atlases report 0 until something creates them. */
     s.gpu_texture_bytes = res_atlas_bytes() + res_sprite_bytes() + res_sdf_bytes();
 
+    /* The two storage-buffer tables the fragment resolves through: clip entries and primitive
+       records.  Both are allocated whole at init and are NOT per-surface -- one region per
+       (frame-in-flight, viewport) is baked into the size -- so unlike the geometry above they do
+       not scale with live_viewports.  The record table dominates by two orders of magnitude,
+       which is why it is worth reporting rather than folding into a "misc". */
+    if ( rhi_handle_valid( s_render.clip_buf ) )
+        s.gpu_table_bytes += (u32)( GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES );
+    if ( rhi_handle_valid( s_render.prim_buf ) )
+        s.gpu_table_bytes += (u32)( GUI_PRIM_REGION_COUNT * GUI_PRIM_REGION_BYTES );
+
 #ifdef GUI_DEBUG_OVERLAY
 
     /* The overlay's own VB/IB (one region per viewport per frame-in-flight, dbg_init). */
@@ -40,7 +50,8 @@ backend_memory( u32 live_viewports )
                                  * ( GUI_DBG_VB_REGION_BYTES + GUI_DBG_IB_REGION_BYTES ) );
 #endif
 
-    s.gpu_total = s.gpu_vertex_bytes + s.gpu_index_bytes + s.gpu_texture_bytes + s.gpu_debug_bytes;
+    s.gpu_total = s.gpu_vertex_bytes + s.gpu_index_bytes + s.gpu_texture_bytes
+                + s.gpu_table_bytes  + s.gpu_debug_bytes;
 
     /* EMIT: the semantic draw list and the line/path stroker built on it. */
     s.cpu_drawlist_bytes = (u32)( sizeof( s_draw ) + sizeof( s_path ) );
@@ -59,6 +70,7 @@ backend_memory( u32 live_viewports )
                              + sizeof( s_cache ) + sizeof( s_stats ) + sizeof( s_seg_next )
                              + sizeof( s_win_order )
                              + sizeof( s_volatile )
+                             + sizeof( s_clip_slab_pending ) + sizeof( s_prim_range_pending )
                              + sizeof( s_patch_order ) );
 
     /* The DRAW unit's statics (icon + sprite registries) -- the font registry moved to the font/

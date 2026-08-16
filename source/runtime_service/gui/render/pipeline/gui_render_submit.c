@@ -347,6 +347,28 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
                                  + sl->cache_idx * GUI_WIN_CLIP_MAX * (u32)GUI_CLIP_ENTRY_BYTES );
     }
 
+    /* Primitive record upload.  The records are already in their final form on the CPU (gui.h,
+       gui_prim_t is what the shader reads), so unlike the clip entries there is no staging step --
+       a slot's run copies straight out of the arena.
+       Where this genuinely differs from the clip slabs above: a record range is PACKED, so its
+       offset moves whenever the arena repacks or the window relocates.  s_prim_range_pending is
+       therefore set by every fresh tessellation (which is the only thing that can move a base or
+       change a record) rather than only on content change. */
+    for ( u32 d = 0; d < s_dispatch_count; ++d )
+    {
+        const win_geo_slot_t* sl = s_dispatch[ d ];
+        if ( sl->vp != vp_index || sl->prim_count == 0 )
+            continue;
+        if ( !( s_prim_range_pending[ sl->cache_idx ] & region_bit ) )
+            continue;
+        s_prim_range_pending[ sl->cache_idx ] &= (u8)~region_bit;
+
+        rhi()->buffer_write( s_render.prim_buf, &s_tess.prims[ sl->prim_base ],
+                             sl->prim_count * (u32)GUI_PRIM_BYTES,
+                             clip_region * (u32)GUI_PRIM_REGION_BYTES
+                                 + sl->prim_base * (u32)GUI_PRIM_BYTES );
+    }
+
     /* Open a LOAD pass on the swapchain color target (no depth).  LOAD preserves the scene content
        rendered before this call; CLEAR would wipe it. */
     rhi_color_attachment_t color_att = {
@@ -411,6 +433,13 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
     push.clip_buf  = s_render.clip_buf_idx;
     push.clip_base = clip_region * (u32)GUI_CLIP_REGION_MAX;
 
+    /* Record plumbing.  The buffer slot is flush-constant like the clip one; prim_base is NOT --
+       records are packed per window slot, so it is re-pushed from the tail as the walk crosses a
+       slot boundary (below).  Seeded past the end of the region so a draw that somehow escaped the
+       per-slot push cannot silently read another window's records. */
+    push.prim_buf  = s_render.prim_buf_idx;
+    push.prim_base = ~0u;
+
     /* Push the whole struct once, before the walk. tex_idx/tex_mode/samp_idx live in the vertex,
        not the push constant, so everything left here -- both sampler slots, dbg_flat, the frame
        clock, the clip buffer slot and base -- is constant for the entire flush.
@@ -437,6 +466,19 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         const win_geo_slot_t* slot = s_dispatch[ d ];
         if ( slot->vp != vp_index )
             continue;
+
+        /* The one piece of per-SLOT state: where this window's records start.  Vertices bake
+           slot-local record indices so they survive a repack, exactly as index values do, and this
+           is the base that puts them back.  Filtered against the last value pushed -- a surface
+           showing one window pushes it once, and consecutive slots that happen to share a base
+           (only the empty ones) push nothing. */
+        u32 slot_prim_base = clip_region * (u32)GUI_PRIM_REGION_MAX + slot->prim_base;
+        if ( push.prim_base != slot_prim_base )
+        {
+            push.prim_base = slot_prim_base;
+            rhi()->cmd_push_constants( cmd, tail, GUI_PUSH_TAIL_SIZE, GUI_PUSH_TAIL_OFF );
+            ++s_render.state_pushes;
+        }
 
         for ( u32 k = 0; k < slot->cmd_count; ++k )
         {

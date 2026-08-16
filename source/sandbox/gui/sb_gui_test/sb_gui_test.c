@@ -108,6 +108,8 @@ main( int argc, char* argv[] )
     test_register( "fxc_pack",            test_fxc_pack );
     test_register( "tex_word",            test_tex_word );
     test_register( "vert_ctors",          test_vert_ctors );
+    test_register( "prim_layout",         test_prim_layout );
+    test_register( "prim_ops",            test_prim_ops );
 
     /* GUI_RECT -- the leaf kit */
     test_register( "rect_cut",            test_rect_cut );

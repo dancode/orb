@@ -204,6 +204,7 @@ typedef struct
     u32      z;
     u32      vert_base, vert_count, vert_alloc;  // VB: absolute position, actual count, padded reservation
     u32      idx_base,  idx_count,  idx_alloc;   // IB: absolute position, actual count, padded reservation
+    u32      prim_base, prim_count, prim_alloc;  // records: same three, in the primitive arena
     u32      cmd_base,  cmd_count;               // range into s_tess.gpu_cmds[] for this window
     u32      tess_gen;                           // generation of the tess pass that produced the geometry
     u8       vp;                                 // viewport (GUI_MAX_VIEWPORTS = 4)
@@ -244,6 +245,13 @@ static u8               s_win_cached_live [ RENDER_MAX_WIN ];
 ORB_STATIC_ASSERT( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS <= 8,
                    "clip slab pending mask is a u8 -- one bit per (frame, viewport) region" );
 static u8               s_clip_slab_pending[ RENDER_MAX_WIN ];
+
+/* Record-range upload masks, keyed and shaped exactly like the clip masks above, and needed for a
+   reason the clip slabs do not have: a clip slab sits at a FIXED offset (cache_idx * the per-window
+   cap), so only its content can go stale, while a record range is packed and therefore moves.  So
+   this is set by every fresh tessellation -- which is the only thing that can change either the
+   content or the base -- and cleared one bit per range the flush uploads. */
+static u8               s_prim_range_pending[ RENDER_MAX_WIN ];
 
 /* Resolve a window's cache entry: existing, else a freshly claimed free slot, else ~0u (only
    possible past RENDER_MAX_WIN live windows -- those are dropped from rendering anyway). */
@@ -294,7 +302,8 @@ static u32 s_tess_gen_next;
    on idle frames that is the last completed frame's table; during cache_build_frame's slot loop
    it already contains this frame's slots built so far -- both exactly what a caller wants. */
 static bool
-cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base, u32* tess_gen )
+cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* prim_base, u32* cmd_base,
+                   u32* tess_gen )
 {
     for ( u32 i = 0; i < s_slot_count; ++i )
     {
@@ -302,11 +311,27 @@ cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* cmd_base, u
             continue;
         *vert_base = s_slots[ i ].vert_base;
         *idx_base  = s_slots[ i ].idx_base;
+        *prim_base = s_slots[ i ].prim_base;
         *cmd_base  = s_slots[ i ].cmd_base;
         *tess_gen  = s_slots[ i ].tess_gen;
         return true;
     }
     return false;
+}
+
+/* Mark a window's record range stale in every upload region (forward-declared in
+   gui_build_volatile.c).  A volatile patch rewrites records in place inside the slot's range, and
+   records upload per SLOT rather than per byte span -- so unlike the vertex and index bytes there
+   is no dirty span to union, just the slot's own pending mask. */
+static void
+volatile_prim_range_dirty( gui_id_t win )
+{
+    for ( u32 i = 0; i < s_slot_count; ++i )
+        if ( s_slots[ i ].win == win && s_slots[ i ].valid )
+        {
+            s_prim_range_pending[ s_slots[ i ].cache_idx ] = 0xFF;
+            return;
+        }
 }
 
 /* A window's CURRENT viewport + arena band by id (forward-declared in gui_build_volatile.c): a
@@ -361,17 +386,19 @@ cache_slot_clips_bind( gui_id_t win )
    !RELEASE only, matching the sole call site (that assert). */
 #if !RELEASE
 static void
-cache_slots_extent( u32* out_vert_end, u32* out_idx_end )
+cache_slots_extent( u32* out_vert_end, u32* out_idx_end, u32* out_prim_end )
 {
-    u32 ve = 0, ie = 0;
+    u32 ve = 0, ie = 0, pe = 0;
     for ( u32 i = 0; i < s_slot_count; ++i )
     {
         if ( !s_slots[ i ].valid )
             continue;
         u32 v = s_slots[ i ].vert_base + s_slots[ i ].vert_alloc;
         u32 x = s_slots[ i ].idx_base  + s_slots[ i ].idx_alloc;
+        u32 p = s_slots[ i ].prim_base + s_slots[ i ].prim_alloc;
         if ( v > ve ) ve = v;
         if ( x > ie ) ie = x;
+        if ( p > pe ) pe = p;
     }
     for ( u32 i = 0; i < s_slot_prev_count; ++i )
     {
@@ -379,11 +406,14 @@ cache_slots_extent( u32* out_vert_end, u32* out_idx_end )
             continue;
         u32 v = s_slots_prev[ i ].vert_base + s_slots_prev[ i ].vert_alloc;
         u32 x = s_slots_prev[ i ].idx_base  + s_slots_prev[ i ].idx_alloc;
+        u32 p = s_slots_prev[ i ].prim_base + s_slots_prev[ i ].prim_alloc;
         if ( v > ve ) ve = v;
         if ( x > ie ) ie = x;
+        if ( p > pe ) pe = p;
     }
     *out_vert_end = ve;
     *out_idx_end  = ie;
+    *out_prim_end = pe;
 }
 #endif
 
@@ -847,6 +877,9 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
     slot->idx_base   = prev->idx_base;
     slot->idx_count  = prev->idx_count;
     slot->idx_alloc  = prev->idx_alloc;
+    slot->prim_base  = prev->prim_base;
+    slot->prim_count = prev->prim_count;
+    slot->prim_alloc = prev->prim_alloc;
     slot->tess_gen   = prev->tess_gen;   /* geometry unchanged: same tessellation pass */
     slot->cache_idx  = cache_idx;        /* id-keyed, so it matches what the vertices baked */
 
@@ -860,6 +893,8 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
         s_tess.vert_count = prev->vert_base + prev->vert_alloc;
     if ( prev->idx_base + prev->idx_alloc > s_tess.idx_count )
         s_tess.idx_count = prev->idx_base + prev->idx_alloc;
+    if ( prev->prim_base + prev->prim_alloc > s_tess.prim_count )
+        s_tess.prim_count = prev->prim_base + prev->prim_alloc;
 
     /* Replay GPU commands from the stable cache.  lvbase/libase are slot-local, so
        adding slot->vert_base/idx_base gives the absolute offsets for this frame. */
@@ -923,16 +958,23 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
 {
     u32 tail_v = s_tess.vert_count;   /* invariant: the write head is past every live reservation */
     u32 tail_i = s_tess.idx_count;
+    u32 tail_p = s_tess.prim_count;
 
     slot->vert_base       = tail_v;
     slot->idx_base        = tail_i;
+    slot->prim_base       = tail_p;
     slot->cmd_base        = s_tess.cmd_count;
     slot->tess_gen        = ++s_tess_gen_next;   /* fresh pass: volatile captures bind to it */
     s_tess.slot_vert_base = tail_v;
     s_tess.slot_idx_base  = tail_i;
+    s_tess.slot_prim_base = tail_p;
     s_tess.slot_cmd_base  = s_tess.cmd_count;
     s_tess.slot_tess_gen  = slot->tess_gen;
     s_tess.force_new_cmd  = true;
+
+    /* The memo must not reach back into the PREVIOUS slot's records: their indices are relative to
+       that slot's base, so reusing one here would name a record this slot does not own. */
+    s_tess.prim_memo_valid = false;
 
     /* Fresh tessellation rebuilds the slot's local clip table from scratch (tess_clip_local).
        cache_idx keys the window's fixed clip slab; a window past the cache cap (~0u, dropped
@@ -954,11 +996,17 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
 
     slot->vert_count = s_tess.vert_count - slot->vert_base;
     slot->idx_count  = s_tess.idx_count  - slot->idx_base;
+    slot->prim_count = s_tess.prim_count - slot->prim_base;
     slot->cmd_count  = s_tess.cmd_count  - slot->cmd_base;
+
+    /* Fresh geometry means fresh records, and (unless it lands back in its own hole below) a
+       moved base as well -- either way every region's GPU copy is stale. */
+    s_prim_range_pending[ slot->cache_idx ] = 0xFF;
 
     bool fits = ( prev && prev->valid
                   && slot->vert_count <= prev->vert_alloc
-                  && slot->idx_count  <= prev->idx_alloc );
+                  && slot->idx_count  <= prev->idx_alloc
+                  && slot->prim_count <= prev->prim_alloc );
     if ( fits )
     {
         /* Relocate from the tail scratch back into the window's own reservation.  The spans are
@@ -966,6 +1014,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
            are slot-relative and move verbatim; only the absolute per-command bases shift. */
         u32 dv = tail_v - prev->vert_base;
         u32 di = tail_i - prev->idx_base;
+        u32 dp = tail_p - prev->prim_base;
         if ( dv || di )
         {
             memcpy( &s_tess.verts  [ prev->vert_base ], &s_tess.verts  [ tail_v ],
@@ -978,14 +1027,24 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
                 s_tess.gpu_cmds[ slot->cmd_base + k ].ibase -= di;
             }
         }
+        /* Records move on their own axis: the record arena is packed independently of the vertex
+           one, so a slot can land back in its vertex hole while its records still shift.  Their
+           baked indices are slot-local, so like the index values they travel verbatim. */
+        if ( dp )
+            memcpy( &s_tess.prims[ prev->prim_base ], &s_tess.prims[ tail_p ],
+                    slot->prim_count * sizeof( gui_prim_t ) );
+
         slot->vert_base  = prev->vert_base;
         slot->vert_alloc = prev->vert_alloc;
         slot->idx_base   = prev->idx_base;
         slot->idx_alloc  = prev->idx_alloc;
+        slot->prim_base  = prev->prim_base;
+        slot->prim_alloc = prev->prim_alloc;
 
         /* Rewind the tail: the scratch bytes are abandoned, nothing references them. */
         s_tess.vert_count = tail_v;
         s_tess.idx_count  = tail_i;
+        s_tess.prim_count = tail_p;
     }
     else
     {
@@ -993,8 +1052,10 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
            fixed pads, so growth relocates logarithmically instead of once per grown frame. */
         u32 pad_v = slot->vert_count / 4u;  if ( pad_v < SLOT_VERT_PAD ) pad_v = SLOT_VERT_PAD;
         u32 pad_i = slot->idx_count  / 4u;  if ( pad_i < SLOT_IDX_PAD  ) pad_i = SLOT_IDX_PAD;
+        u32 pad_p = slot->prim_count / 4u;  if ( pad_p < SLOT_PRIM_PAD ) pad_p = SLOT_PRIM_PAD;
         slot->vert_alloc = slot->vert_count + pad_v;
         slot->idx_alloc  = slot->idx_count  + pad_i;
+        slot->prim_alloc = slot->prim_count + pad_p;
 
         /* Clamp to the arena like volatile_range_close: headroom shrinks before the write head
            can pass the cap, so fill ratios and the overflow report never read past the pools. */
@@ -1002,9 +1063,12 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
             slot->vert_alloc = GUI_MAX_VERTS - slot->vert_base;
         if ( slot->idx_base + slot->idx_alloc > GUI_MAX_IDX )
             slot->idx_alloc = GUI_MAX_IDX - slot->idx_base;
+        if ( slot->prim_base + slot->prim_alloc > GUI_MAX_PRIMS )
+            slot->prim_alloc = GUI_MAX_PRIMS - slot->prim_base;
 
         s_tess.vert_count = slot->vert_base + slot->vert_alloc;
         s_tess.idx_count  = slot->idx_base  + slot->idx_alloc;
+        s_tess.prim_count = slot->prim_base + slot->prim_alloc;
     }
 
     /* Only THIS slot's bytes changed (both the in-place and the fresh-tail placement leave every
@@ -1107,8 +1171,10 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
             if ( !s_slots_prev[ i ].valid ) continue;
             u32 ve = s_slots_prev[ i ].vert_base + s_slots_prev[ i ].vert_alloc;
             u32 ie = s_slots_prev[ i ].idx_base  + s_slots_prev[ i ].idx_alloc;
+            u32 pe = s_slots_prev[ i ].prim_base + s_slots_prev[ i ].prim_alloc;
             if ( ve > s_tess.vert_count ) s_tess.vert_count = ve;
             if ( ie > s_tess.idx_count  ) s_tess.idx_count  = ie;
+            if ( pe > s_tess.prim_count ) s_tess.prim_count = pe;
         }
     }
 
@@ -1292,6 +1358,7 @@ cache_build_frame( void )
        main band alone peak independently, so each gets its own accumulator. */
     if ( s_tess.vert_count           > s_tess_stats.vert_hwm       ) s_tess_stats.vert_hwm       = s_tess.vert_count;
     if ( s_tess.idx_count            > s_tess_stats.idx_hwm        ) s_tess_stats.idx_hwm        = s_tess.idx_count;
+    if ( s_tess.prim_count           > s_tess_stats.prim_hwm       ) s_tess_stats.prim_hwm       = s_tess.prim_count;
     if ( s_tess_stats.band0_vert_end > s_tess_stats.band0_vert_hwm ) s_tess_stats.band0_vert_hwm = s_tess_stats.band0_vert_end;
     if ( s_tess_stats.band0_idx_end  > s_tess_stats.band0_idx_hwm  ) s_tess_stats.band0_idx_hwm  = s_tess_stats.band0_idx_end;
 

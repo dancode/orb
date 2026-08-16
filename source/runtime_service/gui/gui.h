@@ -1648,13 +1648,18 @@ typedef enum
     Mode 0 (GUI_FX_NONE) is what every other primitive writes, and the fragment tests it first:
     text, lines, sprites and square fills pay one compare and are byte-for-byte unchanged.
 
-    Vertex attribute layout (matches the gui pipeline), 28 bytes, single interleaved binding:
+    Vertex attribute layout (matches the gui pipeline), 32 bytes, single interleaved binding:
         location 0 : FLOAT2     (x, y)      offset  0   -- pixel-space position
         location 1 : UNORM16X2  (uv u32)    offset  8   -- texture UV, [0,1] at 1/65535
         location 2 : UNORM8X4   (abgr u32)  offset 12   -- packed color, R8G8B8A8_UNORM
         location 3 : HALF2      (fxc u32)   offset 16   -- effect coordinate (see below)
         location 4 : UINT       (fx u32)    offset 20   -- packed effect word (flat)
         location 5 : UINT       (tex u32)   offset 24   -- sampling model + bindless slot (flat)
+        location 6 : UINT       (prim u32)  offset 28   -- primitive record index (flat)
+
+    Locations 4 and 5 are LIVE BUT DOOMED: the primitive record above carries the same two words
+    unpacked, and they stay only while the record path is being stood up -- the vertex shader does
+    not declare location 6 yet, and an attribute no shader input reads is legal and ignored.
 
     FOUR of those six are packed, and the shader is unaware of it: the fetch unit widens every
     normalized and half format to float, so the vertex stage still declares vec2 / vec4 and reads
@@ -1981,6 +1986,96 @@ gui_fx_pack_text_edge( f32 width, u32 abgr )
     return (u32)GUI_FX_TEXT_EDGE | ( w << 4 ) | ( r << 12 ) | ( g << 17 ) | ( b << 22 ) | ( a << 27 );
 }
 
+/*==============================================================================================
+    GUI_DRAW -- the primitive record: per-shape constants, stored once instead of per vertex.
+
+    A rounded box emits 16 vertices and every one of them carries a byte-identical copy of the
+    effect word and the texture word.  That is 128 bytes to say one 8-byte thing, and it is the
+    reason those 8 bytes have to be bit-packed at all: the container is per-vertex, so widening a
+    field taxes every glyph on screen.
+
+    The record breaks that link.  Per-shape constants live in a bindless storage buffer, the vertex
+    names one by index, and the fragment resolves it with a dependent load -- exactly the shape the
+    clip band already runs (gui_clip_entry_t, gui_render.h), generalized to the whole effect band.
+    Fields are PLAIN, not packed: a corner radius is an f32 in pixels, a shape is an enum in a
+    32-bit word, and there is no bit budget left to run out of.
+
+    Indices are SLOT-LOCAL -- relative to the window cache slot's own run of records -- and the
+    flush adds the slot's base through a push constant, the same arrangement index values already
+    use (vertex_offset = slot->vert_base).  That is what lets a record index survive in cached
+    geometry across a repack: the arena moves, the baked index does not.
+
+    ROW [2] IS PER-FIELD.  Corner radii are what the box family stores there and what it is named
+    for; the fields that have no corners reuse the row rather than pad it out:
+
+        BOX / SEG      r_tl, r_tr, r_br, r_bl   -- per-corner radii (SEG: r_tl = half-thickness)
+        ARC_DASH       r_tl = dash period (turns), r_tr = on-duty fraction
+        GRID           r_tl, r_tr = lattice phase per axis
+        everything else                          -- unused, left zero
+
+    Leaving unused fields ZERO is not tidiness, it is what makes the record memo work: two plain
+    fills differ only in the geometry their vertices carry, so their records compare equal and
+    collapse to one entry (tess_prim_local).  A writer that scribbled a rect into a NONE record
+    would give every fill its own record and blow the arena.
+==============================================================================================*/
+
+typedef struct
+{
+    /* Row 0 -- read by EVERY fragment, which is why it leads: a glyph or a flat fill resolves its
+       texture and its clip from here and never touches the four rows below. */
+    u32 field;      // gui_fx_mode_t -- which field the fragment evaluates (0 = none)
+    u32 ops;        // GUI_OP_* -- modifiers on whatever field arrived, orthogonal to it
+    u32 tex;        // sampling model | bindless slot (GUI_TEX_MODE | index)
+    u32 clip;       // clip-table entry index, absolute within the frame clip region
+
+    /* Row 1 -- the shape rect in screen pixels, stated as CENTRE and HALF-EXTENT rather than as
+       an origin and a size.  That is the form every field actually wants: a box folds about its
+       centre, a sector IS its centre, and a capsule's axis runs through it.  A field that needs
+       no rect (the screen-space patterns) leaves the row zero.
+         BOX  cx, cy = centre        hw, hh = half size
+         SEG  cx, cy = midpoint      hw     = half length   (hh unused)
+         ARC  cx, cy = centre        hw, hh unused */
+    f32 cx, cy, hw, hh;
+
+    /* Row 2 -- per-field payload; see the alias table above. */
+    f32 r_tl, r_tr, r_br, r_bl;
+
+    /* Row 3 -- the softness and the turn.  Rotation is stored as its cosine and sine because the
+       CPU already computes both once per shape; an angle here would put a cos/sin on every
+       fragment of every rotated box.  An unrotated shape stores (1, 0). */
+    f32 feather, border, rot_cos, rot_sin;
+
+    /* Row 4 -- the scalar parameters and the second colour.
+         ARC / PIE      param = radius, tube half-thickness, aperture (radians, HALF the sweep)
+         CHECKER        param = cell, phase x, phase y            col_b = the alternate colour
+         GRID           param = cell, line thickness, angle
+         TILE_U         param_a = repeat count
+         TEXT_EDGE      param_a = outline width                   col_b = the outline colour
+         GUI_OP_PULSE   param_a = rate (Hz), param_b = depth      (on any field it modifies) */
+    f32 param_a, param_b, param_c;
+    u32 col_b;
+
+} gui_prim_t;
+
+/* 80 bytes = five std430 rows of four 32-bit components, so the fragment indexes the buffer as
+   `prim * GUI_PRIM_ROWS + row` with no padding to account for.  Pinned because the shaders spell
+   that stride as a literal. */
+#define GUI_PRIM_ROWS   5u
+#define GUI_PRIM_BYTES  ( GUI_PRIM_ROWS * 16u )
+
+ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
+                   "gui_prim_t must stay five 16-byte rows -- the shaders index it as vec4[]" );
+
+/* The modifier bits.  They are a WORD OF THEIR OWN here, where in the packed layout they had to be
+   carved out of the texture index: an op composes with any field and with any other op, so it can
+   never share space with something a particular field re-partitions. */
+#define GUI_OP_BAND     ( 1u << 0 )   /* bend the field into a border of `border` px           */
+#define GUI_OP_CUT      ( 1u << 1 )   /* cut the interior away -- the drop shadow's skirt      */
+#define GUI_OP_INSET    ( 1u << 2 )   /* turn the falloff inward -- the inner shadow           */
+#define GUI_OP_PULSE    ( 1u << 3 )   /* breathe coverage on the frame clock (param_a/param_b) */
+#define GUI_OP_STRIPES  ( 1u << 4 )   /* GRID: cut on one axis only -- a stripe field          */
+#define GUI_OP_SELF     ( 1u << 5 )   /* solid colour: do not consult the texel at all         */
+
 /*----------------------------------------------------------------------------------------------
     The packed vertex, and the two constructors that are the ONLY supported way to build one.
 
@@ -1991,12 +2086,12 @@ gui_fx_pack_text_edge( f32 width, u32 abgr )
     and do the packing themselves, so a call site reads the same way and a wrong one does not
     compile.
 
-    Note what they do NOT set: `tex` and `fx` stay 0 here on purpose.  Both are stamped by the
-    tessellator's single commit point (tess_verts_commit) from ambient state, which is what makes
-    them impossible to forget -- see the comment there.  Both are PRIMITIVE-constant (a shape has
-    one effect word, a glyph run has one outline, a quad has one texture) while the effect
-    COORDINATE is the only part of the band that varies per corner, which is why that is the one
-    thing a constructor still takes.
+    Note what they do NOT set: `tex`, `fx` and `prim` stay 0 here on purpose.  All three are
+    stamped by the tessellator's single commit point (tess_verts_commit) from ambient state, which
+    is what makes them impossible to forget -- see the comment there.  All three are
+    PRIMITIVE-constant (a shape has one effect word, a glyph run has one outline, a quad has one
+    texture) while the effect COORDINATE is the only part of the band that varies per corner,
+    which is why that is the one thing a constructor still takes.
 ----------------------------------------------------------------------------------------------*/
 
 typedef struct
@@ -2007,6 +2102,7 @@ typedef struct
     u32 fxc;      // effect coordinate |p| - c as two halves (GUI_FX_NONE ignores it)
     u32 fx;       // packed effect word (gui_fx_pack); low nibble 0 = no effect
     u32 tex;      // sampling model + bindless slot (GUI_TEX_MODE | index) -- see above
+    u32 prim;     // primitive record index, SLOT-LOCAL (gui_prim_t; + the flush's prim_base)
 
 } gui_draw_vert_t;
 
@@ -2073,14 +2169,15 @@ gui_fxc_pack( f32 ex, f32 ey )
 static inline gui_draw_vert_t
 gui_vert( f32 x, f32 y, f32 u, f32 v, u32 abgr )
 {
-    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, 0u, 0u, 0u };
+    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, 0u, 0u, 0u, 0u };
 }
 
 /* The same, carrying the per-corner effect coordinate.  The effect WORD is ambient (above). */
 static inline gui_draw_vert_t
 gui_vert_fxc( f32 x, f32 y, f32 u, f32 v, u32 abgr, f32 ex, f32 ey )
 {
-    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, gui_fxc_pack( ex, ey ), 0u, 0u };
+    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr,
+                                gui_fxc_pack( ex, ey ), 0u, 0u, 0u };
 }
 
 /*==============================================================================================
@@ -3130,6 +3227,7 @@ typedef struct
    not 4x: verts stop just under 64K (u16 indices) and the clip table at 256 (u8 index). */
 
 #define GUI_MAX_VERTS        ( 60 * 1024 )   /* per-frame tessellated vertices                   */
+#define GUI_MAX_PRIMS        8192            /* per-frame primitive records (gui_prim_t)         */
 #define GUI_MAX_CMDS         8192            /* per-frame semantic draw commands                 */
 #define GUI_MAX_PATH_PTS     32768           /* per-frame total polyline / path point pool       */
 #define GUI_MAX_RECT_ENTRIES 16384           /* per-frame total draw_rects batch pool            */
@@ -3139,6 +3237,7 @@ typedef struct
 #else
 
 #define GUI_MAX_VERTS        ( 32 * 1024 )   /* per-frame tessellated vertices                   */
+#define GUI_MAX_PRIMS        2048            /* per-frame primitive records (gui_prim_t)         */
 #define GUI_MAX_CMDS         1024            /* per-frame semantic draw commands                 */
 #define GUI_MAX_PATH_PTS     2048            /* per-frame total polyline / path point pool       */
 #define GUI_MAX_RECT_ENTRIES 4096            /* per-frame total draw_rects batch pool            */
@@ -3149,6 +3248,17 @@ typedef struct
 
 #define GUI_MAX_IDX          ( GUI_MAX_VERTS * 3 )   /* 3x clears quads (1.5:1) and AA strips     */
 #define GUI_CLIP_DEPTH       32                      /* push_clip / pop_clip nesting depth       */
+
+/* Records are counted per STATE CHANGE, not per primitive -- a glyph run is one, and a run of flat
+   fills sharing a texture and a clip is one -- so the cap sits far below the vertex cap rather
+   than at verts/4.  What consumes records is shapes with distinct GEOMETRY in them: rounded
+   panels, shadows, arcs.  Measured: the sandbox demos peak at 22-72 records against 500-5000
+   vertices, so the ratio is roughly a record per 70 vertices and the cap here is generous by an
+   order of magnitude.
+   The GPU cost is the multiplier to watch, because the storage buffer holds this many records for
+   EVERY (frame-in-flight, viewport) region: 2048 records is 1.3 MB, the stress bench's 8192 is
+   5.2 MB.  Both the shutdown log and the dashboard report the high-water mark -- move the cap from
+   what those measure, not from a guess. */
 
 /* Command segments: one contiguous span of the command list per (win, z, vp, band) the emit path
    stamps, cut wherever a window seam, draw_set_sort_key, draw_set_viewport or draw_set_band
@@ -3187,6 +3297,8 @@ typedef struct
     u32 gpu_vertex_bytes;       // per-viewport VB regions, summed over live surfaces x frames-in-flight
     u32 gpu_index_bytes;        // per-viewport IB regions, summed over live surfaces x frames-in-flight
     u32 gpu_texture_bytes;      // the three resource atlases (coverage incl. assist rows, sprite, SDF)
+    u32 gpu_table_bytes;        // the two per-frame storage-buffer tables: clip entries + primitive
+                                //   records.  Sized by the pools, not by how many surfaces are open
     u32 gpu_debug_bytes;        // debug-overlay VB/IB (Debug builds; 0 when compiled out / not created)
     u32 gpu_total;              // sum of the section above
     u32 viewport_count;         // live GPU surfaces contributing to gpu_vertex/index_bytes

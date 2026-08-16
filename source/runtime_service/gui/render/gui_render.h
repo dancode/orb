@@ -349,6 +349,8 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
 #endif
 #define SLOT_VERT_PAD     64u   // per-slot vertex headroom: absorbs minor growth in-place
 #define SLOT_IDX_PAD      128u  // per-slot index headroom (~2x vertex count for quads)
+#define SLOT_PRIM_PAD     8u    // per-slot record headroom; records are per state change, not
+                                //   per primitive, so a window holds few and grows by few
 
 /* One entry of a window slot's LOCAL clip table: the rects this window's cached vertices name
    through the tex word's clip band (gui.h, GUI_TEX_CLIP_SHIFT).  Vertices bake ABSOLUTE frame-

@@ -150,6 +150,7 @@ gui_print_mem_stats( void )
     GUI_MEM_ROW( "vertex buffers",   s.gpu_vertex_bytes  );
     GUI_MEM_ROW( "index buffers",    s.gpu_index_bytes   );
     GUI_MEM_ROW( "atlas textures",   s.gpu_texture_bytes );
+    GUI_MEM_ROW( "clip + prim tables", s.gpu_table_bytes );
     if ( s.gpu_debug_bytes )
         GUI_MEM_ROW( "debug overlay buffers", s.gpu_debug_bytes );
     GUI_MEM_ROW( "  GPU subtotal",   s.gpu_total         );

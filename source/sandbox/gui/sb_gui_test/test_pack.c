@@ -291,6 +291,74 @@ test_vert_ctors( void )
     test_equal( 0u,     f.fx   );
     test_equal( 0u,     f.tex  );
     test_equal( gui_fxc_pack( -4.0f, 6.0f ), f.fxc );
+
+    /* The record index clears with the other two ambient words, and for the same reason: the
+       tessellator's commit point stamps it, so a constructor that left one behind would point a
+       fresh primitive at whatever shape happened to be built before it. */
+    test_equal( 0u, v.prim );
+    test_equal( 0u, f.prim );
+}
+
+/*==============================================================================================
+    The primitive record -- the layout the fragment indexes as vec4[].
+
+    Nothing here checks a VALUE; the record has no packing to get wrong, which is the point of it.
+    What can still go wrong is its SHAPE: the shader spells the row stride as a literal, so a
+    field inserted or a type widened would slide every row past the first and shift a corner
+    radius into a rotation with no compile error anywhere.
+==============================================================================================*/
+
+static void
+test_prim_layout( void )
+{
+    /* Five 16-byte rows, no tail padding.  GUI_PRIM_ROWS is what the shaders multiply by. */
+    test_equal( 5u,  GUI_PRIM_ROWS );
+    test_equal( 80u, (u32)GUI_PRIM_BYTES );
+    test_equal( 80u, (u32)sizeof( gui_prim_t ) );
+
+    /* Row starts.  The hot word leads on purpose: a glyph or a flat fill reads row 0 and stops. */
+    test_equal(  0u, (u32)offsetof( gui_prim_t, field   ) );
+    test_equal( 16u, (u32)offsetof( gui_prim_t, cx      ) );
+    test_equal( 32u, (u32)offsetof( gui_prim_t, r_tl    ) );
+    test_equal( 48u, (u32)offsetof( gui_prim_t, feather ) );
+    test_equal( 64u, (u32)offsetof( gui_prim_t, param_a ) );
+
+    /* Within-row order, since a row is read as one vec4 and its components are positional. */
+    test_equal(  4u, (u32)offsetof( gui_prim_t, ops     ) );
+    test_equal(  8u, (u32)offsetof( gui_prim_t, tex     ) );
+    test_equal( 12u, (u32)offsetof( gui_prim_t, clip    ) );
+    test_equal( 20u, (u32)offsetof( gui_prim_t, cy      ) );
+    test_equal( 24u, (u32)offsetof( gui_prim_t, hw      ) );
+    test_equal( 28u, (u32)offsetof( gui_prim_t, hh      ) );
+    test_equal( 36u, (u32)offsetof( gui_prim_t, r_tr    ) );
+    test_equal( 40u, (u32)offsetof( gui_prim_t, r_br    ) );
+    test_equal( 44u, (u32)offsetof( gui_prim_t, r_bl    ) );
+    test_equal( 52u, (u32)offsetof( gui_prim_t, border  ) );
+    test_equal( 56u, (u32)offsetof( gui_prim_t, rot_cos ) );
+    test_equal( 60u, (u32)offsetof( gui_prim_t, rot_sin ) );
+    test_equal( 68u, (u32)offsetof( gui_prim_t, param_b ) );
+    test_equal( 72u, (u32)offsetof( gui_prim_t, param_c ) );
+    test_equal( 76u, (u32)offsetof( gui_prim_t, col_b   ) );
+}
+
+/* The op bits are single bits and DISJOINT, which is the whole claim the op word makes: any op
+   composes with any field and with any other op.  A shared bit would silently turn a neighbour on
+   -- the failure the tex word's op band was carved out to avoid, restated where it now lives. */
+static void
+test_prim_ops( void )
+{
+    const u32 ops[] = { GUI_OP_BAND, GUI_OP_CUT, GUI_OP_INSET,
+                        GUI_OP_PULSE, GUI_OP_STRIPES, GUI_OP_SELF };
+
+    u32 seen = 0u;
+    for ( u32 i = 0; i < ARRAY_COUNT( ops ); ++i )
+    {
+        test_true( ops[ i ] != 0u );
+        test_equal( 0u, ops[ i ] & ( ops[ i ] - 1u ) );   /* exactly one bit set */
+        test_equal( 0u, seen & ops[ i ] );                /* and not one already spent */
+        seen |= ops[ i ];
+    }
+    test_equal( 0x3Fu, seen );
 }
 
 /*============================================================================================*/
