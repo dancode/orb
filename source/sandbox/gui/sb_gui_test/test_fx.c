@@ -64,7 +64,7 @@ test_fx_pack_box( void )
     /* Mode occupies the low nibble alone, and survives every other field being zero. */
     test_equal( GUI_FX_NONE, gui_fx_pack( GUI_FX_NONE, 0.0f, 0.0f, 0.0f ) & 0xFu );
     test_equal( GUI_FX_BOX,  gui_fx_pack( GUI_FX_BOX,  0.0f, 0.0f, 0.0f ) & 0xFu );
-    test_equal( GUI_FX_RING, gui_fx_pack( GUI_FX_RING, 0.0f, 0.0f, 0.0f ) & 0xFu );
+    test_equal( GUI_FX_SEG,  gui_fx_pack( GUI_FX_SEG,  0.0f, 0.0f, 0.0f ) & 0xFu );
 
     /* Field isolation: one field at max, the rest zero, assert the ENTIRE word. */
     test_equal( 0x0000FFF1u, gui_fx_pack( GUI_FX_BOX, GUI_FX_RADIUS_MAX,  0.0f, 0.0f ) );
@@ -74,9 +74,11 @@ test_fx_pack_box( void )
     /* Every field at once saturates the word: all 28 parameter bits reachable, none shared. */
     test_equal( 0xFFFFFFF1u, gui_fx_pack( GUI_FX_BOX, 9999.0f, 9999.0f, 9999.0f ) );
 
-    /* Ordinary values land in the right field and read back exactly. */
-    u32 w = gui_fx_pack( GUI_FX_RING, 10.0f, 2.0f, 1.0f );
-    test_equal( GUI_FX_RING, w & 0xFu );
+    /* Ordinary values land in the right field and read back exactly.  `border` is meaningful
+       only under GUI_TEX_OP_BAND, but the packer neither knows nor cares which ops the tex word
+       will carry -- it is the same word either way. */
+    u32 w = gui_fx_pack( GUI_FX_BOX, 10.0f, 2.0f, 1.0f );
+    test_equal( GUI_FX_BOX, w & 0xFu );
     test_equal( 80, ( w >>  4 ) & 0xFFFu );    /* 10.0 px at 1/8 */
     test_equal( 8,  ( w >> 16 ) & 0x1FFu );    /*  2.0 px at 1/4 */
     test_equal( 8,  ( w >> 25 ) & 0x7Fu  );    /*  1.0 px at 1/8 */
@@ -107,24 +109,27 @@ test_fx_no_wrap_regression( void )
 }
 
 /*==============================================================================================
-    gui_fx_pack_pulse -- radius / feather keep their positions; RING's border bits become
-    rate (25..28) + depth (29..31).
+    gui_fx_pack_pulse -- the word a BOX under GUI_TEX_OP_PULSE writes.  Radius and feather keep
+    their positions; the border bits GUI_TEX_OP_BAND would use become rate (25..28) + depth
+    (29..31), which is why those two ops are the one pair that cannot combine.
 ==============================================================================================*/
 
 static void
 test_fx_pack_pulse( void )
 {
-    test_equal( GUI_FX_PULSE, gui_fx_pack_pulse( 0.0f, 0.0f, 0.0f, 0.0f ) & 0xFu );
+    /* The nibble is GUI_FX_BOX: a pulse is not a shape of its own, and the fragment must reach
+       the same shared decode a plain fill does before the op modulates what it found. */
+    test_equal( GUI_FX_BOX, gui_fx_pack_pulse( 0.0f, 0.0f, 0.0f, 0.0f ) & 0xFu );
 
-    test_equal( 0x0000FFF3u, gui_fx_pack_pulse( GUI_FX_RADIUS_MAX, 0.0f, 0.0f, 0.0f ) );
-    test_equal( 0x01FF0003u, gui_fx_pack_pulse( 0.0f, GUI_FX_FEATHER_MAX, 0.0f, 0.0f ) );
-    test_equal( 0x1E000003u, gui_fx_pack_pulse( 0.0f, 0.0f, GUI_FX_RATE_MAX, 0.0f ) );
-    test_equal( 0xE0000003u, gui_fx_pack_pulse( 0.0f, 0.0f, 0.0f, 1.0f ) );
+    test_equal( 0x0000FFF1u, gui_fx_pack_pulse( GUI_FX_RADIUS_MAX, 0.0f, 0.0f, 0.0f ) );
+    test_equal( 0x01FF0001u, gui_fx_pack_pulse( 0.0f, GUI_FX_FEATHER_MAX, 0.0f, 0.0f ) );
+    test_equal( 0x1E000001u, gui_fx_pack_pulse( 0.0f, 0.0f, GUI_FX_RATE_MAX, 0.0f ) );
+    test_equal( 0xE0000001u, gui_fx_pack_pulse( 0.0f, 0.0f, 0.0f, 1.0f ) );
 
-    test_equal( 0xFFFFFFF3u, gui_fx_pack_pulse( 9999.0f, 9999.0f, 9999.0f, 9999.0f ) );
+    test_equal( 0xFFFFFFF1u, gui_fx_pack_pulse( 9999.0f, 9999.0f, 9999.0f, 9999.0f ) );
 
-    /* Radius and feather sit where the BOX modes put them -- the fragment decodes them with the
-       same two shifts, so a PULSE that moved them would decode as a differently-shaped box. */
+    /* Radius and feather sit where a plain fill puts them -- the fragment decodes them with the
+       same two shifts, so a pulse that moved them would decode as a differently-shaped box. */
     u32 pulse = gui_fx_pack_pulse( 10.0f, 2.0f, 0.0f, 0.0f );
     u32 box   = gui_fx_pack( GUI_FX_BOX, 10.0f, 2.0f, 0.0f );
     test_equal( ( box >> 4 ) & 0xFFFu, ( pulse >> 4 ) & 0xFFFu );
@@ -292,8 +297,8 @@ test_fx_mode_nibble( void )
        low nibble first.  A packer whose parameters reached bit 0..3 would decode as a
        different SHAPE -- the one failure here that changes everything downstream. */
     test_equal( GUI_FX_BOX,       gui_fx_pack( GUI_FX_BOX, 9999.0f, 9999.0f, 9999.0f ) & 0xFu );
-    test_equal( GUI_FX_RING,      gui_fx_pack( GUI_FX_RING, 9999.0f, 9999.0f, 9999.0f ) & 0xFu );
-    test_equal( GUI_FX_PULSE,     gui_fx_pack_pulse( 9999.0f, 9999.0f, 9999.0f, 9999.0f ) & 0xFu );
+    test_equal( GUI_FX_SEG,       gui_fx_pack( GUI_FX_SEG, 9999.0f, 9999.0f, 9999.0f ) & 0xFu );
+    test_equal( GUI_FX_BOX,       gui_fx_pack_pulse( 9999.0f, 9999.0f, 9999.0f, 9999.0f ) & 0xFu );
     test_equal( GUI_FX_TILE_U,    gui_fx_pack_tile_u( 1.0e12f ) & 0xFu );
     test_equal( GUI_FX_TEXT_EDGE, gui_fx_pack_text_edge( 9999.0f, 0xFFFFFFFFu ) & 0xFu );
     test_equal( GUI_FX_ARC,       gui_fx_pack_arc( GUI_FX_ARC, 9999.0f, 9999.0f, 9999.0f ) & 0xFu );

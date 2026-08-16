@@ -731,10 +731,11 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 
     A surface with nothing to paint inside carves its interior out, emitting an L (two quads) per
     quadrant around the hole instead of one quad -- where the 8/32 upper bound below comes from.
-    Two modes qualify.  A RING paints a band only `border` px wide, so rasterizing the whole inside
-    of a window frame at zero coverage is a real cost on a large panel.  A SKIRT paints nothing at
-    all inside its boundary: the elevation shadow under floating chrome is a band of quads around
-    the frame rather than a plate spanning the window, roughly a tenth of the area.
+    Three ops qualify.  BAND paints a border only `border` px wide, so rasterizing the whole inside
+    of a window frame at zero coverage is a real cost on a large panel.  CUT paints nothing at all
+    inside its boundary: the elevation shadow under floating chrome is a band of quads around the
+    frame rather than a plate spanning the window, roughly a tenth of the area.  INSET paints
+    `feather` px in from the boundary, so an inner shadow on a full panel costs the rim.
 
     Every SDF surface samples the same atlas as everything else and carries its mode per VERTEX,
     so it merges into whatever GPU command is already open: a soft shadow behind a panel costs
@@ -744,14 +745,16 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 /* Emit one SDF surface.  `r4` is the corner radius PER QUADRANT, in the tessellation order
    top-left, top-right, bottom-right, bottom-left (tess_fx_box passes four copies of one radius;
    only tess_round_rect_ex passes four different ones), and `feather` the total width of the falloff
-   band straddling the boundary (0 = hard edge); both are read by every mode.  The remaining
-   parameters are MODE-SPECIFIC, mirroring the fx word's own re-partitioning -- `border` is the band
-   width for GUI_FX_RING, `rate`/`depth` the wave for GUI_FX_PULSE, and each mode ignores the
-   other's.  UVs span the AUTHORED box and are clamped over the grown skirt, so a textured rounded
-   quad cannot bleed into its atlas neighbour where the coverage has already faded to nothing.
+   band straddling the boundary (0 = hard edge); both are always read.  The remaining parameters are
+   OP-SPECIFIC, mirroring the fx word's own re-partitioning -- `border` is the border width under
+   GUI_TEX_OP_BAND, `rate`/`depth` the wave under GUI_TEX_OP_PULSE, and each ignores the other's.
+   UVs span the AUTHORED box and are clamped over the grown skirt, so a textured rounded quad cannot
+   bleed into its atlas neighbour where the coverage has already faded to nothing.
 
-   GUI_FX_SKIRT takes no parameter of its own: it is GUI_FX_BOX with the interior cut, so it reads
-   radius and feather exactly as a box does and differs only in the hole below and one line in the
+   The surface is always GUI_FX_BOX; which of the four ops it carries comes in on ambient state
+   (s_tess.cur_tex_bits), set by the caller BEFORE this runs because the interior hole is sized from
+   it.  GUI_TEX_OP_CUT and GUI_TEX_OP_INSET take no parameter of their own -- they read radius and
+   feather exactly as a plain fill does and differ only in the hole below and one line in the
    fragment.
 
    Per-corner radii are nearly free HERE and nowhere else, which is the whole reason this generalized
@@ -868,7 +871,6 @@ tess_grad_col( const tess_grad_t* g, f32 lx, f32 ly )
 static void
 tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
                   f32 feather, f32 border, f32 rate, f32 depth, f32 rot,
-                  gui_fx_mode_t mode,
                   f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr,
                   const tess_grad_t* grad )
 {
@@ -905,7 +907,8 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     if ( feather < 0.0f ) feather = 0.0f;
     if ( feather > GUI_FX_FEATHER_MAX ) feather = GUI_FX_FEATHER_MAX;
     if ( border  < 0.0f ) border  = 0.0f;
-    if ( mode == GUI_FX_RING && border > GUI_FX_BORDER_MAX ) border = GUI_FX_BORDER_MAX;
+    if ( ( s_tess.cur_tex_bits & GUI_TEX_OP_BAND ) && border > GUI_FX_BORDER_MAX )
+        border = GUI_FX_BORDER_MAX;
     if ( rate    < 0.0f ) rate  = 0.0f;
     if ( rate    > GUI_FX_RATE_MAX ) rate = GUI_FX_RATE_MAX;
     if ( depth   < 0.0f ) depth = 0.0f;
@@ -949,20 +952,26 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     if ( rot != 0.0f ) { rcs = cosf( rot ); rsn = sinf( rot ); }
 
     /* `reach`: how deep past the boundary this surface paints nothing, so the geometry need not
-       reach there either.  A RING stops at the far side of its band; a SKIRT stops at the boundary
-       itself, since its coverage is cut to zero inside (a pixel of slack keeps the hole clear of
-       the boundary the rasterizer resolves).  Both are properties of the MODE -- neither makes any
-       claim about what is drawn over the shape, so neither can be wrong about it.
+       reach there either.  A BAND stops at the far side of its border; a CUT stops at the boundary
+       itself, since its coverage is zero inside (a pixel of slack keeps the hole clear of the
+       boundary the rasterizer resolves); an INSET paints inward exactly `feather` px.  All three
+       are properties of the surface itself -- none makes any claim about what is drawn OVER it, so
+       none can be wrong about it.
 
-       The INSET op is read from ambient state rather than taken as a parameter because it is
-       already there: the op rides the tex word, which this function does not otherwise touch, and
-       threading a nineteenth argument through both entry points to restate it would be the only
-       alternative.  An inset paints from the boundary inward exactly `feather` px, so that IS its
-       reach -- the same relationship the ring's band has to its own. */
-    f32 reach = ( mode == GUI_FX_RING  ) ? border + feather * 0.5f
-              : ( mode == GUI_FX_SKIRT ) ? 1.0f
-              : ( s_tess.cur_tex_bits & GUI_TEX_OP_INSET ) ? feather
-                                         : 0.0f;
+       The ops are read from ambient state rather than taken as parameters because they are already
+       there: they ride the tex word, which this function does not otherwise touch, and threading
+       them back in as arguments to restate what the vertices will carry anyway would be the only
+       alternative.
+
+       Two ops on one surface take the WIDEST reach, which is the conservative direction and not the
+       exact one: reach only sizes the interior hole, and a larger reach carves a SMALLER hole (the
+       eroded radius shrinks with it).  Erring large costs interior fragments nobody sees; erring
+       small would notch the frame, which is visible.  Each op alone still lands on exactly the
+       number it had as a mode. */
+    f32 reach = 0.0f;
+    if ( s_tess.cur_tex_bits & GUI_TEX_OP_BAND )  reach = border + feather * 0.5f;
+    if ( s_tess.cur_tex_bits & GUI_TEX_OP_INSET ) reach = ( feather > reach ) ? feather : reach;
+    if ( s_tess.cur_tex_bits & GUI_TEX_OP_CUT )   reach = ( reach > 1.0f )    ? reach : 1.0f;
 
     /* The per-quadrant coverage, in quadrant-local |p| space: one box normally, two forming an L
        when there is an interior worth skipping.
@@ -1018,10 +1027,13 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
            corner matches (tess_fx_box, the overwhelmingly common case) all four words are identical
            and this is exactly what a single stamp produced. */
         f32 kx = hx - rq[ q ], ky = hy - rq[ q ];
-        u32 fx = ( mode == GUI_FX_PULSE )
+        /* Both packers write GUI_FX_BOX -- they differ only in what the top 7 bits mean, which is
+           the one field PULSE and BAND cannot both have (gui.h).  Everything else the surface does
+           rides the op band, so the mode is a constant here. */
+        u32 fx = ( s_tess.cur_tex_bits & GUI_TEX_OP_PULSE )
                      ? gui_fx_pack_pulse( rq[ q ], feather, rate, depth )
-                     : gui_fx_pack( mode, rq[ q ], feather,
-                                    ( mode == GUI_FX_RING ) ? border : 0.0f );
+                     : gui_fx_pack( GUI_FX_BOX, rq[ q ], feather,
+                                    ( s_tess.cur_tex_bits & GUI_TEX_OP_BAND ) ? border : 0.0f );
 
         for ( u32 k = 0; k < nbox; ++k, ++n )
         {
@@ -1067,11 +1079,10 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
    of a per-corner one, and it keeps a single tessellator for both. */
 static void
 tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rate, f32 depth,
-             f32 rot, gui_fx_mode_t mode,
-             f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
+             f32 rot, f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
     const f32 r4[ 4 ] = { r, r, r, r };
-    tess_fx_box_core( x, y, w, h, r4, feather, border, rate, depth, rot, mode,
+    tess_fx_box_core( x, y, w, h, r4, feather, border, rate, depth, rot,
                       u0, v0, u1, v1, tex_idx, abgr, NULL );
 }
 
@@ -1116,7 +1127,7 @@ static void
 tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
 {
     tess_fx_box( pcx - r, pcy - r, r * 2.0f, r * 2.0f,
-                 r, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
+                 r, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f,
                  0, 0, 1, 1, 0, abgr );
 }
 
@@ -1153,7 +1164,7 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
         tess_grad_init( &grad, abgr, col_b, grad_ang, w, h );
 
     tess_fx_box_core( x, y, w, h, r4, ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
-                      0.0f, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
+                      0.0f, 0.0f, 0.0f, 0.0f,
                       0, 0, 1, 1, 0, abgr, ( col_b != abgr ) ? &grad : NULL );
 }
 
@@ -1213,8 +1224,9 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     if ( sweep > TESS_TAU ) { sweep = TESS_TAU; a1 = a0 + TESS_TAU; }
 
     /* A full turn is not a sector, and the exact primitives are cheaper: a PIE is a disc, and an
-       ARC is a closed ring whose interior GUI_FX_RING carves away -- worth real fragments on a
-       large one.  The ring is only taken when the band FITS ITS BORDER FIELD, which caps lower
+       ARC is a closed ring, which is a BOX under GUI_TEX_OP_BAND whose interior the band carves
+       away -- worth real fragments on a large one.  The ring is only taken when the band FITS ITS
+       BORDER FIELD, which caps lower
        (GUI_FX_BORDER_MAX) than the tube field a sector carries; a thicker band falls through rather
        than silently drawing thinner.  Falling through is correct, not a fallback: at aperture pi the
        sector formula is the exact full annulus, it merely rasterizes the hole as well.
@@ -1234,8 +1246,9 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
             /* The same shape draw_circle's unfilled path asks for, measured from the OUTER boundary
                inward -- so the band still straddles r. */
             f32 outer = r + thickness * 0.5f;
+            s_tess.cur_tex_bits |= GUI_TEX_OP_BAND;
             tess_fx_box( pcx - outer, pcy - outer, outer * 2.0f, outer * 2.0f,
-                         outer, TESS_FX_AA, thickness, 0.0f, 0.0f, 0.0f, GUI_FX_RING,
+                         outer, TESS_FX_AA, thickness, 0.0f, 0.0f, 0.0f,
                          0, 0, 1, 1, 0, abgr );
             return;
         }
@@ -1871,7 +1884,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_RECT_FILLED:
                 if ( c->rect.rounding > 0.0f )
                     tess_fx_box( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
-                                 c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
+                                 c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f,
                                  c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
                                  c->rect.tex_idx, c->rect.abgr );
                 else
@@ -1880,15 +1893,18 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                                       c->rect.tex_idx, c->rect.abgr );
                 break;
 
-            /* RING measures from the OUTER boundary inward, matching the square path's INSIDE
-               band (and the closed AA stroke this replaced). */
+            /* The band measures from the OUTER boundary inward, matching the square path's
+               INSIDE band (and the closed AA stroke this replaced). */
             case GUI_CMD_RECT_OUTLINE:
                 if ( c->rect_outline.rounding > 0.0f )
+                {
+                    s_tess.cur_tex_bits |= GUI_TEX_OP_BAND;
                     tess_fx_box( c->rect_outline.x, c->rect_outline.y,
                                  c->rect_outline.w, c->rect_outline.h,
                                  c->rect_outline.rounding, TESS_FX_AA, c->rect_outline.t,
-                                 0.0f, 0.0f, 0.0f, GUI_FX_RING,
+                                 0.0f, 0.0f, 0.0f,
                                  0, 0, 1, 1, 0, c->rect_outline.abgr );
+                }
                 else
                     tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
                                        c->rect_outline.w, c->rect_outline.h,
@@ -1899,20 +1915,19 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                stacked rects pretending to be a gaussian is the exact same falloff the corners
                use, only spread out), a pulse the shader-clock word -- geometrically a plain
                rounded fill whose vertices are correct for every frame it runs, so the retained
-               slot never invalidates and the breathing costs no re-tessellation.  rate > 0 IS
-               the mode: a still box and a zero-rate pulse are the same shape to the fragment. */
+               slot never invalidates and the breathing costs no re-tessellation. */
             case GUI_CMD_FX_BOX:
-                /* The INSET is a plain BOX whose falloff the op turns inward, so it names no mode
-                   of its own -- which is the point of an op band.  Set before the tessellator runs
-                   because the interior hole is sized from it (see `reach`). */
-                if ( c->fx_box.variant == 2u )
-                    s_tess.cur_tex_bits |= GUI_TEX_OP_INSET;
+                /* All four of these are the one GUI_FX_BOX mode; the variant and the rate pick
+                   which ops ride the tex word.  They are INDEPENDENT flags rather than a choice of
+                   one, which is what lets a cut or inset surface breathe -- as a mode number the
+                   pulse had to displace whichever shape it was applied to.  Set before the
+                   tessellator runs because the interior hole is sized from them (see `reach`). */
+                if ( c->fx_box.variant == 1u )   s_tess.cur_tex_bits |= GUI_TEX_OP_CUT;
+                if ( c->fx_box.variant == 2u )   s_tess.cur_tex_bits |= GUI_TEX_OP_INSET;
+                if ( c->fx_box.rate    > 0.0f )  s_tess.cur_tex_bits |= GUI_TEX_OP_PULSE;
                 tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
                              c->fx_box.rounding, c->fx_box.feather, 0.0f,
                              c->fx_box.rate, c->fx_box.depth, c->fx_box.rot,
-                             ( c->fx_box.rate > 0.0f )    ? GUI_FX_PULSE
-                           : ( c->fx_box.variant == 1u ) ? GUI_FX_SKIRT
-                                                         : GUI_FX_BOX,
                              0, 0, 1, 1, 0, c->fx_box.abgr );
                 break;
 

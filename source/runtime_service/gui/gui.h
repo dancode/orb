@@ -5,7 +5,6 @@
     runtime_service/gui/gui.h -- gui module types (the public type header).
 
     This file has no functions, just definitions -- the shape of every "noun" the GUI uses.
-    For the deep dive on why it is built this way, see GUI_ARCHITECTURE.md in this directory.
 
     GUI is ORB's in-house immediate-mode 2D interaction renderer, built from two servers
     that never see each other:
@@ -1702,8 +1701,9 @@ typedef enum
 {
     GUI_FX_NONE      = 0,  /* no effect -- (ex, ey) and the parameters are ignored (the default) */
     GUI_FX_BOX       = 1,  /* filled rounded box: coverage 1 inside the boundary, feathered across it */
-    GUI_FX_RING      = 2,  /* the same boundary as a BAND of `border` px lying INSIDE it             */
-    GUI_FX_PULSE     = 3,  /* a BOX whose alpha breathes on pc.time -- the band's first clock reader */
+
+    /* 2 and 3 are unnamed.  They were RING and PULSE, which are a BOX plus a post-op rather than
+       shapes of their own -- see GUI_TEX_OP_BAND / GUI_TEX_OP_PULSE, which is where they live now. */
 
     /* The two modes that are not SHAPES.  Both leave coverage at 1 and act somewhere else in the
        pipeline -- proof the word is really "what the fragment does", not "which SDF to evaluate". */
@@ -1738,15 +1738,8 @@ typedef enum
                               The vertex colour draws the LINES only -- layer it over any fill.
                               Phase rides the uv word as a per-axis fraction of the cell        */
 
-    /* A BOX with its interior cut away at the boundary: same radius, same feather, same outward
-       falloff, but coverage is exactly 0 anywhere inside the shape.  The elevation shadow under
-       floating chrome, which must not tint what it sits behind -- a translucent panel shows the
-       ground through it, not a dark plate.  The cut leaves a step at the boundary (half coverage
-       outside, none inside) and that is the shape, not an artifact: it is where the object the
-       shadow belongs to begins.  Emitting nothing inside also makes the interior hole in
-       tess_fx_box_core unconditional, so a skirt is a band of quads around the frame at any size,
-       with no claim about what is drawn over it. */
-    GUI_FX_SKIRT     = 13,
+    /* 13 is unnamed.  It was SKIRT -- a BOX with its interior cut away -- which is now
+       GUI_TEX_OP_CUT, the exact mirror of the inset op it used to sit opposite. */
 
 } gui_fx_mode_t;
 
@@ -1840,7 +1833,8 @@ gui_fx_fixed( f32 v, f32 scale, u32 max_q )
 }
 
 /* mode | radius (1/8 px) | feather (1/4 px) | border (1/8 px).  Each field saturates at its own
-   maximum (GUI_FX_*_MAX above) rather than wrapping -- see gui_fx_fixed. */
+   maximum (GUI_FX_*_MAX above) rather than wrapping -- see gui_fx_fixed.  `border` is read only
+   under GUI_TEX_OP_BAND; every other box primitive packs 0 there. */
 static inline u32
 gui_fx_pack( gui_fx_mode_t mode, f32 radius, f32 feather, f32 border )
 {
@@ -1850,14 +1844,16 @@ gui_fx_pack( gui_fx_mode_t mode, f32 radius, f32 feather, f32 border )
     return ( (u32)mode & 0xFu ) | ( r << 4 ) | ( f << 16 ) | ( b << 25 );
 }
 
-/* PULSE re-partitions the word rather than asking for a wider one: the 28 parameter bits are FULL,
-   so a mode that wants a new field spends the one it does not use.  Radius and feather keep their
-   positions -- the shape is a BOX and the fragment decodes them with the same two shifts -- and the
-   7 bits RING spends on `border` become rate + depth.  This is the pattern any future mode follows.
+/* The word a BOX carrying GUI_TEX_OP_PULSE writes.  It re-partitions the same 28 bits rather than
+   asking for a wider word: radius and feather keep their positions -- the shape is still a BOX and
+   the fragment decodes them with the same two shifts -- and the top 7 bits, which are `border`
+   under GUI_TEX_OP_BAND, become rate + depth instead.
      rate  -- 4 bits at 1/4 Hz.  Quantized to quarters ON PURPOSE: rate * GUI_FX_TIME_WRAP is then
               always a whole number of cycles, so every pulse crosses the clock wrap seamlessly.
      depth -- 3 bits over 0..1.  The fraction of alpha the pulse removes at its trough; 0 is a
-              still box, 1 fades fully out and back. */
+              still box, 1 fades fully out and back.
+   Sharing those 7 bits is why PULSE and BAND are the one op pair that cannot combine: the word has
+   room for a band width or a wave, not both.  Every other pairing composes. */
 #define GUI_FX_RATE_MAX      3.75f       /* 4 bits at 1/4 Hz */
 #define GUI_FX_DEPTH_STEPS   7.0f        /* 3 bits over 0..1 */
 
@@ -1868,7 +1864,7 @@ gui_fx_pack_pulse( f32 radius, f32 feather, f32 rate, f32 depth )
     u32 f  = gui_fx_fixed( feather, 4.0f, 0x1FFu );
     u32 hz = gui_fx_fixed( rate,    4.0f, 0xFu   );
     u32 dp = gui_fx_fixed( depth, GUI_FX_DEPTH_STEPS, 0x7u );
-    return (u32)GUI_FX_PULSE | ( r << 4 ) | ( f << 16 ) | ( hz << 25 ) | ( dp << 29 );
+    return (u32)GUI_FX_BOX | ( r << 4 ) | ( f << 16 ) | ( hz << 25 ) | ( dp << 29 );
 }
 
 /* TILE_U spends the whole parameter field on one number: how many times the source U span repeats
@@ -2156,7 +2152,8 @@ typedef enum
     GUI_CMD_RECT_FILLED,     // filled rectangle or textured quad (glyph); rounding > 0 makes it
                              //   an SDF surface -- a filled DISC is this command at radius ==
                              //   half-extent (draw_push_circle_filled), not a type of its own
-    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads (GUI_FX_RING when rounded)
+    GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads (a BOX under GUI_TEX_OP_BAND
+                             //   when rounded)
     GUI_CMD_TRIANGLE,        // solid triangle
     GUI_CMD_TEXT,            // glyph run from the font atlas
     GUI_CMD_TEXT_XF,         // glyph run under a uniform scale + a rotation about its origin
@@ -2209,7 +2206,7 @@ typedef enum
 
    FOUR bits, matching GUI_FX_MODE_BITS -- the two mode fields answer the same kind of question and
    grow by the same rule.  The bits come out of the INDEX half, which never needed them: the RHI's
-   bindless array is 2048 entries (11 bits) and the low 14 still hold 16K.  This word is the shader
+   bindless array is 2048 entries (11 bits) and the low 12 still hold 4K.  This word is the shader
    contract: the shifts below must equal TEX_MODE_SHIFT / TEX_CLIP_SHIFT in gui.frag / gui.ps.hlsl
    (and the paraphrase in gui_shader.h) -- change one, change all, resplice the SPIR-V.
 
@@ -2250,27 +2247,54 @@ typedef enum
 #define GUI_TEX_SELF_SHIFT  16u
 #define GUI_TEX_SELF_BIT    ( 1u << GUI_TEX_SELF_SHIFT )
 
-/* THE OP BAND -- bits 14..15, post-ops that MODIFY whatever shape the effect word named.
+/* THE OP BAND -- bits 12..15, post-ops that MODIFY whatever shape the effect word named.
 
    They live here rather than in the effect word for one reason, and it is the reason the mode
    nibble kept running out: every fx mode re-partitions its own 28 bits differently, so there is no
-   bit position that means the same thing across modes.  BOX leaves 25..31 free, PULSE spends them
-   on rate + depth, ARC spends them on the aperture -- a flag placed there is a flag that works for
-   some shapes and corrupts others.  The tex word has no such partitioning: these bits are free
-   whatever the shape is, so an op composes with any of them and with each other.
+   bit position that means the same thing across modes.  BOX leaves 25..31 free, a pulse spends
+   them on rate + depth, ARC spends them on the aperture -- a flag placed there is a flag that
+   works for some shapes and corrupts others.  The tex word has no such partitioning: these bits
+   are free whatever the shape is, so an op composes with any of them and with each other.
 
    An op is not a shape and must never become one.  If a thing needs its own field, its own
    parameters, or its own branch in the sector decode, it is a MODE; an op is a modifier on a
    coverage the fragment already computed.  Ops apply to the box-family modes only -- the sector
-   and pattern modes return their coverage before the shared box decode the ops act on. */
-#define GUI_TEX_OP_SHIFT    14u
-#define GUI_TEX_OP_MASK     ( 0x3u << GUI_TEX_OP_SHIFT )
+   and pattern modes return their coverage before the shared box decode the ops act on -- which
+   means BOX and SEG both take all four, and a stroked capsule costs no mode of its own.
+
+   The four bits come out of the INDEX half, which has them to spare: the RHI's bindless array is
+   2048 entries (rhi/vk_state.c, VK_MAX_TEXTURES) and 12 bits still hold 4096.  Every op below is
+   also a coverage modifier, never a colour one -- a colour post-op has to reach main() after the
+   sampling model is resolved, which is a different seam entirely (GUI_FX_TEXT_EDGE). */
+#define GUI_TEX_OP_SHIFT    12u
+#define GUI_TEX_OP_MASK     ( 0xFu << GUI_TEX_OP_SHIFT )
+
+/* Bend the field into a BAND of `border` px lying inside the boundary, instead of filling it: the
+   rounded outline every panel and widget frame is drawn with.  A band is derived from ONE
+   boundary, so a rect whose four corners want different radii is not a shape this can describe. */
+#define GUI_TEX_OP_BAND     ( 1u << 12 )
+
+/* Cut the interior away at the boundary: same radius, same feather, same outward falloff, but
+   coverage is exactly 0 anywhere inside the shape.  The elevation shadow under floating chrome,
+   which must not tint what it sits behind -- a translucent panel shows the ground through it, not
+   a dark plate.  The cut leaves a step at the boundary (half coverage outside, none inside) and
+   that is the shape, not an artifact: it is where the object the shadow belongs to begins.
+   Emitting nothing inside also makes the interior hole in tess_fx_box_core unconditional, so a cut
+   surface is a band of quads around the frame at any size, with no claim about what covers it. */
+#define GUI_TEX_OP_CUT      ( 1u << 13 )
 
 /* Run the falloff INWARD from the boundary instead of across it: full strength against the edge,
-   gone `feather` px in, nothing outside.  The inner shadow / pressed well -- and the SKIRT's exact
-   mirror, which is why it is an op and SKIRT is not: a skirt keeps the outward half of the falloff
-   and cuts the core, an inset keeps an inward falloff and cuts everything past the edge. */
+   gone `feather` px in, nothing outside.  The inner shadow / pressed well -- and OP_CUT's exact
+   mirror: a cut keeps the outward half of the falloff and drops the core, an inset keeps an inward
+   falloff and drops everything past the edge. */
 #define GUI_TEX_OP_INSET    ( 1u << 14 )
+
+/* Breathe the coverage on pc.time -- the band's only clock reader.  rate and depth replace the
+   `border` field in the effect word (gui_fx_pack_pulse), which is what makes this the one op that
+   cannot combine with OP_BAND; it composes with the other two freely.  Geometrically it is a still
+   box, so the vertices stay correct for every frame it runs and the retained slot never
+   invalidates -- the breathing costs no re-tessellation and no batch split. */
+#define GUI_TEX_OP_PULSE    ( 1u << 15 )
 
 typedef enum
 {
@@ -2382,8 +2406,9 @@ typedef struct
            geometry reaches feather/2 past the box on every side) and the pulsing box (`rate` in
            Hz + `depth` 0..1, alpha breathing on pc.time in the FRAGMENT -- geometry never
            changes, so the retained slot stays valid and nothing re-tessellates while it runs;
-           the frame must still be PRESENTED, see GUI_FX_TIME_WRAP).  The mode is derived at
-           tessellation: rate > 0 is a PULSE, else a BOX.  Its own member rather than
+           the frame must still be PRESENTED, see GUI_FX_TIME_WRAP).  Every one of these is the
+           same GUI_FX_BOX mode; what differs is the op the tessellator stamps.  Its own member
+           rather than
            feather/rate/depth bolted onto rect: rect is the hot variant every fill goes through,
            and widening it would grow the whole command pool for fields almost nothing sets.
            `rot` (radians, screen space, about the box CENTRE) turns the whole surface: the fx
@@ -2392,13 +2417,14 @@ typedef struct
            every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap.
            `variant` picks which of the three fills this is, all sharing the one geometry:
              0 BOX    -- the filled surface: a glow or halo MEANT to be seen through its subject.
-             1 SKIRT  -- the interior cut away (GUI_FX_SKIRT), same outward falloff, painting
+             1 SKIRT  -- the interior cut away (GUI_TEX_OP_CUT), same outward falloff, painting
                          nothing inside the boundary.  What a DROP shadow wants: the core of a
                          filled one is only ever seen through whatever it sits behind, which is a
                          translucent panel dimming itself.
              2 INSET  -- the falloff turned INWARD (GUI_TEX_OP_INSET), painting from the boundary
                          `feather` px in and nothing outside.  The inner shadow / pressed well.
-           A non-zero `rate` overrides all three with the PULSE, which is a BOX that breathes. */
+           A non-zero `rate` adds GUI_TEX_OP_PULSE on top of whichever variant is set, so a cut or
+           inset surface can breathe as readily as a filled one. */
         struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr, variant; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME four quadrant quads a uniform rounded rect emits; the one thing that differs is
@@ -2408,9 +2434,9 @@ typedef struct
            stamps (see tess_fx_box_core).
            The field order IS the quadrant order the tessellator walks (top-left, top-right,
            bottom-right, bottom-left), so the two cannot drift apart.
-           Filled and solid-colour only.  The stroked form stays a perimeter polyline: GUI_FX_RING
-           derives its interior hole from a single radius, and generalizing that is not worth it for
-           a shape whose outline the polyline already draws correctly.
+           Filled and solid-colour only.  The stroked form stays a perimeter polyline:
+           GUI_TEX_OP_BAND derives its interior hole from a single radius, and generalizing that is
+           not worth it for a shape whose outline the polyline already draws correctly.
            `feather` is the falloff band exactly as fx_box carries it -- 0 gets the standard 1 px
            AA, wider makes the per-corner SOFT SHADOW (the tab / asymmetric-card drop shadow); the
            quadrants agree at any feather (tess_fx_box_core's centre-line proof).

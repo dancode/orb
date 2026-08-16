@@ -27,14 +27,18 @@ layout(location = 3) flat in uint v_fx;
 layout(location = 4) flat in uint v_tex;   // sampling model (top 4 bits) | bindless slot
 layout(location = 0) out vec4 out_color;
 
-// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_CLIP_SHIFT / GUI_TEX_SELF_BIT in gui.h -- keep the three
+// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_CLIP_SHIFT / GUI_TEX_SELF_BIT / the op band in gui.h --
+// keep the three
 // files in step.
 #define TEX_MODE_SHIFT  28u
 #define TEX_CLIP_SHIFT  17u
 #define TEX_CLIP_MASK   0x7FFu
 #define TEX_SELF_BIT    0x00010000u
+#define TEX_OP_BAND     0x00001000u
+#define TEX_OP_CUT      0x00002000u
 #define TEX_OP_INSET    0x00004000u
-#define TEX_INDEX_MASK  0x00003FFFu
+#define TEX_OP_PULSE    0x00008000u
+#define TEX_INDEX_MASK  0x00000FFFu
 
 // v_color arrives ALREADY LINEAR -- the vertex stage decodes it (see gui.vert), because it is a
 // per-vertex constant and decoding it per fragment spent three pow() on every pixel of the UI.
@@ -53,9 +57,12 @@ vec3 srgb_to_linear( vec3 c )
 // The effect band (gui.h): coverage of the shape this fragment's vertex named, 1.0 when it named
 // none.  v_fx_coord is |p| - c, so the corner arc the CPU used to tessellate is simply where both
 // components go positive at once.
-//   mode 1 BOX   -- fill inside the boundary
-//   mode 2 RING  -- the band of `border` px lying inside the boundary
-//   mode 3 PULSE -- BOX, alpha breathing on pc.time (rate + depth replace border in the word)
+//   mode 1 BOX -- fill inside the boundary
+//   mode 6 SEG -- a capsule (below)
+// Those are the two shapes that reach the shared decode at the bottom, and the OP BAND in the tex
+// word modifies whichever one arrived: BAND bends the field into a border, CUT and INSET cut the
+// coverage against the boundary in opposite directions, PULSE breathes it on pc.time.  Every op
+// therefore applies to both shapes -- a stroked capsule needs no mode of its own.
 // feather is the total width of the transition, straddling the boundary, so coverage is 0.5
 // exactly on it; feather 0 means a hard edge (no antialiasing).
 //
@@ -194,33 +201,38 @@ float fx_coverage()
     else
     {
         d = min( max( q.x, q.y ), 0.0 ) + length( max( q, vec2( 0.0 ) ) ) - radius;
-        if ( mode == 2u )
-            d = abs( d + border * 0.5 ) - border * 0.5;
     }
+
+    // GUI_TEX_OP_BAND -- the band of `border` px lying inside the boundary: the rounded outline.
+    // The one op that bends `d` rather than the coverage, because a band IS a different field and
+    // everything downstream should measure from its edges, not the original boundary's.
+    if ( ( v_tex & TEX_OP_BAND ) != 0u )
+        d = abs( d + border * 0.5 ) - border * 0.5;
 
     float cov = ( feather <= 0.0 ) ? ( d <= 0.0 ? 1.0 : 0.0 )
                                    : clamp( 0.5 - d / feather, 0.0, 1.0 );
 
-    // mode 13 SKIRT -- the BOX with its interior cut away.  The outward half of the falloff is
-    // untouched, so a skirt and a box are pixel-identical everywhere the box was visible; what
-    // goes is the saturated core, which a drop shadow only ever showed through whatever it sits
-    // behind.  Taken here rather than folded into `d` because the cut is on COVERAGE: bending the
-    // distance would move the boundary the outward falloff is measured from.
-    if ( mode == 13u && d <= 0.0 )
+    // GUI_TEX_OP_CUT -- the interior cut away.  The outward half of the falloff is untouched, so a
+    // cut surface and a filled one are pixel-identical everywhere the fill was visible; what goes
+    // is the saturated core, which a drop shadow only ever showed through whatever it sits behind.
+    // Taken here rather than folded into `d` because the cut is on COVERAGE: bending the distance
+    // would move the boundary the outward falloff is measured from.
+    if ( ( v_tex & TEX_OP_CUT ) != 0u && d <= 0.0 )
         cov = 0.0;
 
     // GUI_TEX_OP_INSET -- the inner shadow.  The falloff is re-measured INWARD from the boundary:
     // full strength against the edge, gone `feather` px in, and nothing outside it.  Taken on
-    // COVERAGE for the same reason the skirt's cut is (bending d would move the boundary both
+    // COVERAGE for the same reason the cut is (bending d would move the boundary both
     // terms are measured from), and the second factor is the ordinary 1 px edge band, so the outer
     // rim antialiases exactly as the filled box's does rather than stair-stepping.
     if ( ( v_tex & TEX_OP_INSET ) != 0u )
         cov = clamp( 1.0 + d / max( feather, 1e-4 ), 0.0, 1.0 ) * clamp( 0.5 - d, 0.0, 1.0 );
 
-    // PULSE reuses the same two shifts for radius/feather and reads the top 7 bits as rate+depth.
-    // The wave starts at its PEAK (cos 0 = 1 -> no attenuation), so a pulse fading in from nothing
-    // is never what the first frame shows.
-    if ( mode == 3u )
+    // GUI_TEX_OP_PULSE -- reuses the same two shifts for radius/feather and reads the top 7 bits
+    // as rate+depth, which is why it is the one op that cannot combine with BAND (those bits are
+    // `border` there).  The wave starts at its PEAK (cos 0 = 1 -> no attenuation), so a pulse
+    // fading in from nothing is never what the first frame shows.
+    if ( ( v_tex & TEX_OP_PULSE ) != 0u )
     {
         float rate  = float( ( v_fx >> 25 ) & 0xFu ) * 0.25;
         float depth = float( ( v_fx >> 29 ) & 0x7u ) / 7.0;

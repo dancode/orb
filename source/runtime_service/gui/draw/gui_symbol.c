@@ -239,7 +239,7 @@ round_rect_perimeter_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, gui_v
    quadrant quad already covers exactly one corner, so four radii cost four packed words and no
    extra geometry.  It used to fan the sampled perimeter into up to 62 separate TRIANGLE commands
    with a polygonal, unantialiased edge.  STROKED still walks the perimeter: an outline of four
-   different radii is not a shape GUI_FX_RING can describe (its band is derived from one), and the
+   different radii is not a shape GUI_TEX_OP_BAND can describe (its band is derived from one), and the
    closed antialiased polyline draws it correctly already. */
 void
 draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
@@ -287,7 +287,7 @@ draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness
        ring r = 100  256 verts / 1152 idx -> 32 / 48
 
    A ring is a rounded rect whose radius reached its half-extent, which is why it needs no shape of
-   its own: GUI_FX_RING already paints a band `border` px wide lying INSIDE the boundary.  Two
+   its own: GUI_TEX_OP_BAND already paints a band `border` px wide lying INSIDE the boundary.  Two
    details make it match what the polyline drew:
      - GUI_STROKE_CENTER centres the band ON radius r, so the band spans [r - t/2, r + t/2].  The
        SDF band hangs inside its boundary, so the boundary is r + t/2.

@@ -1200,7 +1200,7 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
     vertex it merges into whatever GPU batch is already open -- a shadow behind every floating
     panel costs no draw calls.
 
-    draw_push_skirt is the same surface with its interior cut away (GUI_FX_SKIRT) -- identical
+    draw_push_skirt is the same surface with its interior cut away (GUI_TEX_OP_CUT) -- identical
     outward falloff, nothing painted inside the boundary.  That is what a DROP shadow is: the core
     of a filled one can only ever be seen through the thing casting it, so on a translucent panel
     it reads as the panel dimming itself.  Cutting it also makes the tessellator's interior hole
@@ -1539,7 +1539,7 @@ draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 angle, bool stri
 void
 draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 {
-    /* Rounded outlines become GUI_FX_RING surfaces with an AA skirt past the authored rect --
+    /* Rounded outlines become GUI_TEX_OP_BAND surfaces with an AA skirt past the authored rect --
        the same 1 px cull slack the rounded fill takes (see draw_rect_cmd). */
     f32 rounding = draw_clamp_rounding( w, h );
     f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;

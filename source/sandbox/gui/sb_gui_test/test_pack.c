@@ -183,21 +183,35 @@ test_tex_word( void )
     test_equal( 0x0FFE0000u, GUI_TEX_CLIP_MASK );
     test_equal( 16u, GUI_TEX_SELF_SHIFT );
     test_equal( 0x00010000u, GUI_TEX_SELF_BIT );
-    test_equal( 14u, GUI_TEX_OP_SHIFT );
-    test_equal( 0x0000C000u, GUI_TEX_OP_MASK );
+    test_equal( 12u, GUI_TEX_OP_SHIFT );
+    test_equal( 0x0000F000u, GUI_TEX_OP_MASK );
+    test_equal( 0x00001000u, GUI_TEX_OP_BAND );
+    test_equal( 0x00002000u, GUI_TEX_OP_CUT );
     test_equal( 0x00004000u, GUI_TEX_OP_INSET );
+    test_equal( 0x00008000u, GUI_TEX_OP_PULSE );
 
-    /* Every field tiles the word without overlapping, and the slot half still holds 16K against
-       the RHI's 2048 -- the property that makes these bits free rather than borrowed. */
+    /* Every field tiles the word without overlapping, and the slot half still holds 4K against
+       the RHI's 2048 (rhi/vk_state.c, VK_MAX_TEXTURES) -- the property that makes the op band's
+       bits free rather than borrowed.  Stated as the smallest op bit so the assertion tightens
+       automatically if the band ever widens again. */
     test_equal( 0u, GUI_TEX_MODE_MASK & GUI_TEX_CLIP_MASK );
     test_equal( 0u, GUI_TEX_CLIP_MASK & GUI_TEX_SELF_BIT );
     test_equal( 0u, GUI_TEX_SELF_BIT  & GUI_TEX_OP_MASK  );
     test_equal( 0u, GUI_TEX_CLIP_MASK & GUI_TEX_OP_MASK  );
-    test_true ( 2048u < GUI_TEX_OP_INSET );
+    test_true ( 2048u < GUI_TEX_OP_BAND );
+
+    /* The four ops are distinct single bits, so they COMPOSE -- an op that shared a bit with
+       another would silently turn its neighbour on.  (BAND and PULSE still cannot combine, but
+       that is the effect word's border field being spent twice, not a tex-word collision.) */
+    test_equal( GUI_TEX_OP_MASK, GUI_TEX_OP_BAND | GUI_TEX_OP_CUT
+                               | GUI_TEX_OP_INSET | GUI_TEX_OP_PULSE );
 
     /* Every op must live inside the band it is declared in -- an op bit that drifted out of the
        mask would survive gui_tex_index and be read as part of the bindless slot. */
+    test_equal( GUI_TEX_OP_BAND,  GUI_TEX_OP_BAND  & GUI_TEX_OP_MASK );
+    test_equal( GUI_TEX_OP_CUT,   GUI_TEX_OP_CUT   & GUI_TEX_OP_MASK );
     test_equal( GUI_TEX_OP_INSET, GUI_TEX_OP_INSET & GUI_TEX_OP_MASK );
+    test_equal( GUI_TEX_OP_PULSE, GUI_TEX_OP_PULSE & GUI_TEX_OP_MASK );
 
     /* The mode field is the same width as the fx mode field -- they grow by the same rule. */
     test_true( (u32)GUI_TEX_SDF < ( 1u << GUI_FX_MODE_BITS ) );
@@ -227,7 +241,7 @@ test_tex_word( void )
     for ( u32 i = 0; i < ARRAY_COUNT( idxs ); ++i )
     {
         u32 word = GUI_TEX_MODE( GUI_TEX_COVERAGE ) | GUI_TEX_SELF_BIT
-                 | GUI_TEX_OP_INSET | idxs[ i ];
+                 | GUI_TEX_OP_MASK | idxs[ i ];
         test_equal( idxs[ i ], gui_tex_index( word ) );
         test_equal( GUI_TEX_COVERAGE, gui_tex_mode( word ) );
     }
