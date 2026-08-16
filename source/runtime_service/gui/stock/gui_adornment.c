@@ -13,7 +13,7 @@
       - the label paint (label_natural_w + gui_field_row): gui_field_row draws a labeled widget's
         own label per the ambient gui_field_t.  Its geometry half (field_geom_split) lives with
         the composer in flow -- the paint and the WIDGET_PAD self-measure are here;
-      - the system adornments (nav ring, focus border, drop ring, child box, resize highlight):
+      - the system adornments (nav ring, focus ring, drop ring, child box, resize highlight):
         the units below decide WHEN one paints, across their documented upward seams
         (core/gui_core.h, interact/gui_interact.h, flow/gui_flow.h), and the paint POLICY --
         color, thickness, extent -- lives here with the rest of the skin.
@@ -128,22 +128,131 @@ gui_field_row( const char* label )
     tier never reads a style value to adorn an item.
 ==============================================================================================*/
 
-/* NAV_RING (the focus-ring inset) is declared in core/gui_core.h beside this painter's upward
-   seam: the nav scroll chase (flow/gui_scroll.c) reads it to keep the ring clear of the view edge. */
+/* THE RING -- the one shape both keyboard signals wear.
 
-/* Keyboard-nav focus ring: an outline just outside the item rect, painted before the item's
-   own background so the fill leaves the border visible (nav_item_register invokes it across
-   the core unit's one paint seam -- see the upward-seam block in core/gui_core.h).
-   captured selects the ring color: plain nav-highlight (COL_MARK_HOT) vs. a value widget that has
-   captured the keyboard for Left/Right editing (COL_MARK_ACTIVE) -- this is the one adornment
-   every widget passes through, so it is the single place that makes "input captured" read as a
-   real, theme-wide-consistent state change instead of looking identical to plain nav focus. */
-void
-draw_nav_ring( gui_rect_t r, bool captured )
+   Two things can say "the keyboard is here": the nav cursor (ring_mark_nav) and text/value focus
+   (ring_mark_focus).  They are different states and carry different colours, but they are the same
+   geometry -- a FOCUS_RING-thick stroke ON the item rect, drawn inward from its edge.  Both are
+   declared in core/gui_core.h beside their seams.
+
+   It rests on the rect rather than standing off it because an item's rect is the only space it
+   owns.  A stroke offset outward has to be paid for in whitespace around every focusable thing:
+   it bleeds past a title bar whose buttons sit flush to the edge, it is clipped where a full-width
+   field meets a region edge or a table cell, and a dense editor panel has no gap to spare for it.
+   Inward, the geometry is unconditional -- the ring cannot be clipped by anything that was not
+   already clipping the item, and it costs no layout.  Widgets carry their own interior padding
+   (WIDGET_PAD), so the stroke lands on the frame and the outermost pixels of fill, not on
+   content.
+
+   Resting inward is only possible because a ring PAINTS LATE (rings_paint below).  Drawn where it
+   is decided -- mid-item, before the widget fills itself -- the fill would cover it, which is what
+   pushed the old cursor ring outside the rect to begin with. */
+
+/* The stroke itself.  `round` is the item's own corner radius; the ring shares it exactly, since
+   it lies on the same boundary.  The ambient radius is saved and restored -- the caller is
+   mid-paint with its own. */
+static void
+draw_ring( gui_rect_t r, f32 round, u32 col )
 {
-    draw_push_rect_outline( r.x - NAV_RING, r.y - NAV_RING,
-                            r.w + 2.0f * NAV_RING, r.h + 2.0f * NAV_RING,
-                            WIN_BORDER, captured ? COL_MARK_ACTIVE : COL_MARK_HOT );
+    f32 t = FOCUS_RING;
+    if ( t <= 0.0f ) return;   /* theme opt-out: no ring at any thickness */
+
+    f32 keep = draw_rounding();
+
+    draw_set_rounding( round );
+    draw_push_rect_outline( r.x, r.y, r.w, r.h, t, col );
+    draw_set_rounding( keep );
+}
+
+/* A ring is MARKED where it is decided and PAINTED at the end of the window body, not in place.
+
+   Both are decided mid-item -- before the widget has drawn itself, and before the neighbours,
+   region grounds and row fills that reach over its edge.  Emitted at the decision point, a ring on
+   the item rect goes under all of it and disappears.  So the decision only stamps the rect, the
+   interaction clip it was made under, and the item's radius, and rings_paint (gui_window_end, just
+   before the body region closes) lays both down last, each back under its own clip so a ring on an
+   item inside a scrolled child is still bounded by that child's view.
+
+   One of each per frame is all there can be: one nav cursor, one focused item.  A mark is always
+   consumed by the end of the window that made it, since an item can only be marked between a
+   window_begin and its window_end. */
+
+typedef struct
+{
+    gui_rect_t r;         // item rect the ring lies on
+    gui_rect_t clip;      // s_scope.clip where it was marked -- re-pushed to paint it
+    f32        round;     // the item's own corner radius, which the ring shares
+    bool       set;       // a mark is pending
+    bool       captured;  // nav only: the keyboard is captured for value editing
+
+} ring_mark_t;
+
+static ring_mark_t s_ring_nav;
+static ring_mark_t s_ring_focus;
+
+/* The radius comes from the ambient at MARK time -- the item's own (item_flags_resolve set it to
+   ROUND_WIDGET); by paint time chrome has reset the ambient to the panel radius. */
+static void
+ring_mark( ring_mark_t* m, gui_rect_t r, bool captured )
+{
+    m->r        = r;
+    m->clip     = s_scope.clip;
+    m->round    = draw_rounding();
+    m->captured = captured;
+    m->set      = true;
+}
+
+/* Keyboard-nav cursor ring (nav_item_register invokes it across the core unit's one paint seam --
+   see the upward-seam block in core/gui_core.h).  captured selects the colour: plain
+   nav-highlight (COL_MARK_HOT) vs. a value widget that has captured the keyboard for Left/Right
+   editing (COL_MARK_ACTIVE) -- this is the one adornment every widget passes through, so it is
+   the single place that makes "input captured" read as a real, theme-wide-consistent state change
+   instead of looking identical to plain nav focus.  Opaque, unlike the focus ring: a cursor is
+   something you hunt for on screen. */
+void
+ring_mark_nav( gui_rect_t r, bool captured )
+{
+    ring_mark( &s_ring_nav, r, captured );
+}
+
+/* Keyboard-focus ring: the ring around the item that owns the keyboard right now -- the caret's
+   field, a drag box in text-entry mode.  item_state marks it the moment focus resolves
+   (core/gui_item.c), so every focusable widget gets the same signal without spelling it.
+
+   BORDER[ACTIVE] is the hue, held back to FOCUS_RING_ALPHA so a stroke twice the frame's width
+   does not land with twice its weight.  The alpha is a fixed signal constant, not a theme ramp,
+   for the BAKE_DROP_WASH reason: a theme is free to run its ramps near zero, and a cue that says
+   where typing goes has to survive that. */
+#define FOCUS_RING_ALPHA 0.70f
+
+void
+ring_mark_focus( gui_rect_t r )
+{
+    ring_mark( &s_ring_focus, r, false );
+}
+
+static void
+ring_paint( ring_mark_t* m, u32 col )
+{
+    if ( !m->set ) return;
+    m->set = false;
+
+    draw_push_clip_rect( m->clip.x, m->clip.y, m->clip.w, m->clip.h );
+    draw_ring( m->r, m->round, col );
+    draw_pop_clip_rect();
+}
+
+/* Lay down whatever this window marked.  Focus first, cursor over it: when one item is both, the
+   cursor is the louder signal and wins the pixels. */
+void
+rings_paint( void )
+{
+    u32 focus = COL_BORDER_ACTIVE;
+    focus = ( focus & 0x00FFFFFFu )
+          | ( (u32)( (f32)( focus >> 24 ) * FOCUS_RING_ALPHA ) << 24 );
+
+    ring_paint( &s_ring_focus, focus );
+    ring_paint( &s_ring_nav, s_ring_nav.captured ? COL_MARK_ACTIVE : COL_MARK_HOT );
 }
 
 /* Drag-and-drop accept ring: a bolder outline around an open target whose type matched the

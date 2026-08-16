@@ -143,8 +143,8 @@ typedef struct
 
 } gui_vp_request_t;
 
-const gui_next_win_t* gui_next_win_peek( void );  // core/gui_surface.c -- read-only queue peek
-extern gui_vp_request_t s_vp_request;  // core/gui_surface.c
+const gui_next_win_t* gui_next_win_peek( void );    // core/gui_surface.c -- read-only queue peek
+extern gui_vp_request_t s_vp_request;               // core/gui_surface.c
 
 /*==============================================================================================
     Keyboard navigation state (behavior in chrome/nav/gui_nav.c)

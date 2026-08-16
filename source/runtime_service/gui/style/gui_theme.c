@@ -73,6 +73,7 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
     [ GUI_VAR_TITLE_H         ] = { "Title Height",    GUI_CLASS_METRIC, 48 },
 
     [ GUI_VAR_BORDER          ] = { "Border Width",    GUI_CLASS_STROKE, 8  },
+    [ GUI_VAR_FOCUS_RING      ] = { "Focus Ring",      GUI_CLASS_STROKE, 8  },
 
     [ GUI_VAR_ROUND           ] = { "Widget Rounding", GUI_CLASS_SKIN,   16 },
     [ GUI_VAR_PANEL_ROUND     ] = { "Panel Rounding",  GUI_CLASS_SKIN,   24 },
@@ -279,6 +280,7 @@ var_is_pixels( u8 cls )
         [ GUI_VAR_ROUND           ] = ( ROUND ), \
         [ GUI_VAR_PANEL_ROUND     ] = ( PANEL_ROUND ), \
         [ GUI_VAR_SHADOW          ] = 16, \
+        [ GUI_VAR_FOCUS_RING      ] = 2, \
         [ GUI_VAR_GRID_Q          ] = ( GRID_Q ), \
         /* 3. RATIOS -- unitless */ \
         [ GUI_VAR_DISABLED_ALPHA  ] = 0.5f, \
@@ -599,13 +601,14 @@ metrics_compute( u32 em, u32 char_h, u32 line_h, f32 dpi_scale )
     }
 
     /* Prevent vanishing hairlines when scaling down: an authored nonzero never rounds to nothing.
-       (The caret and the focus ring used to need their own clauses here; both now read
-       GUI_VAR_BORDER, so one clause covers them.) */
+       (The caret reads GUI_VAR_BORDER, so its clause is the border's.) */
     bool clamp_min_visible_metrics = true;
     if ( clamp_min_visible_metrics )
     {
         if ( s_style.var[ GUI_VAR_BORDER ] < 1.0f && s_style_base.var[ GUI_VAR_BORDER ] > 0.0f )
             s_style.var[ GUI_VAR_BORDER ] = 1.0f;
+        if ( s_style.var[ GUI_VAR_FOCUS_RING ] < 1.0f && s_style_base.var[ GUI_VAR_FOCUS_RING ] > 0.0f )
+            s_style.var[ GUI_VAR_FOCUS_RING ] = 1.0f;
         if ( s_style.var[ GUI_VAR_GAP ] < 1.0f && s_style_base.var[ GUI_VAR_GAP ] > 0.0f )
             s_style.var[ GUI_VAR_GAP ] = 1.0f;
     }

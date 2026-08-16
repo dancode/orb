@@ -249,7 +249,7 @@ main( int argc, char** argv )
     i32 vp = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui",
         .w         = 1280, .h = 960,
-        .os_chrome = true,
+        .os_chrome = false,
         .font      = GUI_FONT_CASCADIA_MONO_16,
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
@@ -289,11 +289,11 @@ main( int argc, char** argv )
         // Recolor by SEED: change a source color, re-derive the 32-cell grid from it.  This is
         // the usual door -- every role fed by the seed moves together and keeps its ramp.
 
-        // u32 blue = GUI_COLOR( 32, 32, 192, 255 );        
+     // u32 blue = GUI_COLOR( 32, 32, 192, 255 );
         u32 pane = GUI_COLOR( 48, 48, 48, 255 );
         u32 line = GUI_COLOR( 96, 96, 96, 255 );
         u32 ink = GUI_COLOR( 224, 224, 224, 255 );
-        // u32 accent = GUI_COLOR( 128, 128, 128, 255 );
+     // u32 accent = GUI_COLOR( 128, 128, 128, 255 );
         u32 pop = GUI_COLOR( 32, 160, 32, 255 );
 
         style->palette.seed[GUI_SEED_SURFACE]   = pane;
@@ -324,7 +324,7 @@ main( int argc, char** argv )
 
         // style->var[GUI_VAR_PANEL_ROUND] = 0;    // Square windows
         // style->var[GUI_VAR_ROUND]       = 0;    // No bevel on buttons
-     // style->var[GUI_VAR_GAP]         = 12;   // More breathing room
+        // style->var[GUI_VAR_GAP]         = 12;   // More breathing room
 
         // Re-scale and apply the changes across the UI
         // gui()->style_apply();
@@ -359,7 +359,7 @@ main( int argc, char** argv )
              show_example_main_menu_bar();
             
              if ( show_demo )
-                 show_demo_window( &show_demo );
+                  show_demo_window( &show_demo );
 
              /* Closing the default context also auto-emits the debug overlays (perf/state/dashboard)
                 last in its build.  Clean frames skip this whole scope; frame_end below replays the

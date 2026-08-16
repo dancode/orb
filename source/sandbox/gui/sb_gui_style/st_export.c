@@ -108,6 +108,7 @@ static const char* const k_var_id[ GUI_VAR_COUNT ] =
     [ GUI_VAR_ROUND           ] = "GUI_VAR_ROUND",
     [ GUI_VAR_PANEL_ROUND     ] = "GUI_VAR_PANEL_ROUND",
     [ GUI_VAR_SHADOW          ] = "GUI_VAR_SHADOW",
+    [ GUI_VAR_FOCUS_RING      ] = "GUI_VAR_FOCUS_RING",
     [ GUI_VAR_CHECK_SHAPE     ] = "GUI_VAR_CHECK_SHAPE",
     [ GUI_VAR_BULLET_SHAPE    ] = "GUI_VAR_BULLET_SHAPE",
     [ GUI_VAR_ARROW_SHAPE     ] = "GUI_VAR_ARROW_SHAPE",

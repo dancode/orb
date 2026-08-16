@@ -26,6 +26,13 @@
    standard inset.  Its caption sibling gui_field_row is public, declared in gui_host.h. */
 f32 label_natural_w( const char* s );
 
+/* Paint the keyboard rings this window marked (stock/gui_adornment.c).  Called at the end of a
+   window's body, before its chrome: a ring lies ON its item's rect, so painting it where it is
+   decided would put it under the widget's own fill.  It is marked there instead (ring_mark_*,
+   core/gui_core.h) and laid down here, each back under its own clip so a ring inside a scrolled
+   child stays bounded by that child's view. */
+void rings_paint( void );
+
 /* The styled half of the symbol palette (stock/gui_symbol_style.c): emitters that resolve
    their own look (style-var picks, WIN_BORDER, ROUND_WIDGET) over the draw unit's pure ones.
    Their public wrappers (gui_draw_arrow / gui_draw_close / gui_draw_frame) are in gui_host.h. */

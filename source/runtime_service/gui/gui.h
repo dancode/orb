@@ -714,6 +714,7 @@ typedef enum
     GUI_VAR_ROUND,          // corner radius: control frames, slider knobs, scrollbar grabs
     GUI_VAR_PANEL_ROUND,    // corner radius: windows / children / popups; 0 = square
     GUI_VAR_SHADOW,         // elevation-shadow feather under floating chrome (px; overlays widen it); 0 = flat
+    GUI_VAR_FOCUS_RING,     // keyboard ring stroke, drawn inward from the item edge (px); 0 = none
     GUI_VAR_CHECK_SHAPE,    // checkbox/menu indicator: 0 = 'v' tick, 1 = disc, 2 = 'X' (gui_check_style_t)
     GUI_VAR_BULLET_SHAPE,   // bullet glyph: 0 = disc, 1 = square (gui_bullet_style_t)
     GUI_VAR_ARROW_SHAPE,    // directional arrow: 0 = triangle, 1 = chevron (gui_arrow_style_t)

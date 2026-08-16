@@ -666,17 +666,43 @@ tess_sprite( const gui_cmd_t* c )
         }
 }
 
-/* Tessellate a hollow rectangle as four edge quads.  t is clamped to half the shorter side so a
-   thick border on a small rect degenerates to a filled rect instead of inverted side quads. */
+/* Tessellate a hollow rectangle as four edge quads.
+
+   The frame is snapped to whole pixels ONCE, here, and the four quads are cut from those integer
+   edges.  Every fill snaps its own origin (tess_rect_filled) and nothing snaps its extent, so
+   handing four unsnapped rects to it rounds four origins independently against four fractional
+   far edges: the top rail lands on one row and the side rails start on another, and the right
+   rail's inner edge misses the top rail's end.  That reads as pixel gaps at the corners and a
+   one-pixel overhang on the right and bottom -- on any fractional origin (a scrolled row, a
+   fractional layout position) and worse the thicker the stroke.  Snapped first, the shared edges
+   are the same integer on both sides and the joins are exact.
+
+   t is rounded to a whole stroke (never below one pixel, so a hairline cannot vanish) and clamped
+   to half the shorter side, so a thick border on a small rect degenerates to a filled rect
+   instead of inverted side quads. */
 static void
 tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 {
-    f32 tmax = ( w < h ? w : h ) * 0.5f;
+    f32 x0 = tess_snap_px( x ),     y0 = tess_snap_px( y );
+    f32 x1 = tess_snap_px( x + w ), y1 = tess_snap_px( y + h );
+    f32 bw = x1 - x0,               bh = y1 - y0;
+    if ( bw <= 0.0f || bh <= 0.0f )
+        return;
+
+    f32 tmax = ( bw < bh ? bw : bh ) * 0.5f;
+    t = tess_snap_px( t );
+    if ( t < 1.0f ) t = 1.0f;
     if ( t > tmax ) t = tmax;
-    tess_rect_filled( x,         y,         w, t,     0,0,1,1, 0, abgr );
-    tess_rect_filled( x,         y + h - t, w, t,     0,0,1,1, 0, abgr );
-    tess_rect_filled( x,         y + t,     t, h-2*t, 0,0,1,1, 0, abgr );
-    tess_rect_filled( x + w - t, y + t,     t, h-2*t, 0,0,1,1, 0, abgr );
+
+    tess_rect_filled( x0,     y0,     bw, t, 0,0,1,1, 0, abgr );
+    tess_rect_filled( x0,     y1 - t, bw, t, 0,0,1,1, 0, abgr );
+
+    f32 mid = bh - 2.0f * t;   /* the span between the rails; zero once t swallowed the box */
+    if ( mid > 0.0f )
+    {
+        tess_rect_filled( x0,     y0 + t, t, mid, 0,0,1,1, 0, abgr );
+        tess_rect_filled( x1 - t, y0 + t, t, mid, 0,0,1,1, 0, abgr );
+    }
 }
 
 /*==============================================================================================

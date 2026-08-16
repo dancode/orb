@@ -185,11 +185,20 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
     st.focused = ( s_interaction.focused_id == id );
     st.clicked = s_io.mouse_released[ 0 ] && s_interaction.hover_id == id && s_interaction.active_id == id;
 
-    /* Record which window owns the keyboard focus, for the exclusive-scope focus lock (a modal
-       input mode holds its focus sticky; see interact_new_frame).  Refreshed every frame the
-       focused widget re-emits, so it always names that widget's current window. */
     if ( st.focused )
+    {
+        /* Record which window owns the keyboard focus, for the exclusive-scope focus lock (a modal
+           input mode holds its focus sticky; see interact_new_frame).  Refreshed every frame the
+           focused widget re-emits, so it always names that widget's current window. */
         s_interaction.focused_win = s_scope.win;
+
+        /* The focus ring, from this seam for the same reason as the nav ring below: it must be
+           uniform across every focusable widget, and this is the one point every widget passes
+           through.  Marking only -- the skin paints it at the end of the window body
+           (rings_paint, stock/gui_adornment.c), where the widgets that would cover it are
+           already down.  Do not read style or draw here. */
+        ring_mark_focus( r );
+    }
 
     /* Keyboard nav: an item in the nav window registers as a candidate and, if it is the nav
        cursor, takes a synthesized click from an Enter/Space activation -- the keyboard mirror of

@@ -392,7 +392,7 @@ layout_pop_region( void )
 void
 nav_scroll_chase( gui_rect_t r )
 {
-    const f32 pad = NAV_RING + 2.0f;   /* breathing room so the ring lands clear of the view edge */
+    const f32 pad = 4.0f;   /* air, so the item lands inside the view rather than against its edge */
 
     u32 top = ( s_layout_sp <= GUI_LAYOUT_DEPTH ) ? s_layout_sp : GUI_LAYOUT_DEPTH;
     for ( i32 i = (i32)top - 1; i >= 0; --i )

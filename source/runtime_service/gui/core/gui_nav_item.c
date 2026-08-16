@@ -86,18 +86,16 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kin
         it->label[0]  = 0;   /* type-ahead opt-in: nav_item_stamp_label fills it in, if called */
     }
 
-    /* Current item: draw the outline ring whenever a nav cursor exists (even in mouse mode, so it
+    /* Current item: mark the cursor ring whenever a nav cursor exists (even in mouse mode, so it
        keeps its location), and -- only while the keyboard is the active instrument (nav_highlight)
        -- give it the fill (st->nav, read by col_item_bg / col_frame_bg) and apply a pending
-       activation.  The ring is drawn before the widget's own background (item_state runs
-       first), inset outward by NAV_RING so the fill leaves the border visible.
+       activation.
 
-       LAYERING NOTE: the ring is invoked from here because it is a system adornment that must
-       be uniform across every widget -- stock and custom alike -- and must paint beneath the
-       item's own fill, and no single presentation seam exists after behavior that every widget
-       passes through.  The paint itself (color, thickness, extent) is draw_nav_ring in
-       stock/gui_adornment.c; behavior only picks the moment.  Do not add style reads or
-       raw draws to this tier. */
+       LAYERING NOTE: the ring is marked from here because it is a system adornment that must be
+       uniform across every widget -- stock and custom alike -- and no single presentation seam
+       exists after behavior that every widget passes through.  Everything else is the skin's:
+       ring_mark_nav records, and rings_paint lays the ring down at the end of the window body
+       (stock/gui_adornment.c).  Do not add style reads or raw draws to this tier. */
 
     if ( is_cur && g_ctx->nav.active )
     {
@@ -113,7 +111,7 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kin
         }
 
         bool captured = ( g_ctx->nav.edit_id == id || g_ctx->nav.solo_drag_id == id );
-        draw_nav_ring( r, captured );
+        ring_mark_nav( r, captured );
 
         if ( g_ctx->nav.highlight )
         {

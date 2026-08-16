@@ -524,8 +524,10 @@ gui_window_end( void )
                the sweep protocol + highlight while the content clip is still active. */
             if ( s_build.win.flags & GUI_WIN_TEXT_SELECT )
                 select_window_end();
+            rings_paint();              /* keyboard rings, over the body and under the chrome */
             layout_pop_region();        /* measure content, draw scrollbars, pop the inner clip */
             window_route_chrome( node ); /* tab strip + tabs + node border, under the window clip */
+            rings_paint();              /* again for a ring the chrome itself marked (a tab) */
             draw_pop_clip_rect();       /* balance the clip pushed in window_begin_docked */
         }
 
@@ -561,6 +563,11 @@ gui_window_end( void )
        nothing and keeps its extents from the last expanded frame, so scroll survives collapse.
        Bars are drawn here, before the chrome (so the border frames them) and before the window
        drag-grab below (so a press on a knob claims active_id and the window does not drag). */
+    /* Keyboard rings (nav cursor, focus) last over the body: each lies on its item's own rect, so
+       drawing it where it was decided would leave it under that widget's fill.  Before the region
+       pop, so the scrollbars and the border frame them like any other content. */
+    rings_paint();
+
     if ( !s_build.win.collapsed )
         layout_pop_region();
 
@@ -611,6 +618,11 @@ gui_window_end( void )
 
     /* CAN_AUTOSIZE size-grip triangle in the bottom-right corner (resize handle + auto-fit). */
     window_end_size_grip( win, native, hot_edges );
+
+    /* A ring the CHROME marked -- the nav cursor can sit on a caption button or a shelf chip,
+       which emit after the body flush above.  A no-op when the body already consumed the mark;
+       it must not survive this window, or it would paint into the next one. */
+    rings_paint();
 
     /* Balance the clip push, which window_begin only made for an expanded window. */
     if ( !s_build.win.collapsed )

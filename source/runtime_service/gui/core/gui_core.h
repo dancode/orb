@@ -478,11 +478,14 @@ gui_state_usage_t gui_state_usage( void );
     Upward seams -- the interact server's few documented calls above its layer (the inc-10
     discipline: explicit and few, listed here so the whole set is visible at once).
 
-    draw_nav_ring    the ONE system-adornment paint this server invokes (nav_item_register,
-                     core/gui_nav_item.c): the ring must land beneath the item's own fill and no
-                     presentation seam after behavior exists that every widget passes through.
-                     Behavior picks the MOMENT; the paint policy (color, thickness) lives with
-                     the skin (stock/gui_adornment.c).  Do not add more.
+    ring_mark_nav    the system-adornment marks this server makes -- the nav cursor ring
+    ring_mark_focus  (nav_item_register, core/gui_nav_item.c) and the keyboard-focus ring
+                     (item_state, core/gui_item.c).  No presentation seam after behavior exists
+                     that every widget passes through, so behavior is where the two are DECIDED;
+                     the skin (stock/gui_adornment.c) owns everything else, including when they
+                     actually paint -- rings_paint lays them down at the end of the window body,
+                     since a ring lies on its item's rect and would otherwise be covered by that
+                     widget's own fill.  Do not add more.
     nav_scroll_chase the keyboard scroll-into-view (nav_item_register, core/gui_nav_item.c):
                      walking the open region stack and moving scroll offsets is composition
                      machinery, so the act lives with flow (flow/gui_scroll.c) and behavior
@@ -496,9 +499,8 @@ gui_state_usage_t gui_state_usage( void );
                      compiled away outside Debug.
 ==============================================================================================*/
 
-#define NAV_RING 2.0f   /* focus-ring inset outside the item rect; the nav scroll chase keeps
-                           the ring clear of the view edge with it */
-void draw_nav_ring( gui_rect_t r, bool captured );
+void ring_mark_nav  ( gui_rect_t r, bool captured );
+void ring_mark_focus( gui_rect_t r );
 void nav_scroll_chase( gui_rect_t r );
 app_event_result_t gui_owned_window_event( const app_event_t* ev );
 
