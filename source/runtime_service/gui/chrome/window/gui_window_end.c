@@ -598,9 +598,14 @@ gui_window_end( void )
            border input is OS-routed).  Restored right after for the chrome that follows. */
         if ( frame_only )
             draw_set_sort_key( GUI_REGION_Z );
-        u8 border_phase = ( s_build.win.id == g_ctx->nav.focused_win ) ? GUI_PHASE_ACTIVE
-                         : interact_hover_bare( s_build.win.id )       ? GUI_PHASE_HOT
-                                                                        : GUI_PHASE_IDLE;
+
+        /* The frame reads the window's own standing (window_standing_phase -- focus ring, drop
+           cue, modal fence), never where the cursor happens to be.  A frame keyed on the cursor
+           strobes: the pointer crosses widget/gap boundaries constantly -- every step down a menu
+           or a list passes through the spacing between rows -- and a ring around the whole window
+           switching colour on each crossing is the loudest motion on screen.  A hovered EDGE is
+           still its own signal: draw_resize_highlight below bolds just that edge. */
+        u8 border_phase = window_standing_phase( s_build.win.id );
         draw_push_rect_outline( win_r.x, win_r.y, win_r.w, win_r.h, WIN_BORDER,
                                 style_col( GUI_ROLE_BORDER, border_phase ) );
         if ( frame_only )

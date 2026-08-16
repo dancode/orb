@@ -713,9 +713,7 @@ dock_window_chrome( gui_dock_node_t* node )
        angles.  Drawn before the undock handler so it never reads `node` after a drag-out collapses
        an emptied node. */
     draw_set_rounding( 0.0f );
-    u8 border_phase = ( s_build.win.id == g_ctx->nav.focused_win ) ? GUI_PHASE_ACTIVE
-                     : interact_hover_bare( s_build.win.id )       ? GUI_PHASE_HOT
-                                                                    : GUI_PHASE_IDLE;
+    u8 border_phase = window_standing_phase( s_build.win.id );   /* standing, not the cursor */
     draw_push_rect_outline( x, y, w, s_build.win.h, WIN_BORDER,
                             style_col( GUI_ROLE_BORDER, border_phase ) );
 

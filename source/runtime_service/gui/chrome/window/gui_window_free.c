@@ -684,7 +684,13 @@ window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 ti
    the render's stable z-sort keeps it behind the window's own body but above every window below.
    Strength is banded by elevation -- overlays strongest, free floaters lighter -- and the flush
    chrome the caller filters out (docked, maximized, native, frame-only shells) casts none.
-   A theme opts out entirely with GUI_VAR_SHADOW 0 or an alpha-0 GUI_EXT_SHADOW. */
+   A theme opts out entirely with GUI_VAR_SHADOW 0 or an alpha-0 GUI_EXT_SHADOW.
+
+   Emitted HOLLOW.  The window body that follows fills this same rect opaquely (window_open_body's
+   draw_face, at the same rounding), so the only part of the plate that ever reaches the screen is
+   the skirt around the frame -- plus the sliver the downward offset leaves uncovered along the
+   bottom edge, which is what the hollow depth names.  On a window-sized box that is the difference
+   between rasterizing the whole rect and rasterizing a band around it. */
 
 static void
 window_draw_elevation( const gui_window_t* win, f32 disp_h )
@@ -701,7 +707,7 @@ window_draw_elevation( const gui_window_t* win, f32 disp_h )
             | ( (u32)( (f32)( col >> 24 ) * WIN_SHADOW_FLOAT_ALPHA ) << 24 );
 
     draw_push_shadow( win->x, win->y + feather * WIN_SHADOW_DROP, win->w, disp_h,
-                      ROUND_WIN, feather, col );
+                      ROUND_WIN, feather, feather * WIN_SHADOW_DROP, col );
 }
 
 /* Open the window body -- or, when collapsed, just seed the collapse-arrow clip.  Expanded: push the

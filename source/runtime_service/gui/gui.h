@@ -2322,8 +2322,13 @@ typedef struct
            `rot` (radians, screen space, about the box CENTRE) turns the whole surface: the fx
            coordinate is box-local and affine, so rotating the four corner POSITIONS preserves the
            field under interpolation -- a rotated card costs the same four quadrant quads.  0 for
-           every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap. */
-        struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr; } fx_box;
+           every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap.
+           `hollow` is a promise, in px inward from the boundary, that the caller covers everything
+           deeper with opaque geometry of its own, so the tessellator may skip emitting it (the
+           interior hole in tess_fx_box_core).  A shadow's visible part is the skirt around the
+           frame; its saturated core is pure overdraw behind the panel that cast it.  0 -- every
+           caller that does not own what lands on top -- emits the interior whole. */
+        struct { f32 x, y, w, h; f32 rounding, feather, hollow, rate, depth, rot; u32 abgr; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME four quadrant quads a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape

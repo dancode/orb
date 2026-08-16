@@ -464,11 +464,15 @@ draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal )
    rounding so it hugs a rounded panel.  Draw it before the panel body.
 
    `spread` reads as "how far the shadow reaches", so it is HALF the falloff band: the fill is
-   solid until spread px inside the box and gone spread px outside it. */
+   solid until spread px inside the box and gone spread px outside it.
+
+   The solid core is emitted whole (hollow 0).  A public caller may draw a shadow with nothing on
+   top of it -- a glow behind a transparent card, a halo under a hovered tile -- and the hollow
+   promise is only sound where the same code emits the opaque cover. */
 static void
 draw_shadow( gui_rect_t box, f32 spread, u32 col )
 {
-    draw_push_shadow( box.x, box.y, box.w, box.h, draw_rounding(), spread * 2.0f, col );
+    draw_push_shadow( box.x, box.y, box.w, box.h, draw_rounding(), spread * 2.0f, 0.0f, col );
 }
 
 /* A rounded fill whose alpha breathes, evaluated in the FRAGMENT off the shared frame clock.
