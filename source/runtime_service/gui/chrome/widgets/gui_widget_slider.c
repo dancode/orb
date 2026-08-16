@@ -381,8 +381,24 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
     gui_item_state_t st = item_state( id, box_r, num_edit_active( id ) ? ITEM_FOCUSABLE : ITEM_DRAG );
     drag_text_enter( id, &st );
 
-    bool changed   = false;
-    bool text_mode = st.focused || num_edit_active( id );
+    /* Keyboard activation opens text entry, input-field parity: Enter/Space on the nav cursor
+       lands as a fresh value-edit capture (nav.edit_id, nav_item_register), and a drag box has a
+       text mode to promote it into -- take real focus so the editor seeds this same frame (the
+       activating key was already claimed, so it cannot instantly submit).  Sliders keep the
+       arrow-step capture; they have nothing to type into. */
+    if ( g_ctx->nav.edit_id == id )
+    {
+        g_ctx->nav.edit_id       = GUI_ID_NONE;
+        s_interaction.focused_id = id;
+        st.focused               = true;
+    }
+
+    bool changed    = false;
+    /* Text entry rides on real focus ownership, never st.focused alone: a keyboard value capture
+       mirrors focused onto DRAG widgets for the border treatment only (nav_item_register), and
+       must keep the drag presentation -- its arrows step the value, they do not type. */
+    bool edit_focus = ( s_interaction.focused_id == id );
+    bool text_mode  = edit_focus || num_edit_active( id );
 
     if ( text_mode )
     {
@@ -436,7 +452,7 @@ drag_int_box( gui_id_t id, gui_rect_t box_r, i32* v, f32 v_speed, i32 v_min, i32
 
     /* Value text -- unless the focused editor already painted its own (and caret), or the box is
        scrolled out (paint gate -- see slider_float_step; skips the snprintf + measure). */
-    if ( !st.focused && !draw_cull_box( box_r.x, box_r.y, box_r.w, box_r.h ) )
+    if ( !edit_focus && !draw_cull_box( box_r.x, box_r.y, box_r.w, box_r.h ) )
     {
         char buf[ 64 ];
         fmt_snprintf( buf, sizeof( buf ), format, *v );
@@ -480,12 +496,21 @@ static bool
 drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
                 f32 v_speed, f32 v_min, f32 v_max, const char* fmt )
 {
-    /* FOCUSABLE while the scratch owns the box -- see drag_int_box. */
+    /* FOCUSABLE while the scratch owns the box, text entry on real focus only -- see drag_int_box. */
     gui_item_state_t st = item_state( id, box_r, num_edit_active( id ) ? ITEM_FOCUSABLE : ITEM_DRAG );
     drag_text_enter( id, &st );
 
-    bool changed   = false;
-    bool text_mode = st.focused || num_edit_active( id );
+    /* Nav Enter/Space promotes the fresh value-edit capture to text entry -- see drag_int_box. */
+    if ( g_ctx->nav.edit_id == id )
+    {
+        g_ctx->nav.edit_id       = GUI_ID_NONE;
+        s_interaction.focused_id = id;
+        st.focused               = true;
+    }
+
+    bool changed    = false;
+    bool edit_focus = ( s_interaction.focused_id == id );
+    bool text_mode  = edit_focus || num_edit_active( id );
 
     if ( text_mode )
     {
@@ -543,7 +568,7 @@ drag_float_box( gui_id_t id, gui_rect_t box_r, f32* v,
 
     /* Value text -- unless the focused editor already painted its own (and caret), or the box is
        scrolled out (paint gate -- see slider_float_step; skips the snprintf + measure). */
-    if ( !st.focused && !draw_cull_box( box_r.x, box_r.y, box_r.w, box_r.h ) )
+    if ( !edit_focus && !draw_cull_box( box_r.x, box_r.y, box_r.w, box_r.h ) )
     {
         char buf[ 64 ];
         fmt_snprintf( buf, sizeof( buf ), fmt, *v );

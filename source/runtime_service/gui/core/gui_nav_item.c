@@ -122,7 +122,9 @@ nav_item_register( gui_id_t id, gui_rect_t r, gui_item_state_t* st, gui_item_kin
                 {
                     /* A value widget (slider, drag box) does not click -- activation captures it
                        for keyboard editing: Left/Right then step the value (st->nav_adjust below)
-                       until Enter/Space/Esc or a mouse press releases (gui_nav.c). */
+                       until Enter/Space/Esc or a mouse press releases (gui_nav.c).  A drag box
+                       promotes this fresh capture straight into its text-entry mode
+                       (gui_widget_slider.c), input-field parity. */
                     g_ctx->nav.edit_id = id;
                 }
                 else
