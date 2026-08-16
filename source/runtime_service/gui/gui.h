@@ -2210,7 +2210,7 @@ typedef enum
    contract: the shifts below must equal TEX_MODE_SHIFT / TEX_CLIP_SHIFT in gui.frag / gui.ps.hlsl
    (and the paraphrase in gui_shader.h) -- change one, change all, resplice the SPIR-V.
 
-   THE CLIP BAND -- bits 17..27, between the model and the index: which clip rect cuts this
+   THE CLIP BAND -- bits 19..27, between the model and the index: which clip rect cuts this
    vertex's fragments, as an ABSOLUTE entry index into the frame clip region -- the window's fixed
    slab (its stable cache slot * GUI_WIN_CLIP_MAX) plus a local first-seen index within it
    (win_geo_slot_t).  The fragment resolves it against the frame clip table (gui_shader.h,
@@ -2218,17 +2218,23 @@ typedef enum
    -- the same move the texture and the effect word made.  Keyed by the stable cache slot on
    purpose: cached geometry bakes these bits, and both halves survive as long as the window does --
    the slot is id-keyed, and the window's own first-seen clip order is reproducible from its
-   (hashed) commands where a per-frame table's assignment order is not.  Eleven bits because the
-   stress build tracks 128 windows * 16 clips.  Stamped by tess_verts_commit from ambient state,
-   like the two words below it; nothing outside the tessellator sets it. */
+   (hashed) commands where a per-frame table's assignment order is not.
+
+   NINE bits -- 512 entries, which is RENDER_MAX_WIN * GUI_WIN_CLIP_MAX exactly in every build.
+   The band is sized to what is RESIDENT, not to what could ever exist: a slab is per stable cache
+   SLOT, slots are recycled, and a window past the cap degrades within itself (tess_clip_local
+   falls back to its own slab entry 0) rather than borrowing another window's rect.  Most windows
+   use one clip and four is already heavy, so the product is generous at both ends -- and the two
+   bits this gave back are the op band's growth room.  Stamped by tess_verts_commit from ambient
+   state, like the two words below it; nothing outside the tessellator sets it. */
 #define GUI_TEX_MODE_SHIFT  28u
 #define GUI_TEX_MODE_MASK   ( 0xFu << GUI_TEX_MODE_SHIFT )
 #define GUI_TEX_MODE( m )   ( (u32)( m ) << GUI_TEX_MODE_SHIFT )
 
-#define GUI_TEX_CLIP_SHIFT  17u
-#define GUI_TEX_CLIP_MASK   ( 0x7FFu << GUI_TEX_CLIP_SHIFT )
+#define GUI_TEX_CLIP_SHIFT  19u
+#define GUI_TEX_CLIP_MASK   ( 0x1FFu << GUI_TEX_CLIP_SHIFT )
 
-/* THE SELF-SAMPLED BIT -- bit 16, the top of what is left of the index half.  Set, it tells the
+/* THE SELF-SAMPLED BIT -- bit 18, directly under the clip band.  Set, it tells the
    fragment not to consult the texel at all: coverage is forced to 1, and the vertex's 32-bit uv
    word is a mode PAYLOAD rather than a texture coordinate (the fragment still samples, at a
    garbage location of a valid texture, because that is cheaper than a divergent skip).
@@ -2244,8 +2250,13 @@ typedef enum
    SELF-SAMPLED one partitions those 28 plus the whole uv word, because unorm16 round-trips
    k/65535 exactly and the quad stamps the same value on all four corners (flat interpolation).
    That is 60 bits for any shape willing to be one colour, which is most UI chrome. */
-#define GUI_TEX_SELF_SHIFT  16u
+#define GUI_TEX_SELF_SHIFT  18u
 #define GUI_TEX_SELF_BIT    ( 1u << GUI_TEX_SELF_SHIFT )
+
+/* Bits 17..16 are RESERVED and must read 0.  They sit directly above the op band so it can widen
+   from four bits to six without moving anything else -- the only unallocated real estate in the
+   whole vertex, and the reason the clip band was narrowed to what is actually resident. */
+#define GUI_TEX_RESERVED_MASK  ( 0x3u << 16 )
 
 /* THE OP BAND -- bits 12..15, post-ops that MODIFY whatever shape the effect word named.
 
@@ -2323,7 +2334,7 @@ static inline u32
 gui_tex_index( u32 tex_idx )
 {
     return tex_idx & ~( GUI_TEX_MODE_MASK | GUI_TEX_CLIP_MASK | GUI_TEX_SELF_BIT
-                        | GUI_TEX_OP_MASK );
+                        | GUI_TEX_RESERVED_MASK | GUI_TEX_OP_MASK );
 }
 
 /* One semantic draw command.  The 4-byte header carries the command type, the index of the active

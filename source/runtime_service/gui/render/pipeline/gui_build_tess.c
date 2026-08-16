@@ -272,8 +272,10 @@ tess_set_tex( u32 tex_idx )
    is keyed by the window's id-keyed stable cache slot, so the absolute index survives as long as
    the window does.  An append marks the slot's upload mask -- the flush re-uploads a slab only
    when its content changed.  The memo serves the common run of consecutive same-clip commands.
-   A slot past GUI_WIN_CLIP_MAX distinct clips falls back to its slab's entry 0 (asserted -- 16
-   distinct clips in one window is a bug, not a budget). */
+   A slot past GUI_WIN_CLIP_MAX distinct clips falls back to its slab's entry 0 -- degrading INSIDE
+   the window (its own first clip, usually the window rect) rather than borrowing a neighbour's
+   slab, which is what makes the clip band safe to size for what is resident.  Asserted only where
+   the budget is the generous 16; the stress bench's 4 is a real ceiling, not a bug. */
 static u32
 tess_clip_local( u8 ci )
 {
@@ -296,7 +298,9 @@ tess_clip_local( u8 ci )
     }
     if ( n >= GUI_WIN_CLIP_MAX )
     {
-        ORB_ASSERT( false );
+#if GUI_WIN_CLIP_MAX >= 16
+        ORB_ASSERT( false );   /* 16 distinct clips in one window is a bug, not a budget */
+#endif
         return s_tess.clip_memo_local = s_tess.slot_clip_base;
     }
     s_tess.slot_clips[ n ] = ( gui_clip_entry_t ){ .rect = *r, .radius = rad };
@@ -358,7 +362,7 @@ tess_ensure_gpu_cmd( void )
 static void
 tess_verts_commit( u32 n )
 {
-    /* The clip band (gui.h): the absolute clip entry index rides bits 17..27 of the tex word.  The
+    /* The clip band (gui.h): the absolute clip entry index rides bits 19..27 of the tex word.  The
        bindless index below never reaches them (2048 slots, 11 bits), asserted because a collision
        here silently re-clips the primitive rather than failing. */
     ORB_ASSERT( ( s_tess.cur_tex & GUI_TEX_CLIP_MASK ) == 0u );

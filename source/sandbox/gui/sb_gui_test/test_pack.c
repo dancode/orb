@@ -179,10 +179,11 @@ test_tex_word( void )
        means "go re-cook the shaders too". */
     test_equal( 28u, GUI_TEX_MODE_SHIFT );
     test_equal( 0xF0000000u, GUI_TEX_MODE_MASK );
-    test_equal( 17u, GUI_TEX_CLIP_SHIFT );
-    test_equal( 0x0FFE0000u, GUI_TEX_CLIP_MASK );
-    test_equal( 16u, GUI_TEX_SELF_SHIFT );
-    test_equal( 0x00010000u, GUI_TEX_SELF_BIT );
+    test_equal( 19u, GUI_TEX_CLIP_SHIFT );
+    test_equal( 0x0FF80000u, GUI_TEX_CLIP_MASK );
+    test_equal( 18u, GUI_TEX_SELF_SHIFT );
+    test_equal( 0x00040000u, GUI_TEX_SELF_BIT );
+    test_equal( 0x00030000u, GUI_TEX_RESERVED_MASK );
     test_equal( 12u, GUI_TEX_OP_SHIFT );
     test_equal( 0x0000F000u, GUI_TEX_OP_MASK );
     test_equal( 0x00001000u, GUI_TEX_OP_BAND );
@@ -198,7 +199,20 @@ test_tex_word( void )
     test_equal( 0u, GUI_TEX_CLIP_MASK & GUI_TEX_SELF_BIT );
     test_equal( 0u, GUI_TEX_SELF_BIT  & GUI_TEX_OP_MASK  );
     test_equal( 0u, GUI_TEX_CLIP_MASK & GUI_TEX_OP_MASK  );
+    test_equal( 0u, GUI_TEX_RESERVED_MASK & ( GUI_TEX_MODE_MASK | GUI_TEX_CLIP_MASK
+                                            | GUI_TEX_SELF_BIT  | GUI_TEX_OP_MASK ) );
     test_true ( 2048u < GUI_TEX_OP_BAND );
+
+    /* The whole word is accounted for: every bit belongs to exactly one field.  Without this the
+       reserved pair could silently drift into a neighbour and nothing would notice until a vertex
+       came back wrong. */
+    test_equal( 0xFFFFFFFFu, GUI_TEX_MODE_MASK | GUI_TEX_CLIP_MASK | GUI_TEX_SELF_BIT
+                           | GUI_TEX_RESERVED_MASK | GUI_TEX_OP_MASK | 0x00000FFFu );
+
+    /* The clip band addresses exactly the resident set -- RENDER_MAX_WIN * GUI_WIN_CLIP_MAX in
+       every build.  gui_render.h static-asserts the same relation; this pins the band's size so a
+       widened window pool cannot quietly outgrow it here first. */
+    test_equal( 512u, ( GUI_TEX_CLIP_MASK >> GUI_TEX_CLIP_SHIFT ) + 1u );
 
     /* The four ops are distinct single bits, so they COMPOSE -- an op that shared a bit with
        another would silently turn its neighbour on.  (BAND and PULSE still cannot combine, but
@@ -241,7 +255,7 @@ test_tex_word( void )
     for ( u32 i = 0; i < ARRAY_COUNT( idxs ); ++i )
     {
         u32 word = GUI_TEX_MODE( GUI_TEX_COVERAGE ) | GUI_TEX_SELF_BIT
-                 | GUI_TEX_OP_MASK | idxs[ i ];
+                 | GUI_TEX_OP_MASK | GUI_TEX_RESERVED_MASK | idxs[ i ];
         test_equal( idxs[ i ], gui_tex_index( word ) );
         test_equal( GUI_TEX_COVERAGE, gui_tex_mode( word ) );
     }

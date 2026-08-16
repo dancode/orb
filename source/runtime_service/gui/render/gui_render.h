@@ -365,7 +365,16 @@ typedef struct
 
 } gui_clip_entry_t;
 
-#define GUI_WIN_CLIP_MAX  16    // distinct clips per window slot
+/* Distinct clips per window slot.  The product with RENDER_MAX_WIN is what the tex word's 9-bit
+   clip band has to address (512), so the two trade against each other: the shipping build spends
+   its budget on 16 clips across 32 windows, the stress bench on 4 across 128.  Four is not tight
+   in practice -- most windows use ONE clip and a scrolled child adds one more -- and a window that
+   does exceed it degrades inside its own slab (tess_clip_local), never into a neighbour's. */
+#ifdef GUI_STRESS_TEST
+#define GUI_WIN_CLIP_MAX  4
+#else
+#define GUI_WIN_CLIP_MAX  16
+#endif
 
 ORB_STATIC_ASSERT( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX
                        <= ( GUI_TEX_CLIP_MASK >> GUI_TEX_CLIP_SHIFT ) + 1,

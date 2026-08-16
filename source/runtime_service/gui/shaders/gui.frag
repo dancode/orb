@@ -27,13 +27,12 @@ layout(location = 3) flat in uint v_fx;
 layout(location = 4) flat in uint v_tex;   // sampling model (top 4 bits) | bindless slot
 layout(location = 0) out vec4 out_color;
 
-// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_CLIP_SHIFT / GUI_TEX_SELF_BIT / the op band in gui.h --
-// keep the three
-// files in step.
+// Mirrors the tex-word fields in gui.h -- model, clip band, self bit and op band.  Keep gui.h,
+// gui.frag and gui.ps.hlsl in step, then resplice the SPIR-V and re-cook.
 #define TEX_MODE_SHIFT  28u
-#define TEX_CLIP_SHIFT  17u
-#define TEX_CLIP_MASK   0x7FFu
-#define TEX_SELF_BIT    0x00010000u
+#define TEX_CLIP_SHIFT  19u
+#define TEX_CLIP_MASK   0x1FFu
+#define TEX_SELF_BIT    0x00040000u
 #define TEX_OP_BAND     0x00001000u
 #define TEX_OP_CUT      0x00002000u
 #define TEX_OP_INSET    0x00004000u
@@ -243,7 +242,7 @@ float fx_coverage()
 }
 
 // The clip band: which clip rect cuts this fragment, resolved HERE rather than by the hardware
-// scissor so a clip change never opens a new draw call.  The vertex names its entry (bits 17..27
+// scissor so a clip change never opens a new draw call.  The vertex names its entry (bits 19..27
 // of the tex word, absolute within the frame's clip region); pc.clip_base is the region's origin,
 // constant for the whole flush.  The table lives in a bindless storage buffer named by
 // pc.clip_buf.  clip_buf 0 -- the reserved invalid slot -- means "no clip table bound": full
