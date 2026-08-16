@@ -95,6 +95,7 @@ main( int argc, char* argv[] )
     test_register( "fx_pack_pulse",       test_fx_pack_pulse );
     test_register( "fx_pack_tile_u",      test_fx_pack_tile_u );
     test_register( "fx_pack_arc",         test_fx_pack_arc );
+    test_register( "fx_pack_grid",        test_fx_pack_grid );
     test_register( "fx_pack_text_edge",   test_fx_pack_text_edge );
     test_register( "fx_mode_nibble",      test_fx_mode_nibble );
 

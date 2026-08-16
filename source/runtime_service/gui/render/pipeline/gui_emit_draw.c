@@ -1504,7 +1504,8 @@ draw_push_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
 }
 
 void
-draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness, u32 abgr )
+draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 angle, bool stripes,
+                f32 cell, f32 thickness, u32 abgr )
 {
     /* A lattice denser than its own line width is a fill; keep the parameters meaning what they
        say rather than letting the fragment resolve a moire. */
@@ -1525,6 +1526,8 @@ draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickn
     c->grid.thickness = thickness;
     c->grid.ox        = ox;
     c->grid.oy        = oy;
+    c->grid.angle     = angle;
+    c->grid.stripes   = stripes ? 1u : 0u;
     c->grid.abgr      = col;
     draw_cmd_seal();
 }

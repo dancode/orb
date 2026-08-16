@@ -220,6 +220,7 @@ void gui_draw_hatch( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
 void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
 void gui_draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, f32 angle );
 void gui_draw_inset_shadow( gui_rect_t box, f32 depth, u32 col );
+void gui_draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col );
 void gui_draw_shadow( gui_rect_t box, f32 spread, u32 col );
 void gui_draw_pulse( gui_rect_t box, f32 rate, f32 depth, u32 col );
 void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );

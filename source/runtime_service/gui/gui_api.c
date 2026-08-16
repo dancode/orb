@@ -139,6 +139,7 @@ const gui_api_t g_gui_api_struct =
     .draw_gradient                      = gui_draw_gradient,
     .draw_round_rect_gradient           = gui_draw_round_rect_gradient,
     .draw_inset_shadow                  = gui_draw_inset_shadow,
+    .draw_stripes                       = gui_draw_stripes,
     .draw_shadow                        = gui_draw_shadow,
     .draw_pulse                         = gui_draw_pulse,
     .draw_text_outline                  = gui_draw_text_outline,

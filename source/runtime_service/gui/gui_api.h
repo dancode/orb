@@ -827,6 +827,8 @@ typedef struct gui_api_s
     void ( *draw_grid              )( gui_rect_t box, f32 cell, f32 thickness,
                                       f32 origin_x, f32 origin_y, u32 col );
     void ( *draw_hatch             )( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
+    void ( *draw_stripes           )( gui_rect_t box, f32 spacing, f32 thickness, f32 angle,
+                                      u32 col );
     void ( *draw_gradient          )( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
     void ( *draw_round_rect_gradient )( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
                                         f32 angle );

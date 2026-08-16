@@ -204,6 +204,48 @@ test_fx_pack_arc( void )
 }
 
 /*==============================================================================================
+    gui_fx_pack_grid -- cell (4..15) | thickness (16..22) | angle (23..30) | stripes (31).
+
+    The one packer that fills all 32 bits with FIVE fields, so an overlap here has the most room
+    to hide.  The angle is also the only field in the whole band that WRAPS instead of saturating
+    (a lattice at a and at a + pi are the same lattice), and the wrap happens in tess_grid rather
+    than in the packer -- so what is asserted here is the packer's contract, [0, pi).
+==============================================================================================*/
+
+static void
+test_fx_pack_grid( void )
+{
+    test_equal( GUI_FX_GRID, gui_fx_pack_grid( 0.0f, 0.0f, 0.0f, false ) & 0xFu );
+
+    /* Field isolation: each field driven to its maximum alone, whole word asserted. */
+    test_equal( 0x0000FFFCu, gui_fx_pack_grid( GUI_FX_CELL_MAX, 0.0f, 0.0f, false ) );
+    test_equal( 0x007F000Cu, gui_fx_pack_grid( 0.0f, GUI_FX_BORDER_MAX, 0.0f, false ) );
+    test_equal( 0x7F80000Cu, gui_fx_pack_grid( 0.0f, 0.0f, GUI_FX_PI, false ) );
+    test_equal( 0x8000000Cu, gui_fx_pack_grid( 0.0f, 0.0f, 0.0f, true ) );
+
+    /* Every field at once saturates the word -- which proves all 32 bits are reachable AND that
+       no two fields overlap, since overlapping fields could not sum to a full word. */
+    test_equal( 0xFFFFFFFCu, gui_fx_pack_grid( 9999.0f, 9999.0f, 9999.0f, true ) );
+
+    /* cell is 1/4 px (the pattern pitch), thickness 1/8 px (the border field's partition). */
+    test_equal( 64, ( gui_fx_pack_grid( 16.0f, 0.0f, 0.0f, false ) >>  4 ) & 0xFFFu );
+    test_equal( 16, ( gui_fx_pack_grid( 0.0f,  2.0f, 0.0f, false ) >> 16 ) & 0x7Fu  );
+
+    /* angle is 8 bits over 0..pi; a 45-degree hatch is a quarter of the range.  One step of
+       slack for f32 rounding of 255/pi, as the aperture test allows. */
+    u32 q = ( gui_fx_pack_grid( 0.0f, 0.0f, GUI_FX_PI * 0.25f, false ) >> 23 ) & 0xFFu;
+    test_true( q >= 63u && q <= 65u );
+
+    /* The stripe bit must not disturb the fields under it -- it is the top bit and nothing else
+       may move when it is set. */
+    u32 lat = gui_fx_pack_grid( 14.0f, 1.0f, GUI_FX_PI * 0.25f, false );
+    u32 str = gui_fx_pack_grid( 14.0f, 1.0f, GUI_FX_PI * 0.25f, true  );
+    test_equal( lat, str & ~GUI_FX_GRID_STRIPES_BIT );
+    test_equal( GUI_FX_GRID_STRIPES_BIT, str & GUI_FX_GRID_STRIPES_BIT );
+    test_equal( 0u, lat & GUI_FX_GRID_STRIPES_BIT );
+}
+
+/*==============================================================================================
     gui_fx_pack_text_edge -- width (4..11) | r (12..16) | g (17..21) | b (22..26) | a (27..31).
     The only packer whose shape comes from the texture, so it spends all 28 bits.
 ==============================================================================================*/

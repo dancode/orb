@@ -430,7 +430,8 @@ draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b )
 void
 draw_grid( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f32 origin_y, u32 col )
 {
-    draw_push_grid( box.x, box.y, box.w, box.h, origin_x, origin_y, cell, thickness, col );
+    draw_push_grid( box.x, box.y, box.w, box.h, origin_x, origin_y, 0.0f, false,
+                    cell, thickness, col );
 }
 
 /* Diagonal hatch fill of `box`: 45-degree lines `spacing` px apart (a disabled / read-only backdrop,
@@ -439,12 +440,23 @@ static void
 draw_hatch( gui_rect_t box, f32 spacing, f32 thickness, u32 col )
 {
     if ( spacing < 1.0f ) spacing = 1.0f;
-    draw_push_clip_rect( box.x, box.y, box.w, box.h );
-    f32 end = box.x + box.w;
-    u32 guard = 0;
-    for ( f32 x = box.x - box.h; x < end && guard < 512; x += spacing, ++guard )
-        gui_draw_line( x, box.y, x + box.h, box.y + box.h, thickness, col );
-    draw_pop_clip_rect();
+    draw_push_grid( box.x, box.y, box.w, box.h, box.x, box.y,
+                    SYM_PI * 0.25f, true, spacing, thickness, col );
+}
+
+/* Stripes across `box`: parallel lines `spacing` px apart, `thickness` wide, running at `angle`
+   (radians; 0 gives vertical lines, and the hatch above is simply this at 45 degrees).  Anchored
+   to the box origin, so the pattern travels with the shape rather than sliding under it.
+
+   One quad, resolved in the fragment (GUI_FX_GRID with its stripe bit).  The lines are a lattice
+   cut on ONE axis, which is why an arbitrary angle costs nothing extra -- the fragment rotates
+   its own pixel coordinate and everything downstream is the axis-aligned case. */
+void
+draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col )
+{
+    if ( spacing < 1.0f ) spacing = 1.0f;
+    draw_push_grid( box.x, box.y, box.w, box.h, box.x, box.y,
+                    angle, true, spacing, thickness, col );
 }
 
 /* Gradient fill of `box`, col_a -> col_b, vertical (default) or horizontal.  One quad whose
@@ -672,6 +684,7 @@ void gui_draw_hatch   ( gui_rect_t box, f32 spacing, f32 thickness, u32 col ) { 
 void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal ) { draw_gradient( box, col_a, col_b, horizontal ); }
 void gui_draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, f32 angle ) { draw_round_rect_gradient( box, rounding, col_a, col_b, angle ); }
 void gui_draw_inset_shadow( gui_rect_t box, f32 depth, u32 col ) { draw_inset_shadow( box, depth, col ); }
+void gui_draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col ) { draw_stripes( box, spacing, thickness, angle, col ); }
 void gui_draw_shadow  ( gui_rect_t box, f32 spread, u32 col )             { draw_shadow( box, spread, col ); }
 void gui_draw_pulse   ( gui_rect_t box, f32 rate, f32 depth, u32 col )    { draw_pulse( box, rate, depth, col ); }
 

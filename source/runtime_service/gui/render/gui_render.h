@@ -275,7 +275,8 @@ void draw_push_arc_gradient     ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, 
    a `thickness` px line every `cell` px OVER NOTHING (layer it on your own fill); the lattice
    anchors to (ox, oy) in screen px, so a panning canvas passes its content origin. */
 void draw_push_checker          ( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b );
-void draw_push_grid             ( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy,
+void draw_push_grid             ( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 angle,
+                                  bool stripes,
                                   f32 cell, f32 thickness, u32 abgr );
 
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr );

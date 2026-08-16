@@ -1576,6 +1576,32 @@ win_fills( void )
     gui()->text( "left: pressed well   middle: the drop shadow it mirrors   right: inset over a gradient" );
     gui()->text( "an inset's interior is HOLLOW -- the band is only `depth` deep, so one on a "
                  "full-size panel costs the rim, not the panel" );
+
+    gui()->separator_text( "stripes + hatch -- the lattice cut on ONE axis, turned (GRID's spare bits)" );
+    {
+        gui_rect_t r = gui()->canvas( 130.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        f32 w = ( r.w - 40.0f ) / 3.0f, h = r.h - 24.0f;
+
+        /* The classic 45-degree hatch -- the "disabled / in-progress / diff" fill.  This used to
+           be up to 512 stroked line commands under a clip rect; it is now one quad. */
+        gui()->draw_hatch( ( gui_rect_t ){ r.x + 10.0f, r.y + 12.0f, w, h },
+                           10.0f, 2.0f, GUI_COLOR( 0x50, 0x50, 0x60, 0xFF ) );
+
+        /* Arbitrary angle, live: the fragment turns its own pixel coordinate, so the pattern
+           costs the same at every angle. */
+        gui()->draw_stripes( ( gui_rect_t ){ r.x + 20.0f + w, r.y + 12.0f, w, h },
+                             12.0f, 3.0f, ang, GUI_COLOR( 0x20, 0xC0, 0xB0, 0xB0 ) );
+
+        /* A turned LATTICE -- the same word with the stripe bit clear, so both axes cut. */
+        gui_rect_t r3 = { r.x + 30.0f + w * 2.0f, r.y + 12.0f, w, h };
+        gui()->draw_rect( r3.x, r3.y, r3.w, r3.h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
+        gui()->draw_grid( r3, 14.0f, 1.0f, r3.x, r3.y, GUI_COLOR( 0x3A, 0x3A, 0x48, 0xFF ) );
+
+        gui()->text( "left: draw_hatch, 1 quad (was up to 512 line commands)   "
+                     "middle: draw_stripes at the live angle   right: the unturned lattice" );
+    }
 }
 
 /*==============================================================================================

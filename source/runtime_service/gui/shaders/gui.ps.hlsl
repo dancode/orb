@@ -79,15 +79,32 @@ float fx_coverage( float2 fx_coord, uint fx, uint tex, float2 uv, float2 px )
         if ( mode == 11u )
             return 1.0;   // CHECKER cuts nothing: it picks between two colours in main()
 
-        // GRID: distance to the nearest lattice line on either axis, the line `thickness` px
-        // wide straddling it, resolved with a 1 px AA band.  The mod is floor-based on purpose:
-        // fmod truncates, and the phase-shifted coordinate can go negative near the origin.
+        // GRID: distance to the nearest lattice line, the line `thickness` px wide straddling
+        // it, resolved with a 1 px AA band.  The mod is floor-based on purpose: fmod truncates,
+        // and the phase-shifted coordinate can go negative near the origin.
         float  cell = float( ( fx >>  4 ) & 0xFFFu ) * 0.25;
         float  ht   = float( ( fx >> 16 ) & 0x7Fu  ) * 0.0625;   // HALF the line width
-        float2 p    = px - uv * cell;                            // uv = per-axis phase fraction
-        float2 m    = p - cell * floor( p / cell );
-        float2 dl   = min( m, float2( cell, cell ) - m );
-        return saturate( 0.5 + ht - min( dl.x, dl.y ) );
+        float  ang  = float( ( fx >> 23 ) & 0xFFu  ) * ( 3.14159265 / 255.0 );
+
+        // Into LATTICE space first, so everything below is the axis-aligned case it always was.
+        // The rotation is of the pixel coordinate, not of the pattern: the phase the CPU sent was
+        // computed against the ROTATED anchor for exactly this reason (tess_grid), so the lines
+        // still land on the anchor after the turn instead of sliding off it.
+        float2 q = px;
+        if ( ang != 0.0 )
+        {
+            float cs = cos( ang ), sn = sin( ang );
+            q = float2( px.x * cs + px.y * sn, -px.x * sn + px.y * cs );
+        }
+
+        float2 p  = q - uv * cell;                               // uv = per-axis phase fraction
+        float2 m  = p - cell * floor( p / cell );
+        float2 dl = min( m, float2( cell, cell ) - m );
+
+        // Bit 31 cuts on ONE axis instead of both: a lattice becomes a stripe field, and a stripe
+        // field at an angle is the diagonal hatch.  Same quad, same cost.
+        float d = ( ( fx & 0x80000000u ) != 0u ) ? dl.x : min( dl.x, dl.y );
+        return saturate( 0.5 + ht - d );
     }
 
     // modes 7 ARC and 8 PIE -- circular sectors.  Taken before the shared decode below because they

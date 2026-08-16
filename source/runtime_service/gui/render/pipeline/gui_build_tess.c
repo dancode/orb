@@ -1357,17 +1357,32 @@ tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
 }
 
 static void
-tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness, u32 abgr )
+tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness,
+           f32 angle, bool stripes, u32 abgr )
 {
     x = tess_snap_px( x );
     y = tess_snap_px( y );
 
     cell = tess_snap_cell( cell );
 
+    /* WRAP rather than clamp: a lattice at `angle` and at angle + pi are the same lattice, so an
+       animated rotation must roll over instead of sticking at pi where gui_fx_fixed saturates.
+       The wrapped value is used for BOTH the packed word and the phase below -- the fragment
+       rotates the pixel coordinate by exactly this angle, so a disagreement would slide the
+       pattern off its anchor. */
+    angle -= GUI_FX_PI * floorf( angle / GUI_FX_PI );
+
     /* The lattice anchor, mod the quantized pitch.  (ox, oy) is a screen-space content origin
-       and may be anywhere (a panned canvas sends large negatives); only its residue matters. */
-    f32 phx = ( ox - cell * floorf( ox / cell ) ) / cell;
-    f32 phy = ( oy - cell * floorf( oy / cell ) ) / cell;
+       and may be anywhere (a panned canvas sends large negatives); only its residue matters.
+       The anchor is rotated INTO lattice space first, because that is the space the fragment
+       does its mod in -- rotation is linear, so R(px - o) is R(px) - R(o), and the phase is the
+       residue of R(o).  Taking the residue before the rotation would anchor the wrong point. */
+    f32 acs = cosf( angle ), asn = sinf( angle );
+    f32 rx  =  ox * acs + oy * asn;
+    f32 ry  = -ox * asn + oy * acs;
+
+    f32 phx = ( rx - cell * floorf( rx / cell ) ) / cell;
+    f32 phy = ( ry - cell * floorf( ry / cell ) ) / cell;
 
     f32              wu, wv;
     gui_draw_vert_t* v;
@@ -1376,7 +1391,7 @@ tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness, 
     if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
         return;
 
-    s_tess.cur_fx = gui_fx_pack_grid( cell, thickness );
+    s_tess.cur_fx = gui_fx_pack_grid( cell, thickness, angle, stripes );
 
     /* The lattice is one colour -- the vertex colour -- so the uv word is free to carry the
        per-axis phase instead of texcoords (self-sampled, gui.h). */
@@ -1955,7 +1970,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_GRID:
                 tess_grid( c->grid.x, c->grid.y, c->grid.w, c->grid.h,
                            c->grid.ox, c->grid.oy, c->grid.cell, c->grid.thickness,
-                           c->grid.abgr );
+                           c->grid.angle, c->grid.stripes != 0u, c->grid.abgr );
                 break;
 
             /* One textured quad about its centre -- the glyph-run transform (tess_quad_xf)

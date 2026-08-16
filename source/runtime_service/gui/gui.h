@@ -1938,8 +1938,17 @@ gui_fx_pack_arc( gui_fx_mode_t mode, f32 ra, f32 tube, f32 aperture )
                 width, straddling the lattice line.  The phase pair moves to the uv word (one
                 unorm16 per axis, fraction of ONE cell -- lines repeat per cell, so parity does
                 not exist) because a grid has one colour and it is the vertex colour, which
-                leaves the whole uv word free. */
-#define GUI_FX_CELL_MAX      1023.75f    /* 12 bits at 1/4 px */
+                leaves the whole uv word free.  The nine bits CHECKER spends on its phase are
+                free here and carry the lattice's ORIENTATION instead:
+                  angle   -- 8 bits over 0..pi (bits 23..30), the whole lattice turned about the
+                             anchor.  0.7 degrees a step, which is a decorative pattern's floor.
+                  stripes -- bit 31: cut on ONE axis instead of both, which turns the lattice into
+                             a stripe field.  Stripes + angle is the diagonal HATCH, and it is
+                             the reason the angle is here: the hatch used to be up to 512 stroked
+                             line commands under a clip, and it is now this one quad. */
+#define GUI_FX_CELL_MAX          1023.75f    /* 12 bits at 1/4 px */
+#define GUI_FX_GRID_ANGLE_STEPS  255.0f      /*  8 bits over 0..pi */
+#define GUI_FX_GRID_STRIPES_BIT  ( 1u << 31 )
 
 static inline u32
 gui_fx_pack_checker( f32 cell, f32 phase_x, f32 phase_y )   /* phases: fraction of 2*cell, [0,1) */
@@ -1950,12 +1959,18 @@ gui_fx_pack_checker( f32 cell, f32 phase_x, f32 phase_y )   /* phases: fraction 
     return (u32)GUI_FX_CHECKER | ( c << 4 ) | ( px << 16 ) | ( py << 24 );
 }
 
+/* `angle` must already be WRAPPED into [0, pi) -- a lattice at a and at a + pi are the same
+   lattice, so the caller wraps rather than letting gui_fx_fixed saturate, which would stick an
+   animated rotation at pi.  tess_grid is the one caller and wraps there, where the same wrapped
+   value also drives the phase (the two must agree or the pattern slides off its anchor). */
 static inline u32
-gui_fx_pack_grid( f32 cell, f32 thickness )
+gui_fx_pack_grid( f32 cell, f32 thickness, f32 angle, bool stripes )
 {
     u32 c = gui_fx_fixed( cell,      4.0f, 0xFFFu );
     u32 t = gui_fx_fixed( thickness, 8.0f, 0x7Fu  );
-    return (u32)GUI_FX_GRID | ( c << 4 ) | ( t << 16 );
+    u32 a = gui_fx_fixed( angle, GUI_FX_GRID_ANGLE_STEPS / GUI_FX_PI, 0xFFu );
+    return (u32)GUI_FX_GRID | ( c << 4 ) | ( t << 16 ) | ( a << 23 )
+         | ( stripes ? GUI_FX_GRID_STRIPES_BIT : 0u );
 }
 
 /* abgr is the same R-in-the-low-byte word every other colour here uses (R8G8B8A8_UNORM order). */
@@ -2441,7 +2456,8 @@ typedef struct
            the caller layers it on its own fill.  (ox, oy) is the lattice anchor in screen px:
            lines land on ox + k*cell, so a panning canvas passes its content origin and the grid
            rides along (GUI_FX_GRID). */
-        struct { f32 x, y, w, h; f32 cell, thickness, ox, oy; u32 abgr; } grid;
+        struct { f32 x, y, w, h; f32 cell, thickness, ox, oy; f32 angle; u32 stripes;
+                 u32 abgr; } grid;
     };
 } gui_cmd_t;
 
