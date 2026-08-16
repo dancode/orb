@@ -26,8 +26,7 @@ layout(push_constant) uniform PC {
 
 layout(location = 0) in  vec4 v_color;
 layout(location = 1) in  vec2 v_uv;
-layout(location = 2) in  vec2 v_fx_coord;
-layout(location = 3) flat in uint v_prim;  // primitive record index, slot-local
+layout(location = 2) flat in uint v_prim;  // primitive record index, slot-local
 layout(location = 0) out vec4 out_color;
 
 // Mirrors gui.h: the record's op bits and the sampling model in its `tex` field.  Keep gui.h,
@@ -60,6 +59,21 @@ vec4 prim_row( uint r )
     return u_buffers[ pc.prim_buf ].data[ g_row + r ];
 }
 
+// The shape-local coordinate: the pixel position, moved to the record's centre and un-rotated by
+// its (rot_cos, rot_sin).  Every field that has a shape works in this frame, and every one of them
+// used to receive it interpolated from a per-vertex HALF2 -- which could only be correct within
+// one quadrant, because the fold that produced it is not affine.  Derived here it is exact
+// everywhere, which is what collapsed the box from four quads to one.
+//
+// gl_FragCoord is the pixel CENTRE (i + 0.5) and the record's centre is in the same pixel space,
+// the same convention clip_coverage already relies on.
+vec2 prim_local( vec4 rect, vec4 soft )
+{
+    vec2 d = gl_FragCoord.xy - rect.xy;
+    return vec2( d.x * soft.z + d.y * soft.w, -d.x * soft.w + d.y * soft.z );
+}
+
+
 // v_color arrives ALREADY LINEAR -- the vertex stage decodes it (see gui.vert), because it is a
 // per-vertex constant and decoding it per fragment spent three pow() on every pixel of the UI.
 // Nothing below this line linearizes the vertex color; doing so would decode it twice.
@@ -85,8 +99,8 @@ vec4 unpack_col( uint c )
 }
 
 // The effect band (gui.h): coverage of the shape this fragment's record names, 1.0 when it names
-// none.  v_fx_coord is |p| - c, so the corner arc the CPU used to tessellate is simply where both
-// components go positive at once.
+// none.  The shape-local coordinate is derived here (prim_local), not interpolated, so the corner
+// arc is simply where both components of `|local| - c` go positive at once.
 //   field 1 BOX -- fill inside the boundary
 //   field 6 SEG -- a capsule (below)
 // Those are the two shapes that reach the shared decode at the bottom, and the OP bits modify
@@ -155,11 +169,8 @@ float fx_coverage()
     // before the shared decode below because a sector has no feather (it gets a fixed 1 px band,
     // which is what `0.5 - d` is) and reads an aperture nothing else has.
     //
-    // v_fx_coord is SIGNED here, not folded, and already rotated by the CPU so the sector's
-    // bisector points +y (gui.h).  That is the whole trick: a circular shape subtracts no
-    // half-extent, so its coordinate is affine over one quad and the sign survives -- and the sign
-    // is the angle, without which neither of these shapes can be expressed at all.  The fold below
-    // is the fragment's own, exact because the value it folds is exact.
+    // The coordinate is SIGNED here, folded only on x.  That is the whole trick: the sign is the
+    // ANGLE, without which neither of these shapes can be expressed at all.
     if ( g_field >= 7u && g_field <= 10u )
     {
         vec4  parm = prim_row( 4u );
@@ -167,7 +178,11 @@ float fx_coverage()
         float rb   = parm.y;
         float ap   = parm.z;
         vec2  sc   = vec2( sin( ap ), cos( ap ) );   // the aperture as a direction, once per fragment
-        vec2  q    = vec2( abs( v_fx_coord.x ), v_fx_coord.y );
+        // The sector's frame is a REFLECTION about its bisector rather than a rotation, which
+        // works out to prim_local's expression with the components swapped.  det -1 is harmless:
+        // the shape is symmetric about the bisector and the pipeline does not cull.
+        vec2  sl   = prim_local( prim_row( 1u ), prim_row( 3u ) ).yx;
+        vec2  q    = vec2( abs( sl.x ), sl.y );
         float ds;
 
         if ( g_field == 8u )
@@ -202,7 +217,7 @@ float fx_coverage()
             vec2  dash = prim_row( 2u ).xy;                    // period (turns), on-duty fraction
             float T    = max( dash.x, 1.0 / 65535.0 ) * 6.28318531;
             float duty = dash.y;
-            float t    = atan( v_fx_coord.x, v_fx_coord.y ) + ap;
+            float t    = atan( sl.x, sl.y ) + ap;
             float m    = t - T * floor( t / T );
             float d_on = min( m, duty * T - m );          // signed: > 0 inside an on-run
             cov = min( cov, clamp( 0.5 + d_on * ra, 0.0, 1.0 ) );
@@ -210,38 +225,35 @@ float fx_coverage()
         return cov;
     }
 
+    vec4  rect    = prim_row( 1u );
+    vec4  rad     = prim_row( 2u );
     vec4  soft    = prim_row( 3u );
     float feather = soft.x;
     float border  = soft.y;
 
-    // The corner radius, picked PER QUADRANT.  The field itself still arrives folded in
-    // v_fx_coord, but which of the four radii that fold used is a property of where the fragment
-    // sits, so it comes from the record and the rasterizer's own pixel coordinate rather than
-    // from a per-quadrant copy of a packed word.  This is the first piece of the fold to move.
-    vec4  rect   = prim_row( 1u );
-    vec2  dp     = gl_FragCoord.xy - rect.xy;
-    vec2  local  = vec2( dp.x * soft.z + dp.y * soft.w,     // un-rotate: R(-rot) * (frag - centre)
-                        -dp.x * soft.w + dp.y * soft.z );
-    vec4  rad    = prim_row( 2u );
-    float radius = ( local.y <= 0.0 ) ? ( ( local.x <= 0.0 ) ? rad.x : rad.y )
-                                      : ( ( local.x <= 0.0 ) ? rad.w : rad.z );
-
-    vec2  q = v_fx_coord;
+    vec2  local = prim_local( rect, soft );
+    vec2  q;
+    float radius;
     float d;
 
-    // field 6 SEG -- a CAPSULE: the distance to a line segment, minus its half-thickness.  q.x is
-    // |along| - halflen and q.y is the SIGNED across-axis offset, which needs no fold because
-    // length() squares it.  That asymmetry is the point: the box folds both axes at the vertex
-    // because both subtract a half-extent, so it costs four quadrant quads; the segment subtracts
-    // on one axis only and costs two.  No interior term either -- this form is already the exact
-    // signed distance in the core, where the rounded box's length-only form saturates.
+    // field 6 SEG -- a CAPSULE: the distance to a line segment, minus its half-thickness.  The
+    // record's rotation IS the segment's axis, so local is (along, across) about the midpoint;
+    // fold the along axis against the half-length and leave the across axis signed, because
+    // length() squares it anyway.  No interior term -- this form is already the exact signed
+    // distance in the core, where the rounded box's length-only form saturates.
     if ( g_field == 6u )
     {
         radius = rad.x;                                  // a capsule has one radius, not four
+        q = vec2( abs( local.x ) - rect.z, local.y );
         d = length( vec2( max( q.x, 0.0 ), q.y ) ) - radius;
     }
     else
     {
+        // The corner radius comes from the SIGN of local -- which quadrant the fragment sits in --
+        // so four different corners share one record and one quad.
+        radius = ( local.y <= 0.0 ) ? ( ( local.x <= 0.0 ) ? rad.x : rad.y )
+                                    : ( ( local.x <= 0.0 ) ? rad.w : rad.z );
+        q = abs( local ) - ( rect.zw - vec2( radius ) );
         d = min( max( q.x, q.y ), 0.0 ) + length( max( q, vec2( 0.0 ) ) ) - radius;
     }
 
@@ -398,7 +410,8 @@ void main()
             vec4  parm = prim_row( 4u );
             vec4  c2   = unpack_col( floatBitsToUint( parm.w ) );
             float ap   = parm.z;
-            float t    = clamp( ( atan( v_fx_coord.x, v_fx_coord.y ) + ap )
+            vec2  sl   = prim_local( prim_row( 1u ), prim_row( 3u ) ).yx;
+            float t    = clamp( ( atan( sl.x, sl.y ) + ap )
                                 / max( 2.0 * ap, 1e-4 ), 0.0, 1.0 );
             vcol = mix( vcol, c2, t );
         }

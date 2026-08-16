@@ -250,31 +250,30 @@ render_init( void )
         }
     }
 
-    // Vertex layout: FLOAT2 pos @0, UNORM16X2 uv @8, UNORM8X4 color @12, HALF2 fx coord @16,
-    // UINT prim record @20, stride=24.  The packed effect and texture words are gone: both were
-    // per-PRIMITIVE constants repeated on every vertex, and location 4 now names the record that
-    // holds them (gui.h, gui_prim_t) so the fragment resolves them with one dependent load.
+    // Vertex layout: FLOAT2 pos @0, UNORM16X2 uv @8, UNORM8X4 color @12, UINT prim record @16,
+    // stride=20.  What used to sit here as well -- a packed effect word, a packed texture word, and
+    // a HALF2 shape-local coordinate -- is all per-PRIMITIVE, and location 3 names the record that
+    // holds it (gui.h, gui_prim_t).  The coordinate went last and took the quadrant tessellation
+    // with it: the fragment derives it from SV_Position, so an SDF box is four vertices.
     //
-    // THREE of the five are packed formats, and the shaders declare all three as plain floats:
-    // vertex fetch widens normalized and half attributes on the way in, so the packing is
-    // invisible above this line.  It is validated, not assumed -- pipeline_create checks every
-    // attribute against the reflected shader input for numeric class and component count, and
-    // rejects the pipeline (rather than fetching garbage) if the device cannot read one of these
-    // formats at all.
-    rhi_vertex_attrib_t attribs[ 5 ] = {
+    // TWO of the four are packed formats, and the shaders declare both as plain floats: vertex
+    // fetch widens normalized attributes on the way in, so the packing is invisible above this
+    // line.  It is validated, not assumed -- pipeline_create checks every attribute against the
+    // reflected shader input for numeric class and component count, and rejects the pipeline
+    // (rather than fetching garbage) if the device cannot read one of these formats at all.
+    rhi_vertex_attrib_t attribs[ 4 ] = {
         { .binding = 0, .location = 0, .offset =  0, .format = RHI_VERTEX_FORMAT_FLOAT2     },
         { .binding = 0, .location = 1, .offset =  8, .format = RHI_VERTEX_FORMAT_UNORM16X2  },
         { .binding = 0, .location = 2, .offset = 12, .format = RHI_VERTEX_FORMAT_UNORM8X4   },
-        { .binding = 0, .location = 3, .offset = 16, .format = RHI_VERTEX_FORMAT_HALF2      },
-        { .binding = 0, .location = 4, .offset = 20, .format = RHI_VERTEX_FORMAT_UINT       },
+        { .binding = 0, .location = 3, .offset = 16, .format = RHI_VERTEX_FORMAT_UINT       },
     };
 
     /* The layout above is spelled in literal offsets, so pin it to the struct it must mirror --
        a field inserted into gui_draw_vert_t would otherwise shift every attribute silently. */
-    ORB_STATIC_ASSERT( sizeof( gui_draw_vert_t ) == 24, "gui vertex layout is stated in literal offsets" );
+    ORB_STATIC_ASSERT( sizeof( gui_draw_vert_t ) == 20, "gui vertex layout is stated in literal offsets" );
     ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, uv   ) ==  8, "uv attribute offset drifted" );
-    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, fxc  ) == 16, "fx coord attribute offset drifted" );
-    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, prim ) == 20, "prim attribute offset drifted" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, abgr ) == 12, "colour attribute offset drifted" );
+    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, prim ) == 16, "prim attribute offset drifted" );
 
     // Alpha blend: out = src_rgb*src_a + dst_rgb*(1-src_a).
     rhi_color_target_t color_target = {
@@ -294,9 +293,8 @@ render_init( void )
     rhi_pipeline_desc_t pdesc = {
         .vert               = vert,
         .frag               = frag,
-        .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ],
-                                attribs[ 3 ], attribs[ 4 ] },
-        .attrib_count       = 5,
+        .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ], attribs[ 3 ] },
+        .attrib_count       = 4,
         .vertex_stride      = sizeof( gui_draw_vert_t ),
         .cull               = RHI_CULL_NONE,
         .polygon_mode       = RHI_POLYGON_FILL,

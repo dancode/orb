@@ -22,7 +22,7 @@
     Exit code: 0 = all cases passed, non-zero = the failure count.
 
     Constituents, in include order:
-        test_pack.c  -- vertex packing: binary16, UV, effect coord; the primitive record layout
+        test_pack.c  -- the vertex: UV packing and the constructor; the primitive record layout
         test_rect.c  -- the GUI_RECT leaf kit: rectcut, containment, alignment, colour blend
         test_log.c   -- the GUI_LOG sink contract + the GUI_WARN_ONCE latch
         test_font.c  -- the two-tier glyph lookup: ASCII dense tier, ext binary search, '?' miss
@@ -87,12 +87,7 @@ main( int argc, char* argv[] )
     UNUSED( argv );
 
     /* Vertex packing + the primitive record */
-    test_register( "f16_exact",           test_f16_exact );
-    test_register( "f16_saturation",      test_f16_saturation );
-    test_register( "f16_round_half_up",   test_f16_round_half_up );
-    test_register( "f16_round_trip",      test_f16_round_trip );
     test_register( "uv_pack",             test_uv_pack );
-    test_register( "fxc_pack",            test_fxc_pack );
     test_register( "vert_ctors",          test_vert_ctors );
     test_register( "prim_layout",         test_prim_layout );
     test_register( "prim_ops",            test_prim_ops );

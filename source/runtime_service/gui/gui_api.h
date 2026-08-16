@@ -809,7 +809,7 @@ typedef struct gui_api_s
                                       u32 col_a, u32 col_b );
     /* The SDF box under a rotation about its centre (radians, screen space) -- rotated cards,
        tilted badges, the plate behind rotated text.  feather 0 = crisp 1 px AA; wider = a rotated
-       soft shadow.  Same four quadrant quads as the upright box. */
+       soft shadow.  Same single quad as the upright box. */
     void ( *draw_box_xf            )( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col );
     /* Per-corner radii AND a feather -- the soft drop shadow under a tab or asymmetric card,
        which draw_shadow (one radius) cannot shape.  feather 0 is the crisp per-corner fill. */

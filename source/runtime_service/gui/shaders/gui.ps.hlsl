@@ -45,11 +45,10 @@ struct gui_pc_t
 
 struct ps_in_t
 {
-    float4                  sv_pos   : SV_Position;
-    float4                  color    : COLOR0;
-    float2                  uv       : TEXCOORD0;
-    float2                  fx_coord : TEXCOORD1;
-    nointerpolation uint    prim     : TEXCOORD2;   // primitive record index, slot-local
+    float4                  sv_pos : SV_Position;
+    float4                  color  : COLOR0;
+    float2                  uv     : TEXCOORD0;
+    nointerpolation uint    prim   : TEXCOORD1;   // primitive record index, slot-local
 };
 
 // The record this fragment's primitive named, resolved once at the top of main().  Row 0 is what
@@ -66,6 +65,21 @@ float4 prim_row( uint r )
 {
     return u_buffers[ pc.prim_buf ][ g_row + r ];
 }
+
+// The shape-local coordinate: the pixel position, moved to the record's centre and un-rotated by
+// its (rot_cos, rot_sin).  Every field that has a shape works in this frame, and every one of them
+// used to receive it interpolated from a per-vertex HALF2 -- which could only be correct within
+// one quadrant, because the fold that produced it is not affine.  Derived here it is exact
+// everywhere, which is what collapsed the box from four quads to one.
+//
+// SV_Position is the pixel CENTRE (i + 0.5) and the record's centre is in the same pixel space,
+// the same convention clip_coverage already relies on.
+float2 prim_local( float2 px, float4 rect, float4 soft )
+{
+    float2 d = px - rect.xy;
+    return float2( d.x * soft.z + d.y * soft.w, -d.x * soft.w + d.y * soft.z );
+}
+
 
 // i.color arrives ALREADY LINEAR -- the vertex stage decodes it (see gui.vs.hlsl), because it is a
 // per-vertex constant and decoding it per fragment spent three pow() on every pixel of the UI.
@@ -91,8 +105,8 @@ float4 unpack_col( uint c )
 }
 
 // The effect band (gui.h): coverage of the shape this fragment's record names, 1.0 when it names
-// none.  fx_coord is |p| - c, so the corner arc the CPU used to tessellate is simply where both
-// components go positive at once.
+// none.  The shape-local coordinate is derived here (prim_local), not interpolated, so the corner
+// arc is simply where both components of `|local| - c` go positive at once.
 //   field 1 BOX -- fill inside the boundary
 //   field 6 SEG -- a capsule (below)
 // Those are the two shapes that reach the shared decode at the bottom, and the OP bits modify
@@ -110,7 +124,7 @@ float4 unpack_col( uint c )
 //
 // pc.time -- the wrapped frame clock -- is the band's animation seam, and PULSE is what reading it
 // looks like: frame-constant, so it costs no vertex change, no re-emit and no batch split.
-float fx_coverage( float2 fx_coord, float2 px )
+float fx_coverage( float2 px )
 {
     // 0 NONE, and the two fields that are not shapes: 4 TILE_U acts on the texcoord in main(), 5
     // TEXT_EDGE acts on the COLOR in the SDF branch below.  All three contribute full coverage --
@@ -161,11 +175,8 @@ float fx_coverage( float2 fx_coord, float2 px )
     // before the shared decode below because a sector has no feather (it gets a fixed 1 px band,
     // which is what `0.5 - d` is) and reads an aperture nothing else has.
     //
-    // fx_coord is SIGNED here, not folded, and already rotated by the CPU so the sector's bisector
-    // points +y (gui.h).  That is the whole trick: a circular shape subtracts no half-extent, so its
-    // coordinate is affine over one quad and the sign survives -- and the sign is the angle, without
-    // which neither of these shapes can be expressed at all.  The fold below is the fragment's own,
-    // exact because the value it folds is exact.
+    // The coordinate is SIGNED here, folded only on x.  That is the whole trick: the sign is the
+    // ANGLE, without which neither of these shapes can be expressed at all.
     if ( g_field >= 7u && g_field <= 10u )
     {
         float4 parm = prim_row( 4u );
@@ -173,7 +184,11 @@ float fx_coverage( float2 fx_coord, float2 px )
         float  rb   = parm.y;
         float  ap   = parm.z;
         float2 sc   = float2( sin( ap ), cos( ap ) );  // the aperture as a direction, once per fragment
-        float2 q    = float2( abs( fx_coord.x ), fx_coord.y );
+        // The sector's frame is a REFLECTION about its bisector rather than a rotation, which
+        // works out to prim_local's expression with the components swapped.  det -1 is harmless:
+        // the shape is symmetric about the bisector and the pipeline does not cull.
+        float2 sl   = prim_local( px, prim_row( 1u ), prim_row( 3u ) ).yx;
+        float2 q    = float2( abs( sl.x ), sl.y );
         float  ds;
 
         if ( g_field == 8u )
@@ -209,7 +224,7 @@ float fx_coverage( float2 fx_coord, float2 px )
             float2 dash = prim_row( 2u ).xy;                   // period (turns), on-duty fraction
             float  T    = max( dash.x, 1.0 / 65535.0 ) * 6.28318531;
             float  duty = dash.y;
-            float  t    = atan2( fx_coord.x, fx_coord.y ) + ap;
+            float  t    = atan2( sl.x, sl.y ) + ap;
             float  m    = t - T * floor( t / T );
             float  d_on = min( m, duty * T - m );          // signed: > 0 inside an on-run
             cov = min( cov, saturate( 0.5 + d_on * ra ) );
@@ -217,38 +232,35 @@ float fx_coverage( float2 fx_coord, float2 px )
         return cov;
     }
 
+    float4 rect    = prim_row( 1u );
+    float4 rad     = prim_row( 2u );
     float4 soft    = prim_row( 3u );
     float  feather = soft.x;
     float  border  = soft.y;
 
-    // The corner radius, picked PER QUADRANT.  The field itself still arrives folded in fx_coord,
-    // but which of the four radii that fold used is a property of where the fragment sits, so it
-    // comes from the record and the rasterizer's own pixel coordinate rather than from a
-    // per-quadrant copy of a packed word.  This is the first piece of the fold to move.
-    float4 rect   = prim_row( 1u );
-    float2 dp     = px - rect.xy;
-    float2 local  = float2( dp.x * soft.z + dp.y * soft.w,    // un-rotate: R(-rot) * (frag - centre)
-                           -dp.x * soft.w + dp.y * soft.z );
-    float4 rad    = prim_row( 2u );
-    float  radius = ( local.y <= 0.0 ) ? ( ( local.x <= 0.0 ) ? rad.x : rad.y )
-                                       : ( ( local.x <= 0.0 ) ? rad.w : rad.z );
-
-    float2 q = fx_coord;
+    float2 local = prim_local( px, rect, soft );
+    float2 q;
+    float  radius;
     float  d;
 
-    // field 6 SEG -- a CAPSULE: the distance to a line segment, minus its half-thickness.  q.x is
-    // |along| - halflen and q.y is the SIGNED across-axis offset, which needs no fold because
-    // length() squares it.  That asymmetry is the point: the box folds both axes at the vertex
-    // because both subtract a half-extent, so it costs four quadrant quads; the segment subtracts
-    // on one axis only and costs two.  No interior term either -- this form is already the exact
-    // signed distance in the core, where the rounded box's length-only form saturates.
+    // field 6 SEG -- a CAPSULE: the distance to a line segment, minus its half-thickness.  The
+    // record's rotation IS the segment's axis, so local is (along, across) about the midpoint;
+    // fold the along axis against the half-length and leave the across axis signed, because
+    // length() squares it anyway.  No interior term -- this form is already the exact signed
+    // distance in the core, where the rounded box's length-only form saturates.
     if ( g_field == 6u )
     {
         radius = rad.x;                                  // a capsule has one radius, not four
+        q = float2( abs( local.x ) - rect.z, local.y );
         d = length( float2( max( q.x, 0.0 ), q.y ) ) - radius;
     }
     else
     {
+        // The corner radius comes from the SIGN of local -- which quadrant the fragment sits in --
+        // so four different corners share one record and one quad.
+        radius = ( local.y <= 0.0 ) ? ( ( local.x <= 0.0 ) ? rad.x : rad.y )
+                                    : ( ( local.x <= 0.0 ) ? rad.w : rad.z );
+        q = abs( local ) - ( rect.zw - float2( radius, radius ) );
         d = min( max( q.x, q.y ), 0.0 ) + length( max( q, float2( 0.0, 0.0 ) ) ) - radius;
     }
 
@@ -383,7 +395,7 @@ float4 main( ps_in_t i ) : SV_Target0
 
     float4 s   = u_textures[ NonUniformResourceIndex( tex_slot ) ]
                      .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], uv );
-    float  cov = fx_coverage( i.fx_coord, i.sv_pos.xy ) * ccov;
+    float  cov = fx_coverage( i.sv_pos.xy ) * ccov;
 
     // SELF-SAMPLED primitives (GUI_OP_SELF): the shape is solid colour, so the texel is not
     // consulted (the sample above read a garbage location of a VALID texture, which is harmless and
@@ -402,7 +414,8 @@ float4 main( ps_in_t i ) : SV_Target0
             float4 parm = prim_row( 4u );
             float4 c2   = unpack_col( asuint( parm.w ) );
             float  ap   = parm.z;
-            float  t    = saturate( ( atan2( i.fx_coord.x, i.fx_coord.y ) + ap )
+            float2 sl   = prim_local( i.sv_pos.xy, prim_row( 1u ), prim_row( 3u ) ).yx;
+            float  t    = saturate( ( atan2( sl.x, sl.y ) + ap )
                                     / max( 2.0 * ap, 1e-4 ) );
             vcol = lerp( vcol, c2, t );
         }

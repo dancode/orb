@@ -235,8 +235,8 @@ round_rect_perimeter_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, gui_v
    single-command rounded rect.
 
    The two halves no longer share a path, and the split is the point.  FILLED is a distance-field
-   surface -- one command, 16 vertices, an exact antialiased boundary at any radius -- because a
-   quadrant quad already covers exactly one corner, so four radii cost four packed words and no
+   surface -- one command, four vertices, an exact antialiased boundary at any radius -- because
+   all four radii ride the record and the fragment picks by quadrant, so they cost no
    extra geometry.  It used to fan the sampled perimeter into up to 62 separate TRIANGLE commands
    with a polygonal, unantialiased edge.  STROKED still walks the perimeter: an outline of four
    different radii is not a shape GUI_OP_BAND can describe (its band is derived from one), and the

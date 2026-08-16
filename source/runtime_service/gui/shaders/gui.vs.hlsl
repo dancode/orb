@@ -26,28 +26,29 @@ struct gui_pc_t
 };
 [[vk::push_constant]] gui_pc_t pc;
 
-// THREE of these attributes are PACKED in memory (gui.h): uv is two unorm16, color is four unorm8,
-// and the effect coord is two halves.  None of that appears here, and that is the point -- vertex
-// fetch widens normalized and half formats to 32-bit float before the shader sees them, so the
-// declarations below are what they were when every field was full width.
+// TWO of these attributes are PACKED in memory (gui.h): uv is two unorm16 and color is four
+// unorm8.  Neither says so here, and that is the point -- vertex fetch widens normalized formats
+// to 32-bit float before the shader sees them.
+//
+// The effect COORDINATE used to be a third packed attribute, two halves of `|p| - c` computed per
+// vertex.  The fragment derives it from its own pixel position and the record now, which is what
+// let the quadrant tessellation collapse: this stage no longer knows a shape is involved.
 struct vs_in_t
 {
-    [[vk::location( 0 )]] float2 pos      : POSITION;
-    [[vk::location( 1 )]] float2 uv       : TEXCOORD0;
-    [[vk::location( 2 )]] float4 color    : COLOR0;      // UNORM4 attrib -> normalized float4
-    [[vk::location( 3 )]] float2 fx_coord : TEXCOORD1;    // effect coord: |p| - c, shape-local px
-    [[vk::location( 4 )]] uint   prim     : TEXCOORD2;    // primitive record index, slot-local
+    [[vk::location( 0 )]] float2 pos   : POSITION;
+    [[vk::location( 1 )]] float2 uv    : TEXCOORD0;
+    [[vk::location( 2 )]] float4 color : COLOR0;      // UNORM4 attrib -> normalized float4
+    [[vk::location( 3 )]] uint   prim  : TEXCOORD1;   // primitive record index, slot-local
 };
 
 // nointerpolation on prim: it is an index into a storage buffer, and interpolating it would name a
 // different shape on every pixel.
 struct vs_out_t
 {
-    float4                  sv_pos   : SV_Position;
-    float4                  color    : COLOR0;
-    float2                  uv       : TEXCOORD0;
-    float2                  fx_coord : TEXCOORD1;
-    nointerpolation uint    prim     : TEXCOORD2;
+    float4                  sv_pos : SV_Position;
+    float4                  color  : COLOR0;
+    float2                  uv     : TEXCOORD0;
+    nointerpolation uint    prim   : TEXCOORD1;
 };
 
 // Decode an sRGB-encoded color to linear light.  UI colors are authored in sRGB (the values you
@@ -83,11 +84,9 @@ vs_out_t main( vs_in_t v )
 
     // GUI_FX_TILE_U used to scale U here, from the packed effect word.  It scales in the FRAGMENT
     // now, against the record: the multiply is affine and commutes with interpolation, so the two
-    // are exactly equivalent, and this stage stays a pure pass-through rather than reading the
-    // record twice.  The stored U is still normalized 0..1 (all UNORM16X2 can hold) and the
-    // sampler's REPEAT is still what tiles the atlas stipple row.
-    o.uv       = v.uv;
-    o.fx_coord = v.fx_coord;
-    o.prim     = v.prim;
+    // are exactly equivalent.  The stored U is still normalized 0..1 (all UNORM16X2 can hold) and
+    // the sampler's REPEAT is still what tiles the atlas stipple row.
+    o.uv   = v.uv;
+    o.prim = v.prim;
     return o;
 }

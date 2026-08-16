@@ -2,122 +2,15 @@
 
     sandbox/gui/sb_gui_test/test_pack.c -- the vertex, and the record it points at.
 
-    The packings run on EVERY vertex the gui emits and fail silently: a wrong half-float misplaces
-    an SDF edge by a fraction of a pixel, a swapped UV half samples the wrong row of the atlas.
-    The record has no packing to get wrong -- what it has is a LAYOUT the shaders index by literal
-    row, which is the other thing here.
+    The UV packing runs on every textured vertex the gui emits and fails silently: a swapped half
+    samples the wrong row of the atlas, which is loud, but a swap in ONE emit path is not.
 
-    gui_f16_from_f32 carries a comment saying it was "verified against Python's binary16 packing
-    across the range and every boundary" -- once, by hand, at the time it was written.  This is
-    that verification made repeatable, including the round-half-UP tie behaviour that
-    deliberately differs from the hardware convention.
+    The record has no packing to get wrong -- what it has is a LAYOUT the shaders index by literal
+    row, so a field inserted or a type widened would slide a corner radius into a rotation with no
+    compile error anywhere.  That is the other thing here.
 
 ==============================================================================================*/
 // clang-format off
-
-/*==============================================================================================
-    An INDEPENDENT binary16 decoder -- deliberately not the inverse of the implementation under
-    test, so a round-trip check cannot pass by sharing a bug with it.
-==============================================================================================*/
-
-static f32
-ref_f16_to_f32( u16 h )
-{
-    u32 sign = ( h >> 15 ) & 1u;
-    i32 exp  = (i32)( ( h >> 10 ) & 0x1Fu );
-    u32 man  = h & 0x3FFu;
-    f32 v;
-
-    if ( exp == 0 )
-    {
-        v = ( (f32)man / 1024.0f ) / 16384.0f;          /* subnormal: man/1024 * 2^-14 */
-    }
-    else
-    {
-        f32 scale = 1.0f;
-        i32 e     = exp - 15;
-        for ( i32 i = 0; i <  e; ++i ) scale *= 2.0f;
-        for ( i32 i = 0; i < -e; ++i ) scale *= 0.5f;
-        v = ( 1.0f + (f32)man / 1024.0f ) * scale;
-    }
-
-    return sign ? -v : v;
-}
-
-static f32
-pk_inf( void )  { union { u32 u; f32 f; } n; n.u = 0x7F800000u; return n.f; }
-
-static f32
-pk_nan( void )  { union { u32 u; f32 f; } n; n.u = 0x7FC00000u; return n.f; }
-
-/*==============================================================================================
-    gui_f16_from_f32
-==============================================================================================*/
-
-static void
-test_f16_exact( void )
-{
-    /* Canonical bit patterns. */
-    test_equal( 0x0000u, gui_f16_from_f32(  0.0f ) );
-    test_equal( 0x3C00u, gui_f16_from_f32(  1.0f ) );
-    test_equal( 0xBC00u, gui_f16_from_f32( -1.0f ) );
-    test_equal( 0x3800u, gui_f16_from_f32(  0.5f ) );
-    test_equal( 0x4000u, gui_f16_from_f32(  2.0f ) );
-    test_equal( 0xC000u, gui_f16_from_f32( -2.0f ) );
-    test_equal( 0x5640u, gui_f16_from_f32( 100.0f ) );
-    test_equal( 0x7BFFu, gui_f16_from_f32( 65504.0f ) );    /* largest finite half */
-}
-
-static void
-test_f16_saturation( void )
-{
-    /* Documented: an exponent past the half range clamps to the largest finite value with the
-       sign kept -- and infinities and NaN land in the same place.  A gui that returned a half
-       INF here would put an inf into a vertex attribute and the whole quad would vanish. */
-    test_equal( 0x7BFFu, gui_f16_from_f32(  1.0e9f ) );
-    test_equal( 0xFBFFu, gui_f16_from_f32( -1.0e9f ) );
-    test_equal( 0x7BFFu, gui_f16_from_f32( pk_inf() ) );
-    test_equal( 0xFBFFu, gui_f16_from_f32( -pk_inf() ) );
-    test_equal( 0x7BFFu, gui_f16_from_f32( pk_nan() ) );
-
-    /* Below the subnormal range flushes to a signed zero. */
-    test_equal( 0x0000u, gui_f16_from_f32(  1.0e-10f ) );
-    test_equal( 0x8000u, gui_f16_from_f32( -1.0e-10f ) );
-}
-
-static void
-test_f16_round_half_up( void )
-{
-    /* The documented deviation from hardware: round-half-UP, so an exact tie goes away from
-       zero where the struct/hardware convention would go to even.  2049 -> 2050 here, 2048
-       there.  Pinning it matters because the two are indistinguishable except on ties. */
-    test_equal( 0x6801u, gui_f16_from_f32( 2049.0f ) );
-    test_true( ref_f16_to_f32( gui_f16_from_f32( 2049.0f ) ) == 2050.0f );
-}
-
-static void
-test_f16_round_trip( void )
-{
-    /* The live range: effect coordinates are pixel magnitudes in the hundreds.  Half has ~3
-       decimal digits there, so require the round-trip within one part in 1000. */
-    static const f32 vals[] = { 0.25f, 1.0f, 7.5f, 16.0f, 100.0f, 250.5f, 511.875f, 1024.0f,
-                                -0.25f, -100.0f, -511.875f };
-
-    for ( u32 i = 0; i < ARRAY_COUNT( vals ); ++i )
-    {
-        f32 v   = vals[ i ];
-        f32 got = ref_f16_to_f32( gui_f16_from_f32( v ) );
-        f32 err = ( got - v ) / v;
-        if ( err < 0.0f ) err = -err;
-        test_true( err < 0.001f );
-    }
-
-    /* Exactly representable values must survive EXACTLY -- powers of two and their halves are
-       what a tessellator's skirt offsets actually are. */
-    test_true( ref_f16_to_f32( gui_f16_from_f32( 0.5f  ) ) == 0.5f  );
-    test_true( ref_f16_to_f32( gui_f16_from_f32( 16.0f ) ) == 16.0f );
-    test_true( ref_f16_to_f32( gui_f16_from_f32( 256.0f ) ) == 256.0f );
-}
 
 /*==============================================================================================
     gui_uv_pack -- two unorm16 over [0,1], u in the LOW half.
@@ -145,28 +38,6 @@ test_uv_pack( void )
 }
 
 /*==============================================================================================
-    gui_fxc_pack -- the per-corner effect coordinate, two halves.
-==============================================================================================*/
-
-static void
-test_fxc_pack( void )
-{
-    test_equal( 0x00000000u, gui_fxc_pack( 0.0f, 0.0f ) );
-
-    /* ex in the low half, ey in the high half -- the same convention as the UV word. */
-    test_equal( (u32)gui_f16_from_f32( 1.0f ), gui_fxc_pack( 1.0f, 0.0f ) );
-    test_equal( (u32)gui_f16_from_f32( 1.0f ) << 16, gui_fxc_pack( 0.0f, 1.0f ) );
-
-    u32 w = gui_fxc_pack( -8.0f, 100.0f );
-    test_equal( (u32)gui_f16_from_f32( -8.0f  ), w & 0xFFFFu );
-    test_equal( (u32)gui_f16_from_f32( 100.0f ), w >> 16 );
-
-    /* Signed coordinates matter: ARC/PIE carry the RAW signed offset because the sign is what
-       carries the angle.  A packer that dropped the sign would collapse a sector to a quadrant. */
-    test_not_equal( gui_fxc_pack( 8.0f, 0.0f ), gui_fxc_pack( -8.0f, 0.0f ) );
-}
-
-/*==============================================================================================
     The vertex constructors -- the ONLY supported way to build a gui_draw_vert_t.
 ==============================================================================================*/
 
@@ -180,24 +51,10 @@ test_vert_ctors( void )
     test_equal( 0xFF204060u, v.abgr );
     test_equal( gui_uv_pack( 0.0f, 1.0f ), v.uv );
 
-    /* The clear is the contract: a plain vertex must name record 0 and carry no effect
-       coordinate.  A constructor that left ambient state in place would make every square fill
-       inherit whatever shape was drawn before it. */
-    test_equal( 0u, v.fxc );
-
-    /* The fxc variant differs in exactly one field. */
-    gui_draw_vert_t f = gui_vert_fxc( 10.0f, 20.0f, 0.0f, 1.0f, 0xFF204060u, -4.0f, 6.0f );
-
-    test_true( f.x == v.x && f.y == v.y );
-    test_equal( v.uv,   f.uv   );
-    test_equal( v.abgr, f.abgr );
-    test_equal( gui_fxc_pack( -4.0f, 6.0f ), f.fxc );
-
-    /* The record index clears too, and for the same reason: the tessellator's commit point stamps
-       it, so a constructor that left one behind would point a fresh primitive at whatever shape
-       happened to be built before it. */
+    /* The clear is the contract: a plain vertex must name record 0.  The tessellator's commit
+       point stamps the real index, so a constructor that left ambient state in place would point a
+       fresh primitive at whatever shape happened to be built before it. */
     test_equal( 0u, v.prim );
-    test_equal( 0u, f.prim );
 }
 
 /*==============================================================================================

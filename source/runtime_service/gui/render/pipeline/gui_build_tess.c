@@ -486,24 +486,17 @@ tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
     return true;
 }
 
-/* The INDEX half of tess_prim_commit, separable because one primitive can commit its vertices in
-   more than one chunk.  Exactly one does: the rounded box stamps a different effect word onto each
-   quadrant when the corners differ, and the word is applied by tess_verts_commit -- so the vertices
-   go in four passes while the indices, which belong to the single reservation, are accounted once.
-   Splitting rather than reserving four times is what keeps the shape ALL-OR-NOTHING: four separate
-   reservations could each fail on its own and leave a rounded rect missing a corner. */
-static void
-tess_prim_commit_idx( u32 ni )
-{
-    s_tess.idx_count  += ni;
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
-}
-
+/* Close the reservation tess_prim_begin_* opened: stamp and account the vertices, then fold the
+   indices into the open command's element count.  The index half used to be callable on its own,
+   because the rounded box committed its vertices in four chunks -- one per quadrant, each under a
+   different packed word.  All four corners are in one record now, so every primitive commits once
+   and the split has nothing left to serve. */
 static void
 tess_prim_commit( u32 nv, u32 ni )
 {
     tess_verts_commit( nv );
-    tess_prim_commit_idx( ni );
+    s_tess.idx_count += ni;
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
 }
 
 /* Two triangles over four corners wound TL, TR, BR, BL -- the index pattern of every quad in this
@@ -814,40 +807,40 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
    feather exactly as a plain fill does and differ only in the hole below and one line in the
    fragment.
 
-   Per-corner radii are nearly free HERE and nowhere else, which is the whole reason this generalized
-   rather than growing a second tessellator: a quadrant quad already covers exactly one corner, so
-   the geometry does not change at all -- only which word gets stamped onto its four vertices.  What
-   it costs is that the vertices commit in four chunks instead of one (tess_prim_commit_idx).
+   Per-corner radii are FREE: all four ride the record and the fragment picks the one its own
+   quadrant wants, so the geometry does not change at all.
 
    Why neighbouring quadrants cannot seam, which is the part that has to be true for any of this to
-   work.  Each quadrant measures from its OWN radius, so the obvious worry is that the two sides of a
-   shared centre line disagree.  They cannot.  Take the horizontal one (ay = 0): ey is r - hy, and r
-   is clamped to lim <= hy, so ey <= 0 for every radius.  The y term therefore drops out of both
-   branches of the field and what remains is
+   work.  Each quadrant measures from its OWN radius, so the obvious worry is that the two sides of
+   a shared centre line disagree.  They cannot.  Take the horizontal one (local.y = 0): q.y is
+   r - hy, and r is clamped to lim <= hy, so q.y <= 0 for every radius.  The y term therefore drops
+   out of both branches of the field and what remains is
 
-       d = max( ax - hx, -hy )
+       d = max( |local.x| - hx, -hy )
 
-   in which r has cancelled.  The same holds on the vertical centre line.  The fold lines are
+   in which r has cancelled.  The same holds on the vertical centre line.  The selection lines are
    precisely where the corner radius stops contributing, so the two sides agree EXACTLY -- not
-   approximately, and not merely because the interior saturates.  This is why per-corner radii place
-   no new restriction on feather. */
+   approximately, and not merely because the interior saturates.  That was the load-bearing claim
+   when the quadrants were separate QUADS and it is the same claim now that they are separate
+   BRANCHES of one fragment, which is why the shape survived the fold moving. */
 /* `rot` turns the whole surface about the box CENTRE (radians, screen space; 0 = the common
-   axis-aligned path).  Only the four corner POSITIONS rotate -- the effect coordinate stays in
-   box-local |p| space, which interpolation preserves because it is affine in the position.  The
-   UVs are computed from the UNROTATED position first, so a textured rotated box still maps its
-   picture across the authored rect and clamps over the skirt exactly as the upright one does. */
+   axis-aligned path).  Only the corner POSITIONS rotate; the fragment un-rotates by the same pair
+   out of the record to recover its box-local coordinate.  The UVs are computed from the UNROTATED
+   position first, so a textured rotated box still maps its picture across the authored rect and
+   clamps over the skirt exactly as the upright one does. */
 /*----------------------------------------------------------------------------------------------
     tess_grad_t -- a linear colour ramp carried by the box's own VERTICES.
 
     Colour is affine in position along a linear gradient, and vertex interpolation is affine, so
     evaluating the ramp at each corner reproduces it EXACTLY across every quad -- at any angle,
-    for no fx mode, no packed bits and no shader work.  The 16 vertices a rounded box already
+    for no fx mode, no packed bits and no shader work.  The vertices a rounded box already
     emits are more than the two a gradient needs.
 
-    The effect word could not have expressed this anyway: a box's effect coordinate is |p| - c,
-    folded at the vertex, so the fragment cannot tell one side of the shape from the other.  That
-    is the same limit that rules out a directional drop shadow, and it is why the sector modes --
-    whose coordinate stays signed -- are the ones that carry a gradient in the WORD instead.
+    The packed effect word could not have expressed this: a box's coordinate was |p| - c, folded at
+    the VERTEX, so the fragment could not tell one side of the shape from the other -- the same
+    limit that ruled out a directional drop shadow.  That limit is gone now the fragment derives a
+    SIGNED local coordinate, so this ramp could move into the record whenever something wants a
+    gradient the vertices cannot carry; it stays here because vertices carry this one for free.
 
     The ramp runs in LINEAR light and is re-encoded to sRGB per vertex.  That is what makes a
     rounded gradient agree with the square draw_gradient at its midpoint: the hardware interpolates
@@ -1045,23 +1038,27 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     if ( s_tess.cur_ops & GUI_OP_INSET ) reach = ( feather > reach ) ? feather : reach;
     if ( s_tess.cur_ops & GUI_OP_CUT )   reach = ( reach > 1.0f )    ? reach : 1.0f;
 
-    /* The per-quadrant coverage, in quadrant-local |p| space: one box normally, two forming an L
-       when there is an interior worth skipping.
+    /* The COVERING: which rectangles have to be rasterized for the fragment to resolve the shape.
+       One quad normally -- the whole grown extent -- and a frame of four when there is an interior
+       worth skipping.  This is pure geometry now.  It used to be four QUADRANT quads whether or not
+       there was a hole, because the effect coordinate was |p| - c and the absolute value is not
+       affine across the centre lines; the fragment folds for itself, so the quadrant split has
+       nothing left to buy and a plain fill costs 4 vertices instead of 16.
 
        Sizing the hole is the whole subtlety.  It must lie entirely at d <= -reach -- one pixel of
        it inside the painted band would notch the frame -- and the binding case is its CORNER, which
        pokes diagonally toward the arc.  So the hole is the largest axis-aligned box inscribed in
        the shape ERODED by that reach, whose corner sits on the eroded arc at 45 degrees.  Erode
-       until nothing is left and there is simply no hole. */
-    f32 lo_x[ 2 ] = { 0.0f, 0.0f }, lo_y[ 2 ] = { 0.0f, 0.0f };
-    f32 hi_x[ 2 ] = { ehx,  0.0f }, hi_y[ 2 ] = { ehy,  0.0f };
-    u32 nbox = 1;
+       until nothing is left and there is simply no hole.
 
-    /* rmin == rmax gates the hole to a UNIFORM radius: the inscribed box below is derived from one
-       radius, and with four it would have to be the intersection of four different erosions.  Not
-       worth deriving -- the only per-corner caller is a FILL, which has no hole.  A mixed-radius
-       ring would simply pay for interior fragments it does not paint. */
-    if ( reach > 0.0f && rmin == rmax )
+       The erosion is derived from the LARGEST radius, which is the conservative direction: a bigger
+       radius rounds harder and inscribes a smaller box, so one number is safe for four different
+       corners.  It used to be gated on all four matching for want of that argument. */
+    f32 qlo_x[ 4 ], qlo_y[ 4 ], qhi_x[ 4 ], qhi_y[ 4 ];
+    u32 nq = 1;
+    qlo_x[ 0 ] = -ehx;  qlo_y[ 0 ] = -ehy;  qhi_x[ 0 ] = ehx;  qhi_y[ 0 ] = ehy;
+
+    if ( reach > 0.0f )
     {
         f32 er = rmax - reach;                    /* the eroded shape's radius */
         if ( er < 0.0f ) er = 0.0f;
@@ -1069,13 +1066,15 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         f32 hiy = ( hy - reach - er ) + er * 0.70710678f;
         if ( hix > 0.0f && hiy > 0.0f )
         {
-            lo_x[ 0 ] = hix;  lo_y[ 0 ] = 0.0f;  hi_x[ 0 ] = ehx;  hi_y[ 0 ] = ehy;   /* side  */
-            lo_x[ 1 ] = 0.0f; lo_y[ 1 ] = hiy;  hi_x[ 1 ] = hix;  hi_y[ 1 ] = ehy;   /* end   */
-            nbox = 2;
+            qlo_x[ 0 ] = -ehx;  qlo_y[ 0 ] = -ehy;  qhi_x[ 0 ] =  ehx;  qhi_y[ 0 ] = -hiy; /* top   */
+            qlo_x[ 1 ] = -ehx;  qlo_y[ 1 ] =  hiy;  qhi_x[ 1 ] =  ehx;  qhi_y[ 1 ] =  ehy; /* base  */
+            qlo_x[ 2 ] = -ehx;  qlo_y[ 2 ] = -hiy;  qhi_x[ 2 ] = -hix;  qhi_y[ 2 ] =  hiy; /* left  */
+            qlo_x[ 3 ] =  hix;  qlo_y[ 3 ] = -hiy;  qhi_x[ 3 ] =  ehx;  qhi_y[ 3 ] =  hiy; /* right */
+            nq = 4;
         }
     }
 
-    u32              nv = 4u * nbox * 4u, ni = 4u * nbox * 6u;
+    u32              nv = nq * 4u, ni = nq * 6u;
     gui_draw_vert_t* v;
     u16*             idx;
     u16              base;
@@ -1085,55 +1084,37 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     f32 ulo = ( u0 < u1 ) ? u0 : u1, uhi = ( u0 < u1 ) ? u1 : u0;
     f32 vlo = ( v0 < v1 ) ? v0 : v1, vhi = ( v0 < v1 ) ? v1 : v0;
 
-    static const f32 sx[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };   /* quadrant, CCW from top-left */
-    static const f32 sy[ 4 ] = { -1.0f, -1.0f, 1.0f, 1.0f };
-    /* Corner of one quad, in that quad's own lo/hi box: (0,0) nearest the centre. */
+    /* Corner of one quad in its own lo/hi box, counter-clockwise from the low corner. */
     static const f32 qu[ 4 ] = { 0.0f, 1.0f, 1.0f, 0.0f };
     static const f32 qv[ 4 ] = { 0.0f, 0.0f, 1.0f, 1.0f };
 
-    u32 n = 0;                                     /* quad counter across quadrants x boxes */
-
-    for ( u32 q = 0; q < 4; ++q )
+    for ( u32 n = 0; n < nq; ++n )
     {
-        /* This quadrant's corner, and therefore its own centre rect and its own word.  When every
-           corner matches (tess_fx_box, the overwhelmingly common case) all four words are identical
-           and this is exactly what a single stamp produced. */
-        f32 kx = hx - rq[ q ], ky = hy - rq[ q ];
-
-        for ( u32 k = 0; k < nbox; ++k, ++n )
+        for ( u32 c = 0; c < 4; ++c )
         {
-            for ( u32 c = 0; c < 4; ++c )
+            f32 lx = qlo_x[ n ] + qu[ c ] * ( qhi_x[ n ] - qlo_x[ n ] );
+            f32 ly = qlo_y[ n ] + qv[ c ] * ( qhi_y[ n ] - qlo_y[ n ] );
+            f32 px = cx + lx, py = cy + ly;
+            f32 tu = uhi > ulo ? u0 + ( u1 - u0 ) * ( px - x ) / w : u0;
+            f32 tv = vhi > vlo ? v0 + ( v1 - v0 ) * ( py - y ) / h : v0;
+            if ( tu < ulo ) tu = ulo;  if ( tu > uhi ) tu = uhi;
+            if ( tv < vlo ) tv = vlo;  if ( tv > vhi ) tv = vhi;
+            /* The ramp reads the box-LOCAL offset, which is the pre-rotation one -- so the
+               gradient turns with the box exactly as the uv does. */
+            u32 vcol = grad ? tess_grad_col( grad, lx, ly ) : abgr;
+            /* The turn, LAST: uv came from the unrotated position, so only the world position
+               rotates about the centre.  The fragment un-rotates by the same pair to recover the
+               box-local coordinate it needs. */
+            if ( rot != 0.0f )
             {
-                /* ax/ay ARE |p| at this corner -- the quadrant sign is applied only to the
-                   position, which is why the effect coord needs no abs() in the shader. */
-                f32 ax = lo_x[ k ] + qu[ c ] * ( hi_x[ k ] - lo_x[ k ] );
-                f32 ay = lo_y[ k ] + qv[ c ] * ( hi_y[ k ] - lo_y[ k ] );
-                f32 px = cx + sx[ q ] * ax, py = cy + sy[ q ] * ay;
-                f32 tu = uhi > ulo ? u0 + ( u1 - u0 ) * ( px - x ) / w : u0;
-                f32 tv = vhi > vlo ? v0 + ( v1 - v0 ) * ( py - y ) / h : v0;
-                if ( tu < ulo ) tu = ulo;  if ( tu > uhi ) tu = uhi;
-                if ( tv < vlo ) tv = vlo;  if ( tv > vhi ) tv = vhi;
-                /* The turn, LAST: uv came from the unrotated position, the effect coord is
-                   box-local either way, so only the world position rotates about the centre. */
-                /* The ramp reads the box-LOCAL offset, which is the pre-rotation one -- so the
-                   gradient turns with the box exactly as the uv and the effect coord do. */
-                u32 vcol = grad ? tess_grad_col( grad, sx[ q ] * ax, sy[ q ] * ay ) : abgr;
-                if ( rot != 0.0f )
-                {
-                    f32 dx = px - cx, dy = py - cy;
-                    px = cx + dx * rcs - dy * rsn;
-                    py = cy + dx * rsn + dy * rcs;
-                }
-                v[ n * 4 + c ] = gui_vert_fxc( px, py, tu, tv, vcol, ax - kx, ay - ky );
+                px = cx + lx * rcs - ly * rsn;
+                py = cy + lx * rsn + ly * rcs;
             }
-            tess_quad_idx( &idx[ n * 6 ], (u16)( base + n * 4 ) );
+            v[ n * 4 + c ] = gui_vert( px, py, tu, tv, vcol );
         }
+        tess_quad_idx( &idx[ n * 6 ], (u16)( base + n * 4 ) );
     }
 
-    /* ONE commit for all four quadrants.  They used to go in four chunks because each carried its
-       own packed word -- a different radius per corner meant a different word per quadrant, and
-       tess_verts_commit stamps from ambient state.  All four radii are in the record now, so the
-       quadrants differ in nothing but their vertices. */
     tess_prim_commit( nv, ni );
 }
 
@@ -1199,15 +1180,15 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
 
     The tab, the notch, the asymmetric card: shapes that used to walk a per-corner perimeter (up to
     72 sampled points) and fan it into as many separate TRIANGLE commands, with a polygonal boundary
-    and no antialiasing at all.  Here it is the same 16 vertices a uniform rounded rect costs, and
-    the boundary is exact, because a quadrant quad already sees exactly one corner -- the radii live
-    in four packed words, not in the geometry.
+    and no antialiasing at all.  Here it is the same FOUR vertices a uniform rounded rect costs, and
+    the boundary is exact, because all four radii ride the record and the fragment picks the one
+    its own quadrant wants -- the radii are data, not geometry.
 
         perimeter fan, 4 rounded corners   ~70 verts / ~200 idx, 62 commands, aliased
-        the field                           16 verts /   24 idx,  1 command,  antialiased
+        the field                            4 verts /    6 idx,  1 command,  antialiased
 
-    Solid colour and the standard 1 px AA band, because that is what the callers want -- not a
-    limit of the field (tess_fx_box_core shows the quadrants agree exactly at any feather).
+    Solid colour and the standard 1 px AA band, because that is what the callers want, not a limit
+    of the field.
 ==============================================================================================*/
 
 static void
@@ -1215,9 +1196,10 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
                     f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
                     u32 abgr, u32 col_b, f32 grad_ang )
 {
-    /* Quadrant order: top-left, top-right, bottom-right, bottom-left (sx/sy in tess_fx_box_core),
-       which is the order gui_cmd_t.round_rect declares its radii in.  feather below the standard
-       AA band clamps up -- 0 means "crisp", never "hard-edged". */
+    /* Corner order: top-left, top-right, bottom-right, bottom-left -- the order gui_cmd_t
+       .round_rect declares its radii in, and the order the record's r_tl/r_tr/r_br/r_bl carry
+       them, which is what the fragment indexes by the sign of its own position.  feather below
+       the standard AA band clamps up -- 0 means "crisp", never "hard-edged". */
     const f32 r4[ 4 ] = { rtl, rtr, rbr, rbl };
 
     /* Equal endpoints ARE a flat fill, so the ramp is skipped rather than special-cased: running
@@ -1389,7 +1371,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
            flips for bisectors in the lower half plane costs nothing. */
         f32 px = pcx - sm * lx + cm * ly;
         f32 py = pcy + cm * lx + sm * ly;
-        v[ i ] = gui_vert_fxc( px, py, wu, wv, abgr, lx, ly );
+        v[ i ] = gui_vert( px, py, wu, wv, abgr );
     }
     tess_quad_idx( idx, base );
     tess_prim_commit( 4u, 6u );
@@ -1876,11 +1858,11 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     gui_draw_vert_t* v;
     u16*             idx;
     u16              base;
-    if ( !tess_prim_begin( 8u, 12u, &wu, &wv, &v, &idx, &base ) )
+    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
         return;
     /* The record states the capsule outright: midpoint, half-length, the axis as the shape's turn,
-       and the radius in the corner-radius lane.  Everything the two-quad fold above exists to
-       precompute is derivable from those five numbers. */
+       and the radius in the corner-radius lane.  That is what collapsed the geometry to one quad --
+       the along-axis fold that used to force two lives in the fragment now. */
     s_tess.cur_prim.field   = (u32)GUI_FX_SEG;
     s_tess.cur_prim.cx      = mx;
     s_tess.cur_prim.cy      = my;
@@ -1890,26 +1872,18 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     s_tess.cur_prim.rot_cos = ux;
     s_tess.cur_prim.rot_sin = uy;
 
-    /* Corner of one quad in its own half: `a` runs 0 -> ea away from the midpoint (so |along| is
-       simply a, and its sign is constant over the quad -- the whole reason for the split), `b`
-       spans the full width signed. */
-    static const f32 qa[ 4 ] = {  0.0f, 1.0f, 1.0f,  0.0f };
+    /* One quad, oriented along the segment: `a` spans the full length signed, `b` the full width. */
+    static const f32 qa[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };
     static const f32 qb[ 4 ] = { -1.0f, -1.0f, 1.0f, 1.0f };
 
-    for ( u32 s = 0; s < 2; ++s )
+    for ( u32 c = 0; c < 4; ++c )
     {
-        f32 sa = ( s == 0 ) ? 1.0f : -1.0f;     /* which side of the midpoint this quad covers */
-        for ( u32 c = 0; c < 4; ++c )
-        {
-            f32 a = qa[ c ] * ea, b = qb[ c ] * ec;
-            v[ s * 4 + c ] = gui_vert_fxc( mx + sa * a * ux + b * nx,
-                                           my + sa * a * uy + b * ny,
-                                           wu, wv, col, a - hl, b );
-        }
-        tess_quad_idx( &idx[ s * 6 ], (u16)( base + s * 4u ) );
+        f32 a = qa[ c ] * ea, b = qb[ c ] * ec;
+        v[ c ] = gui_vert( mx + a * ux + b * nx, my + a * uy + b * ny, wu, wv, col );
     }
+    tess_quad_idx( idx, base );
 
-    tess_prim_commit( 8u, 12u );
+    tess_prim_commit( 4u, 6u );
 }
 
 /* Volatile-widget seam (render/pipeline/gui_build_volatile.c, included right after this file in

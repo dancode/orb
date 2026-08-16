@@ -1638,31 +1638,37 @@ typedef enum
     the same shortfall: an effect the rasterizer could evaluate exactly, approximated in vertices
     because the vertex has nowhere to say what shape it belongs to.
 
-    The effect band is that missing sentence.  Every vertex carries a signed-distance coordinate
-    and one packed word naming the shape, so a rounded box is FOUR quads whose fragment shader
-    knows the exact boundary: analytic antialiasing, arbitrary softness, and the texture still
-    sampling underneath it.  Crucially the mode travels PER VERTEX, not in a push constant, so an
-    SDF surface, a glyph run and a plain fill share one draw call -- an effect can never split a
-    batch, which is what makes it affordable to use one on every widget.
+    The effect band is that missing sentence.  A primitive names a RECORD (gui_prim_t, above) that
+    states its shape outright -- rect, radii, softness, rotation -- and the fragment evaluates the
+    field from its own pixel position: analytic antialiasing, arbitrary softness, and the texture
+    still sampling underneath it.  A rounded box is FOUR VERTICES.
 
-    Mode 0 (GUI_FX_NONE) is what every other primitive writes, and the fragment tests it first:
+    Field 0 (GUI_FX_NONE) is what every other primitive writes, and the fragment tests it first:
     text, lines, sprites and square fills pay one compare and are byte-for-byte unchanged.
 
-    Vertex attribute layout (matches the gui pipeline), 24 bytes, single interleaved binding:
+    THE FOLD IS GONE, and it is worth saying what it was, because it shaped everything above.  The
+    coordinate used to be `|p| - c` computed at each VERTEX -- and an absolute value is not affine
+    across the line where it folds, so the hardware could only interpolate it correctly inside one
+    quadrant.  That is why a rounded box cost four quadrant quads and a capsule two, why the vertex
+    carried a HALF2 coordinate at all, and why a shadow could never have a DIRECTION: |p| threw the
+    sign away, and the sign is which side you are on.  Handing the fragment the rect instead makes
+    the fold its own business -- `abs(p) - c` on a value it computes exactly -- so the quadrants
+    collapse to one quad, the coordinate leaves the vertex, and the sign survives.
+
+    Vertex attribute layout (matches the gui pipeline), 20 bytes, single interleaved binding:
         location 0 : FLOAT2     (x, y)      offset  0   -- pixel-space position
         location 1 : UNORM16X2  (uv u32)    offset  8   -- texture UV, [0,1] at 1/65535
         location 2 : UNORM8X4   (abgr u32)  offset 12   -- packed color, R8G8B8A8_UNORM
-        location 3 : HALF2      (fxc u32)   offset 16   -- effect coordinate (see below)
-        location 4 : UINT       (prim u32)  offset 20   -- primitive record index (flat)
+        location 3 : UINT       (prim u32)  offset 16   -- primitive record index (flat)
 
-    The packed effect word and the packed texture word used to sit here, 8 bytes repeated on every
-    vertex of every primitive.  They are the record now (above), and what is left is exactly the
-    four quantities that genuinely VARY across a primitive plus the one number naming the rest.
+    What is left is the three quantities that genuinely VARY across a primitive, plus the one
+    number naming everything that does not.  Colour stays per-vertex because it earns it: the
+    rounded gradient, the plot and the per-vertex-coloured polyline all interpolate it.
 
-    THREE of those five are packed, and the shader is unaware of it: the fetch unit widens every
-    normalized and half format to float, so the vertex stage still declares vec2 / vec4 and reads
-    the same values it would if every field were 32-bit.  The two decisions worth recording are WHY
-    each packing is safe, because both have a failure mode that is invisible until it is not:
+    TWO of the four are packed, and the shader is unaware of it: the fetch unit widens every
+    normalized format to float, so the vertex stage still declares vec2 / vec4 and reads the same
+    values it would if every field were 32-bit.  The one decision worth recording is why the uv
+    packing is safe, because its failure mode is invisible until it is not:
 
       uv as UNORM16X2 -- 1/65535, against a largest atlas of 1024 px, is 64 steps per texel, so a
         glyph's sample lands where it did.  What it cannot represent is U OUTSIDE [0,1], and one
@@ -1671,17 +1677,6 @@ typedef enum
         lives in the record and the FRAGMENT multiplies, so the stored UV stays inside [0,1] and
         the sampled one is unchanged.  Any future primitive that wants to tile does the same;
         storing U > 1 directly would silently CLAMP.
-
-      fxc as HALF2 -- half is only ~3 decimal digits, and the effect coordinate reaches hundreds of
-        pixels at the centre of a large panel, where its ulp is half a pixel.  It is safe anyway,
-        and for a reason specific to how the field is used: an SDF only matters near its ZERO
-        crossing, and linear interpolation weights each vertex by proximity, so the error there is
-        dominated by the NEAR vertex -- whose value is small (radius + feather, tens of pixels) and
-        whose ulp is therefore ~0.008 px.  The far vertex's half-pixel error arrives multiplied by
-        a barycentric weight of a few percent.  Measured at the boundary of a 1600 px panel the
-        total is under 0.02 px.  A uniform fixed-point encoding would be WORSE (0.06 px
-        everywhere) despite sounding safer: what matters is precision where the field is zero, not
-        precision on average.
 
     THE TEXTURE TRAVELS PER PRIMITIVE, for the same reason the shape does: so it cannot split a
     batch.  Coverage, SDF and sprite art are a pixel format and a sampler apart, so they cannot
@@ -1695,8 +1690,8 @@ typedef enum
     neighbouring primitives in one draw legitimately name different textures.
 ==============================================================================================*/
 
-/* What the fragment does with the effect coordinate.  Four bits, so the band has room to grow
-   without touching the vertex again. */
+/* What the fragment does at this primitive.  A full 32-bit member of the record, so the list grows
+   by naming a value -- there is no nibble to run out of. */
 typedef enum
 {
     GUI_FX_NONE      = 0,  /* no effect -- (ex, ey) and the parameters are ignored (the default) */
@@ -1718,77 +1713,66 @@ typedef enum
     GUI_FX_ARC       = 7,  /* annular sector: a band of `tube` px centred on radius ra, round caps */
     GUI_FX_PIE       = 8,  /* filled wedge: the disc of radius ra cut to the aperture, sharp edges */
 
-    /* The SELF-SAMPLED sector modes.  Both emit with GUI_OP_SELF set, which is what frees the
-       vertex's 32-bit uv word to carry mode-specific parameters instead of texcoords.  The same ARC
-       word partition (ra | tube | aperture) still applies; only the uv payload differs. */
+    /* The SELF-SAMPLED sector modes.  Both emit with GUI_OP_SELF set, so the fragment forces
+       coverage to 1 and never consults the texel.  They read the same ra / tube / aperture the
+       plain sector does and add their own record members on top. */
     GUI_FX_ARC_DASH  = 9,  /* ARC whose coverage is cut by an angular dash pattern: uv.x = the dash
                               period as a fraction of a full turn, uv.y = the on-duty fraction   */
     GUI_FX_ARC_GRAD  = 10, /* ARC whose colour sweeps from the vertex colour at the sector start
-                              to a second RGBA8 riding the uv word (x = r|g<<8, y = b|a<<8)      */
+                              to the record's col_b at its end                                   */
 
     /* The FRAMEBUFFER-TILING pattern modes.  Self-sampled like the two above (same bit), but the pattern
        coordinate is gl_FragCoord / SV_Position -- exact float pixels straight from the
-       rasterizer -- rather than the interpolated HALF2 effect coordinate, whose ulp reaches a
-       full pixel at the far corners of a fullscreen backdrop, and backdrops are exactly the
-       shapes that get that big.  The phase rides the packed words, so the pattern anchors to
-       the SHAPE, not the screen: a backdrop drags with its window instead of sliding under it. */
-    GUI_FX_CHECKER   = 11, /* two colours alternating in cell-sized squares: col_b rides the uv
-                              word (the ARC_GRAD lanes); cell + phase live in the effect word   */
+       rasterizer -- rather than a shape-local frame, because these two do not HAVE a rect: a
+       backdrop's pattern belongs to the screen grid.  The phase rides the record, so the pattern
+       anchors to the SHAPE: a backdrop drags with its window instead of sliding under it. */
+    GUI_FX_CHECKER   = 11, /* two colours alternating in cell-sized squares: the record's col_b
+                              is the alternate; cell + per-axis phase are param_a / _b / _c     */
     GUI_FX_GRID      = 12, /* line lattice every `cell` px, `thickness` px wide, antialiased.
                               The vertex colour draws the LINES only -- layer it over any fill.
-                              Phase rides the uv word as a per-axis fraction of the cell        */
+                              Phase is a per-axis fraction of the cell (record r_tl / r_tr)     */
 
     /* 13 is unnamed.  It was SKIRT -- a BOX with its interior cut away -- which is now
        GUI_OP_CUT, the exact mirror of the inset op it used to sit opposite. */
 
 } gui_fx_mode_t;
 
-/* The effect coordinate (ex, ey) is the shape-local quantity `|p| - c`, where p is the vertex's
-   offset from the shape centre and c the centre-rect half-extent (half-size minus the corner
-   radius).  The absolute value is why an SDF box is tessellated as four QUADRANT quads rather
-   than one: within a quadrant the sign of p is constant, so |p| is affine in p and the hardware's
-   linear interpolation reproduces it exactly.  Across one quad it would fold at the centre line.
-   The fragment then needs only `d = length( max( ex_ey, 0 ) ) - radius`.
+/* HOW THE FRAGMENT GETS ITS SHAPE-LOCAL COORDINATE.  Every field below works in a frame of its
+   own, and every one of them derives it the same way: take the pixel position, subtract the
+   record's centre, and un-rotate by the record's (rot_cos, rot_sin).
 
-   Note precisely WHY the fold has to happen at the vertex: it is the SUBTRACTION of c that forces
-   it.  c is not in the packed word, so the fragment cannot redo `|p| - c` itself.  An axis with no
-   subtraction needs no fold at all -- which is the whole reason GUI_FX_SEG costs half what a box
-   does.  A capsule subtracts a half-length on the along-axis only, so that axis folds (two quads,
-   split at the midpoint perpendicular) while the across-axis rides SIGNED and the fragment squares
-   it inside length().  Two quads, and the shape is a rotated segment with exact round caps:
+       d     = SV_Position.xy - (cx, cy)
+       local = ( d.x * rot_cos + d.y * rot_sin, -d.x * rot_sin + d.y * rot_cos )
 
-       ex = |p_along| - halflen        ey = p_across  (signed)
-       d  = length( vec2( max( ex, 0 ), ey ) ) - radius
+   BOX folds that itself -- `q = |local| - c`, where c is the half-extent minus the corner radius
+   -- and picks WHICH corner radius from the sign of local, since the sign says which quadrant the
+   fragment is in.  Then `d = min(max(q.x,q.y),0) + length(max(q,0)) - radius`; the interior term is
+   what keeps a border wider than the radius, or a shadow softer than it, correct in the core.
 
-   That form is the true distance to the segment inside and out, so unlike the rounded box it needs
-   no interior-distance term to stay correct in its core.
+   SEG uses the segment's own axis as the rotation, so local is (along, across) about the midpoint,
+   and folds only the along axis: `q = (|local.x| - halflen, local.y)`, then
+   `d = length(vec2(max(q.x,0), q.y)) - radius`.  That form is the true distance to the segment
+   inside and out, so unlike the box it needs no interior term at all.
 
-   THE SECTOR MODES FOLD NOTHING, and that is what makes an arc affordable.  Re-read the rule above:
-   the fold is forced by the SUBTRACTION of c, not by the absolute value.  A circular shape has
-   c = 0 -- the centre rect of a disc is a point -- so there is nothing to subtract, the effect
-   coordinate is just p, and p is affine in the vertex position over the WHOLE shape.  One quad
-   interpolates it exactly.  The fragment applies its own abs() to the interpolated value, which is
-   exact because the value it folds is.
+   THE SECTOR FIELDS use the same two numbers as a REFLECTION rather than a rotation -- the frame
+   whose +y is the sector's bisector -- which works out to the box's expression with its components
+   swapped.  They fold nothing but |x|, and that is what makes an arc expressible at all: the SIGN
+   of the coordinate is the angle, and a shape that threw it away could never tell where on the
+   circle a fragment lies.
 
-   Getting the fold for free is not the point though; getting the ANGLE is.  |p| destroys the sign
-   and with it any way to tell where on the circle a fragment lies, which is why no amount of
-   quadrant-folding could ever have expressed an arc.  Signed p keeps it, so a sector costs:
+       q   = ( |local.x|, local.y )
+       ARC = the distance to the circle of radius ra, cut to the aperture, minus the tube
+       PIE = that disc intersected with the angular half-plane
 
-       ex, ey = p rotated so the sector's bisector points +y     (the CPU does this rotation)
-       q      = ( |ex|, ey )                                     (the fragment's own fold)
-       ARC    = the distance to the circle of radius ra, cut to the aperture, minus the tube
-       PIE    = that disc intersected with the angular half-plane
+   The frame is a reflection (det -1), which is harmless: the shape is symmetric about the bisector
+   by construction, and the pipeline does not cull.
 
-   The rotation is on the CPU because it is per-shape, not per-fragment: four vertices pay for it
-   instead of every pixel, and it means the packed word carries ONE aperture rather than two
-   absolute angles.  The frame is a reflection (det -1), which is harmless -- the shape is symmetric
-   about the bisector by construction, and the pipeline does not cull.
-
-   One precision note specific to these modes.  Every other mode's coordinate is near ZERO at the
-   boundary, which is the whole argument for HALF2 above; a sector's is near ra, so its ulp at the
-   boundary is the ulp of ra rather than of a corner radius.  At UI radii (<= 64 px) that is 0.03 px
-   and invisible; by 512 px it is 0.25 px.  Arcs that large are not a UI shape, but that is where
-   the limit is and it is not the same limit the box has. */
+   ALL OF THIS USED TO HAPPEN AT THE VERTEX, in a HALF2 attribute, and the cost was structural
+   rather than arithmetic: |p| is not affine across the line it folds on, so the hardware could
+   only interpolate it correctly WITHIN one quadrant -- hence four quadrant quads for a box, two
+   for a capsule, and no way to express a direction, because |p| had already discarded the sign.
+   The fragment computes the same quantity exactly, from numbers the record states, so the geometry
+   is now whatever covers the shape and nothing more. */
 
 /* THE FRAME CLOCK the fragment sees, in seconds, wrapped to GUI_FX_TIME_WRAP.  It rides the PUSH
    CONSTANT, not the vertex, and that is the whole point: time is the same number for every shape
@@ -1919,48 +1903,9 @@ typedef struct
     f32 x, y;     // pixel position
     u32 uv;       // texture UV, two unorm16 over [0,1] (gui_uv_pack)
     u32 abgr;     // packed color
-    u32 fxc;      // effect coordinate |p| - c as two halves (GUI_FX_NONE ignores it)
     u32 prim;     // primitive record index, SLOT-LOCAL (gui_prim_t; + the flush's prim_base)
 
 } gui_draw_vert_t;
-
-/* IEEE binary32 -> binary16, round-half-UP (struct/hardware convention is half-to-even, so the two
-   differ by 1 ulp on an exact tie -- 2049 goes to 2050 here and 2048 there).  An exponent past the
-   half range clamps to the largest finite value with the sign kept, which is also where infinities
-   and NaN land; a mantissa carry at the very top of the range is deliberately allowed to ripple
-   into the exponent and produce inf, because that is the correctly rounded answer.
-
-   None of those edges are reachable from an effect coordinate -- these are pixel magnitudes in the
-   hundreds, so the live paths are the normal one and flush-to-subnormal near zero.  Verified
-   against Python's binary16 packing across the range and every boundary listed above. */
-static inline u16
-gui_f16_from_f32( f32 f )
-{
-    union { f32 f; u32 u; } in;
-    in.f = f;
-
-    u32 sign = ( in.u >> 16 ) & 0x8000u;
-    i32 exp  = (i32)( ( in.u >> 23 ) & 0xFFu ) - 127 + 15;
-    u32 man  = in.u & 0x7FFFFFu;
-
-    if ( exp >= 31 )                       /* overflow / inf / nan -> largest finite, sign kept */
-        return (u16)( sign | 0x7BFFu );
-
-    if ( exp <= 0 )                        /* below the normal range -> subnormal, or zero */
-    {
-        if ( exp < -10 )
-            return (u16)sign;
-        man |= 0x800000u;                  /* restore the implicit leading 1 */
-        u32 shift = (u32)( 14 - exp );     /* 14..24 */
-        u32 sub   = ( man >> shift ) + ( ( man >> ( shift - 1 ) ) & 1u );
-        return (u16)( sign | sub );
-    }
-
-    /* Normal.  The round-up carry is allowed to ripple into the exponent -- that is the correct
-       result when a mantissa of all ones rounds up, and it is why this is not masked. */
-    u32 h = sign | ( (u32)exp << 10 ) | ( man >> 13 );
-    return (u16)( h + ( ( man >> 12 ) & 1u ) );
-}
 
 /* UV -> two unorm16.  Clamped, because that is the only thing the format can do with an out-of-
    range coordinate -- a caller that wants U past 1 asks for GUI_FX_TILE_U instead.
@@ -1977,24 +1922,13 @@ gui_uv_pack( f32 u, f32 v )
     return (u32)( u * 65535.0f + 0.5f ) | ( (u32)( v * 65535.0f + 0.5f ) << 16 );
 }
 
-static inline u32
-gui_fxc_pack( f32 ex, f32 ey )
-{
-    return (u32)gui_f16_from_f32( ex ) | ( (u32)gui_f16_from_f32( ey ) << 16 );
-}
-
-/* A vertex with no effect -- what every primitive that is not an SDF surface writes. */
+/* THE vertex constructor.  There used to be a second one taking the per-corner effect coordinate;
+   the fragment derives that from its own pixel position and the record now, so a vertex is
+   position, texcoord, colour, and the number naming everything else. */
 static inline gui_draw_vert_t
 gui_vert( f32 x, f32 y, f32 u, f32 v, u32 abgr )
 {
-    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, 0u, 0u };
-}
-
-/* The same, carrying the per-corner effect coordinate.  The RECORD is ambient (above). */
-static inline gui_draw_vert_t
-gui_vert_fxc( f32 x, f32 y, f32 u, f32 v, u32 abgr, f32 ex, f32 ey )
-{
-    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, gui_fxc_pack( ex, ey ), 0u };
+    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, 0u };
 }
 
 /*==============================================================================================
@@ -2240,7 +2174,7 @@ typedef struct
            and widening it would grow the whole command pool for fields almost nothing sets.
            `rot` (radians, screen space, about the box CENTRE) turns the whole surface: the fx
            coordinate is box-local and affine, so rotating the four corner POSITIONS preserves the
-           field under interpolation -- a rotated card costs the same four quadrant quads.  0 for
+           field under interpolation -- a rotated card costs the same one quad.  0 for
            every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap.
            `variant` picks which of the three fills this is, all sharing the one geometry:
              0 BOX    -- the filled surface: a glow or halo MEANT to be seen through its subject.
@@ -2254,7 +2188,7 @@ typedef struct
            inset surface can breathe as readily as a filled one. */
         struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr, variant; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
-           the SAME four quadrant quads a uniform rounded rect emits; the one thing that differs is
+           the SAME one quad a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape
            parameter that lives in the WORD rather than in the vertices.  A quadrant already sees
            exactly one corner, so per-corner radii cost no extra geometry -- only the four separate
@@ -2289,10 +2223,10 @@ typedef struct
         /* The arc under an angular dash cut.  `period` is radians per dash+gap cycle -- the emit
            side quantizes it so a WHOLE number of cycles fits the sweep, which is what keeps a
            closed dashed ring from showing a seam where the pattern meets itself; `duty` is the
-           on-fraction.  Both ride the quad's flat uv word to the fragment (GUI_FX_ARC_DASH). */
+           on-fraction.  Both reach the fragment through the record (GUI_FX_ARC_DASH). */
         struct { f32 cx, cy, r, thickness, a0, a1; f32 period, duty; u32 abgr; } arc_dash;
-        /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1).  col_b rides the quad's flat
-           uv word; the fragment lerps by angle/aperture (GUI_FX_ARC_GRAD) -- the one gradient a
+        /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1).  col_b reaches the fragment
+           through the record; it lerps by angle/aperture (GUI_FX_ARC_GRAD) -- the one gradient a
            4-corner vertex colour could never express, because it varies by ANGLE, not position. */
         struct { f32 cx, cy, r, thickness, a0, a1; u32 col_a, col_b; } arc_grad;
         /* A textured quad under a rotation about its CENTRE -- the text_xf treatment applied to

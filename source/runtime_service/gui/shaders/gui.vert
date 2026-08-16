@@ -13,22 +13,23 @@ layout(push_constant) uniform PC {
     uint prim_base;  // this window slot's first record (fragment-only)
 } pc;
 
-// THREE of these attributes are PACKED in memory (gui.h): uv is two unorm16, color is four unorm8,
-// and the effect coord is two halves.  None of that appears here, and that is the point -- vertex
-// fetch widens normalized and half formats to 32-bit float before the shader sees them, so the
-// declarations below are what they were when every field was full width.
+// TWO of these attributes are PACKED in memory (gui.h): uv is two unorm16 and color is four
+// unorm8.  Neither says so here, and that is the point -- vertex fetch widens normalized formats
+// to 32-bit float before the shader sees them.
+//
+// The effect COORDINATE used to be a third packed attribute, two halves of `|p| - c` computed per
+// vertex.  The fragment derives it from its own pixel position and the record now, which is what
+// let the quadrant tessellation collapse: this stage no longer knows a shape is involved.
 layout(location = 0) in vec2 in_pos;
 layout(location = 1) in vec2 in_uv;
 layout(location = 2) in vec4 in_color;
-layout(location = 3) in vec2 in_fx_coord;   // effect coord: |p| - c, shape-local pixels
-layout(location = 4) in uint in_prim;       // primitive record index, slot-local
+layout(location = 3) in uint in_prim;       // primitive record index, slot-local
 
 layout(location = 0) out vec4 v_color;
 layout(location = 1) out vec2 v_uv;
-layout(location = 2) out vec2 v_fx_coord;
 // flat: this is an index into a storage buffer, and interpolating it would name a different shape
 // on every pixel of the primitive.
-layout(location = 3) flat out uint v_prim;
+layout(location = 2) flat out uint v_prim;
 
 // Decode an sRGB-encoded color to linear light.  UI colors are authored in sRGB (the values you
 // type as hex / pick in a color picker), but the swapchain is a _SRGB format, so the GPU blends in
@@ -62,10 +63,8 @@ void main()
 
     // GUI_FX_TILE_U used to scale U here, from the packed effect word.  It scales in the FRAGMENT
     // now, against the record: the multiply is affine and commutes with interpolation, so the two
-    // are exactly equivalent, and this stage stays a pure pass-through rather than reading the
-    // record twice.  The stored U is still normalized 0..1 (all UNORM16X2 can hold) and the
-    // sampler's REPEAT is still what tiles the atlas stipple row.
+    // are exactly equivalent.  The stored U is still normalized 0..1 (all UNORM16X2 can hold) and
+    // the sampler's REPEAT is still what tiles the atlas stipple row.
     v_uv       = in_uv;
-    v_fx_coord = in_fx_coord;
     v_prim     = in_prim;
 }
