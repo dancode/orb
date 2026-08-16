@@ -708,6 +708,12 @@ volatile_update( void )
     if ( s_draw.seg_count == 0 )
         return;   /* no frame has ever emitted -- nothing to patch, and no segment to checkpoint */
 
+    /* Restored once after the loop: the per-row replays land per-viewport DPI bakes and install
+       stamped fonts, and the active font must leave this function as it entered (the landing
+       machinery's lineage guard reads it). */
+    u32 active_font_ck = font_active_id();
+    u32 draw_font_ck   = s_draw.cur_font;
+
     for ( u32 i = 0; i < s_volatile_count; ++i )
     {
         gui_volatile_slot_t* row = &s_volatile[ i ];
@@ -744,6 +750,16 @@ volatile_update( void )
         f32        tclip_x0_ck   = s_draw.text_clip_x0;
         f32        tclip_x1_ck   = s_draw.text_clip_x1;
         u32        tedge_ck      = s_draw.text_edge;
+
+        /* Mixed DPI: land the bake of the viewport this row's window sits on, exactly as
+           window_begin does before the real emit (gui_frame_dpi.c).  The idle frame's ambient
+           metrics are viewport 0's (frame_begin lands them), so without this a floater on a
+           differently-scaled monitor replays its callback against the wrong s_style metrics --
+           the stamped font gives the right glyph sizes but every em-scaled layout metric (gaps,
+           widget heights, the grid quantum) is the primary surface's, the measured footprint
+           disagrees with every real emit, and the reflow strike counter runs out.  A no-op when
+           the sizes already match (the single-monitor common case). */
+        gui_dpi_land( (i32)row->vp );
 
         s_draw.cur_win      = row->win;
         s_draw.cur_z        = row->z;
@@ -819,8 +835,16 @@ volatile_update( void )
         s_draw.text_clip_x0         = tclip_x0_ck;
         s_draw.text_clip_x1         = tclip_x1_ck;
         s_draw.text_edge            = tedge_ck;
-        font_use( font_ck );
+
+        /* The active font stays this row's stamped font until the tail below: re-activating an
+           unrelated font here would trip the DPI landing's lineage guard for the next row. */
     }
+
+    /* Re-land the primary surface's bake (the ambient state everything between frames reads --
+       a no-op unless a row above landed a floater's), then restore the entry font state. */
+    gui_dpi_land( 0 );
+    font_use( active_font_ck );
+    s_draw.cur_font = draw_font_ck;
 }
 
 // clang-format on
