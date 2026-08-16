@@ -187,8 +187,9 @@ step_cmd_detail( const step_cmd_info_t* ci )
         case GUI_CMD_FX_BOX:
             gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->fx_box.x, c->fx_box.y,
                        c->fx_box.w, c->fx_box.h );
-            fmt_snprintf( b2, sizeof( b2 ), "round %.1f   feather %.1f   rate %.2f Hz   depth %.2f",
-                          c->fx_box.rounding, c->fx_box.feather, c->fx_box.rate, c->fx_box.depth );
+            fmt_snprintf( b2, sizeof( b2 ), "round %.1f   feather %.1f   rate %.2f Hz   depth %.2f%s",
+                          c->fx_box.rounding, c->fx_box.feather, c->fx_box.rate, c->fx_box.depth,
+                          c->fx_box.skirt ? "   skirt" : "" );
             row2 = b2;
             break;
         case GUI_CMD_ROUND_RECT_EX:

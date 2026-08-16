@@ -221,12 +221,14 @@ void draw_push_rect_gradient    ( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col
 
 /* Push a soft rounded box -- the SDF surface behind draw_shadow.  `feather` is the TOTAL width of
    the falloff band and it straddles the boundary, so the geometry reaches feather/2 past the box
-   on every side while the shape itself stays exactly where it was authored.
-   `hollow` promises that opaque geometry from the same caller covers everything deeper than that
-   many px inside the boundary, letting the tessellator skip the saturated core and emit only the
-   visible skirt around the frame.  0 when the caller does not own what draws on top. */
-void draw_push_shadow           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 hollow,
-                                  u32 abgr );
+   on every side while the shape itself stays exactly where it was authored. */
+void draw_push_shadow           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr );
+
+/* The same surface with its interior cut away: same outward falloff, nothing painted inside the
+   boundary.  What a DROP shadow is -- a filled one's core is only visible through the thing casting
+   it, so a translucent panel ends up dimming itself.  Emits a band of quads around the frame rather
+   than the whole box.  Use draw_push_shadow for a glow meant to be seen THROUGH its subject. */
+void draw_push_skirt            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr );
 void draw_push_pulse            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth,
                                   u32 abgr );
 

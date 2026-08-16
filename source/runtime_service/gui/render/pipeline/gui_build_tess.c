@@ -724,13 +724,12 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     edge (and a shadow's whole soft skirt) is OUTSIDE the shape's own rect.  The BOUNDARY still
     sits exactly on the authored rect -- pad moves the triangles, never the shape.
 
-    A surface with nothing to paint deep inside carves its interior out, emitting an L (two quads)
-    per quadrant around the hole instead of one quad -- where the 8/32 upper bound below comes from.
-    Two shapes qualify.  A RING paints a band only `border` px wide, so rasterizing the whole inside
-    of a window frame at zero coverage is a real cost on a large panel.  A HOLLOW box paints a
-    saturated core its caller promises is covered by opaque geometry drawn on top -- the elevation
-    shadow under a floating window, whose visible part is the falloff skirt around the frame while
-    the other ~90% of its area sits behind the window's own opaque body.
+    A surface with nothing to paint inside carves its interior out, emitting an L (two quads) per
+    quadrant around the hole instead of one quad -- where the 8/32 upper bound below comes from.
+    Two modes qualify.  A RING paints a band only `border` px wide, so rasterizing the whole inside
+    of a window frame at zero coverage is a real cost on a large panel.  A SKIRT paints nothing at
+    all inside its boundary: the elevation shadow under floating chrome is a band of quads around
+    the frame rather than a plate spanning the window, roughly a tenth of the area.
 
     Every SDF surface samples the same atlas as everything else and carries its mode per VERTEX,
     so it merges into whatever GPU command is already open: a soft shadow behind a panel costs
@@ -742,18 +741,13 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
    only tess_round_rect_ex passes four different ones), and `feather` the total width of the falloff
    band straddling the boundary (0 = hard edge); both are read by every mode.  The remaining
    parameters are MODE-SPECIFIC, mirroring the fx word's own re-partitioning -- `border` is the band
-   width for GUI_FX_RING and the HOLLOW depth for GUI_FX_BOX, `rate`/`depth` the wave for
-   GUI_FX_PULSE, and each mode ignores the other's.  UVs span the AUTHORED box and are clamped over
-   the grown skirt, so a textured rounded quad cannot bleed into its atlas neighbour where the
-   coverage has already faded to nothing.
+   width for GUI_FX_RING, `rate`/`depth` the wave for GUI_FX_PULSE, and each mode ignores the
+   other's.  UVs span the AUTHORED box and are clamped over the grown skirt, so a textured rounded
+   quad cannot bleed into its atlas neighbour where the coverage has already faded to nothing.
 
-   The two readings of `border` are the same statement -- "this surface emits nothing deeper than
-   here" -- which is why they share one parameter and one hole below.  They differ in who guarantees
-   it: a RING genuinely paints nothing past its band, while a HOLLOW box paints a solid core that
-   the CALLER guarantees is covered.  A hollow value past what the caller can promise punches a hole
-   in a shadow, so it is only ever set where the occluder is emitted by the same code (see
-   window_draw_elevation).  border reaches the packed word for the RING alone; for a box it is
-   geometry only, so it is not bound by GUI_FX_BORDER_MAX.
+   GUI_FX_SKIRT takes no parameter of its own: it is GUI_FX_BOX with the interior cut, so it reads
+   radius and feather exactly as a box does and differs only in the hole below and one line in the
+   fragment.
 
    Per-corner radii are nearly free HERE and nowhere else, which is the whole reason this generalized
    rather than growing a second tessellator: a quadrant quad already covers exactly one corner, so
@@ -859,17 +853,14 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     f32 rcs = 1.0f, rsn = 0.0f;                   /* the rotation, hoisted out of the corner loop */
     if ( rot != 0.0f ) { rcs = cosf( rot ); rsn = sinf( rot ); }
 
-    /* `reach`: how deep past the boundary this surface still has something to emit.  A RING stops
-       at the far side of its band.  A HOLLOW box stops exactly where its caller says the cover
-       starts -- and nowhere else, because occlusion is the ONLY thing that makes the cut safe.
-       Where the field happens to saturate does not enter it: a fragment behind opaque geometry is
-       invisible at any coverage, so a shadow whose feather reaches 20 px inward can still be cut
-       4 px in when that is where the panel over it turns opaque.  Cutting is a geometry edge, not
-       a coverage edge -- the band that survives carries the same affine effect coordinate it
-       always did, so the visible falloff is bit-identical either way. */
-    f32 reach = ( mode == GUI_FX_RING ) ? border + feather * 0.5f
-              : ( mode == GUI_FX_BOX  ) ? border
-                                        : 0.0f;
+    /* `reach`: how deep past the boundary this surface paints nothing, so the geometry need not
+       reach there either.  A RING stops at the far side of its band; a SKIRT stops at the boundary
+       itself, since its coverage is cut to zero inside (a pixel of slack keeps the hole clear of
+       the boundary the rasterizer resolves).  Both are properties of the MODE -- neither makes any
+       claim about what is drawn over the shape, so neither can be wrong about it. */
+    f32 reach = ( mode == GUI_FX_RING  ) ? border + feather * 0.5f
+              : ( mode == GUI_FX_SKIRT ) ? 1.0f
+                                         : 0.0f;
 
     /* The per-quadrant coverage, in quadrant-local |p| space: one box normally, two forming an L
        when there is an interior worth skipping.
@@ -1778,9 +1769,11 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                the mode: a still box and a zero-rate pulse are the same shape to the fragment. */
             case GUI_CMD_FX_BOX:
                 tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
-                             c->fx_box.rounding, c->fx_box.feather, c->fx_box.hollow,
+                             c->fx_box.rounding, c->fx_box.feather, 0.0f,
                              c->fx_box.rate, c->fx_box.depth, c->fx_box.rot,
-                             ( c->fx_box.rate > 0.0f ) ? GUI_FX_PULSE : GUI_FX_BOX,
+                             ( c->fx_box.rate > 0.0f ) ? GUI_FX_PULSE
+                           : ( c->fx_box.skirt        ) ? GUI_FX_SKIRT
+                                                        : GUI_FX_BOX,
                              0, 0, 1, 1, 0, c->fx_box.abgr );
                 break;
 

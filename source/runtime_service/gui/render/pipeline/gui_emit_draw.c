@@ -1200,12 +1200,12 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
     vertex it merges into whatever GPU batch is already open -- a shadow behind every floating
     panel costs no draw calls.
 
-    `hollow` is what a shadow's caller can say about the geometry it will draw ON TOP: everything
-    deeper than that many px inside the boundary is covered, so the tessellator emits a ring of
-    quads around the frame instead of quads spanning the whole box.  The core it skips is the
-    saturated part of the falloff -- pure overdraw under an opaque panel, and the large majority of
-    the shadow's area on any window-sized box.  0 is the honest answer whenever the caller does not
-    own what lands on top, and it emits the solid interior exactly as before.
+    draw_push_skirt is the same surface with its interior cut away (GUI_FX_SKIRT) -- identical
+    outward falloff, nothing painted inside the boundary.  That is what a DROP shadow is: the core
+    of a filled one can only ever be seen through the thing casting it, so on a translucent panel
+    it reads as the panel dimming itself.  Cutting it also makes the tessellator's interior hole
+    unconditional, taking a window-sized plate down to a band of quads around the frame.  Keep
+    draw_push_shadow for a glow or halo that is MEANT to be seen through its subject.
 
     A pulse is the surface whose alpha breathes on pc.time in the FRAGMENT.  Geometrically it is
     a plain rounded fill, and that identity is the feature: the command's bytes never change, so
@@ -1216,7 +1216,7 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
 ==============================================================================================*/
 
 static void
-draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 hollow,
+draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 skirt,
                  f32 rate, f32 depth, f32 rot, u32 abgr )
 {
     /* Cull against the GROWN box: the falloff skirt is real geometry (feather/2 past the rect,
@@ -1246,24 +1246,30 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 holl
     c->fx_box.h        = h;
     c->fx_box.rounding = rounding;
     c->fx_box.feather  = feather;
-    c->fx_box.hollow   = hollow;
     c->fx_box.rate     = rate;
     c->fx_box.depth    = depth;
     c->fx_box.rot      = rot;
     c->fx_box.abgr     = col;
+    c->fx_box.skirt    = skirt;
     draw_cmd_seal();
 }
 
 void
-draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 hollow, u32 abgr )
+draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, feather, hollow, 0.0f, 0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0u, 0.0f, 0.0f, 0.0f, abgr );
+}
+
+void
+draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 1u, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 void
 draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0.0f, rate, depth, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0u, rate, depth, 0.0f, abgr );
 }
 
 /* The rotated box: same surface, four corner positions turned about the box centre.  The default
@@ -1274,7 +1280,7 @@ draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot
 {
     draw_fx_box_cmd( x, y, w, h, rounding,
                      ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
-                     0.0f, 0.0f, 0.0f, rot, abgr );
+                     0u, 0.0f, 0.0f, rot, abgr );
 }
 
 /*==============================================================================================

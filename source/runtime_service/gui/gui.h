@@ -1740,6 +1740,16 @@ typedef enum
                               The vertex colour draws the LINES only -- layer it over any fill.
                               Phase rides the uv word as a per-axis fraction of the cell        */
 
+    /* A BOX with its interior cut away at the boundary: same radius, same feather, same outward
+       falloff, but coverage is exactly 0 anywhere inside the shape.  The elevation shadow under
+       floating chrome, which must not tint what it sits behind -- a translucent panel shows the
+       ground through it, not a dark plate.  The cut leaves a step at the boundary (half coverage
+       outside, none inside) and that is the shape, not an artifact: it is where the object the
+       shadow belongs to begins.  Emitting nothing inside also makes the interior hole in
+       tess_fx_box_core unconditional, so a skirt is a band of quads around the frame at any size,
+       with no claim about what is drawn over it. */
+    GUI_FX_SKIRT     = 13,
+
 } gui_fx_mode_t;
 
 /* The effect coordinate (ex, ey) is the shape-local quantity `|p| - c`, where p is the vertex's
@@ -2323,12 +2333,12 @@ typedef struct
            coordinate is box-local and affine, so rotating the four corner POSITIONS preserves the
            field under interpolation -- a rotated card costs the same four quadrant quads.  0 for
            every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap.
-           `hollow` is a promise, in px inward from the boundary, that the caller covers everything
-           deeper with opaque geometry of its own, so the tessellator may skip emitting it (the
-           interior hole in tess_fx_box_core).  A shadow's visible part is the skirt around the
-           frame; its saturated core is pure overdraw behind the panel that cast it.  0 -- every
-           caller that does not own what lands on top -- emits the interior whole. */
-        struct { f32 x, y, w, h; f32 rounding, feather, hollow, rate, depth, rot; u32 abgr; } fx_box;
+           `skirt` cuts the interior away (GUI_FX_SKIRT): the same shape and the same outward
+           falloff, painting nothing inside the boundary.  It is what a DROP shadow wants -- the
+           core of a filled one is only ever seen through whatever it sits behind, which is a
+           translucent panel dimming itself.  A glow or halo that is meant to be seen through its
+           subject leaves it 0 and gets the filled box. */
+        struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr, skirt; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME four quadrant quads a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape

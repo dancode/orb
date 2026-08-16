@@ -676,8 +676,6 @@ window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 ti
    window sits lower, so its shadow is the authored width at reduced strength. */
 #define WIN_SHADOW_OVERLAY_SPREAD  1.5f     /* overlay-band feather multiplier             */
 #define WIN_SHADOW_FLOAT_ALPHA     0.7f     /* window-band fraction of the theme's alpha   */
-#define WIN_SHADOW_DROP            0.15f    /* downward offset, as a fraction of the feather */
-#define WIN_SHADOW_COVER_SLACK     2.0f     /* px past the body edge before the hollow cut  */
 
 /* One soft SDF plate under floating chrome -- the ambient shadow that separates a floater from
    the ground plane.  Emitted as this window's FIRST geometry, at its own sort key and under the
@@ -687,17 +685,20 @@ window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 ti
    chrome the caller filters out (docked, maximized, native, frame-only shells) casts none.
    A theme opts out entirely with GUI_VAR_SHADOW 0 or an alpha-0 GUI_EXT_SHADOW.
 
-   Emitted HOLLOW, so the plate is a band around the frame rather than quads spanning the whole
-   window.  What makes that sound is that window_open_body fills this same rect with an OPAQUE body
-   at the same rounding, a moment later and in front: the only part of the plate that can reach the
-   screen is the skirt outside the frame, plus the sliver along the bottom that the downward offset
-   leaves past the body's edge.  The hollow depth is therefore the OFFSET, not anything about the
-   falloff -- how far the cover starts, not how far the shadow is solid -- widened by
-   WIN_SHADOW_COVER_SLACK to clear the body's own 1 px antialiasing band, where it is not yet fully
-   opaque.  A theme whose PANEL cell is translucent breaks the premise, and gets the solid plate. */
+   A SKIRT, not a filled box: the plate paints nothing inside the window's own outline, so a
+   translucent panel shows the desktop behind it rather than the shadow's core, and the geometry is
+   a band around the frame instead of quads spanning the window.
+
+   The skirt's rect is the window rect EXACTLY, which is a constraint and not a choice: a skirt
+   begins at its own boundary, so any offset between the two rects shows up as an artifact on both
+   sides at once -- the strip the shadow's rect no longer covers takes skirt coverage INSIDE the
+   window, and the strip past the window's edge that its rect does cover takes none, opening a gap
+   between the window and its shadow.  This is why the shadow is even on all four sides.  A cast,
+   directional shadow needs the falloff measured from one rect and the cut taken against another,
+   which is two shapes; one SDF cannot express it. */
 
 static void
-window_draw_elevation( const gui_window_t* win, gui_id_t id, f32 disp_h )
+window_draw_elevation( const gui_window_t* win, f32 disp_h )
 {
     f32 feather = WIN_SHADOW;
     u32 col     = style_ext( GUI_EXT_SHADOW );
@@ -710,19 +711,7 @@ window_draw_elevation( const gui_window_t* win, gui_id_t id, f32 disp_h )
         col = ( col & 0x00FFFFFFu )
             | ( (u32)( (f32)( col >> 24 ) * WIN_SHADOW_FLOAT_ALPHA ) << 24 );
 
-    /* Ask the body cell what it will actually paint, rather than assuming the built-in themes'
-       opaque surface: hollow is a claim about the cover, so it has to be read from the cover.
-       Only the plain-colour path can answer it -- an authored FACE is a brush whose coverage may
-       be a gradient stop or a sprite's own alpha, which is not knowable from here, so a skinned
-       panel keeps the solid plate rather than risk cutting a hole in a shadow it shows through. */
-    u8  phase  = window_standing_phase( id );
-    f32 drop   = feather * WIN_SHADOW_DROP;
-    bool solid = !style_face( GUI_ROLE_PANEL, phase )
-              && ( style_col( GUI_ROLE_PANEL, phase ) >> 24 ) == 0xFFu;
-    f32 hollow = solid ? drop + WIN_SHADOW_COVER_SLACK : 0.0f;
-
-    draw_push_shadow( win->x, win->y + drop, win->w, disp_h,
-                      ROUND_WIN, feather, hollow, col );
+    draw_push_skirt( win->x, win->y, win->w, disp_h, ROUND_WIN, feather, col );
 }
 
 /* Open the window body -- or, when collapsed, just seed the collapse-arrow clip.  Expanded: push the
@@ -1116,7 +1105,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
        shell or detached floater) fills its own OS surface edge-to-edge, so the skirt would be
        clipped at the surface bounds and read as a dark rim. */
     if ( !native && !frame_only && !win->maximized )
-        window_draw_elevation( win, id, disp_h );
+        window_draw_elevation( win, disp_h );
 
     /* Commit window chrome state for the widgets and window_end (id + interaction scope were
        committed by pane_tag above).  The layout pen, content column, scroll, and scrollbars

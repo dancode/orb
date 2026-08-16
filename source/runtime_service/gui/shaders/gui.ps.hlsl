@@ -71,7 +71,7 @@ float fx_coverage( float2 fx_coord, uint fx, float2 uv, float2 px )
     // SV_Position pixels: exact at any panel size, where the HALF2 effect coordinate's ulp
     // reaches a full pixel at the corners of a fullscreen backdrop.  The phase re-anchors the
     // pattern to the shape; the CPU derived it against the same quantized cell the word carries.
-    if ( mode >= 11u )
+    if ( mode == 11u || mode == 12u )
     {
         if ( mode == 11u )
             return 1.0;   // CHECKER cuts nothing: it picks between two colours in main()
@@ -96,7 +96,7 @@ float fx_coverage( float2 fx_coord, uint fx, float2 uv, float2 px )
     // coordinate is affine over one quad and the sign survives -- and the sign is the angle, without
     // which neither of these shapes can be expressed at all.  The fold below is the fragment's own,
     // exact because the value it folds is exact.
-    if ( mode >= 7u )
+    if ( mode >= 7u && mode <= 10u )
     {
         float  ra = float( ( fx >>  4 ) & 0xFFFu ) * 0.125;
         float  rb = float( ( fx >> 16 ) & 0x7Fu  ) * 0.125;
@@ -172,6 +172,14 @@ float fx_coverage( float2 fx_coord, uint fx, float2 uv, float2 px )
 
     float cov = ( feather <= 0.0 ) ? ( d <= 0.0 ? 1.0 : 0.0 )
                                    : saturate( 0.5 - d / feather );
+
+    // mode 13 SKIRT -- the BOX with its interior cut away.  The outward half of the falloff is
+    // untouched, so a skirt and a box are pixel-identical everywhere the box was visible; what
+    // goes is the saturated core, which a drop shadow only ever showed through whatever it sits
+    // behind.  Taken here rather than folded into `d` because the cut is on COVERAGE: bending the
+    // distance would move the boundary the outward falloff is measured from.
+    if ( mode == 13u && d <= 0.0 )
+        cov = 0.0;
 
     // PULSE reuses the same two shifts for radius/feather and reads the top 7 bits as rate+depth.
     // The wave starts at its PEAK (cos 0 = 1 -> no attenuation), so a pulse fading in from nothing

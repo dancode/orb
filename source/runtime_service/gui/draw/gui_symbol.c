@@ -466,13 +466,13 @@ draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal )
    `spread` reads as "how far the shadow reaches", so it is HALF the falloff band: the fill is
    solid until spread px inside the box and gone spread px outside it.
 
-   The solid core is emitted whole (hollow 0).  A public caller may draw a shadow with nothing on
-   top of it -- a glow behind a transparent card, a halo under a hovered tile -- and the hollow
-   promise is only sound where the same code emits the opaque cover. */
+   The core is FILLED, which is what a glow wants -- a halo behind a transparent card, a hover
+   bloom under a tile -- and is the reason this is not the skirt the window elevation shadow uses
+   (draw_push_skirt): a shape meant to be seen through its subject must paint under it. */
 static void
 draw_shadow( gui_rect_t box, f32 spread, u32 col )
 {
-    draw_push_shadow( box.x, box.y, box.w, box.h, draw_rounding(), spread * 2.0f, 0.0f, col );
+    draw_push_shadow( box.x, box.y, box.w, box.h, draw_rounding(), spread * 2.0f, col );
 }
 
 /* A rounded fill whose alpha breathes, evaluated in the FRAGMENT off the shared frame clock.
