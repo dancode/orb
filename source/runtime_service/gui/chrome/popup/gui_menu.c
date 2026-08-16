@@ -106,10 +106,14 @@ gui_menu_item( const char* label, const char* shortcut, bool* selected )
     f32 lx = r.x + WIDGET_PAD + check_w;
     draw_label( lx, text_center_y( r.y, r.h ), COL_TEXT_PRIMARY_IDLE, label );
 
-    /* Shortcut hint, dim and right-aligned in the row. */
+    /* Shortcut hint, dim, SMALL-typed and right-aligned in the row -- the measure and the
+       centering read the small font inside the bracket, and the captured width sizes the
+       popup's natural reach below. */
+    gui_type_push( GUI_TYPE_SMALL );
     f32 sw = ( shortcut && shortcut[ 0 ] ) ? font_text_w( shortcut ) : 0.0f;
     if ( sw > 0.0f )
         draw_push_text( r.x + r.w - WIDGET_PAD - sw, text_center_y( r.y, r.h ), COL_TEXT_SECONDARY_IDLE, shortcut );
+    gui_type_pop();
 
     /* Natural row width (gutter + label + a gap + shortcut) so the menu popup auto-sizes to its
        widest row over two frames, like the combo dropdown. */

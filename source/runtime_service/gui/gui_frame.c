@@ -89,6 +89,11 @@ void           viewport_destroy( i32 vp );                                      
 void           gui_dpi_base_set( gui_builtin_font_t font );                                   /* gui_frame_dpi.c */
 bool           gui_dpi_poll    ( void );                                                      /* gui_frame_dpi.c */
 
+void           gui_type_resolve    ( void );                                                  /* gui_frame_type.c */
+bool           gui_type_prewarm    ( void );                                                  /* gui_frame_type.c */
+void           gui_type_frame_reset( void );                                                  /* gui_frame_type.c */
+void           gui_type_clear      ( void );                                                  /* gui_frame_type.c */
+
 /* The theme registry, base/active style state (s_style_base, s_style, s_font_size), the style
    stacks, and metrics_compute live in the STYLE UNIT (gui_style.c); this unit reads
    s_style and the resolvers through the style/gui_style.h externs + seams.
@@ -159,6 +164,10 @@ bool           gui_dpi_poll    ( void );                                        
 // gui_style_apply reads dpi_scale_landed() through its forward decl) and BEFORE gui_viewport.c
 // (viewport_create seeds dpi_bake from s_dpi.base; tear-off drives gui_dpi_vp_resolve).
 #include "runtime_service/gui/frame/gui_frame_dpi.c"
+
+// The type ramp -- AFTER the dpi file: role resolution reads its managed-lineage state
+// (dpi_managed / dpi_landed_bake) to know which family is landed and whether to act.
+#include "runtime_service/gui/frame/gui_frame_type.c"
 
 // The pane bracket -- the go-between verb stamping BOTH servers; and the public
 // multi-context lifecycle -- context destruction tears down GPU surfaces, orchestrator work.

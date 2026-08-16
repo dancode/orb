@@ -36,7 +36,9 @@ gui_collapsing_header( const char* label )
 
     gui_rect_t arrow = { r.x, r.y, r.h, r.h };          /* a square the height of the bar */
     draw_collapse_arrow( arrow, !hs->open, COL_TEXT_PRIMARY_IDLE );    /* closed -> points right */
+    gui_type_push( GUI_TYPE_LARGE );                    /* a section header wears LARGE */
     draw_label( r.x + r.h, text_center_y( r.y, r.h ), COL_TEXT_PRIMARY_IDLE, label );
+    gui_type_pop();
 
     return hs->open;
 }

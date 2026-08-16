@@ -1130,7 +1130,10 @@ table_draw_header( gui_table_t* t )
         f32         lblw  = ( cx + cw - (f32)WIDGET_PAD - arrow ) - lblx;
         if ( lblw < 0.0f ) lblw = 0.0f;
 
-        /* Alignment only has somewhere to move the label when it fits its slot. */
+        /* Alignment only has somewhere to move the label when it fits its slot.  Header labels
+           wear the SMALL type role: the measure, the centering and the fitted draw all read the
+           small font inside the bracket. */
+        gui_type_push( GUI_TYPE_SMALL );
         f32 tw = font_text_w( lbl );
         if ( tw < lblw )
         {
@@ -1144,6 +1147,7 @@ table_draw_header( gui_table_t* t )
            changes the header height / glyph size ratio). */
         table_text_clip( t, lblx, lblw );
         draw_text_fit_n( lblx, hy + ( hh - font_char_h() ) * 0.5f, COL_TEXT_PRIMARY_IDLE, lbl, 0xFFFFFFFFu, lblw );
+        gui_type_pop();
 
         /* Sort indicator triangle on the active sort column: tip up for ascending, down for
            descending, seated in the reserve the label just gave up. */

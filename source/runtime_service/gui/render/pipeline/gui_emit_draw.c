@@ -537,6 +537,14 @@ draw_set_font( u32 font )
     s_draw.cur_font = font;
 }
 
+/* Font subsequent TEXT commands are stamped with -- the save half of a scoped font swap. */
+
+u32
+draw_get_font( void )
+{
+    return s_draw.cur_font;
+}
+
 /*==============================================================================================
     draw_set_sort_key -- stamp subsequent commands with this z (window paint order).
     Set to the window's z in window_begin and back to 0 (background) in window_end.

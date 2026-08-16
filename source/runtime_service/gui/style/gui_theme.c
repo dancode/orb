@@ -88,6 +88,8 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
     [ GUI_VAR_ANIM_SELECT     ] = { "Select Rate",     GUI_CLASS_RATE,   40 },
     [ GUI_VAR_ANIM_SIZE       ] = { "Size Rate",       GUI_CLASS_RATE,   40 },
 
+    [ GUI_VAR_TYPE_STEP       ] = { "Type Step",       GUI_CLASS_TYPE,   8  },
+
     [ GUI_VAR_CHECK_SHAPE     ] = { "Check Shape",     GUI_CLASS_SHAPE,  GUI_CHECK_CROSS      },
     [ GUI_VAR_BULLET_SHAPE    ] = { "Bullet Shape",    GUI_CLASS_SHAPE,  GUI_BULLET_SQUARE    },
     [ GUI_VAR_ARROW_SHAPE     ] = { "Arrow Shape",     GUI_CLASS_SHAPE,  GUI_ARROW_CHEVRON    },
@@ -135,16 +137,20 @@ static const char* const k_class_name[ GUI_CLASS_COUNT ] =
     [ GUI_CLASS_RATIO  ] = "Ratios",
     [ GUI_CLASS_RATE   ] = "Motion",
     [ GUI_CLASS_SHAPE  ] = "Shapes",
+    [ GUI_CLASS_TYPE   ] = "Type",
 };
 
-/* The three px classes: everything the em rescale multiplies.  A PITCH is a raw lattice count,
+/* The px classes: everything the em rescale multiplies.  A PITCH is a raw lattice count,
    a RATIO is a unitless fraction and a SHAPE is an enum -- scaling any of them would be
-   meaningless, not merely wrong. */
+   meaningless, not merely wrong.  TYPE is px like METRIC but is never lattice-snapped
+   (the quantize pass touches METRIC only): a 2px font step snapped to a 4px quantum
+   would double. */
 
 static bool
 var_is_pixels( u8 cls )
 {
-    return cls == GUI_CLASS_METRIC || cls == GUI_CLASS_STROKE || cls == GUI_CLASS_SKIN;
+    return cls == GUI_CLASS_METRIC || cls == GUI_CLASS_STROKE || cls == GUI_CLASS_SKIN
+        || cls == GUI_CLASS_TYPE;
 }
 
 /*==============================================================================================
@@ -301,6 +307,8 @@ var_is_pixels( u8 cls )
         [ GUI_VAR_PROGRESS_SHAPE  ] = GUI_PROGRESS_SOLID, \
         [ GUI_VAR_KNOB_SHAPE      ] = ( KNOB ), \
         [ GUI_VAR_MENU_CHECK      ] = GUI_MENU_CHECK_BOX, \
+        /* 6. TYPE -- px at em=12, em-scaled, never snapped */ \
+        [ GUI_VAR_TYPE_STEP       ] = 2, \
     }
 
 /* Built-in theme registry.  Each entry is a complete gui_style_t authored for em=12;

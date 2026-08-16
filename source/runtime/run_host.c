@@ -583,6 +583,12 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                    auto-register on first write; the `log` console command lists them). */
                 gui()->log_set_fn( run_host_gui_log, NULL );
 
+                /* The type ramp's runtime baker, when the host brought one (a dev_font_get
+                   adapter).  Installed before init() so the first style landing can already
+                   resolve the ramp sizes. */
+                if ( gd && gd->font_baker )
+                    gui()->font_baker_set( gd->font_baker, gd->font_baker_user );
+
                 if ( !gui()->init( gd ? gd->font : GUI_FONT_NONE ) )
                 {
                     fprintf( stderr, "[host] gui init failed\n" );

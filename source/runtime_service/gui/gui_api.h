@@ -102,6 +102,15 @@ typedef struct gui_api_s
 
     void                ( *log_set_fn )         ( gui_log_fn fn, void* user );
 
+    /* Runtime font baker -- the door the type ramp's extra sizes come through.  gui ships no
+       bake for "body plus 2px", so when a theme's GUI_VAR_TYPE_STEP is non-zero it asks this
+       callback to produce one (dev_font_get is the canonical implementation; the gui target
+       stays free of the developer tier the same way it stays free of core above).  Install any
+       time -- before or after init(); NULL uninstalls.  Unwired, the ramp is silently off and
+       every chrome label renders at the body size. */
+
+    void                ( *font_baker_set )     ( gui_font_bake_fn fn, void* user );
+
     /* GPU resource lifecycle -- the boot and teardown calls every host makes exactly once.
 
         init()

@@ -73,8 +73,10 @@ window_end_chip( gui_window_t* win, f32 title_h )
         window_minimize_set( win, false );
 
     f32 text_x = s_build.win.x + WIDGET_PAD;
+    gui_type_push( GUI_TYPE_LARGE );   /* titles wear the ramp's LARGE role */
     draw_text_fit_n( text_x, text_center_y( s_build.win.y, title_h ), COL_TEXT_PRIMARY_IDLE, s_build.win.title,
                      0xFFFFFFFFu, right_limit - text_x );
+    gui_type_pop();
 }
 
 /* Deferred chrome: titlebar background, collapse arrow, the close / maximize / minimize / detach
@@ -282,9 +284,12 @@ window_end_titlebar( gui_window_t* win, bool native )
 
         /* Title text, fitted to the room between the arrow square and the detach button (or the
            bar's right edge) so a narrow (shrunk) window ellipsizes the title instead of bleeding
-           it under the button / border. */
+           it under the button / border.  LARGE role: the fit and the vertical centering both
+           measure with the title font inside the bracket. */
+        gui_type_push( GUI_TYPE_LARGE );
         draw_text_fit_n( text_x, text_center_y( s_build.win.y, title_h ), COL_TEXT_PRIMARY_IDLE, s_build.win.title,
                          0xFFFFFFFFu, right_limit - text_x );
+        gui_type_pop();
     }
 }
 

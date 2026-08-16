@@ -322,6 +322,8 @@ void
 gui_separator_text( const char* label )
 {
     gui_rect_t r   = cell_next( WIDGET_H );
+    gui_type_push( GUI_TYPE_LARGE );                     /* a section header wears LARGE; the
+                                                            width and centering measure with it */
     f32          ly  = r.y + r.h * 0.5f;                 /* line centre */
     f32          tw  = label_width( label );
     f32          pre = 2.0f * WIDGET_PAD;                /* short leading rule before the text */
@@ -334,6 +336,7 @@ gui_separator_text( const char* label )
     f32 rx = tx + tw + WIDGET_PAD;                       /* trailing rule to the right edge */
     f32 rw = ( r.x + r.w ) - rx;
     draw_rule( rx, ly, rw, WIN_BORDER, COL_BORDER_IDLE );     /* draw_rule no-ops on rw <= 0 */
+    gui_type_pop();
 }
 
 // clang-format on

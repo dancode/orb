@@ -55,6 +55,14 @@ st_begin( const char* title, f32 w, f32 h )
     return gui()->window_begin( title, GUI_WIN_CLOSEABLE );
 }
 
+/* Runtime font baker for the gui type ramp -- dev_font is already initialized by main. */
+static bool
+st_gui_font_bake( const char* family, u32 size_px, char* out, int n, void* user )
+{
+    (void)user;
+    return dev_font_get( family, (int)size_px, out, n );
+}
+
 /*============================================================================================*/
 /* Window bodies -- one file each, unity-included so the build config stays one unit.          */
 /*============================================================================================*/
@@ -225,8 +233,9 @@ main( int argc, char** argv )
     draw_inited = true;
 
     /* dev_font drives the Font Tool's local scan + quick stb bake; font_tool.exe (spawned) drives
-       the final one. */
+       the final one.  It also serves the gui type ramp's SMALL/LARGE role sizes. */
     dev_font_init( NULL );
+    gui()->font_baker_set( st_gui_font_bake, NULL );
 
     gui()->set_retained_skip( true );
 

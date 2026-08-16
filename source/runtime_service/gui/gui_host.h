@@ -43,6 +43,10 @@ mod_desc_t* gui_get_mod_desc( void );
 
 void gui_log_set_fn( gui_log_fn fn, void* user );
 
+/* runtime font baker for the type ramp's extra sizes -- NULL = ramp off.  See gui_api.h. */
+
+void gui_font_baker_set( gui_font_bake_fn fn, void* user );
+
 bool gui_init( gui_builtin_font_t font );
 void gui_shutdown( void );
 

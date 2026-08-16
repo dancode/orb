@@ -182,6 +182,7 @@ gui_shutdown( void )
        not per context: a viewport is a real OS window / RHI context, never context-owned. */
     for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
         viewport_destroy( v );
+    gui_type_clear();         /* drop the type ramp's role aim + size memo (ids die below) */
     gui_draw_shutdown();      /* draw unit resources (fonts + icons) leave the atlas first */
     backend_exit();       /* shared pipeline / sampler / atlas */
 
@@ -273,6 +274,10 @@ gui_frame_begin( f32 dt )
     s_overlays_emitted = false;   /* debug overlays emit once, at the default context's ctx_end */
     s_shell_emitted    = false;   /* boot chrome shell emits once, at the default context's ctx_begin */
 
+    gui_type_frame_reset();       /* repair a leaked type-ramp scope before anything reads the
+                                     active font -- a ramp font left active reads as a host
+                                     takeover to the dpi engine below */
+
     /* display dimensions: viewports are the one global s_vp_pool, so this needs no context at all.
        The host may resize the OS window at any time, so read the current size from the primary
        (main swapchain) surface, slot 0. */
@@ -342,6 +347,12 @@ gui_frame_begin( f32 dt )
     if ( gui_dpi_poll() )
         s_frame_dirty = true;
     gui_dpi_land( 0 );
+
+    /* Warm the type ramp for every live surface's bake (before the font flush for the same
+       reason the dpi poll sits here: fresh pixels ride this frame's atlas flush).  A fresh
+       ramp bake changes glyph sizes, so it forces a rebuild like a committed font swap. */
+    if ( gui_type_prewarm() )
+        s_frame_dirty = true;
 
     /* Commit deferred font (re)loads at this safe between-frames point -- always, since the host
        can request a load between frames independent of the widget emit.  A committed swap changes

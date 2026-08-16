@@ -245,7 +245,8 @@ st_editor_window( void )
            schema ceiling (style_var_max), so a border slider spans the few px a border can be
            rather than a shared 64px track.  Both asked of the engine, tabulated nowhere here. */
         bool px = ( c == GUI_CLASS_METRIC || c == GUI_CLASS_STROKE
-                 || c == GUI_CLASS_SKIN   || c == GUI_CLASS_PITCH );
+                 || c == GUI_CLASS_SKIN   || c == GUI_CLASS_PITCH
+                 || c == GUI_CLASS_TYPE );
 
         gui()->separator_text( gui()->style_class_name( ( gui_style_class_t )c ) );
         for ( u32 v = 0; v < GUI_VAR_COUNT; ++v )

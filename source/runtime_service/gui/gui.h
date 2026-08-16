@@ -199,6 +199,15 @@ typedef bool ( *gui_edit_key_fn )( u32 key, bool ctrl, bool shift, bool repeat, 
    installed for the duration of the call. */
 typedef void ( *gui_style_source_fn )( void* user );
 
+/* Runtime font baker (see font_baker_set) -- resolve "this typeface at this pixel size" to a
+   baked .orb_font on disk.  gui asks it for the type-ramp sizes (GUI_VAR_TYPE_STEP) it has no
+   shipped bake for; `family` is a source name a baker like dev_font_get resolves (a file in
+   assets/font_source or an OS-installed face name), size_px is final (DPI already applied).
+   Write the absolute path into out_path and return true; false = cannot bake (gui records the
+   failure once per size and leaves that role at the body size). */
+typedef bool ( *gui_font_bake_fn )( const char* family, u32 size_px,
+                                    char* out_path, int out_path_size, void* user );
+
 /* A style SET -- one installed copy of gui_style_t, the whole schema.  Set 0 is chrome's and always
    exists; gui()->style_set_create() takes another, and style_set_push / _pop bracket the UI
    that resolves through it.  Two looks stay installed side by side, so an editor's chrome and
@@ -739,6 +748,11 @@ typedef enum
     GUI_VAR_ANIM_SELECT,    // rate a selection / toggle crosses to the SELECT plane
     GUI_VAR_ANIM_SIZE,      // rate a MEASURED extent eases to a new size (natural track, box height)
 
+    /* 5. TYPE -- the chrome type ramp.  Em-scaled but never lattice-snapped: a font size must
+       track the body type, and a lattice snap would double a 2px step on the default quantum. */
+
+    GUI_VAR_TYPE_STEP,      // px (at em=12) the SMALL/LARGE type roles sit below/above the body em; 0 = ramp off
+
     GUI_VAR_COUNT,          // var count -- not a var
 
 } gui_style_var_t;
@@ -759,6 +773,7 @@ typedef enum
     RATIO    no           n/a                a unitless 0..1 fraction -- no pixels to scale
     RATE     no           n/a                an animation speed in Hz -- a duration, not a size
     SHAPE    no           n/a                an enum pick carried in the f32 slot
+    TYPE     yes          no                 a font-size delta -- tracks the body em, never snaps
     
     RATIO exists because every other non-pick class is em-SCALED, and scaling a fraction is
     simply wrong: a disabled item at 0.5 opacity would become 0.9 at a large font.  It is not
@@ -787,6 +802,7 @@ typedef enum
     GUI_CLASS_RATIO,
     GUI_CLASS_RATE,
     GUI_CLASS_SHAPE,
+    GUI_CLASS_TYPE,
     GUI_CLASS_COUNT
 
 } gui_style_class_t;
@@ -971,6 +987,26 @@ void         gui_style_apply( void );
    that bake is already landed, when DPI is unmanaged, or while a host-driven font is active. */
 
 void         gui_dpi_land( i32 viewport );
+
+/* The TYPE RAMP roles -- three chrome type sizes the style resolves from GUI_VAR_TYPE_STEP:
+   SMALL for hints / shortcuts / table headers, LARGE for window titles / section headers,
+   NORMAL the body itself.  gui_type_push / gui_type_pop are the internal seam chrome brackets
+   ONE LABEL's measure + draw with: both the measurement readers (font_text_w, text_center_y)
+   and the TEXT command stamp switch to the role's font inside the scope; layout metrics and
+   the style never move, so the widget's cell stays body-sized.  A role the ramp could not
+   resolve (no baker installed, bake failed, step 0) falls through to the body font -- the
+   bracket is always safe to write. */
+
+typedef enum
+{
+    GUI_TYPE_NORMAL = 0,   // the body font -- push is a saved no-op
+    GUI_TYPE_SMALL,        // body minus the type step (floored at readability)
+    GUI_TYPE_LARGE,        // body plus the type step
+
+} gui_type_role_t;
+
+void         gui_type_push( gui_type_role_t role );
+void         gui_type_pop ( void );
 
 /* gui_style_bake() -- derive the 96-cell colour grid from s->palette, in place.  The one step
    between what a theme AUTHORS and what a render READS, and the only writer of col[][][] the

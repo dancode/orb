@@ -40,6 +40,8 @@
 
 #include "game/game_api.h" /* RUN_MODULE( game ) decl in monolithic builds */
 
+#include "developer/dev_font/dev_font.h" /* runtime font baker -- the gui type ramp's sizes */
+
 #include "runtime/run_api.h"
 #include "runtime/run_host.h"
 
@@ -149,10 +151,27 @@ static const run_module_entry_t k_modules[] = {
     { 0 }
 };
 
+/* Runtime font baker for the gui type ramp: resolve + bake through dev_font, initialized
+   lazily on the first size the gui asks for.  A failed init latches -- one attempt, and the
+   ramp stays off (gui degrades every role to the body size). */
+static bool
+editor_gui_font_bake( const char* family, u32 size_px, char* out, int n, void* user )
+{
+    (void)user;
+    static bool inited, failed;
+    if ( !inited && !failed )
+    {
+        failed = !dev_font_init( NULL );
+        inited = !failed;
+    }
+    return !failed && dev_font_get( family, (int)size_px, out, n );
+}
+
 static const run_gui_desc_t k_gui_desc = {
-    .font  = GUI_FONT_ROBOTO_16,
-    .clear = { 0.10f, 0.10f, 0.12f, 1.00f },
-    .debug = true,            /* P/O/F10 overlays, I idle skip, etc. */
+    .font       = GUI_FONT_ROBOTO_16,
+    .clear      = { 0.10f, 0.10f, 0.12f, 1.00f },
+    .debug      = true,       /* P/O/F10 overlays, I idle skip, etc. */
+    .font_baker = editor_gui_font_bake,
 };
 
 int

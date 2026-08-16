@@ -111,6 +111,7 @@ static ex_demo_t s_demos[] =
     { "Style",    "Style Stacks",     "Style Stacks",     "push_style_color/var / next_* / scale ramp",        ex_style_stacks,        false },
     { "Style",    "Widget Shape Tags","Widget Shape Tags","check/bullet/arrow/separator/knob style vars",      ex_style_shape_tags,    false },
     { "Style",    "Fonts",            "Fonts",            "font_load / live font switch / text_size / atlas view",    ex_style_fonts,         false },
+    { "Style",    "Font Sizes",       "Font Sizes",       "push_font size presets / one-widget bracket / type ramp",  ex_style_font_sizes,    false },
 
     { "Draw",     "Lines & Paths",    "Lines & Paths",    "draw_line / draw_polyline / path_stroke",           ex_draw_lines,          false },
     { "Draw",     "Shape Primitives", "Shape Primitives", "the parametric draw_* shape palette",               ex_draw_shapes,         false },

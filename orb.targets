@@ -361,7 +361,7 @@ target sample_game_ship				# single-exe ship shape: build with -monolithic; proj
     unit        host_game_main.c
     define      HOST_PROJECT=sample_game
     dep         base mod sys ref prof pack fs job net app core run
-    dep         host_common rhi draw console gui
+    dep         host_common rhi draw console gui dev_font
     mono_dep    render game sample_game
 
 
@@ -438,7 +438,7 @@ target host_game
     folder      08_HOST
     unit        host_game_main.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         host_common rhi draw gui console base
+    dep         host_common rhi draw gui console dev_font base
     mono_dep    render game
 
 target host_editor
@@ -448,7 +448,7 @@ target host_editor
     folder      08_HOST
     unit        host_editor_main.c
     dep         mod sys ref prof pack fs job net app core run
-    dep         host_common rhi draw gui console editor editor_viewport base
+    dep         host_common rhi draw gui console editor editor_viewport dev_font base
     mono_dep    render game
 
 # ==============================================================================
@@ -776,7 +776,7 @@ target sb_gui_example					# gui feature explorer: end-to-end demos of every feat
     unit        sb_gui_example.c
     unit        ex_demos.c
     dep         mod sys ref job app core
-    dep         rhi gui base
+    dep         rhi gui dev_font base
 
 target sb_gui_timeline					# prof timeline overlay (flame graph) + synthetic workload
 

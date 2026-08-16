@@ -23,6 +23,7 @@ const gui_api_t g_gui_api_struct =
     /*===============================================  GUI_FRAME  ===============================================*/
 
     .log_set_fn                         = gui_log_set_fn,
+    .font_baker_set                     = gui_font_baker_set,
     .init                               = gui_init,
     .shutdown                           = gui_shutdown,
     .font_load                          = gui_font_load,

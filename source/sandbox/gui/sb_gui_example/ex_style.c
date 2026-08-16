@@ -448,4 +448,111 @@ ex_style_fonts( void )
     gui()->window_end();
 }
 
+/*==============================================================================================
+    Font Sizes -- size shifting in code.  A size IS a font: the same face at another baked
+    pixel height, selected per scope with push_font / pop_font.  Plus the theme's automatic
+    type ramp (GUI_VAR_TYPE_STEP), which shifts chrome type without any per-widget code.
+==============================================================================================*/
+
+static void
+ex_style_font_sizes( void )
+{
+    /* The boot face at four baked sizes, loaded once.  font_load_builtin activates what it
+       loads, so remember + restore the active id around the batch. */
+    static const gui_builtin_font_t k_sizes[ 4 ] 
+        = { GUI_FONT_JETBRAINS_12, GUI_FONT_JETBRAINS_16, 
+            GUI_FONT_JETBRAINS_20, GUI_FONT_JETBRAINS_24 };
+
+    static const char* k_size_name[ 4 ] = { "12 px", "16 px", "20 px", "24 px" };
+    static u32  s_size_id[ 4 ];
+    static bool s_loaded = false;
+
+    if ( !s_loaded )
+    {
+        u32 prev = gui()->font_active_id();
+        for ( i32 i = 0; i < 4; ++i )
+            s_size_id[ i ] = gui()->font_load_builtin( k_sizes[ i ] );
+        gui()->font_use( prev );
+        s_loaded = true;
+    }
+
+    if ( ex_begin( "Font Sizes", 500, 680, GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+
+        /* Scope scale -- every layout metric derives from the active font's em, so pushing a
+           size preset rescales rows, pads and glyphs together.  There is no separate zoom
+           factor to keep in sync. */
+        gui()->separator_text( "push_font -- widgets scale with the em" );
+        gui()->text( "A size is a loaded font.  Push one and every widget" );
+        gui()->text( "in the scope follows: row heights, padding and text" );
+        gui()->text( "all re-derive from the new em." );
+
+        static i32 pick = 1;
+        for ( i32 i = 0; i < 4; ++i )
+        {
+            gui()->radio_button( k_size_name[ i ], &pick, i );
+            if ( i < 3 ) gui()->same_line( -1.0f );
+        }
+
+        gui()->push_font( s_size_id[ pick ] );
+        static bool s_check = true;
+        static f32  s_val   = 0.35f;
+        gui()->textf( "line height %.1f px", gui()->sz_line_h() );
+        gui()->button( "a button at this size" );
+        gui()->checkbox( "checkbox", &s_check );
+        gui()->slider_float( "slider", &s_val, 0.0f, 1.0f );
+        gui()->progress_bar( s_val, NULL );
+        gui()->pop_font();
+
+        /* Single-widget bracket -- the scope can be one widget wide.  Metrics move with the
+           font, so the bracketed button is taller than its row mates: honest, and the reason
+           per-LABEL shifts belong to the type ramp below, not to push_font. */
+        gui()->separator_text( "bracket one widget" );
+        gui()->button( "normal" );
+        gui()->same_line( -1.0f );
+        gui()->push_font( s_size_id[ 3 ] );
+        gui()->button( "24 px" );
+        gui()->pop_font();
+        gui()->same_line( -1.0f );
+        gui()->button( "normal again" );
+        gui()->text_disabled( "(a font push relands the whole style -- scope it tightly)" );
+
+        /* The automatic ramp -- chrome shifts type with NO per-widget code: window titles and
+           the separator_text labels above draw LARGE, table headers and menu shortcuts draw
+           SMALL, all from one theme var.  The sizes do not ship as assets; gui asks the
+           host-installed baker (font_baker_set -> dev_font_get, wired in sb_gui_example.c)
+           the first time a landing needs one. */
+        gui()->separator_text( "the theme type ramp" );
+        gui()->text( "This window's TITLE and the section labels above are" );
+        gui()->text( "LARGE; the table headers below are SMALL.  One theme" );
+        gui()->text( "var drives both -- widget code never mentions a size." );
+
+        const gui_style_t* st   = gui()->style_peek();
+        i32                step = (i32)( st->var[ GUI_VAR_TYPE_STEP ] + 0.5f );
+        if ( gui()->slider_int( "GUI_VAR_TYPE_STEP", &step, 0, 8 ) )
+        {
+            gui_style_t work = *st;                      /* commit like a style editor: the theme */
+            work.var[ GUI_VAR_TYPE_STEP ] = (f32)step;   /* reads "(custom)" until theme_reset    */
+            *gui()->style_get() = work;
+            gui()->style_apply();
+        }
+        gui()->text_disabled( "(px at em=12, em-scaled; 0 = ramp off -- titles drop to body size)" );
+
+        if ( gui()->table_begin( "ramp_headers", 3, GUI_TABLE_BORDERS_H, 0.0f ) )
+        {
+            gui()->table_setup_column( "Small Header", GUI_TABLE_COL_STRETCH, 0 );
+            gui()->table_setup_column( "Type",         GUI_TABLE_COL_FIXED,   90.0f );
+            gui()->table_setup_column( "Size",         GUI_TABLE_COL_FIXED,   90.0f );
+            gui()->table_headers_row();
+            gui()->table_next_row( 0 );
+            if ( gui()->table_next_column() ) gui()->text( "body cell" );
+            if ( gui()->table_next_column() ) gui()->text( "body" );
+            if ( gui()->table_next_column() ) gui()->text( "1 em" );
+            gui()->table_end();
+        }
+    }
+    gui()->window_end();
+}
+
 /*============================================================================================*/

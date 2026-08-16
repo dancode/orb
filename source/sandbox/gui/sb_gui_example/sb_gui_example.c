@@ -21,9 +21,18 @@
 #include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 #include "runtime_service/gui/gui_host.h"
+#include "developer/dev_font/dev_font.h"   /* runtime font baker -- the gui type ramp's sizes */
 #include "ex_demos.h"
 
 // clang-format off
+
+/* Runtime font baker for the gui type ramp -- dev_font is initialized in main before wiring. */
+static bool
+ex_gui_font_bake( const char* family, u32 size_px, char* out, int n, void* user )
+{
+    (void)user;
+    return dev_font_get( family, (int)size_px, out, n );
+}
 
 /*==============================================================================================
     main
@@ -81,6 +90,11 @@ main( int argc, char** argv )
 
    gui()->debug_enable( true );
 
+    /* Runtime font baker: serves the type ramp's SMALL/LARGE sizes (window titles, section
+       headers, table headers, menu shortcuts) and the Font Sizes demo. */
+    dev_font_init( NULL );
+    gui()->font_baker_set( ex_gui_font_bake, NULL );
+
     /* Main loop -- boot_poll pumps the OS and routes events (rhi swapchain resize, gui input
        + floater lifecycle); false on quit or main-window close. */
 
@@ -117,6 +131,7 @@ main( int argc, char** argv )
 
 shutdown:
     if ( vp0 != GUI_VP_INVALID ) gui()->shutdown();  /* also tears down the boot window + context */
+    dev_font_shutdown();
     rhi()->shutdown();                               /* no-op if boot never initialized it */
     mod_system_exit();
     return ret_code;

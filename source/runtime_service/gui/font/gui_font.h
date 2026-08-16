@@ -96,6 +96,7 @@ bool            font_load_into     ( u32 id, const char* path );  // parse into 
 bool               font_load_builtin      ( gui_builtin_font_t font ); // load a built-in preset into slot 0; true no-op for GUI_FONT_NONE
 const char*        font_builtin_rel_path  ( gui_builtin_font_t font ); // preset's asset path relative to the root; NULL for NONE / out of range
 u32                font_builtin_size      ( gui_builtin_font_t font ); // preset's baked glyph height in px; 0 for NONE / out of range
+const char*        font_builtin_bake_source( gui_builtin_font_t font ); // family's runtime bake source name; NULL = none (ramp off)
 gui_builtin_font_t font_builtin_pick      ( gui_builtin_font_t base, f32 scale ); // same-family preset nearest base_size * scale (DPI retarget)
 
 /*==============================================================================================

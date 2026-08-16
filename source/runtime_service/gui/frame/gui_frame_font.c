@@ -66,6 +66,9 @@ gui_style_apply( void )
        runs at init-time font load, before any context exists. */
     if ( g_ctx )
         redraw_request();
+
+    /* The landed style or font moved -- re-aim the type ramp's role fonts at the new em/step. */
+    gui_type_resolve();
 }
 
 void

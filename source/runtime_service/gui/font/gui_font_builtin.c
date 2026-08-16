@@ -38,6 +38,20 @@ typedef struct builtin_font_info_s
 
 } builtin_font_info_t;
 
+/* Runtime bake source per family: the name a host's font baker resolves to a TTF (a file in
+   assets/font_source, or an OS-installed friendly name).  NULL = family has no runtime source;
+   the type ramp stays off for it.  One name per FAMILY -- a bake at any size comes from the
+   same face. */
+
+static const char* const s_family_bake_source[] =
+{
+    [ FONT_FAM_NONE          ] = NULL,
+    [ FONT_FAM_JETBRAINS     ] = "JetBrains Mono NL",   // OS-installed name; absent = ramp off
+    [ FONT_FAM_ROBOTO        ] = "Roboto-Regular",      // assets/font_source/Roboto-Regular.ttf
+    [ FONT_FAM_CASCADIA_MONO ] = "Cascadia Mono",       // ships with Windows 11
+    [ FONT_FAM_CASCADIA_CODE ] = "Cascadia Code",       // ships with Windows 11
+};
+
 static const builtin_font_info_t s_builtin_font[ GUI_FONT_BUILTIN_COUNT ] =
 {
     [ GUI_FONT_NONE ]               = { NULL,                                                FONT_FAM_NONE,          0  },
@@ -65,6 +79,16 @@ font_builtin_rel_path( gui_builtin_font_t font )
     if ( font >= GUI_FONT_BUILTIN_COUNT )
         return NULL;
     return s_builtin_font[ font ].rel;
+}
+
+/* Runtime bake source name of a preset's FAMILY; NULL for NONE / out-of-range / no source. */
+
+const char*
+font_builtin_bake_source( gui_builtin_font_t font )
+{
+    if ( font >= GUI_FONT_BUILTIN_COUNT )
+        return NULL;
+    return s_family_bake_source[ s_builtin_font[ font ].family ];
 }
 
 /* Baked glyph height of a preset in px; 0 for GUI_FONT_NONE / out-of-range. */

@@ -82,6 +82,22 @@ dpi_scale_landed( void )
     return dpi_bake_scale( s_dpi.landed );
 }
 
+/* The type ramp's view of this engine (gui_frame_type.c, later in this TU): whether the
+   managed lineage is what is active -- the same test every dpi entry point gates on -- and
+   which bake it landed (the family the ramp sizes bake from). */
+
+static bool
+dpi_managed( void )
+{
+    return s_dpi.base != GUI_FONT_NONE && font_active_id() == s_dpi.landed_id;
+}
+
+static gui_builtin_font_t
+dpi_landed_bake( void )
+{
+    return s_dpi.landed;
+}
+
 /* Debug cross-check: dpi_bake_scale trusts the builtin table's MIRRORED size, while metrics
    scale from the file's real em -- a table row that drifts from its .orb_font header would
    silently split the one scale factor in two (quantum + window rescale vs layout metrics).
@@ -130,6 +146,7 @@ gui_dpi_base_set( gui_builtin_font_t font )
         s_dpi.loaded_id[ i ] = 0;
     for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
         s_vp_pool[ v ].dpi_bake = font;   /* surfaces open post-init inherit via viewport_create */
+    gui_type_clear();   /* ramp sizes resolved against the old lineage are stale */
 }
 
 void
@@ -251,6 +268,10 @@ gui_dpi_land( i32 viewport )
        carry this font.  landed_id from what is ACTUALLY active (font_use ignores a bad id). */
     draw_set_font( font_active_id() );
     s_dpi.landed_id = font_active_id();
+
+    /* Re-aim the type ramp at this surface's em -- prewarmed, so a memo hit, and QUIET like
+       the landing itself. */
+    gui_type_resolve();
 }
 
 /* Frame-begin poll (gui_frame_loop.c): resolve every live surface's wanted scale, retarget on

@@ -139,6 +139,7 @@ void draw_set_band              ( u32 band );       // arena band: 0 = main UI, 
 u32  draw_band                  ( void );           // current band (sampled for popup band inheritance)
 void draw_set_window            ( gui_id_t win );   // stable window id stamped on new commands (cache key)
 void draw_set_font              ( u32 font );       // active font id, stamped onto each TEXT command (push/pop/use_font)
+u32  draw_get_font              ( void );           // current stamp font (save/restore around a scoped swap)
 
 /* The paint cursor as one record (state in gui_emit_draw.c; here -- the definer's
    side of the seam): the command segment tag (owning window, sort key, viewport, arena band --
