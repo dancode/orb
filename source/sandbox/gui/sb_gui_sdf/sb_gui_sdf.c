@@ -1509,7 +1509,7 @@ win_fills( void )
     }
     f32 ang = gui_radians( s_fill_ang );
 
-    gui()->separator_text( "rounded gradient -- linear at any angle, radial, conic; one quad each" );
+    gui()->separator_text( "rounded gradient -- linear, radial, conic" );
     {
         gui_rect_t r = gui()->canvas( 130.0f );
         gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
@@ -1528,11 +1528,12 @@ win_fills( void )
                                          GUI_COLOR( 0xFF, 0x70, 0x50, 0x00 ),
                                          GUI_GRAD_RADIAL, ang );
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 30.0f + w * 2.0f, r.y + 12.0f, w, h },
-                                         s_fill_round, INK, GUI_COLOR( 0xE8, 0xE0, 0xD0, 0xFF ),
+                                         s_fill_round, TEAL, GUI_COLOR( 0x30, 0x20, 0x60, 0xFF ),
                                          GUI_GRAD_CONIC, ang );
     }
-    gui()->text( "left: linear, on the angle slider   middle: radial, fading to transparent at the "
-                 "rim   right: conic, its seam on the angle" );
+    gui()->text_wrapped( "left: linear, on the angle slider.  middle: radial, fading to "
+                         "transparent at the rim.  right: conic -- the angle turns its SEAM, the "
+                         "one place the ramp meets itself." );
 
     gui()->separator_text( "the midpoint test -- rounded vs square, same two endpoints" );
     {
@@ -1547,7 +1548,8 @@ win_fills( void )
         gui()->draw_gradient( ( gui_rect_t ){ r.x, r.y, r.w, 36.0f }, a, b, true );
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x, r.y + 38.0f, r.w, 36.0f },
                                          0.0f, a, b, GUI_GRAD_LINEAR, 0.0f );
-        gui()->text( "no seam at the centre = the linear-light round trip is doing its job" );
+        gui()->text_wrapped( "no seam where the two bands meet = both sides are ramping in "
+                             "linear light." );
     }
 
     gui()->separator_text( "inset shadow -- the falloff turned INWARD (tex op bit, no fx mode)" );
@@ -1581,43 +1583,63 @@ win_fills( void )
         gui()->draw_set_rounding( 0.0f );
     }
 
-    gui()->text( "left: pressed well   middle: the drop shadow it mirrors   right: inset over a gradient" );
+    gui()->text_wrapped( "left: pressed well.  middle: the drop shadow it mirrors.  right: inset "
+                         "over a gradient." );
 
-    gui()->separator_text( "the DIRECTIONAL cast -- two boundaries in one field" );
-    gui()->slider_float( "cast x (px)", &s_drop_x, -30.0f, 30.0f );
-    gui()->slider_float( "cast y (px)", &s_drop_y, -30.0f, 30.0f );
+    gui()->separator_text( "the drop shadow -- the EVEN cast" );
     {
-        /* draw_drop_shadow cuts the CASTER'S silhouette out of the falloff rather than its own, so
-           the shadow can be laid off-centre: the near side stays flush against the card's border
-           while the far side reaches its full spread.  Cutting against its own outline instead --
-           what every skirt did before the record carried a second boundary -- opens a gap on one
-           side and lays shadow inside the card on the other.
-           Both cards are TRANSLUCENT, which is the case that makes the cut visible at all: a
-           filled shadow would show its core through them as the card dimming itself. */
-        gui_rect_t r = gui()->canvas( 160.0f );
+        /* The cut taken against the card's own outline: the falloff is the same width on all four
+           sides and every part of it that would fall inside the card is gone.  That reads as
+           CONTACT rather than height -- the card sits ON the ground plane instead of above it --
+           and it is still the right look for flush chrome, a docked shelf, a resting tile.  It is
+           the directional cast below with an offset of zero, not a lesser version of it.
+           The card is TRANSLUCENT, which is what makes the cut visible at all: a FILLED shadow
+           (draw_shadow) would show its core through the card as the card dimming itself. */
+        gui_rect_t r = gui()->canvas( 120.0f );
         gui()->draw_checker( r, 12.0f, GUI_COLOR( 0x2A, 0x2A, 0x30, 0xFF ),
                                        GUI_COLOR( 0x22, 0x22, 0x28, 0xFF ) );
 
-        f32        w  = ( r.w - 30.0f ) / 2.0f, h = r.h - 40.0f;
-        gui_rect_t c0 = { r.x + 10.0f, r.y + 20.0f, w, h };
-        gui_rect_t c1 = { r.x + 20.0f + w, r.y + 20.0f, w, h };
+        f32        cw = ( r.w > 260.0f ) ? 220.0f : r.w - 40.0f;
+        gui_rect_t c  = { r.x + ( r.w - cw ) * 0.5f, r.y + 18.0f, cw, r.h - 36.0f };
 
         gui()->draw_set_rounding( s_fill_round );
-        gui()->draw_drop_shadow( c0, s_fill_depth, 0.0f, 0.0f,
+        gui()->draw_drop_shadow( c, s_fill_depth, 0.0f, 0.0f,
                                  GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
-        gui()->draw_round_rect( c0, s_fill_round, s_fill_round, s_fill_round, s_fill_round,
-                                true, 0.0f, GUI_COLOR( 0x50, 0x54, 0x60, 0x90 ) );
-
-        gui()->draw_drop_shadow( c1, s_fill_depth, s_drop_x, s_drop_y,
-                                 GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
-        gui()->draw_round_rect( c1, s_fill_round, s_fill_round, s_fill_round, s_fill_round,
+        gui()->draw_round_rect( c, s_fill_round, s_fill_round, s_fill_round, s_fill_round,
                                 true, 0.0f, GUI_COLOR( 0x50, 0x54, 0x60, 0x90 ) );
         gui()->draw_set_rounding( 0.0f );
     }
-    gui()->text( "left: the even cast (offset 0)   right: the same shadow on the sliders -- no gap "
-                 "on the near side, no shadow inside the card" );
-    gui()->text( "an inset's interior is HOLLOW -- the band is only `depth` deep, so one on a "
-                 "full-size panel costs the rim, not the panel" );
+    gui()->text_wrapped( "even on all four sides, and hidden under its own caster -- the shadow "
+                         "reads as contact, not as height." );
+
+    gui()->separator_text( "the drop shadow -- the DIRECTIONAL cast" );
+    gui()->slider_float( "cast x (px)", &s_drop_x, -30.0f, 30.0f );
+    gui()->slider_float( "cast y (px)", &s_drop_y, -30.0f, 30.0f );
+    {
+        /* The same call with a non-zero offset.  It cuts the CASTER'S silhouette out of the
+           falloff rather than its own, so the shadow can be laid off-centre: the near side stays
+           flush against the card's border while the far side reaches its full spread.  Cutting
+           against its own outline instead -- all a skirt could do before the record carried a
+           second boundary -- opens a gap on one side and lays shadow inside the card on the
+           other. */
+        gui_rect_t r = gui()->canvas( 120.0f );
+        gui()->draw_checker( r, 12.0f, GUI_COLOR( 0x2A, 0x2A, 0x30, 0xFF ),
+                                       GUI_COLOR( 0x22, 0x22, 0x28, 0xFF ) );
+
+        f32        cw = ( r.w > 260.0f ) ? 220.0f : r.w - 40.0f;
+        gui_rect_t c  = { r.x + ( r.w - cw ) * 0.5f, r.y + 18.0f, cw, r.h - 36.0f };
+
+        gui()->draw_set_rounding( s_fill_round );
+        gui()->draw_drop_shadow( c, s_fill_depth, s_drop_x, s_drop_y,
+                                 GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
+        gui()->draw_round_rect( c, s_fill_round, s_fill_round, s_fill_round, s_fill_round,
+                                true, 0.0f, GUI_COLOR( 0x50, 0x54, 0x60, 0x90 ) );
+        gui()->draw_set_rounding( 0.0f );
+    }
+    gui()->text_wrapped( "drag the sliders: no gap opens on the near side and no shadow lands "
+                         "inside the card, at any offset." );
+    gui()->text_wrapped( "an inset's interior is HOLLOW -- the band is only `depth` deep, so one "
+                         "on a full-size panel costs the rim, not the panel." );
 
     gui()->separator_text( "stripes + hatch -- the lattice cut on ONE axis, turned (GRID's spare bits)" );
     {
@@ -1672,7 +1694,7 @@ static sdf_demo_t s_demos[] = {
     { "Dials",          "Dials",          "draggable knob / clock / compass with rotated labels",  win_dials,     900.0f, 400.0f, false },
     { "New Verbs",      "New Verbs",      "box_xf / icon_xf / corner shadow / dashed + gradient arcs", win_five,  980.0f, 760.0f, false },
     { "Backdrops",      "Backdrops",      "checker + line grid as one-quad fragment patterns",     win_backdrops, 760.0f, 560.0f, false },
-    { "Fills",          "Fills",          "rounded gradients (any angle) + the inset shadow op",   win_fills,     940.0f, 690.0f, false },
+    { "Fills",          "Fills",          "gradients (linear / radial / conic) + inset + drop shadows", win_fills, 940.0f, 900.0f, false },
     { "Frontier Notes", "Frontier Notes", "what shipped and what is still out",                    win_frontier,  640.0f, 480.0f, false },
 };
 
