@@ -1478,6 +1478,107 @@ win_frontier( void )
 }
 
 /*==============================================================================================
+    Fills -- the two shapes that cost the effect band nothing.
+
+    Both are here for the same reason: neither needed an fx mode.  The gradient rides the sixteen
+    VERTICES a rounded box already emits, because colour is affine in position and so is vertex
+    interpolation; the inset rides an OP BIT in the tex word, because turning a falloff inward is
+    a modifier on a coverage the fragment already computed, not a new shape.  A mode was the
+    expensive answer to both, and the nibble only has two values left.
+==============================================================================================*/
+
+static f32  s_fill_ang    = 90.0f;    /* gradient angle, degrees (90 = top to bottom) */
+static f32  s_fill_round  = 10.0f;
+static f32  s_fill_depth  = 14.0f;    /* inset falloff depth, px */
+static bool s_fill_spin;
+
+static void
+win_fills( void )
+{
+    gui()->stack();
+
+    gui()->slider_float( "angle (deg)", &s_fill_ang,   0.0f, 360.0f );
+    gui()->slider_float( "rounding",    &s_fill_round, 0.0f, 40.0f  );
+    gui()->checkbox( "spin the angle", &s_fill_spin );
+    if ( s_fill_spin )
+    {
+        s_fill_ang = fmodf( s_time * 40.0f, 360.0f );
+        keep_awake();
+    }
+    f32 ang = gui_radians( s_fill_ang );
+
+    gui()->separator_text( "rounded gradient -- any angle, four quads, one draw call" );
+    {
+        gui_rect_t r = gui()->canvas( 130.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        /* Three plates at the live angle.  A gradient on a ROUNDED rect had no expression at all
+           before this: draw_gradient is one square quad with two corner colours. */
+        f32 w = ( r.w - 40.0f ) / 3.0f, h = r.h - 24.0f;
+        gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 10.0f, r.y + 12.0f, w, h },
+                                         s_fill_round, TEAL, PANEL, ang );
+        gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 20.0f + w, r.y + 12.0f, w, h },
+                                         s_fill_round,
+                                         GUI_COLOR( 0xFF, 0x70, 0x50, 0xFF ),
+                                         GUI_COLOR( 0x50, 0x30, 0xA0, 0xFF ), ang );
+        /* Alpha ramps too, and it stays LINEAR -- alpha is coverage, never gamma encoded, so a
+           fade to transparent is even rather than crowded at one end. */
+        gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 30.0f + w * 2.0f, r.y + 12.0f, w, h },
+                                         s_fill_round, INK, GUI_COLOR( 0xE8, 0xE0, 0xD0, 0x00 ), ang );
+    }
+
+    gui()->separator_text( "the midpoint test -- rounded vs square, same two endpoints" );
+    {
+        /* The one thing that could go wrong invisibly.  The hardware interpolates the DECODED
+           colours, so the ramp is computed in linear light and re-encoded per vertex; lerping the
+           sRGB bytes instead would miss the centre by ~45/255 and these two bands would show a
+           seam where they meet.  They must read as ONE continuous ramp. */
+        gui_rect_t r = gui()->canvas( 76.0f );
+        u32 a = GUI_COLOR( 0x10, 0x20, 0xC0, 0xFF ), b = GUI_COLOR( 0xE0, 0xB0, 0x40, 0xFF );
+
+        gui()->draw_gradient( ( gui_rect_t ){ r.x, r.y, r.w, 36.0f }, a, b, true );
+        gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x, r.y + 38.0f, r.w, 36.0f },
+                                         0.0f, a, b, 0.0f );
+        gui()->text( "no seam at the centre = the linear-light round trip is doing its job" );
+    }
+
+    gui()->separator_text( "inset shadow -- the falloff turned INWARD (tex op bit, no fx mode)" );
+    gui()->slider_float( "depth (px)", &s_fill_depth, 1.0f, 48.0f );
+    {
+        gui_rect_t r = gui()->canvas( 150.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        f32 w = ( r.w - 40.0f ) / 3.0f, h = r.h - 24.0f;
+        gui()->draw_set_rounding( s_fill_round );
+
+        /* A pressed well: the fill, then the inset against its own inside edge. */
+        gui_rect_t w0 = { r.x + 10.0f, r.y + 12.0f, w, h };
+        gui()->draw_round_rect( w0, s_fill_round, s_fill_round, s_fill_round, s_fill_round,
+                                true, 0.0f, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
+        gui()->draw_inset_shadow( w0, s_fill_depth, GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
+
+        /* The mirror, side by side: a DROP shadow sits on the ground UNDER its subject, an inset
+           sits against the inside of the subject's own edge. */
+        gui_rect_t w1 = { r.x + 20.0f + w, r.y + 12.0f, w, h };
+        gui()->draw_shadow( w1, s_fill_depth * 0.5f, GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
+        gui()->draw_round_rect( w1, s_fill_round, s_fill_round, s_fill_round, s_fill_round,
+                                true, 0.0f, EDGE );
+
+        /* Composed: an inset over a gradient, which is the point of an op -- it modifies whatever
+           the fill happened to be instead of replacing it with a shape of its own. */
+        gui_rect_t w2 = { r.x + 30.0f + w * 2.0f, r.y + 12.0f, w, h };
+        gui()->draw_round_rect_gradient( w2, s_fill_round, TEAL, PANEL, ang );
+        gui()->draw_inset_shadow( w2, s_fill_depth, GUI_COLOR( 0x00, 0x00, 0x00, 0xA0 ) );
+
+        gui()->draw_set_rounding( 0.0f );
+    }
+
+    gui()->text( "left: pressed well   middle: the drop shadow it mirrors   right: inset over a gradient" );
+    gui()->text( "an inset's interior is HOLLOW -- the band is only `depth` deep, so one on a "
+                 "full-size panel costs the rim, not the panel" );
+}
+
+/*==============================================================================================
     Registry + menu -- every demo window hidden by default, launched from the menu bar or the
     launcher window (both drive the same table; the titlebar X syncs back into it).
 ==============================================================================================*/
@@ -1503,6 +1604,7 @@ static sdf_demo_t s_demos[] = {
     { "Dials",          "Dials",          "draggable knob / clock / compass with rotated labels",  win_dials,     900.0f, 400.0f, false },
     { "New Verbs",      "New Verbs",      "box_xf / icon_xf / corner shadow / dashed + gradient arcs", win_five,  980.0f, 760.0f, false },
     { "Backdrops",      "Backdrops",      "checker + line grid as one-quad fragment patterns",     win_backdrops, 760.0f, 560.0f, false },
+    { "Fills",          "Fills",          "rounded gradients (any angle) + the inset shadow op",   win_fills,     940.0f, 690.0f, false },
     { "Frontier Notes", "Frontier Notes", "what shipped and what is still out",                    win_frontier,  640.0f, 480.0f, false },
 };
 

@@ -229,6 +229,10 @@ void draw_push_shadow           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
    it, so a translucent panel ends up dimming itself.  Emits a band of quads around the frame rather
    than the whole box.  Use draw_push_shadow for a glow meant to be seen THROUGH its subject. */
 void draw_push_skirt            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr );
+
+/* The inner shadow -- the falloff turned INWARD, painting from the boundary `depth` px in and
+   nothing outside it.  The pressed well / recessed field a drop shadow cannot express. */
+void draw_push_inset            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 depth, u32 abgr );
 void draw_push_pulse            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth,
                                   u32 abgr );
 
@@ -243,7 +247,8 @@ void draw_push_box_xf           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
    form stays a perimeter polyline.  `feather` widens the falloff band exactly as draw_push_shadow's
    does (0 = the standard 1 px AA) -- the per-corner soft shadow. */
 void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
-                                  f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather, u32 abgr );
+                                  f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
+                                  u32 abgr, u32 col_b, f32 grad_ang );
 
 /* Push a circular sector -- a stroked arc with round caps, or a filled wedge with sharp radial
    edges.  Angles are radians in screen space (0 points +x, positive turns clockwise); a reversed

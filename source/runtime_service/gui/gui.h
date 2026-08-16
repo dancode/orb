@@ -1718,17 +1718,15 @@ typedef enum
     GUI_FX_ARC       = 7,  /* annular sector: a band of `tube` px centred on radius ra, round caps */
     GUI_FX_PIE       = 8,  /* filled wedge: the disc of radius ra cut to the aperture, sharp edges */
 
-    /* The SELF-SAMPLED sector modes.  From 9 up a mode declares its shape solid colour by
-       definition: the fragment does not consult the texel (coverage forced 1), which FREES the
-       vertex's 32-bit uv word to carry mode-specific parameters -- the quad stamps the same value
-       on all four corners, interpolation is flat, and unorm16 round-trips k/65535 exactly.  The
-       same ARC word partition (ra | tube | aperture) still applies; only the uv payload differs. */
+    /* The SELF-SAMPLED sector modes.  Both emit with GUI_TEX_SELF_BIT set, which is what frees the
+       vertex's 32-bit uv word to carry mode-specific parameters instead of texcoords.  The same ARC
+       word partition (ra | tube | aperture) still applies; only the uv payload differs. */
     GUI_FX_ARC_DASH  = 9,  /* ARC whose coverage is cut by an angular dash pattern: uv.x = the dash
                               period as a fraction of a full turn, uv.y = the on-duty fraction   */
     GUI_FX_ARC_GRAD  = 10, /* ARC whose colour sweeps from the vertex colour at the sector start
                               to a second RGBA8 riding the uv word (x = r|g<<8, y = b|a<<8)      */
 
-    /* The FRAMEBUFFER-TILING pattern modes.  Self-sampled like the two above, but the pattern
+    /* The FRAMEBUFFER-TILING pattern modes.  Self-sampled like the two above (same bit), but the pattern
        coordinate is gl_FragCoord / SV_Position -- exact float pixels straight from the
        rasterizer -- rather than the interpolated HALF2 effect coordinate, whose ulp reaches a
        full pixel at the far corners of a fullscreen backdrop, and backdrops are exactly the
@@ -2196,7 +2194,7 @@ typedef enum
 
    FOUR bits, matching GUI_FX_MODE_BITS -- the two mode fields answer the same kind of question and
    grow by the same rule.  The bits come out of the INDEX half, which never needed them: the RHI's
-   bindless array is 2048 entries (11 bits) and the low 17 still hold 128K.  This word is the shader
+   bindless array is 2048 entries (11 bits) and the low 14 still hold 16K.  This word is the shader
    contract: the shifts below must equal TEX_MODE_SHIFT / TEX_CLIP_SHIFT in gui.frag / gui.ps.hlsl
    (and the paraphrase in gui_shader.h) -- change one, change all, resplice the SPIR-V.
 
@@ -2218,6 +2216,47 @@ typedef enum
 #define GUI_TEX_CLIP_SHIFT  17u
 #define GUI_TEX_CLIP_MASK   ( 0x7FFu << GUI_TEX_CLIP_SHIFT )
 
+/* THE SELF-SAMPLED BIT -- bit 16, the top of what is left of the index half.  Set, it tells the
+   fragment not to consult the texel at all: coverage is forced to 1, and the vertex's 32-bit uv
+   word is a mode PAYLOAD rather than a texture coordinate (the fragment still samples, at a
+   garbage location of a valid texture, because that is cheaper than a divergent skip).
+
+   It is a BIT and not a range of mode numbers because it describes the PRIMITIVE, not the shape.
+   Solid colour is what makes the uv word free, and whether a shape is solid colour is decided at
+   the emit site: a rounded box drawn as a fill has nothing to say in its uv, while the same mode
+   drawn through draw_texture_in carries real texcoords.  Keyed off the mode instead, one of those
+   two would have to be a second mode -- which is how a 4-bit enum runs out while the parameter
+   bits it is trying to buy sit unused.
+
+   The payoff is the parameter budget.  A shape mode partitions 28 bits of the effect word; a
+   SELF-SAMPLED one partitions those 28 plus the whole uv word, because unorm16 round-trips
+   k/65535 exactly and the quad stamps the same value on all four corners (flat interpolation).
+   That is 60 bits for any shape willing to be one colour, which is most UI chrome. */
+#define GUI_TEX_SELF_SHIFT  16u
+#define GUI_TEX_SELF_BIT    ( 1u << GUI_TEX_SELF_SHIFT )
+
+/* THE OP BAND -- bits 14..15, post-ops that MODIFY whatever shape the effect word named.
+
+   They live here rather than in the effect word for one reason, and it is the reason the mode
+   nibble kept running out: every fx mode re-partitions its own 28 bits differently, so there is no
+   bit position that means the same thing across modes.  BOX leaves 25..31 free, PULSE spends them
+   on rate + depth, ARC spends them on the aperture -- a flag placed there is a flag that works for
+   some shapes and corrupts others.  The tex word has no such partitioning: these bits are free
+   whatever the shape is, so an op composes with any of them and with each other.
+
+   An op is not a shape and must never become one.  If a thing needs its own field, its own
+   parameters, or its own branch in the sector decode, it is a MODE; an op is a modifier on a
+   coverage the fragment already computed.  Ops apply to the box-family modes only -- the sector
+   and pattern modes return their coverage before the shared box decode the ops act on. */
+#define GUI_TEX_OP_SHIFT    14u
+#define GUI_TEX_OP_MASK     ( 0x3u << GUI_TEX_OP_SHIFT )
+
+/* Run the falloff INWARD from the boundary instead of across it: full strength against the edge,
+   gone `feather` px in, nothing outside.  The inner shadow / pressed well -- and the SKIRT's exact
+   mirror, which is why it is an op and SKIRT is not: a skirt keeps the outward half of the falloff
+   and cuts the core, an inset keeps an inward falloff and cuts everything past the edge. */
+#define GUI_TEX_OP_INSET    ( 1u << 14 )
+
 typedef enum
 {
     GUI_TEX_COVERAGE = 0,   /* R8: the texel's R is alpha and the vertex colour supplies RGB --
@@ -2232,7 +2271,9 @@ typedef enum
 
 } gui_tex_mode_t;
 
-/* Split a command's tex_idx into its two halves: the model, and the bindless slot to sample. */
+/* Split a command's tex_idx into its parts: the model, and the bindless slot to sample.  The clip
+   band and the self-sampled bit are stamped later (tess_verts_commit) and are not a command's to
+   carry, but both are masked out here so a word read back off a VERTEX splits the same way. */
 static inline gui_tex_mode_t
 gui_tex_mode( u32 tex_idx )
 {
@@ -2242,7 +2283,8 @@ gui_tex_mode( u32 tex_idx )
 static inline u32
 gui_tex_index( u32 tex_idx )
 {
-    return tex_idx & ~( GUI_TEX_MODE_MASK | GUI_TEX_CLIP_MASK );
+    return tex_idx & ~( GUI_TEX_MODE_MASK | GUI_TEX_CLIP_MASK | GUI_TEX_SELF_BIT
+                        | GUI_TEX_OP_MASK );
 }
 
 /* One semantic draw command.  The 4-byte header carries the command type, the index of the active
@@ -2333,12 +2375,16 @@ typedef struct
            coordinate is box-local and affine, so rotating the four corner POSITIONS preserves the
            field under interpolation -- a rotated card costs the same four quadrant quads.  0 for
            every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap.
-           `skirt` cuts the interior away (GUI_FX_SKIRT): the same shape and the same outward
-           falloff, painting nothing inside the boundary.  It is what a DROP shadow wants -- the
-           core of a filled one is only ever seen through whatever it sits behind, which is a
-           translucent panel dimming itself.  A glow or halo that is meant to be seen through its
-           subject leaves it 0 and gets the filled box. */
-        struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr, skirt; } fx_box;
+           `variant` picks which of the three fills this is, all sharing the one geometry:
+             0 BOX    -- the filled surface: a glow or halo MEANT to be seen through its subject.
+             1 SKIRT  -- the interior cut away (GUI_FX_SKIRT), same outward falloff, painting
+                         nothing inside the boundary.  What a DROP shadow wants: the core of a
+                         filled one is only ever seen through whatever it sits behind, which is a
+                         translucent panel dimming itself.
+             2 INSET  -- the falloff turned INWARD (GUI_TEX_OP_INSET), painting from the boundary
+                         `feather` px in and nothing outside.  The inner shadow / pressed well.
+           A non-zero `rate` overrides all three with the PULSE, which is a BOX that breathes. */
+        struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr, variant; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME four quadrant quads a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape
@@ -2352,8 +2398,17 @@ typedef struct
            a shape whose outline the polyline already draws correctly.
            `feather` is the falloff band exactly as fx_box carries it -- 0 gets the standard 1 px
            AA, wider makes the per-corner SOFT SHADOW (the tab / asymmetric-card drop shadow); the
-           quadrants agree at any feather (tess_fx_box_core's centre-line proof). */
-        struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather; u32 abgr; } round_rect;
+           quadrants agree at any feather (tess_fx_box_core's centre-line proof).
+           `col_b` + `grad_ang` make it a LINEAR GRADIENT fill: the ramp runs abgr -> col_b along
+           the axis at `grad_ang` (radians, box-local, 0 points +x), spanning the box exactly and
+           holding its end colours across the AA skirt.  col_b == abgr is a flat fill, which is
+           not a special case but the honest degenerate one -- the tessellator runs the same path.
+           The ramp is carried by the box's own VERTICES, not by the effect word, so it costs no
+           fx mode and no packed bits (see tess_grad_t); the effect word could not express it in
+           any case, because the box's folded effect coordinate cannot tell one side of the shape
+           from the other. */
+        struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather; u32 abgr; u32 col_b;
+                 f32 grad_ang; } round_rect;
         /* Circular sector -- ONE member serving GUI_CMD_ARC and GUI_CMD_PIE, which differ only in
            the field the fragment evaluates, not in anything they carry.  Angles are radians in
            screen space (0 points +x, positive turns clockwise, matching text_xf.rot); a1 < a0 is

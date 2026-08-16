@@ -189,7 +189,8 @@ step_cmd_detail( const step_cmd_info_t* ci )
                        c->fx_box.w, c->fx_box.h );
             fmt_snprintf( b2, sizeof( b2 ), "round %.1f   feather %.1f   rate %.2f Hz   depth %.2f%s",
                           c->fx_box.rounding, c->fx_box.feather, c->fx_box.rate, c->fx_box.depth,
-                          c->fx_box.skirt ? "   skirt" : "" );
+                          ( c->fx_box.variant == 1u ) ? "   skirt"
+                          : ( c->fx_box.variant == 2u ) ? "   inset" : "" );
             row2 = b2;
             break;
         case GUI_CMD_ROUND_RECT_EX:
@@ -295,7 +296,11 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_POLYLINE:      step_swatch( r, r.x, "color", c->polyline.abgr );     break;
                 case GUI_CMD_DASHED_LINE:   step_swatch( r, r.x, "color", c->dash.abgr );         break;
                 case GUI_CMD_FX_BOX:        step_swatch( r, r.x, "color", c->fx_box.abgr );       break;
-                case GUI_CMD_ROUND_RECT_EX: step_swatch( r, r.x, "color", c->round_rect.abgr );   break;
+                case GUI_CMD_ROUND_RECT_EX:
+                    step_swatch( r, r.x, "color", c->round_rect.abgr );
+                    if ( c->round_rect.col_b != c->round_rect.abgr )
+                        step_swatch( r, r.x, "col_b", c->round_rect.col_b );
+                    break;
                 case GUI_CMD_ARC:
                 case GUI_CMD_PIE:           step_swatch( r, r.x, "color", c->arc.abgr );          break;
                 case GUI_CMD_ARC_DASH:      step_swatch( r, r.x, "color", c->arc_dash.abgr );     break;

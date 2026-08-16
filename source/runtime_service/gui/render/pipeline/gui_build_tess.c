@@ -66,6 +66,10 @@ static struct
     u32         cur_fx;     /* packed effect word stamped into every vertex committed.  CLEARED at
                                the top of each semantic command (tess_dispatch), so a primitive
                                that wants one sets it and nothing can inherit it afterwards.      */
+    u32         cur_tex_bits; /* GUI_TEX_SELF_BIT | GUI_TEX_OP_* -- the per-primitive flags OR'd
+                               into the tex word by tess_verts_commit.  Cleared per semantic
+                               command exactly like cur_fx: leaking a self bit would blank a
+                               textured quad, and leaking an op would reshape the next fill. */
 
     /* per-slot tesellation context */
 
@@ -358,8 +362,9 @@ tess_verts_commit( u32 n )
        bindless index below never reaches them (2048 slots, 11 bits), asserted because a collision
        here silently re-clips the primitive rather than failing. */
     ORB_ASSERT( ( s_tess.cur_tex & GUI_TEX_CLIP_MASK ) == 0u );
+    ORB_ASSERT( ( s_tess.cur_tex & ( GUI_TEX_SELF_BIT | GUI_TEX_OP_MASK ) ) == 0u );
     ORB_ASSERT( s_tess.cur_clip_local < ( GUI_TEX_CLIP_MASK >> GUI_TEX_CLIP_SHIFT ) + 1u );
-    u32 tex = s_tess.cur_tex | ( s_tess.cur_clip_local << GUI_TEX_CLIP_SHIFT );
+    u32 tex = s_tess.cur_tex | s_tess.cur_tex_bits | ( s_tess.cur_clip_local << GUI_TEX_CLIP_SHIFT );
 
     gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
     for ( u32 i = 0; i < n; ++i )
@@ -771,11 +776,101 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
    box-local |p| space, which interpolation preserves because it is affine in the position.  The
    UVs are computed from the UNROTATED position first, so a textured rotated box still maps its
    picture across the authored rect and clamps over the skirt exactly as the upright one does. */
+/*----------------------------------------------------------------------------------------------
+    tess_grad_t -- a linear colour ramp carried by the box's own VERTICES.
+
+    Colour is affine in position along a linear gradient, and vertex interpolation is affine, so
+    evaluating the ramp at each corner reproduces it EXACTLY across every quad -- at any angle,
+    for no fx mode, no packed bits and no shader work.  The 16 vertices a rounded box already
+    emits are more than the two a gradient needs.
+
+    The effect word could not have expressed this anyway: a box's effect coordinate is |p| - c,
+    folded at the vertex, so the fragment cannot tell one side of the shape from the other.  That
+    is the same limit that rules out a directional drop shadow, and it is why the sector modes --
+    whose coordinate stays signed -- are the ones that carry a gradient in the WORD instead.
+
+    The ramp runs in LINEAR light and is re-encoded to sRGB per vertex.  That is what makes a
+    rounded gradient agree with the square draw_gradient at its midpoint: the hardware interpolates
+    the DECODED colours, so lerping the sRGB bytes here would put a different colour on the centre
+    line than the same two endpoints produce across one quad.
+----------------------------------------------------------------------------------------------*/
+typedef struct
+{
+    f32 lin_a[ 4 ], lin_b[ 4 ];   // endpoints in linear light; alpha stays linear (it is coverage)
+    f32 dx, dy;                   // gradient axis, box-local, unit length
+    f32 inv_len;                  // 1 / the box's extent along that axis (0 for a degenerate box)
+
+} tess_grad_t;
+
+/* The sRGB transfer curve, both directions -- the same pair base/math_color.h states for vec4 and
+   both shader twins state for float3.  Kept local as two scalars rather than reached for: the ramp
+   needs the curve on a channel, not the vector colour type that header is built around. */
+static f32
+tess_srgb_to_linear( f32 c )
+{
+    return ( c <= 0.04045f ) ? c / 12.92f : powf( ( c + 0.055f ) / 1.055f, 2.4f );
+}
+
+static f32
+tess_linear_to_srgb( f32 c )
+{
+    return ( c <= 0.0031308f ) ? c * 12.92f : 1.055f * powf( c, 1.0f / 2.4f ) - 0.055f;
+}
+
+static void
+tess_grad_unpack( u32 abgr, f32* out )
+{
+    out[ 0 ] = tess_srgb_to_linear( (f32)(   abgr         & 0xFFu ) / 255.0f );
+    out[ 1 ] = tess_srgb_to_linear( (f32)( ( abgr >>  8 ) & 0xFFu ) / 255.0f );
+    out[ 2 ] = tess_srgb_to_linear( (f32)( ( abgr >> 16 ) & 0xFFu ) / 255.0f );
+    out[ 3 ] =                      (f32)( ( abgr >> 24 ) & 0xFFu ) / 255.0f;
+}
+
+static void
+tess_grad_init( tess_grad_t* g, u32 col_a, u32 col_b, f32 ang, f32 w, f32 h )
+{
+    f32 cs = cosf( ang ), sn = sinf( ang );
+    g->dx = cs;
+    g->dy = sn;
+
+    /* The box's own extent along the axis -- the support width of a projected rectangle.  The ramp
+       therefore spans the SHAPE at any angle, instead of running off it on the diagonal. */
+    f32 len = fabsf( w * cs ) + fabsf( h * sn );
+    g->inv_len = ( len > 1e-6f ) ? 1.0f / len : 0.0f;
+
+    tess_grad_unpack( col_a, g->lin_a );
+    tess_grad_unpack( col_b, g->lin_b );
+}
+
+/* The ramp at a box-LOCAL offset from the centre (pre-rotation, so the gradient turns with the
+   box).  t clamps to [0,1]: the ramp spans the box exactly, and the falloff skirt outside it
+   carries the end colours rather than extrapolating past them -- which would wrap on the u8 pack. */
+static u32
+tess_grad_col( const tess_grad_t* g, f32 lx, f32 ly )
+{
+    f32 t = ( lx * g->dx + ly * g->dy ) * g->inv_len + 0.5f;
+    if ( t < 0.0f ) t = 0.0f;
+    if ( t > 1.0f ) t = 1.0f;
+
+    u32 out = 0u;
+    for ( u32 i = 0; i < 3u; ++i )
+    {
+        f32 c = tess_linear_to_srgb( g->lin_a[ i ] + ( g->lin_b[ i ] - g->lin_a[ i ] ) * t );
+        u32 b = (u32)( c * 255.0f + 0.5f );
+        out |= ( ( b > 255u ) ? 255u : b ) << ( i * 8u );
+    }
+    f32 a  = g->lin_a[ 3 ] + ( g->lin_b[ 3 ] - g->lin_a[ 3 ] ) * t;
+    u32 ab = (u32)( a * 255.0f + 0.5f );
+    return out | ( ( ( ab > 255u ) ? 255u : ab ) << 24u );
+}
+
+/* `grad` NULL is the flat fill in `abgr` -- every caller but the gradient one passes NULL. */
 static void
 tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
                   f32 feather, f32 border, f32 rate, f32 depth, f32 rot,
                   gui_fx_mode_t mode,
-                  f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
+                  f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr,
+                  const tess_grad_t* grad )
 {
     if ( w <= 0.0f || h <= 0.0f )
         return;
@@ -857,9 +952,16 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        reach there either.  A RING stops at the far side of its band; a SKIRT stops at the boundary
        itself, since its coverage is cut to zero inside (a pixel of slack keeps the hole clear of
        the boundary the rasterizer resolves).  Both are properties of the MODE -- neither makes any
-       claim about what is drawn over the shape, so neither can be wrong about it. */
+       claim about what is drawn over the shape, so neither can be wrong about it.
+
+       The INSET op is read from ambient state rather than taken as a parameter because it is
+       already there: the op rides the tex word, which this function does not otherwise touch, and
+       threading a nineteenth argument through both entry points to restate it would be the only
+       alternative.  An inset paints from the boundary inward exactly `feather` px, so that IS its
+       reach -- the same relationship the ring's band has to its own. */
     f32 reach = ( mode == GUI_FX_RING  ) ? border + feather * 0.5f
               : ( mode == GUI_FX_SKIRT ) ? 1.0f
+              : ( s_tess.cur_tex_bits & GUI_TEX_OP_INSET ) ? feather
                                          : 0.0f;
 
     /* The per-quadrant coverage, in quadrant-local |p| space: one box normally, two forming an L
@@ -936,13 +1038,16 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
                 if ( tv < vlo ) tv = vlo;  if ( tv > vhi ) tv = vhi;
                 /* The turn, LAST: uv came from the unrotated position, the effect coord is
                    box-local either way, so only the world position rotates about the centre. */
+                /* The ramp reads the box-LOCAL offset, which is the pre-rotation one -- so the
+                   gradient turns with the box exactly as the uv and the effect coord do. */
+                u32 vcol = grad ? tess_grad_col( grad, sx[ q ] * ax, sy[ q ] * ay ) : abgr;
                 if ( rot != 0.0f )
                 {
                     f32 dx = px - cx, dy = py - cy;
                     px = cx + dx * rcs - dy * rsn;
                     py = cy + dx * rsn + dy * rcs;
                 }
-                v[ n * 4 + c ] = gui_vert_fxc( px, py, tu, tv, abgr, ax - kx, ay - ky );
+                v[ n * 4 + c ] = gui_vert_fxc( px, py, tu, tv, vcol, ax - kx, ay - ky );
             }
             tess_quad_idx( &idx[ n * 6 ], (u16)( base + n * 4 ) );
         }
@@ -967,7 +1072,7 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
 {
     const f32 r4[ 4 ] = { r, r, r, r };
     tess_fx_box_core( x, y, w, h, r4, feather, border, rate, depth, rot, mode,
-                      u0, v0, u1, v1, tex_idx, abgr );
+                      u0, v0, u1, v1, tex_idx, abgr, NULL );
 }
 
 /* TESS_FX_AA -- the default 1 px antialiasing band -- lives in gui_render.h now: the emit side
@@ -1033,15 +1138,23 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
 
 static void
 tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
-                    f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather, u32 abgr )
+                    f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
+                    u32 abgr, u32 col_b, f32 grad_ang )
 {
     /* Quadrant order: top-left, top-right, bottom-right, bottom-left (sx/sy in tess_fx_box_core),
        which is the order gui_cmd_t.round_rect declares its radii in.  feather below the standard
        AA band clamps up -- 0 means "crisp", never "hard-edged". */
     const f32 r4[ 4 ] = { rtl, rtr, rbr, rbl };
+
+    /* Equal endpoints ARE a flat fill, so the ramp is skipped rather than special-cased: running
+       it would land the same colour on every vertex, only after two transfer-curve round trips. */
+    tess_grad_t grad;
+    if ( col_b != abgr )
+        tess_grad_init( &grad, abgr, col_b, grad_ang, w, h );
+
     tess_fx_box_core( x, y, w, h, r4, ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
                       0.0f, 0.0f, 0.0f, 0.0f, GUI_FX_BOX,
-                      0, 0, 1, 1, 0, abgr );
+                      0, 0, 1, 1, 0, abgr, ( col_b != abgr ) ? &grad : NULL );
 }
 
 /*==============================================================================================
@@ -1162,13 +1275,14 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
 
     s_tess.cur_fx = gui_fx_pack_arc( mode, ra, rb, ap );
 
-    /* Self-sampled modes carry their parameter pair in the uv lanes; the fragment never samples
-       there (coverage is forced to 1 for mode >= 9), so the white texel is not needed and the
-       atlas stays bound only to keep the descriptor index valid. */
-    if ( mode >= GUI_FX_ARC_DASH )
+    /* These two carry their parameter pair in the uv lanes instead of texcoords, which is what the
+       self-sampled bit announces: the fragment forces coverage to 1 and never reads the texel, so
+       the white texel is not needed and the atlas stays bound only to keep the index valid. */
+    if ( mode == GUI_FX_ARC_DASH || mode == GUI_FX_ARC_GRAD )
     {
         wu = uvx;
         wv = uvy;
+        s_tess.cur_tex_bits |= GUI_TEX_SELF_BIT;
     }
 
     static const f32 lsx[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };
@@ -1232,6 +1346,7 @@ tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
     /* col_b in the ARC_GRAD uv lanes; the fragment never samples there (self-sampled, gui.h). */
     wu = (f32)(   col_b         & 0xFFFFu ) / 65535.0f;
     wv = (f32)( ( col_b >> 16 ) & 0xFFFFu ) / 65535.0f;
+    s_tess.cur_tex_bits |= GUI_TEX_SELF_BIT;
 
     v[ 0 ] = gui_vert( x,     y,     wu, wv, col_a );
     v[ 1 ] = gui_vert( x + w, y,     wu, wv, col_a );
@@ -1263,8 +1378,11 @@ tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness, 
 
     s_tess.cur_fx = gui_fx_pack_grid( cell, thickness );
 
+    /* The lattice is one colour -- the vertex colour -- so the uv word is free to carry the
+       per-axis phase instead of texcoords (self-sampled, gui.h). */
     wu = phx;
     wv = phy;
+    s_tess.cur_tex_bits |= GUI_TEX_SELF_BIT;
 
     v[ 0 ] = gui_vert( x,     y,     wu, wv, abgr );
     v[ 1 ] = gui_vert( x + w, y,     wu, wv, abgr );
@@ -1726,7 +1844,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
            can be ambient at all -- it lets an outline reach every glyph of a run, and a shape's
            word reach all 16 of its quadrant vertices, without threading a parameter through
            tess_rect_filled, which every fill in the library shares. */
-        s_tess.cur_fx = 0u;
+        s_tess.cur_fx       = 0u;
+        s_tess.cur_tex_bits = 0u;
 
         switch ( c->type )
         {
@@ -1768,12 +1887,17 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                slot never invalidates and the breathing costs no re-tessellation.  rate > 0 IS
                the mode: a still box and a zero-rate pulse are the same shape to the fragment. */
             case GUI_CMD_FX_BOX:
+                /* The INSET is a plain BOX whose falloff the op turns inward, so it names no mode
+                   of its own -- which is the point of an op band.  Set before the tessellator runs
+                   because the interior hole is sized from it (see `reach`). */
+                if ( c->fx_box.variant == 2u )
+                    s_tess.cur_tex_bits |= GUI_TEX_OP_INSET;
                 tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
                              c->fx_box.rounding, c->fx_box.feather, 0.0f,
                              c->fx_box.rate, c->fx_box.depth, c->fx_box.rot,
-                             ( c->fx_box.rate > 0.0f ) ? GUI_FX_PULSE
-                           : ( c->fx_box.skirt        ) ? GUI_FX_SKIRT
-                                                        : GUI_FX_BOX,
+                             ( c->fx_box.rate > 0.0f )    ? GUI_FX_PULSE
+                           : ( c->fx_box.variant == 1u ) ? GUI_FX_SKIRT
+                                                         : GUI_FX_BOX,
                              0, 0, 1, 1, 0, c->fx_box.abgr );
                 break;
 
@@ -1784,7 +1908,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                                     c->round_rect.w, c->round_rect.h,
                                     c->round_rect.rtl, c->round_rect.rtr,
                                     c->round_rect.rbr, c->round_rect.rbl,
-                                    c->round_rect.feather, c->round_rect.abgr );
+                                    c->round_rect.feather, c->round_rect.abgr,
+                                    c->round_rect.col_b, c->round_rect.grad_ang );
                 break;
 
             /* The sectors share their geometry and differ only in the field the fragment

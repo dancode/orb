@@ -27,11 +27,14 @@ layout(location = 3) flat in uint v_fx;
 layout(location = 4) flat in uint v_tex;   // sampling model (top 4 bits) | bindless slot
 layout(location = 0) out vec4 out_color;
 
-// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_CLIP_SHIFT in gui.h -- keep the three in step.
+// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_CLIP_SHIFT / GUI_TEX_SELF_BIT in gui.h -- keep the three
+// files in step.
 #define TEX_MODE_SHIFT  28u
 #define TEX_CLIP_SHIFT  17u
 #define TEX_CLIP_MASK   0x7FFu
-#define TEX_INDEX_MASK  0x0001FFFFu
+#define TEX_SELF_BIT    0x00010000u
+#define TEX_OP_INSET    0x00004000u
+#define TEX_INDEX_MASK  0x00003FFFu
 
 // v_color arrives ALREADY LINEAR -- the vertex stage decodes it (see gui.vert), because it is a
 // per-vertex constant and decoding it per fragment spent three pow() on every pixel of the UI.
@@ -189,6 +192,14 @@ float fx_coverage()
     if ( mode == 13u && d <= 0.0 )
         cov = 0.0;
 
+    // GUI_TEX_OP_INSET -- the inner shadow.  The falloff is re-measured INWARD from the boundary:
+    // full strength against the edge, gone `feather` px in, and nothing outside it.  Taken on
+    // COVERAGE for the same reason the skirt's cut is (bending d would move the boundary both
+    // terms are measured from), and the second factor is the ordinary 1 px edge band, so the outer
+    // rim antialiases exactly as the filled box's does rather than stair-stepping.
+    if ( ( v_tex & TEX_OP_INSET ) != 0u )
+        cov = clamp( 1.0 + d / max( feather, 1e-4 ), 0.0, 1.0 ) * clamp( 0.5 - d, 0.0, 1.0 );
+
     // PULSE reuses the same two shifts for radius/feather and reads the top 7 bits as rate+depth.
     // The wave starts at its PEAK (cos 0 = 1 -> no attenuation), so a pulse fading in from nothing
     // is never what the first frame shows.
@@ -278,15 +289,17 @@ void main()
                                          u_samplers[nonuniformEXT( samp )] ), v_uv );
     float cov = fx_coverage() * ccov;   // every non-debug path below multiplies by cov
 
-    // SELF-SAMPLED fx modes (9+): the shape is solid colour by definition, so the texel is not
+    // SELF-SAMPLED primitives (GUI_TEX_SELF_BIT): the shape is solid colour, so the texel is not
     // consulted -- the uv word carried mode parameters instead (the sample above read a garbage
-    // location of a VALID texture, which is harmless and cheaper than a divergent skip).  Mode 10
-    // additionally sweeps the colour toward a second RGBA8 riding that word, lerped by the same
-    // signed angle the aperture cut uses -- the gradient a 4-corner vertex colour cannot express.
-    // Mode 11 picks between the vertex colour and that same second RGBA8 by cell parity.
+    // location of a VALID texture, which is harmless and cheaper than a divergent skip).  The bit
+    // rides the TEX word, not the mode number, so whether a uv is a payload is the emit site's
+    // call: the same mode fills solid here and carries real texcoords through draw_texture_in.
+    // Mode 10 additionally sweeps the colour toward a second RGBA8 riding that word, lerped by the
+    // same signed angle the aperture cut uses -- the gradient a 4-corner vertex colour cannot
+    // express.  Mode 11 picks between the vertex colour and that same second RGBA8 by cell parity.
     vec4 vcol = v_color;
     uint fxm  = v_fx & 0xFu;
-    if ( fxm >= 9u )
+    if ( ( v_tex & TEX_SELF_BIT ) != 0u )
     {
         s = vec4( 1.0 );
         if ( fxm == 10u )

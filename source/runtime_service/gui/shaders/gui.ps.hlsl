@@ -24,11 +24,14 @@ struct gui_pc_t
 // radius (see clip_coverage below).
 [[vk::binding( 2, 0 )]] StructuredBuffer<float4> u_buffers[] : register( t0, space1 );
 
-// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_CLIP_SHIFT in gui.h -- keep the three in step.
+// Mirrors GUI_TEX_MODE_SHIFT / GUI_TEX_CLIP_SHIFT / GUI_TEX_SELF_BIT in gui.h -- keep the three
+// files in step.
 #define TEX_MODE_SHIFT  28u
 #define TEX_CLIP_SHIFT  17u
 #define TEX_CLIP_MASK   0x7FFu
-#define TEX_INDEX_MASK  0x0001FFFFu
+#define TEX_SELF_BIT    0x00010000u
+#define TEX_OP_INSET    0x00004000u
+#define TEX_INDEX_MASK  0x00003FFFu
 
 struct ps_in_t
 {
@@ -57,7 +60,7 @@ struct ps_in_t
 //
 // pc.time -- the wrapped frame clock -- is the band's animation seam, and PULSE is what reading it
 // looks like: frame-constant, so it costs no vertex change, no re-emit and no batch split.
-float fx_coverage( float2 fx_coord, uint fx, float2 uv, float2 px )
+float fx_coverage( float2 fx_coord, uint fx, uint tex, float2 uv, float2 px )
 {
     uint mode = fx & 0xFu;
     // 0 NONE, and the two modes that are not shapes: 4 TILE_U acted in the vertex stage, 5
@@ -181,6 +184,14 @@ float fx_coverage( float2 fx_coord, uint fx, float2 uv, float2 px )
     if ( mode == 13u && d <= 0.0 )
         cov = 0.0;
 
+    // GUI_TEX_OP_INSET -- the inner shadow.  The falloff is re-measured INWARD from the boundary:
+    // full strength against the edge, gone `feather` px in, and nothing outside it.  Taken on
+    // COVERAGE for the same reason the skirt's cut is (bending d would move the boundary both
+    // terms are measured from), and the second factor is the ordinary 1 px edge band, so the outer
+    // rim antialiases exactly as the filled box's does rather than stair-stepping.
+    if ( ( tex & TEX_OP_INSET ) != 0u )
+        cov = saturate( 1.0 + d / max( feather, 1e-4 ) ) * saturate( 0.5 - d );
+
     // PULSE reuses the same two shifts for radius/feather and reads the top 7 bits as rate+depth.
     // The wave starts at its PEAK (cos 0 = 1 -> no attenuation), so a pulse fading in from nothing
     // is never what the first frame shows.
@@ -278,17 +289,19 @@ float4 main( ps_in_t i ) : SV_Target0
     uint   samp     = ( tex_mode == 0u ) ? pc.samp_point : pc.samp_image;
     float4 s        = u_textures[ NonUniformResourceIndex( tex_slot ) ]
                           .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], i.uv );
-    float  cov = fx_coverage( i.fx_coord, i.fx, i.uv, i.sv_pos.xy ) * ccov;
+    float  cov = fx_coverage( i.fx_coord, i.fx, i.tex, i.uv, i.sv_pos.xy ) * ccov;
 
-    // SELF-SAMPLED fx modes (9+): the shape is solid colour by definition, so the texel is not
+    // SELF-SAMPLED primitives (GUI_TEX_SELF_BIT): the shape is solid colour, so the texel is not
     // consulted -- the uv word carried mode parameters instead (the sample above read a garbage
-    // location of a VALID texture, which is harmless and cheaper than a divergent skip).  Mode 10
-    // additionally sweeps the colour toward a second RGBA8 riding that word, lerped by the same
-    // signed angle the aperture cut uses -- the gradient a 4-corner vertex colour cannot express.
-    // Mode 11 picks between the vertex colour and that same second RGBA8 by cell parity.
+    // location of a VALID texture, which is harmless and cheaper than a divergent skip).  The bit
+    // rides the TEX word, not the mode number, so whether a uv is a payload is the emit site's
+    // call: the same mode fills solid here and carries real texcoords through draw_texture_in.
+    // Mode 10 additionally sweeps the colour toward a second RGBA8 riding that word, lerped by the
+    // same signed angle the aperture cut uses -- the gradient a 4-corner vertex colour cannot
+    // express.  Mode 11 picks between the vertex colour and that same second RGBA8 by cell parity.
     float4 vcol = i.color;
     uint   fxm  = i.fx & 0xFu;
-    if ( fxm >= 9u )
+    if ( ( i.tex & TEX_SELF_BIT ) != 0u )
     {
         s = float4( 1.0, 1.0, 1.0, 1.0 );
         if ( fxm == 10u )

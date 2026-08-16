@@ -1216,7 +1216,7 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
 ==============================================================================================*/
 
 static void
-draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 skirt,
+draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 variant,
                  f32 rate, f32 depth, f32 rot, u32 abgr )
 {
     /* Cull against the GROWN box: the falloff skirt is real geometry (feather/2 past the rect,
@@ -1250,7 +1250,7 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 skir
     c->fx_box.depth    = depth;
     c->fx_box.rot      = rot;
     c->fx_box.abgr     = col;
-    c->fx_box.skirt    = skirt;
+    c->fx_box.variant  = variant;
     draw_cmd_seal();
 }
 
@@ -1264,6 +1264,16 @@ void
 draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
 {
     draw_fx_box_cmd( x, y, w, h, rounding, feather, 1u, 0.0f, 0.0f, 0.0f, abgr );
+}
+
+/* The inner shadow: the same surface with its falloff turned inward (GUI_TEX_OP_INSET), painting
+   from the boundary `depth` px in and nothing outside it.  A pressed well, a recessed field, the
+   inner edge of a scroll area -- the shapes a drop shadow cannot make because they belong to the
+   inside of their subject rather than to the ground under it. */
+void
+draw_push_inset( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 depth, u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding, depth, 2u, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 void
@@ -1299,26 +1309,35 @@ draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot
 
 void
 draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
-                         f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather, u32 abgr )
+                         f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
+                         u32 abgr, u32 col_b, f32 grad_ang )
 {
     /* Cull against the grown box: the falloff skirt is real geometry (feather/2 past the rect,
        plus the tessellator's pixel of slack) -- the draw_push_shadow rule. */
     f32 pad = ( feather > 0.0f ? feather * 0.5f : 0.0f ) + 1.0f;
     u32 col = draw_apply_alpha( abgr );
+    u32 cb  = draw_apply_alpha( col_b );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ROUND_RECT_EX, col, x, y, w, h, pad );
+    /* The transparent drop must see the WHOLE ramp: a gradient fading in from nothing has a
+       transparent first endpoint and is still a real shape, the same nuance an outline-only
+       text run relies on.  Visibility is therefore the stronger of the two alphas. */
+    u32 vis = ( ( cb >> 24 ) > ( col >> 24 ) ) ? cb : col;
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ROUND_RECT_EX, vis, x, y, w, h, pad );
     if ( !c )
         return;
-    c->round_rect.x       = x;
-    c->round_rect.y       = y;
-    c->round_rect.w       = w;
-    c->round_rect.h       = h;
-    c->round_rect.rtl     = rtl;
-    c->round_rect.rtr     = rtr;
-    c->round_rect.rbr     = rbr;
-    c->round_rect.rbl     = rbl;
-    c->round_rect.feather = feather;
-    c->round_rect.abgr    = col;
+    c->round_rect.x        = x;
+    c->round_rect.y        = y;
+    c->round_rect.w        = w;
+    c->round_rect.h        = h;
+    c->round_rect.rtl      = rtl;
+    c->round_rect.rtr      = rtr;
+    c->round_rect.rbr      = rbr;
+    c->round_rect.rbl      = rbl;
+    c->round_rect.feather  = feather;
+    c->round_rect.abgr     = col;
+    c->round_rect.col_b    = cb;
+    c->round_rect.grad_ang = grad_ang;
     draw_cmd_seal();
 }
 
