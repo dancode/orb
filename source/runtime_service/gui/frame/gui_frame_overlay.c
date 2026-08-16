@@ -422,6 +422,85 @@ overlay_state( int mode )
 }
 
 /*==============================================================================================
+    Font overlay
+
+    Text readout of the font registry and the resolver ledger behind it: one row per loaded
+    slot (size, coverage, resident bitmap, ownership marks, source file), plus the resolver's
+    memo / shipped-scan / baker facts.  The view for "why are there this many fonts": every
+    row names who owns it (H held, S/L ramp role, v<N> a viewport's landed DPI font) -- an
+    unmarked row is evictable, a marked one is somebody's live answer.
+
+    Toggled by the selector menu's checkbox (no hotkey -- rarely flipped mid-chase).
+==============================================================================================*/
+
+static void
+overlay_fonts( void )
+{
+    /* Same work top as the other HUDs; fixed offset right of state_overlay so all three can
+       show at once (perf 8, state 260 -- state's widest tier rows reach past 460). */
+    f32 top_y = gui_viewport_content_y( 0 ) + 34.0f;
+
+    gui_region_begin( "font_overlay", 560.0f, top_y, 0.0f, 0.0f, GUI_REGION_FG, GUI_VP_MAIN,
+                      GUI_WIN_DEBUG_BAND | GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT
+                      | GUI_WIN_ALWAYS_AUTOSIZE );
+    {
+        overlay_backdrop();
+        gui_stack();
+        gui_scale_push( GUI_SCALE_DENSE );   /* tight row pitch -- a HUD, not a form */
+
+        /* Header: slot occupancy + total resident glyph pixels (CPU-side R8 bitmaps). */
+        u32 used = 0, resident = 0;
+        for ( u32 id = 0; id < GUI_FONT_REGISTRY_MAX; ++id )
+        {
+            font_slot_t* s = font_slot_ptr( id );
+            if ( s && s->used )
+            {
+                ++used;
+                resident += s->atlas_w * s->atlas_h;
+            }
+        }
+        gui_textf( "Fonts %u/%u slots  %u kB resident",
+                   used, (u32)GUI_FONT_REGISTRY_MAX, ( resident + 1023u ) / 1024u );
+        gui_text_colored( COL_TEXT_SECONDARY_IDLE,
+                          "* active  H held  S/L role  v<N> dpi  ! upload failed" );
+        gui_new_line( 2.0f );
+
+        /* One row per loaded slot.  Glyph coverage = the dense ASCII tier plus the extended
+           records a -range bake carries.  Slot 0 is the default font (implicitly pinned). */
+        for ( u32 id = 0; id < GUI_FONT_REGISTRY_MAX; ++id )
+        {
+            font_slot_t* s = font_slot_ptr( id );
+            if ( !s || !s->used )
+                continue;
+
+            char flags[ 16 ];
+            font_resolve_debug_flags( id, flags, sizeof( flags ) );
+
+            gui_textf( "%c%2u %3upx %4u gl %4ux%-4u %-4s %s%s%s",
+                       id == font_active_id() ? '*' : ' ', id,
+                       (u32)( s->metrics.size + 0.5f ),
+                       (u32)ORB_FONT_CP_COUNT + s->ext_count,
+                       s->atlas_w, s->atlas_h,
+                       flags,
+                       s->name[ 0 ] ? s->name : "(unnamed)",
+                       s->sdf_range     ? " sdf" : "",
+                       s->upload_failed ? " !"   : "" );
+        }
+
+        /* The resolver ledger behind the slots. */
+        font_resolve_debug_t rd = font_resolve_debug();
+        gui_new_line( 2.0f );
+        gui_textf( "memo %u/%u  shipped %u%s  baker %s",
+                   rd.memo_used, rd.memo_cap,
+                   rd.ship_count, rd.ship_scanned ? "" : " (unscanned)",
+                   rd.baker ? "yes" : "no" );
+
+        gui_scale_pop();
+    }
+    gui_region_end();
+}
+
+/*==============================================================================================
     Frame hooks -- OS services gui cannot reach itself
 
     gui links only app + rhi (no sys), so the wall clock, sleep, and block-on-input wait arrive as
@@ -505,6 +584,7 @@ bool gui_debug_is_enabled( void ) { return s_debug_enabled; }
 
 static int  s_dbg_perf_mode;     /* perf overlay tier, NP_ADD cycles 0..4                   */
 static int  s_dbg_state_mode;    /* state overlay tier, NP_SUB cycles 0..3                  */
+static bool s_dbg_font_open;     /* font registry overlay, selector menu checkbox toggles  */
 static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */
 static bool s_dbg_step_open;     /* command stepper window, F8 opens (X button hides)       */
 static bool s_idle_skip;         /* boot_pace: block on OS input when idle, selector menu toggles */
@@ -772,6 +852,7 @@ debug_hotkeys( void )
 #define SEL_FORCE   "Force redraw"
 #define SEL_TESS    "Tess cache"
 #define SEL_IDLE    "Idle skip"
+#define SEL_FONTS   "Font registry"
 #define SEL_PERF    "NP+ perf"
 #define SEL_STATE   "NP- state"
 
@@ -816,7 +897,7 @@ selector_content_w( f32 label_w )
     f32  w = font_text_w( SEL_HINT );
 
     /* Checkbox rows: indicator box + gap + label. */
-    static const char* const k_lever[] = { SEL_FORCE, SEL_TESS, SEL_IDLE };
+    static const char* const k_lever[] = { SEL_FORCE, SEL_TESS, SEL_IDLE, SEL_FONTS };
     for ( u32 i = 0; i < sizeof( k_lever ) / sizeof( k_lever[ 0 ] ); ++i )
     {
         f32 row = CHECKBOX_SZ + WIDGET_PAD + font_text_w( k_lever[ i ] );
@@ -895,7 +976,8 @@ debug_selector_menu( void )
         if ( gui_checkbox( SEL_TESS, &cached ) )
             build_set_retained_skip( cached );
 
-        gui_checkbox( SEL_IDLE, &s_idle_skip );
+        gui_checkbox( SEL_IDLE,  &s_idle_skip );
+        gui_checkbox( SEL_FONTS, &s_dbg_font_open );
 
         /* Tier sliders under a left label column, so the two labels align and the tracks line up
            with each other instead of each starting after its own label's width. */
@@ -943,6 +1025,8 @@ debug_overlays_emit( void )
 
     overlay_perf ( s_dbg_hotkeys_armed ? s_dbg_perf_mode  : 0 );
     overlay_state( s_dbg_hotkeys_armed ? s_dbg_state_mode : 0 );
+    if ( s_dbg_hotkeys_armed && s_dbg_font_open )
+        overlay_fonts();
 }
 
 /* NOTE: gui_boot_pace() -- the boot loop's end-of-frame sleep -- lives in gui_boot.c with the

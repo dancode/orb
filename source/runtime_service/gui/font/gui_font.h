@@ -78,6 +78,10 @@ typedef struct
        measurement and hit-testing never learn this exists. */
     u32                 sdf_range;          // 0 = coverage bitmap; > 0 = distance field, spread px
 
+    /* Identity for debug readouts (the font overlay): the loaded file's basename, ".orb_font"
+       stripped.  Purely informational -- nothing resolves or compares against it. */
+    char                name[ 64 ];
+
 } font_slot_t;
 
 /*==============================================================================================

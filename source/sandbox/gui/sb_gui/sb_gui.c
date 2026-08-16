@@ -251,7 +251,7 @@ main( int argc, char** argv )
         .w         = 1280, .h = 960,
         .os_chrome = false,
         .font      = GUI_FONT_CASCADIA_MONO,
-        // .font_size = 16,
+        .font_size = 16,
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
         .wait      = sys_wait_for_os_events_ms,

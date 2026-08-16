@@ -617,5 +617,49 @@ gui_font_baker_set( gui_font_bake_fn fn, void* user )
     gui_type_resolve();   /* pre-init the guards bail; post-init the roles re-aim now */
 }
 
+/*==============================================================================================
+    Debug readout -- the font overlay's window into the ledger (gui_frame_overlay.c).
+==============================================================================================*/
+
+font_resolve_debug_t
+font_resolve_debug( void )
+{
+    font_resolve_debug_t d;
+    d.memo_used    = s_resolver.memo_count;
+    d.memo_cap     = FONT_RESOLVE_MEMO_MAX;
+    d.ship_count   = s_resolver.ship_count;
+    d.ship_scanned = s_resolver.ship_scanned;
+    d.baker        = s_resolver.baker != NULL;
+    return d;
+}
+
+/* Ownership marks for one registry id: H = held by a public font_get, S / L = live type-ramp
+   role, v<N> = viewport N's landed DPI font.  Empty = evictable (or the default slot 0, which
+   is implicitly pinned and carries no marks). */
+void
+font_resolve_debug_flags( u32 id, char* out, int out_size )
+{
+    if ( out_size <= 0 )
+        return;
+    out[ 0 ] = 0;
+    if ( id == 0 )
+        return;
+
+    int n = 0;
+    if ( resolve_id_held( id ) && n < out_size - 1 )
+        out[ n++ ] = 'H';
+    if ( s_resolver.pin[ FONT_PIN_SMALL ] == id && n < out_size - 1 )
+        out[ n++ ] = 'S';
+    if ( s_resolver.pin[ FONT_PIN_LARGE ] == id && n < out_size - 1 )
+        out[ n++ ] = 'L';
+    out[ n ] = 0;
+
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+        if ( s_resolver.pin[ FONT_PIN_VP0 + v ] == id && n < out_size - 3 )
+        {
+            n += fmt_snprintf( out + n, (size_t)( out_size - n ), "v%u", v );
+        }
+}
+
 // clang-format on
 /*============================================================================================*/

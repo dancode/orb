@@ -98,6 +98,21 @@ u32            font_resolve_generation( void );
 void           font_resolve_pin       ( u32 pin_slot, u32 id );
 void           font_resolve_clear     ( void );
 
+/* Resolver debug readout, consumed by the font overlay -- gui_frame_overlay.c precedes
+   gui_frame_resolve.c in this unit, so the ledger's window is declared here. */
+typedef struct
+{
+    u32  memo_used;      // request -> id ledger entries in use
+    u32  memo_cap;
+    u32  ship_count;     // parsed shipped bakes under assets/font
+    bool ship_scanned;   // the lazy directory scan has run
+    bool baker;          // a runtime baker is installed
+
+} font_resolve_debug_t;
+
+font_resolve_debug_t font_resolve_debug( void );                                              /* gui_frame_resolve.c */
+void                 font_resolve_debug_flags( u32 id, char* out, int out_size );
+
 void           gui_type_resolve    ( void );                                                  /* gui_frame_type.c */
 bool           gui_type_prewarm    ( void );                                                  /* gui_frame_type.c */
 void           gui_type_frame_reset( void );                                                  /* gui_frame_type.c */

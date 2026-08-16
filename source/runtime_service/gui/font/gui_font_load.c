@@ -172,6 +172,21 @@ font_slot_load( font_slot_t* slot, const char* path )
     slot->ext       = ext;
     slot->ext_count = ext_count;
 
+    /* Identity for debug readouts: the file's basename, ".orb_font" stripped. */
+    {
+        const char* base = path;
+        for ( const char* p = path; *p; ++p )
+            if ( *p == '/' || *p == '\\' )
+                base = p + 1;
+        u32 n = 0;
+        for ( ; base[ n ] && n < sizeof( slot->name ) - 1; ++n )
+            slot->name[ n ] = base[ n ];
+        slot->name[ n ] = 0;
+        char* dot = strrchr( slot->name, '.' );
+        if ( dot && strcmp( dot, ".orb_font" ) == 0 )
+            *dot = 0;
+    }
+
     slot->used          = true;
     slot->needs_upload  = true;
     slot->upload_failed = false;   /* a fresh page deserves a fresh attempt (retry gate) */

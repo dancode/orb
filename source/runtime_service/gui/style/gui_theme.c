@@ -307,8 +307,10 @@ var_is_pixels( u8 cls )
         [ GUI_VAR_PROGRESS_SHAPE  ] = GUI_PROGRESS_SOLID, \
         [ GUI_VAR_KNOB_SHAPE      ] = ( KNOB ), \
         [ GUI_VAR_MENU_CHECK      ] = GUI_MENU_CHECK_BOX, \
-        /* 6. TYPE -- px at em=12, em-scaled, never snapped */ \
-        [ GUI_VAR_TYPE_STEP       ] = 2, \
+        /* 6. TYPE -- px at em=12, em-scaled, never snapped.  0 = single-size chrome: no
+              SMALL/LARGE role bakes, one font per DPI size.  The ramp is a style OPT-IN --
+              push/set GUI_VAR_TYPE_STEP > 0 to turn it on. */ \
+        [ GUI_VAR_TYPE_STEP       ] = 0, \
     }
 
 /* Built-in theme registry.  Each entry is a complete gui_style_t authored for em=12;

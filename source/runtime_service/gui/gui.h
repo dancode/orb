@@ -751,7 +751,8 @@ typedef enum
     /* 5. TYPE -- the chrome type ramp.  Em-scaled but never lattice-snapped: a font size must
        track the body type, and a lattice snap would double a 2px step on the default quantum. */
 
-    GUI_VAR_TYPE_STEP,      // px (at em=12) the SMALL/LARGE type roles sit below/above the body em; 0 = ramp off
+    GUI_VAR_TYPE_STEP,      // px (at em=12) the SMALL/LARGE type roles sit below/above the body em;
+                            // 0 (the default) = ramp off -- single-size chrome, an opt-in per style
 
     GUI_VAR_COUNT,          // var count -- not a var
 
