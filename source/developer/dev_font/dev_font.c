@@ -73,8 +73,9 @@ static stbrp_node       s_nodes  [ ATLAS_NODE_MAX ];
 /* Page buffer -- glyphs are packed full-height, no reserved band; dev-only tooling, and
    heap-free by the library's charter.  Every ladder candidate below asserts it fits this. */
 static u8               s_atlas  [ ATLAS_PIXEL_MAX ];
-/* Rasterized-glyph scratch for THIS file's stb baker, which bakes the ASCII contract only. */
-static dev_font_glyph_t s_glyphs [ ORB_FONT_CP_COUNT ];
+/* Rasterized-glyph scratch for THIS file's stb baker -- sized to the format cap because a
+   range spec can feed extended sets through it (dev_font_get_ex's range_spec). */
+static dev_font_glyph_t s_glyphs [ ORB_FONT_MAX_GLYPHS ];
 /* Pack scratch + output records for dev_font_bake_write -- sized to the format cap, not the
    ASCII count, because font_tool -range feeds extended sets through the shared back-end. */
 static stbrp_rect       s_rects      [ ORB_FONT_MAX_GLYPHS ];
@@ -288,6 +289,187 @@ resolve_ttf( const char* ttf_path, char* out, int size )
 
     set_error( "font '%s' not found in assets/font_source/, system fonts, or by name", ttf_path );
     return false;
+}
+
+/*==============================================================================================
+    Codepoint ranges -- what a -range spec parses into.
+
+    NULL / empty means exactly the ASCII contract from orb_font.h, so a default bake stays
+    byte-identical to every bake made before ranges existed.  A spec is comma-separated tokens,
+    each a preset name or an explicit LO[-HI] span (hex or decimal):
+        "latin1"        "latin,greek,cyrillic"        "ascii,0x2022"
+    Spans are sorted and merged before baking, so overlapping presets never bake a glyph twice.
+==============================================================================================*/
+
+typedef struct
+{
+    const char*      name;
+    dev_font_range_t span[ 2 ];
+    int              count;
+
+} range_preset_t;
+
+/* Presets are PRINTABLE spans; a codepoint the face has no glyph for is skipped at bake, so a
+   generous span costs nothing in the file. */
+static const range_preset_t s_presets[] = {
+    { "ascii",    { { 0x0020, 0x007E } },                     1 },   /* the default            */
+    { "latin1",   { { 0x0020, 0x007E }, { 0x00A0, 0x00FF } }, 2 },   /* + Latin-1 Supplement   */
+    { "latin",    { { 0x0020, 0x007E }, { 0x00A0, 0x017F } }, 2 },   /* + Latin Extended-A     */
+    { "greek",    { { 0x0370, 0x03FF } },                     1 },   /* Greek and Coptic       */
+    { "cyrillic", { { 0x0400, 0x04FF } },                     1 },   /* Cyrillic               */
+};
+
+static bool
+range_add( dev_font_range_t* out, int cap, int* count, u32 lo, u32 hi )
+{
+    if ( *count == cap )
+    {
+        set_error( "range spec has too many spans (max %d)", cap );
+        return false;
+    }
+    out[ *count ].lo = lo;
+    out[ *count ].hi = hi;
+    ++*count;
+    return true;
+}
+
+/* One spec token: a preset name, a single codepoint, or "LO-HI" (strtoul base 0: hex or decimal). */
+
+static bool
+range_parse_token( const char* tok, size_t len, dev_font_range_t* out, int cap, int* count )
+{
+    char          buf[ 32 ];
+    char*         end;
+    unsigned long lo, hi;
+
+    for ( size_t i = 0; i < sizeof( s_presets ) / sizeof( s_presets[ 0 ] ); ++i )
+    {
+        const range_preset_t* p = &s_presets[ i ];
+        if ( strlen( p->name ) == len && strncmp( tok, p->name, len ) == 0 )
+        {
+            for ( int s = 0; s < p->count; ++s )
+                if ( !range_add( out, cap, count, p->span[ s ].lo, p->span[ s ].hi ) )
+                    return false;
+            return true;
+        }
+    }
+
+    if ( len == 0 || len >= sizeof( buf ) )
+        goto bad;
+    memcpy( buf, tok, len );
+    buf[ len ] = '\0';
+
+    lo = strtoul( buf, &end, 0 );
+    hi = lo;
+    if ( end == buf )
+        goto bad;
+    if ( *end == '-' )
+    {
+        const char* hs = end + 1;
+        hi = strtoul( hs, &end, 0 );
+        if ( end == hs )
+            goto bad;
+    }
+    if ( *end != '\0' || lo < 0x20 || hi < lo || hi > 0x10FFFF )
+        goto bad;
+    return range_add( out, cap, count, (u32)lo, (u32)hi );
+
+bad:
+    set_error( "bad range token '%.*s' (preset name or LO[-HI], e.g. latin1 or 0xA0-0xFF)",
+               (int)len, tok );
+    return false;
+}
+
+int
+dev_font_range_parse( const char* spec, dev_font_range_t* out, int cap )
+{
+    int count = 0;
+
+    if ( !out || cap < 1 )
+    {
+        set_error( "range output buffer is NULL or empty" );
+        return 0;
+    }
+
+    if ( !spec || !*spec )   /* the ASCII contract */
+    {
+        out[ 0 ].lo = ORB_FONT_CP_FIRST;
+        out[ 0 ].hi = ORB_FONT_CP_LAST;
+        return 1;
+    }
+
+    const char* p = spec;
+    while ( *p )
+    {
+        const char* q = p;
+        while ( *q && *q != ',' )
+            ++q;
+        if ( !range_parse_token( p, (size_t)( q - p ), out, cap, &count ) )
+            return 0;
+        p = ( *q == ',' ) ? q + 1 : q;
+    }
+    if ( count == 0 )
+    {
+        set_error( "range spec is empty" );
+        return 0;
+    }
+
+    /* Sort by lo and merge touching spans, so overlapping tokens never bake a codepoint twice. */
+    for ( int i = 1; i < count; ++i )     /* insertion sort -- the list is tiny */
+    {
+        dev_font_range_t r = out[ i ];
+        int              j = i;
+        while ( j > 0 && out[ j - 1 ].lo > r.lo )
+        {
+            out[ j ] = out[ j - 1 ];
+            --j;
+        }
+        out[ j ] = r;
+    }
+    int w = 0;
+    for ( int i = 1; i < count; ++i )
+    {
+        if ( out[ i ].lo <= out[ w ].hi + 1u )
+        {
+            if ( out[ i ].hi > out[ w ].hi )
+                out[ w ].hi = out[ i ].hi;
+        }
+        else
+        {
+            out[ ++w ] = out[ i ];
+        }
+    }
+    return w + 1;
+}
+
+void
+dev_font_range_suffix( const char* spec, char* out, int out_size )
+{
+    if ( !out || out_size < 1 )
+        return;
+    out[ 0 ] = '\0';
+    if ( !spec || !*spec || out_size < 3 )
+        return;
+
+    int n      = 0;
+    out[ n++ ] = '_';
+    for ( const char* p = spec; *p && n < out_size - 1; ++p )
+    {
+        char c = *p;
+        if ( c >= 'A' && c <= 'Z' )
+            c = (char)( c - 'A' + 'a' );
+        out[ n++ ] = ( ( c >= 'a' && c <= 'z' ) || ( c >= '0' && c <= '9' ) ) ? c : '-';
+    }
+    out[ n ] = '\0';
+}
+
+static u32
+range_codepoint_count( const dev_font_range_t* ranges, int count )
+{
+    u32 n = 0;
+    for ( int i = 0; i < count; ++i )
+        n += ranges[ i ].hi - ranges[ i ].lo + 1u;
+    return n;
 }
 
 /*==============================================================================================
@@ -507,8 +689,16 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
 ==============================================================================================*/
 
 static bool
-bake_font( const char* ttf_path, int size_px, const char* out_path )
+bake_font( const char* ttf_path, int size_px,
+           const dev_font_range_t* ranges, int range_count, const char* out_path )
 {
+    if ( range_codepoint_count( ranges, range_count ) > ORB_FONT_MAX_GLYPHS )
+    {
+        set_error( "range spans %u codepoints, format cap is %u",
+                   range_codepoint_count( ranges, range_count ), (u32)ORB_FONT_MAX_GLYPHS );
+        return false;
+    }
+
     /*------------------------------------------------------------------------------------------
         Read the TTF file into memory.
     ------------------------------------------------------------------------------------------*/
@@ -582,8 +772,16 @@ bake_font( const char* ttf_path, int size_px, const char* out_path )
     memset( s_glyphs, 0, sizeof( s_glyphs ) );
     u32 raw_count = 0;
 
-    for ( u32 cp = ORB_FONT_CP_FIRST; cp <= ORB_FONT_CP_LAST; ++cp )
+    for ( int ri = 0; ri < range_count; ++ri )
+    for ( u32 cp = ranges[ ri ].lo; cp <= ranges[ ri ].hi; ++cp )
     {
+        /* Outside ASCII, a codepoint the face does not map is SKIPPED -- records are sparse by
+           codepoint, so a hole costs nothing, whereas baking glyph 0 would store one .notdef box
+           per hole.  Inside ASCII, glyph 0 still bakes, keeping the default output byte-identical
+           to bakes made before ranges existed. */
+        if ( cp > ORB_FONT_CP_LAST && stbtt_FindGlyphIndex( &font_info, (int)cp ) == 0 )
+            continue;
+
         dev_font_glyph_t* r = &s_glyphs[ raw_count++ ];
         r->codepoint        = cp;
 
@@ -660,8 +858,112 @@ dev_font_shutdown( void )
     memset( &g_rt, 0, sizeof( g_rt ) );
 }
 
+/*==============================================================================================
+    Fine (FreeType) bakes -- font_tool.exe spawned as a child process.
+
+    font_tool lives next to the calling exe in bin/ and resolves the same inputs this library
+    does (it links dev_font itself), so handing it the already-resolved absolute TTF path plus
+    an explicit output path makes the child bake exactly what the caller asked for.  Output
+    goes to assets/font_cache/ with an "_ft" tag -- never assets/font/, which is the shipped
+    set and is staged wholesale by the ship pipeline.
+==============================================================================================*/
+
+#if OS_WINDOWS
+    #define FONT_TOOL_EXE "font_tool.exe"
+#else
+    #define FONT_TOOL_EXE "font_tool"
+#endif
+
+/* Blocking font_tool run.  Failure text goes to `err` (not g_error) so background refine
+   workers never race the main thread's error slot. */
+
+static bool
+fine_spawn( const char* ttf_abs, int size_px, const char* range_spec, const char* out_path,
+            char* err, int err_size )
+{
+    char exe_dir[ DEV_PATH_MAX ];
+    sys_exe_dir( exe_dir, sizeof( exe_dir ) );
+
+    char cmd[ 2048 ];
+    if ( range_spec && *range_spec )
+        snprintf( cmd, sizeof( cmd ), "\"%s" PATH_SEP FONT_TOOL_EXE "\" \"%s\" %d \"%s\" -range=%s",
+                  exe_dir, ttf_abs, size_px, out_path, range_spec );
+    else
+        snprintf( cmd, sizeof( cmd ), "\"%s" PATH_SEP FONT_TOOL_EXE "\" \"%s\" %d \"%s\"",
+                  exe_dir, ttf_abs, size_px, out_path );
+
+    char                 out[ 512 ] = { 0 };
+    sys_process_result_t res        = { 0 };
+    if ( !sys_process_run_capture( cmd, NULL, out, sizeof( out ), NULL, &res ) || !res.started )
+    {
+        snprintf( err, (size_t)err_size, "could not launch " FONT_TOOL_EXE " (expected in %s)",
+                  exe_dir );
+        return false;
+    }
+    if ( res.exit_code != 0 )
+    {
+        /* font_tool prints an "error:" line on failure -- surface its last output line. */
+        const char* tail = out;
+        for ( const char* p = out; *p; ++p )
+            if ( ( *p == '\n' || *p == '\r' ) && p[ 1 ] && p[ 1 ] != '\n' && p[ 1 ] != '\r' )
+                tail = p + 1;
+        snprintf( err, (size_t)err_size, FONT_TOOL_EXE " failed (exit %d): %s",
+                  res.exit_code, tail );
+        return false;
+    }
+    return true;
+}
+
+/* Full structural check of a cached .orb_font this pipeline wrote: header fields sane and the
+   file exactly as long as header + records + pixels claim.  Rejects the torn file a killed
+   bake leaves behind, which the mtime freshness rule alone would accept. */
+
+static bool
+cache_file_valid( const char* path )
+{
+    FILE* f = fopen( path, "rb" );
+    if ( !f )
+        return false;
+
+    orb_font_header_t hdr;
+    memset( &hdr, 0, sizeof( hdr ) );
+    bool ok = fread( &hdr, 1, ORB_FONT_HEADER_BASE_SIZE, f ) == ORB_FONT_HEADER_BASE_SIZE
+           && hdr.magic == ORB_FONT_MAGIC
+           && hdr.version >= 2u && hdr.version <= ORB_FONT_VERSION
+           && hdr.glyph_count <= ORB_FONT_MAX_GLYPHS
+           && hdr.atlas_w > 0 && hdr.atlas_h > 0;
+    fclose( f );
+    if ( !ok )
+        return false;
+
+    u32 hdr_bytes = ( hdr.version >= 4u ) ? (u32)sizeof( orb_font_header_t )
+                                          : ORB_FONT_HEADER_BASE_SIZE;
+    u32 expect    = hdr_bytes
+                  + hdr.glyph_count * (u32)sizeof( orb_font_glyph_t )
+                  + hdr.atlas_w * hdr.atlas_h;
+    return sys_file_size( path ) == expect;
+}
+
+/* Cache path for a request at a quality tier:
+   assets/font_cache/<stem>_<size>px[<rangetag>][_ft].orb_font */
+
+static void
+cache_path_make( const char* ttf_abs, int size_px, const char* range_spec, bool fine,
+                 char* out, int out_size )
+{
+    char stem[ 64 ];
+    derive_stem( ttf_abs, stem, sizeof( stem ) );
+
+    char tag[ 48 ];
+    dev_font_range_suffix( range_spec, tag, sizeof( tag ) );
+
+    snprintf( out, (size_t)out_size, "%s" PATH_SEP "%s_%dpx%s%s.orb_font",
+              g_rt.font_cache_dir, stem, size_px, tag, fine ? "_ft" : "" );
+}
+
 bool
-dev_font_get( const char* ttf_path, int size_px, char* out_path, int out_path_size )
+dev_font_get_ex( const char* ttf_path, int size_px, dev_font_quality_t quality,
+                 const char* range_spec, char* out_path, int out_path_size )
 {
     if ( !g_rt.initialized )
     {
@@ -684,25 +986,63 @@ dev_font_get( const char* ttf_path, int size_px, char* out_path, int out_path_si
         return false;
     }
 
+    dev_font_range_t ranges[ DEV_FONT_RANGE_MAX ];
+    int              range_count = dev_font_range_parse( range_spec, ranges, DEV_FONT_RANGE_MAX );
+    if ( range_count == 0 )
+        return false;
+
     /* Resolve the source TTF to an absolute path that exists on disk. */
 
     char ttf_abs[ DEV_PATH_MAX ];
     if ( !resolve_ttf( ttf_path, ttf_abs, sizeof( ttf_abs ) ) )
         return false;
 
-    /* Derive cache filename: assets/font_cache/<stem>_<size>px.orb_font */
+    u64 ttf_time = sys_file_time( ttf_abs );
 
-    char stem[ 64 ];
-    derive_stem( ttf_abs, stem, sizeof( stem ) );
+    /* Fine tiers look for a fresh, structurally valid "_ft" bake first.  FINE_IF_CACHED never
+       blocks on the child tool: a miss falls through to the fast stb bake below. */
+
+    if ( quality != DEV_FONT_FAST )
+    {
+        char fine_path[ DEV_PATH_MAX ];
+        cache_path_make( ttf_abs, size_px, range_spec, true, fine_path, sizeof( fine_path ) );
+
+        u64 fine_time = sys_file_time( fine_path );
+        if ( fine_time > 0 && ttf_time > 0 && fine_time >= ttf_time
+             && cache_file_valid( fine_path ) )
+        {
+            snprintf( out_path, (size_t)out_path_size, "%s", fine_path );
+            return true;
+        }
+
+        if ( quality == DEV_FONT_FINE )
+        {
+            sys_dir_make( g_rt.font_cache_dir );
+
+            char err[ 256 ];
+            if ( !fine_spawn( ttf_abs, size_px, range_spec, fine_path, err, sizeof( err ) ) )
+            {
+                set_error( "%s", err );
+                return false;
+            }
+            if ( !cache_file_valid( fine_path ) )
+            {
+                set_error( "fine bake wrote an invalid file '%s'", fine_path );
+                return false;
+            }
+            snprintf( out_path, (size_t)out_path_size, "%s", fine_path );
+            return true;
+        }
+    }
+
+    /* Fast tier: assets/font_cache/<stem>_<size>px[<rangetag>].orb_font */
 
     char cache_path[ DEV_PATH_MAX ];
-    snprintf( cache_path, sizeof( cache_path ), "%s" PATH_SEP "%s_%dpx.orb_font",
-              g_rt.font_cache_dir, stem, size_px );
+    cache_path_make( ttf_abs, size_px, range_spec, false, cache_path, sizeof( cache_path ) );
 
     /* Cache hit: skip baking when the cached file is at least as new as the source TTF. */
 
     u64 cache_time = sys_file_time( cache_path );
-    u64 ttf_time   = sys_file_time( ttf_abs );
     if ( cache_time > 0 && ttf_time > 0 && cache_time >= ttf_time )
     {
         snprintf( out_path, (size_t)out_path_size, "%s", cache_path );
@@ -711,11 +1051,138 @@ dev_font_get( const char* ttf_path, int size_px, char* out_path, int out_path_si
 
     sys_dir_make( g_rt.font_cache_dir );   // create assets/font_cache/ on first bake
 
-    if ( !bake_font( ttf_abs, size_px, cache_path ) )
+    if ( !bake_font( ttf_abs, size_px, ranges, range_count, cache_path ) )
         return false;
 
     snprintf( out_path, (size_t)out_path_size, "%s", cache_path );
     return true;
+}
+
+bool
+dev_font_get( const char* ttf_path, int size_px, char* out_path, int out_path_size )
+{
+    return dev_font_get_ex( ttf_path, size_px, DEV_FONT_FAST, NULL, out_path, out_path_size );
+}
+
+/*==============================================================================================
+    Background refine -- worker threads running fine_spawn.
+
+    One table entry per in-flight refine keys on the fine cache path, so two kicks for the same
+    (request, size, range) can never race font_tool over one output file.  The table and each
+    entry's key are the only shared state; the mutex guards them.  Workers write no g_error and
+    report through their own printf line.
+==============================================================================================*/
+
+#define REFINE_JOB_MAX 8
+
+typedef struct
+{
+    u64  key;                          // FNV-1a of the fine cache path; 0 = slot free
+    int  size_px;
+    char ttf_abs[ DEV_PATH_MAX ];
+    char spec   [ 64 ];                // range spec; "" = ASCII default
+    char fine   [ DEV_PATH_MAX ];      // output path (the key's source string)
+
+} refine_job_t;
+
+static refine_job_t s_refine_jobs[ REFINE_JOB_MAX ];
+static mutex_t      s_refine_mutex;
+static bool         s_refine_mutex_ready;   // lazily set up on the main thread before any worker
+
+static u64
+hash_str64( const char* s )
+{
+    u64 h = 1469598103934665603ull;
+    for ( ; *s; ++s )
+    {
+        h ^= (u8)*s;
+        h *= 1099511628211ull;
+    }
+    return h ? h : 1u;   // 0 means "slot free" in the job table
+}
+
+static void
+refine_worker( void* arg )
+{
+    refine_job_t* job = (refine_job_t*)arg;
+
+    char err[ 256 ];
+    if ( fine_spawn( job->ttf_abs, job->size_px, job->spec[ 0 ] ? job->spec : NULL,
+                     job->fine, err, sizeof( err ) ) )
+        printf( "[dev_font] refined '%s' %d px -> '%s'\n", job->ttf_abs, job->size_px, job->fine );
+    else
+        printf( "[dev_font] refine failed for '%s' %d px: %s\n", job->ttf_abs, job->size_px, err );
+
+    mutex_lock( &s_refine_mutex );
+    job->key = 0;
+    mutex_unlock( &s_refine_mutex );
+}
+
+void
+dev_font_refine_kick( const char* ttf_path, int size_px, const char* range_spec )
+{
+    if ( !g_rt.initialized || !ttf_path || !*ttf_path || size_px < 6 || size_px > 256 )
+        return;
+
+    char ttf_abs[ DEV_PATH_MAX ];
+    if ( !resolve_ttf( ttf_path, ttf_abs, sizeof( ttf_abs ) ) )
+        return;
+
+    char fine_path[ DEV_PATH_MAX ];
+    cache_path_make( ttf_abs, size_px, range_spec, true, fine_path, sizeof( fine_path ) );
+
+    u64 fine_time = sys_file_time( fine_path );
+    u64 ttf_time  = sys_file_time( ttf_abs );
+    if ( fine_time > 0 && ttf_time > 0 && fine_time >= ttf_time && cache_file_valid( fine_path ) )
+        return;   /* already fresh */
+
+    /* Kicks only ever come from the main thread, so first-use init races nothing: no worker
+       exists until after the mutex does. */
+    if ( !s_refine_mutex_ready )
+    {
+        mutex_init( &s_refine_mutex );
+        s_refine_mutex_ready = true;
+    }
+
+    u64 key = hash_str64( fine_path );
+
+    mutex_lock( &s_refine_mutex );
+    int slot = -1;
+    for ( int i = 0; i < REFINE_JOB_MAX; ++i )
+    {
+        if ( s_refine_jobs[ i ].key == key )
+        {
+            mutex_unlock( &s_refine_mutex );   /* this exact refine is already in flight */
+            return;
+        }
+        if ( s_refine_jobs[ i ].key == 0 && slot < 0 )
+            slot = i;
+    }
+    if ( slot < 0 )
+    {
+        mutex_unlock( &s_refine_mutex );       /* table full -- a later kick retries */
+        return;
+    }
+
+    refine_job_t* job = &s_refine_jobs[ slot ];
+    job->key     = key;
+    job->size_px = size_px;
+    snprintf( job->ttf_abs, sizeof( job->ttf_abs ), "%s", ttf_abs );
+    snprintf( job->spec,    sizeof( job->spec ),    "%s", range_spec ? range_spec : "" );
+    snprintf( job->fine,    sizeof( job->fine ),    "%s", fine_path );
+    mutex_unlock( &s_refine_mutex );
+
+    sys_dir_make( g_rt.font_cache_dir );
+
+    thread_t t = thread_create( refine_worker, job, 0 );
+    if ( !thread_valid( t ) )
+    {
+        mutex_lock( &s_refine_mutex );
+        job->key = 0;
+        mutex_unlock( &s_refine_mutex );
+        return;
+    }
+    thread_detach( t );
 }
 
 bool

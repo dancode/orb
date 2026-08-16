@@ -35,9 +35,10 @@
 
     Cache
     -----
-    dev_font_get() writes assets/font_cache/<stem>_<size>px.orb_font.
-    On a repeated call the cache file is returned immediately if its modification time
-    is >= the source TTF's modification time -- no re-bake occurs.
+    dev_font_get() writes assets/font_cache/<stem>_<size>px[<rangetag>].orb_font; fine
+    (FreeType) bakes add an "_ft" tag before the extension.  On a repeated call the cache
+    file is returned immediately if its modification time is >= the source TTF's
+    modification time -- no re-bake occurs.
 
 ==============================================================================================*/
 
@@ -48,6 +49,28 @@ typedef struct
     const char* build_dir;  /* repo root; NULL = auto-detect from exe location */
 
 } dev_font_settings_t;
+
+/* One codepoint span [lo, hi] a bake covers.  A -range spec parses into a sorted, merged
+   list of these. */
+typedef struct
+{
+    u32 lo, hi;
+
+} dev_font_range_t;
+
+#define DEV_FONT_RANGE_MAX 32   /* spans one spec may carry after merging */
+
+/* Bake quality tier for dev_font_get_ex.  FAST is the stb_truetype bake this library performs
+   itself -- milliseconds, good enough to work against.  FINE is a FreeType bake performed by
+   spawning font_tool.exe (which must sit next to the calling exe in bin/); its output is cached
+   with an "_ft" filename tag so the two tiers never overwrite each other. */
+typedef enum
+{
+    DEV_FONT_FAST = 0,        // stb bake into assets/font_cache (dev_font_get's behavior)
+    DEV_FONT_FINE_IF_CACHED,  // fresh fine cache file if one exists, else FAST
+    DEV_FONT_FINE             // blocking font_tool.exe spawn (FreeType quality)
+
+} dev_font_quality_t;
 
 /* One rasterized glyph handed to dev_font_bake_write.  The front-end fills this: stb_truetype in
    dev_font's own baker, FreeType in font_tool.  bearing_y follows the orb_font convention
@@ -75,6 +98,30 @@ void        dev_font_shutdown( void );
    Returns true on success; call dev_font_last_error() for the failure reason. */
 bool        dev_font_get( const char* ttf_path, int size_px,
                           char* out_path, int out_path_size );
+
+/* dev_font_get with a quality tier and a codepoint range.  range_spec is a -range spec string
+   (see dev_font_range_parse); NULL or "" bakes the ASCII contract and keeps the untagged cache
+   filename, so existing FAST caches stay valid.  FINE_IF_CACHED never blocks on font_tool: it
+   returns the fine cache only when a fresh, header-valid file already exists (a torn file from
+   a killed bake is rejected and ignored). */
+bool        dev_font_get_ex( const char* ttf_path, int size_px, dev_font_quality_t quality,
+                             const char* range_spec, char* out_path, int out_path_size );
+
+/* Fire-and-forget background FreeType refine of the fine ("_ft") cache file for this request.
+   A worker thread spawns font_tool.exe; the caller keeps whatever bake it already has, and the
+   next run's FINE_IF_CACHED picks the fine file up.  No-op when the fine cache is already fresh
+   or a refine for this exact (request, size, range) is still in flight. */
+void        dev_font_refine_kick( const char* ttf_path, int size_px, const char* range_spec );
+
+/* Parse a range spec -- comma-separated preset names (ascii|latin1|latin|greek|cyrillic) and/or
+   explicit LO[-HI] codepoint spans (strtoul base 0: hex or decimal) -- into sorted, merged
+   spans.  Returns the span count, or 0 on a bad spec (dev_font_last_error set).  NULL/"" is a
+   valid spec meaning the ASCII contract and yields that single span. */
+int         dev_font_range_parse( const char* spec, dev_font_range_t* out, int cap );
+
+/* Filename tag for a spec ("latin,greek" -> "_latin-greek"; unsafe chars map to '-'), so bakes
+   of different ranges never overwrite each other.  NULL/"" writes "" (the untagged default). */
+void        dev_font_range_suffix( const char* spec, char* out, int out_size );
 
 /* Resolve a bare filename, a friendly font name ("Cascadia Mono"), or a path to an absolute
    TTF/OTF/TTC path that exists on disk, using the same search order as dev_font_get (see Path

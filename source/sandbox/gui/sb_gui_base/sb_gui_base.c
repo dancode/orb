@@ -531,7 +531,7 @@ main( int argc, char** argv )
         .title     = "ORB -- gui base",
         .w         = 1280, .h = 720,
         .os_chrome = true,   /* stock OS-framed window instead of the gui-driven borderless viewport */
-        .font      = GUI_FONT_CASCADIA_MONO_16,
+        .font      = GUI_FONT_CASCADIA_MONO,
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,

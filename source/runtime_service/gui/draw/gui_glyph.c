@@ -6,7 +6,7 @@
     shared atlas (font_atlas_sync, once per frame at a between-frames latch), dispatches a glyph to
     its atlas UV rect (font_glyph, the render server's reverse-seam consumer), and answers atlas
     queries for a font id.  The parse, metrics, pixel storage, and preset loading are the font/
-    resource (font_load / font_load_into / font_load_builtin + the metric readers) -- this file
+    resource (font_load / font_load_into + the metric readers) -- this file
     never reads a file; it drives the atlas.
 
 ==============================================================================================*/

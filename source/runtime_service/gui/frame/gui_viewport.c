@@ -48,7 +48,7 @@ viewport_create( i32 vp, rhi_texture_t target, i32 win_id )
     v->pending_close   = false;              // owned floater close request; serviced by viewport_update
     v->disp_w          = 0;                  // drawable size set by the host before ui build; 0 = fall back to main
     v->disp_h          = 0;
-    v->dpi_bake        = s_dpi.base;         // managed-family bake; per-surface once poll resolves it
+    v->dpi_size_px     = s_dpi.base_size;    // managed-family size; per-surface once poll resolves it
     v->dpi_os_scale    = 1.0f;               // OS-scale snapshot; first poll takes the real value
 
     v->caption_inset      = 0.0f;            // no native caption band until one publishes it during the build
@@ -71,6 +71,9 @@ void
 viewport_destroy( i32 vp )
 {
     gui_viewport_t* v = &s_vp_pool[ vp ];
+
+    /* This surface's landed DPI font is no longer live here -- lift its eviction exemption. */
+    font_resolve_pin( FONT_PIN_VP0 + (u32)vp, 0 );
 
     /* owned floater: destroy the gui owned render context */   
 
@@ -491,11 +494,11 @@ viewport_service_tearoff( gui_window_t* win, bool has_home )
            frame at the wrong scale -- snapshot its OS scale so the next poll reads no phantom
            change, and match the OS window size so the panel keeps its apparent size (spawned
            with origin-scale sw/sh; the slaved window record follows via window_sync_native). */
-        f32 src = dpi_bake_scale( s_vp_pool[ 0 ].dpi_bake );
+        f32 src = dpi_bake_scale( s_vp_pool[ 0 ].dpi_size_px );
         gui_dpi_vp_resolve( vp );
         s_vp_pool[ vp ].dpi_os_scale = s_vp_pool[ vp ].win_id >= 0
                                          ? app()->window_dpi_scale( s_vp_pool[ vp ].win_id ) : 1.0f;
-        f32 dst = dpi_bake_scale( s_vp_pool[ vp ].dpi_bake );
+        f32 dst = dpi_bake_scale( s_vp_pool[ vp ].dpi_size_px );
         if ( dst != src && src > 0.0f )
             app()->window_resize( s_vp_pool[ vp ].win_id,
                                   (i32)( (f32)sw * dst / src + 0.5f ),
@@ -529,9 +532,9 @@ viewport_service_mergeback( gui_window_t* win )
     f32 dpi_r = 1.0f;
     if ( fvp > 0 && fvp < GUI_MAX_VIEWPORTS )
     {
-        f32 from = dpi_bake_scale( s_vp_pool[ fvp ].dpi_bake );
+        f32 from = dpi_bake_scale( s_vp_pool[ fvp ].dpi_size_px );
         if ( from > 0.0f )
-            dpi_r = dpi_bake_scale( s_vp_pool[ 0 ].dpi_bake ) / from;
+            dpi_r = dpi_bake_scale( s_vp_pool[ 0 ].dpi_size_px ) / from;
     }
     if ( dpi_r != 1.0f )
     {

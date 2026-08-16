@@ -26,12 +26,16 @@
 
 // clang-format off
 
-/* Runtime font baker for the gui type ramp -- dev_font is initialized in main before wiring. */
+/* Runtime font baker for the gui font resolver -- dev_font is initialized in main before
+   wiring.  Fine (FreeType) cache when fresh, else the fast stb bake + a background refine. */
 static bool
 ex_gui_font_bake( const char* family, u32 size_px, char* out, int n, void* user )
 {
     (void)user;
-    return dev_font_get( family, (int)size_px, out, n );
+    if ( !dev_font_get_ex( family, (int)size_px, DEV_FONT_FINE_IF_CACHED, NULL, out, n ) )
+        return false;
+    dev_font_refine_kick( family, (int)size_px, NULL );
+    return true;
 }
 
 /*==============================================================================================
@@ -66,6 +70,12 @@ main( int argc, char** argv )
 
     int ret_code = 1;
 
+    /* Runtime font baker: serves any size no shipped bake matches (the type ramp's SMALL/LARGE
+       roles, DPI retarget sizes, the Font Sizes demo).  Installed BEFORE boot so the boot-time
+       style landing already bakes exact sizes instead of laddering to shipped neighbours. */
+    dev_font_init( NULL );
+    gui()->font_baker_set( ex_gui_font_bake, NULL );
+
     /* One-call setup: gui owns the main window + render context end to end (boot path).
        Borderless by default -- gui()->viewport_shell() is the chrome (titlebar drives OS move
        + caption buttons, borders resize) and is auto-emitted each frame; set .os_chrome = true
@@ -75,7 +85,7 @@ main( int argc, char** argv )
         .title = "ORB -- gui example",
         .x = 128, .y = 128,
         .w     = 1920, .h = 1080,
-        .font  = GUI_FONT_JETBRAINS_16,
+        .font  = GUI_FONT_JETBRAINS,
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,
@@ -89,11 +99,6 @@ main( int argc, char** argv )
     }
 
    gui()->debug_enable( true );
-
-    /* Runtime font baker: serves the type ramp's SMALL/LARGE sizes (window titles, section
-       headers, table headers, menu shortcuts) and the Font Sizes demo. */
-    dev_font_init( NULL );
-    gui()->font_baker_set( ex_gui_font_bake, NULL );
 
     /* Main loop -- boot_poll pumps the OS and routes events (rhi swapchain resize, gui input
        + floater lifecycle); false on quit or main-window close. */

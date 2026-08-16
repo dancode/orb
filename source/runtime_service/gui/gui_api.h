@@ -102,12 +102,13 @@ typedef struct gui_api_s
 
     void                ( *log_set_fn )         ( gui_log_fn fn, void* user );
 
-    /* Runtime font baker -- the door the type ramp's extra sizes come through.  gui ships no
-       bake for "body plus 2px", so when a theme's GUI_VAR_TYPE_STEP is non-zero it asks this
-       callback to produce one (dev_font_get is the canonical implementation; the gui target
-       stays free of the developer tier the same way it stays free of core above).  Install any
-       time -- before or after init(); NULL uninstalls.  Unwired, the ramp is silently off and
-       every chrome label renders at the body size. */
+    /* Runtime font baker -- the door on-demand font sizes come through.  gui ships no bake for
+       an arbitrary pixel size, so the font resolver asks this callback to produce one whenever
+       no shipped bake serves a request (the DPI retarget, the type ramp's SMALL/LARGE roles,
+       font_get).  dev_font_get is the canonical implementation; the gui target stays free of
+       the developer tier the same way it stays free of core above.  Install any time -- before
+       or after init(); NULL uninstalls.  Unwired, requests degrade to the nearest shipped size
+       (warn-once) and the type ramp stays off for unshipped sizes. */
 
     void                ( *font_baker_set )     ( gui_font_bake_fn fn, void* user );
 
@@ -115,10 +116,11 @@ typedef struct gui_api_s
 
         init()
             : call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
-              `font` optionally loads one of the built-in presets (gui_builtin_font_t,
-              gui.h) into slot 0; pass GUI_FONT_NONE to load nothing and call font_load()
-              yourself. A failed built-in load is non-fatal (a warning; init still
-              succeeds without text).
+              `family` optionally boots a managed font (gui_font_family_t, gui.h) into
+              slot 0 at `size_px` (0 = 16): a shipped bake if one matches, else the
+              installed baker, else the nearest shipped size.  Pass GUI_FONT_NONE to
+              load nothing and call font_load() yourself.  A failed resolve is
+              non-fatal (a warning; init still succeeds without text).
 
         shutdown()
             : call before rhi()->shutdown(); destroys all GPU resources.
@@ -126,47 +128,53 @@ typedef struct gui_api_s
         asset_path()
             : resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
               the build root, one level above the executable -- the same convention
-              load_icon and the built-in font/icon presets resolve through. Writes the
-              resolved path into `out` (out_size bytes); for a caller that wants the
-              absolute path itself (e.g. a plain fopen) rather than a load_icon call.
+              load_icon and the font resolver resolve through. Writes the resolved
+              path into `out` (out_size bytes); for a caller that wants the absolute
+              path itself (e.g. a plain fopen) rather than a load_icon call.
 
         font_load()
             : load a pre-baked .orb_font atlas into a new font id and make it active;
               call after init(). Returns the new id (>= 1), or 0 on failure.
 
-        font_load_builtin()
-            : font_load for a built-in preset (gui_builtin_font_t): the enum
-              already knows its asset path, so no path plumbing at the call site.
-              Same contract as font_load -- a NEW id, activated (the init()/boot()
-              preset in slot 0 is untouched; font_use( 0 ) switches back).  Returns
-              the new id, or 0 for GUI_FONT_NONE / an unknown preset / a failed load. */
+        font_get()
+            : resolve a font by REQUEST -- source name + pixel size -- without
+              activating it.  `family` is a file in assets/font_source, an OS-installed
+              face name, or a shipped file stem; the resolver finds a shipped bake,
+              asks the installed baker, or degrades to the nearest in-family size
+              (warn-once), never below the default font.  The id is stable for the
+              session (cache it; apply with font_use / push_font).
 
-    bool                ( *init      )          ( gui_builtin_font_t font );
+        font_get_builtin()
+            : font_get for a curated family (gui_font_family_t) -- no name plumbing
+              at the call site. */
+
+    bool                ( *init      )          ( gui_font_family_t family, u32 size_px );
     void                ( *shutdown  )          ( void );
     void                ( *asset_path )         ( const char* relative, char* out, int out_size );
 
     u32                 ( *font_load )          ( const char* path );
-    u32                 ( *font_load_builtin )  ( gui_builtin_font_t font );
+    u32                 ( *font_get )           ( const char* family, u32 size_px );
+    u32                 ( *font_get_builtin )   ( gui_font_family_t fam, u32 size_px );
 
     /* DPI response (gui_dpi_mode_t, gui.h) -- keeps text and widgets a sensible physical size on
        a scaled monitor. The engine works in physical pixels, so without this a UI on a 200%
-       display renders crisp but tiny. When enabled, gui swaps the init() preset's font family
-       for the closest pre-baked size to the wanted scale every frame; em-driven layout does the
-       rest. Granularity = the family's baked sizes.
+       display renders crisp but tiny. When enabled, gui resolves the managed family at
+       base_size * scale every frame; em-driven layout does the rest.  Exact with a runtime
+       baker installed, else granularity = the family's shipped sizes.
 
         dpi_set()
             : select the response mode.  AUTO follows EACH surface's own monitor scale
               (app window_dpi_scale of its hosting window, tracked live across monitor moves /
-              OS scale edits -- mixed-DPI monitors get per-surface bakes); MANUAL applies
-              `scale` (0.5..4, clamped) everywhere; OFF pins the authored bake.
+              OS scale edits -- mixed-DPI monitors get per-surface sizes); MANUAL applies
+              `scale` (0.5..4, clamped) everywhere; OFF pins the authored size.
               `scale` <= 0 keeps the previous manual factor.  Cheap and idempotent --
               a host may push it every frame (e.g. from a cvar).
         dpi_mode()
             : the current response mode.
         dpi_scale()
-            : the scale in effect on the PRIMARY surface -- its bake's size / init() preset
-              size.  1.0 while unmanaged (GUI_FONT_NONE init).  During a host font takeover
-              (font_use / a custom load) it keeps reporting the last landed bake's scale --
+            : the scale in effect on the PRIMARY surface -- its landed size / the init()
+              base size.  1.0 while unmanaged (GUI_FONT_NONE init).  During a host font
+              takeover (font_use / a custom load) it keeps reporting the last landed scale --
               retargeting is suspended, not reset. */
 
     void                ( *dpi_set   )          ( gui_dpi_mode_t mode, f32 scale );

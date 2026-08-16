@@ -43,11 +43,12 @@ mod_desc_t* gui_get_mod_desc( void );
 
 void gui_log_set_fn( gui_log_fn fn, void* user );
 
-/* runtime font baker for the type ramp's extra sizes -- NULL = ramp off.  See gui_api.h. */
+/* runtime font baker -- on-demand sizes for the resolver (DPI retarget, type ramp, font_get);
+   NULL uninstalls.  See gui_api.h. */
 
 void gui_font_baker_set( gui_font_bake_fn fn, void* user );
 
-bool gui_init( gui_builtin_font_t font );
+bool gui_init( gui_font_family_t family, u32 size_px );
 void gui_shutdown( void );
 
 gui_mem_stats_t gui_mem_stats( void );
@@ -64,7 +65,8 @@ gui_render_stats_t gui_render_stats( void );
 /* font lifecycle (load-into-registry half lives with GUI_DRAW below) */
 
 u32  gui_font_load( const char* path );
-u32  gui_font_load_builtin( gui_builtin_font_t font );
+u32  gui_font_get( const char* family, u32 size_px );
+u32  gui_font_get_builtin( gui_font_family_t fam, u32 size_px );
 
 /* DPI response -- monitor-scale font retargeting (see dpi_set in gui_api.h) */
 

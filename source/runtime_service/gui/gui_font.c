@@ -27,6 +27,6 @@
 #include "runtime_service/gui/font/gui_font.h"
 #include "runtime_service/gui/font/gui_font_core.c"       // registry + metric readers
 #include "runtime_service/gui/font/gui_font_load.c"       // .orb_font parser + load API
-#include "runtime_service/gui/font/gui_font_builtin.c"    // built-in preset -> load
+#include "runtime_service/gui/font/gui_font_family.c"     // family identities + built-in preset -> load
 
 /*============================================================================================*/

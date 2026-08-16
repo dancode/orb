@@ -325,7 +325,7 @@ them. `gui_boot.c` is NOT involved.
 
 ```
 // setup (after app window + rhi context + swapchain exist)
-gui()->init( font );                              // or GUI_FONT_NONE
+gui()->init( family, size_px );                   // or GUI_FONT_NONE, 0
 gui()->frame_set_hooks( clock, sleep, wait );     // OS services gui cannot reach itself
 gui()->debug_enable( true );                      // optional hotkey driver
 i32 vp0 = gui()->viewport_open( win_id );         // attach gui to the EXISTING window/ctx

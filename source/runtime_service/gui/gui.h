@@ -2904,41 +2904,35 @@ typedef i32 ( *gui_table_sort_cmp_fn )( i32 a, i32 b, i32 col, bool descending, 
 /*==============================================================================================
     GUI_FRAME -- font configuration
 ==============================================================================================*/
-/* Built-in font presets for init() -- pre-baked .orb_font assets (FreeType-rasterized offline by
-   font_tool, not an stb runtime bake) shipped under assets/font/.  GUI_FONT_NONE loads nothing;
-   the caller is then responsible for its own font_load() before the first frame renders. */
+/* Curated font families -- the "it just works" font selection.  A family names a typeface, not
+   a file: the resolver finds a bake at any requested size (a shipped .orb_font, a cached bake,
+   or the host-installed runtime baker), so no size matrix exists here.  A face outside this
+   list is reached by source name through font_get() with identical behavior.  GUI_FONT_NONE
+   boots no managed font; the caller is then responsible for its own font_load() before the
+   first frame renders. */
 
 typedef enum
 {
-    GUI_FONT_NONE = 0,        // load nothing; caller loads its own font(s) via font_load()
-    GUI_FONT_JETBRAINS_12,
-    GUI_FONT_JETBRAINS_16,
-    GUI_FONT_JETBRAINS_20,
-    GUI_FONT_JETBRAINS_24,
-    GUI_FONT_ROBOTO_12,
-    GUI_FONT_ROBOTO_16,
-    GUI_FONT_ROBOTO_20,
-    GUI_FONT_ROBOTO_24,
-    GUI_FONT_CASCADIA_MONO_12,
-    GUI_FONT_CASCADIA_MONO_16,
-    GUI_FONT_CASCADIA_MONO_20,
-    GUI_FONT_CASCADIA_MONO_24,
-    GUI_FONT_CASCADIA_MONO_32,
-    GUI_FONT_CASCADIA_CODE_16,
+    GUI_FONT_NONE = 0,        // no managed font; the caller loads its own via font_load()
+    GUI_FONT_JETBRAINS,       // JetBrains Mono NL (OS-installed)
+    GUI_FONT_ROBOTO,          // Roboto Regular (assets/font_source)
+    GUI_FONT_CASCADIA_MONO,   // Cascadia Mono (ships with Windows 11)
+    GUI_FONT_CASCADIA_CODE,   // Cascadia Code (ships with Windows 11)
 
-    GUI_FONT_BUILTIN_COUNT
+    GUI_FONT_FAMILY_COUNT
 
-} gui_builtin_font_t;
+} gui_font_family_t;
 
 /*==============================================================================================
     GUI_FRAME -- DPI response mode
 
     How gui reacts to monitor scale (app()->window_dpi_scale; the process is per-monitor DPI
-    aware, so all engine coordinates are physical pixels).  gui scales by retargeting the
-    ACTIVE FONT within the init() preset's family -- a bigger bake raises em, and every layout
-    metric already rescales from em -- so the response granularity is the set of baked sizes
-    that family ships.  Each surface (viewport) resolves against ITS OWN hosting window's
-    scale, so floaters on differently-scaled monitors each get the right bake (mixed DPI).
+    aware, so all engine coordinates are physical pixels).  gui scales by resolving the
+    managed family at base_size * scale -- a bigger size raises em, and every layout metric
+    already rescales from em.  With a runtime font baker installed the response is EXACT (any
+    size bakes on demand); without one it snaps to the nearest shipped size.  Each surface
+    (viewport) resolves against ITS OWN hosting window's scale, so floaters on
+    differently-scaled monitors each get the right size (mixed DPI).
     See dpi_set() in gui_api.h.
 ==============================================================================================*/
 
@@ -2971,7 +2965,8 @@ typedef struct
                                     // with the gui chrome shell auto-emitted
 
     bool               debug;       // arm the debug hotkey driver (debug_enable)
-    gui_builtin_font_t font;        // built-in preset; GUI_FONT_NONE = caller font_load()s
+    gui_font_family_t  font;        // managed boot family; GUI_FONT_NONE = caller font_load()s
+    u32                font_size;   // requested boot size, px; 0 = 16
 
     gui_clock_fn       clock;       // system clock function callback
     gui_sleep_fn       sleep;       // system sleep function callback

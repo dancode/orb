@@ -10,32 +10,26 @@
     command stamp for one label without touching layout metrics, the style, or the redraw
     flag.  Widgets keep their body-derived cells; only the glyphs change size.
 
-    gui ships no bake at "body plus 2px", so the sizes come from a host-installed runtime
-    baker (font_baker_set -> dev_font_get is the canonical wiring).  Resolved ids are
-    memoized per pixel size; a failed bake latches a sentinel so a missing face costs one
-    attempt, not one per frame.  Unwired, or under a host-driven font (the same lineage guard
-    the DPI engine uses), both role ids stay 0 and the bracket is a saved no-op.
+    gui ships no bake at "body plus 2px", so the sizes come from the font resolver
+    (gui_frame_resolve.c): shipped bakes serve exact sizes, the host-installed baker
+    (font_baker_set -> dev_font_get is the canonical wiring) fills the gaps.  A role demands
+    its EXACT size -- a resolver answer laddered to a neighbour (no baker, size not shipped)
+    reads as "role off" so the ramp never silently aliases a role to the body font.  Under a
+    host-driven font (the same lineage guard the DPI engine uses) both role ids stay 0 and
+    the bracket is a saved no-op.
 
     Included by gui_frame.c after gui_frame_dpi.c: resolution reads the DPI engine's managed
-    lineage (dpi_managed / dpi_landed_bake) to know which family is landed and whether the
+    lineage (dpi_managed / dpi_base_family) to know which family is managed and whether the
     ramp may act at all.
 
 ==============================================================================================*/
 // clang-format off
 
-#define GUI_TYPE_MEMO_MAX     8             /* distinct baked sizes held at once */
 #define GUI_TYPE_STACK_MAX    4             /* push/pop nesting -- role scopes are per-label */
-#define GUI_TYPE_LOAD_FAILED  0xFFFFFFFFu   /* memo id: bake attempted and failed; no retries */
 #define GUI_TYPE_MIN_PX       8             /* SMALL floor -- below this nothing reads */
 
 static struct
 {
-    gui_font_bake_fn baker;                 // host-installed runtime baker; NULL = ramp off
-    void*            baker_user;
-
-    struct { u32 size_px; u32 id; } memo[ GUI_TYPE_MEMO_MAX ];   // size -> loaded font id
-    u32              memo_count;
-
     u32              small_id;              // landed role ids; 0 = role off (body size)
     u32              large_id;
 
@@ -43,79 +37,18 @@ static struct
     u32              depth;                 // counted past capacity so pop stays paired
 
     bool             resolving;             // re-entrancy latch (belt over the lineage guard)
-    bool             loaded;                // a resolve/prewarm loaded fresh pixels this call
 
 } s_type;
 
-/*==============================================================================================
-
-    The size -> font id memo.  A hit returns the loaded id (0 for the failure sentinel); a
-    miss asks the baker for a file and font_load's it.  font_load ACTIVATES what it loads, so
-    the active font and the draw stamp are restored around it -- a ramp load must never move
-    the ambient state the DPI lineage guard and draw_reset read.
-
-==============================================================================================*/
+/* A role font: the resolver's answer ONLY when it landed the exact size -- a laddered
+   neighbour would change layout-vs-glyph agreement subtly, so the role turns off instead. */
 
 static u32
-type_font_for( const char* family, u32 size_px )
+type_font_exact( gui_font_family_t fam, u32 size_px )
 {
-    for ( u32 i = 0; i < s_type.memo_count; ++i )
-        if ( s_type.memo[ i ].size_px == size_px )
-            return s_type.memo[ i ].id == GUI_TYPE_LOAD_FAILED ? 0 : s_type.memo[ i ].id;
-
-    char path[ 576 ];
-    bool baked = s_type.baker( family, size_px, path, sizeof( path ), s_type.baker_user );
-
-    u32 prev      = font_active_id();
-    u32 prev_draw = draw_get_font();
-    u32 id        = 0;
-
-    if ( baked )
-    {
-        /* A full memo EVICTS before loading: release the retired size's registry slot and atlas
-           tenant (font_slot_release), then load the new size into a fresh slot -- registry ids
-           stay bounded while an editor scrubbing the step knob mints a size per notch, and the
-           freed tenant hole is reclaimed by the atlas's next pressure repack.  Live role ids are
-           exempt; failure latches are free (they hold no slot). */
-        if ( s_type.memo_count >= GUI_TYPE_MEMO_MAX )
-        {
-            u32 evict = GUI_TYPE_MEMO_MAX;
-            for ( u32 i = 0; i < s_type.memo_count; ++i )
-            {
-                u32 mid = s_type.memo[ i ].id;
-                if ( mid == GUI_TYPE_LOAD_FAILED ) { evict = i; break; }   /* free: no slot held */
-                if ( mid != s_type.small_id && mid != s_type.large_id )
-                    evict = i;
-            }
-            if ( evict == GUI_TYPE_MEMO_MAX )
-                return 0;   /* cannot happen with MEMO_MAX > 2 live roles; stay safe */
-
-            if ( s_type.memo[ evict ].id != GUI_TYPE_LOAD_FAILED )
-                font_slot_release( s_type.memo[ evict ].id );
-            s_type.memo[ evict ] = s_type.memo[ --s_type.memo_count ];
-        }
-
-        id = font_load( path );   /* fresh registry id, activated -- restored below */
-        s_type.memo[ s_type.memo_count ].size_px = size_px;
-        s_type.memo[ s_type.memo_count ].id      = id ? id : GUI_TYPE_LOAD_FAILED;
-        s_type.memo_count++;
-
-        font_use( prev );
-        draw_set_font( prev_draw );
-    }
-    else if ( s_type.memo_count < GUI_TYPE_MEMO_MAX )
-    {
-        s_type.memo[ s_type.memo_count ].size_px = size_px;
-        s_type.memo[ s_type.memo_count ].id      = GUI_TYPE_LOAD_FAILED;
-        s_type.memo_count++;
-    }
-
-    if ( id )
-        s_type.loaded = true;
-    else
-        GUI_WARN_ONCE( "type ramp: no bake for '%s' at %upx -- role falls back to the body size",
-                       family, size_px );
-    return id;
+    u32 landed = 0;
+    u32 id     = font_resolve( fam, NULL, size_px, false, &landed );
+    return ( id && landed == size_px ) ? id : 0;
 }
 
 /* Role sizes for a body em under the em-scaled step: SMALL floors at GUI_TYPE_MIN_PX and
@@ -153,20 +86,24 @@ gui_type_resolve( void )
     s_type.small_id = 0;
     s_type.large_id = 0;
 
-    if ( s_type.baker && font_valid() && dpi_managed() )
+    if ( font_valid() && dpi_managed() )
     {
         f32 step = style_var( GUI_VAR_TYPE_STEP );   /* landed style: already em-scaled */
-        const char* family = font_builtin_bake_source( dpi_landed_bake() );
-        if ( step >= 0.5f && family )
+        if ( step >= 0.5f )
         {
             f32 em    = font_em();
             u32 small = type_size_small( em, step );
             u32 large = (u32)( em + step + 0.5f );
             if ( small )
-                s_type.small_id = type_font_for( family, small );
-            s_type.large_id = type_font_for( family, large );
+                s_type.small_id = type_font_exact( dpi_base_family(), small );
+            s_type.large_id = type_font_exact( dpi_base_family(), large );
         }
     }
+
+    /* Live role ids are eviction-exempt while landed (0 clears the pin). */
+    font_resolve_pin( FONT_PIN_SMALL, s_type.small_id );
+    font_resolve_pin( FONT_PIN_LARGE, s_type.large_id );
+
     s_type.resolving = false;
 }
 
@@ -186,14 +123,12 @@ gui_type_resolve( void )
 bool
 gui_type_prewarm( void )
 {
-    s_type.loaded = false;
     gui_type_resolve();
 
-    if ( s_type.baker && dpi_managed() )
+    if ( dpi_managed() )
     {
-        const char* family    = font_builtin_bake_source( dpi_landed_bake() );
-        f32         base_step = gui_style_peek()->var[ GUI_VAR_TYPE_STEP ];
-        if ( family && base_step > 0.0f )
+        f32 base_step = gui_style_peek()->var[ GUI_VAR_TYPE_STEP ];
+        if ( base_step > 0.0f )
         {
             for ( i32 v = 0; v < s_vp_count; ++v )
             {
@@ -201,19 +136,19 @@ gui_type_prewarm( void )
                 if ( !rhi_handle_valid( vp->vb ) )
                     continue;   /* slot not live */
 
-                u32 size = font_builtin_size( vp->dpi_bake );
-                f32 step = base_step * (f32)size / 12.0f;
+                u32 size = vp->dpi_size_px;
+                f32 step = base_step * (f32)size / 12.0f;   /* the style var is authored at em 12 */
                 if ( !size || step < 0.5f )
                     continue;
 
                 u32 small = type_size_small( (f32)size, step );
                 if ( small )
-                    type_font_for( family, small );
-                type_font_for( family, (u32)( (f32)size + step + 0.5f ) );
+                    type_font_exact( dpi_base_family(), small );
+                type_font_exact( dpi_base_family(), (u32)( (f32)size + step + 0.5f ) );
             }
         }
     }
-    return s_type.loaded;
+    return font_resolve_fresh_take();
 }
 
 /*==============================================================================================
@@ -239,45 +174,24 @@ gui_type_frame_reset( void )
     }
 }
 
-/* Forget everything resolved and memoized -- the managed lineage / family changed underneath
-   (gui_dpi_base_set) or the GUI is shutting down.  The ramp minted its registry slots and
-   nothing else holds them, so they are RELEASED (slot + atlas tenant) rather than left resident
-   -- a family change must not leak the old family's bakes.  DPI preset slots are not the
-   ramp's to touch (and font_slot_release refuses id 0). */
+/* Drop the landed roles and the bracket stack -- the managed lineage / family changed
+   underneath (gui_dpi_base_set) or the GUI is shutting down.  The minted registry slots
+   belong to the resolver's memo; releasing them is font_resolve_clear's job, called beside
+   this at both call sites.  This only unpins and forgets. */
 
 void
 gui_type_clear( void )
 {
-    for ( u32 i = 0; i < s_type.memo_count; ++i )
-        if ( s_type.memo[ i ].id != GUI_TYPE_LOAD_FAILED )
-            font_slot_release( s_type.memo[ i ].id );
-    s_type.memo_count = 0;
-    s_type.small_id   = 0;
-    s_type.large_id   = 0;
-    s_type.depth      = 0;
+    s_type.small_id = 0;
+    s_type.large_id = 0;
+    s_type.depth    = 0;
+    font_resolve_pin( FONT_PIN_SMALL, 0 );
+    font_resolve_pin( FONT_PIN_LARGE, 0 );
 }
 
 /*==============================================================================================
     Public surface
 ==============================================================================================*/
-
-/* Install / replace the runtime baker.  Failure latches are dropped -- the new baker may
-   succeed where the old one could not -- but loaded sizes are kept.  NULL uninstalls. */
-
-void
-gui_font_baker_set( gui_font_bake_fn fn, void* user )
-{
-    s_type.baker      = fn;
-    s_type.baker_user = user;
-
-    u32 keep = 0;
-    for ( u32 i = 0; i < s_type.memo_count; ++i )
-        if ( s_type.memo[ i ].id != GUI_TYPE_LOAD_FAILED )
-            s_type.memo[ keep++ ] = s_type.memo[ i ];
-    s_type.memo_count = keep;
-
-    gui_type_resolve();   /* pre-init the guards bail; post-init the roles re-aim now */
-}
 
 /* The chrome bracket.  Push saves the active font and the TEXT stamp, then switches both to
    the role's font -- measurement (font_text_w / text_center_y) and the emitted glyphs agree

@@ -365,14 +365,14 @@ typedef struct
 
     /* DPI Data --------------------------------------------------------------------------------- */
     
-    /* Per-surface DPI state, for mixed-DPI multi-monitor setups (frame/gui_frame_font.c).
-       dpi_bake is the font atlas size this surface's windows use, resolved from its own
-       monitor's scale -- so surfaces on differently-scaled monitors can use different bakes in
+    /* Per-surface DPI state, for mixed-DPI multi-monitor setups (frame/gui_frame_dpi.c).
+       dpi_size_px is the managed font size this surface's windows use, resolved from its own
+       monitor's scale -- so surfaces on differently-scaled monitors can use different sizes in
        the same frame. dpi_os_scale is last frame's OS-reported scale, kept so gui can tell an
-       OS-driven DPI change (which already resized the window) apart from a gui-driven one 
+       OS-driven DPI change (which already resized the window) apart from a gui-driven one
        (a manual ui_scale change where gui must resize the window itself). */
 
-    gui_builtin_font_t dpi_bake;      // font bake this surface uses; GUI_FONT_NONE = unmanaged
+    u32                dpi_size_px;   // landed font size on this surface, px; 0 = unmanaged
     f32                dpi_os_scale;  // OS scale last reported for this surface's window (1.0 = 100%)
 
     /* Area Data -------------------------------------------------------------------------------- */

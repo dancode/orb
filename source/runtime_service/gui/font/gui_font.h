@@ -22,7 +22,7 @@
 ==============================================================================================*/
 
 #include "tools/font_tool/orb_font.h"   /* orb_font_glyph_t + the .orb_font on-disk record */
-#include "runtime_service/gui/gui.h"    /* gui_builtin_font_t -- the built-in preset enum   */
+#include "runtime_service/gui/gui.h"    /* gui_font_family_t -- the curated family enum    */
 
 // clang-format off
 
@@ -91,16 +91,21 @@ u32             font_load          ( const char* path );          // parse into 
 bool            font_load_into     ( u32 id, const char* path );  // parse into an existing id (0 = default); false = bad id / load fail
 
 /*==============================================================================================
-    Built-in font presets -- a convenience over font_load_into: map a gui_builtin_font_t (gui.h) to
-    its baked .orb_font asset and load it into the default slot.  Picking and loading a file is
-    resource work, so it lives with the resource, not render-side.
+    Curated families (gui_font_family_t, gui.h) -- per-family identity strings the resolver
+    composes requests from.  A family names a typeface; sizes are requested, never enumerated.
 ==============================================================================================*/
 
-bool               font_load_builtin      ( gui_builtin_font_t font ); // load a built-in preset into slot 0; true no-op for GUI_FONT_NONE
-const char*        font_builtin_rel_path  ( gui_builtin_font_t font ); // preset's asset path relative to the root; NULL for NONE / out of range
-u32                font_builtin_size      ( gui_builtin_font_t font ); // preset's baked glyph height in px; 0 for NONE / out of range
-const char*        font_builtin_bake_source( gui_builtin_font_t font ); // family's runtime bake source name; NULL = none (ramp off)
-gui_builtin_font_t font_builtin_pick      ( gui_builtin_font_t base, f32 scale ); // same-family preset nearest base_size * scale (DPI retarget)
+const char*        font_family_bake_source( gui_font_family_t fam ); // runtime baker request name; NULL = NONE / no source
+const char*        font_family_ship_stem  ( gui_font_family_t fam ); // shipped .orb_font filename stem; NULL = NONE
+
+/* Name utilities shared by the resolver's shipped-bake scan and its memo keying (unit-tested in
+   sb_gui_test).  Normalize: lowercase alphanumeric-only, so "Cascadia Mono" == "CascadiaMono" ==
+   "cascadia_mono".  Parse: split "<stem>_<N>px[<tags>].orb_font" into stem + size + tag facts;
+   false for names carrying no "_<N>px" size token. */
+
+void               font_name_normalize ( const char* s, char* out, int out_size );
+bool               font_ship_name_parse( const char* filename, char* stem, int stem_size,
+                                         u32* size_px, bool* tagged, bool* sdf );
 
 /*==============================================================================================
     Metric readers -- the active font's measurement surface.  Pure sizes + math over the loaded

@@ -88,19 +88,24 @@ gui_font_load( const char* path )
     return id;
 }
 
-u32
-gui_font_load_builtin( gui_builtin_font_t font )
-{
-    /* The preset enum already knows its asset path -- resolve it and take the normal
-       font_load path (new id + activate).  Unlike init's slot-0 preset load, this never
-       touches the default font; GUI_FONT_NONE / an unknown preset returns 0. */
-    const char* rel = font_builtin_rel_path( font );
-    if ( rel == NULL )
-        return 0;
+/* Resolve a font by request -- family + pixel size -- WITHOUT activating it.  The resolver
+   finds a shipped bake, asks the installed baker, or degrades to the nearest in-family size
+   (warn-once); the returned id is HELD (never evicted -- callers cache it in statics) and is
+   applied with font_use / push_font.  Never 0-fails into nothing: worst case the answer is
+   the default font, id 0. */
 
-    char path[ 576 ];
-    gui_asset_path( rel, path, sizeof( path ) );
-    return gui_font_load( path );
+u32
+gui_font_get( const char* family, u32 size_px )
+{
+    u32 landed = 0;
+    return font_resolve( GUI_FONT_NONE, family, size_px, true, &landed );
+}
+
+u32
+gui_font_get_builtin( gui_font_family_t fam, u32 size_px )
+{
+    u32 landed = 0;
+    return font_resolve( fam, NULL, size_px, true, &landed );
 }
 
 bool

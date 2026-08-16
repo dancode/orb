@@ -55,12 +55,16 @@ st_begin( const char* title, f32 w, f32 h )
     return gui()->window_begin( title, GUI_WIN_CLOSEABLE );
 }
 
-/* Runtime font baker for the gui type ramp -- dev_font is already initialized by main. */
+/* Runtime font baker for the gui font resolver -- dev_font is already initialized by main.
+   Fine (FreeType) cache when fresh, else the fast stb bake + a background refine. */
 static bool
 st_gui_font_bake( const char* family, u32 size_px, char* out, int n, void* user )
 {
     (void)user;
-    return dev_font_get( family, (int)size_px, out, n );
+    if ( !dev_font_get_ex( family, (int)size_px, DEV_FONT_FINE_IF_CACHED, NULL, out, n ) )
+        return false;
+    dev_font_refine_kick( family, (int)size_px, NULL );
+    return true;
 }
 
 /*============================================================================================*/
@@ -207,12 +211,18 @@ main( int argc, char** argv )
     int  ret_code    = 1;
     bool draw_inited = false;
 
+    /* dev_font drives the Font Tool's local scan + quick stb bake; font_tool.exe (spawned)
+       drives the final one.  It also serves the gui font resolver -- installed BEFORE boot so
+       the boot-time style landing already bakes exact sizes. */
+    dev_font_init( NULL );
+    gui()->font_baker_set( st_gui_font_bake, NULL );
+
     /* gui owns the main window + render context (boot path); see sb_gui for the full rationale. */
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui_style",
         .w         = 1280, .h = 800,
         .os_chrome = true,
-        .font      = GUI_FONT_CASCADIA_MONO_16,
+        .font      = GUI_FONT_CASCADIA_MONO,
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
         .wait      = sys_wait_for_os_events_ms,
@@ -231,11 +241,6 @@ main( int argc, char** argv )
         goto shutdown;
     }
     draw_inited = true;
-
-    /* dev_font drives the Font Tool's local scan + quick stb bake; font_tool.exe (spawned) drives
-       the final one.  It also serves the gui type ramp's SMALL/LARGE role sizes. */
-    dev_font_init( NULL );
-    gui()->font_baker_set( st_gui_font_bake, NULL );
 
     gui()->set_retained_skip( true );
 

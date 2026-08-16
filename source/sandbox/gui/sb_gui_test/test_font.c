@@ -149,5 +149,85 @@ test_font_cp_ext_empty( void )
     test_true( font_slot_cp( slot, 0x10FFFFu )->advance == '?' );
 }
 
+/*==============================================================================================
+    The resolver's name utilities -- how a request matches files and memo keys.
+==============================================================================================*/
+
+static void
+test_font_name_normalize( void )
+{
+    char a[ 96 ], b[ 96 ];
+
+    /* Spaces, case, and punctuation all vanish: a friendly name, a filename stem, and a
+       cache-mangled stem of the same face compare equal. */
+    font_name_normalize( "Cascadia Mono", a, sizeof( a ) );
+    font_name_normalize( "CascadiaMono",  b, sizeof( b ) );
+    test_true( strcmp( a, b ) == 0 );
+    font_name_normalize( "cascadia_mono", b, sizeof( b ) );
+    test_true( strcmp( a, b ) == 0 );
+
+    font_name_normalize( "Roboto-Regular", a, sizeof( a ) );
+    font_name_normalize( "Roboto_Regular", b, sizeof( b ) );   /* dev_font cache mangling */
+    test_true( strcmp( a, b ) == 0 );
+
+    font_name_normalize( "JetBrains Mono NL", a, sizeof( a ) );
+    test_true( strcmp( a, "jetbrainsmononl" ) == 0 );
+
+    /* Distinct faces stay distinct. */
+    font_name_normalize( "JetBrainsMonoNL-Regular", b, sizeof( b ) );
+    test_true( strcmp( a, b ) != 0 );
+}
+
+static void
+test_font_ship_name_parse( void )
+{
+    char stem[ 96 ];
+    u32  px;
+    bool tagged, sdf;
+
+    /* The plain shipped shape. */
+    test_true( font_ship_name_parse( "CascadiaMono_16px.orb_font",
+                                     stem, sizeof( stem ), &px, &tagged, &sdf ) );
+    test_true( strcmp( stem, "CascadiaMono" ) == 0 && px == 16 && !tagged && !sdf );
+
+    /* Hyphenated stem. */
+    test_true( font_ship_name_parse( "JetBrainsMonoNL-Regular_12px.orb_font",
+                                     stem, sizeof( stem ), &px, &tagged, &sdf ) );
+    test_true( strcmp( stem, "JetBrainsMonoNL-Regular" ) == 0 && px == 12 && !tagged );
+
+    /* Range tag: tagged, not sdf. */
+    test_true( font_ship_name_parse( "CascadiaMono_16px_latin-greek-cyrillic-0x20ac.orb_font",
+                                     stem, sizeof( stem ), &px, &tagged, &sdf ) );
+    test_true( strcmp( stem, "CascadiaMono" ) == 0 && px == 16 && tagged && !sdf );
+
+    /* SDF tags, alone and after a range. */
+    test_true( font_ship_name_parse( "CascadiaMono_32px_sdf.orb_font",
+                                     stem, sizeof( stem ), &px, &tagged, &sdf ) );
+    test_true( px == 32 && tagged && sdf );
+    test_true( font_ship_name_parse( "CascadiaMono_32px_latin1_sdf.orb_font",
+                                     stem, sizeof( stem ), &px, &tagged, &sdf ) );
+    test_true( px == 32 && tagged && sdf );
+
+    /* The fine-cache tag parses as an ordinary tag. */
+    test_true( font_ship_name_parse( "JetBrainsMonoNL_Regular_13px_ft.orb_font",
+                                     stem, sizeof( stem ), &px, &tagged, &sdf ) );
+    test_true( strcmp( stem, "JetBrainsMonoNL_Regular" ) == 0 && px == 13 && tagged && !sdf );
+
+    /* Size-less names carry no identity: refused, never misparsed. */
+    test_true( !font_ship_name_parse( "Roboto-Regular.orb_font",
+                                      stem, sizeof( stem ), &px, &tagged, &sdf ) );
+    test_true( !font_ship_name_parse( "Roboto-Bold.orb_font",
+                                      stem, sizeof( stem ), &px, &tagged, &sdf ) );
+
+    /* Wrong extension: refused. */
+    test_true( !font_ship_name_parse( "CascadiaMono_16px.ttf",
+                                      stem, sizeof( stem ), &px, &tagged, &sdf ) );
+
+    /* A stem containing a size-shaped token: the LAST size token wins. */
+    test_true( font_ship_name_parse( "Face_12px_x_16px.orb_font",
+                                     stem, sizeof( stem ), &px, &tagged, &sdf ) );
+    test_true( strcmp( stem, "Face_12px_x" ) == 0 && px == 16 && !tagged );
+}
+
 // clang-format on
 /*============================================================================================*/

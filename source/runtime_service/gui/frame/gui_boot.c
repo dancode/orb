@@ -98,7 +98,7 @@ gui_boot( const gui_boot_desc_t* desc )
 
     /* the gui requires a valid rhi context to initialize the drawing atlas */
 
-    if ( !gui_init( desc->font ) ) {
+    if ( !gui_init( desc->font, desc->font_size ) ) {
          rhi()->context_destroy( rctx );
          app()->window_close( win );
          return GUI_VP_INVALID;

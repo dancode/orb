@@ -349,7 +349,7 @@ main( int argc, char** argv )
         .title     = "ORB -- gui strokes",
         .w         = 1180, .h = 1020,
         .os_chrome = true,
-        .font      = GUI_FONT_CASCADIA_MONO_16,
+        .font      = GUI_FONT_CASCADIA_MONO,
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,

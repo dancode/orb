@@ -136,144 +136,13 @@ path_make_parent_dir( const char* path )
     Spans are sorted and merged before baking, so overlapping presets never bake a glyph twice.
 ==============================================================================================*/
 
-#define FONT_RANGE_MAX  32
+/* Parsing, merging, and the filename tag live in dev_font (dev_font_range_parse /
+   dev_font_range_suffix) so the runtime stb baker accepts the same specs; this exe keeps only
+   the parsed spans and the derived tag. */
 
-typedef struct { uint32_t lo, hi; } cp_range_t;
-
-static cp_range_t s_ranges[ FONT_RANGE_MAX ];
-static int        s_range_count = 0;
-static char       s_range_suffix[ 48 ];   /* derived-filename tag ("_latin1"); empty = default */
-
-typedef struct
-{
-    const char* name;
-    cp_range_t  span[ 2 ];
-    int         count;
-
-} range_preset_t;
-
-/* Presets are PRINTABLE spans; a codepoint the face has no glyph for is skipped at bake, so a
-   generous span costs nothing in the file. */
-static const range_preset_t s_presets[] = {
-    { "ascii",    { { 0x0020, 0x007E } },                     1 },   /* the default            */
-    { "latin1",   { { 0x0020, 0x007E }, { 0x00A0, 0x00FF } }, 2 },   /* + Latin-1 Supplement   */
-    { "latin",    { { 0x0020, 0x007E }, { 0x00A0, 0x017F } }, 2 },   /* + Latin Extended-A     */
-    { "greek",    { { 0x0370, 0x03FF } },                     1 },   /* Greek and Coptic       */
-    { "cyrillic", { { 0x0400, 0x04FF } },                     1 },   /* Cyrillic               */
-};
-
-static bool
-range_add( uint32_t lo, uint32_t hi )
-{
-    if ( s_range_count == FONT_RANGE_MAX )
-    {
-        fprintf( stderr, "error: -range has too many spans (max %d)\n", FONT_RANGE_MAX );
-        return false;
-    }
-    s_ranges[ s_range_count ].lo = lo;
-    s_ranges[ s_range_count ].hi = hi;
-    ++s_range_count;
-    return true;
-}
-
-/* One spec token: a preset name, a single codepoint, or "LO-HI" (strtoul base 0: hex or decimal). */
-static bool
-range_parse_token( const char* tok, size_t len )
-{
-    char          buf[ 32 ];
-    char*         end;
-    unsigned long lo, hi;
-
-    for ( size_t i = 0; i < sizeof( s_presets ) / sizeof( s_presets[ 0 ] ); ++i )
-    {
-        const range_preset_t* p = &s_presets[ i ];
-        if ( strlen( p->name ) == len && strncmp( tok, p->name, len ) == 0 )
-        {
-            for ( int s = 0; s < p->count; ++s )
-                if ( !range_add( p->span[ s ].lo, p->span[ s ].hi ) )
-                    return false;
-            return true;
-        }
-    }
-
-    if ( len == 0 || len >= sizeof( buf ) )
-        goto bad;
-    memcpy( buf, tok, len );
-    buf[ len ] = '\0';
-
-    lo = strtoul( buf, &end, 0 );
-    hi = lo;
-    if ( end == buf )
-        goto bad;
-    if ( *end == '-' )
-    {
-        const char* hs = end + 1;
-        hi = strtoul( hs, &end, 0 );
-        if ( end == hs )
-            goto bad;
-    }
-    if ( *end != '\0' || lo < 0x20 || hi < lo || hi > 0x10FFFF )
-        goto bad;
-    return range_add( (uint32_t)lo, (uint32_t)hi );
-
-bad:
-    fprintf( stderr, "error: bad -range token '%.*s' (preset name or LO[-HI], e.g. latin1 or 0xA0-0xFF)\n",
-             (int)len, tok );
-    return false;
-}
-
-static bool
-range_parse_spec( const char* spec )
-{
-    const char* p = spec;
-    while ( *p )
-    {
-        const char* q = p;
-        while ( *q && *q != ',' )
-            ++q;
-        if ( !range_parse_token( p, (size_t)( q - p ) ) )
-            return false;
-        p = ( *q == ',' ) ? q + 1 : q;
-    }
-    if ( s_range_count == 0 )
-    {
-        fprintf( stderr, "error: -range spec is empty\n" );
-        return false;
-    }
-    return true;
-}
-
-/* Sort by lo and merge touching spans, so overlapping tokens never bake a codepoint twice. */
-static void
-range_normalize( void )
-{
-    for ( int i = 1; i < s_range_count; ++i )     /* insertion sort -- the list is tiny */
-    {
-        cp_range_t r = s_ranges[ i ];
-        int        j = i;
-        while ( j > 0 && s_ranges[ j - 1 ].lo > r.lo )
-        {
-            s_ranges[ j ] = s_ranges[ j - 1 ];
-            --j;
-        }
-        s_ranges[ j ] = r;
-    }
-
-    int w = 0;
-    for ( int i = 1; i < s_range_count; ++i )
-    {
-        if ( s_ranges[ i ].lo <= s_ranges[ w ].hi + 1u )
-        {
-            if ( s_ranges[ i ].hi > s_ranges[ w ].hi )
-                s_ranges[ w ].hi = s_ranges[ i ].hi;
-        }
-        else
-        {
-            s_ranges[ ++w ] = s_ranges[ i ];
-        }
-    }
-    s_range_count = w + 1;
-}
+static dev_font_range_t s_ranges[ DEV_FONT_RANGE_MAX ];
+static int              s_range_count = 0;
+static char             s_range_suffix[ 48 ];   /* derived-filename tag ("_latin1"); empty = default */
 
 static uint32_t
 range_codepoint_count( void )
@@ -282,23 +151,6 @@ range_codepoint_count( void )
     for ( int i = 0; i < s_range_count; ++i )
         n += s_ranges[ i ].hi - s_ranges[ i ].lo + 1u;
     return n;
-}
-
-/* Filename tag for a derived output path: '_' + the spec with anything unsafe mapped to '-'
-   ("latin,greek" -> "_latin-greek"), so bakes of different ranges never overwrite each other. */
-static void
-range_make_suffix( const char* spec )
-{
-    int n                 = 0;
-    s_range_suffix[ n++ ] = '_';
-    for ( const char* p = spec; *p && n < (int)sizeof( s_range_suffix ) - 1; ++p )
-    {
-        char c = *p;
-        if ( c >= 'A' && c <= 'Z' )
-            c = (char)( c - 'A' + 'a' );
-        s_range_suffix[ n++ ] = ( ( c >= 'a' && c <= 'z' ) || ( c >= '0' && c <= '9' ) ) ? c : '-';
-    }
-    s_range_suffix[ n ] = '\0';
 }
 
 /*==============================================================================================
@@ -796,9 +648,13 @@ cli_parse( int argc, char** argv, cli_t* cli )
                 fprintf( stderr, "error: -range needs a spec, e.g. -range=latin1\n" );
                 return false;
             }
-            if ( !range_parse_spec( a + 7 ) )
+            s_range_count = dev_font_range_parse( a + 7, s_ranges, DEV_FONT_RANGE_MAX );
+            if ( s_range_count == 0 )
+            {
+                fprintf( stderr, "error: %s\n", dev_font_last_error() );
                 return false;
-            range_make_suffix( a + 7 );
+            }
+            dev_font_range_suffix( a + 7, s_range_suffix, sizeof( s_range_suffix ) );
             continue;
         }
 
@@ -904,8 +760,7 @@ main( int argc, char** argv )
 
     /* No -range on the command line: exactly the ASCII contract, as every bake before the flag. */
     if ( s_range_count == 0 )
-        range_add( ORB_FONT_CP_FIRST, ORB_FONT_CP_LAST );
-    range_normalize();
+        s_range_count = dev_font_range_parse( NULL, s_ranges, DEV_FONT_RANGE_MAX );
 
     uint32_t cp_total = range_codepoint_count();
     if ( cp_total > ORB_FONT_MAX_GLYPHS )

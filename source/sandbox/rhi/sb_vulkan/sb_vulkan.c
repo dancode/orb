@@ -119,7 +119,7 @@ main( int argc, char** argv )
     /* ------------------------------------------------------------------------------ */
     /* Setup GUI -- the render-status overlay (see the file header). */
 
-    if ( !gui()->init( GUI_FONT_JETBRAINS_16 ) )
+    if ( !gui()->init( GUI_FONT_JETBRAINS, 16 ) )
     {
         fprintf( stderr, "[sb_vulkan] gui->init failed\n" );
         sb_vk_boot_destroy( &boot );

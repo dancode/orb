@@ -129,11 +129,13 @@ main( int argc, char* argv[] )
     test_register( "log_set_fn",          test_log_set_fn );
     test_register( "warn_once",           test_warn_once );
 
-    /* GUI_FONT -- the two-tier glyph lookup */
+    /* GUI_FONT -- the two-tier glyph lookup + the resolver's name utilities */
     test_register( "font_cp_ascii",       test_font_cp_ascii );
     test_register( "font_cp_ext_search",  test_font_cp_ext_search );
     test_register( "font_cp_ext_empty",   test_font_cp_ext_empty );
     test_register( "font_measure_utf8",   test_font_measure_utf8 );
+    test_register( "font_name_normalize", test_font_name_normalize );
+    test_register( "font_ship_name_parse", test_font_ship_name_parse );
 
     /* Edit seams -- UTF-8 caret math + word classes */
     test_register( "edit_caret_utf8",     test_edit_caret_utf8 );

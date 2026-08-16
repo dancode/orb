@@ -141,13 +141,15 @@ typedef struct
    gui is in k_modules[]. */
 typedef struct
 {
-    gui_builtin_font_t        font;       // GUI_FONT_NONE = host loads its own (font_load)
+    gui_font_family_t         font;       // GUI_FONT_NONE = host loads its own (font_load)
+    u32                       font_size;  // requested boot size, px; 0 = 16
     f32                       clear[ 4 ]; // main-surface clear color; alpha 0 = default dark
     bool                      debug;      // arm the gui debug hotkey driver (P/O/F9/F10...)  */
 
-    /* Runtime font baker for the gui type ramp (dev_font_get adapter, typically) -- gui asks
-       it for the SMALL/LARGE role sizes it has no shipped bake for.  NULL = ramp off.  The
-       host supplies it so this lib never links the developer tier. */
+    /* Runtime font baker for the gui font resolver (dev_font_get adapter, typically) -- gui
+       asks it for any size no shipped bake serves (DPI retarget, type ramp roles, font_get).
+       NULL = nearest-shipped-size fallback.  The host supplies it so this lib never links the
+       developer tier. */
     gui_font_bake_fn          font_baker;
     void*                     font_baker_user;
 

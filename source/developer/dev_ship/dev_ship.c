@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>   /* atoi -- fonts.manifest size field */
 #include <string.h>
 
 #include "orb.h"
@@ -32,9 +33,11 @@
 #if OS_WINDOWS
     #define PATH_SEP        "\\"
     #define BUILD_TOOL_EXE  "build_tool.exe"
+    #define FONT_TOOL_EXE   "font_tool.exe"
 #else
     #define PATH_SEP        "/"
     #define BUILD_TOOL_EXE  "build_tool"
+    #define FONT_TOOL_EXE   "font_tool"
 #endif
 
 /*==============================================================================================
@@ -331,17 +334,127 @@ ship_build( const dev_ship_desc_t* desc )
 /*==============================================================================================
     cook -- convert source assets to runtime formats.
 
-    A real no-op today: fonts, shaders, and assets are cooked offline by their tools and the
-    results committed.  This stage becomes the font_tool/shader_tool/asset_tool call-out
-    once cooking moves into the pipeline.
+    Fonts cook from config/fonts.manifest: one line per shipped bake,
+
+        <family> <size_px> [-sdf[=n]] [-range=<spec>]
+
+    where <family> is a font_tool input (a TTF in assets/font_source, or an OS-installed face
+    name -- wrap names containing spaces in double quotes) and the flags pass through to
+    font_tool verbatim.  '#' starts a comment.  Each line runs font_tool.exe (FreeType
+    quality), whose default output dir is the engine's assets/font/ -- which the stage step
+    then ships wholesale, so a cooked font needs no further wiring.  font_tool's own cache-less
+    bake runs every time; the tool is fast and a ship is not an inner loop.
+
+    No manifest = nothing to cook.  Shaders and other assets are still cooked offline by their
+    tools; their call-outs land here the same way when the time comes.
 ==============================================================================================*/
 
 static bool
 ship_cook( const dev_ship_desc_t* desc )
 {
-    (void)desc;
-    printf( "[cook]    nothing to cook (assets are cooked offline)\n" );
-    return true;
+    char manifest[ 1024 ];
+    snprintf( manifest, sizeof( manifest ),
+              "%s" PATH_SEP "config" PATH_SEP "fonts.manifest", desc->root_dir );
+
+    FILE* f = fopen( manifest, "rb" );
+    if ( !f )
+    {
+        printf( "[cook]    nothing to cook (no config/fonts.manifest)\n" );
+        return true;
+    }
+
+    /* font_tool.exe lives in the engine bin; build it if this tree never has. */
+    const char* eng = ship_engine_root( desc );
+    char        tool[ 1024 ];
+    snprintf( tool, sizeof( tool ), "%s" PATH_SEP "bin" PATH_SEP FONT_TOOL_EXE, eng );
+    if ( sys_file_time( tool ) == 0 && !ship_build_target( desc, "font_tool", false ) )
+    {
+        fclose( f );
+        return false;
+    }
+
+    char line[ 512 ];
+    int  baked = 0;
+    bool ok    = true;
+
+    while ( ok && fgets( line, sizeof( line ), f ) )
+    {
+        char* p = line;
+        while ( *p == ' ' || *p == '\t' ) ++p;
+        if ( *p == '#' || *p == '\0' || *p == '\r' || *p == '\n' )
+            continue;
+
+        size_t len = strlen( p );
+        while ( len && ( p[ len - 1 ] == '\n' || p[ len - 1 ] == '\r'
+                      || p[ len - 1 ] == ' '  || p[ len - 1 ] == '\t' ) )
+            p[ --len ] = '\0';
+
+        /* Family: a leading '"' opens a quoted span (names contain spaces), else the first
+           whitespace-delimited token. */
+        char        family[ 256 ];
+        const char* rest;
+        if ( *p == '"' )
+        {
+            char* q = strchr( p + 1, '"' );
+            if ( !q )
+            {
+                ship_set_error( "fonts.manifest: unterminated quote: %s", p );
+                ok = false;
+                break;
+            }
+            snprintf( family, sizeof( family ), "%.*s", (int)( q - p - 1 ), p + 1 );
+            rest = q + 1;
+        }
+        else
+        {
+            const char* q = p;
+            while ( *q && *q != ' ' && *q != '\t' ) ++q;
+            snprintf( family, sizeof( family ), "%.*s", (int)( q - p ), p );
+            rest = q;
+        }
+        while ( *rest == ' ' || *rest == '\t' ) ++rest;
+
+        int size_px = atoi( rest );
+        if ( size_px < 6 || size_px > 256 )
+        {
+            ship_set_error( "fonts.manifest: bad size in line: %s", p );
+            ok = false;
+            break;
+        }
+
+        /* Flags: everything after the size token, passed through verbatim. */
+        const char* flags = rest;
+        while ( *flags && *flags != ' ' && *flags != '\t' ) ++flags;
+        while ( *flags == ' ' || *flags == '\t' ) ++flags;
+
+        char cmd[ 1600 ];
+        snprintf( cmd, sizeof( cmd ), "\"%s\" \"%s\" %d%s%s",
+                  tool, family, size_px, *flags ? " " : "", flags );
+
+        sys_process_result_t res;
+        if ( !sys_process_run( cmd, desc->root_dir, &res ) )
+        {
+            ship_set_error( "could not launch font_tool: %s", cmd );
+            ok = false;
+            break;
+        }
+        if ( res.exit_code != 0 )
+        {
+            ship_set_error( "font_tool failed (exit %d) on manifest line: %s",
+                            res.exit_code, p );
+            ok = false;
+            break;
+        }
+        printf( "[cook]    font %s %dpx%s%s -> assets/font/\n",
+                family, size_px, *flags ? " " : "", flags );
+        ++baked;
+    }
+    fclose( f );
+
+    if ( ok )
+        printf( "[cook]    %d font bake%s from config/fonts.manifest\n",
+                baked, baked == 1 ? "" : "s" );
+    return ok;
 }
 
 /*==============================================================================================

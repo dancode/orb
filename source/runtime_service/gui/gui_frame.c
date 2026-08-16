@@ -86,8 +86,17 @@ void           ctx_pool_init  ( void );                                         
 bool           viewport_create ( i32 vp, rhi_texture_t target, i32 win_id );             /* gui_viewport.c */
 void           viewport_destroy( i32 vp );                                               /* gui_viewport.c */
 
-void           gui_dpi_base_set( gui_builtin_font_t font );                                   /* gui_frame_dpi.c */
+void           gui_dpi_base_set( gui_font_family_t fam, u32 landed_px );                      /* gui_frame_dpi.c */
 bool           gui_dpi_poll    ( void );                                                      /* gui_frame_dpi.c */
+
+u32            font_resolve           ( gui_font_family_t fam, const char* name, u32 size_px,
+                                        bool held, u32* out_landed_px );                      /* gui_frame_resolve.c */
+void           font_resolve_boot      ( gui_font_family_t fam, u32 size_px, u32* out_landed_px );
+void           font_resolve_adopt_default( gui_font_family_t fam, u32 landed_px );
+bool           font_resolve_fresh_take( void );
+u32            font_resolve_generation( void );
+void           font_resolve_pin       ( u32 pin_slot, u32 id );
+void           font_resolve_clear     ( void );
 
 void           gui_type_resolve    ( void );                                                  /* gui_frame_type.c */
 bool           gui_type_prewarm    ( void );                                                  /* gui_frame_type.c */
@@ -160,13 +169,18 @@ void           gui_type_clear      ( void );                                    
 #include "runtime_service/gui/frame/gui_frame_loop.c"
 #include "runtime_service/gui/frame/gui_frame_font.c"
 
-// The DPI response engine -- AFTER the font file (bake loads ride gui_font_load_builtin;
+// The font resolver -- (family, size) -> loaded id through memo / shipped scan / baker /
+// nearest-size ladder.  AFTER the font file (its loads ride the same deferred-upload flush)
+// and BEFORE the DPI engine and type ramp, its two internal clients.
+#include "runtime_service/gui/frame/gui_frame_resolve.c"
+
+// The DPI response engine -- AFTER the resolver (every wanted size goes through font_resolve;
 // gui_style_apply reads dpi_scale_landed() through its forward decl) and BEFORE gui_viewport.c
-// (viewport_create seeds dpi_bake from s_dpi.base; tear-off drives gui_dpi_vp_resolve).
+// (viewport_create seeds dpi_size_px from s_dpi.base_size; tear-off drives gui_dpi_vp_resolve).
 #include "runtime_service/gui/frame/gui_frame_dpi.c"
 
 // The type ramp -- AFTER the dpi file: role resolution reads its managed-lineage state
-// (dpi_managed / dpi_landed_bake) to know which family is landed and whether to act.
+// (dpi_managed / dpi_base_family) to know which family is managed and whether to act.
 #include "runtime_service/gui/frame/gui_frame_type.c"
 
 // The pane bracket -- the go-between verb stamping BOTH servers; and the public

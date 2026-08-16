@@ -1625,7 +1625,7 @@ main( int argc, char** argv )
         .title     = "ORB -- gui sdf explorer",
         .w         = 1240, .h = 1000,
         .os_chrome = true,
-        .font      = GUI_FONT_CASCADIA_MONO_16,
+        .font      = GUI_FONT_CASCADIA_MONO,
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,

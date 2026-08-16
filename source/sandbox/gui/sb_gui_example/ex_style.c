@@ -457,11 +457,10 @@ ex_style_fonts( void )
 static void
 ex_style_font_sizes( void )
 {
-    /* The boot face at four baked sizes, loaded once.  font_load_builtin activates what it
-       loads, so remember + restore the active id around the batch. */
-    static const gui_builtin_font_t k_sizes[ 4 ] 
-        = { GUI_FONT_JETBRAINS_12, GUI_FONT_JETBRAINS_16, 
-            GUI_FONT_JETBRAINS_20, GUI_FONT_JETBRAINS_24 };
+    /* The boot face at four sizes, resolved once.  A size is a REQUEST: font_get_builtin
+       finds a shipped bake or asks the installed baker, and never activates -- no save /
+       restore dance around the batch. */
+    static const u32 k_sizes[ 4 ] = { 12, 16, 20, 24 };
 
     static const char* k_size_name[ 4 ] = { "12 px", "16 px", "20 px", "24 px" };
     static u32  s_size_id[ 4 ];
@@ -469,10 +468,8 @@ ex_style_font_sizes( void )
 
     if ( !s_loaded )
     {
-        u32 prev = gui()->font_active_id();
         for ( i32 i = 0; i < 4; ++i )
-            s_size_id[ i ] = gui()->font_load_builtin( k_sizes[ i ] );
-        gui()->font_use( prev );
+            s_size_id[ i ] = gui()->font_get_builtin( GUI_FONT_JETBRAINS, k_sizes[ i ] );
         s_loaded = true;
     }
 

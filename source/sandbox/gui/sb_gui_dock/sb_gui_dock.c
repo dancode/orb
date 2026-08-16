@@ -383,7 +383,7 @@ main( int argc, char** argv )
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB -- gui dock",
         .w     = 1280, .h = 720,
-        .font  = GUI_FONT_JETBRAINS_16,
+        .font  = GUI_FONT_JETBRAINS,
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,

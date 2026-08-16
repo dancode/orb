@@ -85,7 +85,7 @@ main( int argc, char** argv )
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB Editor -- sb_gui_editor",
         .w     = 1600, .h = 900,
-        .font  = GUI_FONT_ROBOTO_16,        // GUI_FONT_JETBRAINS_16
+        .font  = GUI_FONT_ROBOTO,        // GUI_FONT_JETBRAINS
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,

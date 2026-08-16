@@ -223,7 +223,7 @@ static const run_module_entry_t k_modules[] = {
 };
 
 static const run_gui_desc_t k_gui_desc = {
-    .font  = GUI_FONT_ROBOTO_16,
+    .font  = GUI_FONT_ROBOTO,
     .clear = { 0.10f, 0.10f, 0.12f, 1.00f },
     .debug = true,            /* P/O/F10 overlays, I idle skip, etc. */
 };

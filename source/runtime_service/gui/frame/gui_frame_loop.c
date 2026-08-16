@@ -89,7 +89,7 @@ rhi_context_any_live( void )
 /*============================================================================================*/
 
 bool
-gui_init( gui_builtin_font_t font )
+gui_init( gui_font_family_t family, u32 size_px )
 {
     /* Both produce a gui that runs but paints nothing: a second init strands the first one's GPU
        resources, and an init with no device has nothing to build the pipeline from. */
@@ -126,20 +126,20 @@ gui_init( gui_builtin_font_t font )
         return false;
     }
 
-    /* Optional built-in font (gui.h); non-fatal on failure -- init still succeeds, just without
-       text, mirroring the debug-overlay init a few lines below.  font_load_builtin activates the
-       font in the backend but -- unlike the public gui_font_load/gui_font_use wrappers -- does not
-       rescale layout itself, so gui_style_apply() is called explicitly here; its own font_valid()
-       guard makes this correct either way -- a real font rescales s_style, GUI_FONT_NONE (or a
-       failed load) leaves it at the zero-font values gui_theme_set seeded above until the caller's
-       own font_load() activates one. */
+    /* Optional managed boot font (gui.h); non-fatal on failure -- init still succeeds, just
+       without text, mirroring the debug-overlay init a few lines below.  The resolver loads the
+       family at the requested size into slot 0 (a shipped bake, the installed baker, or the
+       nearest shipped neighbour) but does not rescale layout itself, so gui_style_apply() is
+       called explicitly here; its own font_valid() guard makes this correct either way -- a real
+       font rescales s_style, GUI_FONT_NONE (or a failed resolve) leaves it at the zero-font
+       values gui_theme_set seeded above until the caller's own font_load() activates one. */
 
-    if ( font != GUI_FONT_NONE )
+    if ( family != GUI_FONT_NONE )
     {
-        if ( font_load_builtin( font ) )
-            gui_dpi_base_set( font );   /* DPI retargeting manages this preset's family */
-        else
-            gui_log( GUI_LOG_WARN, "built-in font load failed; continuing without text" );
+        u32 landed = 0;
+        font_resolve_boot( family, size_px ? size_px : 16, &landed );
+        if ( landed )
+            gui_dpi_base_set( family, landed );   /* DPI retargeting manages this family */
     }
 
     gui_style_apply();
@@ -182,7 +182,8 @@ gui_shutdown( void )
        not per context: a viewport is a real OS window / RHI context, never context-owned. */
     for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
         viewport_destroy( v );
-    gui_type_clear();         /* release the type ramp's minted font slots + atlas tenants */
+    gui_type_clear();         /* drop the ramp roles + bracket stack (unpins the role ids) */
+    font_resolve_clear();     /* release the resolver's minted font slots + atlas tenants */
     gui_draw_shutdown();      /* draw unit resources (fonts + icons) leave the atlas first */
     backend_exit();       /* shared pipeline / sampler / atlas */
 

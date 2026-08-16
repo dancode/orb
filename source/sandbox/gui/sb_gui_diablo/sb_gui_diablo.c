@@ -626,7 +626,7 @@ main( int argc, char** argv )
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB -- sb_gui_diablo",
         .w     = 1600, .h = 900,
-        .font  = GUI_FONT_ROBOTO_16,
+        .font  = GUI_FONT_ROBOTO,
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,
@@ -642,10 +642,10 @@ main( int argc, char** argv )
     // gui()->set_force_redraw( true );
 
     /* Second font for the F1/F2 basis-unit test.  boot() put Roboto 16 in registry slot 0;
-       font_load_builtin loads a preset into a NEW registry id and activates it -- switch back
-       to slot 0 after.  0 on failure: F2 then just reselects slot 0. */
-    u32 font_big = gui()->font_load_builtin( GUI_FONT_CASCADIA_MONO_20 );
-    gui()->font_use( 0 );
+       font_get_builtin resolves a request into a NEW registry id without activating it, so
+       slot 0 stays the live font.  Worst case the resolver degrades to the default font --
+       F2 then just reselects slot 0. */
+    u32 font_big = gui()->font_get_builtin( GUI_FONT_CASCADIA_MONO, 20 );
     ui_kit_install();   /* the kit owns the element look -- install after every font landing */
 
     f32 dt = 0.0f;
