@@ -860,16 +860,16 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     if ( rot != 0.0f ) { rcs = cosf( rot ); rsn = sinf( rot ); }
 
     /* `reach`: how deep past the boundary this surface still has something to emit.  A RING stops
-       at the far side of its band; a HOLLOW box stops where its coverage saturates, which is half
-       the falloff plus a pixel of slack -- past that every fragment is the same solid colour the
-       caller's own opaque geometry covers.  A caller promising less than that (the elevation
-       shadow's downward offset, a fraction of the feather) does not shrink the hole below what the
-       field itself allows.  0 means the interior is emitted whole. */
-    f32 reach = 0.0f;
-    if ( mode == GUI_FX_RING )
-        reach = border + feather * 0.5f;
-    else if ( mode == GUI_FX_BOX && border > 0.0f )
-        reach = ( border > feather * 0.5f + 1.0f ) ? border : feather * 0.5f + 1.0f;
+       at the far side of its band.  A HOLLOW box stops exactly where its caller says the cover
+       starts -- and nowhere else, because occlusion is the ONLY thing that makes the cut safe.
+       Where the field happens to saturate does not enter it: a fragment behind opaque geometry is
+       invisible at any coverage, so a shadow whose feather reaches 20 px inward can still be cut
+       4 px in when that is where the panel over it turns opaque.  Cutting is a geometry edge, not
+       a coverage edge -- the band that survives carries the same affine effect coordinate it
+       always did, so the visible falloff is bit-identical either way. */
+    f32 reach = ( mode == GUI_FX_RING ) ? border + feather * 0.5f
+              : ( mode == GUI_FX_BOX  ) ? border
+                                        : 0.0f;
 
     /* The per-quadrant coverage, in quadrant-local |p| space: one box normally, two forming an L
        when there is an interior worth skipping.

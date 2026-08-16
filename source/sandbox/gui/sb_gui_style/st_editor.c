@@ -213,6 +213,21 @@ st_editor_window( void )
         changed = true;
     }
 
+    /* The flat hues the seed/ramp derivation does not produce: the four severity colours, the drop
+       highlight, and the elevation shadow -- whose ALPHA is the only strength knob shadows have
+       (GUI_VAR_SHADOW below sets their width, and the falloff curve itself is the fragment's).
+       These are NOT palette_changed and must not be: a bake derives the grid below from seeds and
+       ramp alone and merely COPIES ext through (gui_bake.c), so folding them in would re-derive all
+       48 cells -- silently discarding the hand-edits the next section exists to make -- for an
+       input the derivation never reads.  The copy is the whole update, so it is spelled here. */
+    gui()->separator_text( "Palette -- extended" );
+    for ( u32 i = 0; i < GUI_EXT_RESERVED_COUNT; ++i )
+        if ( se_color( gui()->style_ext_name( ( gui_style_ext_t )i ), &work.palette.ext[ i ] ) )
+        {
+            work.ext[ i ] = work.palette.ext[ i ];   /* what style_ext actually reads */
+            changed       = true;
+        }
+
     /* --- Colors: the DERIVED grid, a section per role ---------------------------------------
        Editing a cell here is legitimate and sticks: it is the "bake, then disagree" shape a kit
        uses, just spelled interactively.  Touch a seed or a ramp value above and the disagreement

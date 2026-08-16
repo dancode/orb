@@ -100,8 +100,8 @@
 /* palette.ext[GUI_EXT_RESERVED_COUNT] sits here in the struct -- right after ramp[], since it is
    the third and last field of gui_palette_t -- but earns no STYLE_xxx_SLOT of its own: nothing
    addresses "the authored default" by slot, only style.ext[] (STYLE_EXT_BASE, below) which is
-   what a bake copies it INTO and what style_ext / push_style_ext actually read.  The four u32s
-   still have to be counted here, or every base after them is wrong by four. */
+   what a bake copies it INTO and what style_ext / push_style_ext actually read.  They still have
+   to be counted here, or every base after them is off by GUI_EXT_RESERVED_COUNT. */
 #define STYLE_COL_BASE    ( STYLE_RAMP_BASE  + GUI_RAMP_COUNT + GUI_EXT_RESERVED_COUNT )   // col[][] starts after palette
 
 #define STYLE_COL_COUNT   ( GUI_ROLE_COUNT   * GUI_PHASE_COUNT )    // full size of col[][]
