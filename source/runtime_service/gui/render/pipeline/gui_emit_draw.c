@@ -1227,7 +1227,7 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
 
 static void
 draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 variant,
-                 f32 rate, f32 depth, f32 rot, u32 abgr )
+                 f32 rate, f32 depth, f32 rot, f32 cut_dx, f32 cut_dy, u32 abgr )
 {
     /* Cull against the GROWN box: the falloff skirt is real geometry (feather/2 past the rect,
        plus the tessellator's pixel of slack), and a shadow whose box is just off screen still
@@ -1261,19 +1261,26 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
     c->fx_box.rot      = rot;
     c->fx_box.abgr     = col;
     c->fx_box.variant  = variant;
+    c->fx_box.cut_dx   = cut_dx;
+    c->fx_box.cut_dy   = cut_dy;
     draw_cmd_seal();
 }
 
 void
 draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0u, 0.0f, 0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
+/* x,y,w,h is the CASTER; (ox, oy) is how far the shadow falls from it.  The command carries the
+   shadow's own rect, so the cut offset is the trip back to the caster -- the shape states where it
+   is drawn and the offset states what it is drawn under. */
 void
-draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
+draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
+                 f32 ox, f32 oy, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, feather, 1u, 0.0f, 0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x + ox, y + oy, w, h, rounding, feather, 1u,
+                     0.0f, 0.0f, 0.0f, -ox, -oy, abgr );
 }
 
 /* The inner shadow: the same surface with its falloff turned inward (GUI_OP_INSET), painting
@@ -1283,13 +1290,14 @@ draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr
 void
 draw_push_inset( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 depth, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, depth, 2u, 0.0f, 0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, depth, 2u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 void
 draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0u, rate, depth, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0u, rate, depth, 0.0f,
+                     0.0f, 0.0f, abgr );
 }
 
 /* The rotated box: same surface, four corner positions turned about the box centre.  The default
@@ -1300,7 +1308,7 @@ draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot
 {
     draw_fx_box_cmd( x, y, w, h, rounding,
                      ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
-                     0u, 0.0f, 0.0f, rot, abgr );
+                     0u, 0.0f, 0.0f, rot, 0.0f, 0.0f, abgr );
 }
 
 /*==============================================================================================
@@ -1320,7 +1328,7 @@ draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot
 void
 draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
                          f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
-                         u32 abgr, u32 col_b, f32 grad_ang )
+                         u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind )
 {
     /* Cull against the grown box: the falloff skirt is real geometry (feather/2 past the rect,
        plus the tessellator's pixel of slack) -- the draw_push_shadow rule. */
@@ -1347,7 +1355,8 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
     c->round_rect.feather  = feather;
     c->round_rect.abgr     = col;
     c->round_rect.col_b    = cb;
-    c->round_rect.grad_ang = grad_ang;
+    c->round_rect.grad_ang  = grad_ang;
+    c->round_rect.grad_kind = grad_kind;
     draw_cmd_seal();
 }
 

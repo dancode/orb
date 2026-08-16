@@ -775,12 +775,12 @@ typedef struct gui_api_s
        the GUI_VAR_*_SHAPE pick and push_style_var scopes it.)
 
        Pipeline note: draw_gradient is an exact one-quad blend via per-vertex color
-       (GUI_CMD_RECT_GRADIENT), and draw_shadow / draw_round_rect (uniform radius) are exact SDF
-       surfaces -- four quads whose fragment shader resolves the boundary analytically, so their
-       edges are antialiased at any radius and softness and they merge into the batch already
-       open.  Only genuinely per-corner radii still walk a tessellated perimeter.  Angles for
-       arc / pie / progress are radians, screen-space (y down).  `thickness` is the stroke width
-       for the stroked forms. */
+       (GUI_CMD_RECT_GRADIENT), and draw_shadow / draw_round_rect are exact SDF surfaces -- ONE
+       quad whose fragment shader resolves the boundary analytically, so their edges are
+       antialiased at any radius and softness and they merge into the batch already open.  Only a
+       STROKED per-corner outline still walks a tessellated perimeter; the filled form is a
+       surface like any other.  Angles for arc / pie / progress are radians, screen-space
+       (y down).  `thickness` is the stroke width for the stroked forms. */
 
     void ( *draw_check_mark        )( gui_rect_t box, u32 col );
     void ( *draw_arrow             )( gui_rect_t box, gui_dir_t dir, u32 col );
@@ -829,10 +829,21 @@ typedef struct gui_api_s
     void ( *draw_stripes           )( gui_rect_t box, f32 spacing, f32 thickness, f32 angle,
                                       u32 col );
     void ( *draw_gradient          )( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
+    /* Gradient fill of a ROUNDED box, resolved in the FRAGMENT off the primitive record.  `kind`
+       shapes the ramp and `angle` orients it: the axis for GUI_GRAD_LINEAR, the starting direction
+       for GUI_GRAD_CONIC, ignored by GUI_GRAD_RADIAL.  Radial and conic exist here and not on
+       draw_gradient because neither can be described by colours at a rectangle's corners. */
     void ( *draw_round_rect_gradient )( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
-                                        f32 angle );
+                                        gui_grad_t kind, f32 angle );
     void ( *draw_inset_shadow      )( gui_rect_t box, f32 depth, u32 col );
     void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );
+    /* The drop shadow proper: draw_shadow's falloff with the CASTER'S silhouette cut out of it,
+       laid (off_x, off_y) px away from the box that casts it.  Nothing paints inside `box`, so a
+       translucent panel shows what is behind it rather than its own shadow's core -- and because
+       the cut is taken against the caster while the falloff is measured from the shadow, the cast
+       has a DIRECTION.  (0, 0) is the even cast on all four sides.  Use draw_shadow for a glow
+       MEANT to be seen through its subject. */
+    void ( *draw_drop_shadow       )( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col );
 
     /* draw_pulse -- a rect whose fill alpha breathes in and out on a clock, for a "this is
        live / recording" indicator, without costing any extra GPU work each frame it breathes.

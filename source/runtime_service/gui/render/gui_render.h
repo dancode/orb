@@ -226,8 +226,12 @@ void draw_push_shadow           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
 /* The same surface with its interior cut away: same outward falloff, nothing painted inside the
    boundary.  What a DROP shadow is -- a filled one's core is only visible through the thing casting
    it, so a translucent panel ends up dimming itself.  Emits a band of quads around the frame rather
-   than the whole box.  Use draw_push_shadow for a glow meant to be seen THROUGH its subject. */
-void draw_push_skirt            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr );
+   than the whole box.  Use draw_push_shadow for a glow meant to be seen THROUGH its subject.
+   x,y,w,h is the CASTER and (ox, oy) is how far the shadow falls from it: the falloff is measured
+   from the shadow's outline while the cut is taken against the caster's, which is what makes the
+   cast DIRECTIONAL.  (0, 0) is the even cast on all four sides. */
+void draw_push_skirt            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
+                                  f32 ox, f32 oy, u32 abgr );
 
 /* The inner shadow -- the falloff turned INWARD, painting from the boundary `depth` px in and
    nothing outside it.  The pressed well / recessed field a drop shadow cannot express. */
@@ -242,12 +246,13 @@ void draw_push_box_xf           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
                                   u32 abgr );
 
 /* Push a filled box with four independent corner radii (tab / notch / asymmetric card).  Ignores
-   the ambient rounding -- the caller names every corner.  Solid colour, filled only; the stroked
-   form stays a perimeter polyline.  `feather` widens the falloff band exactly as draw_push_shadow's
-   does (0 = the standard 1 px AA) -- the per-corner soft shadow. */
+   the ambient rounding -- the caller names every corner.  Filled only; the stroked form stays a
+   perimeter polyline.  `feather` widens the falloff band exactly as draw_push_shadow's does
+   (0 = the standard 1 px AA) -- the per-corner soft shadow.
+   col_b != abgr makes it a ramp, shaped by `grad_kind` (gui_grad_t) and oriented by `grad_ang`. */
 void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
                                   f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
-                                  u32 abgr, u32 col_b, f32 grad_ang );
+                                  u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind );
 
 /* Push a circular sector -- a stroked arc with round caps, or a filled wedge with sharp radial
    edges.  Angles are radians in screen space (0 points +x, positive turns clockwise); a reversed

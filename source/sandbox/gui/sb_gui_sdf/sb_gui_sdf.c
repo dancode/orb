@@ -1491,6 +1491,8 @@ static f32  s_fill_ang    = 90.0f;    /* gradient angle, degrees (90 = top to bo
 static f32  s_fill_round  = 10.0f;
 static f32  s_fill_depth  = 14.0f;    /* inset falloff depth, px */
 static bool s_fill_spin;
+static f32  s_drop_x      = 0.0f;     /* directional cast, px */
+static f32  s_drop_y      = 10.0f;
 
 static void
 win_fills( void )
@@ -1507,38 +1509,44 @@ win_fills( void )
     }
     f32 ang = gui_radians( s_fill_ang );
 
-    gui()->separator_text( "rounded gradient -- any angle, four quads, one draw call" );
+    gui()->separator_text( "rounded gradient -- linear at any angle, radial, conic; one quad each" );
     {
         gui_rect_t r = gui()->canvas( 130.0f );
         gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
 
-        /* Three plates at the live angle.  A gradient on a ROUNDED rect had no expression at all
-           before this: draw_gradient is one square quad with two corner colours. */
+        /* The three ramp shapes, all on the live angle.  Only the LINEAR one has a vertex
+           expression at all -- colours at a rectangle's four corners cannot describe a ring or a
+           sweep -- which is why all three read from the record instead. */
         f32 w = ( r.w - 40.0f ) / 3.0f, h = r.h - 24.0f;
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 10.0f, r.y + 12.0f, w, h },
-                                         s_fill_round, TEAL, PANEL, ang );
+                                         s_fill_round, TEAL, PANEL, GUI_GRAD_LINEAR, ang );
+        /* Alpha ramps too, and it stays LINEAR -- alpha is coverage, never gamma encoded, so a
+           fade to transparent is even rather than crowded at one end. */
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 20.0f + w, r.y + 12.0f, w, h },
                                          s_fill_round,
                                          GUI_COLOR( 0xFF, 0x70, 0x50, 0xFF ),
-                                         GUI_COLOR( 0x50, 0x30, 0xA0, 0xFF ), ang );
-        /* Alpha ramps too, and it stays LINEAR -- alpha is coverage, never gamma encoded, so a
-           fade to transparent is even rather than crowded at one end. */
+                                         GUI_COLOR( 0xFF, 0x70, 0x50, 0x00 ),
+                                         GUI_GRAD_RADIAL, ang );
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 30.0f + w * 2.0f, r.y + 12.0f, w, h },
-                                         s_fill_round, INK, GUI_COLOR( 0xE8, 0xE0, 0xD0, 0x00 ), ang );
+                                         s_fill_round, INK, GUI_COLOR( 0xE8, 0xE0, 0xD0, 0xFF ),
+                                         GUI_GRAD_CONIC, ang );
     }
+    gui()->text( "left: linear, on the angle slider   middle: radial, fading to transparent at the "
+                 "rim   right: conic, its seam on the angle" );
 
     gui()->separator_text( "the midpoint test -- rounded vs square, same two endpoints" );
     {
-        /* The one thing that could go wrong invisibly.  The hardware interpolates the DECODED
-           colours, so the ramp is computed in linear light and re-encoded per vertex; lerping the
-           sRGB bytes instead would miss the centre by ~45/255 and these two bands would show a
-           seam where they meet.  They must read as ONE continuous ramp. */
+        /* The one thing that could go wrong invisibly.  These two ramps are produced by different
+           machinery -- the square one interpolates decoded colours across a quad's vertices, the
+           rounded one mixes them in the fragment off the record -- and both work in LINEAR light,
+           so they must read as ONE continuous ramp.  Mixing sRGB bytes on either side instead would
+           miss the centre by ~45/255 and show a seam where the two bands meet. */
         gui_rect_t r = gui()->canvas( 76.0f );
         u32 a = GUI_COLOR( 0x10, 0x20, 0xC0, 0xFF ), b = GUI_COLOR( 0xE0, 0xB0, 0x40, 0xFF );
 
         gui()->draw_gradient( ( gui_rect_t ){ r.x, r.y, r.w, 36.0f }, a, b, true );
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x, r.y + 38.0f, r.w, 36.0f },
-                                         0.0f, a, b, 0.0f );
+                                         0.0f, a, b, GUI_GRAD_LINEAR, 0.0f );
         gui()->text( "no seam at the centre = the linear-light round trip is doing its job" );
     }
 
@@ -1567,13 +1575,47 @@ win_fills( void )
         /* Composed: an inset over a gradient, which is the point of an op -- it modifies whatever
            the fill happened to be instead of replacing it with a shape of its own. */
         gui_rect_t w2 = { r.x + 30.0f + w * 2.0f, r.y + 12.0f, w, h };
-        gui()->draw_round_rect_gradient( w2, s_fill_round, TEAL, PANEL, ang );
+        gui()->draw_round_rect_gradient( w2, s_fill_round, TEAL, PANEL, GUI_GRAD_LINEAR, ang );
         gui()->draw_inset_shadow( w2, s_fill_depth, GUI_COLOR( 0x00, 0x00, 0x00, 0xA0 ) );
 
         gui()->draw_set_rounding( 0.0f );
     }
 
     gui()->text( "left: pressed well   middle: the drop shadow it mirrors   right: inset over a gradient" );
+
+    gui()->separator_text( "the DIRECTIONAL cast -- two boundaries in one field" );
+    gui()->slider_float( "cast x (px)", &s_drop_x, -30.0f, 30.0f );
+    gui()->slider_float( "cast y (px)", &s_drop_y, -30.0f, 30.0f );
+    {
+        /* draw_drop_shadow cuts the CASTER'S silhouette out of the falloff rather than its own, so
+           the shadow can be laid off-centre: the near side stays flush against the card's border
+           while the far side reaches its full spread.  Cutting against its own outline instead --
+           what every skirt did before the record carried a second boundary -- opens a gap on one
+           side and lays shadow inside the card on the other.
+           Both cards are TRANSLUCENT, which is the case that makes the cut visible at all: a
+           filled shadow would show its core through them as the card dimming itself. */
+        gui_rect_t r = gui()->canvas( 160.0f );
+        gui()->draw_checker( r, 12.0f, GUI_COLOR( 0x2A, 0x2A, 0x30, 0xFF ),
+                                       GUI_COLOR( 0x22, 0x22, 0x28, 0xFF ) );
+
+        f32        w  = ( r.w - 30.0f ) / 2.0f, h = r.h - 40.0f;
+        gui_rect_t c0 = { r.x + 10.0f, r.y + 20.0f, w, h };
+        gui_rect_t c1 = { r.x + 20.0f + w, r.y + 20.0f, w, h };
+
+        gui()->draw_set_rounding( s_fill_round );
+        gui()->draw_drop_shadow( c0, s_fill_depth, 0.0f, 0.0f,
+                                 GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
+        gui()->draw_round_rect( c0, s_fill_round, s_fill_round, s_fill_round, s_fill_round,
+                                true, 0.0f, GUI_COLOR( 0x50, 0x54, 0x60, 0x90 ) );
+
+        gui()->draw_drop_shadow( c1, s_fill_depth, s_drop_x, s_drop_y,
+                                 GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
+        gui()->draw_round_rect( c1, s_fill_round, s_fill_round, s_fill_round, s_fill_round,
+                                true, 0.0f, GUI_COLOR( 0x50, 0x54, 0x60, 0x90 ) );
+        gui()->draw_set_rounding( 0.0f );
+    }
+    gui()->text( "left: the even cast (offset 0)   right: the same shadow on the sliders -- no gap "
+                 "on the near side, no shadow inside the card" );
     gui()->text( "an inset's interior is HOLLOW -- the band is only `depth` deep, so one on a "
                  "full-size panel costs the rim, not the panel" );
 

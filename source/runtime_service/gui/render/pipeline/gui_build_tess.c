@@ -761,35 +761,34 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 }
 
 /*==============================================================================================
-    The SDF surface -- every rounded shape, in four quads.
+    The SDF surface -- every rounded shape, in ONE quad.
 
     A rounded box used to be tessellated: a cached quarter arc fanned into ~37 vertices with hard
-    stair-stepped edges, and a texture could not ride on it at all.  Here the CPU emits only the
-    QUADRANTS and the fragment shader resolves the boundary exactly (gui.h, the effect band).
+    stair-stepped edges, and a texture could not ride on it at all.  Here the CPU emits a covering
+    and the fragment shader resolves the boundary exactly (gui.h, the effect band).
 
-    Why four quads and not one.  The fragment needs `|p| - c`, where p is its offset from the
-    shape centre.  The absolute value folds at the centre lines, and a linear interpolator cannot
-    reproduce a fold -- but within ONE QUADRANT the sign of p is fixed, so |p| is affine there and
-    the hardware interpolates it exactly.  Four quads is the cheapest partition on which the
-    interpolation is correct, and it is still less than half the vertices the arc fan cost.  The
-    quadrants meet at the centre lines where both sides evaluate to the same value, so there is
-    no seam.
+    The covering is one quad.  It was four -- one per quadrant -- while the fragment received
+    `|p| - c` interpolated from the vertices: an absolute value folds at the centre lines and no
+    linear interpolator reproduces a fold, so the shape had to be cut into pieces on which the sign
+    of p was fixed.  The fragment derives that coordinate from its own pixel position now, so the
+    partition has nothing left to buy.
 
     The geometry is grown by `pad` past the box so the falloff has somewhere to land: a feathered
     edge (and a shadow's whole soft skirt) is OUTSIDE the shape's own rect.  The BOUNDARY still
     sits exactly on the authored rect -- pad moves the triangles, never the shape.
 
-    A surface with nothing to paint inside carves its interior out, emitting an L (two quads) per
-    quadrant around the hole instead of one quad -- where the 8/32 upper bound below comes from.
-    Three ops qualify.  BAND paints a border only `border` px wide, so rasterizing the whole inside
-    of a window frame at zero coverage is a real cost on a large panel.  CUT paints nothing at all
-    inside its boundary: the elevation shadow under floating chrome is a band of quads around the
-    frame rather than a plate spanning the window, roughly a tenth of the area.  INSET paints
-    `feather` px in from the boundary, so an inner shadow on a full panel costs the rim.
+    A surface with nothing to paint inside carves its interior out, covered by a FRAME of four
+    quads around the hole instead of one quad spanning it -- where the 16/24 upper bound below
+    comes from.  Three ops qualify.  BAND paints a border only `border` px wide, so rasterizing the
+    whole inside of a window frame at zero coverage is a real cost on a large panel.  CUT paints
+    nothing at all inside its boundary: the elevation shadow under floating chrome is a band of
+    quads around the frame rather than a plate spanning the window, roughly a tenth of the area.
+    INSET paints `feather` px in from the boundary, so an inner shadow on a full panel costs the
+    rim.
 
-    Every SDF surface samples the same atlas as everything else and carries its mode per VERTEX,
-    so it merges into whatever GPU command is already open: a soft shadow behind a panel costs
-    a batch split of zero.
+    Every SDF surface samples the same atlas as everything else and names its shape through a
+    RECORD, so it merges into whatever GPU command is already open: a soft shadow behind a panel
+    costs a batch split of zero.
 ==============================================================================================*/
 
 /* Emit one SDF surface.  `r4` is the corner radius PER QUADRANT, in the tessellation order
@@ -829,100 +828,26 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
    position first, so a textured rotated box still maps its picture across the authored rect and
    clamps over the skirt exactly as the upright one does. */
 /*----------------------------------------------------------------------------------------------
-    tess_grad_t -- a linear colour ramp carried by the box's own VERTICES.
+    tess_fx_aux_t -- the two extras a box surface can carry, absent from every plain fill.
 
-    Colour is affine in position along a linear gradient, and vertex interpolation is affine, so
-    evaluating the ramp at each corner reproduces it EXACTLY across every quad -- at any angle,
-    for no fx mode, no packed bits and no shader work.  The vertices a rounded box already
-    emits are more than the two a gradient needs.
-
-    The packed effect word could not have expressed this: a box's coordinate was |p| - c, folded at
-    the VERTEX, so the fragment could not tell one side of the shape from the other -- the same
-    limit that ruled out a directional drop shadow.  That limit is gone now the fragment derives a
-    SIGNED local coordinate, so this ramp could move into the record whenever something wants a
-    gradient the vertices cannot carry; it stays here because vertices carry this one for free.
-
-    The ramp runs in LINEAR light and is re-encoded to sRGB per vertex.  That is what makes a
-    rounded gradient agree with the square draw_gradient at its midpoint: the hardware interpolates
-    the DECODED colours, so lerping the sRGB bytes here would put a different colour on the centre
-    line than the same two endpoints produce across one quad.
+    One pointer rather than four more parameters, because that is what they are: a rarely-taken
+    branch off a call that already states sixteen things.  Both are read only when the op that owns
+    them is set, the same rule `border` and `rate`/`depth` follow.
 ----------------------------------------------------------------------------------------------*/
 typedef struct
 {
-    f32 lin_a[ 4 ], lin_b[ 4 ];   // endpoints in linear light; alpha stays linear (it is coverage)
-    f32 dx, dy;                   // gradient axis, box-local, unit length
-    f32 inv_len;                  // 1 / the box's extent along that axis (0 for a degenerate box)
+    u32 grad_col;         // GUI_OP_GRAD: the ramp's far colour
+    f32 grad_ang;         // GUI_OP_GRAD: axis, radians, box-local, 0 points +x (linear ramp only)
+    f32 cut_dx, cut_dy;   // GUI_OP_CUT: the cut boundary's centre, offset from this shape's
 
-} tess_grad_t;
+} tess_fx_aux_t;
 
-/* The sRGB transfer curve, both directions -- the same pair base/math_color.h states for vec4 and
-   both shader twins state for float3.  Kept local as two scalars rather than reached for: the ramp
-   needs the curve on a channel, not the vector colour type that header is built around. */
-static f32
-tess_srgb_to_linear( f32 c )
-{
-    return ( c <= 0.04045f ) ? c / 12.92f : powf( ( c + 0.055f ) / 1.055f, 2.4f );
-}
-
-static f32
-tess_linear_to_srgb( f32 c )
-{
-    return ( c <= 0.0031308f ) ? c * 12.92f : 1.055f * powf( c, 1.0f / 2.4f ) - 0.055f;
-}
-
-static void
-tess_grad_unpack( u32 abgr, f32* out )
-{
-    out[ 0 ] = tess_srgb_to_linear( (f32)(   abgr         & 0xFFu ) / 255.0f );
-    out[ 1 ] = tess_srgb_to_linear( (f32)( ( abgr >>  8 ) & 0xFFu ) / 255.0f );
-    out[ 2 ] = tess_srgb_to_linear( (f32)( ( abgr >> 16 ) & 0xFFu ) / 255.0f );
-    out[ 3 ] =                      (f32)( ( abgr >> 24 ) & 0xFFu ) / 255.0f;
-}
-
-static void
-tess_grad_init( tess_grad_t* g, u32 col_a, u32 col_b, f32 ang, f32 w, f32 h )
-{
-    f32 cs = cosf( ang ), sn = sinf( ang );
-    g->dx = cs;
-    g->dy = sn;
-
-    /* The box's own extent along the axis -- the support width of a projected rectangle.  The ramp
-       therefore spans the SHAPE at any angle, instead of running off it on the diagonal. */
-    f32 len = fabsf( w * cs ) + fabsf( h * sn );
-    g->inv_len = ( len > 1e-6f ) ? 1.0f / len : 0.0f;
-
-    tess_grad_unpack( col_a, g->lin_a );
-    tess_grad_unpack( col_b, g->lin_b );
-}
-
-/* The ramp at a box-LOCAL offset from the centre (pre-rotation, so the gradient turns with the
-   box).  t clamps to [0,1]: the ramp spans the box exactly, and the falloff skirt outside it
-   carries the end colours rather than extrapolating past them -- which would wrap on the u8 pack. */
-static u32
-tess_grad_col( const tess_grad_t* g, f32 lx, f32 ly )
-{
-    f32 t = ( lx * g->dx + ly * g->dy ) * g->inv_len + 0.5f;
-    if ( t < 0.0f ) t = 0.0f;
-    if ( t > 1.0f ) t = 1.0f;
-
-    u32 out = 0u;
-    for ( u32 i = 0; i < 3u; ++i )
-    {
-        f32 c = tess_linear_to_srgb( g->lin_a[ i ] + ( g->lin_b[ i ] - g->lin_a[ i ] ) * t );
-        u32 b = (u32)( c * 255.0f + 0.5f );
-        out |= ( ( b > 255u ) ? 255u : b ) << ( i * 8u );
-    }
-    f32 a  = g->lin_a[ 3 ] + ( g->lin_b[ 3 ] - g->lin_a[ 3 ] ) * t;
-    u32 ab = (u32)( a * 255.0f + 0.5f );
-    return out | ( ( ( ab > 255u ) ? 255u : ab ) << 24u );
-}
-
-/* `grad` NULL is the flat fill in `abgr` -- every caller but the gradient one passes NULL. */
+/* `aux` NULL is a plain fill with neither extra -- almost every caller. */
 static void
 tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
                   f32 feather, f32 border, f32 rate, f32 depth, f32 rot,
                   f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr,
-                  const tess_grad_t* grad )
+                  const tess_fx_aux_t* aux )
 {
     if ( w <= 0.0f || h <= 0.0f )
         return;
@@ -1016,6 +941,43 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     s_tess.cur_prim.param_a = ( s_tess.cur_ops & GUI_OP_PULSE ) ? rate  : 0.0f;
     s_tess.cur_prim.param_b = ( s_tess.cur_ops & GUI_OP_PULSE ) ? depth : 0.0f;
 
+    /* GUI_OP_GRAD -- the ramp's far colour and its axis.  The axis is stored ALREADY DIVIDED by
+       the box's extent along it (the support width of a projected rectangle), so the ramp spans
+       the shape at any angle and the fragment recovers t with one dot product instead of
+       repeating this per pixel.  A conic sweep has no extent to divide by: it stores the unit
+       direction it starts from. */
+    if ( aux && ( s_tess.cur_ops & GUI_OP_GRAD ) )
+    {
+        s_tess.cur_prim.col_b = aux->grad_col;
+
+        /* A radial ramp has no axis, so it stays ZERO rather than carrying an angle the fragment
+           will not read -- otherwise two identical radial fills authored at different angles take
+           two records for no reason (tess_prim_local memos on the record's bytes). */
+        if ( !( s_tess.cur_ops & GUI_OP_GRAD_RADIAL ) )
+        {
+            f32 cs = cosf( aux->grad_ang ), sn = sinf( aux->grad_ang );
+            if ( !( s_tess.cur_ops & GUI_OP_GRAD_CONIC ) )
+            {
+                f32 len = fabsf( w * cs ) + fabsf( h * sn );
+                f32 inv = ( len > 1e-6f ) ? 1.0f / len : 0.0f;
+                cs *= inv;
+                sn *= inv;
+            }
+            s_tess.cur_prim.grad_x = cs;
+            s_tess.cur_prim.grad_y = sn;
+        }
+    }
+
+    /* GUI_OP_CUT -- where the cut boundary sits.  Zero is the shape cutting itself, which is every
+       caller that wants a shadow cast straight down onto the ground under its subject; a non-zero
+       offset is the DIRECTIONAL cast, the falloff measured from this outline while the hole is
+       taken against the caster's. */
+    if ( aux && ( s_tess.cur_ops & GUI_OP_CUT ) )
+    {
+        s_tess.cur_prim.cut_dx = aux->cut_dx;
+        s_tess.cur_prim.cut_dy = aux->cut_dy;
+    }
+
     /* `reach`: how deep past the boundary this surface paints nothing, so the geometry need not
        reach there either.  A BAND stops at the far side of its border; a CUT stops at the boundary
        itself, since its coverage is zero inside (a pixel of slack keeps the hole clear of the
@@ -1064,12 +1026,29 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         if ( er < 0.0f ) er = 0.0f;
         f32 hix = ( hx - reach - er ) + er * 0.70710678f;
         f32 hiy = ( hy - reach - er ) + er * 0.70710678f;
-        if ( hix > 0.0f && hiy > 0.0f )
+
+        /* The hole sits around the shape's own centre -- unless the cut boundary has moved off it,
+           in which case what paints nothing is the interior of BOTH, and the intersection of two
+           axis-aligned boxes is one axis-aligned box.  Intersecting is conservative where only the
+           cut is in play (the hole could be the whole offset box), and a few pixels of extra
+           interior costs less than a second rule. */
+        f32 hlo_x = -hix, hhi_x = hix;
+        f32 hlo_y = -hiy, hhi_y = hiy;
+        f32 cdx   = s_tess.cur_prim.cut_dx, cdy = s_tess.cur_prim.cut_dy;
+        if ( cdx != 0.0f || cdy != 0.0f )
         {
-            qlo_x[ 0 ] = -ehx;  qlo_y[ 0 ] = -ehy;  qhi_x[ 0 ] =  ehx;  qhi_y[ 0 ] = -hiy; /* top   */
-            qlo_x[ 1 ] = -ehx;  qlo_y[ 1 ] =  hiy;  qhi_x[ 1 ] =  ehx;  qhi_y[ 1 ] =  ehy; /* base  */
-            qlo_x[ 2 ] = -ehx;  qlo_y[ 2 ] = -hiy;  qhi_x[ 2 ] = -hix;  qhi_y[ 2 ] =  hiy; /* left  */
-            qlo_x[ 3 ] =  hix;  qlo_y[ 3 ] = -hiy;  qhi_x[ 3 ] =  ehx;  qhi_y[ 3 ] =  hiy; /* right */
+            if ( cdx - hix > hlo_x ) hlo_x = cdx - hix;
+            if ( cdx + hix < hhi_x ) hhi_x = cdx + hix;
+            if ( cdy - hiy > hlo_y ) hlo_y = cdy - hiy;
+            if ( cdy + hiy < hhi_y ) hhi_y = cdy + hiy;
+        }
+
+        if ( hhi_x > hlo_x && hhi_y > hlo_y )
+        {
+            qlo_x[ 0 ] = -ehx;   qlo_y[ 0 ] = -ehy;    qhi_x[ 0 ] = ehx;     qhi_y[ 0 ] = hlo_y; /* top   */
+            qlo_x[ 1 ] = -ehx;   qlo_y[ 1 ] =  hhi_y;  qhi_x[ 1 ] = ehx;     qhi_y[ 1 ] = ehy;   /* base  */
+            qlo_x[ 2 ] = -ehx;   qlo_y[ 2 ] =  hlo_y;  qhi_x[ 2 ] = hlo_x;   qhi_y[ 2 ] = hhi_y; /* left  */
+            qlo_x[ 3 ] =  hhi_x; qlo_y[ 3 ] =  hlo_y;  qhi_x[ 3 ] = ehx;     qhi_y[ 3 ] = hhi_y; /* right */
             nq = 4;
         }
     }
@@ -1099,9 +1078,6 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
             f32 tv = vhi > vlo ? v0 + ( v1 - v0 ) * ( py - y ) / h : v0;
             if ( tu < ulo ) tu = ulo;  if ( tu > uhi ) tu = uhi;
             if ( tv < vlo ) tv = vlo;  if ( tv > vhi ) tv = vhi;
-            /* The ramp reads the box-LOCAL offset, which is the pre-rotation one -- so the
-               gradient turns with the box exactly as the uv does. */
-            u32 vcol = grad ? tess_grad_col( grad, lx, ly ) : abgr;
             /* The turn, LAST: uv came from the unrotated position, so only the world position
                rotates about the centre.  The fragment un-rotates by the same pair to recover the
                box-local coordinate it needs. */
@@ -1110,7 +1086,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
                 px = cx + lx * rcs - ly * rsn;
                 py = cy + lx * rsn + ly * rcs;
             }
-            v[ n * 4 + c ] = gui_vert( px, py, tu, tv, vcol );
+            v[ n * 4 + c ] = gui_vert( px, py, tu, tv, abgr );
         }
         tess_quad_idx( &idx[ n * 6 ], (u16)( base + n * 4 ) );
     }
@@ -1123,11 +1099,12 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
    of a per-corner one, and it keeps a single tessellator for both. */
 static void
 tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rate, f32 depth,
-             f32 rot, f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
+             f32 rot, f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr,
+             const tess_fx_aux_t* aux )
 {
     const f32 r4[ 4 ] = { r, r, r, r };
     tess_fx_box_core( x, y, w, h, r4, feather, border, rate, depth, rot,
-                      u0, v0, u1, v1, tex_idx, abgr, NULL );
+                      u0, v0, u1, v1, tex_idx, abgr, aux );
 }
 
 /* TESS_FX_AA -- the default 1 px antialiasing band -- lives in gui_render.h now: the emit side
@@ -1172,7 +1149,7 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
 {
     tess_fx_box( pcx - r, pcy - r, r * 2.0f, r * 2.0f,
                  r, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f,
-                 0, 0, 1, 1, 0, abgr );
+                 0, 0, 1, 1, 0, abgr, NULL );
 }
 
 /*==============================================================================================
@@ -1187,14 +1164,18 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
         perimeter fan, 4 rounded corners   ~70 verts / ~200 idx, 62 commands, aliased
         the field                            4 verts /    6 idx,  1 command,  antialiased
 
-    Solid colour and the standard 1 px AA band, because that is what the callers want, not a limit
-    of the field.
+    The RAMP rides the same record.  A linear one could be carried by the four vertices instead --
+    colour is affine along the axis and so is interpolation -- but only a linear one, and only
+    approximately: the corners it would be evaluated at are the FALLOFF SKIRT's, a pixel or more
+    outside the shape, so the ramp arrives stretched by however wide the skirt is.  Resolved in the
+    fragment it spans the shape exactly, and the two ramps a rectangle's corners cannot describe at
+    all -- radial and conic -- cost the same one branch.
 ==============================================================================================*/
 
 static void
 tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
                     f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
-                    u32 abgr, u32 col_b, f32 grad_ang )
+                    u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind )
 {
     /* Corner order: top-left, top-right, bottom-right, bottom-left -- the order gui_cmd_t
        .round_rect declares its radii in, and the order the record's r_tl/r_tr/r_br/r_bl carry
@@ -1202,15 +1183,21 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
        the standard AA band clamps up -- 0 means "crisp", never "hard-edged". */
     const f32 r4[ 4 ] = { rtl, rtr, rbr, rbl };
 
-    /* Equal endpoints ARE a flat fill, so the ramp is skipped rather than special-cased: running
-       it would land the same colour on every vertex, only after two transfer-curve round trips. */
-    tess_grad_t grad;
+    /* Equal endpoints ARE a flat fill, so the op is left off rather than special-cased: a ramp
+       between one colour and itself is that colour, and the fragment should not pay for it. */
+    tess_fx_aux_t aux = { 0 };
     if ( col_b != abgr )
-        tess_grad_init( &grad, abgr, col_b, grad_ang, w, h );
+    {
+        s_tess.cur_ops |= GUI_OP_GRAD;
+        if ( grad_kind == (u32)GUI_GRAD_RADIAL ) s_tess.cur_ops |= GUI_OP_GRAD_RADIAL;
+        if ( grad_kind == (u32)GUI_GRAD_CONIC  ) s_tess.cur_ops |= GUI_OP_GRAD_CONIC;
+        aux.grad_col = col_b;
+        aux.grad_ang = grad_ang;
+    }
 
     tess_fx_box_core( x, y, w, h, r4, ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
                       0.0f, 0.0f, 0.0f, 0.0f,
-                      0, 0, 1, 1, 0, abgr, ( col_b != abgr ) ? &grad : NULL );
+                      0, 0, 1, 1, 0, abgr, &aux );
 }
 
 /*==============================================================================================
@@ -1292,7 +1279,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
         s_tess.cur_ops |= GUI_OP_BAND;
         tess_fx_box( pcx - outer, pcy - outer, outer * 2.0f, outer * 2.0f,
                      outer, TESS_FX_AA, thickness, 0.0f, 0.0f, 0.0f,
-                     0, 0, 1, 1, 0, abgr );
+                     0, 0, 1, 1, 0, abgr, NULL );
         return;
     }
 
@@ -1986,7 +1973,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                     tess_fx_box( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
                                  c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f,
                                  c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
-                                 c->rect.tex_idx, c->rect.abgr );
+                                 c->rect.tex_idx, c->rect.abgr, NULL );
                 else
                     tess_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
                                       c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
@@ -2003,7 +1990,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                                  c->rect_outline.w, c->rect_outline.h,
                                  c->rect_outline.rounding, TESS_FX_AA, c->rect_outline.t,
                                  0.0f, 0.0f, 0.0f,
-                                 0, 0, 1, 1, 0, c->rect_outline.abgr );
+                                 0, 0, 1, 1, 0, c->rect_outline.abgr, NULL );
                 }
                 else
                     tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
@@ -2025,21 +2012,31 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 if ( c->fx_box.variant == 1u )   s_tess.cur_ops |= GUI_OP_CUT;
                 if ( c->fx_box.variant == 2u )   s_tess.cur_ops |= GUI_OP_INSET;
                 if ( c->fx_box.rate    > 0.0f )  s_tess.cur_ops |= GUI_OP_PULSE;
-                tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
-                             c->fx_box.rounding, c->fx_box.feather, 0.0f,
-                             c->fx_box.rate, c->fx_box.depth, c->fx_box.rot,
-                             0, 0, 1, 1, 0, c->fx_box.abgr );
+                {
+                    /* The cut boundary, for the DIRECTIONAL cast: the command states where the
+                       shadow is drawn, and this says where the caster it belongs to sits relative
+                       to it.  Zero for every other variant, and the aux is read only under the op
+                       that owns it. */
+                    tess_fx_aux_t aux = { 0 };
+                    aux.cut_dx = c->fx_box.cut_dx;
+                    aux.cut_dy = c->fx_box.cut_dy;
+                    tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
+                                 c->fx_box.rounding, c->fx_box.feather, 0.0f,
+                                 c->fx_box.rate, c->fx_box.depth, c->fx_box.rot,
+                                 0, 0, 1, 1, 0, c->fx_box.abgr, &aux );
+                }
                 break;
 
-            /* Four quadrants, four radii, four words -- and still one surface, one command and no
-               batch split, exactly like the uniform fill it generalizes. */
+            /* Four radii and a ramp -- and still one surface, one command and no batch split,
+               exactly like the uniform fill it generalizes. */
             case GUI_CMD_ROUND_RECT_EX:
                 tess_round_rect_ex( c->round_rect.x, c->round_rect.y,
                                     c->round_rect.w, c->round_rect.h,
                                     c->round_rect.rtl, c->round_rect.rtr,
                                     c->round_rect.rbr, c->round_rect.rbl,
                                     c->round_rect.feather, c->round_rect.abgr,
-                                    c->round_rect.col_b, c->round_rect.grad_ang );
+                                    c->round_rect.col_b, c->round_rect.grad_ang,
+                                    c->round_rect.grad_kind );
                 break;
 
             /* The sectors share their geometry and differ only in the field the fragment

@@ -140,6 +140,7 @@ const gui_api_t g_gui_api_struct =
     .draw_inset_shadow                  = gui_draw_inset_shadow,
     .draw_stripes                       = gui_draw_stripes,
     .draw_shadow                        = gui_draw_shadow,
+    .draw_drop_shadow                   = gui_draw_drop_shadow,
     .draw_pulse                         = gui_draw_pulse,
     .draw_text_outline                  = gui_draw_text_outline,
     .draw_text_shadow                   = gui_draw_text_shadow,

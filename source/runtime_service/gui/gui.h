@@ -1663,7 +1663,9 @@ typedef enum
 
     What is left is the three quantities that genuinely VARY across a primitive, plus the one
     number naming everything that does not.  Colour stays per-vertex because it earns it: the
-    rounded gradient, the plot and the per-vertex-coloured polyline all interpolate it.
+    square gradient, the plot and the per-vertex-coloured polyline all interpolate it.  A ramp on a
+    SHAPE does not -- it rides the record (GUI_OP_GRAD), where it spans the shape exactly and can
+    be radial or conic rather than only linear.
 
     TWO of the four are packed, and the shader is unaware of it: the fetch unit widens every
     normalized format to float, so the vertex stage still declares vec2 / vec4 and reads the same
@@ -1855,20 +1857,32 @@ typedef struct
          GRID           param = cell, line thickness, angle
          TILE_U         param_a = repeat count
          TEXT_EDGE      param_a = outline width                   col_b = the outline colour
-         GUI_OP_PULSE   param_a = rate (Hz), param_b = depth      (on any field it modifies) */
+         GUI_OP_PULSE   param_a = rate (Hz), param_b = depth      (on any field it modifies)
+         GUI_OP_GRAD    col_b   = the ramp's far colour */
     f32 param_a, param_b, param_c;
     u32 col_b;
 
+    /* Row 5 -- the two things that are a SECOND of something the rows above state once, both in
+       the shape's local frame (prim_local's frame, so both turn with the shape).
+         GUI_OP_GRAD  grad = the ramp's axis, ALREADY DIVIDED by the shape's extent along it, so
+                             the fragment spans the shape with one dot product.  Under GRAD_CONIC
+                             it is the unit direction the sweep starts from; GRAD_RADIAL ignores
+                             it and measures against the half-extent directly.
+         GUI_OP_CUT   cut  = the centre of the boundary the cut is taken against, as an offset
+                             from this shape's own centre.  (0,0) -- every caller before the
+                             directional shadow -- cuts against the shape itself. */
+    f32 grad_x, grad_y, cut_dx, cut_dy;
+
 } gui_prim_t;
 
-/* 80 bytes = five std430 rows of four 32-bit components, so the fragment indexes the buffer as
+/* 96 bytes = six std430 rows of four 32-bit components, so the fragment indexes the buffer as
    `prim * GUI_PRIM_ROWS + row` with no padding to account for.  Pinned because the shaders spell
    that stride as a literal. */
-#define GUI_PRIM_ROWS   5u
+#define GUI_PRIM_ROWS   6u
 #define GUI_PRIM_BYTES  ( GUI_PRIM_ROWS * 16u )
 
 ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
-                   "gui_prim_t must stay five 16-byte rows -- the shaders index it as vec4[]" );
+                   "gui_prim_t must stay whole 16-byte rows -- the shaders index it as vec4[]" );
 
 /* The modifier bits.  They are a WORD OF THEIR OWN here, where in the packed layout they had to be
    carved out of the texture index: an op composes with any field and with any other op, so it can
@@ -1879,6 +1893,24 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
 #define GUI_OP_PULSE    ( 1u << 3 )   /* breathe coverage on the frame clock (param_a/param_b) */
 #define GUI_OP_STRIPES  ( 1u << 4 )   /* GRID: cut on one axis only -- a stripe field          */
 #define GUI_OP_SELF     ( 1u << 5 )   /* solid colour: do not consult the texel at all         */
+#define GUI_OP_GRAD     ( 1u << 6 )   /* ramp the fill from its own colour toward col_b        */
+
+/* The ramp's SHAPE, under GUI_OP_GRAD.  At most one; neither is the linear ramp, and the fragment
+   tests radial first, so both set reads as radial rather than as undefined.  Bits rather than a
+   small enum because they belong to the op word every other modifier lives in -- and unlike the
+   modifiers they are alternatives, which is a property of what a ramp IS, not of the storage. */
+#define GUI_OP_GRAD_RADIAL  ( 1u << 7 )   /* centre -> rim, against the shape's own half-extent */
+#define GUI_OP_GRAD_CONIC   ( 1u << 8 )   /* one full turn about the centre from the grad axis  */
+
+/* Which way a ramp runs, as a draw parameter.  The record carries it as the op bits above; this is
+   the spelling a caller uses, where "at most one" is a property of the type rather than a rule. */
+typedef enum
+{
+    GUI_GRAD_LINEAR = 0,   // along `angle`, spanning the shape's extent on that axis
+    GUI_GRAD_RADIAL,       // centre -> rim, against the shape's own half-extent
+    GUI_GRAD_CONIC,        // one full turn about the centre, starting from `angle`
+
+} gui_grad_t;
 
 /*----------------------------------------------------------------------------------------------
     The packed vertex, and the two constructors that are the ONLY supported way to build one.
@@ -2185,8 +2217,15 @@ typedef struct
              2 INSET  -- the falloff turned INWARD (GUI_OP_INSET), painting from the boundary
                          `feather` px in and nothing outside.  The inner shadow / pressed well.
            A non-zero `rate` adds GUI_OP_PULSE on top of whichever variant is set, so a cut or
-           inset surface can breathe as readily as a filled one. */
-        struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr, variant; } fx_box;
+           inset surface can breathe as readily as a filled one.
+           `cut_dx`/`cut_dy` move the SKIRT's cut off the shape it is drawn on: x,y,w,h is where
+           the shadow lies and the cut offset says where the caster sits relative to it, so the
+           falloff is measured from one outline while the hole is taken against another.  That is
+           what makes a cast DIRECTIONAL, and 0 is the even one every caller had before.  The
+           offset is in the shape's LOCAL frame -- the same as screen for the axis-aligned boxes
+           that are the only things which cast. */
+        struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr, variant;
+                 f32 cut_dx, cut_dy; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME one quad a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape
@@ -2201,16 +2240,16 @@ typedef struct
            `feather` is the falloff band exactly as fx_box carries it -- 0 gets the standard 1 px
            AA, wider makes the per-corner SOFT SHADOW (the tab / asymmetric-card drop shadow); the
            quadrants agree at any feather (tess_fx_box_core's centre-line proof).
-           `col_b` + `grad_ang` make it a LINEAR GRADIENT fill: the ramp runs abgr -> col_b along
-           the axis at `grad_ang` (radians, box-local, 0 points +x), spanning the box exactly and
-           holding its end colours across the AA skirt.  col_b == abgr is a flat fill, which is
-           not a special case but the honest degenerate one -- the tessellator runs the same path.
-           The ramp is carried by the box's own VERTICES, not by the effect word, so it costs no
-           fx mode and no packed bits (see tess_grad_t); the effect word could not express it in
-           any case, because the box's folded effect coordinate cannot tell one side of the shape
-           from the other. */
+           `col_b` makes it a GRADIENT fill: the ramp runs abgr -> col_b, shaped by `grad_kind`
+           (gui_grad_t) and oriented by `grad_ang` (radians, box-local, 0 points +x -- the axis for
+           a linear ramp, the starting direction for a conic one, ignored by a radial one).  A
+           linear ramp spans the box exactly and holds its end colours across the AA skirt.
+           col_b == abgr is a flat fill, which is not a special case but the honest degenerate one:
+           the op is simply left off.
+           The ramp reaches the fragment through the RECORD (GUI_OP_GRAD), which is why radial and
+           conic exist at all -- neither can be described by colours at a rectangle's corners. */
         struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather; u32 abgr; u32 col_b;
-                 f32 grad_ang; } round_rect;
+                 f32 grad_ang; u32 grad_kind; } round_rect;
         /* Circular sector -- ONE member serving GUI_CMD_ARC and GUI_CMD_PIE, which differ only in
            the field the fragment evaluates, not in anything they carry.  Angles are radians in
            screen space (0 points +x, positive turns clockwise, matching text_xf.rot); a1 < a0 is

@@ -53,7 +53,8 @@ void draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w );
 void draw_bullet( f32 cx, f32 cy, f32 r, u32 color );
 void draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
 void draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
-void draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, f32 angle );
+void draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
+                               gui_grad_t kind, f32 angle );
 void draw_inset_shadow( gui_rect_t box, f32 depth, u32 col );
 void draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col );
 void draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, bool filled,

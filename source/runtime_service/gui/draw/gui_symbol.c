@@ -16,10 +16,10 @@
 
     Most commands carry one abgr, but GUI_CMD_RECT_GRADIENT carries two and lets the GPU's
     per-vertex color interpolation blend them, so draw_gradient is an exact one-quad blend (not
-    banded).  draw_shadow and the uniform-radius draw_round_rect hand their shape to the FRAGMENT
-    (GUI_CMD_FX_BOX / a rounded rect command, both SDF surfaces -- see the effect band in gui.h):
-    exact edges at any radius and softness, four quads, no batch split.  Only genuinely per-corner
-    radii still walk a tessellated perimeter here.  Everything here is pixel-exact.
+    banded).  draw_shadow and draw_round_rect hand their shape to the FRAGMENT (GUI_CMD_FX_BOX / a
+    rounded rect command, both SDF surfaces -- see the effect band in gui.h): exact edges at any
+    radius and softness, ONE quad, no batch split.  Only a STROKED per-corner outline still walks a
+    tessellated perimeter here.  Everything here is pixel-exact.
 
     Compiled in the DRAW unit (gui_draw.c) after gui_paint.c.  Everything here is
     PARAMETER-PURE: the emitters that resolve their own look (draw_arrow,
@@ -247,7 +247,8 @@ draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
 {
     if ( filled )
     {
-        draw_push_round_rect_ex( b.x, b.y, b.w, b.h, rtl, rtr, rbr, rbl, 0.0f, col, col, 0.0f );
+        draw_push_round_rect_ex( b.x, b.y, b.w, b.h, rtl, rtr, rbr, rbl, 0.0f, col, col,
+                                 0.0f, (u32)GUI_GRAD_LINEAR );
         return;
     }
     gui_vec2_t pts[ 4 * 17 + 4 ];
@@ -449,20 +450,22 @@ draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal )
     draw_push_rect_gradient( box.x, box.y, box.w, box.h, col_a, col_b, horizontal );
 }
 
-/* Gradient fill of a ROUNDED `box`, col_a -> col_b along `angle` (radians, 0 points +x, positive
-   turns clockwise).  The ramp spans the box along that axis and holds its end colors past it.
+/* Gradient fill of a ROUNDED `box`, col_a -> col_b.  `kind` shapes the ramp and `angle` orients it
+   (radians, 0 points +x, positive turns clockwise): the axis for GUI_GRAD_LINEAR, the starting
+   direction for GUI_GRAD_CONIC, ignored by GUI_GRAD_RADIAL.  A linear ramp spans the box along its
+   axis and holds its end colors past it.
 
-   The rounded SDF surface and the gradient cost each other nothing: the ramp rides the sixteen
-   vertices the surface already emits, so this is the same four quads and the same one draw call a
-   flat draw_round_rect produces -- which is why a gradient is affordable on ordinary chrome
-   rather than a special occasion.  Unlike draw_gradient it takes an arbitrary angle, because a
-   per-vertex ramp has no preferred axis. */
+   The rounded SDF surface and the ramp cost each other nothing: this is the same one quad and the
+   same draw call a flat draw_round_rect produces, with the ramp resolved from the record in the
+   fragment -- which is why a gradient is affordable on ordinary chrome rather than a special
+   occasion, and why radial and conic are available at all. */
 void
-draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, f32 angle )
+draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
+                          gui_grad_t kind, f32 angle )
 {
     draw_push_round_rect_ex( box.x, box.y, box.w, box.h,
                              rounding, rounding, rounding, rounding, 0.0f,
-                             col_a, col_b, angle );
+                             col_a, col_b, angle, (u32)kind );
 }
 
 /* Inner shadow inside `box`, strongest against the edge and gone `depth` px in, with nothing
@@ -470,8 +473,8 @@ draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, f3
    subject, this one lays it against the inside of the subject's own edge (pressed wells, recessed
    fields, the inner lip of a scroll area).  Takes the ambient rounding like draw_shadow does.
 
-   It is the same four quads either way, and the interior is HOLLOW -- the band is only `depth`
-   deep, so an inset on a full-size panel costs the rim, not the panel. */
+   The interior is HOLLOW -- the band is only `depth` deep, so an inset on a full-size panel is
+   covered by a frame of quads around the rim rather than one spanning it. */
 void
 draw_inset_shadow( gui_rect_t box, f32 depth, u32 col )
 {
@@ -480,7 +483,7 @@ draw_inset_shadow( gui_rect_t box, f32 depth, u32 col )
 
 /* Soft drop shadow / glow behind `box`, alpha falling off over `spread` px (popups, floating
    panels).  ONE SDF surface: the fragment shader resolves the falloff exactly, so this is no
-   longer the six stacked rects that used to stand in for a gaussian -- and it costs four quads
+   longer the six stacked rects that used to stand in for a gaussian -- and it costs one quad
    in whatever batch is already open rather than six commands of its own.  Honors the ambient
    rounding so it hugs a rounded panel.  Draw it before the panel body.
 
@@ -494,6 +497,21 @@ static void
 draw_shadow( gui_rect_t box, f32 spread, u32 col )
 {
     draw_push_shadow( box.x, box.y, box.w, box.h, draw_rounding(), spread * 2.0f, col );
+}
+
+/* The drop shadow proper: the same falloff with the CASTER'S silhouette cut out of it, laid
+   (off_x, off_y) px away from the box that casts it.  Nothing paints inside `box` itself, so a
+   translucent panel shows what is behind it rather than its own shadow's core -- and because the
+   cut is taken against the caster while the falloff is measured from the shadow, the cast can have
+   a DIRECTION.  (0, 0) is the even cast on all four sides.
+
+   `spread` reads as "how far the shadow reaches" and is HALF the falloff band, the draw_shadow
+   rule.  Honors the ambient rounding so it hugs a rounded panel; draw it before the panel body. */
+static void
+draw_drop_shadow( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col )
+{
+    draw_push_skirt( box.x, box.y, box.w, box.h, draw_rounding(), spread * 2.0f,
+                     off_x, off_y, col );
 }
 
 /* A rounded fill whose alpha breathes, evaluated in the FRAGMENT off the shared frame clock.
@@ -598,9 +616,9 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
                          bool filled, f32 thickness, u32 col )
 {
     /* Uniform-radius fast path: route an equal-cornered rect -- filled or stroked -- through the
-       backend's single rounded-rect command, which is an SDF surface (four quads, exact analytic
-       AA).  Only genuinely asymmetric corners still need the perimeter walk, and they pay a
-       tessellated arc and a polyline stroke for it. */
+       backend's single rounded-rect command, which is an SDF surface (one quad, exact analytic
+       AA).  Asymmetric corners go to draw_round_rect_ex, which is a surface too when FILLED; only
+       its stroked form pays a tessellated arc and a polyline. */
     bool equal_corners = ( r_tl == r_tr && r_tr == r_br && r_br == r_bl );
     if ( equal_corners )
     {
@@ -646,7 +664,7 @@ void gui_draw_round_rect_shadow( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f
                                  f32 feather, u32 col )
 {
     draw_push_round_rect_ex( box.x, box.y, box.w, box.h, r_tl, r_tr, r_br, r_bl, feather,
-                             col, col, 0.0f );
+                             col, col, 0.0f, (u32)GUI_GRAD_LINEAR );
 }
 
 /* curves */
@@ -662,10 +680,12 @@ void gui_draw_grid    ( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f
                                                                                { draw_grid( box, cell, thickness, origin_x, origin_y, col ); }
 void gui_draw_hatch   ( gui_rect_t box, f32 spacing, f32 thickness, u32 col ) { draw_hatch( box, spacing, thickness, col ); }
 void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal ) { draw_gradient( box, col_a, col_b, horizontal ); }
-void gui_draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, f32 angle ) { draw_round_rect_gradient( box, rounding, col_a, col_b, angle ); }
+void gui_draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, gui_grad_t kind, f32 angle ) { draw_round_rect_gradient( box, rounding, col_a, col_b, kind, angle ); }
 void gui_draw_inset_shadow( gui_rect_t box, f32 depth, u32 col ) { draw_inset_shadow( box, depth, col ); }
 void gui_draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col ) { draw_stripes( box, spacing, thickness, angle, col ); }
 void gui_draw_shadow  ( gui_rect_t box, f32 spread, u32 col )             { draw_shadow( box, spread, col ); }
+void gui_draw_drop_shadow( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col )
+                                                                               { draw_drop_shadow( box, spread, off_x, off_y, col ); }
 void gui_draw_pulse   ( gui_rect_t box, f32 rate, f32 depth, u32 col )    { draw_pulse( box, rate, depth, col ); }
 
 /* text effects + decorations */

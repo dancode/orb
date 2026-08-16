@@ -676,6 +676,7 @@ window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 ti
    window sits lower, so its shadow is the authored width at reduced strength. */
 #define WIN_SHADOW_OVERLAY_SPREAD  1.5f     /* overlay-band feather multiplier             */
 #define WIN_SHADOW_FLOAT_ALPHA     0.7f     /* window-band fraction of the theme's alpha   */
+#define WIN_SHADOW_DROP            0.30f    /* downward cast, as a fraction of the feather */
 
 /* One soft SDF plate under floating chrome -- the ambient shadow that separates a floater from
    the ground plane.  Emitted as this window's FIRST geometry, at its own sort key and under the
@@ -685,23 +686,17 @@ window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 ti
    chrome the caller filters out (docked, maximized, native, frame-only shells) casts none.
    A theme opts out entirely with GUI_VAR_SHADOW 0 or an alpha-0 GUI_EXT_SHADOW.
 
-   A SKIRT, not a filled box: it paints nothing inside its own outline, so a translucent panel shows
-   the desktop behind it rather than the shadow's core, and the geometry is a band around the frame
-   instead of quads spanning the window.
+   A SKIRT, not a filled box: it paints nothing inside the WINDOW's outline, so a translucent panel
+   shows the desktop behind it rather than the shadow's core, and the geometry is a band of quads
+   around the frame instead of quads spanning the window.
 
-   ONE skirt, on the window rect exactly, and both of those are forced.  A skirt's coverage steps
-   from nothing to half AT its outline -- that is what "no interior" means -- so a skirt is only
-   usable where its outline is hidden by the thing it belongs to.  Move this rect and the step lands
-   in open space: offset it and the window gets shadow inside it on one side while a gap opens on
-   the other; grow it and the step shows up as a dark line hanging below the border, with a lighter
-   band between.  Stacking a second, larger skirt does not rescue that -- the near band would then
-   carry one layer where every other side carries two, so the shadow reads LIGHTEST against the
-   border it belongs to and darkest out in space.  No alpha split fixes it, because a smooth falloff
-   cannot cancel a step.
-
-   The shadow is therefore even on all four sides.  A directional cast needs the falloff measured
-   from one outline while the cut is taken against another, which is two boundaries in one field;
-   no parameterization of a single SDF provides it, and no stack of them does either. */
+   The cast is DIRECTIONAL -- dropped WIN_SHADOW_DROP of its own softness down the screen.  That
+   needs two boundaries in one field: the falloff measured from the shadow's outline while the cut
+   is taken against the window's.  Both ride the primitive record (gui_prim_t's cut offset), so the
+   near side is cut flush against the border while the far side reaches its full spread.  A skirt
+   whose cut sat on its own outline could not be moved at all: its coverage steps from nothing to
+   half AT that outline, so offsetting it opened a gap on one side and laid shadow inside the
+   window on the other. */
 
 static void
 window_draw_elevation( const gui_window_t* win, f32 disp_h )
@@ -717,7 +712,8 @@ window_draw_elevation( const gui_window_t* win, f32 disp_h )
         col = ( col & 0x00FFFFFFu )
             | ( (u32)( (f32)( col >> 24 ) * WIN_SHADOW_FLOAT_ALPHA ) << 24 );
 
-    draw_push_skirt( win->x, win->y, win->w, disp_h, ROUND_WIN, feather, col );
+    draw_push_skirt( win->x, win->y, win->w, disp_h, ROUND_WIN, feather,
+                     0.0f, feather * WIN_SHADOW_DROP, col );
 }
 
 /* Open the window body -- or, when collapsed, just seed the collapse-arrow clip.  Expanded: push the

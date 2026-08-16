@@ -6,7 +6,7 @@ layout(set = 0, binding = 1) uniform sampler   u_samplers[];
 
 // The bindless storage-buffer array (set 0, binding 2).  The gui reads TWO tables through it:
 //   - the frame's clip entries, two vec4s each (see clip_coverage below)
-//   - the frame's PRIMITIVE RECORDS, five vec4s each (gui.h, gui_prim_t)
+//   - the frame's PRIMITIVE RECORDS, six vec4s each (gui.h, gui_prim_t)
 // Both are declared as vec4[] because that is the one element type the array can have; the
 // record's integer row comes back through floatBitsToUint, which is a reinterpret, not a convert.
 layout(set = 0, binding = 2, std430) readonly buffer clip_buf_t { vec4 data[]; } u_buffers[];
@@ -37,12 +37,17 @@ layout(location = 0) out vec4 out_color;
 #define OP_PULSE        0x08u
 #define OP_STRIPES      0x10u
 #define OP_SELF         0x20u
+#define OP_GRAD         0x40u
+#define OP_GRAD_RADIAL  0x80u
+#define OP_GRAD_CONIC   0x100u
 
 #define TEX_MODE_SHIFT  28u
 #define TEX_INDEX_MASK  0x0FFFFFFFu
 
-// Five vec4 rows per record, no padding (gui.h pins the struct to that).
-#define PRIM_ROWS       5u
+// Six vec4 rows per record, no padding (gui.h pins the struct to that).
+#define PRIM_ROWS       6u
+
+#define TAU             6.28318531
 
 // The record this fragment's primitive named, resolved once at the top of main().  Row 0 is what
 // every fragment reads -- a glyph or a flat fill decodes its texture and clip and touches nothing
@@ -71,6 +76,23 @@ vec2 prim_local( vec4 rect, vec4 soft )
 {
     vec2 d = gl_FragCoord.xy - rect.xy;
     return vec2( d.x * soft.z + d.y * soft.w, -d.x * soft.w + d.y * soft.z );
+}
+
+// The rounded-box field at `p`, in the shape's own local frame (prim_local's frame).  The corner
+// radius comes from the SIGN of p -- which quadrant the fragment sits in -- so four different
+// corners share one record and one quad.
+//
+// The min(max(q.x,q.y),0) term is the INTERIOR distance and it is not optional: without it the
+// field saturates at -radius everywhere inside, which silently breaks the two cases that need
+// depth rather than proximity -- a border wider than the radius (the whole interior lands in the
+// band and fills), and a shadow whose falloff is wider than the radius (its core never reaches
+// full opacity).
+float box_field( vec2 p, vec2 half_ext, vec4 rad )
+{
+    float r = ( p.y <= 0.0 ) ? ( ( p.x <= 0.0 ) ? rad.x : rad.y )
+                             : ( ( p.x <= 0.0 ) ? rad.w : rad.z );
+    vec2  q = abs( p ) - ( half_ext - vec2( r ) );
+    return min( max( q.x, q.y ), 0.0 ) + length( max( q, vec2( 0.0 ) ) ) - r;
 }
 
 
@@ -109,12 +131,6 @@ vec4 unpack_col( uint c )
 // applies to both shapes -- a stroked capsule needs no field of its own.
 // feather is the total width of the transition, straddling the boundary, so coverage is 0.5
 // exactly on it; feather 0 means a hard edge (no antialiasing).
-//
-// The min(max(q.x,q.y),0) term is the INTERIOR distance and it is not optional: without it the
-// field saturates at -radius everywhere inside, which silently breaks the two cases that need
-// depth rather than proximity -- a border wider than the radius (the whole interior lands in the
-// band and fills), and a shadow whose falloff is wider than the radius (its core never reaches
-// full opacity).
 //
 // pc.time -- the wrapped frame clock -- is the band's animation seam, and PULSE is what reading it
 // looks like: frame-constant, so it costs no vertex change, no re-emit and no batch split.
@@ -232,8 +248,6 @@ float fx_coverage()
     float border  = soft.y;
 
     vec2  local = prim_local( rect, soft );
-    vec2  q;
-    float radius;
     float d;
 
     // field 6 SEG -- a CAPSULE: the distance to a line segment, minus its half-thickness.  The
@@ -243,19 +257,11 @@ float fx_coverage()
     // distance in the core, where the rounded box's length-only form saturates.
     if ( g_field == 6u )
     {
-        radius = rad.x;                                  // a capsule has one radius, not four
-        q = vec2( abs( local.x ) - rect.z, local.y );
-        d = length( vec2( max( q.x, 0.0 ), q.y ) ) - radius;
+        vec2 q = vec2( abs( local.x ) - rect.z, local.y );
+        d = length( vec2( max( q.x, 0.0 ), q.y ) ) - rad.x;  // a capsule has one radius, not four
     }
     else
-    {
-        // The corner radius comes from the SIGN of local -- which quadrant the fragment sits in --
-        // so four different corners share one record and one quad.
-        radius = ( local.y <= 0.0 ) ? ( ( local.x <= 0.0 ) ? rad.x : rad.y )
-                                    : ( ( local.x <= 0.0 ) ? rad.w : rad.z );
-        q = abs( local ) - ( rect.zw - vec2( radius ) );
-        d = min( max( q.x, q.y ), 0.0 ) + length( max( q, vec2( 0.0 ) ) ) - radius;
-    }
+        d = box_field( local, rect.zw, rad );
 
     // GUI_OP_BAND -- the band of `border` px lying inside the boundary: the rounded outline.
     // The one op that bends `d` rather than the coverage, because a band IS a different field and
@@ -271,7 +277,15 @@ float fx_coverage()
     // is the saturated core, which a drop shadow only ever showed through whatever it sits behind.
     // Taken here rather than folded into `d` because the cut is on COVERAGE: bending the distance
     // would move the boundary the outward falloff is measured from.
-    if ( ( g_ops & OP_CUT ) != 0u && d <= 0.0 )
+    //
+    // The cut has a boundary of its OWN, offset from this shape's by the record's cut vector, and
+    // that second boundary is the whole of what makes a cast DIRECTIONAL: the falloff is measured
+    // from the shadow's outline while the hole is taken against the caster's, so the near side is
+    // cut flush against the caster while the far side reaches its full spread.  A zero offset is
+    // the shape cutting itself, which lands on exactly `d` again.  Always the rounded box -- a
+    // capsule never carries this op.
+    if ( ( g_ops & OP_CUT ) != 0u
+      && box_field( local - prim_row( 5u ).zw, rect.zw, rad ) <= 0.0 )
         cov = 0.0;
 
     // GUI_OP_INSET -- the inner shadow.  The falloff is re-measured INWARD from the boundary:
@@ -429,6 +443,32 @@ void main()
             if ( k - 2.0 * floor( k * 0.5 ) >= 0.5 )
                 vcol = c2;
         }
+    }
+
+    // GUI_OP_GRAD -- the ramp from the fill's own colour toward the record's second one.  Resolved
+    // here rather than by the vertices because two of its three shapes have no vertex expression at
+    // all: colours at a rectangle's four corners can describe a linear ramp and nothing else.  The
+    // ramp works in the shape's own local frame, so it turns with the shape and spans it exactly --
+    // where corner colours would be sampled out on the falloff skirt and arrive stretched by it.
+    if ( ( g_ops & OP_GRAD ) != 0u )
+    {
+        vec4  grect = prim_row( 1u );
+        vec2  lp    = prim_local( grect, prim_row( 3u ) );
+        vec2  g     = prim_row( 5u ).xy;
+        float t;
+
+        if ( ( g_ops & OP_GRAD_RADIAL ) != 0u )
+            t = clamp( length( lp / max( grect.zw, vec2( 1e-4 ) ) ), 0.0, 1.0 );
+        else if ( ( g_ops & OP_GRAD_CONIC ) != 0u )
+            // One full turn from the axis, and the seam where the ramp meets itself IS the axis:
+            // fract rather than clamp, because a conic ramp has no far end to hold.
+            t = fract( atan( g.x * lp.y - g.y * lp.x, dot( lp, g ) ) / TAU );
+        else
+            // g arrives already divided by the shape's extent along it (gui.h), so the whole ramp
+            // is one dot product no matter what angle it runs at.
+            t = clamp( dot( lp, g ) + 0.5, 0.0, 1.0 );
+
+        vcol = mix( vcol, unpack_col( floatBitsToUint( prim_row( 4u ).w ) ), t );
     }
 
     // GUI_TEX_RGBA -- full-RGBA image (scene viewport / arbitrary bindless texture): the texel IS
