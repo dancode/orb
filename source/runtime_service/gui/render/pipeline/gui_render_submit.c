@@ -435,10 +435,11 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
 
     /* Record plumbing.  The buffer slot is flush-constant like the clip one; prim_base is NOT --
        records are packed per window slot, so it is re-pushed from the tail as the walk crosses a
-       slot boundary (below).  Seeded past the end of the region so a draw that somehow escaped the
-       per-slot push cannot silently read another window's records. */
+       slot boundary (below).  Seeded to the region ORIGIN rather than to a sentinel: the walk
+       pushes before any draw of a slot so this value is never read, and an in-bounds seed keeps
+       that a rendering question rather than an out-of-range storage-buffer read. */
     push.prim_buf  = s_render.prim_buf_idx;
-    push.prim_base = ~0u;
+    push.prim_base = clip_region * (u32)GUI_PRIM_REGION_MAX;
 
     /* Push the whole struct once, before the walk. tex_idx/tex_mode/samp_idx live in the vertex,
        not the push constant, so everything left here -- both sampler slots, dbg_flat, the frame

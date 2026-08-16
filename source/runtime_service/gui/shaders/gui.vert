@@ -9,28 +9,33 @@ layout(push_constant) uniform PC {
     float time;      // effect-band frame clock, seconds wrapped to GUI_FX_TIME_WRAP (1024)
     uint clip_buf;   // bindless buffer slot of the frame's clip table (fragment-only)
     uint clip_base;  // the flush's clip-region origin in the table (fragment-only)
+    uint prim_buf;   // bindless buffer slot of the primitive records (fragment-only)
+    uint prim_base;  // this window slot's first record (fragment-only)
 } pc;
 
-// FOUR of these six attributes are PACKED in memory (gui.h): uv is two unorm16, color is four
-// unorm8, and the effect coord is two halves.  None of that appears here, and that is the point --
-// vertex fetch widens normalized and half formats to 32-bit float before the shader sees them, so
-// the declarations below are what they were when every field was full width.  The vertex is 28
-// bytes instead of 36 for no shader change at all.
+// FOUR of these attributes are PACKED in memory (gui.h): uv is two unorm16, color is four unorm8,
+// and the effect coord is two halves.  None of that appears here, and that is the point -- vertex
+// fetch widens normalized and half formats to 32-bit float before the shader sees them, so the
+// declarations below are what they were when every field was full width.
+//
+// in_fx and in_tex are DEAD WEIGHT: the primitive record (gui.h) carries both unpacked and the
+// fragment reads them from there.  They ride one stage longer so the switch-over is isolated.
 layout(location = 0) in vec2 in_pos;
 layout(location = 1) in vec2 in_uv;
 layout(location = 2) in vec4 in_color;
 layout(location = 3) in vec2 in_fx_coord;   // effect coord: |p| - c, shape-local pixels
-layout(location = 4) in uint in_fx;         // packed effect word; low nibble 0 = no effect
-layout(location = 5) in uint in_tex;        // sampling model (top 4 bits) | bindless slot
+layout(location = 4) in uint in_fx;         // dead: superseded by the record
+layout(location = 5) in uint in_tex;        // dead: superseded by the record
+layout(location = 6) in uint in_prim;       // primitive record index, slot-local
 
 layout(location = 0) out vec4 v_color;
 layout(location = 1) out vec2 v_uv;
 layout(location = 2) out vec2 v_fx_coord;
-// flat: the effect word names the SHAPE, which is constant over it -- interpolating a bit field
-// would blend a radius into a mode.  Nothing else in the band needs to travel per fragment.
 layout(location = 3) flat out uint v_fx;
-// flat for the same reason, and more sharply: this one is a descriptor index.
 layout(location = 4) flat out uint v_tex;
+// flat, and more sharply than the two above ever needed: this is an index into a storage buffer,
+// and interpolating it would name a different shape on every pixel of the primitive.
+layout(location = 5) flat out uint v_prim;
 
 // Decode an sRGB-encoded color to linear light.  UI colors are authored in sRGB (the values you
 // type as hex / pick in a color picker), but the swapchain is a _SRGB format, so the GPU blends in
@@ -62,15 +67,14 @@ void main()
     // RGB linear, alpha untouched -- alpha is coverage, which is already a linear quantity.
     v_color    = vec4( srgb_to_linear( in_color.rgb ), in_color.a );
 
-    // GUI_FX_TILE_U: the stored U is normalized 0..1 (all UNORM16X2 can hold) and the repeat count
-    // rides the effect word.  Scaling HERE rather than in the fragment is what keeps it free: the
-    // hardware interpolates the scaled value exactly as it would have interpolated a wide U, so a
-    // dashed line is still one quad tiling the atlas stipple row under the sampler's REPEAT.
+    // GUI_FX_TILE_U used to scale U here, from the packed effect word.  It scales in the FRAGMENT
+    // now, against the record: the multiply is affine and commutes with interpolation, so the two
+    // are exactly equivalent, and this stage stays a pure pass-through rather than reading the
+    // record twice.  The stored U is still normalized 0..1 (all UNORM16X2 can hold) and the
+    // sampler's REPEAT is still what tiles the atlas stipple row.
     v_uv       = in_uv;
-    if ( ( in_fx & 0xFu ) == 4u )
-        v_uv.x *= float( ( in_fx >> 4 ) & 0xFFFFFFu ) * 0.0625;
-
     v_fx_coord = in_fx_coord;
     v_fx       = in_fx;
     v_tex      = in_tex;
+    v_prim     = in_prim;
 }

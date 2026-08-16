@@ -21,27 +21,31 @@ struct gui_pc_t
     float    time;         // effect-band frame clock, wrapped seconds (GUI_FX_TIME_WRAP)
     uint     clip_buf;     // bindless buffer slot of the frame's clip table (fragment-only)
     uint     clip_base;    // the flush's clip-region origin in the table (fragment-only)
+    uint     prim_buf;     // bindless buffer slot of the primitive records (fragment-only)
+    uint     prim_base;    // this window slot's first record (fragment-only)
 };
 [[vk::push_constant]] gui_pc_t pc;
 
-// FOUR of these six attributes are PACKED in memory (gui.h): uv is two unorm16, color is four
-// unorm8, and the effect coord is two halves.  None of that appears here, and that is the point --
-// vertex fetch widens normalized and half formats to 32-bit float before the shader sees them, so
-// the declarations below are what they were when every field was full width.  The vertex is 28
-// bytes instead of 36 for no shader change at all.
+// FOUR of these attributes are PACKED in memory (gui.h): uv is two unorm16, color is four unorm8,
+// and the effect coord is two halves.  None of that appears here, and that is the point -- vertex
+// fetch widens normalized and half formats to 32-bit float before the shader sees them, so the
+// declarations below are what they were when every field was full width.
+//
+// fx and tex are DEAD WEIGHT: the primitive record (gui.h) carries both unpacked and the fragment
+// reads them from there.  They ride one stage longer so the switch-over is isolated.
 struct vs_in_t
 {
     [[vk::location( 0 )]] float2 pos      : POSITION;
     [[vk::location( 1 )]] float2 uv       : TEXCOORD0;
     [[vk::location( 2 )]] float4 color    : COLOR0;      // UNORM4 attrib -> normalized float4
     [[vk::location( 3 )]] float2 fx_coord : TEXCOORD1;    // effect coord: |p| - c, shape-local px
-    [[vk::location( 4 )]] uint   fx       : TEXCOORD2;    // packed effect word; low nibble 0 = none
-    [[vk::location( 5 )]] uint   tex      : TEXCOORD3;    // sampling model (top 4 bits) | slot
+    [[vk::location( 4 )]] uint   fx       : TEXCOORD2;    // dead: superseded by the record
+    [[vk::location( 5 )]] uint   tex      : TEXCOORD3;    // dead: superseded by the record
+    [[vk::location( 6 )]] uint   prim     : TEXCOORD4;    // primitive record index, slot-local
 };
 
-// nointerpolation on fx: the effect word names the SHAPE, which is constant over it -- an
-// interpolated bit field would blend a radius into a mode.  Same for tex, and more sharply:
-// that one is a descriptor index.
+// nointerpolation on prim, and more sharply than the two dead words ever needed: it is an index
+// into a storage buffer, and interpolating it would name a different shape on every pixel.
 struct vs_out_t
 {
     float4                  sv_pos   : SV_Position;
@@ -50,6 +54,7 @@ struct vs_out_t
     float2                  fx_coord : TEXCOORD1;
     nointerpolation uint    fx       : TEXCOORD2;
     nointerpolation uint    tex      : TEXCOORD3;
+    nointerpolation uint    prim     : TEXCOORD4;
 };
 
 // Decode an sRGB-encoded color to linear light.  UI colors are authored in sRGB (the values you
@@ -83,16 +88,15 @@ vs_out_t main( vs_in_t v )
     // RGB linear, alpha untouched -- alpha is coverage, which is already a linear quantity.
     o.color    = float4( srgb_to_linear( v.color.rgb ), v.color.a );
 
-    // GUI_FX_TILE_U: the stored U is normalized 0..1 (all UNORM16X2 can hold) and the repeat count
-    // rides the effect word.  Scaling HERE rather than in the fragment is what keeps it free: the
-    // hardware interpolates the scaled value exactly as it would have interpolated a wide U, so a
-    // dashed line is still one quad tiling the atlas stipple row under the sampler's REPEAT.
+    // GUI_FX_TILE_U used to scale U here, from the packed effect word.  It scales in the FRAGMENT
+    // now, against the record: the multiply is affine and commutes with interpolation, so the two
+    // are exactly equivalent, and this stage stays a pure pass-through rather than reading the
+    // record twice.  The stored U is still normalized 0..1 (all UNORM16X2 can hold) and the
+    // sampler's REPEAT is still what tiles the atlas stipple row.
     o.uv       = v.uv;
-    if ( ( v.fx & 0xFu ) == 4u )
-        o.uv.x *= float( ( v.fx >> 4 ) & 0xFFFFFFu ) * 0.0625;
-
     o.fx_coord = v.fx_coord;
     o.fx       = v.fx;
     o.tex      = v.tex;
+    o.prim     = v.prim;
     return o;
 }
