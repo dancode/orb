@@ -40,7 +40,8 @@
     it produced and tag it with the row id; volatile_stamp (called from inside the callback by
     gui_volatile_begin) records the window/z/vp/font/clip context, the ambient
     alpha/rounding/text-clip scalars a raw draw_ call reads directly, the layout cursor
-    position, and the owning region's view/pad (reinstalled on the replay layout frame).  When the window tessellates, tess_dispatch (gui_build_tess.c) calls
+    position, and the owning region's view/pad (reinstalled on the replay layout frame).  
+    When the window tessellates, tess_dispatch (gui_build_tess.c) calls
     volatile_range_close (this file), which reserves the padded region, pads the slot's GPU
     command run with dormant commands, and stamps the slot generation.
 
@@ -262,6 +263,7 @@ volatile_foot_eq( f32 aw, f32 ah, f32 bw, f32 bh )
    real emit simply disagree about the same content, and no number of forced frames will close the
    gap; count a strike, and once they run out stop buying frames for this row (a permanent
    full-rate redraw is a worse failure than the overlap it was trying to fix). */
+
 void
 volatile_footprint( f32 w, f32 h )
 {
