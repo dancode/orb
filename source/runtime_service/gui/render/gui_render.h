@@ -118,6 +118,12 @@ bool sprite_get    ( gui_sprite_id_t id,
 
 bool            res_atlas_flush_upload  ( void );   // re-upload if dirty; true when pixels were sent
 
+/* Occupancy diagnostics (mem stats print): percent of the packable region covered, live tenant
+   count, current dimensions (the atlases grow under pressure; 0-dims = never created). */
+void            res_atlas_occupancy     ( f32* pct, u32* tenants, u32* w, u32* h );
+void            res_sprite_occupancy    ( f32* pct, u32* tenants, u32* w, u32* h );
+void            res_sdf_occupancy       ( f32* pct, u32* tenants, u32* w, u32* h );
+
 /*==============================================================================================
     EMIT: CPU draw list (pipeline/gui_emit_draw.c)
 ==============================================================================================*/

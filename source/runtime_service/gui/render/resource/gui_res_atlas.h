@@ -51,10 +51,18 @@
 
     GPU upload is deferred: add/update/repack only touch the resident CPU buffer and set `dirty`;
     res_atlas_flush_upload (called from frame_begin) re-uploads once per frame when needed.  The GPU
-    texture and its bindless slot are created once and never destroyed until shutdown, so a live font
-    reload mutates pixels within the persistent texture rather than churning the bindless slot --
-    churning it on every reload is what would risk a VK_ERROR_DEVICE_LOST hazard, tearing down a
-    texture an in-flight frame may still reference; the persistent texture avoids that entirely.
+    texture is destroyed only when the atlas GROWS -- at the frame_begin latch, under the RHI's
+    deferred-destroy epoch (vk_garbage), so an in-flight frame sampling the old texture is safe --
+    and otherwise lives until shutdown: a live font reload mutates pixels within the persistent
+    texture rather than churning the bindless slot per reload.
+
+    GROWTH: an atlas starts at its boot dimensions and doubles (smaller dimension first) whenever
+    the tenant set no longer fits, up to GUI_RES_ATLAS_DIM_CAP (RGBA sprite: GUI_SPR_ATLAS_DIM_CAP).
+    Every repack is TRANSACTIONAL -- placements are trialed in a scratch packer first, and on any
+    failure the master packer, every tenant origin and the pixel buffer are untouched.  Only a
+    tenant set that cannot fit the fully-grown atlas fails, loudly, with occupancy numbers.
+    FUTURE WORK: pages pack whole, so a 256-wide page monopolizes a full skyline band; per-glyph
+    packing is the real fix for that width waste and is deliberately not built yet.
 
     res_atlas_generation / res_sprite_generation bump on every structural (UV-affecting) change so
     the retained render cache can fold them into its per-window hash and re-tessellate geometry
@@ -70,13 +78,17 @@
 
 // clang-format off
 
-/* One owned R8 texture, 1 byte / pixel.  512x512 = 256 KiB resident CPU + 256 KiB GPU: fits the
-   default UI font(s) plus the editor icon set with room to spare.  Bump to 1024 (or larger) if a
-   build packs many large fonts/icons and res_atlas_add starts reporting the atlas full.
-   Dimensions are PER INSTANCE (see the record in the .c) precisely because the SDF atlas cannot
-   share these -- see below. */
+/* BOOT dimensions of the coverage atlas, 1 byte / pixel.  512x512 = 256 KiB resident CPU +
+   256 KiB GPU: fits the default UI font(s) plus the editor icon set.  The atlas GROWS on demand
+   from here (doubling up to GUI_RES_ATLAS_DIM_CAP), so these only set the floor a minimal build
+   pays.  #ifndef-guarded so a stress target can shrink them (orb.targets `define`) to force the
+   growth path.  Dimensions are PER INSTANCE (see the record in the .c). */
+#ifndef GUI_RES_ATLAS_W
 #define GUI_RES_ATLAS_W            512u
+#endif
+#ifndef GUI_RES_ATLAS_H
 #define GUI_RES_ATLAS_H            512u
+#endif
 
 /* The SDF atlas is WIDER, and that is a property of the data rather than a tuning knob.  A
    distance-field glyph carries `spread` px of field on all four sides, so it costs several times
@@ -87,13 +99,23 @@
    upload warning: the atlas stays empty and every glyph samples zero.
    Height is modest because the baker crops the page to the rows it actually packed
    (dev_font_bake_write), so a 16px face is ~512x153 and three fit here.  512 KiB, paid only by a
-   build that loads a distance-field font -- the instance is created lazily.  A much larger face
-   wants a taller atlas; res_add says so loudly rather than silently dropping the page. */
+   build that loads a distance-field font -- the instance is created lazily.  Grows like the
+   coverage atlas; only a page too large for the fully-grown atlas is rejected, loudly. */
+#ifndef GUI_SDF_ATLAS_W
 #define GUI_SDF_ATLAS_W            1024u
+#endif
+#ifndef GUI_SDF_ATLAS_H
 #define GUI_SDF_ATLAS_H            512u
+#endif
 
-/* Widest any instance may be -- sizes the per-instance packer node scratch. */
-#define GUI_RES_ATLAS_MAX_W        GUI_SDF_ATLAS_W
+/* Growth caps, by what a texel costs: the R8 atlases (coverage, SDF) may double up to
+   2048x2048 (4 MiB CPU mirror + 4 MiB GPU each, worst case); the RGBA sprite atlas caps at
+   1024x1024 (4 MiB) because colour costs 4x per texel. */
+#define GUI_RES_ATLAS_DIM_CAP      2048u
+#define GUI_SPR_ATLAS_DIM_CAP      1024u
+
+/* Widest any instance may GROW to -- sizes the per-instance packer node scratch. */
+#define GUI_RES_ATLAS_MAX_W        GUI_RES_ATLAS_DIM_CAP
 
 /* Max distinct packed rects: font slots (<= GUI_FONT_REGISTRY_MAX) + icons (<= ICON_MAX).  The
    sprite atlas shares the instance record and therefore this bound; it needs far fewer. */
@@ -149,8 +171,16 @@ f32  res_atlas_dash_v        ( f32 duty );      // center V of the assist dash r
 f32  res_atlas_inv_w         ( void );          // 1 / atlas pixel width  (per-glyph/icon UV scale)
 f32  res_atlas_inv_h         ( void );          // 1 / atlas pixel height
 u32  res_atlas_generation    ( void );          // bumps on every UV-affecting structural change
-u32  res_atlas_bytes         ( void );          // GPU bytes held (W*H, R8) -- memory accounting
+u32  res_atlas_bytes         ( void );          // GPU bytes held (current w*h, R8) -- memory accounting
 u32  res_atlas_cpu_bytes     ( void );          // CPU heap held by ALL THREE atlases (mirrors + tenant copies)
+void res_atlas_size          ( u32* w, u32* h );// current texture dimensions (grow-aware)
+
+/* Occupancy of the packable region -- percent covered by packed cells (tenant + pad), live tenant
+   count, current dimensions.  The sprite / SDF twins answer zeros until their atlas exists.
+   Diagnostics only (mem stats, dashboards); nothing in the mechanism reads these. */
+void res_atlas_occupancy     ( f32* pct, u32* tenants, u32* w, u32* h );
+void res_sprite_occupancy    ( f32* pct, u32* tenants, u32* w, u32* h );
+void res_sdf_occupancy       ( f32* pct, u32* tenants, u32* w, u32* h );
 
 /*==============================================================================================
     The SPRITE atlas (RGBA8) -- same six verbs, one texel meaning apart.
@@ -194,6 +224,7 @@ f32  res_sdf_inv_w           ( void );          // 1 / atlas pixel width  (per-g
 f32  res_sdf_inv_h           ( void );          // 1 / atlas pixel height
 u32  res_sdf_generation      ( void );          // bumps on every UV-affecting structural change
 u32  res_sdf_bytes           ( void );          // GPU bytes held (0 until created)
+void res_sdf_size            ( u32* w, u32* h );// current dimensions (boot constants until created)
 
 // clang-format on
 /*============================================================================================*/

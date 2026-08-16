@@ -172,8 +172,9 @@ font_slot_load( font_slot_t* slot, const char* path )
     slot->ext       = ext;
     slot->ext_count = ext_count;
 
-    slot->used         = true;
-    slot->needs_upload = true;
+    slot->used          = true;
+    slot->needs_upload  = true;
+    slot->upload_failed = false;   /* a fresh page deserves a fresh attempt (retry gate) */
     slot->metrics      = ( font_metrics_t ){
         .char_h = (f32)( hdr.ascent - hdr.descent ),
         .line_h = (f32)( hdr.ascent - hdr.descent + hdr.line_gap ),
@@ -204,7 +205,11 @@ font_load( const char* path )
 {
     u32 id = font_alloc_slot();
     if ( id == 0 )
+    {
+        gui_log( GUI_LOG_WARN, "font registry full (%u slots) -- load of '%s' rejected",
+                 GUI_FONT_REGISTRY_MAX, path );
         return 0;
+    }
 
     if ( !font_slot_load( font_slot_ptr( id ), path ) )
         return 0;

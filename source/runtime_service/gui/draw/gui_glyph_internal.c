@@ -17,10 +17,13 @@
 /*==============================================================================================
     font_slot_upload -- pack a slot's resident glyph pixels into the shared resource atlas.
 
-    A fresh slot adds a new tenant; a reloaded slot (already has a tenant) updates it in place -- the
-    persistent texture and stable bindless slot mean no per-frame create/destroy churn and no device
-    drain here (the caller runs this from frame_begin, a safe between-frames point).  Clears
-    needs_upload on success; on failure the slot keeps its previous atlas tenant intact.
+    A fresh slot adds a new tenant; a reloaded slot (already has a tenant) updates it in place --
+    the atlas grows under pressure, so failure means the page cannot fit even the fully-grown
+    texture.  THE INVARIANT this function keeps: a slot's glyph records either address pixels its
+    tenant actually holds, or the slot has NO tenant and its glyphs draw nothing (font_slot_glyph's
+    gate).  A failed resize-update therefore RELEASES the tenant -- font_slot_load already
+    committed the new records, so the tenant's old pixels no longer match them and keeping the
+    pair would render garbled text.
 ==============================================================================================*/
 
 static bool
@@ -50,7 +53,16 @@ font_slot_upload( font_slot_t* slot )
                 ? res_sdf_update  ( slot->atlas_tenant, slot->pixels, slot->atlas_w, slot->atlas_h )
                 : res_atlas_update( slot->atlas_tenant, slot->pixels, slot->atlas_w, slot->atlas_h );
         if ( !ok )
-            return false;   // slot keeps its previous tenant intact
+        {
+            /* The slot's records are the NEW page's; the tenant still holds the OLD pixels.  A
+               fresh re-add would run the identical (just-failed) placement, so drop the tenant
+               and go invisible instead of garbled. */
+            if ( slot->tenant_sdf ) res_sdf_remove  ( slot->atlas_tenant );
+            else                    res_atlas_remove( slot->atlas_tenant );
+            slot->atlas_tenant  = 0;
+            slot->upload_failed = true;
+            return false;
+        }
         tenant = slot->atlas_tenant;
     }
     else
@@ -58,12 +70,16 @@ font_slot_upload( font_slot_t* slot )
         tenant = slot->sdf_range ? res_sdf_add  ( slot->pixels, slot->atlas_w, slot->atlas_h )
                                  : res_atlas_add( slot->pixels, slot->atlas_w, slot->atlas_h );
         if ( tenant == 0 )
+        {
+            slot->upload_failed = true;
             return false;
+        }
     }
 
-    slot->atlas_tenant = tenant;
-    slot->tenant_sdf   = slot->sdf_range != 0;
-    slot->needs_upload = false;
+    slot->atlas_tenant  = tenant;
+    slot->tenant_sdf    = slot->sdf_range != 0;
+    slot->needs_upload  = false;
+    slot->upload_failed = false;
     return true;
 }
 
@@ -105,6 +121,19 @@ font_slot_glyph( const font_slot_t* slot, u32 cp,
     /* One lookup rule shared with the measure path (font_slot_cp): ASCII dense, extended by
        binary search, miss -> '?'. */
     const orb_font_glyph_t* g = font_slot_cp( slot, cp );
+
+    /* No tenant (never uploaded, or a failed reload released it): draw NOTHING rather than
+       sample UVs rebased to the atlas origin -- another tenant's pixels.  Advance and offsets
+       stay real so layout holds its shape, and the text pops in when a later upload lands. */
+    if ( slot->atlas_tenant == 0 )
+    {
+        *u0 = *v0 = *u1 = *v1 = 0.0f;
+        *gw = *gh = 0.0f;
+        *ox      = (f32)g->bearing_x;
+        *oy      = (f32)( slot->ascent - (i32)g->bearing_y );
+        *advance = (f32)g->advance;
+        return;
+    }
 
     /* Glyph atlas_x/atlas_y are in the font's own baked pixel space; rebase by the font's live
        page origin in the shared atlas (valid across repacks) and scale by the shared atlas dims.

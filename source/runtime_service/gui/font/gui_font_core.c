@@ -217,6 +217,23 @@ font_active_slot( void )
     return font_live_slot();
 }
 
+/* Clear ONE registry slot: free its resident pixels + extended records, zero it.  Slot 0 (the
+   default) and out-of-range ids are refused.  Releasing the ACTIVE slot re-aims at slot 0 --
+   the active id must never keep naming a corpse (the DPI lineage guard reads it, and the metric
+   readers would silently fall back while it lied).  The atlas half of a release lives render-side
+   (font_slot_release, draw/gui_glyph.c): the tenant must go first, then this. */
+void
+font_slot_clear( u32 id )
+{
+    if ( id == 0 || id >= GUI_FONT_REGISTRY_MAX || !s_fonts[ id ].used )
+        return;
+    free( s_fonts[ id ].pixels );
+    free( s_fonts[ id ].ext );
+    s_fonts[ id ] = ( font_slot_t ){ 0 };
+    if ( s_active_id == id )
+        font_activate( 0 );
+}
+
 /* Clear the registry and active pointers at shutdown.  Frees each slot's resident glyph pixels;
    the atlas copy of those pixels is a separate GPU resource torn down once render-side
    (res_atlas_shutdown), so this just drops the CPU registry. */

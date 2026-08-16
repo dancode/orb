@@ -182,7 +182,7 @@ gui_shutdown( void )
        not per context: a viewport is a real OS window / RHI context, never context-owned. */
     for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
         viewport_destroy( v );
-    gui_type_clear();         /* drop the type ramp's role aim + size memo (ids die below) */
+    gui_type_clear();         /* release the type ramp's minted font slots + atlas tenants */
     gui_draw_shutdown();      /* draw unit resources (fonts + icons) leave the atlas first */
     backend_exit();       /* shared pipeline / sampler / atlas */
 

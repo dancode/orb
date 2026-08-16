@@ -56,8 +56,10 @@ typedef struct
     u8*            pixels;                           // resident CPU staging (w*h*bpp)
 
     /* Per instance, not global: a distance-field page is several times the area of its coverage
-       twin, so the SDF atlas must be larger or a font's page cannot be a tenant of it at all. */
-    u32            w, h;                             // texture dimensions in pixels
+       twin, so the SDF atlas must be larger or a font's page cannot be a tenant of it at all.
+       w/h are the CURRENT dimensions; the atlas grows toward max_w/max_h under pressure. */
+    u32            w, h;                             // current texture dimensions in pixels
+    u32            max_w, max_h;                     // growth ceiling (GUI_*_DIM_CAP)
 
     u32            bpp;                              // 1 = R8 coverage, 4 = RGBA8 colour
     bool           assist;                           // reserve + paint the bottom assist band
@@ -189,34 +191,54 @@ res_blit_tenant( res_atlas_t* a, const res_tenant_t* t )
         res_extrude_tenant( a, t );
 }
 
-/* Pack one (w+pad, h+pad) rect into the master packer; on success reports the tenant's origin --
-   the packed cell's, moved in by `inset` so the tenant sits inside its own gutter ring. */
+/* Pack one (w+pad, h+pad) rect into an explicit packer context; on success reports the tenant's
+   origin -- the packed cell's, moved in by `inset` so the tenant sits inside its own gutter ring.
+   Trial and master replay both come through here so they share one packing rule byte-for-byte. */
 static bool
-res_pack_one( res_atlas_t* a, u32 w, u32 h, u32* ox, u32* oy )
+res_pack_one_ctx( stbrp_context* ctx, u32 pad, u32 inset, u32 w, u32 h, u32* ox, u32* oy )
 {
-    stbrp_rect rc = { .w = (stbrp_coord)( w + a->pad ),
-                      .h = (stbrp_coord)( h + a->pad ) };
-    if ( !stbrp_pack_rects( &a->pack, &rc, 1 ) || !rc.was_packed )
+    stbrp_rect rc = { .w = (stbrp_coord)( w + pad ),
+                      .h = (stbrp_coord)( h + pad ) };
+    if ( !stbrp_pack_rects( ctx, &rc, 1 ) || !rc.was_packed )
         return false;
-    *ox = (u32)rc.x + a->inset;
-    *oy = (u32)rc.y + a->inset;
+    *ox = (u32)rc.x + inset;
+    *oy = (u32)rc.y + inset;
     return true;
 }
 
+/* Same, into the instance's master packer. */
+static bool
+res_pack_one( res_atlas_t* a, u32 w, u32 h, u32* ox, u32* oy )
+{
+    return res_pack_one_ctx( &a->pack, a->pad, a->inset, w, h, ox, oy );
+}
+
 /*==============================================================================================
-    res_repack -- re-init the packer, re-place every live tenant (tallest first for a tighter
-    skyline), clear + repaint the resident buffer, and re-blit each tenant at its new origin.
-    Returns false only if some tenant no longer fits (atlas genuinely over capacity).
+    Repack, TRANSACTIONAL -- trial then commit.
+
+    The trial packs every live tenant (tallest first for a tighter skyline) into a LOCAL packer
+    over shared scratch nodes, at whatever dimensions the caller is considering.  It touches
+    nothing in the instance, so a failed trial leaves the master packer, every tenant origin and
+    the pixel buffer exactly as they were -- the caller may then try larger dimensions or give
+    up cleanly.  The commit re-initializes the master packer and REPLAYS the identical sequence:
+    stb_rect_pack's skyline is deterministic (no randomness, fixed BL heuristic, and our one-
+    rect-per-call pattern leaves its internal sort nothing to reorder), so the same fresh
+    context and the same (w,h) sequence give the same placements -- asserted below as a tripwire
+    against a future stb upgrade changing that.
 ==============================================================================================*/
 
-static bool
-res_repack( res_atlas_t* a )
-{
-    stbrp_init_target( &a->pack, (int)a->w, (int)res_pack_h( a ), a->nodes, (int)a->w );
+/* Trial scratch, shared by all three instances (the GUI is single-threaded).  Sized for the
+   growth cap: a trial may probe dimensions larger than any current atlas. */
+static stbrp_node s_trial_nodes[ GUI_RES_ATLAS_DIM_CAP ];
 
+/* Collect + sort the live tenant set and trial-pack it at (try_w x try_pack_h).  Writes the
+   tenant order and their would-be origins; returns false when the set does not fit. */
+static bool
+res_repack_trial( res_atlas_t* a, u32 try_w, u32 try_pack_h,
+                  u32* order, u32* n_out, u32* nx, u32* ny )
+{
     /* Place tallest tenants first: stb_rect_pack's skyline packs tighter that way, and an
        incremental burst of registrations can otherwise leave later (larger) rects homeless. */
-    u32 order[ GUI_RES_ATLAS_MAX_TENANTS ];
     u32 n = 0;
     for ( u32 i = 0; i < GUI_RES_ATLAS_MAX_TENANTS; ++i )
         if ( a->tenants[ i ].used )
@@ -227,28 +249,152 @@ res_repack( res_atlas_t* a )
             {
                 u32 tmp = order[ x ]; order[ x ] = order[ y ]; order[ y ] = tmp;
             }
+    *n_out = n;
 
-    /* Pack into scratch origins first and commit only if EVERY tenant fits.  A mid-loop failure
-       (atlas genuinely over capacity) must not leave some tenants' live origins pointing at a
-       layout the pixel buffer was never re-blitted to. */
-    u32 nx[ GUI_RES_ATLAS_MAX_TENANTS ];
-    u32 ny[ GUI_RES_ATLAS_MAX_TENANTS ];
+    stbrp_context trial;
+    stbrp_init_target( &trial, (int)try_w, (int)try_pack_h, s_trial_nodes, (int)try_w );
     for ( u32 k = 0; k < n; ++k )
-        if ( !res_pack_one( a, a->tenants[ order[ k ] ].w, a->tenants[ order[ k ] ].h,
-                            &nx[ k ], &ny[ k ] ) )
+        if ( !res_pack_one_ctx( &trial, a->pad, a->inset,
+                                a->tenants[ order[ k ] ].w, a->tenants[ order[ k ] ].h,
+                                &nx[ k ], &ny[ k ] ) )
             return false;
+    return true;
+}
+
+/* Commit a successful trial taken at the instance's CURRENT dimensions: rebuild the master
+   packer by replaying the sequence, clear + repaint the buffer, re-blit every tenant. */
+static void
+res_repack_commit( res_atlas_t* a, const u32* order, u32 n, const u32* nx, const u32* ny )
+{
+    stbrp_init_target( &a->pack, (int)a->w, (int)res_pack_h( a ), a->nodes, (int)a->w );
 
     memset( a->pixels, 0, (size_t)a->w * a->h * a->bpp );
     res_paint_assist( a );
     for ( u32 k = 0; k < n; ++k )
     {
         res_tenant_t* t = &a->tenants[ order[ k ] ];
-        t->ox = nx[ k ];
-        t->oy = ny[ k ];
+        u32 ox, oy;
+        if ( res_pack_one( a, t->w, t->h, &ox, &oy ) )
+        {
+            /* Master placements are the truth the skyline will build future fast-path adds on;
+               the assert pins them to the trial's (the determinism contract). */
+            ORB_ASSERT_MSG( ox == nx[ k ] && oy == ny[ k ],
+                            "atlas repack replay diverged from its trial -- stb_rect_pack "
+                            "determinism contract broken (vendored copy upgraded?)" );
+            t->ox = ox;
+            t->oy = oy;
+        }
+        else
+        {
+            /* Replay refusing what the trial placed should be impossible; fall back to the
+               trial's origin -- collision-free by construction -- and let a later pressure
+               repack straighten the (now conservative) master skyline. */
+            ORB_ASSERT_MSG( false, "atlas repack replay failed a rect its trial placed" );
+            t->ox = nx[ k ];
+            t->oy = ny[ k ];
+        }
         res_blit_tenant( a, t );
     }
 
     a->dirty = true;
+}
+
+/*==============================================================================================
+    Growth -- the pressure valve.  res_place makes the current tenant set fit: trial at the
+    current dimensions, then at successively larger ones (doubling the smaller dimension), and
+    commit at the first size that fits -- swapping in a larger texture when that size is not the
+    current one.  Fully transactional: on false NOTHING has moved, and the one failure left is a
+    tenant set the fully-grown atlas cannot hold, reported loudly with occupancy numbers.
+==============================================================================================*/
+
+/* Percent of the packable region covered by packed cells (tenant + pad), and the live count. */
+static void
+res_occupancy( const res_atlas_t* a, f32* pct, u32* tenants )
+{
+    u64 covered = 0;
+    u32 n       = 0;
+    for ( u32 i = 0; i < GUI_RES_ATLAS_MAX_TENANTS; ++i )
+        if ( a->tenants[ i ].used )
+        {
+            covered += (u64)( a->tenants[ i ].w + a->pad ) * ( a->tenants[ i ].h + a->pad );
+            ++n;
+        }
+    u64 area = (u64)a->w * res_pack_h( a );
+    if ( pct )     *pct = area ? 100.0f * (f32)covered / (f32)area : 0.0f;
+    if ( tenants ) *tenants = n;
+}
+
+/* Swap in a larger texture: new CPU buffer + new GPU texture BEFORE the old is destroyed, so a
+   failure leaves everything as it was.  The old texture dies under the RHI's deferred-destroy
+   epoch -- in-flight frames sampling it are safe.  Pixels are blank until the caller commits a
+   repack into the new buffer; the normal dirty -> flush upload carries them to the GPU. */
+static bool
+res_resize( res_atlas_t* a, u32 nw, u32 nh )
+{
+    u8* np = (u8*)calloc( (size_t)nw * nh * a->bpp, 1 );
+    if ( !np )
+        return false;
+
+    gui_atlas_t na;
+    if ( !gui_atlas_create( &na, nw, nh, a->bpp, np, a->debug_name ) )
+    {
+        free( np );
+        return false;
+    }
+
+    gui_atlas_destroy( &a->atlas );
+    a->atlas = na;
+    free( a->pixels );
+    a->pixels = np;
+    a->w      = nw;
+    a->h      = nh;
+    return true;
+}
+
+static bool
+res_place( res_atlas_t* a, u32 want_w, u32 want_h )
+{
+    u32 order[ GUI_RES_ATLAS_MAX_TENANTS ];
+    u32 nx   [ GUI_RES_ATLAS_MAX_TENANTS ];
+    u32 ny   [ GUI_RES_ATLAS_MAX_TENANTS ];
+    u32 n = 0;
+
+    u32 try_w = a->w, try_h = a->h;
+    for ( ;; )
+    {
+        u32 try_pack_h = a->assist ? try_h - RES_ASSIST_ROWS : try_h;
+        if ( res_repack_trial( a, try_w, try_pack_h, order, &n, nx, ny ) )
+            break;
+
+        /* Next rung: double the smaller dimension (width first when square). */
+        if ( try_w <= try_h && try_w < a->max_w )
+            try_w *= 2;
+        else if ( try_h < a->max_h )
+            try_h *= 2;
+        else
+        {
+            f32 pct; u32 tn;
+            res_occupancy( a, &pct, &tn );
+            gui_log( GUI_LOG_WARN,
+                     "%s: FULL -- a %ux%u tenant cannot be placed at %ux%u (growth capped at "
+                     "%ux%u); %u tenants, %.0f%% occupied",
+                     a->debug_name, want_w, want_h, a->w, a->h, a->max_w, a->max_h, tn, pct );
+            return false;
+        }
+    }
+
+    if ( try_w != a->w || try_h != a->h )
+    {
+        u32 ow = a->w, oh = a->h;
+        if ( !res_resize( a, try_w, try_h ) )
+            return false;
+        f32 pct; u32 tn;
+        res_occupancy( a, &pct, &tn );
+        gui_log( GUI_LOG_INFO, "%s: grown %ux%u -> %ux%u (%u tenants, %.0f%% full)",
+                 a->debug_name, ow, oh, a->w, a->h, tn, pct );
+    }
+
+    res_repack_commit( a, order, n, nx, ny );
     return true;
 }
 
@@ -258,11 +404,14 @@ res_repack( res_atlas_t* a )
 ==============================================================================================*/
 
 static bool
-res_init( res_atlas_t* a, u32 w, u32 h, u32 bpp, bool assist, bool extrude, const char* debug_name )
+res_init( res_atlas_t* a, u32 w, u32 h, u32 max_w, u32 max_h,
+          u32 bpp, bool assist, bool extrude, const char* debug_name )
 {
     memset( a, 0, sizeof( *a ) );
     a->w          = w;
     a->h          = h;
+    a->max_w      = max_w > w ? max_w : w;   /* a shrunken boot (stress define) still grows */
+    a->max_h      = max_h > h ? max_h : h;
     a->bpp        = bpp;
     a->assist     = assist;
     a->extrude    = extrude;
@@ -330,17 +479,18 @@ res_add( res_atlas_t* a, const u8* src, u32 w, u32 h )
     if ( !a->ready || !src || w == 0 || h == 0 )
         return 0;
 
-    /* Oversize: the tenant is bigger than the whole texture, so no occupancy and no repack can ever
-       place it.  Loud, per the codebase's overflow rule, and it names the numbers -- this is not a
-       "getting full" condition that a smaller working set would fix, and it fails identically on
-       frame one and frame ten thousand.  A distance-field font page is what found this: it is
-       several times the area of its coverage twin, so it outgrew an atlas the coverage one fits in
-       with room to spare, and the only symptom downstream is that every glyph samples zero. */
-    if ( w + a->pad > a->w || h + a->pad > res_pack_h( a ) )
+    /* Oversize: the tenant is bigger than even the fully-GROWN texture, so no occupancy, repack
+       or growth can ever place it.  Loud, per the codebase's overflow rule, and it names the
+       numbers -- this is not a "getting full" condition that a smaller working set would fix,
+       and it fails identically on frame one and frame ten thousand.  A distance-field font page
+       is what found this: it is several times the area of its coverage twin, so it outgrew an
+       atlas the coverage one fits in with room to spare. */
+    u32 cap_pack_h = a->assist ? a->max_h - RES_ASSIST_ROWS : a->max_h;
+    if ( w + a->pad > a->max_w || h + a->pad > cap_pack_h )
     {
-        GUI_WARN_ONCE( "%s: tenant %ux%u does not fit a %ux%u atlas (+%u pad, %u usable rows) -- "
-                       "it is rejected whole; raise the atlas dimensions\n",
-                       a->debug_name, w, h, a->w, a->h, a->pad, res_pack_h( a ) );
+        GUI_WARN_ONCE( "%s: tenant %ux%u does not fit even a fully grown %ux%u atlas (+%u pad, "
+                       "%u usable rows) -- it is rejected whole; raise the growth cap\n",
+                       a->debug_name, w, h, a->max_w, a->max_h, a->pad, cap_pack_h );
         return 0;
     }
 
@@ -349,7 +499,11 @@ res_add( res_atlas_t* a, const u8* src, u32 w, u32 h )
     for ( u32 i = 0; i < GUI_RES_ATLAS_MAX_TENANTS; ++i )
         if ( !a->tenants[ i ].used ) { idx = i; break; }
     if ( idx == GUI_RES_ATLAS_MAX_TENANTS )
+    {
+        gui_log( GUI_LOG_WARN, "%s: tenant table full (%u) -- registration rejected",
+                 a->debug_name, GUI_RES_ATLAS_MAX_TENANTS );
         return 0;
+    }
 
     size_t bytes = (size_t)w * h * a->bpp;
     u8*    copy  = (u8*)malloc( bytes );
@@ -363,13 +517,14 @@ res_add( res_atlas_t* a, const u8* src, u32 w, u32 h )
     t->w    = w;
     t->h    = h;
 
-    /* Fast path: one incremental pack call.  On a full packer, fold this tenant into a repack. */
+    /* Fast path: one incremental pack call.  Under pressure, res_place repacks the whole set --
+       growing the texture if it must -- or fails with NOTHING moved (transactional). */
     if ( res_pack_one( a, w, h, &t->ox, &t->oy ) )
     {
         res_blit_tenant( a, t );
         a->dirty = true;
     }
-    else if ( !res_repack( a ) )   /* repack places every used tenant, including this one */
+    else if ( !res_place( a, w, h ) )   /* the trial set includes this just-claimed tenant */
     {
         free( t->src );
         *t = ( res_tenant_t ){ 0 };
@@ -401,11 +556,18 @@ res_update( res_atlas_t* a, u32 handle, const u8* src, u32 w, u32 h )
         return true;
     }
 
-    if ( w + a->pad > a->w || h + a->pad > res_pack_h( a ) )
+    u32 cap_pack_h = a->assist ? a->max_h - RES_ASSIST_ROWS : a->max_h;
+    if ( w + a->pad > a->max_w || h + a->pad > cap_pack_h )
+    {
+        GUI_WARN_ONCE( "%s: resized tenant %ux%u does not fit even a fully grown %ux%u atlas -- "
+                       "update rejected\n", a->debug_name, w, h, a->max_w, a->max_h );
         return false;
+    }
 
-    /* Different footprint: swap the source and repack (this tenant's old rect is freed, origins may
-       move).  On failure the tenant keeps its old (still-blitted) pixels -- restore its source. */
+    /* Different footprint: swap the source and re-place the whole set (this tenant's old rect is
+       freed, origins may move, the texture may grow).  res_place is transactional, so on failure
+       nothing has moved -- the tenant keeps its old, still-blitted pixels; just restore its
+       source fields. */
     u8* copy = (u8*)malloc( (size_t)w * h * a->bpp );
     if ( !copy )
         return false;
@@ -417,13 +579,12 @@ res_update( res_atlas_t* a, u32 handle, const u8* src, u32 w, u32 h )
     t->w   = w;
     t->h   = h;
 
-    if ( !res_repack( a ) )
+    if ( !res_place( a, w, h ) )
     {
         free( t->src );
         t->src = old_src;
         t->w   = old_w;
         t->h   = old_h;
-        res_repack( a );   /* restore the previous layout so the atlas stays consistent */
         return false;
     }
 
@@ -469,7 +630,9 @@ bool res_atlas_init( void )
 {
     memset( &s_spr, 0, sizeof( s_spr ) );   /* not created until the first sprite registers */
     memset( &s_sdf, 0, sizeof( s_sdf ) );   /* not created until an SDF font loads          */
-    return res_init( &s_res, GUI_RES_ATLAS_W, GUI_RES_ATLAS_H, 1u, true, false, "gui_res_atlas" );
+    return res_init( &s_res, GUI_RES_ATLAS_W, GUI_RES_ATLAS_H,
+                     GUI_RES_ATLAS_DIM_CAP, GUI_RES_ATLAS_DIM_CAP,
+                     1u, true, false, "gui_res_atlas" );
 }
 
 void res_atlas_shutdown( void )
@@ -514,11 +677,50 @@ bool res_atlas_update    ( u32 h_, const u8* src, u32 w, u32 h )      { return r
 void res_atlas_remove    ( u32 handle )                               { res_remove( &s_res, handle ); }
 void res_atlas_origin    ( u32 handle, u32* ox, u32* oy )             { res_origin( &s_res, handle, ox, oy ); }
 
+/* Dimension accessors read the INSTANCE (the atlas grows), falling back to the boot constants
+   while a lazily-created atlas does not exist yet -- a caller asking a not-yet-created atlas for
+   its UV scale must not get 1/0.  The coverage atlas is created at boot, so it has no fallback. */
+
 u32  res_atlas_idx        ( void ) { return s_res.atlas.atlas_idx; }
-f32  res_atlas_inv_w      ( void ) { return 1.0f / (f32)GUI_RES_ATLAS_W; }
-f32  res_atlas_inv_h      ( void ) { return 1.0f / (f32)GUI_RES_ATLAS_H; }
+f32  res_atlas_inv_w      ( void ) { return 1.0f / (f32)s_res.w; }
+f32  res_atlas_inv_h      ( void ) { return 1.0f / (f32)s_res.h; }
 u32  res_atlas_generation ( void ) { return s_res.generation; }
-u32  res_atlas_bytes      ( void ) { return GUI_RES_ATLAS_W * GUI_RES_ATLAS_H; }
+u32  res_atlas_bytes      ( void ) { return s_res.w * s_res.h; }
+
+void res_atlas_size( u32* w, u32* h ) { *w = s_res.w; *h = s_res.h; }
+
+void res_atlas_occupancy( f32* pct, u32* tenants, u32* w, u32* h )
+{
+    res_occupancy( &s_res, pct, tenants );
+    if ( w ) *w = s_res.w;
+    if ( h ) *h = s_res.h;
+}
+
+void res_sprite_occupancy( f32* pct, u32* tenants, u32* w, u32* h )
+{
+    if ( !s_spr.ready )
+    {
+        if ( pct ) *pct = 0.0f;  if ( tenants ) *tenants = 0;
+        if ( w )   *w   = 0;     if ( h )       *h       = 0;
+        return;
+    }
+    res_occupancy( &s_spr, pct, tenants );
+    if ( w ) *w = s_spr.w;
+    if ( h ) *h = s_spr.h;
+}
+
+void res_sdf_occupancy( f32* pct, u32* tenants, u32* w, u32* h )
+{
+    if ( !s_sdf.ready )
+    {
+        if ( pct ) *pct = 0.0f;  if ( tenants ) *tenants = 0;
+        if ( w )   *w   = 0;     if ( h )       *h       = 0;
+        return;
+    }
+    res_occupancy( &s_sdf, pct, tenants );
+    if ( w ) *w = s_sdf.w;
+    if ( h ) *h = s_sdf.h;
+}
 
 void
 res_atlas_white_uv( f32* u, f32* v )
@@ -555,6 +757,7 @@ u32
 res_sprite_add( const u8* rgba, u32 w, u32 h )
 {
     if ( !s_spr.ready && !res_init( &s_spr, GUI_RES_ATLAS_W, GUI_RES_ATLAS_H,
+                                    GUI_SPR_ATLAS_DIM_CAP, GUI_SPR_ATLAS_DIM_CAP,
                                     GUI_SPR_ATLAS_BPP, false, true, "gui_sprite_atlas" ) )
         return 0;
     return res_add( &s_spr, rgba, w, h );
@@ -564,10 +767,10 @@ bool res_sprite_update ( u32 handle, const u8* rgba, u32 w, u32 h ) { return res
 void res_sprite_origin ( u32 handle, u32* ox, u32* oy )             { res_origin( &s_spr, handle, ox, oy ); }
 
 u32  res_sprite_idx        ( void ) { return s_spr.atlas.atlas_idx; }
-f32  res_sprite_inv_w      ( void ) { return 1.0f / (f32)GUI_RES_ATLAS_W; }
-f32  res_sprite_inv_h      ( void ) { return 1.0f / (f32)GUI_RES_ATLAS_H; }
+f32  res_sprite_inv_w      ( void ) { return s_spr.ready ? 1.0f / (f32)s_spr.w : 1.0f / (f32)GUI_RES_ATLAS_W; }
+f32  res_sprite_inv_h      ( void ) { return s_spr.ready ? 1.0f / (f32)s_spr.h : 1.0f / (f32)GUI_RES_ATLAS_H; }
 u32  res_sprite_generation ( void ) { return s_spr.generation; }
-u32  res_sprite_bytes      ( void ) { return s_spr.ready ? GUI_RES_ATLAS_W * GUI_RES_ATLAS_H * GUI_SPR_ATLAS_BPP : 0u; }
+u32  res_sprite_bytes      ( void ) { return s_spr.ready ? s_spr.w * s_spr.h * GUI_SPR_ATLAS_BPP : 0u; }
 
 /*==============================================================================================
     THE SDF ATLAS -- public binding, created on demand.
@@ -588,6 +791,7 @@ u32
 res_sdf_add( const u8* src, u32 w, u32 h )
 {
     if ( !s_sdf.ready && !res_init( &s_sdf, GUI_SDF_ATLAS_W, GUI_SDF_ATLAS_H,
+                                    GUI_RES_ATLAS_DIM_CAP, GUI_RES_ATLAS_DIM_CAP,
                                     1u, false, true, "gui_sdf_atlas" ) )
         return 0;
     return res_add( &s_sdf, src, w, h );
@@ -598,13 +802,18 @@ void res_sdf_remove ( u32 handle )                              { res_remove( &s
 void res_sdf_origin ( u32 handle, u32* ox, u32* oy )            { res_origin( &s_sdf, handle, ox, oy ); }
 
 u32  res_sdf_idx        ( void ) { return s_sdf.atlas.atlas_idx; }
-/* The dimension accessors read the CONSTANTS, never the instance: a lazily created atlas is asked
-   for its UV scale before it exists, and 1/0 is not a useful answer.  The instance's own w/h exist
-   for the mechanism (packing, blitting, clearing), which only ever runs on a live atlas. */
-f32  res_sdf_inv_w      ( void ) { return 1.0f / (f32)GUI_SDF_ATLAS_W; }
-f32  res_sdf_inv_h      ( void ) { return 1.0f / (f32)GUI_SDF_ATLAS_H; }
+/* Instance dims once created (the atlas grows); the boot constants before -- a lazily created
+   atlas is asked for its UV scale before it exists, and 1/0 is not a useful answer. */
+f32  res_sdf_inv_w      ( void ) { return s_sdf.ready ? 1.0f / (f32)s_sdf.w : 1.0f / (f32)GUI_SDF_ATLAS_W; }
+f32  res_sdf_inv_h      ( void ) { return s_sdf.ready ? 1.0f / (f32)s_sdf.h : 1.0f / (f32)GUI_SDF_ATLAS_H; }
 u32  res_sdf_generation ( void ) { return s_sdf.generation; }
-u32  res_sdf_bytes      ( void ) { return s_sdf.ready ? GUI_SDF_ATLAS_W * GUI_SDF_ATLAS_H : 0u; }
+u32  res_sdf_bytes      ( void ) { return s_sdf.ready ? s_sdf.w * s_sdf.h : 0u; }
+
+void res_sdf_size( u32* w, u32* h )
+{
+    *w = s_sdf.ready ? s_sdf.w : GUI_SDF_ATLAS_W;
+    *h = s_sdf.ready ? s_sdf.h : GUI_SDF_ATLAS_H;
+}
 
 // clang-format on
 /*============================================================================================*/

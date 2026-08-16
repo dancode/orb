@@ -173,6 +173,23 @@ gui_print_mem_stats( void )
     GUI_MEM_ROW( "atlas mirrors + tenants", s.cpu_atlas_bytes );
     GUI_MEM_ROW( "  CPU heap subtotal",   s.cpu_dynamic_total );
 
+    /* Atlas occupancy -- dims are live (the atlases grow under pressure); a row only prints for
+       an atlas that exists. */
+    {
+        f32 pct; u32 tn, w, h;
+        res_atlas_occupancy( &pct, &tn, &w, &h );
+        gui_log( GUI_LOG_INFO, "  %-22s %ux%u   %u tenant%s   %.0f%% full",
+                 "coverage atlas", w, h, tn, tn == 1u ? "" : "s", pct );
+        res_sprite_occupancy( &pct, &tn, &w, &h );
+        if ( w )
+            gui_log( GUI_LOG_INFO, "  %-22s %ux%u   %u tenant%s   %.0f%% full",
+                     "sprite atlas", w, h, tn, tn == 1u ? "" : "s", pct );
+        res_sdf_occupancy( &pct, &tn, &w, &h );
+        if ( w )
+            gui_log( GUI_LOG_INFO, "  %-22s %ux%u   %u tenant%s   %.0f%% full",
+                     "sdf atlas", w, h, tn, tn == 1u ? "" : "s", pct );
+    }
+
     gui_log( GUI_LOG_INFO, "  --------------------------------------------------------" );
     gui_log( GUI_LOG_INFO, "  %-22s %10u B  (%8.1f KB)  (%.1f MB)",
              "TOTAL", s.total_bytes, s.total_bytes / kb, s.total_bytes / ( kb * kb ) );

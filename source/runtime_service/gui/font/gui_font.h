@@ -66,6 +66,9 @@ typedef struct
     u32                 atlas_w;            // pixel width  of `pixels` (the packed .orb_font atlas)
     u32                 atlas_h;            // pixel height of `pixels`
     bool                needs_upload;       // pixels (re)loaded; the render side must pack them into the atlas
+    bool                upload_failed;      // the upload could not place the page (atlas growth capped):
+                                            // glyphs draw invisible (no tenant) and the render side stops
+                                            // retrying until a reload clears this
 
     /* What the bytes in `pixels` MEAN: 0 = coverage, > 0 = a distance field with that spread in
        pixels (orb_font.h, sdf_range).  It is a property of the LOADED FILE, so it is resolved once
@@ -134,6 +137,7 @@ void            font_activate           ( u32 id );     // point the active poin
 u32             font_alloc_slot         ( void );       // first free id in 1..MAX-1, or 0 if full
 font_slot_t*    font_slot_ptr           ( u32 id );     // registry slot by id (loader fill target); NULL if OOR
 font_slot_t*    font_active_slot        ( void );       // active slot (render's glyph dispatch reads it)
+void            font_slot_clear         ( u32 id );     // free + zero one slot (active re-aims at 0); id 0 refused
 void            font_registry_reset     ( void );       // clear the registry + active pointers (shutdown)
 
 /* Decentralized memory accounting -- the registry, summed into cpu_frontend_bytes. */

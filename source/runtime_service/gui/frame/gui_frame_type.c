@@ -72,10 +72,11 @@ type_font_for( const char* family, u32 size_px )
 
     if ( baked )
     {
-        /* A full memo reloads an existing ramp slot in place rather than minting registry ids
-           without bound (an editor scrubbing the step knob mints a size per notch).  Live role
-           ids are exempt; failure latches are free to overwrite.  The reloaded slot's metrics
-           are live on return; its atlas pixels ride the next frame_begin flush. */
+        /* A full memo EVICTS before loading: release the retired size's registry slot and atlas
+           tenant (font_slot_release), then load the new size into a fresh slot -- registry ids
+           stay bounded while an editor scrubbing the step knob mints a size per notch, and the
+           freed tenant hole is reclaimed by the atlas's next pressure repack.  Live role ids are
+           exempt; failure latches are free (they hold no slot). */
         if ( s_type.memo_count >= GUI_TYPE_MEMO_MAX )
         {
             u32 evict = GUI_TYPE_MEMO_MAX;
@@ -89,26 +90,16 @@ type_font_for( const char* family, u32 size_px )
             if ( evict == GUI_TYPE_MEMO_MAX )
                 return 0;   /* cannot happen with MEMO_MAX > 2 live roles; stay safe */
 
-            if ( s_type.memo[ evict ].id == GUI_TYPE_LOAD_FAILED )
-                id = font_load( path );
-            else if ( font_load_into( s_type.memo[ evict ].id, path ) )
-                id = s_type.memo[ evict ].id;
+            if ( s_type.memo[ evict ].id != GUI_TYPE_LOAD_FAILED )
+                font_slot_release( s_type.memo[ evict ].id );
+            s_type.memo[ evict ] = s_type.memo[ --s_type.memo_count ];
+        }
 
-            if ( id )
-            {
-                s_type.memo[ evict ].size_px = size_px;
-                s_type.memo[ evict ].id      = id;
-            }
-            else
-                s_type.memo[ evict ] = s_type.memo[ --s_type.memo_count ];   /* drop the corpse */
-        }
-        else
-        {
-            id = font_load( path );   /* new registry id, activated -- restored below */
-            s_type.memo[ s_type.memo_count ].size_px = size_px;
-            s_type.memo[ s_type.memo_count ].id      = id ? id : GUI_TYPE_LOAD_FAILED;
-            s_type.memo_count++;
-        }
+        id = font_load( path );   /* fresh registry id, activated -- restored below */
+        s_type.memo[ s_type.memo_count ].size_px = size_px;
+        s_type.memo[ s_type.memo_count ].id      = id ? id : GUI_TYPE_LOAD_FAILED;
+        s_type.memo_count++;
+
         font_use( prev );
         draw_set_font( prev_draw );
     }
@@ -249,12 +240,17 @@ gui_type_frame_reset( void )
 }
 
 /* Forget everything resolved and memoized -- the managed lineage / family changed underneath
-   (gui_dpi_base_set) or the GUI is shutting down.  Registry slots stay resident like the DPI
-   bakes' do; only the aim is dropped. */
+   (gui_dpi_base_set) or the GUI is shutting down.  The ramp minted its registry slots and
+   nothing else holds them, so they are RELEASED (slot + atlas tenant) rather than left resident
+   -- a family change must not leak the old family's bakes.  DPI preset slots are not the
+   ramp's to touch (and font_slot_release refuses id 0). */
 
 void
 gui_type_clear( void )
 {
+    for ( u32 i = 0; i < s_type.memo_count; ++i )
+        if ( s_type.memo[ i ].id != GUI_TYPE_LOAD_FAILED )
+            font_slot_release( s_type.memo[ i ].id );
     s_type.memo_count = 0;
     s_type.small_id   = 0;
     s_type.large_id   = 0;

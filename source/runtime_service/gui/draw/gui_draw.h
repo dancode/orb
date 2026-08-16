@@ -95,6 +95,7 @@ gui_rect_t cell_next_w  ( f32 natural_w, f32 h );
 u32  font_slot_atlas_idx    ( u32 id );                     // live bindless atlas index backing a font id (0 if empty)
 gui_vec2_t font_slot_atlas_size( u32 id );                  // live atlas pixel dimensions backing a font id
 bool font_atlas_sync        ( void );                       // upload (re)loaded fonts' pixels to the atlas; true if the active font changed
+void font_slot_release      ( u32 id );                     // free font id: atlas tenant + registry slot; id 0 refused
 
 /* Icon registry + loading (draw/gui_icon.c, draw/gui_icon_load.c).  icon_get (the sprite-
    source half the emit layer consumes) is declared in render/gui_render.h. */

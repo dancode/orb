@@ -32,19 +32,18 @@ font_atlas_sync( void )
     for ( u32 id = 0; id < GUI_FONT_REGISTRY_MAX; ++id )
     {
         font_slot_t* slot = font_slot_ptr( id );
-        if ( !slot->used || !slot->needs_upload )
-            continue;
+        if ( !slot->used || !slot->needs_upload || slot->upload_failed )
+            continue;   /* upload_failed gates re-attempts of a doomed page (growth capped);
+                           a later font_slot_load clears it, so a reload retries naturally */
 
-        if ( !font_slot_upload( slot ) )   /* slot keeps its previous atlas tenant; say so */
+        if ( !font_slot_upload( slot ) )
         {
-            /* The symptom downstream is silent -- a never-uploaded slot keeps tenant 0, whose
-               origin answers (0,0), so its glyphs sample UVs rebased to the atlas top-left (other
-               tenants' pixels or the assist rows: visual garbage, not blank).  This line is the
-               only thing that names the cause, and an unflushed warning is how it went unnoticed
-               once already.  gui_log's default sink flushes; a host sink owns that guarantee
-               itself. */
-            gui_log( GUI_LOG_WARN, "font atlas upload failed for slot %u", id );
-            slot->needs_upload = false;    // don't retry a doomed upload every frame
+            /* The atlas layer already said WHY (FULL / oversize, with the numbers).  The slot has
+               no tenant now, so its glyphs draw INVISIBLE -- never another tenant's pixels --
+               until a reload lands (font_slot_glyph's gate).  gui_log's default sink flushes; a
+               host sink owns that guarantee itself. */
+            gui_log( GUI_LOG_WARN, "font atlas upload failed for slot %u -- its glyphs draw "
+                                   "invisible until the font is reloaded", id );
             continue;
         }
 
@@ -53,6 +52,31 @@ font_atlas_sync( void )
     }
 
     return active_changed;
+}
+
+/*==============================================================================================
+    font_slot_release -- free a font id: its atlas tenant, then its registry slot.
+
+    The release spans both halves the way font_shutdown does: only the render side may touch the
+    atlas (the font/ leaf never does), the font side owns the slot.  The tenant's rect is
+    abandoned in place -- the next pressure repack reclaims the hole -- so no generation bump and
+    no surviving UV goes stale.  Id 0 (the default / DPI slot) and empty ids are no-ops.  The one
+    caller today is the type ramp's eviction (frame/gui_frame_type.c), which mints and retires
+    sizes as the style moves.
+==============================================================================================*/
+
+void
+font_slot_release( u32 id )
+{
+    font_slot_t* slot = font_slot_ptr( id );
+    if ( id == 0 || !slot || !slot->used )
+        return;
+    if ( slot->atlas_tenant )
+    {
+        if ( slot->tenant_sdf ) res_sdf_remove  ( slot->atlas_tenant );
+        else                    res_atlas_remove( slot->atlas_tenant );
+    }
+    font_slot_clear( id );
 }
 
 /*==============================================================================================
@@ -72,16 +96,19 @@ font_slot_atlas_idx( u32 id )
     return slot->sdf_range ? res_sdf_idx() : res_atlas_idx();
 }
 
-/* Pixel dimensions of the atlas backing font id `id` (0,0 for an empty / out-of-range slot) -- the
-   shared resource atlas dimensions.  A texture preview needs size alongside font_slot_atlas_idx. */
+/* Pixel dimensions of the atlas backing font id `id` (0,0 for an empty / out-of-range slot) --
+   the CURRENT dimensions, since the atlas grows.  A texture preview needs size alongside
+   font_slot_atlas_idx. */
 gui_vec2_t
 font_slot_atlas_size( u32 id )
 {
     font_slot_t* slot = font_slot_ptr( id );
     if ( !slot || !slot->used )
         return ( gui_vec2_t ){ 0.0f, 0.0f };
-    return slot->sdf_range ? ( gui_vec2_t ){ (f32)GUI_SDF_ATLAS_W, (f32)GUI_SDF_ATLAS_H }
-                           : ( gui_vec2_t ){ (f32)GUI_RES_ATLAS_W, (f32)GUI_RES_ATLAS_H };
+    u32 w, h;
+    if ( slot->sdf_range ) res_sdf_size  ( &w, &h );
+    else                   res_atlas_size( &w, &h );
+    return ( gui_vec2_t ){ (f32)w, (f32)h };
 }
 
 /*==============================================================================================
