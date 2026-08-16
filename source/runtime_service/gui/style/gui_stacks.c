@@ -12,6 +12,7 @@
         push_style_color / _var      per-item theme overrides
         style_color                  the resolved read back out of the palette
         scale_push / _pop            a named density step, as three paired var pushes
+        scale_push_font              a step WITH a type role riding along (same pop)
 
     Two different stacks sit behind these verbs: id and item-flag pushes forward down to the
     interact server (core); style color / var / scale / seed pushes forward to statics kept in
@@ -198,20 +199,59 @@ void gui_pop_style_ext ( u32 count )                      { style_pop_ext( count
 #define SCALE_PAD 1u
 #define SCALE_GAP 2u
 
+/* Which open scale scopes carried a type role along (scale_push_font): one bit per depth, so
+   the single scale_pop verb releases exactly what its push acquired.  Reset with the style
+   stacks at frame begin (scale_stack_reset from style_new_frame). */
+static u32 s_scale_font_bits;
+static u32 s_scale_depth;
+
+void
+scale_stack_reset( void )
+{
+    s_scale_font_bits = 0;
+    s_scale_depth     = 0;
+}
+
 void
 gui_scale_push( gui_scale_t s )
 {
     /* clamp, like the other stacks */
-    if ( s >= GUI_SCALE_COUNT ) s = GUI_SCALE_STD;   
+    if ( s >= GUI_SCALE_COUNT ) s = GUI_SCALE_STD;
     style_push_var( GUI_VAR_ROW, style_scale( s, SCALE_ROW ) );
     style_push_var( GUI_VAR_PAD, style_scale( s, SCALE_PAD ) );
     style_push_var( GUI_VAR_GAP, style_scale( s, SCALE_GAP ) );
+
+    if ( s_scale_depth < 32u )
+        s_scale_font_bits &= ~( 1u << s_scale_depth );
+    ++s_scale_depth;
+}
+
+/* scale_push with a type role riding along: the step's metrics land on the var stack AND the
+   role's font brackets the scope (gui_type_push -- an upward seam into the frame unit, whose
+   gui.h declaration is the documented crossing).  The plain scale ramp stays whitespace-only
+   on purpose -- pairing a density step with a glyph size is this explicit opt-in, never an
+   inference.  Closed by the same gui_scale_pop as a plain push; the role falls back to the
+   body font wherever it is off or unresolvable, so the pairing is always safe to author. */
+void
+gui_scale_push_font( gui_scale_t s, gui_type_role_t role )
+{
+    gui_scale_push( s );
+    gui_type_push( role );
+    if ( s_scale_depth - 1u < 32u )
+        s_scale_font_bits |= 1u << ( s_scale_depth - 1u );
 }
 
 void
 gui_scale_pop( void )
 {
     style_pop_var( 3 );   /* the three slots scale_push pushed */
+
+    if ( s_scale_depth )
+    {
+        --s_scale_depth;
+        if ( s_scale_depth < 32u && ( s_scale_font_bits & ( 1u << s_scale_depth ) ) )
+            gui_type_pop();   /* the role scale_push_font brought along */
+    }
 }
 
 /* The row height of a ramp step, without pushing it -- size a child to another step's rows

@@ -372,6 +372,9 @@ const gui_api_t g_gui_api_struct =
     .style_ext_name                     = gui_style_ext_name,
     .scale_push                         = gui_scale_push,
     .scale_pop                          = gui_scale_pop,
+    .scale_push_font                    = gui_scale_push_font,
+    .type_push                          = gui_type_push,
+    .type_pop                           = gui_type_pop,
 
     /*===============================================  GUI_STOCK  ===============================================*/
 

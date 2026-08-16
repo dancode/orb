@@ -893,6 +893,8 @@ style_landing( void )
    The INSTALLED layer is deliberately left alone: only a landing re-derives it, which is what
    lets an ad-hoc gui_style_edit() poke survive to be picked up by the reseed below. */
 
+void scale_stack_reset( void );   /* gui_stacks.c (below in this unit) -- the scale ride-along record */
+
 void
 style_new_frame( void )
 {
@@ -906,6 +908,8 @@ style_new_frame( void )
     s_col_stack.sp = s_var_stack.sp = s_face_stack.sp = s_ext_stack.sp = 0;
     s_seed_sp = 0;
     s_next_n = s_item_n = 0;
+
+    scale_stack_reset();           /* scale depth + font ride-along bits, beside the var stack */
 }
 
 /*==============================================================================================

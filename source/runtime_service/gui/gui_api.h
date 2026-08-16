@@ -1913,6 +1913,22 @@ typedef struct gui_api_s
     void ( *scale_push )( gui_scale_t s );
     void ( *scale_pop  )( void );
 
+    /* scale_push_font -- a density step WITH a type role riding along, closed by the same
+       scale_pop.  The plain scale ramp is whitespace-only by design (row / pad / gap, the
+       glyphs stay body-sized); this is the explicit opt-in that pairs a step with a glyph
+       size -- e.g. scale_push_font( GUI_SCALE_DENSE, GUI_TYPE_SMALL ) for an outliner that
+       is tighter AND smaller-set.  The role falls back to the body font wherever it is off
+       or unresolvable, so the pairing never needs a guard.
+
+       type_push / type_pop -- bracket any scope with a type role on its own (no density
+       change): the authored SMALL / LARGE size (GUI_VAR_TYPE_SMALL / _LARGE, absolute px at
+       em=12; 0 = role off) swaps measurement and glyphs inside while layout metrics and the
+       style stay put -- cells remain body-sized.  NORMAL, an off role, or a failed bake are
+       all saved no-ops: authoring against a role is always safe. */
+    void ( *scale_push_font )( gui_scale_t s, gui_type_role_t role );
+    void ( *type_push       )( gui_type_role_t role );
+    void ( *type_pop        )( void );
+
 
     /*============================================================================================================
         GUI_STOCK -- components + the reference widget set  (component/ + stock/)

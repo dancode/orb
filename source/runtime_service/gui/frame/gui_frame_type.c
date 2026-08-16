@@ -1,14 +1,17 @@
 /*==============================================================================================
 
     runtime_service/gui/frame/gui_frame_type.c -- the TYPE RAMP: SMALL / NORMAL / LARGE
-    chrome type sizes resolved from the style.
+    type roles resolved from the style.
 
-    The style owns one knob, GUI_VAR_TYPE_STEP (px at em=12, em-scaled): SMALL sits that far
-    below the body em, LARGE that far above.  This file turns the knob into two loaded font
-    ids whenever a style lands (theme change, font change, DPI retarget), and hands chrome a
+    The style authors each role's size directly -- GUI_VAR_TYPE_SMALL / GUI_VAR_TYPE_LARGE,
+    absolute px at em=12, em-scaled, 0 = that role off -- the type analogue of the scale
+    ramp's authored row heights.  This file turns the authored sizes into loaded font ids
+    whenever a style lands (theme change, font change, DPI retarget), and provides the
     scoped bracket -- gui_type_push / gui_type_pop -- that swaps measurement and the TEXT
-    command stamp for one label without touching layout metrics, the style, or the redraw
-    flag.  Widgets keep their body-derived cells; only the glyphs change size.
+    command stamp for one scope without touching layout metrics, the style, or the redraw
+    flag.  Widgets keep their body-derived cells; only the glyphs change size.  Chrome
+    consumes the roles internally; hosts author against them through the public type_push /
+    type_pop rows and the scale_push_font ride-along.
 
     gui ships no bake at "body plus 2px", so the sizes come from the font resolver
     (gui_frame_resolve.c): shipped bakes serve exact sizes, the host-installed baker
@@ -25,7 +28,7 @@
 ==============================================================================================*/
 // clang-format off
 
-#define GUI_TYPE_STACK_MAX    4             /* push/pop nesting -- role scopes are per-label */
+#define GUI_TYPE_STACK_MAX    8             /* push/pop nesting -- label brackets + public scopes */
 #define GUI_TYPE_MIN_PX       8             /* SMALL floor -- below this nothing reads */
 
 static struct
@@ -51,16 +54,18 @@ type_font_exact( gui_font_family_t fam, u32 size_px )
     return ( id && landed == size_px ) ? id : 0;
 }
 
-/* Role sizes for a body em under the em-scaled step: SMALL floors at GUI_TYPE_MIN_PX and
-   collapses to "off" when the clamp lands it back on the body size. */
+/* An authored role size, landed against a body size: 0 (role off) stays off, otherwise the
+   size floors at GUI_TYPE_MIN_PX and collapses back to "off" when rounding lands it on the
+   body size -- a role that renders at body px is not a variation, just a duplicate bake. */
 
 static u32
-type_size_small( f32 em, f32 step )
+type_size_landed( f32 size_px, u32 body_px )
 {
-    f32 s = em - step;
-    if ( s < (f32)GUI_TYPE_MIN_PX ) s = (f32)GUI_TYPE_MIN_PX;
-    u32 px = (u32)( s + 0.5f );
-    return px == (u32)( em + 0.5f ) ? 0 : px;
+    if ( size_px < 0.5f )
+        return 0;
+    u32 px = (u32)( size_px + 0.5f );
+    if ( px < GUI_TYPE_MIN_PX ) px = GUI_TYPE_MIN_PX;
+    return px == body_px ? 0 : px;
 }
 
 /*==============================================================================================
@@ -69,10 +74,10 @@ type_size_small( f32 em, f32 step )
 
     Runs at every landing that can move the answer: gui_style_apply (theme / font / deferred
     flush), gui_dpi_land (per-window mixed-DPI re-land), and the frame_begin prewarm.  Cheap
-    when nothing changed -- two memo probes.  Bails to "ramp off" whenever the baker is
-    absent, the step is zero, the DPI-managed lineage is not the active font (a host-driven
-    font is none of our business -- the dpi engine's own rule), or the family has no runtime
-    bake source.
+    when nothing changed -- two memo probes.  Each role resolves INDEPENDENTLY: a style may
+    author small only, large only, or both.  Bails to "ramp off" whenever both roles are
+    unauthored, the DPI-managed lineage is not the active font (a host-driven font is none
+    of our business -- the dpi engine's own rule), or the family cannot resolve.
 
 ==============================================================================================*/
 
@@ -88,16 +93,13 @@ gui_type_resolve( void )
 
     if ( font_valid() && dpi_managed() )
     {
-        f32 step = style_var( GUI_VAR_TYPE_STEP );   /* landed style: already em-scaled */
-        if ( step >= 0.5f )
-        {
-            f32 em    = font_em();
-            u32 small = type_size_small( em, step );
-            u32 large = (u32)( em + step + 0.5f );
-            if ( small )
-                s_type.small_id = type_font_exact( dpi_base_family(), small );
+        u32 body  = (u32)( font_em() + 0.5f );
+        u32 small = type_size_landed( style_var( GUI_VAR_TYPE_SMALL ), body );   /* landed style: em-scaled */
+        u32 large = type_size_landed( style_var( GUI_VAR_TYPE_LARGE ), body );
+        if ( small )
+            s_type.small_id = type_font_exact( dpi_base_family(), small );
+        if ( large )
             s_type.large_id = type_font_exact( dpi_base_family(), large );
-        }
     }
 
     /* Live role ids are eviction-exempt while landed (0 clears the pin). */
@@ -112,11 +114,11 @@ gui_type_resolve( void )
     gui_type_prewarm -- frame_begin step, after gui_dpi_land(0) and before the font flush.
 
     Resolves the primary surface's roles, then walks every live viewport's bake and warms the
-    memo for its two role sizes -- so a mid-frame per-window landing (mixed DPI) is a pure
-    memo hit and never loads a font mid-build.  The step is hand-scaled from the BASE style
-    per bake: the landed style_var carries only the primary's scale.  Returns true when any
-    fresh bake loaded (its pixels ride this frame's atlas flush; the caller dirties the frame
-    so the new sizes paint).
+    memo for its authored role sizes -- so a mid-frame per-window landing (mixed DPI) is a
+    pure memo hit and never loads a font mid-build.  The role sizes are hand-scaled from the
+    BASE style per bake: the landed style_var carries only the primary's scale.  Returns true
+    when any fresh bake loaded (its pixels ride this frame's atlas flush; the caller dirties
+    the frame so the new sizes paint).
 
 ==============================================================================================*/
 
@@ -127,8 +129,9 @@ gui_type_prewarm( void )
 
     if ( dpi_managed() )
     {
-        f32 base_step = gui_style_peek()->var[ GUI_VAR_TYPE_STEP ];
-        if ( base_step > 0.0f )
+        f32 base_small = gui_style_peek()->var[ GUI_VAR_TYPE_SMALL ];   /* authored at em 12 */
+        f32 base_large = gui_style_peek()->var[ GUI_VAR_TYPE_LARGE ];
+        if ( base_small > 0.0f || base_large > 0.0f )
         {
             for ( i32 v = 0; v < s_vp_count; ++v )
             {
@@ -137,14 +140,15 @@ gui_type_prewarm( void )
                     continue;   /* slot not live */
 
                 u32 size = vp->dpi_size_px;
-                f32 step = base_step * (f32)size / 12.0f;   /* the style var is authored at em 12 */
-                if ( !size || step < 0.5f )
+                if ( !size )
                     continue;
 
-                u32 small = type_size_small( (f32)size, step );
+                u32 small = type_size_landed( base_small * (f32)size / 12.0f, size );
                 if ( small )
                     type_font_exact( dpi_base_family(), small );
-                type_font_exact( dpi_base_family(), (u32)( (f32)size + step + 0.5f ) );
+                u32 large = type_size_landed( base_large * (f32)size / 12.0f, size );
+                if ( large )
+                    type_font_exact( dpi_base_family(), large );
             }
         }
     }
@@ -193,11 +197,12 @@ gui_type_clear( void )
     Public surface
 ==============================================================================================*/
 
-/* The chrome bracket.  Push saves the active font and the TEXT stamp, then switches both to
-   the role's font -- measurement (font_text_w / text_center_y) and the emitted glyphs agree
-   for everything inside.  A role that resolved to 0 (ramp off, failed bake, NORMAL) still
-   saves, so the matching pop is unconditional.  Never touches metrics or the style: the
-   widget's cell stays body-sized and only the glyphs change. */
+/* The role bracket -- chrome's label bracket and the public type_push / type_pop rows.
+   Push saves the active font and the TEXT stamp, then switches both to the role's font --
+   measurement (font_text_w / text_center_y) and the emitted glyphs agree for everything
+   inside.  A role that resolved to 0 (role off, failed bake, NORMAL) still saves, so the
+   matching pop is unconditional and authoring against a role is always safe.  Never touches
+   metrics or the style: the widget's cell stays body-sized and only the glyphs change. */
 
 void
 gui_type_push( gui_type_role_t role )

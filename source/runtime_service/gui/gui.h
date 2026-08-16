@@ -200,8 +200,8 @@ typedef bool ( *gui_edit_key_fn )( u32 key, bool ctrl, bool shift, bool repeat, 
 typedef void ( *gui_style_source_fn )( void* user );
 
 /* Runtime font baker (see font_baker_set) -- resolve "this typeface at this pixel size" to a
-   baked .orb_font on disk.  gui asks it for the type-ramp sizes (GUI_VAR_TYPE_STEP) it has no
-   shipped bake for; `family` is a source name a baker like dev_font_get resolves (a file in
+   baked .orb_font on disk.  gui asks it for the type-ramp sizes (GUI_VAR_TYPE_SMALL / _LARGE)
+   it has no shipped bake for; `family` is a source name a baker like dev_font_get resolves (a file in
    assets/font_source or an OS-installed face name), size_px is final (DPI already applied).
    Write the absolute path into out_path and return true; false = cannot bake (gui records the
    failure once per size and leaves that role at the body size). */
@@ -748,11 +748,14 @@ typedef enum
     GUI_VAR_ANIM_SELECT,    // rate a selection / toggle crosses to the SELECT plane
     GUI_VAR_ANIM_SIZE,      // rate a MEASURED extent eases to a new size (natural track, box height)
 
-    /* 5. TYPE -- the chrome type ramp.  Em-scaled but never lattice-snapped: a font size must
-       track the body type, and a lattice snap would double a 2px step on the default quantum. */
+    /* 5. TYPE -- the type ramp's role sizes, authored ABSOLUTE like the scale ramp's rows
+       ("small IS 10 at em 12"), not as offsets from the body.  Em-scaled but never
+       lattice-snapped: a font size must track the body type, and a lattice snap would
+       double a small size difference on the default quantum.  Each role is its own opt-in:
+       0 (the default) = that role off, chrome and type_push fall back to the body font. */
 
-    GUI_VAR_TYPE_STEP,      // px (at em=12) the SMALL/LARGE type roles sit below/above the body em;
-                            // 0 (the default) = ramp off -- single-size chrome, an opt-in per style
+    GUI_VAR_TYPE_SMALL,     // px (at em=12) the SMALL type role renders at; 0 = role off
+    GUI_VAR_TYPE_LARGE,     // px (at em=12) the LARGE type role renders at; 0 = role off
 
     GUI_VAR_COUNT,          // var count -- not a var
 
@@ -989,20 +992,25 @@ void         gui_style_apply( void );
 
 void         gui_dpi_land( i32 viewport );
 
-/* The TYPE RAMP roles -- three chrome type sizes the style resolves from GUI_VAR_TYPE_STEP:
-   SMALL for hints / shortcuts / table headers, LARGE for window titles / section headers,
-   NORMAL the body itself.  gui_type_push / gui_type_pop are the internal seam chrome brackets
-   ONE LABEL's measure + draw with: both the measurement readers (font_text_w, text_center_y)
-   and the TEXT command stamp switch to the role's font inside the scope; layout metrics and
-   the style never move, so the widget's cell stays body-sized.  A role the ramp could not
-   resolve (no baker installed, bake failed, step 0) falls through to the body font -- the
-   bracket is always safe to write. */
+/* The TYPE RAMP roles -- the official size variations UI is authored against, the type
+   analogue of the scale ramp's density steps.  Each role's size is authored in the style
+   (GUI_VAR_TYPE_SMALL / _LARGE, absolute px at em=12) and is its OWN opt-in: 0 leaves that
+   role off.  NORMAL is the body em itself -- never authored, never off, always the fallback.
+   Chrome consumes the roles automatically when they are on (SMALL for hints / shortcuts /
+   table headers, LARGE for window titles / section headers).
+
+   gui_type_push / gui_type_pop bracket ONE SCOPE's measure + draw with a role: both the
+   measurement readers (font_text_w, text_center_y) and the TEXT command stamp switch to the
+   role's font inside; layout metrics and the style never move, so cells stay body-sized.  A
+   role that is off or could not resolve (no baker installed, bake failed) falls through to
+   the body font -- authoring against a role is always safe.  To pair a role with a density
+   step in one declaration, see scale_push_font (the scale ramp itself stays whitespace-only). */
 
 typedef enum
 {
     GUI_TYPE_NORMAL = 0,   // the body font -- push is a saved no-op
-    GUI_TYPE_SMALL,        // body minus the type step (floored at readability)
-    GUI_TYPE_LARGE,        // body plus the type step
+    GUI_TYPE_SMALL,        // the authored small size (floored at readability)
+    GUI_TYPE_LARGE,        // the authored large size
 
 } gui_type_role_t;
 

@@ -450,8 +450,9 @@ ex_style_fonts( void )
 
 /*==============================================================================================
     Font Sizes -- size shifting in code.  A size IS a font: the same face at another baked
-    pixel height, selected per scope with push_font / pop_font.  Plus the theme's automatic
-    type ramp (GUI_VAR_TYPE_STEP), which shifts chrome type without any per-widget code.
+    pixel height, selected per scope with push_font / pop_font.  Plus the theme's type ramp
+    (GUI_VAR_TYPE_SMALL / _LARGE, each its own opt-in), which shifts chrome type without any
+    per-widget code, and the type_push / scale_push_font brackets for authoring against it.
 ==============================================================================================*/
 
 static void
@@ -515,26 +516,32 @@ ex_style_font_sizes( void )
         gui()->button( "normal again" );
         gui()->text_disabled( "(a font push relands the whole style -- scope it tightly)" );
 
-        /* The automatic ramp -- chrome shifts type with NO per-widget code: window titles and
+        /* The theme ramp -- chrome shifts type with NO per-widget code: window titles and
            the separator_text labels above draw LARGE, table headers and menu shortcuts draw
-           SMALL, all from one theme var.  The sizes do not ship as assets; gui asks the
-           host-installed baker (font_baker_set -> dev_font_get, wired in sb_gui_example.c)
-           the first time a landing needs one. */
+           SMALL.  Each role is authored as its own absolute size (px at em=12) and is its
+           own opt-in: enable small only, large only, or both.  The sizes do not ship as
+           assets; gui asks the host-installed baker (font_baker_set -> dev_font_get, wired
+           in sb_gui_example.c) the first time a landing needs one. */
         gui()->separator_text( "the theme type ramp" );
         gui()->text( "This window's TITLE and the section labels above are" );
-        gui()->text( "LARGE; the table headers below are SMALL.  One theme" );
-        gui()->text( "var drives both -- widget code never mentions a size." );
+        gui()->text( "LARGE; the table headers below are SMALL.  Each role" );
+        gui()->text( "is its own authored size -- opt into one or both." );
 
-        const gui_style_t* st   = gui()->style_peek();
-        i32                step = (i32)( st->var[ GUI_VAR_TYPE_STEP ] + 0.5f );
-        if ( gui()->slider_int( "GUI_VAR_TYPE_STEP", &step, 0, 8 ) )
+        const gui_style_t* st    = gui()->style_peek();
+        i32                small = (i32)( st->var[ GUI_VAR_TYPE_SMALL ] + 0.5f );
+        i32                large = (i32)( st->var[ GUI_VAR_TYPE_LARGE ] + 0.5f );
+        bool               edit  = false;
+        edit |= gui()->slider_int( "GUI_VAR_TYPE_SMALL", &small, 0, 12 );
+        edit |= gui()->slider_int( "GUI_VAR_TYPE_LARGE", &large, 0, 24 );
+        if ( edit )
         {
-            gui_style_t work = *st;                      /* commit like a style editor: the theme */
-            work.var[ GUI_VAR_TYPE_STEP ] = (f32)step;   /* reads "(custom)" until theme_reset    */
+            gui_style_t work = *st;                       /* commit like a style editor: the theme */
+            work.var[ GUI_VAR_TYPE_SMALL ] = (f32)small;  /* reads "(custom)" until theme_reset    */
+            work.var[ GUI_VAR_TYPE_LARGE ] = (f32)large;
             *gui()->style_get() = work;
             gui()->style_apply();
         }
-        gui()->text_disabled( "(px at em=12, em-scaled; 0 = ramp off -- titles drop to body size)" );
+        gui()->text_disabled( "(absolute px at em=12, em-scaled; 0 = that role off)" );
 
         if ( gui()->table_begin( "ramp_headers", 3, GUI_TABLE_BORDERS_H, 0.0f ) )
         {
@@ -548,6 +555,25 @@ ex_style_font_sizes( void )
             if ( gui()->table_next_column() ) gui()->text( "1 em" );
             gui()->table_end();
         }
+
+        /* Authoring against a role -- scale_push_font pairs a density step with a type role
+           in one declaration (the plain scale ramp stays whitespace-only): a dense list that
+           is tighter AND smaller-set.  With TYPE_SMALL at 0 the rows still go dense but the
+           glyphs stay body-sized -- the fallback in action. */
+        gui()->separator_text( "scale_push_font -- dense + small together" );
+        gui()->scale_push_font( GUI_SCALE_DENSE, GUI_TYPE_SMALL );
+        if ( gui()->child_begin( "dense_small", 0, gui()->sz_child_rows_h( 4 ), GUI_WIN_NONE ) )
+        {
+            static bool s_dense_on[ 4 ];
+            for ( i32 i = 0; i < 4; ++i )
+            {
+                char row[ 32 ];
+                snprintf( row, sizeof( row ), "outliner row %d", i + 1 );
+                gui()->selectable( row, &s_dense_on[ i ] );
+            }
+        }
+        gui()->child_end();
+        gui()->scale_pop();
     }
     gui()->window_end();
 }

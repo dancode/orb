@@ -88,7 +88,8 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
     [ GUI_VAR_ANIM_SELECT     ] = { "Select Rate",     GUI_CLASS_RATE,   40 },
     [ GUI_VAR_ANIM_SIZE       ] = { "Size Rate",       GUI_CLASS_RATE,   40 },
 
-    [ GUI_VAR_TYPE_STEP       ] = { "Type Step",       GUI_CLASS_TYPE,   8  },
+    [ GUI_VAR_TYPE_SMALL      ] = { "Type Small",      GUI_CLASS_TYPE,   12 },
+    [ GUI_VAR_TYPE_LARGE      ] = { "Type Large",      GUI_CLASS_TYPE,   24 },
 
     [ GUI_VAR_CHECK_SHAPE     ] = { "Check Shape",     GUI_CLASS_SHAPE,  GUI_CHECK_CROSS      },
     [ GUI_VAR_BULLET_SHAPE    ] = { "Bullet Shape",    GUI_CLASS_SHAPE,  GUI_BULLET_SQUARE    },
@@ -307,10 +308,11 @@ var_is_pixels( u8 cls )
         [ GUI_VAR_PROGRESS_SHAPE  ] = GUI_PROGRESS_SOLID, \
         [ GUI_VAR_KNOB_SHAPE      ] = ( KNOB ), \
         [ GUI_VAR_MENU_CHECK      ] = GUI_MENU_CHECK_BOX, \
-        /* 6. TYPE -- px at em=12, em-scaled, never snapped.  0 = single-size chrome: no
-              SMALL/LARGE role bakes, one font per DPI size.  The ramp is a style OPT-IN --
-              push/set GUI_VAR_TYPE_STEP > 0 to turn it on. */ \
-        [ GUI_VAR_TYPE_STEP       ] = 0, \
+        /* 6. TYPE -- role sizes, absolute px at em=12, em-scaled, never snapped.  0 = that
+              role off: single-size chrome, one font per DPI size.  Each role is its own
+              style OPT-IN (e.g. small 10, large 15) -- enable one or both. */ \
+        [ GUI_VAR_TYPE_SMALL      ] = 0, \
+        [ GUI_VAR_TYPE_LARGE      ] = 0, \
     }
 
 /* Built-in theme registry.  Each entry is a complete gui_style_t authored for em=12;

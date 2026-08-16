@@ -517,6 +517,7 @@ const char*       gui_style_ext_name  ( gui_style_ext_t ext );
 
 void gui_scale_push( gui_scale_t s );
 void gui_scale_pop( void );
+void gui_scale_push_font( gui_scale_t s, gui_type_role_t role );   /* step + type role; same pop */
 
 /*===============================================  GUI_STOCK  ===============================================*/
 
