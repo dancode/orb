@@ -49,12 +49,15 @@ struct gui_pc_t
 #define OP_GRAD         0x40u
 #define OP_GRAD_RADIAL  0x80u
 #define OP_GRAD_CONIC   0x100u
+#define OP_SPIN         0x200u
+#define OP_DASH         0x400u
+#define OP_DITHER       0x800u
 
 #define TEX_MODE_SHIFT  28u
 #define TEX_INDEX_MASK  0x0FFFFFFFu
 
-// Six float4 rows per record, no padding (gui.h pins the struct to that).
-#define PRIM_ROWS       6u
+// Eight float4 rows per record, no padding (gui.h pins the struct to that).
+#define PRIM_ROWS       8u
 
 #define PI              3.14159265
 
@@ -76,6 +79,12 @@ static uint g_field;    // gui_fx_mode_t
 static uint g_ops;      // GUI_OP_*
 static uint g_tex;      // sampling model | bindless slot
 
+// OP_SPIN's rotation on the frame clock, resolved once per fragment in main() and composed into
+// every shape-local frame prim_local derives.  Identity when the op is absent, so the compose
+// below costs the same four multiplies either way.
+static float g_spin_c = 1.0;
+static float g_spin_s = 0.0;
+
 float4 prim_row( uint r )
 {
     return u_buffers[ pc.prim_buf ][ g_row + r ];
@@ -91,8 +100,14 @@ float4 prim_row( uint r )
 // the same convention clip_coverage already relies on.
 float2 prim_local( float2 px, float4 rect, float4 soft )
 {
+    // OP_SPIN adds its clock-driven angle to the record's rotation by composing the two
+    // (cos, sin) pairs -- the angle-sum identity, not a second rotate.  g_spin is identity when
+    // the op is absent.  The frame carries every field and op with it, which is what makes a
+    // spinner, a radar sweep and a rotating dashed ring one op over shapes that already exist.
+    float cz = soft.z * g_spin_c - soft.w * g_spin_s;
+    float sw = soft.w * g_spin_c + soft.z * g_spin_s;
     float2 d = px - rect.xy;
-    return float2( d.x * soft.z + d.y * soft.w, -d.x * soft.w + d.y * soft.z );
+    return float2( d.x * cz + d.y * sw, -d.x * sw + d.y * cz );
 }
 
 // The rounded-box field at `p`, in the shape's own local frame (prim_local's frame).  The corner
@@ -129,6 +144,49 @@ float box_field( float2 p, float2 half_ext, float4 rad, float pw )
         outside = length( m );
 
     return min( max( q.x, q.y ), 0.0 ) + outside - r;
+}
+
+// The PERIMETER COORDINATE of the rounded box: arc-length px from the top edge's left end to the
+// boundary point nearest `p`, walked clockwise -- four edges and four corner arcs, pieced
+// together from the same quadrant fold box_field runs.  OP_DASH cuts coverage on this axis, which
+// is what makes a dashed border meet itself: the emit site snapped the period so whole cycles fit
+// the total length this function reaches at the top-left arc's far end.
+float box_perimeter_s( float2 p, float2 he, float4 rad )
+{
+    float HP   = 1.57079633;
+    float lt   = 2.0 * he.x - rad.x - rad.y;    // top edge length; the arcs are r * pi/2
+    float lr   = 2.0 * he.y - rad.y - rad.z;
+    float lb   = 2.0 * he.x - rad.z - rad.w;
+    float s_tr = lt;                             // cumulative starts, clockwise
+    float s_r  = s_tr + rad.y * HP;
+    float s_br = s_r  + lr;
+    float s_b  = s_br + rad.z * HP;
+    float s_bl = s_b  + lb;
+    float s_l  = s_bl + rad.w * HP;
+    float s_tl = s_l  + 2.0 * he.y - rad.w - rad.x;
+
+    // The quadrant fold: q positive on both axes means the corner arc is nearest; otherwise the
+    // larger component names the nearer edge.  Same radius-by-sign pick as box_field.
+    float  r = ( p.y <= 0.0 ) ? ( ( p.x <= 0.0 ) ? rad.x : rad.y )
+                              : ( ( p.x <= 0.0 ) ? rad.w : rad.z );
+    float2 q = abs( p ) - ( he - float2( r, r ) );
+
+    if ( q.x > 0.0 && q.y > 0.0 )
+    {
+        // The angle within the arc, 0 where the arc leaves its leading edge.  Unfolding the
+        // quadrant mirror flips the axis order on the two corners the clockwise walk enters
+        // vertically -- which works out to swapping atan2's arguments.
+        float t  = ( ( p.x > 0.0 ) == ( p.y > 0.0 ) ) ? atan2( q.y, q.x ) : atan2( q.x, q.y );
+        float sc = ( p.y <= 0.0 ) ? ( ( p.x > 0.0 ) ? s_tr : s_tl )
+                                  : ( ( p.x > 0.0 ) ? s_br : s_bl );
+        return sc + r * t;
+    }
+    if ( q.x > q.y )    // a vertical edge: right runs down, left runs up
+        return ( p.x > 0.0 ) ? s_r + clamp( p.y + he.y - rad.y, 0.0, lr )
+                             : s_l + clamp( he.y - rad.w - p.y, 0.0, s_tl - s_l );
+    // a horizontal edge: top runs right, bottom runs left
+    return ( p.y <= 0.0 ) ? clamp( p.x + he.x - rad.x, 0.0, lt )
+                          : s_b + clamp( he.x - rad.z - p.x, 0.0, lb );
 }
 
 
@@ -301,6 +359,25 @@ float fx_coverage( float2 px )
         float2 q = float2( abs( local.x ) - rect.z, local.y );
         d = length( float2( max( q.x, 0.0 ), q.y ) ) - rad.x;  // a capsule has one radius, not four
     }
+    // field 2 NGON -- the regular polygon: rad.y flat sides inscribed in circumradius hw, corners
+    // rounded by rad.x px.  The fold reduces the plane to one edge's sector; the distance is then
+    // to that edge SEGMENT, so corners are exact rather than the apothem approximation.  Rounding
+    // shrinks the polygon and inflates the field back out, so the stated radius is the size drawn.
+    // OP_CUT's second boundary stays the box's; emit sites never pair it with this field.
+    else if ( g_field == 2u )
+    {
+        float  rr  = rad.x;
+        float  R   = max( rect.z - rr, 1.0 );
+        float  an  = PI / max( rad.y, 3.0 );
+        float2 acs = float2( cos( an ), sin( an ) );
+        float  a0  = atan2( local.x, -local.y );          // 0 at the TOP vertex, y-down screen
+        float  T   = 2.0 * an;
+        float  bn  = ( a0 - T * floor( a0 / T ) ) - an;   // floor-mod: fmod truncates negatives
+        float2 q   = length( local ) * float2( cos( bn ), abs( sin( bn ) ) );
+        q -= R * acs;
+        q.y += clamp( -q.y, 0.0, R * acs.y );
+        d = length( q ) * sign( q.x ) - rr;
+    }
     else
     {
         corner_pw = prim_row( 4u ).z;
@@ -315,6 +392,23 @@ float fx_coverage( float2 px )
 
     float cov = ( feather <= 0.0 ) ? ( d <= 0.0 ? 1.0 : 0.0 )
                                    : saturate( 0.5 - d / feather );
+
+    // GUI_OP_DASH -- coverage cut by a dash pattern along the box PERIMETER: the dashed border,
+    // and with anim_rate driving the phase, the marching ants.  Same construction as ARC_DASH's
+    // angular cut, on the arc-length coordinate box_perimeter_s walks; the cut edge antialiases
+    // in the same px the pattern is stated in.  Box family only -- a capsule or ngon never
+    // carries the op (their perimeter is not this function).
+    if ( ( g_ops & OP_DASH ) != 0u )
+    {
+        float4 dsh  = prim_row( 7u );
+        float4 anim = prim_row( 6u );
+        float  T    = max( dsh.x, 1e-3 );
+        float  s    = box_perimeter_s( local, rect.zw, rad )
+                      - ( anim.x * pc.time + anim.y );
+        float  m    = s - T * floor( s / T );              // floor-mod: the phase can go negative
+        float  d_on = min( m, dsh.y * T - m );             // signed px: > 0 inside an on-run
+        cov = min( cov, saturate( 0.5 + d_on ) );
+    }
 
     // GUI_OP_CUT -- the interior cut away.  The outward half of the falloff is untouched, so a
     // cut surface and a filled one are pixel-identical everywhere the fill was visible; what goes
@@ -350,7 +444,9 @@ float fx_coverage( float2 px )
         float4 parm  = prim_row( 4u );
         float  rate  = parm.x;
         float  depth = parm.y;
-        cov *= 1.0 - depth * ( 0.5 - 0.5 * cos( 6.28318531 * rate * pc.time ) );
+        // anim_phase in CYCLES, so same-rate pulses can stagger instead of beating in lockstep.
+        cov *= 1.0 - depth * ( 0.5 - 0.5 * cos( 6.28318531
+                                                * ( rate * pc.time + prim_row( 6u ).y ) ) );
     }
 
     return cov;
@@ -394,6 +490,17 @@ float4 main( ps_in_t i ) : SV_Target0
     g_field     = asuint( head.x );
     g_ops       = asuint( head.y );
     g_tex       = asuint( head.z );
+
+    // OP_SPIN: the clock-driven angle, resolved once and composed into every shape-local frame
+    // below (prim_local).  anim_rate is turns/sec, anim_phase the start in turns; both ride the
+    // record, so the animation re-emits nothing -- only pc.time moves.
+    if ( ( g_ops & OP_SPIN ) != 0u )
+    {
+        float4 anim = prim_row( 6u );
+        float  a    = 6.28318531 * ( anim.x * pc.time + anim.y );
+        g_spin_c = cos( a );
+        g_spin_s = sin( a );
+    }
 
     // The clip cut applies to EVERYTHING, the debug views included -- the scissor this replaces
     // cut their geometry too, and a batch-view block that ignored its clip would lie about what
@@ -513,6 +620,13 @@ float4 main( ps_in_t i ) : SV_Target0
             // is one dot product no matter what angle it runs at.
             t = saturate( dot( lp, g ) + 0.5 );
 
+        // The midpoint bend: grad_mid is the EXPONENT the emit site mapped the authored 0..1
+        // midpoint to (ln 0.5 / ln mid), so t = 0.5 lands where the author put it.  0 means the
+        // linear default and skips the pow.
+        float e = prim_row( 6u ).z;
+        if ( e > 0.0 )
+            t = pow( t, e );
+
         vcol = lerp( vcol, unpack_col( asuint( prim_row( 4u ).w ) ), t );
     }
 
@@ -568,5 +682,17 @@ float4 main( ps_in_t i ) : SV_Target0
     // vcol.rgb is already linear light (i.color, or the field-10 sweep of it); alpha is coverage,
     // which was linear all along.  s.r is the glyph coverage from the R8 atlas (1.0 for the white
     // solid-color pixel and for the self-sampled fields, so non-text draws pass through).
-    return float4( vcol.rgb, vcol.a * s.r * cov );
+    float4 outc = float4( vcol.rgb, vcol.a * s.r * cov );
+
+    // GUI_OP_DITHER -- half an 8-bit step of screen-space noise on the output, so a wide soft
+    // ramp (a drop shadow's falloff, a gradient across a panel) quantizes to distinct pixels
+    // instead of visible bands.  Interleaved gradient noise: one uncorrelated fraction per pixel,
+    // stable per position, no texture.  Applied to alpha too -- shadow banding IS alpha banding.
+    if ( ( g_ops & OP_DITHER ) != 0u )
+    {
+        float n = frac( 52.9829189 * frac( dot( i.sv_pos.xy,
+                                                float2( 0.06711056, 0.00583715 ) ) ) );
+        outc += ( n - 0.5 ) * ( 1.0 / 255.0 );
+    }
+    return outc;
 }

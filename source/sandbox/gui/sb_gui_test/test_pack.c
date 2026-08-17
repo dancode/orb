@@ -69,10 +69,10 @@ test_vert_ctors( void )
 static void
 test_prim_layout( void )
 {
-    /* Six 16-byte rows, no tail padding.  GUI_PRIM_ROWS is what the shaders multiply by. */
-    test_equal( 6u,  GUI_PRIM_ROWS );
-    test_equal( 96u, (u32)GUI_PRIM_BYTES );
-    test_equal( 96u, (u32)sizeof( gui_prim_t ) );
+    /* Eight 16-byte rows, no tail padding.  GUI_PRIM_ROWS is what the shaders multiply by. */
+    test_equal( 8u,   GUI_PRIM_ROWS );
+    test_equal( 128u, (u32)GUI_PRIM_BYTES );
+    test_equal( 128u, (u32)sizeof( gui_prim_t ) );
 
     /* Row starts.  The hot word leads on purpose: a glyph or a flat fill reads row 0 and stops. */
     test_equal(  0u, (u32)offsetof( gui_prim_t, field   ) );
@@ -81,6 +81,8 @@ test_prim_layout( void )
     test_equal( 48u, (u32)offsetof( gui_prim_t, feather ) );
     test_equal( 64u, (u32)offsetof( gui_prim_t, param_a ) );
     test_equal( 80u, (u32)offsetof( gui_prim_t, grad_x  ) );
+    test_equal( 96u, (u32)offsetof( gui_prim_t, anim_rate   ) );
+    test_equal( 112u, (u32)offsetof( gui_prim_t, dash_period ) );
 
     /* Within-row order, since a row is read as one vec4 and its components are positional. */
     test_equal(  4u, (u32)offsetof( gui_prim_t, ops     ) );
@@ -101,6 +103,9 @@ test_prim_layout( void )
     test_equal( 84u, (u32)offsetof( gui_prim_t, grad_y  ) );
     test_equal( 88u, (u32)offsetof( gui_prim_t, cut_dx  ) );
     test_equal( 92u, (u32)offsetof( gui_prim_t, cut_dy  ) );
+    test_equal( 100u, (u32)offsetof( gui_prim_t, anim_phase ) );
+    test_equal( 104u, (u32)offsetof( gui_prim_t, grad_mid   ) );
+    test_equal( 116u, (u32)offsetof( gui_prim_t, dash_duty  ) );
 }
 
 /* The op bits are single bits and DISJOINT, which is the whole claim the op word makes: any op
@@ -111,7 +116,8 @@ test_prim_ops( void )
 {
     const u32 ops[] = { GUI_OP_BAND, GUI_OP_CUT, GUI_OP_INSET,
                         GUI_OP_PULSE, GUI_OP_STRIPES, GUI_OP_SELF,
-                        GUI_OP_GRAD, GUI_OP_GRAD_RADIAL, GUI_OP_GRAD_CONIC };
+                        GUI_OP_GRAD, GUI_OP_GRAD_RADIAL, GUI_OP_GRAD_CONIC,
+                        GUI_OP_SPIN, GUI_OP_DASH, GUI_OP_DITHER };
 
     u32 seen = 0u;
     for ( u32 i = 0; i < ARRAY_COUNT( ops ); ++i )
@@ -121,7 +127,7 @@ test_prim_ops( void )
         test_equal( 0u, seen & ops[ i ] );                /* and not one already spent */
         seen |= ops[ i ];
     }
-    test_equal( 0x1FFu, seen );
+    test_equal( 0xFFFu, seen );
 }
 
 /*============================================================================================*/

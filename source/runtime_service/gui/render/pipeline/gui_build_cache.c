@@ -968,9 +968,10 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_tess.slot_tess_gen  = slot->tess_gen;
     s_tess.force_new_cmd  = true;
 
-    /* The memo must not reach back into the PREVIOUS slot's records: their indices are relative to
-       that slot's base, so reusing one here would name a record this slot does not own. */
-    s_tess.prim_memo_valid = false;
+    /* The dedup floor must not reach back into the PREVIOUS slot's records: their indices are
+       relative to that slot's base, so reusing one here would name a record this slot does not
+       own.  (This also resets a floor a previous slot's volatile boundary left high.) */
+    s_tess.prim_dedup_floor = s_tess.prim_count;
 
     /* Fresh tessellation rebuilds the slot's local clip table from scratch (tess_clip_local).
        cache_idx keys the window's fixed clip slab; a window past the cache cap (~0u, dropped

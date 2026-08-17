@@ -145,6 +145,14 @@ static struct
        only touches it to override one shape. */
     f32 corner_pow;
 
+    /* Ambient BORDER ALIGNMENT for the stroked box family: where the band sits against the
+       authored boundary.  0 = inside (the band's outer edge on the boundary -- the default every
+       outline has always had), 0.5 = centred, 1 = outside (the band's inner edge on it).
+       Resolved at PUSH time by inflating the shape and its radius by align * width, so the
+       tessellator and the fragment never learn the concept -- an inside band of the inflated
+       shape IS the aligned band of the authored one. */
+    f32 border_align;
+
     /* Ambient horizontal text-clip window: glyph-level [x0, x1] hard-clip folded into every pushed
        text run that does not carry its own explicit window.  The sentinel (-/+ GUI_TEXT_NO_CLIP)
        means unclipped (the common path).  A seam that draws text into a bounded slot -- a table cell
@@ -291,6 +299,7 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.alpha                = 1.0f;
     s_draw.rounding             = 0.0f;                 /* square until a seam sets the resolved radius */
     s_draw.corner_pow           = 0.0f;                 /* circular arcs until the frame installs the style */
+    s_draw.border_align         = 0.0f;                 /* borders lie inside until a caller moves them */
     s_draw.text_clip_x0         = -GUI_TEXT_NO_CLIP;    /* unclipped until a seam sets a window */
     s_draw.text_clip_x1         =  GUI_TEXT_NO_CLIP;
     s_draw.text_edge_w          = 0.0f;                 /* plain runs until a caller asks for an edge */
@@ -706,6 +715,22 @@ draw_corner_smooth( void )
     return ( s_draw.corner_pow <= 2.0f ) ? 0.0f : ( s_draw.corner_pow - 2.0f ) * 0.25f;
 }
 
+/* Where a stroked box's band sits against its boundary: 0 inside (the default), 0.5 centred,
+   1 outside -- the alignment every design tool offers on a stroke.  Ambient like the radius,
+   save/restore around the shapes it should affect.  Resolved at push time by inflating the
+   shape by align * width (see s_draw.border_align), so it costs nothing downstream. */
+void
+draw_set_border_align( f32 a )
+{
+    s_draw.border_align = a < 0.0f ? 0.0f : ( a > 1.0f ? 1.0f : a );
+}
+
+f32
+draw_border_align( void )
+{
+    return s_draw.border_align;
+}
+
 /*==============================================================================================
     Text edge -- the ambient second colour painted OUTSIDE the glyph boundary.
 
@@ -858,6 +883,10 @@ static const u8 k_cmd_hash_len[] = {
     [GUI_CMD_IMAGE_XF]      = sizeof( ( (gui_cmd_t*)0 )->image_xf ),
     [GUI_CMD_CHECKER]       = sizeof( ( (gui_cmd_t*)0 )->checker ),
     [GUI_CMD_GRID]          = sizeof( ( (gui_cmd_t*)0 )->grid ),
+    [GUI_CMD_NGON]          = sizeof( ( (gui_cmd_t*)0 )->ngon ),
+    /* Folds rate/phase whole like FX_BOX: the ants scroll in the fragment off pc.time, so the
+       command hashes stable frame-to-frame while the pattern moves. */
+    [GUI_CMD_BOX_DASH]      = sizeof( ( (gui_cmd_t*)0 )->box_dash ),
 };
 
 static u32
@@ -1267,7 +1296,7 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
 
 static void
 draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 variant,
-                 f32 rate, f32 depth, f32 rot, f32 cut_dx, f32 cut_dy, u32 abgr )
+                 f32 rate, f32 depth, f32 phase, f32 rot, f32 cut_dx, f32 cut_dy, u32 abgr )
 {
     /* Cull against the GROWN box: the falloff skirt is real geometry (feather/2 past the rect,
        plus the tessellator's pixel of slack), and a shadow whose box is just off screen still
@@ -1299,6 +1328,7 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
     c->fx_box.feather  = feather;
     c->fx_box.rate     = rate;
     c->fx_box.depth    = depth;
+    c->fx_box.phase    = phase;
     c->fx_box.rot      = rot;
     c->fx_box.abgr     = col;
     c->fx_box.variant  = variant;
@@ -1310,7 +1340,7 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
 void
 draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 /* x,y,w,h is the CASTER; (ox, oy) is how far the shadow falls from it.  The command carries the
@@ -1321,7 +1351,7 @@ draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
                  f32 ox, f32 oy, u32 abgr )
 {
     draw_fx_box_cmd( x + ox, y + oy, w, h, rounding, feather, 1u,
-                     0.0f, 0.0f, 0.0f, -ox, -oy, abgr );
+                     0.0f, 0.0f, 0.0f, 0.0f, -ox, -oy, abgr );
 }
 
 /* The inner shadow: the same surface with its falloff turned inward (GUI_OP_INSET), painting
@@ -1331,13 +1361,14 @@ draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
 void
 draw_push_inset( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 depth, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, depth, 2u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, depth, 2u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 void
-draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, u32 abgr )
+draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, f32 phase,
+                 u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0u, rate, depth, 0.0f,
+    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0u, rate, depth, phase, 0.0f,
                      0.0f, 0.0f, abgr );
 }
 
@@ -1349,7 +1380,7 @@ draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot
 {
     draw_fx_box_cmd( x, y, w, h, rounding,
                      ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
-                     0u, 0.0f, 0.0f, rot, 0.0f, 0.0f, abgr );
+                     0u, 0.0f, 0.0f, 0.0f, rot, 0.0f, 0.0f, abgr );
 }
 
 /*==============================================================================================
@@ -1369,8 +1400,15 @@ draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot
 void
 draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
                          f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
-                         u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind )
+                         u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind, f32 grad_mid )
 {
+    /* The ramp midpoint, authored 0..1 (where the 50/50 blend lands along the ramp), mapped to
+       the exponent the record carries: t^e crosses 0.5 at mid when e = ln 0.5 / ln mid.  0.5 and
+       0 are the linear default and store 0, which is also what keeps two identical linear ramps
+       authored either way deduping onto one record. */
+    f32 mid_e = 0.0f;
+    if ( grad_mid > 0.001f && grad_mid < 0.999f && grad_mid != 0.5f )
+        mid_e = -0.69314718f / logf( grad_mid );
     /* Cull against the grown box: the falloff skirt is real geometry (feather/2 past the rect,
        plus the tessellator's pixel of slack) -- the draw_push_shadow rule. */
     f32 pad = ( feather > 0.0f ? feather * 0.5f : 0.0f ) + 1.0f;
@@ -1399,6 +1437,7 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
     c->round_rect.col_b    = cb;
     c->round_rect.grad_ang  = grad_ang;
     c->round_rect.grad_kind = grad_kind;
+    c->round_rect.grad_mid  = mid_e;
     draw_cmd_seal();
 }
 
@@ -1417,7 +1456,8 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
 ==============================================================================================*/
 
 static void
-draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr )
+draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                 f32 spin_rate, f32 spin_phase, u32 abgr )
 {
     u32 col = draw_apply_alpha( abgr );
     f32 g   = r + thickness * 0.5f;   /* the tessellator's own AA pad rides draw_cmd_open's `pad` */
@@ -1425,26 +1465,39 @@ draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, 
     gui_cmd_t* c = draw_cmd_open( type, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
     if ( !c )
         return;
-    c->arc.cx        = cx;
-    c->arc.cy        = cy;
-    c->arc.r         = r;
-    c->arc.thickness = thickness;
-    c->arc.a0        = a0;
-    c->arc.a1        = a1;
-    c->arc.abgr      = col;
+    c->arc.cx         = cx;
+    c->arc.cy         = cy;
+    c->arc.r          = r;
+    c->arc.thickness  = thickness;
+    c->arc.a0         = a0;
+    c->arc.a1         = a1;
+    c->arc.spin_rate  = spin_rate;
+    c->arc.spin_phase = spin_phase;
+    c->arc.abgr       = col;
     draw_cmd_seal();
 }
 
 void
 draw_push_arc( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr )
 {
-    draw_sector_cmd( GUI_CMD_ARC, cx, cy, r, thickness, a0, a1, abgr );
+    draw_sector_cmd( GUI_CMD_ARC, cx, cy, r, thickness, a0, a1, 0.0f, 0.0f, abgr );
+}
+
+/* The arc under GUI_OP_SPIN: its whole frame rotates at `rate` turns/sec on the shader clock, so
+   the command's bytes are identical every frame it runs -- the spinner that re-tessellates
+   nothing.  `phase` is the starting angle in turns.  The caller still presents frames
+   (gui()->request_redraw(), the pulse contract). */
+void
+draw_push_arc_spin( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                    f32 rate, f32 phase, u32 abgr )
+{
+    draw_sector_cmd( GUI_CMD_ARC, cx, cy, r, thickness, a0, a1, rate, phase, abgr );
 }
 
 void
 draw_push_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr )
 {
-    draw_sector_cmd( GUI_CMD_PIE, cx, cy, r, 0.0f, a0, a1, abgr );
+    draw_sector_cmd( GUI_CMD_PIE, cx, cy, r, 0.0f, a0, a1, 0.0f, 0.0f, abgr );
 }
 
 /*==============================================================================================
@@ -1596,6 +1649,91 @@ draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 angle, bool stri
 }
 
 /*==============================================================================================
+    draw_push_ngon -- a regular polygon as one GUI_FX_NGON quad, filled or stroked.
+
+    The polyline fan this replaces sampled up to 64 perimeter points; the field is exact at any
+    size and the corner can round.  `rounding` shrinks the polygon and inflates the field back
+    out, so the stated circumradius is the size drawn.  The border-align ambient applies to the
+    stroked form exactly as it does to the rect outline -- same inflation, same reasoning.
+==============================================================================================*/
+
+void
+draw_push_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 rounding,
+                f32 thickness, u32 abgr )
+{
+    if ( r <= 0.0f )
+        return;
+    if ( sides < 3u )  sides = 3u;
+    if ( sides > 64u ) sides = 64u;
+
+    if ( thickness > 0.0f )
+    {
+        f32 ba = s_draw.border_align * thickness;
+        r += ba;
+        if ( rounding > 0.0f ) rounding += ba;
+    }
+    if ( rounding > r * 0.5f ) rounding = r * 0.5f;   /* the field needs a real core to inflate from */
+
+    u32 col = draw_apply_alpha( abgr );
+    f32 g   = r + 1.0f;
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_NGON, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->ngon.cx        = cx;
+    c->ngon.cy        = cy;
+    c->ngon.r         = r;
+    c->ngon.rounding  = rounding;
+    c->ngon.rot       = rot;
+    c->ngon.thickness = thickness;
+    c->ngon.sides     = sides;
+    c->ngon.abgr      = col;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_box_dashed -- a rounded-box outline cut by a perimeter dash (the marching ants).
+
+    dash/gap are arc-length px, the draw_dashed_line vocabulary; the tessellator snaps the period
+    so whole cycles fit the perimeter and the pattern meets itself.  `rate` scrolls it in px/sec
+    on the shader clock (0 = static), so the ants' command bytes never change while they march.
+==============================================================================================*/
+
+void
+draw_push_box_dashed( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
+                      f32 dash, f32 gap, f32 rate, f32 phase, u32 abgr )
+{
+    if ( dash <= 0.0f || t <= 0.0f )
+        return;
+
+    /* Border alignment: the same push-time inflation the plain outline runs. */
+    f32 ba = s_draw.border_align * t;
+    if ( ba > 0.0f )
+    {
+        x -= ba;  y -= ba;  w += ba * 2.0f;  h += ba * 2.0f;
+        if ( rounding > 0.0f ) rounding += ba;
+    }
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
+    if ( !c )
+        return;
+    c->box_dash.x        = x;
+    c->box_dash.y        = y;
+    c->box_dash.w        = w;
+    c->box_dash.h        = h;
+    c->box_dash.rounding = rounding;
+    c->box_dash.t        = t;
+    c->box_dash.dash     = dash;
+    c->box_dash.gap      = gap;
+    c->box_dash.rate     = rate;
+    c->box_dash.phase    = phase;
+    c->box_dash.abgr     = col;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
     draw_push_rect_outline -- emit a hollow rectangle semantic command.
 ==============================================================================================*/
 
@@ -1605,6 +1743,22 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     /* Rounded outlines become GUI_OP_BAND surfaces with an AA skirt past the authored rect --
        the same 1 px cull slack the rounded fill takes (see draw_rect_cmd). */
     f32 rounding = draw_clamp_rounding( w, h );
+
+    /* Border alignment, resolved here and nowhere else: an aligned band is the INSIDE band of
+       the shape inflated by align * width, with the radius growing by the same amount so the
+       corners stay concentric with the authored ones.  A square outline (radius 0) keeps its
+       sharp corner -- the mitre join -- because the inflation moves edges, not arcs. */
+    f32 ba = s_draw.border_align * t;
+    if ( ba > 0.0f )
+    {
+        x -= ba;  y -= ba;  w += ba * 2.0f;  h += ba * 2.0f;
+        if ( rounding > 0.0f )
+        {
+            rounding += ba;
+            f32 lim = ( ( w < h ) ? w : h ) * 0.5f;
+            if ( rounding > lim ) rounding = lim;
+        }
+    }
     f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
     u32 col      = draw_apply_alpha( abgr );
 

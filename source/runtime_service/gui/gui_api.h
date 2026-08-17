@@ -744,6 +744,14 @@ typedef struct gui_api_s
     void ( *draw_set_corner_smooth )( f32 t );
     f32  ( *draw_corner_smooth     )( void );
 
+    /* Where a stroked box's band sits against its boundary -- the stroke alignment every design
+       tool offers: 0 inside (the default every outline has always had), 0.5 centred, 1 outside.
+       Applies to the stroked rect / circle / ngon / dashed-border family; resolved at push time
+       by inflating the shape, so it costs nothing downstream.  Ambient like the radius --
+       save, set, draw, restore. */
+    void ( *draw_set_border_align )( f32 a );
+    f32  ( *draw_border_align     )( void );
+
     /* Ambient TEXT EDGE -- draws an outline or drop-shadow color around text, in the same draw
        call as the glyph itself: a second colour painted OUTSIDE the glyph boundary.  Slate spends a whole extra vertex field (SecondaryColor) on this; here
        it is a packed word on the text command, because once a glyph is a distance field the outline
@@ -845,9 +853,19 @@ typedef struct gui_api_s
        shapes the ramp and `angle` orients it: the axis for GUI_GRAD_LINEAR, the direction the
        sheen peaks toward for GUI_GRAD_CONIC, ignored by GUI_GRAD_RADIAL.  Radial and conic exist
        here and not on draw_gradient because neither can be described by colours at a rectangle's
-       corners. */
+       corners.  `mid` bends the ramp: where along it the 50/50 blend lands (a design tool's
+       gradient midpoint handle), 0..1; 0.5 -- and 0, the unset default -- is the linear ramp. */
     void ( *draw_round_rect_gradient )( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
-                                        gui_grad_t kind, f32 angle );
+                                        gui_grad_t kind, f32 angle, f32 mid );
+
+    /* The dashed rounded border -- and at a non-zero `speed` (px/sec) the MARCHING ANTS, the
+       selection border that scrolls on the shader clock: the command's bytes never change while
+       it runs, so the ants re-tessellate nothing (present frames with request_redraw, the
+       draw_pulse contract).  dash/gap are arc-length px (the draw_dashed_line vocabulary); the
+       period snaps so whole cycles fit the perimeter and a closed border meets itself.  Honors
+       the border-align ambient. */
+    void ( *draw_round_rect_dashed )( gui_rect_t box, f32 rounding, f32 thickness,
+                                      f32 dash, f32 gap, f32 speed, u32 col );
     void ( *draw_inset_shadow      )( gui_rect_t box, f32 depth, u32 col );
     void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );
     /* The drop shadow proper: draw_shadow's falloff with the CASTER'S silhouette cut out of it,
@@ -868,12 +886,16 @@ typedef struct gui_api_s
        the frame's region is written whole regardless of what was retained.)  `rate` is in Hz and
        `depth` the 0..1 fraction of alpha taken at the trough.  Honors the ambient rounding.
        The clock advancing does not schedule a frame: call request_redraw while the pulse is
-       live, the same contract a volatile widget has. */
-    void ( *draw_pulse             )( gui_rect_t box, f32 rate, f32 depth, u32 col );
+       live, the same contract a volatile widget has.  `phase` offsets the wave in cycles, so a
+       row of same-rate indicators can stagger instead of beating in lockstep; 0 = in step. */
+    void ( *draw_pulse             )( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col );
     void ( *draw_text_outline      )( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
     void ( *draw_text_shadow       )( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
     void ( *draw_grip              )( gui_rect_t box, u32 col );
-    void ( *draw_spinner           )( gui_rect_t box, f32 t, f32 thickness, u32 col );
+    /* Spinner: a 270-degree arc turning at `rate` revolutions/sec ON THE SHADER CLOCK
+       (GUI_OP_SPIN) -- byte-identical command every frame, so it re-tessellates nothing.
+       Present frames with request_redraw while it shows, the draw_pulse contract. */
+    void ( *draw_spinner           )( gui_rect_t box, f32 rate, f32 thickness, u32 col );
     void ( *draw_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
 
     /* Line / path stroking (gui_stroke_align_t; see gui.h for the pixel model).

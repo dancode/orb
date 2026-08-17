@@ -428,6 +428,13 @@ step_cmd_bounds( const gui_cmd_t* c )
             return ( gui_rect_t ){ c->checker.x, c->checker.y, c->checker.w, c->checker.h };
         case GUI_CMD_GRID:
             return ( gui_rect_t ){ c->grid.x, c->grid.y, c->grid.w, c->grid.h };
+        case GUI_CMD_NGON:
+        {
+            f32 g = c->ngon.r;
+            return ( gui_rect_t ){ c->ngon.cx - g, c->ngon.cy - g, g * 2.0f, g * 2.0f };
+        }
+        case GUI_CMD_BOX_DASH:
+            return ( gui_rect_t ){ c->box_dash.x, c->box_dash.y, c->box_dash.w, c->box_dash.h };
         /* Sprite / nine-slice paints exactly its box -- the slice expansion happens inside it. */
         case GUI_CMD_SPRITE:
             return ( gui_rect_t ){ c->sprite.x, c->sprite.y, c->sprite.w, c->sprite.h };

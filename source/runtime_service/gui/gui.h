@@ -1703,8 +1703,14 @@ typedef enum
     GUI_FX_NONE      = 0,  /* no effect -- (ex, ey) and the parameters are ignored (the default) */
     GUI_FX_BOX       = 1,  /* filled rounded box: coverage 1 inside the boundary, feathered across it */
 
-    /* 2 and 3 are unnamed.  They were RING and PULSE, which are a BOX plus a post-op rather than
-       shapes of their own -- see GUI_OP_BAND / GUI_OP_PULSE, which is where they live now. */
+    GUI_FX_NGON      = 2,  /* filled regular polygon: `sides` flat edges inscribed in radius hw,
+                              corners rounded by r_tl (row [2]: r_tl = rounding, r_tr = sides).
+                              Lands in the shared decode, so BAND / GRAD / CUT / INSET compose --
+                              a stroked hexagon badge is this field plus the band op, one quad. */
+
+    /* 3 is unnamed.  It was PULSE -- a BOX plus a post-op rather than a shape of its own -- see
+       GUI_OP_PULSE, which is where it lives now.  (2 was RING, likewise an op now; NGON above
+       reclaimed the value.) */
 
     /* The two modes that are not SHAPES.  Both leave coverage at 1 and act somewhere else in the
        pipeline -- proof the word is really "what the fragment does", not "which SDF to evaluate". */
@@ -1819,6 +1825,7 @@ typedef enum
     for; the fields that have no corners reuse the row rather than pad it out:
 
         BOX / SEG      r_tl, r_tr, r_br, r_bl   -- per-corner radii (SEG: r_tl = half-thickness)
+        NGON           r_tl = corner rounding (px), r_tr = side count
         ARC_DASH       r_tl = dash period (turns), r_tr = on-duty fraction
         GRID           r_tl, r_tr = lattice phase per axis
         everything else                          -- unused, left zero
@@ -1887,13 +1894,34 @@ typedef struct
 
     f32 grad_x, grad_y, cut_dx, cut_dy;
 
+    /* Row 6 -- the ANIMATION lane, plus the ramp's midpoint.  anim_rate / anim_phase belong to
+       whichever animating op the record carries; at most one interpretation is live per record.
+         GUI_OP_SPIN   anim_rate = turns/sec the local frame rotates at (on pc.time), anim_phase
+                       = the starting angle in turns.  The frame carries every field and op with
+                       it, so a spinner, a radar sweep and a rotating dashed ring are all this
+                       one op over shapes that already exist.
+         GUI_OP_DASH   anim_rate = px/sec the dash pattern scrolls along the perimeter -- the
+                       marching ants; anim_phase = the static offset in px.
+         GUI_OP_PULSE  anim_phase = cycles, so same-rate pulses can stagger instead of beating
+                       in lockstep (rate and depth stay in param_a / param_b).
+         GUI_OP_GRAD   grad_mid = the exponent bending the ramp's t about its midpoint, mapped
+                       once at the emit site (ln 0.5 / ln mid); 0 means the linear default. */
+    f32 anim_rate, anim_phase, grad_mid, reserved_a;
+
+    /* Row 7 -- GUI_OP_DASH's pattern, in ARC-LENGTH px along the shape's perimeter (the
+       draw_arc_dashed vocabulary, walked around a box instead of a circle).  The emit site snaps
+       the period so whole cycles fit the perimeter -- a closed dashed border meets itself.  Its
+       own row for the reason row 5 exists: PULSE owns param_a/b, and a dash that fought it for
+       them would rebuild the "ops that cannot compose" trap the record deleted. */
+    f32 dash_period, dash_duty, reserved_b, reserved_c;
+
 } gui_prim_t;
 
-/* 96 bytes = six std430 rows of four 32-bit components, so the fragment indexes the buffer as
+/* 128 bytes = eight std430 rows of four 32-bit components, so the fragment indexes the buffer as
    `prim * GUI_PRIM_ROWS + row` with no padding to account for.  Pinned because the shaders spell
    that stride as a literal. */
 
-#define GUI_PRIM_ROWS   6u
+#define GUI_PRIM_ROWS   8u
 #define GUI_PRIM_BYTES  ( GUI_PRIM_ROWS * 16u )
 
 ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
@@ -1918,6 +1946,16 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
 
 #define GUI_OP_GRAD_RADIAL  ( 1u << 7 )   /* centre -> rim, against the shape's own half-extent */
 #define GUI_OP_GRAD_CONIC   ( 1u << 8 )   /* angular, mirrored about the grad axis -- a sheen   */
+
+/* The animation and output ops.  SPIN and DASH both read the record's anim_rate/anim_phase (row
+   6) against pc.time -- which is why the whole animation re-emits nothing: the record is
+   byte-identical every frame and only the push constant moves.  The owner still calls
+   gui()->request_redraw() while it runs (GUI_FX_TIME_WRAP). */
+#define GUI_OP_SPIN     ( 1u << 9 )   /* rotate the local frame at anim_rate turns/sec         */
+#define GUI_OP_DASH     ( 1u << 10 )  /* cut coverage by the perimeter dash pattern (row 7),
+                                         scrolled at anim_rate px/sec -- the marching ants     */
+#define GUI_OP_DITHER   ( 1u << 11 )  /* add +-0.5/255 screen-space noise to the output, so a
+                                         wide soft ramp lands on 8-bit without banding         */
 
 /* Which way a ramp runs, as a draw parameter.  The record carries it as the op bits above; this is
    the spelling a caller uses, where "at most one" is a property of the type rather than a rule. */
@@ -2087,6 +2125,10 @@ typedef enum
                              //   4096 quads a rect-pool expansion would cost at its 64x64 clamp
     GUI_CMD_GRID,            // line lattice (GUI_FX_GRID): graph-paper / node-graph backdrop in
                              //   one quad; the lattice anchors to (ox, oy) so it pans with content
+    GUI_CMD_NGON,            // regular polygon (GUI_FX_NGON): filled or stroked, corners rounded
+                             //   by the ambient rounding -- one quad, exact at any size
+    GUI_CMD_BOX_DASH,        // rounded-box outline cut by a perimeter dash (GUI_OP_DASH): the
+                             //   dashed border, and at a non-zero scroll rate the marching ants
 
 } gui_cmd_type_t;
 
@@ -2162,7 +2204,7 @@ gui_tex_index( u32 tex_idx )
 
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (20 values)
+    u8 type;       // gui_cmd_type_t, fits u8 (22 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
@@ -2262,8 +2304,10 @@ typedef struct
            what makes a cast DIRECTIONAL, and 0 is the even one every caller had before.  The
            offset is in the shape's LOCAL frame -- the same as screen for the axis-aligned boxes
            that are the only things which cast. */
+        /* `phase` offsets the pulse wave in CYCLES (record anim_phase), so same-rate pulses can
+           stagger instead of beating in lockstep; 0 for every non-pulsing variant. */
         struct { f32 x, y, w, h; f32 rounding, corner_pow, feather, rate, depth, rot;
-                 u32 abgr, variant; f32 cut_dx, cut_dy; } fx_box;
+                 u32 abgr, variant; f32 cut_dx, cut_dy; f32 phase; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME one quad a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape
@@ -2286,8 +2330,10 @@ typedef struct
            the op is simply left off.
            The ramp reaches the fragment through the RECORD (GUI_OP_GRAD), which is why radial and
            conic exist at all -- neither can be described by colours at a rectangle's corners. */
+        /* `grad_mid` is the ramp's midpoint bend, stored as the EXPONENT the record carries
+           (mapped once at push time, ln 0.5 / ln mid); 0 is the linear default. */
         struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather, corner_pow; u32 abgr;
-                 u32 col_b; f32 grad_ang; u32 grad_kind; } round_rect;
+                 u32 col_b; f32 grad_ang; u32 grad_kind; f32 grad_mid; } round_rect;
         /* Circular sector -- ONE member serving GUI_CMD_ARC and GUI_CMD_PIE, which differ only in
            the field the fragment evaluates, not in anything they carry.  Angles are radians in
            screen space (0 points +x, positive turns clockwise, matching text_xf.rot); a1 < a0 is
@@ -2296,7 +2342,10 @@ typedef struct
            Sampled as a polyline this shape would need up to 66 points fanned or stroked -- up to
            65 separate TRIANGLE commands for a pie, ~130 vertices for a spinner.  It costs one
            quad instead, because a circular field needs no quadrant fold (see the effect band). */
-        struct { f32 cx, cy, r, thickness, a0, a1;                u32 abgr; } arc;
+        /* spin_rate (turns/sec) + spin_phase (turns) put the sector under GUI_OP_SPIN: the whole
+           frame rotates on pc.time in the FRAGMENT, so a spinner's bytes are identical every
+           frame and it re-tessellates nothing -- the pulse contract for rotation.  0 = static. */
+        struct { f32 cx, cy, r, thickness, a0, a1; f32 spin_rate, spin_phase; u32 abgr; } arc;
         /* The arc under an angular dash cut.  `period` is radians per dash+gap cycle -- the emit
            side quantizes it so a WHOLE number of cycles fits the sweep, which is what keeps a
            closed dashed ring from showing a seam where the pattern meets itself; `duty` is the
@@ -2322,6 +2371,17 @@ typedef struct
            rides along (GUI_FX_GRID). */
         struct { f32 x, y, w, h; f32 cell, thickness, ox, oy; f32 angle; u32 stripes;
                  u32 abgr; } grid;
+        /* Regular polygon (GUI_FX_NGON): `sides` flat edges inscribed in circumradius r, rotated
+           by `rot` (radians, 0 = a vertex pointing up), corners rounded by `rounding` px.
+           thickness > 0 strokes it (GUI_OP_BAND); 0 fills. */
+        struct { f32 cx, cy, r, rounding, rot, thickness; u32 sides; u32 abgr; } ngon;
+        /* Rounded-box outline cut by a perimeter dash (GUI_OP_BAND + GUI_OP_DASH).  dash/gap are
+           arc-length px (the draw_dashed_line vocabulary); the tessellator snaps the period so
+           whole cycles fit the perimeter.  `rate` scrolls the pattern in px/sec on pc.time --
+           the marching ants -- and `phase` is a static px offset; both animate in the FRAGMENT,
+           so the ants re-tessellate nothing. */
+        struct { f32 x, y, w, h; f32 rounding, t; f32 dash, gap; f32 rate, phase;
+                 u32 abgr; } box_dash;
     };
 } gui_cmd_t;
 

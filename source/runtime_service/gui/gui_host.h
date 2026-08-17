@@ -185,6 +185,8 @@ void gui_draw_set_rounding( f32 r );
 f32  gui_draw_rounding( void );
 void gui_draw_set_corner_smooth( f32 t );
 f32  gui_draw_corner_smooth( void );
+void gui_draw_set_border_align( f32 a );
+f32  gui_draw_border_align( void );
 
 /* ambient second colour outside the glyph edge -- outlined / shadowed SDF text from one quad */
 void gui_draw_set_text_edge( f32 width, u32 abgr );
@@ -220,16 +222,18 @@ void gui_draw_grid( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f32 o
 void gui_draw_hatch( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
 void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
 void gui_draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
-                                   gui_grad_t kind, f32 angle );
+                                   gui_grad_t kind, f32 angle, f32 mid );
+void gui_draw_round_rect_dashed( gui_rect_t box, f32 rounding, f32 thickness,
+                                 f32 dash, f32 gap, f32 speed, u32 col );
 void gui_draw_inset_shadow( gui_rect_t box, f32 depth, u32 col );
 void gui_draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col );
 void gui_draw_shadow( gui_rect_t box, f32 spread, u32 col );
 void gui_draw_drop_shadow( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col );
-void gui_draw_pulse( gui_rect_t box, f32 rate, f32 depth, u32 col );
+void gui_draw_pulse( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col );
 void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
 void gui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
 void gui_draw_grip( gui_rect_t box, u32 col );
-void gui_draw_spinner( gui_rect_t box, f32 t, f32 thickness, u32 col );
+void gui_draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col );
 void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
 
 /* lines + paths */

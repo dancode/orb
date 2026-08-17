@@ -332,7 +332,7 @@ ex_draw_shapes( void )
             gui()->slider_int( "Grip size (px)", &p_grip, 10, 26 );
 
             static i32 p_spin = 3;       /* stroke weight, px */
-            r = gui()->canvas( H ); gui()->draw_spinner( ex_sym_box( r, H ), t, (f32)p_spin, acc );
+            r = gui()->canvas( H ); gui()->draw_spinner( ex_sym_box( r, H ), 1.0f, (f32)p_spin, acc );
             gui()->slider_int( "Spinner weight", &p_spin, 1, 6 );
 
             static f32 p_prog = 0.66f;   /* continuous 0..1 fraction */
@@ -603,7 +603,7 @@ ex_volatile_block_cb( gui_id_t id, bool is_replay )
     f32 s  = 0.5f + 0.5f * sinf( t * 3.0f );
     u8  g  = (u8)( 80.0f + 175.0f * s );
     gui()->draw_rect( r.x, r.y, 32.0f, 32.0f, GUI_COLOR( 0x00, g, g, 0xFF ) );
-    gui()->draw_spinner( ( gui_rect_t ){ r.x + 44.0f, r.y + 4.0f, 24.0f, 24.0f }, t, 3.0f, EX_AMBR );
+    gui()->draw_spinner( ( gui_rect_t ){ r.x + 44.0f, r.y + 4.0f, 24.0f, 24.0f }, 1.0f, 3.0f, EX_AMBR );
 
     /* Fixed-width digits keep the footprint constant while they animate. */
     f32 dt  = gui()->get_delta_time();

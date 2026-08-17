@@ -413,6 +413,21 @@ gui_draw_corner_smooth( void )
     return draw_corner_smooth();
 }
 
+/* Border ALIGNMENT for the stroked box family (gui_api.h): 0 inside, 0.5 centred, 1 outside.
+   Same ambient discipline as the radius -- save, set, draw, restore. */
+
+void
+gui_draw_set_border_align( f32 a )
+{
+    draw_set_border_align( a );
+}
+
+f32
+gui_draw_border_align( void )
+{
+    return draw_border_align();
+}
+
 /*==============================================================================================
     Text edge -- the same ambient discipline, for the second colour outside a glyph.
 

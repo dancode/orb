@@ -80,12 +80,18 @@ static struct
        lets consecutive flat fills collapse onto one record (tess_prim_local).  Cleared per
        semantic command.
 
-       cur_prim_local is the slot-local index of the record the last commit resolved to, and
-       prim_memo_valid says whether the record at prim_count-1 is that record and therefore
-       reusable -- the memo that keeps a glyph run to one entry. */
+       cur_prim_local is the slot-local index of the record the last commit resolved to.
+       prim_dedup_floor is the lowest record index the memo may reach BACK to: every record in
+       [max(floor, slot_prim_base), prim_count) was written by this pass and is a live dedup
+       candidate.  The scan looks at the last few of those (TESS_PRIM_MEMO_DEPTH), which is what
+       collapses the A-B-A interleave ordinary chrome emits -- a flat-fill record, a widget's box
+       record, the flat record again -- where a last-record-only memo re-appended A per widget.
+       The floor rises wherever the records behind it stop being reusable: a new slot (previous
+       slot's indices are relative to its own base), a volatile block's boundary in either
+       direction (its records are a patch-rewritable reservation), and a patch's scratch. */
     gui_prim_t  cur_prim;
     u32         cur_prim_local;
-    bool        prim_memo_valid;
+    u32         prim_dedup_floor;
 
     /* per-slot tesellation context */
 
@@ -267,7 +273,7 @@ tess_reset( void )
     s_tess.slot_prim_base  = 0;
     s_tess.slot_tess_gen   = 0;
     s_tess.cur_prim_local  = 0;
-    s_tess.prim_memo_valid = false;
+    s_tess.prim_dedup_floor = 0;
     s_tess.slot_clips        = NULL;
     s_tess.slot_clip_count   = NULL;
     s_tess.slot_clip_pending = NULL;
@@ -385,25 +391,38 @@ tess_ensure_gpu_cmd( void )
    Past the arena a slot degrades to its own first record, mirroring tess_clip_local's fallback to
    slab entry 0: a wrong shape is bad, but a wild index into a storage buffer is worse.  The sticky
    overflow flag is what actually reports it, the same way a full vertex buffer does. */
+/* How far back the dedup scan reaches.  1 collapses a homogeneous run (a glyph run, consecutive
+   flat fills); the extra depth collapses the ALTERNATION chrome actually emits -- text, a rounded
+   widget's own record, text again -- which a 1-deep memo re-appended on every return.  Four
+   96-byte compares against L1-hot records is noise next to the tessellation around it. */
+#define TESS_PRIM_MEMO_DEPTH  4u
+
 static u32
 tess_prim_local( void )
 {
-    if ( s_tess.prim_memo_valid && s_tess.prim_count > s_tess.slot_prim_base
-      && memcmp( &s_tess.prims[ s_tess.prim_count - 1 ], &s_tess.cur_prim,
-                 sizeof( gui_prim_t ) ) == 0 )
-        return s_tess.cur_prim_local;
-
-    if ( s_tess.prim_count >= GUI_MAX_PRIMS )
+    u32 hi = s_tess.prim_count;
+    u32 lo = ( s_tess.prim_dedup_floor > s_tess.slot_prim_base )
+             ? s_tess.prim_dedup_floor : s_tess.slot_prim_base;
+    if ( hi > lo )
     {
-        s_tess.overflow        = true;
-        s_tess.prim_memo_valid = false;
+        u32 n = hi - lo;
+        if ( n > TESS_PRIM_MEMO_DEPTH ) n = TESS_PRIM_MEMO_DEPTH;
+        for ( u32 k = 1; k <= n; ++k )
+            if ( memcmp( &s_tess.prims[ hi - k ], &s_tess.cur_prim,
+                         sizeof( gui_prim_t ) ) == 0 )
+                return s_tess.cur_prim_local = ( hi - k ) - s_tess.slot_prim_base;
+    }
+
+    if ( hi >= GUI_MAX_PRIMS )
+    {
+        s_tess.overflow         = true;
+        s_tess.prim_dedup_floor = hi;
         return s_tess.cur_prim_local = 0u;
     }
 
-    s_tess.prims[ s_tess.prim_count ] = s_tess.cur_prim;
-    s_tess.cur_prim_local             = s_tess.prim_count - s_tess.slot_prim_base;
+    s_tess.prims[ hi ]    = s_tess.cur_prim;
+    s_tess.cur_prim_local = hi - s_tess.slot_prim_base;
     s_tess.prim_count++;
-    s_tess.prim_memo_valid = true;
     return s_tess.cur_prim_local;
 }
 
@@ -842,7 +861,12 @@ typedef struct
 {
     u32 grad_col;         // GUI_OP_GRAD: the ramp's far colour
     f32 grad_ang;         // GUI_OP_GRAD: axis, radians, box-local, 0 points +x (linear ramp only)
+    f32 grad_mid;         // GUI_OP_GRAD: midpoint bend, already the exponent (0 = linear)
     f32 cut_dx, cut_dy;   // GUI_OP_CUT: the cut boundary's centre, offset from this shape's
+    f32 anim_rate;        // GUI_OP_DASH: pattern scroll px/sec; GUI_OP_PULSE: unused (rate = param_a)
+    f32 anim_phase;       // GUI_OP_DASH: static px offset; GUI_OP_PULSE: cycle offset
+    f32 dash_period;      // GUI_OP_DASH: px per on+off cycle, already snapped to the perimeter
+    f32 dash_duty;        // GUI_OP_DASH: on-fraction of the period
 
 } tess_fx_aux_t;
 
@@ -950,6 +974,25 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        what keeps square fills deduping onto one record. */
     s_tess.cur_prim.param_c = ( rmax > 0.0f ) ? s_tess.cur_corner_pow : 0.0f;
 
+    /* DITHER, derived rather than asked for: a wide falloff and a colour ramp are the two shapes
+       that band on an 8-bit target, and half a step of screen noise is invisible everywhere else
+       it could apply.  The 1 px AA feather stays clean -- there is no ramp to band. */
+    if ( feather > 2.0f || ( s_tess.cur_ops & GUI_OP_GRAD ) )
+        s_tess.cur_ops |= GUI_OP_DITHER;
+
+    /* The animation lane and the perimeter dash, written only under the op that reads each --
+       the zero-when-unused rule that keeps plain fills deduping onto one record. */
+    if ( aux && ( s_tess.cur_ops & GUI_OP_DASH ) )
+    {
+        s_tess.cur_prim.dash_period = aux->dash_period;
+        s_tess.cur_prim.dash_duty   = aux->dash_duty;
+    }
+    if ( aux && ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_PULSE | GUI_OP_SPIN ) ) )
+    {
+        s_tess.cur_prim.anim_rate  = aux->anim_rate;
+        s_tess.cur_prim.anim_phase = aux->anim_phase;
+    }
+
     /* GUI_OP_GRAD -- the ramp's far colour and its axis.  The axis is stored ALREADY DIVIDED by
        the box's extent along it (the support width of a projected rectangle), so the ramp spans
        the shape at any angle and the fragment recovers t with one dot product instead of
@@ -957,7 +1000,8 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        from the axis -- so it stores the unit direction it peaks toward. */
     if ( aux && ( s_tess.cur_ops & GUI_OP_GRAD ) )
     {
-        s_tess.cur_prim.col_b = aux->grad_col;
+        s_tess.cur_prim.col_b    = aux->grad_col;
+        s_tess.cur_prim.grad_mid = aux->grad_mid;
 
         /* A radial ramp has no axis, so it stays ZERO rather than carrying an angle the fragment
            will not read -- otherwise two identical radial fills authored at different angles take
@@ -1162,6 +1206,56 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
 }
 
 /*==============================================================================================
+    tess_fx_ngon -- a regular polygon (GUI_FX_NGON) in one quad.
+
+    The polyline fan this replaces sampled up to 64 perimeter points and strung them through the
+    ribbon; the field resolves the exact boundary at any size, and a stroked form is the same
+    quad under GUI_OP_BAND -- set by the replay case before this runs, the ambient-ops rule every
+    shape follows.  The record's row [2] re-partitions for the field: r_tl is the corner
+    rounding, r_tr the side count (gui.h).
+==============================================================================================*/
+
+static void
+tess_fx_ngon( f32 pcx, f32 pcy, f32 r, u32 sides, f32 rot, f32 rounding,
+              f32 border, u32 abgr )
+{
+    if ( r <= 0.0f )
+        return;
+
+    f32 pad = TESS_FX_AA * 0.5f + 1.0f;
+    f32 ext = r + pad;
+    f32 rcs = cosf( rot ), rsn = sinf( rot );
+
+    f32              wu, wv;
+    gui_draw_vert_t* v;
+    u16*             idx;
+    u16              base;
+    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
+        return;
+
+    s_tess.cur_prim.field   = (u32)GUI_FX_NGON;
+    s_tess.cur_prim.cx      = pcx;
+    s_tess.cur_prim.cy      = pcy;
+    s_tess.cur_prim.hw      = r;
+    s_tess.cur_prim.hh      = r;
+    s_tess.cur_prim.r_tl    = rounding;
+    s_tess.cur_prim.r_tr    = (f32)sides;
+    s_tess.cur_prim.feather = TESS_FX_AA;
+    s_tess.cur_prim.border  = ( s_tess.cur_ops & GUI_OP_BAND ) ? border : 0.0f;
+    s_tess.cur_prim.rot_cos = rcs;
+    s_tess.cur_prim.rot_sin = rsn;
+
+    /* The quad covers the circumcircle -- no interior hole; the shapes this draws (badges,
+       markers, rating glyphs) are small enough that skipping interior fragments buys nothing. */
+    v[ 0 ] = gui_vert( pcx - ext, pcy - ext, wu, wv, abgr );
+    v[ 1 ] = gui_vert( pcx + ext, pcy - ext, wu, wv, abgr );
+    v[ 2 ] = gui_vert( pcx + ext, pcy + ext, wu, wv, abgr );
+    v[ 3 ] = gui_vert( pcx - ext, pcy + ext, wu, wv, abgr );
+    tess_quad_idx( idx, base );
+    tess_prim_commit( 4u, 6u );
+}
+
+/*==============================================================================================
     tess_round_rect_ex -- a fill whose four corners have four different radii.
 
     The tab, the notch, the asymmetric card: shapes that used to walk a per-corner perimeter (up to
@@ -1184,7 +1278,7 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
 static void
 tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
                     f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
-                    u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind )
+                    u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind, f32 grad_mid )
 {
     /* Corner order: top-left, top-right, bottom-right, bottom-left -- the order gui_cmd_t
        .round_rect declares its radii in, and the order the record's r_tl/r_tr/r_br/r_bl carry
@@ -1202,6 +1296,7 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
         if ( grad_kind == (u32)GUI_GRAD_CONIC  ) s_tess.cur_ops |= GUI_OP_GRAD_CONIC;
         aux.grad_col = col_b;
         aux.grad_ang = grad_ang;
+        aux.grad_mid = grad_mid;
     }
 
     tess_fx_box_core( x, y, w, h, r4, ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
@@ -1248,7 +1343,7 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
    the pair and stamp the white texel as every solid shape does. */
 static void
 tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
-             gui_fx_mode_t mode, f32 uvx, f32 uvy, u32 abgr )
+             gui_fx_mode_t mode, f32 uvx, f32 uvy, f32 spin_rate, f32 spin_phase, u32 abgr )
 {
     if ( r <= 0.0f )
         return;
@@ -1312,6 +1407,16 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     if ( pie && ymin > -pad )
         ymin = -pad;
 
+    /* A SPINNING sector sweeps the whole disc over time while its retained vertices never move,
+       so the quad must cover every orientation the fragment will ever resolve -- the disc's own
+       bounding box, not the sector's. */
+    if ( spin_rate != 0.0f )
+    {
+        xext = ra + rb + pad;
+        ymax = ra + rb + pad;
+        ymin = -ymax;
+    }
+
     f32              wu, wv;
     gui_draw_vert_t* v;
     u16*             idx;
@@ -1329,6 +1434,16 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     s_tess.cur_prim.param_a = ra;
     s_tess.cur_prim.param_b = rb;
     s_tess.cur_prim.param_c = ap;
+
+    /* GUI_OP_SPIN -- the whole frame (aperture, dashes, everything the record states) rotates at
+       anim_rate turns/sec on pc.time.  The record is byte-identical every frame it runs, which is
+       the point: the spinner joins the pulse in re-tessellating nothing. */
+    if ( spin_rate != 0.0f )
+    {
+        s_tess.cur_ops |= GUI_OP_SPIN;
+        s_tess.cur_prim.anim_rate  = spin_rate;
+        s_tess.cur_prim.anim_phase = spin_phase;
+    }
 
     /* These two carry their parameter pair in the uv lanes instead of texcoords, which is what the
        self-sampled bit announces: the fragment forces coverage to 1 and never reads the texel, so
@@ -1949,6 +2064,16 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             if ( open_vid != GUI_ID_NONE )
                 volatile_range_close( open_vid, vb_open, ib_open, pb_open, cmd_open );
             open_vid = vid;
+
+            /* The dedup floor rises at BOTH sides of a volatile boundary.  Entering: the block's
+               first primitive must append a record INSIDE its own range instead of reusing the
+               window's preceding one -- a reused record would sit outside the reservation the
+               patch is allowed to rewrite, and the patch (which always starts cold) would then
+               disagree with the capture about how many it needs.  Leaving: the block's records
+               ARE that rewritable reservation, so a later command deduping onto one would be
+               corrupted by the next patch. */
+            s_tess.prim_dedup_floor = s_tess.prim_count;
+
             if ( vid != GUI_ID_NONE )
             {
                 s_tess.force_new_cmd = true;   /* block owns its GPU commands from the first primitive */
@@ -1956,12 +2081,6 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 ib_open  = s_tess.idx_count;
                 pb_open  = s_tess.prim_count;
                 cmd_open = s_tess.cmd_count;
-
-                /* Cold memo, so the block's first primitive appends a record INSIDE its own range
-                   instead of reusing the window's preceding one.  A reused record would sit outside
-                   the reservation the patch is allowed to rewrite, and the patch -- which always
-                   starts cold -- would then disagree with the capture about how many it needs. */
-                s_tess.prim_memo_valid = false;
             }
         }
 
@@ -2042,8 +2161,9 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                        to it.  Zero for every other variant, and the aux is read only under the op
                        that owns it. */
                     tess_fx_aux_t aux = { 0 };
-                    aux.cut_dx = c->fx_box.cut_dx;
-                    aux.cut_dy = c->fx_box.cut_dy;
+                    aux.cut_dx     = c->fx_box.cut_dx;
+                    aux.cut_dy     = c->fx_box.cut_dy;
+                    aux.anim_phase = c->fx_box.phase;
                     s_tess.cur_corner_pow = c->fx_box.corner_pow;
                     tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
                                  c->fx_box.rounding, c->fx_box.feather, 0.0f,
@@ -2062,7 +2182,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                                     c->round_rect.rbr, c->round_rect.rbl,
                                     c->round_rect.feather, c->round_rect.abgr,
                                     c->round_rect.col_b, c->round_rect.grad_ang,
-                                    c->round_rect.grad_kind );
+                                    c->round_rect.grad_kind, c->round_rect.grad_mid );
                 break;
 
             /* The sectors share their geometry and differ only in the field the fragment
@@ -2070,12 +2190,14 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                self-sampled variants whose extra word rides the quad's flat uv. */
             case GUI_CMD_ARC:
                 tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, c->arc.thickness,
-                             c->arc.a0, c->arc.a1, GUI_FX_ARC, 0.0f, 0.0f, c->arc.abgr );
+                             c->arc.a0, c->arc.a1, GUI_FX_ARC, 0.0f, 0.0f,
+                             c->arc.spin_rate, c->arc.spin_phase, c->arc.abgr );
                 break;
 
             case GUI_CMD_PIE:
                 tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, 0.0f,
-                             c->arc.a0, c->arc.a1, GUI_FX_PIE, 0.0f, 0.0f, c->arc.abgr );
+                             c->arc.a0, c->arc.a1, GUI_FX_PIE, 0.0f, 0.0f,
+                             c->arc.spin_rate, c->arc.spin_phase, c->arc.abgr );
                 break;
 
             /* uv lane packing is the shader contract for the self-sampled pair (gui.h): DASH
@@ -2086,7 +2208,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              c->arc_dash.thickness, c->arc_dash.a0, c->arc_dash.a1,
                              GUI_FX_ARC_DASH,
                              c->arc_dash.period / TESS_TAU, c->arc_dash.duty,
-                             c->arc_dash.abgr );
+                             0.0f, 0.0f, c->arc_dash.abgr );
                 break;
 
             case GUI_CMD_ARC_GRAD:
@@ -2095,7 +2217,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              GUI_FX_ARC_GRAD,
                              (f32)(   c->arc_grad.col_b         & 0xFFFFu ) / 65535.0f,
                              (f32)( ( c->arc_grad.col_b >> 16 ) & 0xFFFFu ) / 65535.0f,
-                             c->arc_grad.col_a );
+                             0.0f, 0.0f, c->arc_grad.col_a );
                 break;
 
             /* The framebuffer-tiling patterns: the fragment does the tiling, the CPU's share is
@@ -2110,6 +2232,46 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                            c->grid.ox, c->grid.oy, c->grid.cell, c->grid.thickness,
                            c->grid.angle, c->grid.stripes != 0u, c->grid.abgr );
                 break;
+
+            /* The regular polygon: filled, or stroked under GUI_OP_BAND -- the op set here for
+               the reason every shape's is (the record's band width is sized from it). */
+            case GUI_CMD_NGON:
+                if ( c->ngon.thickness > 0.0f )
+                    s_tess.cur_ops |= GUI_OP_BAND;
+                tess_fx_ngon( c->ngon.cx, c->ngon.cy, c->ngon.r, c->ngon.sides,
+                              c->ngon.rot, c->ngon.rounding, c->ngon.thickness,
+                              c->ngon.abgr );
+                break;
+
+            /* The dashed border: a BAND box whose coverage the fragment cuts on the perimeter
+               coordinate (GUI_OP_DASH).  The CPU's share is the SNAP: fit a whole number of
+               dash cycles to the perimeter, computed from the same clamped radius the record
+               will state, so the pattern meets itself where the walk closes. */
+            case GUI_CMD_BOX_DASH:
+            {
+                f32 hw  = c->box_dash.w * 0.5f, hh = c->box_dash.h * 0.5f;
+                f32 lim = ( hw < hh ) ? hw : hh;
+                f32 r   = c->box_dash.rounding;
+                if ( r > lim )  r = lim;
+                if ( r < 0.0f ) r = 0.0f;
+
+                f32 L      = 4.0f * ( hw + hh ) - 8.0f * r + TESS_TAU * r;
+                f32 period = c->box_dash.dash + c->box_dash.gap;
+                f32 n      = ( period > 0.0f ) ? floorf( L / period + 0.5f ) : 1.0f;
+                if ( n < 1.0f ) n = 1.0f;
+
+                tess_fx_aux_t aux = { 0 };
+                aux.dash_period = L / n;
+                aux.dash_duty   = c->box_dash.dash / period;
+                aux.anim_rate   = c->box_dash.rate;
+                aux.anim_phase  = c->box_dash.phase;
+
+                s_tess.cur_ops |= GUI_OP_BAND | GUI_OP_DASH;
+                tess_fx_box( c->box_dash.x, c->box_dash.y, c->box_dash.w, c->box_dash.h,
+                             c->box_dash.rounding, TESS_FX_AA, c->box_dash.t,
+                             0.0f, 0.0f, 0.0f, 0, 0, 1, 1, 0, c->box_dash.abgr, &aux );
+                break;
+            }
 
             /* One textured quad about its centre -- the glyph-run transform (tess_quad_xf)
                with the pivot every icon caller wants.  No snap, by the transformed-quad rule. */

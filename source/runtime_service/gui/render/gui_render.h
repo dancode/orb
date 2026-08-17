@@ -136,6 +136,8 @@ void draw_set_rounding          ( f32 r );          // corner radius folded into
 f32  draw_rounding              ( void );           // current ambient radius (save/restore around a sub-element)
 void draw_set_corner_smooth     ( f32 t );          // 0..1 corner profile riding with the radius; 0 = circular arc
 f32  draw_corner_smooth         ( void );           // ...read it back, same save/restore rule as the radius
+void draw_set_border_align      ( f32 a );          // stroked-box band alignment: 0 inside, 0.5 centred, 1 outside
+f32  draw_border_align          ( void );           // ...read it back, same save/restore rule as the radius
 void draw_set_text_edge         ( f32 width, u32 abgr ); // second colour outside the glyph edge (SDF fonts)
 void draw_text_edge             ( f32* width, u32* abgr );  // read it back (save/restore around a run)
 void draw_set_text_clip_x       ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run
@@ -239,7 +241,7 @@ void draw_push_skirt            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
    nothing outside it.  The pressed well / recessed field a drop shadow cannot express. */
 void draw_push_inset            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 depth, u32 abgr );
 void draw_push_pulse            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth,
-                                  u32 abgr );
+                                  f32 phase, u32 abgr );
 
 /* The same SDF box surface under a rotation about its CENTRE (radians, screen space).  The fx
    coordinate is box-local and affine, so only the four corner positions turn -- same quadrant
@@ -254,7 +256,8 @@ void draw_push_box_xf           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
    col_b != abgr makes it a ramp, shaped by `grad_kind` (gui_grad_t) and oriented by `grad_ang`. */
 void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
                                   f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
-                                  u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind );
+                                  u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind,
+                                  f32 grad_mid );
 
 /* Push a circular sector -- a stroked arc with round caps, or a filled wedge with sharp radial
    edges.  Angles are radians in screen space (0 points +x, positive turns clockwise); a reversed
@@ -263,6 +266,12 @@ void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
    longer falls back to a stroked polyline the way it did under the packed word's 15.875 px cap. */
 void draw_push_arc              ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr );
 void draw_push_pie              ( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr );
+
+/* The arc under GUI_OP_SPIN: the whole frame rotates at `rate` turns/sec on pc.time, so a
+   spinner's bytes never change while it runs -- the pulse contract for rotation.  `phase` is the
+   start in turns.  The caller presents frames with gui()->request_redraw(). */
+void draw_push_arc_spin         ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                                  f32 rate, f32 phase, u32 abgr );
 
 /* The arc cut by an angular dash pattern.  `dash` / `gap` are arc-length PIXELS at radius r (the
    draw_dashed_line vocabulary); the push converts to an angular period and quantizes it so a WHOLE
@@ -287,6 +296,18 @@ void draw_push_grid             ( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f3
 
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr );
+
+/* A regular polygon as one GUI_FX_NGON quad: `sides` flat edges inscribed in circumradius r,
+   rotated by `rot` (0 = a vertex up), corners rounded by `rounding` px.  thickness > 0 strokes
+   it (GUI_OP_BAND, border-align aware); 0 fills. */
+void draw_push_ngon             ( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 rounding,
+                                  f32 thickness, u32 abgr );
+
+/* A rounded-box outline cut by a perimeter dash -- the dashed border / marching ants.  dash/gap
+   in arc-length px; `rate` scrolls the pattern in px/sec on pc.time, `phase` is a static px
+   offset.  The period is snapped at tessellation so the pattern meets itself. */
+void draw_push_box_dashed       ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
+                                  f32 dash, f32 gap, f32 rate, f32 phase, u32 abgr );
 
 /* A filled disc IS a rounded rect whose radius reached the half-extent -- this pushes
    GUI_CMD_RECT_FILLED with rounding = r, not a command of its own. */

@@ -248,7 +248,7 @@ draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
     if ( filled )
     {
         draw_push_round_rect_ex( b.x, b.y, b.w, b.h, rtl, rtr, rbr, rbl, 0.0f, col, col,
-                                 0.0f, (u32)GUI_GRAD_LINEAR );
+                                 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
         return;
     }
     gui_vec2_t pts[ 4 * 17 + 4 ];
@@ -256,23 +256,19 @@ draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
     gui_draw_polyline( pts, n, sym_thick( thickness ), GUI_STROKE_CENTER, true, col );
 }
 
-/* Regular n-gon centred at (cx,cy), circumradius r, first vertex at angle `rot`.  Filled (fan) or
-   stroked (closed polyline) -- generalizes the triangle / diamond / hexagon marks. */
+/* Regular n-gon centred at (cx,cy), circumradius r, first vertex at angle `rot` -- generalizes
+   the triangle / diamond / hexagon marks.
+   A signed-distance surface now, filled and stroked both -- the sampled fan and its 64-point
+   ribbon are gone.  The boundary is exact at any size, both forms antialias, and the corners
+   round by the ambient rounding (a design tool's rounded hexagon badge), which the fan never
+   could.  `rot` keeps the sampled convention: 0 puts a vertex at +x, the angle algebra every
+   caller already speaks -- the field's own reference (a vertex up) differs by a quarter turn,
+   folded in here. */
 static void
 draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col )
 {
-    if ( sides < 3 )  sides = 3;
-    if ( sides > 64 ) sides = 64;
-    gui_vec2_t pts[ 64 ];
-    for ( u32 i = 0; i < sides; ++i )
-    {
-        f32 a = rot + SYM_TAU * ( (f32)i / (f32)sides );
-        pts[ i ] = sv2( cx + cosf( a ) * r, cy + sinf( a ) * r );
-    }
-    if ( filled )
-        sym_fill_convex( pts, sides, col );
-    else
-        gui_draw_polyline( pts, sides, sym_thick( thickness ), GUI_STROKE_CENTER, true, col );
+    draw_push_ngon( cx, cy, r, sides, rot + SYM_PI * 0.5f, draw_rounding(),
+                    filled ? 0.0f : sym_thick( thickness ), col );
 }
 
 /* Circle at arbitrary radius: filled or stroked (a ring of `thickness`).  The ring is the outlined
@@ -459,13 +455,27 @@ draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal )
    same draw call a flat draw_round_rect produces, with the ramp resolved from the record in the
    fragment -- which is why a gradient is affordable on ordinary chrome rather than a special
    occasion, and why radial and conic are available at all. */
+/* `mid` is the ramp's midpoint, 0..1: where along the ramp the 50/50 blend lands (a design
+   tool's gradient midpoint handle).  0.5 -- and 0, the unset default -- is the linear ramp. */
 void
 draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
-                          gui_grad_t kind, f32 angle )
+                          gui_grad_t kind, f32 angle, f32 mid )
 {
     draw_push_round_rect_ex( box.x, box.y, box.w, box.h,
                              rounding, rounding, rounding, rounding, 0.0f,
-                             col_a, col_b, angle, (u32)kind );
+                             col_a, col_b, angle, (u32)kind, mid );
+}
+
+/* The dashed rounded border -- and at a non-zero `speed` (px/sec) the marching ants, scrolling
+   on the shader clock with no re-tessellation (the caller presents frames, the pulse contract).
+   dash/gap are arc-length px, the draw_dashed_line vocabulary; the period is snapped so whole
+   cycles fit the perimeter and a closed border meets itself.  Honors the border-align ambient. */
+void
+draw_round_rect_dashed( gui_rect_t box, f32 rounding, f32 thickness,
+                        f32 dash, f32 gap, f32 speed, u32 col )
+{
+    draw_push_box_dashed( box.x, box.y, box.w, box.h, rounding, sym_thick( thickness ),
+                          dash, gap, speed, 0.0f, col );
 }
 
 /* Inner shadow inside `box`, strongest against the edge and gone `depth` px in, with nothing
@@ -523,10 +533,12 @@ draw_drop_shadow( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col )
    `rate` is in Hz (quantized to 1/4 Hz) and `depth` the 0..1 fraction of alpha taken at the
    trough.  Honors the ambient rounding.  The frame still has to be presented -- the caller runs
    gui()->request_redraw() while the pulse is live (see GUI_FX_TIME_WRAP in gui.h). */
+/* `phase` offsets the wave in cycles, so a row of same-rate indicators can stagger instead of
+   beating in lockstep; 0 keeps them synchronized. */
 static void
-draw_pulse( gui_rect_t box, f32 rate, f32 depth, u32 col )
+draw_pulse( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col )
 {
-    draw_push_pulse( box.x, box.y, box.w, box.h, draw_rounding(), rate, depth, col );
+    draw_push_pulse( box.x, box.y, box.w, box.h, draw_rounding(), rate, depth, phase, col );
 }
 
 /*==============================================================================================
@@ -570,17 +582,20 @@ draw_grip_dots( gui_rect_t box, u32 col )
     draw_set_rounding( save );
 }
 
-/* Loading spinner: a 270-degree arc whose start angle advances with `t` seconds (caller supplies
-   the time so the primitive stays stateless), fitted to `box`. */
+/* Loading spinner: a 270-degree arc turning at `rate` revolutions/sec, fitted to `box`.  The
+   rotation runs on the SHADER CLOCK (GUI_OP_SPIN), so the command's bytes are identical every
+   frame and the spin re-tessellates nothing -- the last animated primitive that used to re-emit
+   per frame.  The caller keeps frames presenting with gui()->request_redraw() while it shows,
+   the pulse contract.  rate <= 0 takes one turn per second. */
 static void
-draw_spinner( gui_rect_t box, f32 t, f32 thickness, u32 col )
+draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col )
 {
     gui_vec2_t c = gui_rect_center( box );
     f32        r = sym_min_side( box ) * 0.5f - thickness;
-    f32        cx = c.x, cy = c.y;
     if ( r < 1.0f ) r = 1.0f;
-    f32 a0 = t * 6.0f;                  /* ~one revolution per second */
-    draw_arc( cx, cy, r, a0, a0 + SYM_PI * 1.5f, thickness, col );
+    if ( rate <= 0.0f ) rate = 1.0f;
+    draw_push_arc_spin( c.x, c.y, r, sym_thick( thickness ),
+                        0.0f, SYM_PI * 1.5f, rate, 0.0f, col );
 }
 
 /* Progress arc: a ring filled clockwise from 12 o'clock by `frac` of a turn (a circular progress /
@@ -664,7 +679,7 @@ void gui_draw_round_rect_shadow( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f
                                  f32 feather, u32 col )
 {
     draw_push_round_rect_ex( box.x, box.y, box.w, box.h, r_tl, r_tr, r_br, r_bl, feather,
-                             col, col, 0.0f, (u32)GUI_GRAD_LINEAR );
+                             col, col, 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
 }
 
 /* curves */
@@ -680,13 +695,15 @@ void gui_draw_grid    ( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f
                                                                                { draw_grid( box, cell, thickness, origin_x, origin_y, col ); }
 void gui_draw_hatch   ( gui_rect_t box, f32 spacing, f32 thickness, u32 col ) { draw_hatch( box, spacing, thickness, col ); }
 void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal ) { draw_gradient( box, col_a, col_b, horizontal ); }
-void gui_draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, gui_grad_t kind, f32 angle ) { draw_round_rect_gradient( box, rounding, col_a, col_b, kind, angle ); }
+void gui_draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, gui_grad_t kind, f32 angle, f32 mid ) { draw_round_rect_gradient( box, rounding, col_a, col_b, kind, angle, mid ); }
+void gui_draw_round_rect_dashed( gui_rect_t box, f32 rounding, f32 thickness, f32 dash, f32 gap, f32 speed, u32 col )
+                                                                               { draw_round_rect_dashed( box, rounding, thickness, dash, gap, speed, col ); }
 void gui_draw_inset_shadow( gui_rect_t box, f32 depth, u32 col ) { draw_inset_shadow( box, depth, col ); }
 void gui_draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col ) { draw_stripes( box, spacing, thickness, angle, col ); }
 void gui_draw_shadow  ( gui_rect_t box, f32 spread, u32 col )             { draw_shadow( box, spread, col ); }
 void gui_draw_drop_shadow( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col )
                                                                                { draw_drop_shadow( box, spread, off_x, off_y, col ); }
-void gui_draw_pulse   ( gui_rect_t box, f32 rate, f32 depth, u32 col )    { draw_pulse( box, rate, depth, col ); }
+void gui_draw_pulse   ( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col ) { draw_pulse( box, rate, depth, phase, col ); }
 
 /* text effects + decorations */
 void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline )
@@ -694,7 +711,7 @@ void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col
 void gui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy )
                                                                                { draw_text_shadow( x, y, str, col_text, col_shadow, dx, dy ); }
 void gui_draw_grip( gui_rect_t box, u32 col )                            { draw_grip_dots( box, col ); }
-void gui_draw_spinner( gui_rect_t box, f32 t, f32 thickness, u32 col )    { draw_spinner( box, t, thickness, col ); }
+void gui_draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col ) { draw_spinner( box, rate, thickness, col ); }
 void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, col ); }
 
 // clang-format on

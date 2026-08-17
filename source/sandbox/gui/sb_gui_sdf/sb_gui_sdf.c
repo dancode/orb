@@ -680,7 +680,7 @@ win_gauges( void )
         /* And a spinner beside it: the stock triple plus a custom comet -- an arc whose tail
            length breathes as it orbits.  Angles animate raw; normalization is the renderer's. */
         gui()->draw_spinner( ( gui_rect_t ){ cx + 76.0f, cy - 18.0f, 36.0f, 36.0f },
-                             s_time, 4.0f, INK );
+                             1.0f, 4.0f, INK );
         f32 head = s_time * 3.1f;
         gui()->draw_arc( cx + 94.0f, cy + 52.0f, 16.0f,
                          head - ( 1.2f + 0.8f * sinf( s_time * 1.3f ) ), head, 5.0f, AMBER );
@@ -898,7 +898,7 @@ win_depth( void )
             u32 halo = ( k_glow[ i ].col & 0x00FFFFFFu ) | ( st.hover ? 0xC0000000u : 0x70000000u );
             gui()->draw_shadow( r, st.hover ? 26.0f : 14.0f, halo );
             if ( st.active )
-                gui()->draw_pulse( r, 3.0f, 0.5f, k_glow[ i ].col );
+                gui()->draw_pulse( r, 3.0f, 0.5f, 0.0f, k_glow[ i ].col );
             else
                 gui()->draw_rect( r.x, r.y, r.w, r.h, GUI_COLOR( 0x22, 0x22, 0x2A, 0xFF ) );
             dial_label( r.x + r.w * 0.5f, r.y + r.h * 0.5f,
@@ -919,7 +919,7 @@ win_depth( void )
         f32 save = gui()->draw_rounding();
         gui()->draw_set_rounding( 13.0f );
         gui_rect_t rec = { cell.x + 30.0f, cell.y + 30.0f, 92.0f, 26.0f };
-        gui()->draw_pulse( rec, 1.0f, 0.6f, GUI_COLOR( 0x60, 0x10, 0x10, 0xFF ) );
+        gui()->draw_pulse( rec, 1.0f, 0.6f, 0.0f, GUI_COLOR( 0x60, 0x10, 0x10, 0xFF ) );
         gui()->draw_set_rounding( save );
         gui()->draw_circle( rec.x + 16.0f, rec.y + 13.0f, 5.0f, true, 0.0f, HIT );
         gui()->draw_text( rec.x + 30.0f, rec.y + 5.0f, INK, "REC" );
@@ -1601,17 +1601,17 @@ win_fills( void )
            sweep -- which is why all three read from the record instead. */
         f32 w = ( r.w - 40.0f ) / 3.0f, h = r.h - 24.0f;
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 10.0f, r.y + 12.0f, w, h },
-                                         s_fill_round, TEAL, PANEL, GUI_GRAD_LINEAR, ang );
+                                         s_fill_round, TEAL, PANEL, GUI_GRAD_LINEAR, ang, 0.0f );
         /* Alpha ramps too, and it stays LINEAR -- alpha is coverage, never gamma encoded, so a
            fade to transparent is even rather than crowded at one end. */
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 20.0f + w, r.y + 12.0f, w, h },
                                          s_fill_round,
                                          GUI_COLOR( 0xFF, 0x70, 0x50, 0xFF ),
                                          GUI_COLOR( 0xFF, 0x70, 0x50, 0x00 ),
-                                         GUI_GRAD_RADIAL, ang );
+                                         GUI_GRAD_RADIAL, ang, 0.0f );
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 30.0f + w * 2.0f, r.y + 12.0f, w, h },
                                          s_fill_round, TEAL, GUI_COLOR( 0x30, 0x20, 0x60, 0xFF ),
-                                         GUI_GRAD_CONIC, ang );
+                                         GUI_GRAD_CONIC, ang, 0.0f );
     }
     gui()->text_wrapped( "left: linear, on the angle slider.  middle: radial, fading to "
                          "transparent at the rim.  right: conic -- an angular sheen, mirrored "
@@ -1629,7 +1629,7 @@ win_fills( void )
 
         gui()->draw_gradient( ( gui_rect_t ){ r.x, r.y, r.w, 36.0f }, a, b, true );
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x, r.y + 38.0f, r.w, 36.0f },
-                                         0.0f, a, b, GUI_GRAD_LINEAR, 0.0f );
+                                         0.0f, a, b, GUI_GRAD_LINEAR, 0.0f, 0.0f );
         gui()->text_wrapped( "no seam where the two bands meet = both sides are ramping in "
                              "linear light." );
     }
@@ -1659,7 +1659,7 @@ win_fills( void )
         /* Composed: an inset over a gradient, which is the point of an op -- it modifies whatever
            the fill happened to be instead of replacing it with a shape of its own. */
         gui_rect_t w2 = { r.x + 30.0f + w * 2.0f, r.y + 12.0f, w, h };
-        gui()->draw_round_rect_gradient( w2, s_fill_round, TEAL, PANEL, GUI_GRAD_LINEAR, ang );
+        gui()->draw_round_rect_gradient( w2, s_fill_round, TEAL, PANEL, GUI_GRAD_LINEAR, ang, 0.0f );
         gui()->draw_inset_shadow( w2, s_fill_depth, GUI_COLOR( 0x00, 0x00, 0x00, 0xA0 ) );
 
         gui()->draw_set_rounding( 0.0f );
@@ -1753,6 +1753,125 @@ win_fills( void )
 }
 
 /*==============================================================================================
+    Animation & Ops -- the shader-clock family and the newest record lanes in one window:
+    marching ants (perimeter dash scrolling on pc.time), the zero-retess spinner (GUI_OP_SPIN),
+    staggered pulses (anim_phase), the SDF ngon, stroke alignment, and the gradient midpoint.
+    Everything here that moves does so with byte-identical commands -- watch the dashboard's
+    retess counters sit at zero while all of it runs.
+==============================================================================================*/
+
+static f32 s_ants_speed  = 24.0f;   /* px/sec the border pattern scrolls           */
+static f32 s_spin_rate   = 1.0f;    /* spinner revolutions per second              */
+static f32 s_ngon_round  = 6.0f;    /* ngon corner rounding, px                    */
+static i32 s_ngon_sides  = 6;       /* ngon side count                             */
+static f32 s_mid         = 0.5f;    /* gradient midpoint, 0..1                     */
+
+static void
+win_anim_fx( void )
+{
+    gui()->stack();
+    gui()->field_label_right( 240.0f );
+    gui()->separator_text( "marching ants -- the perimeter dash, scrolling in the fragment" );
+    gui()->slider_float( "speed (px/s)", &s_ants_speed, 0.0f, 120.0f );
+    {
+        gui_rect_t r = gui()->canvas( 110.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        /* Three of the same selection border: square, rounded, and rounded + fat dashes.  The
+           period snaps to each perimeter, so all three patterns meet themselves. */
+        gui_rect_t b0 = { r.x + 20.0f,  r.y + 20.0f, 150.0f, 70.0f };
+        gui_rect_t b1 = { r.x + 200.0f, r.y + 20.0f, 150.0f, 70.0f };
+        gui_rect_t b2 = { r.x + 380.0f, r.y + 20.0f, 150.0f, 70.0f };
+        gui()->draw_round_rect_dashed( b0, 0.0f,  1.0f, 6.0f, 6.0f,  s_ants_speed, INK );
+        gui()->draw_round_rect_dashed( b1, 12.0f, 1.0f, 6.0f, 6.0f,  s_ants_speed, TEAL );
+        gui()->draw_round_rect_dashed( b2, 18.0f, 4.0f, 14.0f, 10.0f, s_ants_speed, AMBER );
+    }
+    gui()->text_wrapped( "the commands' bytes are identical every frame -- the scroll rides "
+                         "pc.time, so the ants re-tessellate nothing while they march." );
+
+    gui()->separator_text( "spinner + staggered pulses -- the animation lane" );
+    gui()->slider_float( "spinner rate (rev/s)", &s_spin_rate, 0.25f, 4.0f );
+    {
+        gui_rect_t r = gui()->canvas( 96.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        /* The spinner rotates on the shader clock now (GUI_OP_SPIN): same retained quad every
+           frame, where the old one re-emitted its arc per frame it turned. */
+        gui()->draw_spinner( ( gui_rect_t ){ r.x + 24.0f, r.y + 24.0f, 48.0f, 48.0f },
+                             s_spin_rate, 5.0f, INK );
+
+        /* Four same-rate pulses a quarter cycle apart -- anim_phase, the stagger a shared clock
+           could never express before. */
+        f32 save = gui()->draw_rounding();
+        gui()->draw_set_rounding( 8.0f );
+        for ( u32 i = 0; i < 4; ++i )
+            gui()->draw_pulse( ( gui_rect_t ){ r.x + 110.0f + (f32)i * 96.0f, r.y + 28.0f,
+                                               84.0f, 40.0f },
+                               1.0f, 0.8f, (f32)i * 0.25f, TEAL );
+        gui()->draw_set_rounding( save );
+    }
+
+    gui()->separator_text( "the ngon field -- flat sides, exact at any size, corners that round" );
+    gui()->slider_int( "sides", &s_ngon_sides, 3, 12 );
+    gui()->slider_float( "corner rounding (px)", &s_ngon_round, 0.0f, 18.0f );
+    {
+        gui_rect_t r  = gui()->canvas( 120.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+        f32 cy = r.y + 60.0f;
+
+        f32 save = gui()->draw_rounding();
+        gui()->draw_set_rounding( s_ngon_round );
+        gui()->draw_ngon( r.x +  70.0f, cy, 44.0f, (u32)s_ngon_sides, -GUI_PI * 0.5f, true, 0.0f, TEAL );
+        gui()->draw_ngon( r.x + 180.0f, cy, 44.0f, (u32)s_ngon_sides, -GUI_PI * 0.5f, false, 4.0f, INK );
+        gui()->draw_ngon( r.x + 290.0f, cy, 44.0f, (u32)s_ngon_sides, s_time * 0.5f, false, 10.0f, AMBER );
+        gui()->draw_set_rounding( save );
+        dial_label( r.x + 180.0f, cy + 58.0f, INK_DIM, "one quad each", 0.9f );
+    }
+
+    gui()->separator_text( "stroke alignment -- inside / centred / outside, one ambient" );
+    {
+        gui_rect_t r = gui()->canvas( 110.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        /* The same authored rect three times, filled so the boundary is visible; only the
+           ambient moves the 8 px band relative to it. */
+        static const f32   k_align[ 3 ] = { 0.0f, 0.5f, 1.0f };
+        static const char* k_name [ 3 ] = { "inside", "centred", "outside" };
+        f32 save = gui()->draw_border_align();
+        for ( u32 i = 0; i < 3; ++i )
+        {
+            gui_rect_t b = { r.x + 30.0f + (f32)i * 180.0f, r.y + 26.0f, 120.0f, 52.0f };
+            gui()->draw_round_rect( b, 10.0f, 10.0f, 10.0f, 10.0f, true, 0.0f, EDGE );
+            gui()->draw_set_border_align( k_align[ i ] );
+            gui()->draw_round_rect( b, 10.0f, 10.0f, 10.0f, 10.0f, false, 8.0f, TEAL );
+            dial_label( b.x + b.w * 0.5f, b.y + b.h + 14.0f, INK_DIM, k_name[ i ], 0.9f );
+        }
+        gui()->draw_set_border_align( save );
+    }
+
+    gui()->separator_text( "gradient midpoint -- where the 50/50 blend lands" );
+    gui()->slider_float( "midpoint", &s_mid, 0.1f, 0.9f );
+    {
+        gui_rect_t r = gui()->canvas( 96.0f );
+        u32 a = GUI_COLOR( 0x10, 0x20, 0xC0, 0xFF ), b = GUI_COLOR( 0xE0, 0xB0, 0x40, 0xFF );
+
+        /* Linear reference on top, the bent ramp under it.  Both dither automatically
+           (GUI_OP_DITHER rides every gradient), so neither bands on a wide panel. */
+        gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x, r.y, r.w, 40.0f },
+                                         8.0f, a, b, GUI_GRAD_LINEAR, 0.0f, 0.0f );
+        gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x, r.y + 48.0f, r.w, 40.0f },
+                                         8.0f, a, b, GUI_GRAD_LINEAR, 0.0f, s_mid );
+    }
+    gui()->text_wrapped( "top: the linear ramp.  bottom: the same endpoints with the midpoint "
+                         "handle at the slider -- the design-tool gradient control.  both ramps "
+                         "carry half a step of screen noise (GUI_OP_DITHER, automatic on every "
+                         "gradient and wide shadow), so neither bands on 8-bit." );
+
+    gui()->field_label_right( 0.0f );
+    keep_awake();   /* everything above animates on the shader clock; keep frames presenting */
+}
+
+/*==============================================================================================
     Registry + menu -- every demo window hidden by default, launched from the menu bar or the
     launcher window (both drive the same table; the titlebar X syncs back into it).
 ==============================================================================================*/
@@ -1769,17 +1888,18 @@ typedef struct
 } sdf_demo_t;
 
 static sdf_demo_t s_demos[] = {
-    { "SDF Text",       "SDF Text",       "the original bed: ladder / turn / hud / edge / atlas",  win_text,     1180.0f, 940.0f, false },
-    { "Shape Economy",  "Shape Economy",  "every SDF primitive next to its vertex price",          win_shapes,    980.0f, 420.0f, false },
-    { "Gauges & Meters","Gauges & Meters","radial gauge / progress ring / segments / spinners",    win_gauges,    900.0f, 430.0f, false },
-    { "Charts & Data",  "Charts & Data",  "donut with hover / sparkline / one-command bar wall",   win_charts,    900.0f, 480.0f, false },
-    { "Depth & Motion", "Depth & Motion", "shadow elevation / glow / pulse / badge / toggle",      win_depth,     820.0f, 560.0f, false },
-    { "Radial Menu",    "Radial Menu",    "arc wedges as hit-tested interactive UI",               win_radial,    620.0f, 470.0f, false },
-    { "Dials",          "Dials",          "draggable knob / clock / compass with rotated labels",  win_dials,     900.0f, 400.0f, false },
-    { "New Verbs",      "New Verbs",      "box_xf / icon_xf / corner shadow / dashed + gradient arcs", win_five,  980.0f, 760.0f, false },
-    { "Backdrops",      "Backdrops",      "checker + line grid as one-quad fragment patterns",     win_backdrops, 760.0f, 560.0f, false },
-    { "Fills",          "Fills",          "gradients (linear / radial / conic) + inset + drop shadows", win_fills, 940.0f, 900.0f, false },
-    { "Corners & Pills","Corners & Pills","corner smoothing + the capsule, filled and hollow",     win_corners,   860.0f, 780.0f, false },
+    { "SDF Text",        "SDF Text",        "the original bed: ladder / turn / hud / edge / atlas",       win_text,      1280.0f, 1024.0f, false },
+    { "Shape Economy",   "Shape Economy",   "every SDF primitive next to its vertex price",               win_shapes,    1280.0f, 1024.0f, false },
+    { "Gauges & Meters", "Gauges & Meters", "radial gauge / progress ring / segments / spinners",         win_gauges,    1280.0f, 1024.0f, false },
+    { "Charts & Data",   "Charts & Data",   "donut with hover / sparkline / one-command bar wall",        win_charts,    1280.0f, 1024.0f, false },
+    { "Depth & Motion",  "Depth & Motion",  "shadow elevation / glow / pulse / badge / toggle",           win_depth,     1280.0f, 1024.0f, false },
+    { "Radial Menu",     "Radial Menu",     "arc wedges as hit-tested interactive UI",                    win_radial,    1280.0f, 1024.0f, false },
+    { "Dials",           "Dials",           "draggable knob / clock / compass with rotated labels",       win_dials,     1280.0f, 1024.0f, false },
+    { "New Verbs",       "New Verbs",       "box_xf / icon_xf / corner shadow / dashed + gradient arcs",  win_five,      1280.0f, 1024.0f, false },
+    { "Backdrops",       "Backdrops",       "checker + line grid as one-quad fragment patterns",          win_backdrops, 1280.0f, 1024.0f, false },
+    { "Fills",           "Fills",           "gradients (linear / radial / conic) + inset + drop shadows", win_fills,     1280.0f, 1024.0f, false },
+    { "Corners & Pills", "Corners & Pills", "corner smoothing + the capsule, filled and hollow",          win_corners,   1280.0f, 1024.0f, false },
+    { "Animation & Ops", "Animation & Ops", "marching ants / spin / phase / ngon / align / midpoint",     win_anim_fx,   1280.0f, 1024.0f, false },
 };
 
 #define SDF_DEMO_COUNT ( (i32)( sizeof( s_demos ) / sizeof( s_demos[ 0 ] ) ) )
@@ -1820,12 +1940,12 @@ menu_bar( void )
 }
 
 /* The launcher: the one window open by default.  A checkbox per demo plus its one-liner --
-   the same registry the menu drives, so the two stay in step for free. */
+   the same registry the menu drives, so the two stay in step for frees. */
 static void
 launcher( void )
 {
     gui()->window_set_next_pos( 24.0f, 48.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 460.0f, 420.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 512.0f, 1024.0f, GUI_COND_ONCE );
     if ( gui()->window_begin( "SDF Explorer", GUI_WIN_NONE ) )
     {
         gui()->stack();
@@ -1856,6 +1976,7 @@ build_frame( void )
         if ( !d->open )
             continue;
 
+        gui()->window_set_next_pos( 512 + 32.0f, 48.0f, GUI_COND_APPEARING );
         gui()->window_set_next_size( d->w, d->h, GUI_COND_ONCE );
         if ( gui()->window_begin( d->title, GUI_WIN_CLOSEABLE ) )
             d->fn();
@@ -1900,7 +2021,7 @@ main( int argc, char** argv )
 
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "ORB -- gui sdf explorer",
-        .w         = 1240, .h = 1000,
+        .w         = 2480, .h = 1280,
         .os_chrome = true,
         .font      = GUI_FONT_CASCADIA_MONO,
         .clock = sys_tick_seconds,

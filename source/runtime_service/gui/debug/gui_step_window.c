@@ -59,6 +59,7 @@ static const char* k_step_type_name[] = {
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
     "sprite", "fx_box", "round_rect_ex", "arc", "pie",
     "arc_dash", "arc_grad", "image_xf", "checker", "grid",
+    "ngon", "box_dash",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -254,6 +255,20 @@ step_cmd_detail( const step_cmd_info_t* ci )
                           c->grid.cell, c->grid.thickness, c->grid.ox, c->grid.oy );
             row2 = b2;
             break;
+        case GUI_CMD_NGON:
+            gui_textf( "centre %.0f,%.0f   r %.1f   sides %u", c->ngon.cx, c->ngon.cy,
+                       c->ngon.r, c->ngon.sides );
+            fmt_snprintf( b2, sizeof( b2 ), "round %.1f   t %.1f   rot %.0f deg",
+                          c->ngon.rounding, c->ngon.thickness, gui_degrees( c->ngon.rot ) );
+            row2 = b2;
+            break;
+        case GUI_CMD_BOX_DASH:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->box_dash.x, c->box_dash.y,
+                       c->box_dash.w, c->box_dash.h );
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   dash %.1f/%.1f   rate %.0f px/s",
+                          c->box_dash.t, c->box_dash.dash, c->box_dash.gap, c->box_dash.rate );
+            row2 = b2;
+            break;
     }
     gui_text( row2 ? row2 : " " );
 
@@ -306,6 +321,8 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_ARC_DASH:      step_swatch( r, r.x, "color", c->arc_dash.abgr );     break;
                 case GUI_CMD_IMAGE_XF:      step_swatch( r, r.x, "color", c->image_xf.abgr );     break;
                 case GUI_CMD_GRID:          step_swatch( r, r.x, "color", c->grid.abgr );         break;
+                case GUI_CMD_NGON:          step_swatch( r, r.x, "color", c->ngon.abgr );         break;
+                case GUI_CMD_BOX_DASH:      step_swatch( r, r.x, "color", c->box_dash.abgr );     break;
                 default:                                                                          break;
             }
             break;

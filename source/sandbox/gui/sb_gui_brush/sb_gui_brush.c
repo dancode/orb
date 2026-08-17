@@ -811,7 +811,7 @@ panel_pulse( void )
         for ( u32 i = 0; i < 3; ++i )
         {
             gui()->draw_pulse( ( gui_rect_t ){ bx, y + 20.0f, 108.0f, 42.0f },
-                               rate[ i ], 0.85f, TEAL );
+                               rate[ i ], 0.85f, 0.0f, TEAL );
             bx += 116.0f;
         }
     }
@@ -825,7 +825,7 @@ panel_pulse( void )
         for ( u32 i = 0; i < 4; ++i )
         {
             gui()->draw_pulse( ( gui_rect_t ){ bx, y + 20.0f, 84.0f, 42.0f },
-                               1.0f, depth[ i ], AMBER );
+                               1.0f, depth[ i ], 0.0f, AMBER );
             bx += 92.0f;
         }
     }
@@ -835,7 +835,8 @@ panel_pulse( void )
     f32 rx = cell.x + 470.0f;
     gui()->draw_text( rx, cell.y + 6.0f, INK_DIM, "same wave, two ways:" );
 
-    gui()->draw_pulse( ( gui_rect_t ){ rx, cell.y + 30.0f, 110.0f, 44.0f }, 1.0f, 0.8f, PLUM );
+    gui()->draw_pulse( ( gui_rect_t ){ rx, cell.y + 30.0f, 110.0f, 44.0f }, 1.0f, 0.8f, 0.0f,
+                       PLUM );
     gui()->draw_text( rx, cell.y + 82.0f, INK_DIM, "GPU: shader" );
 
     if ( s_pulse_cpu_on )

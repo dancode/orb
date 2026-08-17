@@ -487,11 +487,11 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 pb_open, u32 cm
     s_tess.vert_count = vb_open + res_v;
     s_tess.idx_count  = ib_open + res_i;
 
-    /* Records reserve the same way, and the memo has to go with them: the entries in the gap were
-       never written, so letting the next primitive compare against prims[prim_count - 1] would
-       match uninitialized memory and hand back an index inside this block's reservation. */
-    s_tess.prim_count      = pb_open + res_p;
-    s_tess.prim_memo_valid = false;
+    /* Records reserve the same way, and the dedup floor has to go with them: the entries in the
+       gap were never written, so letting the next primitive compare against them would match
+       uninitialized memory and hand back an index inside this block's reservation. */
+    s_tess.prim_count       = pb_open + res_p;
+    s_tess.prim_dedup_floor = s_tess.prim_count;
 
     for ( u32 k = nc; k < res_c; ++k )
     {
@@ -554,7 +554,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     u32  tcmd_ck    = s_tess.cmd_count;
     u32  slot_vb_ck = s_tess.slot_vert_base;
     u32  slot_pb_ck = s_tess.slot_prim_base;
-    bool memo_ck    = s_tess.prim_memo_valid;
+    u32  floor_ck   = s_tess.prim_dedup_floor;
     bool force_ck   = s_tess.force_new_cmd;
     bool ovf_ck     = s_tess.overflow;
 
@@ -587,11 +587,11 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
 
     /* Records take the same fake base, for the same reason and to the same effect: the scratch
        tessellation bakes (scratch position - fake base) = local_prim_base + offset into its
-       vertices, so the records copy into the block's reservation with no index fixup.  The memo
-       starts cold so the first primitive appends instead of reaching back into whatever record
-       happens to precede the scratch. */
-    s_tess.slot_prim_base  = prim_ck - row->local_prim_base;
-    s_tess.prim_memo_valid = false;
+       vertices, so the records copy into the block's reservation with no index fixup.  The dedup
+       floor starts at the scratch tail so the first primitive appends instead of reaching back
+       into whatever record happens to precede the scratch. */
+    s_tess.slot_prim_base   = prim_ck - row->local_prim_base;
+    s_tess.prim_dedup_floor = prim_ck;
 
     /* The patched vertices bake clip-band indices exactly like the capture's did, so resolve
        them against the SAME local table -- the window slot's.  An unchanged footprint clip finds
@@ -678,9 +678,9 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     s_tess.prim_count      = prim_ck;
     s_tess.cmd_count       = tcmd_ck;
     s_tess.slot_vert_base  = slot_vb_ck;
-    s_tess.slot_prim_base  = slot_pb_ck;
-    s_tess.prim_memo_valid = memo_ck;
-    s_tess.force_new_cmd   = force_ck;
+    s_tess.slot_prim_base   = slot_pb_ck;
+    s_tess.prim_dedup_floor = floor_ck;
+    s_tess.force_new_cmd    = force_ck;
     s_tess.overflow        = ovf_ck;
     return ok;
 }
