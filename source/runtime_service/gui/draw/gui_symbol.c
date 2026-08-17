@@ -451,9 +451,9 @@ draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal )
 }
 
 /* Gradient fill of a ROUNDED `box`, col_a -> col_b.  `kind` shapes the ramp and `angle` orients it
-   (radians, 0 points +x, positive turns clockwise): the axis for GUI_GRAD_LINEAR, the starting
-   direction for GUI_GRAD_CONIC, ignored by GUI_GRAD_RADIAL.  A linear ramp spans the box along its
-   axis and holds its end colors past it.
+   (radians, 0 points +x, positive turns clockwise): the axis for GUI_GRAD_LINEAR, the direction the
+   sheen peaks toward for GUI_GRAD_CONIC, ignored by GUI_GRAD_RADIAL.  A linear ramp spans the box
+   along its axis and holds its end colors past it.
 
    The rounded SDF surface and the ramp cost each other nothing: this is the same one quad and the
    same draw call a flat draw_round_rect produces, with the ramp resolved from the record in the

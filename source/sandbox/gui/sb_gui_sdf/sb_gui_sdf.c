@@ -1532,8 +1532,8 @@ win_fills( void )
                                          GUI_GRAD_CONIC, ang );
     }
     gui()->text_wrapped( "left: linear, on the angle slider.  middle: radial, fading to "
-                         "transparent at the rim.  right: conic -- the angle turns its SEAM, the "
-                         "one place the ramp meets itself." );
+                         "transparent at the rim.  right: conic -- an angular sheen, mirrored "
+                         "about the angle so it has no seam to meet itself at." );
 
     gui()->separator_text( "the midpoint test -- rounded vs square, same two endpoints" );
     {

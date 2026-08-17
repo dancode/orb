@@ -1866,7 +1866,7 @@ typedef struct
        the shape's local frame (prim_local's frame, so both turn with the shape).
          GUI_OP_GRAD  grad = the ramp's axis, ALREADY DIVIDED by the shape's extent along it, so
                              the fragment spans the shape with one dot product.  Under GRAD_CONIC
-                             it is the unit direction the sweep starts from; GRAD_RADIAL ignores
+                             it is the unit direction the ramp PEAKS toward; GRAD_RADIAL ignores
                              it and measures against the half-extent directly.
          GUI_OP_CUT   cut  = the centre of the boundary the cut is taken against, as an offset
                              from this shape's own centre.  (0,0) -- every caller before the
@@ -1900,7 +1900,7 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
    small enum because they belong to the op word every other modifier lives in -- and unlike the
    modifiers they are alternatives, which is a property of what a ramp IS, not of the storage. */
 #define GUI_OP_GRAD_RADIAL  ( 1u << 7 )   /* centre -> rim, against the shape's own half-extent */
-#define GUI_OP_GRAD_CONIC   ( 1u << 8 )   /* one full turn about the centre from the grad axis  */
+#define GUI_OP_GRAD_CONIC   ( 1u << 8 )   /* angular, mirrored about the grad axis -- a sheen   */
 
 /* Which way a ramp runs, as a draw parameter.  The record carries it as the op bits above; this is
    the spelling a caller uses, where "at most one" is a property of the type rather than a rule. */
@@ -1908,7 +1908,12 @@ typedef enum
 {
     GUI_GRAD_LINEAR = 0,   // along `angle`, spanning the shape's extent on that axis
     GUI_GRAD_RADIAL,       // centre -> rim, against the shape's own half-extent
-    GUI_GRAD_CONIC,        // one full turn about the centre, starting from `angle`
+    /* Angular and MIRRORED about `angle`: col_b sits on that axis, the fill's own colour at the
+       far side, and the ramp is the same going either way around.  Not a wrapping sweep -- that
+       meets itself at the axis as a hard light/dark edge.  This is the angular SHEEN across a
+       knob, a badge, a dial face.  For a sweep that measures a VALUE, reach for a gradient arc
+       (draw_arc_gradient), whose shape is the sweep. */
+    GUI_GRAD_CONIC,
 
 } gui_grad_t;
 
@@ -2242,7 +2247,7 @@ typedef struct
            quadrants agree at any feather (tess_fx_box_core's centre-line proof).
            `col_b` makes it a GRADIENT fill: the ramp runs abgr -> col_b, shaped by `grad_kind`
            (gui_grad_t) and oriented by `grad_ang` (radians, box-local, 0 points +x -- the axis for
-           a linear ramp, the starting direction for a conic one, ignored by a radial one).  A
+           a linear ramp, the direction a conic one peaks toward, ignored by a radial one).  A
            linear ramp spans the box exactly and holds its end colours across the AA skirt.
            col_b == abgr is a flat fill, which is not a special case but the honest degenerate one:
            the op is simply left off.

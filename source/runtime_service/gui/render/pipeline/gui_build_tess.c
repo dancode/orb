@@ -944,8 +944,8 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     /* GUI_OP_GRAD -- the ramp's far colour and its axis.  The axis is stored ALREADY DIVIDED by
        the box's extent along it (the support width of a projected rectangle), so the ramp spans
        the shape at any angle and the fragment recovers t with one dot product instead of
-       repeating this per pixel.  A conic sweep has no extent to divide by: it stores the unit
-       direction it starts from. */
+       repeating this per pixel.  A conic ramp has no extent to divide by -- it measures an ANGLE
+       from the axis -- so it stores the unit direction it peaks toward. */
     if ( aux && ( s_tess.cur_ops & GUI_OP_GRAD ) )
     {
         s_tess.cur_prim.col_b = aux->grad_col;

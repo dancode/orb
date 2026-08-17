@@ -830,9 +830,10 @@ typedef struct gui_api_s
                                       u32 col );
     void ( *draw_gradient          )( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
     /* Gradient fill of a ROUNDED box, resolved in the FRAGMENT off the primitive record.  `kind`
-       shapes the ramp and `angle` orients it: the axis for GUI_GRAD_LINEAR, the starting direction
-       for GUI_GRAD_CONIC, ignored by GUI_GRAD_RADIAL.  Radial and conic exist here and not on
-       draw_gradient because neither can be described by colours at a rectangle's corners. */
+       shapes the ramp and `angle` orients it: the axis for GUI_GRAD_LINEAR, the direction the
+       sheen peaks toward for GUI_GRAD_CONIC, ignored by GUI_GRAD_RADIAL.  Radial and conic exist
+       here and not on draw_gradient because neither can be described by colours at a rectangle's
+       corners. */
     void ( *draw_round_rect_gradient )( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
                                         gui_grad_t kind, f32 angle );
     void ( *draw_inset_shadow      )( gui_rect_t box, f32 depth, u32 col );

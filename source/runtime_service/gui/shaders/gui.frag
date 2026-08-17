@@ -47,7 +47,7 @@ layout(location = 0) out vec4 out_color;
 // Six vec4 rows per record, no padding (gui.h pins the struct to that).
 #define PRIM_ROWS       6u
 
-#define TAU             6.28318531
+#define PI              3.14159265
 
 // The record this fragment's primitive named, resolved once at the top of main().  Row 0 is what
 // every fragment reads -- a glyph or a flat fill decodes its texture and clip and touches nothing
@@ -460,9 +460,12 @@ void main()
         if ( ( g_ops & OP_GRAD_RADIAL ) != 0u )
             t = clamp( length( lp / max( grect.zw, vec2( 1e-4 ) ) ), 0.0, 1.0 );
         else if ( ( g_ops & OP_GRAD_CONIC ) != 0u )
-            // One full turn from the axis, and the seam where the ramp meets itself IS the axis:
-            // fract rather than clamp, because a conic ramp has no far end to hold.
-            t = fract( atan( g.x * lp.y - g.y * lp.x, dot( lp, g ) ) / TAU );
+            // Angular, MIRRORED about the axis: full at the axis, gone at the far side, and the
+            // same on the way back.  A conic ramp that wrapped instead would meet itself at the
+            // axis with col_b against the fill colour and no transition between them -- a hard
+            // light/dark edge sitting in open space.  This one depends on |angle| alone, which is
+            // continuous across the far side, so there is no seam anywhere on the shape.
+            t = 1.0 - abs( atan( g.x * lp.y - g.y * lp.x, dot( lp, g ) ) ) / PI;
         else
             // g arrives already divided by the shape's extent along it (gui.h), so the whole ramp
             // is one dot product no matter what angle it runs at.

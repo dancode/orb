@@ -46,7 +46,7 @@ struct gui_pc_t
 // Six float4 rows per record, no padding (gui.h pins the struct to that).
 #define PRIM_ROWS       6u
 
-#define TAU             6.28318531
+#define PI              3.14159265
 
 struct ps_in_t
 {
@@ -465,9 +465,12 @@ float4 main( ps_in_t i ) : SV_Target0
         if ( ( g_ops & OP_GRAD_RADIAL ) != 0u )
             t = saturate( length( lp / max( grect.zw, float2( 1e-4, 1e-4 ) ) ) );
         else if ( ( g_ops & OP_GRAD_CONIC ) != 0u )
-            // One full turn from the axis, and the seam where the ramp meets itself IS the axis:
-            // frac rather than saturate, because a conic ramp has no far end to hold.
-            t = frac( atan2( g.x * lp.y - g.y * lp.x, dot( lp, g ) ) / TAU );
+            // Angular, MIRRORED about the axis: full at the axis, gone at the far side, and the
+            // same on the way back.  A conic ramp that wrapped instead would meet itself at the
+            // axis with col_b against the fill colour and no transition between them -- a hard
+            // light/dark edge sitting in open space.  This one depends on |angle| alone, which is
+            // continuous across the far side, so there is no seam anywhere on the shape.
+            t = 1.0 - abs( atan2( g.x * lp.y - g.y * lp.x, dot( lp, g ) ) ) / PI;
         else
             // g arrives already divided by the shape's extent along it (gui.h), so the whole ramp
             // is one dot product no matter what angle it runs at.
