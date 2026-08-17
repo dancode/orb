@@ -777,7 +777,7 @@ target sb_gui_style						# style + look bench: editor, gallery, C exporter, font
     dep         rhi draw gui dev_font base
     mono_dep    render
 
-target sb_gui_stress					# gui load-limit bench: 5 routines on number keys, 0 = idle
+target sb_gui_stress					# gui load-limit bench at the shipping caps:
 
     type        exe
     root        source/sandbox/gui/sb_gui_stress
