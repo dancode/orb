@@ -70,7 +70,7 @@ ctx_alloc_slot( const gui_ctx_config_t* c, u32 slots, i32 slot )
 }
 
 /* Allocate the default context (slot 0) at the internal maxima -- the compile-time caps the
-   library is built with (GUI_STRESS_TEST scales these); no preset overrides them.
+   library is built with; no preset overrides them.
    Called once from gui_init (frame/gui_frame_loop.c). */
 void
 ctx_pool_init( void )

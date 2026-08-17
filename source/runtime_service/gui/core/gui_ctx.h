@@ -177,11 +177,7 @@ typedef struct
 /* Max navigable items per window per frame (includes rows scrolled out of view -- they still
    register, only their draw is clipped). Items past this limit are simply not keyboard-reachable
    that frame. */
-#ifdef GUI_STRESS_TEST
-#define GUI_NAV_ITEMS_MAX 4096   /* stress-bench build: 4x */
-#else
 #define GUI_NAV_ITEMS_MAX 1024
-#endif
 
 typedef struct
 {

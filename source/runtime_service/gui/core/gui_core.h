@@ -37,17 +37,8 @@
 /* Per-context default pool sizes -- used to wire the static default context (slot 0).
    Secondary contexts may use different sizes passed via gui_ctx_config_t. */
 
-#ifdef GUI_STRESS_TEST
-
-#define GUI_DEFAULT_MAX_WINDOWS     128     // gui_stress.lib builds with higher counts
-#define GUI_DEFAULT_STATE_SLOTS     2048    // gui_stress.lib builds with higher counts
-
-#else
-
 #define GUI_DEFAULT_MAX_WINDOWS     32      // default persisted window pool (32)
 #define GUI_DEFAULT_STATE_SLOTS     512     // default keyed state pool capacity
-
-#endif
 
 #define GUI_DEFAULT_POPUP_DEPTH     8       // default max nested popups
 #define GUI_DEFAULT_DOCK_NODES      48      // default dock-tree nodes
@@ -64,11 +55,7 @@
                                             //   scroll link + user_w/h + the anchor tail-follow pair)
 #define GUI_STATE_BIG_CAP           160     // big-class payload bytes (max tenant: gui_table_persist_t --
                                             //   per-column widths + fit measures + display order)
-#ifdef GUI_STRESS_TEST
-#define GUI_STATE_BIG_SLOTS         128     // stress-bench build: 4x
-#else
 #define GUI_STATE_BIG_SLOTS         32      // big-class capacity (tables are the main tenant)
-#endif
 
 /*==============================================================================================
     Input snapshot (core/gui_io.c)

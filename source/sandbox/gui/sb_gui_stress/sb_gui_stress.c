@@ -61,31 +61,19 @@
     Bench state
 ==============================================================================================*/
 
-/* This target compiles against the gui_stress lib variant (orb.targets), where GUI_STRESS_TEST
-   raises the library's pool caps ~4x -- the slider ceilings scale to match.  The stock-cap
-   ceilings remain so the bench still builds against the plain gui lib if ever repointed. */
+/* The bench runs against the SHIPPING gui library, at the caps everything else in the tree gets.
+   Several of the ceilings below sit deliberately past a pool's capacity -- overflowing one is a
+   result, not a failure, and the sticky overflow flag plus the dashboard are how it reads. */
 
-#ifdef GUI_STRESS_TEST
-#define STRESS_FLOOD_MAX   120     // test 1 window cap (window pool is 128 here)
-#define STRESS_WALL_MAX    4000    // test 2 row cap
-#define STRESS_TABLE_MAX   20000   // test 3 row cap
-#define STRESS_STORM_MAX   3000    // test 4 primitive cap (~30 verts/prim avg vs the 60K vert pool)
-#define STRESS_CHURN_MAX   2400    // test 5 damper cap
-#define STRESS_TINY_SLOTS  2048    // mirrors GUI_DEFAULT_STATE_SLOTS in the gui_stress lib
-#define STRESS_DOCK_MAX    24      // test 6 docked-window cap (5 leaves x 8 tabs would hold 40)
-#define STRESS_MUT_MAX     400     // test 7 row cap (big-class slots are 128 here -- overflows them)
-#define STRESS_SWARM_MAX   96      // test 8 block cap (GUI_MAX_VOLATILE is 64 -- deliberate overflow)
-#else
 #define STRESS_FLOOD_MAX   80      // test 1 window cap
 #define STRESS_WALL_MAX    1000    // test 2 row cap
 #define STRESS_TABLE_MAX   5000    // test 3 row cap
 #define STRESS_STORM_MAX   1200    // test 4 primitive cap (~30 verts/prim avg vs the 32K vert pool)
 #define STRESS_CHURN_MAX   600     // test 5 damper cap
-#define STRESS_TINY_SLOTS  512     // mirrors GUI_DEFAULT_STATE_SLOTS in the stock gui lib
+#define STRESS_TINY_SLOTS  512     // mirrors GUI_DEFAULT_STATE_SLOTS
 #define STRESS_DOCK_MAX    12      // test 6 docked-window cap
-#define STRESS_MUT_MAX     100     // test 7 row cap (big-class slots are 32 stock -- overflows them)
+#define STRESS_MUT_MAX     100     // test 7 row cap (big-class slots are 32 -- overflows them)
 #define STRESS_SWARM_MAX   24      // test 8 block cap (GUI_MAX_VOLATILE is 16 -- deliberate overflow)
-#endif
 
 static i32  s_test        = 0;     // active routine, 0 = idle
 static i32  s_flood_count = 40;

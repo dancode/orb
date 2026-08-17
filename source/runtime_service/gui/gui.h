@@ -2928,27 +2928,15 @@ typedef struct
    would sit right at the 65535 ceiling).  The 3x index ratio clears both mixes with room
    to spare -- quads run 6 idx per 4 verts (1.5:1) and AA paths / arcs stay under 2:1 --
    so geometry that would exceed it overflows a frame's tessellation, not the buffer
-   sizing.  The per-frame region sizes that fall out of these (VB 896 KB at the packed
-   24-byte vertex, IB 192 KB) are both 256-byte aligned, so each frame-in-flight region
+   sizing.  The per-frame region sizes that fall out of these (VB 640 KB at the 20-byte
+   vertex, IB 192 KB) are both 256-byte aligned, so each frame-in-flight region
    stays independently addressable -- note that this only matters if the VB/IB are ever
    moved off HOST_COHERENT memory, in which case regions would need rounding up to
-   nonCoherentAtomSize to flush apart. */
+   nonCoherentAtomSize to flush apart.
 
-#ifdef GUI_STRESS_TEST
-
-/* Stress-bench build (the gui_stress lib variant, sb_gui_stress): the per-frame pools scale
-   ~4x so the bench can push past shipping load without tripping caps.  Two are ceiling-bound,
-   not 4x: verts stop just under 64K (u16 indices) and the clip table at 256 (u8 index). */
-
-#define GUI_MAX_VERTS        ( 60 * 1024 )   /* per-frame tessellated vertices                   */
-#define GUI_MAX_PRIMS        8192            /* per-frame primitive records (gui_prim_t)         */
-#define GUI_MAX_CMDS         8192            /* per-frame semantic draw commands                 */
-#define GUI_MAX_PATH_PTS     32768           /* per-frame total polyline / path point pool       */
-#define GUI_MAX_RECT_ENTRIES 16384           /* per-frame total draw_rects batch pool            */
-#define GUI_MAX_TEXT_POOL    ( 64 * 1024 )   /* per-frame flat string copy pool for text cmds    */
-#define GUI_MAX_CLIP_RECTS   256             /* per-frame clip table entries; u8 index caps at 256 */
-
-#else
+   ONE set of caps: the ~4x stress-bench fork these carried is retired, and sb_gui_stress
+   benches the shipping numbers.  Several of its routines deliberately push a pool past its
+   capacity -- the sticky overflow flag and the dashboard are how that reads. */
 
 #define GUI_MAX_VERTS        ( 32 * 1024 )   /* per-frame tessellated vertices                   */
 #define GUI_MAX_PRIMS        2048            /* per-frame primitive records (gui_prim_t)         */
@@ -2957,8 +2945,6 @@ typedef struct
 #define GUI_MAX_RECT_ENTRIES 4096            /* per-frame total draw_rects batch pool            */
 #define GUI_MAX_TEXT_POOL    ( 16 * 1024 )   /* per-frame flat string copy pool for text cmds    */
 #define GUI_MAX_CLIP_RECTS   64              /* per-frame clip table entries; u8 index caps at 256 */
-
-#endif
 
 #define GUI_MAX_IDX          ( GUI_MAX_VERTS * 3 )   /* 3x clears quads (1.5:1) and AA strips     */
 #define GUI_CLIP_DEPTH       32                      /* push_clip / pop_clip nesting depth       */

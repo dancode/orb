@@ -152,9 +152,9 @@ mmap_next_line( const char** p, const char* end, char* buf, size_t buf_size )
     processes in the same logon session share the same mutex object.
     Failure is non-fatal: the caller proceeds unlocked rather than refusing to build.
 
-    Usually keyed by target name, but the key is really the OUTPUT: two different targets can
-    produce one file -- gui and gui_stress cook the same shader pair -- and those must serialize
-    against each other, not against everything else their target builds.
+    Usually keyed by target name, but the key is really the OUTPUT.  Two targets that share a
+    source tree can declare the same generated file, and those must serialize against each other
+    rather than against everything else their target builds -- see build_cook_shaders.
 ==============================================================================================*/
 
 void*

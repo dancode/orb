@@ -167,11 +167,7 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
    truncated -- it goes uncacheable (see cache_slot_tessellate) and re-tessellates every real
    frame; the cap trades stable-cache memory against how large a window can be and still be
    retained. */
-#ifdef GUI_STRESS_TEST
-#define WIN_SLOT_CMD_MAX  128   /* stress-bench build: volatile swarms are a load axis */
-#else
 #define WIN_SLOT_CMD_MAX  64
-#endif
 
 /* Proactive compaction threshold.  The reuse allocator is bump-only: new windows always tessellate
    at the tail (past every live reservation), so a closed/relocated window's space becomes a hole

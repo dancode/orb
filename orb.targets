@@ -190,36 +190,6 @@ target gui
     dep         app rhi base
     tool_dep    asset_tool shader_tool		# the shader cookers, ordered ahead of this target
 
-target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the load bench
-
-    type        static
-    root        source/runtime_service/gui
-    folder      03_RUNTIME/SERVICE
-    unit        gui_log.c    				# GUI_LOG unit: leaf diagnostics floor (gui_log + host sink)
-    unit        gui_rect.c   				# GUI_RECT unit: leaf geometry + color primitives
-    unit        gui_font.c   				# GUI_FONT unit: leaf font-metrics library (measurement, not drawing)
-    unit        gui.c   					# gui module face: vtable + descriptor + DLL exports
-    unit        gui_frame.c   				# GUI_FRAME unit: the frame orchestrator (top of the stack)
-    unit        gui_core.c   				# GUI_CORE unit: the interact server (io, ids, state, item protocol)
-    unit        gui_style.c   				# GUI_STYLE unit: theme, stacks, state->color resolution
-    unit        gui_interact.c   			# GUI_INTERACT unit: gesture mechanisms (move/resize/drag/feat)
-    unit        gui_render.c   				# GUI_RENDER unit: the render server (batch, atlas, pipeline)
-    unit        gui_draw.c   				# GUI_DRAW unit: drawing routines + font/icon resources over the server
-    unit        gui_component.c   			# GUI_COMPONENT unit: widget logic building blocks (comp_* cores)
-    unit        gui_stock.c   				# GUI_STOCK unit: reference widget set (stock_* renders, adornments)
-    unit        gui_debug.c   				# GUI_DEBUG unit: dashboard + command stepper (severable)
-    unit        gui_flow.c   				# GUI_FLOW unit: layout composition (metrics in, rects out)
-    unit        gui_chrome.c   				# GUI_CHROME unit: widgets/table/window/dock/popup/nav
-
-    shader      shaders/gui.vs.hlsl			# same pair as 'gui' -- whichever builds first cooks it
-    shader      shaders/gui.ps.hlsl
-
-    dep         app rhi base
-    tool_dep    asset_tool shader_tool
-
-    define      GUI_STRESS_TEST
-    define      GUI_STATIC   	# target name derives GUI_STRESS_STATIC; the gateway switch needs GUI_STATIC
-
 target asset
 
     type        static
@@ -814,9 +784,7 @@ target sb_gui_stress					# gui load-limit bench: 5 routines on number keys, 0 = 
     folder      09_SANDBOX/GUI
     unit        sb_gui_stress.c
     dep         mod sys ref job app core
-    dep         rhi gui_stress base   # the 4x-caps gui variant, NOT the stock lib
-    define      GUI_STRESS_TEST
-    define      GUI_STATIC   # dep name derives GUI_STRESS_STATIC; the gateway switch needs GUI_STATIC
+    dep         rhi gui base
 
 # ==============================================================================
 # 09_SANDBOX -- HOST (host functionality tests, one per host shape)
@@ -1154,7 +1122,6 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     add         sb_gui_style  		# style + look customization bench
 	add 		sb_gui_utf			# utf rendering test
 	
-	add 		gui_stress			# ensure compiled in build.
     add         sb_gui_stress   	# gui load-limit stress bench
 	
     add         sb_vulkan_stress   	# multi-context sync stress exe
