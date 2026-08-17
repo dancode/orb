@@ -106,7 +106,10 @@ edit_paint( gui_rect_t content, const char* buf, const gui_edit_state_t* es, boo
                metric.  Deriving the caret from the row minus WIDGET_PAD collapsed it to a sliver
                whenever a density pass widened the pad past the font's headroom. */
             f32 cx = text_x + text_x_at( buf, es->cursor );
-            draw_fill( edit_sel_band( cx, cx + (f32)WIN_BORDER, text_y, content ), COL_TEXT_PRIMARY_IDLE );
+            /* Caret width tracks the frame weight but floors at 1 px: a caret is ink the user is
+               staring at, and a border-0 theme must not blank it. */
+            f32 cw = WIN_BORDER;  if ( cw < 1.0f ) cw = 1.0f;
+            draw_fill( edit_sel_band( cx, cx + cw, text_y, content ), COL_TEXT_PRIMARY_IDLE );
         }
     }
 }

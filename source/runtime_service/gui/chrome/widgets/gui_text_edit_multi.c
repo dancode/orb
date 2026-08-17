@@ -95,8 +95,10 @@ medit_paint( gui_rect_t inner, const char* buf, u32 len, const gui_medit_state_t
         {
             bool caret_vis = ( ( (u32)( es->blink_t * 2.0f ) ) & 1u ) == 0u;
             f32  cxp       = text_x + text_x_at( buf + ls, es->cursor - ls );
+            /* Caret width floors at 1 px so a border-0 theme cannot blank it (gui_text_edit.c). */
+            f32  cw        = WIN_BORDER;  if ( cw < 1.0f ) cw = 1.0f;
             if ( caret_vis && cxp >= clip_x0 - 0.5f && cxp <= clip_x1 + 0.5f )
-                draw_fill( ( gui_rect_t ){ cxp, ry, (f32)WIN_BORDER, char_h },
+                draw_fill( ( gui_rect_t ){ cxp, ry, cw, char_h },
                            COL_TEXT_PRIMARY_IDLE );
         }
 

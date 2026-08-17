@@ -156,7 +156,9 @@ native_draw_dock_glyph( gui_rect_t r, bool attached, u32 col )
     f32 cy = r.y + r.h * 0.5f;
     f32 e  = floorf( r.h * 0.20f );      /* half-extent of the whole mark */
     if ( e < 3.0f ) e = 3.0f;
-    f32 t  = WIN_BORDER;
+    /* Stroke from the glyph's own size, 1 px floor -- ink, not a border, so a border-0 theme
+       keeps its caption glyphs.  Same derivation as draw_close_x, so the row strokes evenly. */
+    f32 t  = floorf( r.h * 0.06f );  if ( t < 1.0f ) t = 1.0f;
 
     /* Dock tray along the bottom: a baseline with a short wall turned up at each end. */
     f32 yb = cy + e;
@@ -190,7 +192,7 @@ native_btn_draw_glyph( native_btn_kind_t kind, gui_rect_t r, bool maximized, u32
     f32 cx = r.x + r.w * 0.5f;
     f32 cy = r.y + r.h * 0.5f;
     f32 s  = floorf( r.h * 0.18f );   /* glyph half-extent */
-    f32 t  = WIN_BORDER;
+    f32 t  = floorf( r.h * 0.06f );  if ( t < 1.0f ) t = 1.0f;   /* ink weight -- see dock glyph */
 
     /* The glyph boxes are small line art -- draw them square so the frame radius cannot bend a
        maximize/restore box into a circle. */

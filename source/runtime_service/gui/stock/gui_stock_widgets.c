@@ -145,10 +145,12 @@ stock_button_label( gui_rect_t r, const char* text )
                         STYLE_COL( TEXT_PRIMARY, IDLE ), text, avail );
 }
 
-/* stock_button -- THE reference render over gui_comp_button: a flat, hover/press-animated fill +
-   a centered (or ellipsized) label; the label doubles as the component id ("##"/"###" rules
-   apply).  draw_face_item rides the keyed mix over the SAME grid cells style_col resolves,
-   so stock and chrome animate alike -- this IS the face chrome's gui_button uses.
+/* stock_button -- THE reference render over gui_comp_button: a framed, hover/press-animated fill
+   + a centered (or ellipsized) label; the label doubles as the component id ("##"/"###" rules
+   apply).  draw_face_item_frame rides the keyed mix over the SAME grid cells style_col resolves,
+   so stock and chrome animate alike -- this IS the face chrome's gui_button uses.  The border is
+   the quiet BORDER[IDLE] frame every framed control wears (checkbox, input); an authored face or
+   a border-0 theme suppresses it inside the painter.
    A user forks it by keeping gui_comp_button and swapping only these draw_* calls.  True on click. */
 bool
 gui_stock_button( gui_rect_t r, const char* label )
@@ -156,7 +158,7 @@ gui_stock_button( gui_rect_t r, const char* label )
     gui_id_t          id = item_id( label );       /* the keyed id for the animation damper */
     gui_comp_button_t b  = gui_comp_button( label, r );
 
-    draw_face_item( r, id, b.state, false );
+    draw_face_item_frame( r, id, b.state, false, STYLE_COL( BORDER, IDLE ), WIN_BORDER );
 
     char vis[ 128 ];
     stock_button_label( r, stock_visible_text( label, vis, sizeof vis ) );

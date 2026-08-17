@@ -86,7 +86,7 @@ gui_button_fill( const char* label )
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_face_item( r, id, st, false );
+    draw_face_item_frame( r, id, st, false, COL_BORDER_IDLE, WIN_BORDER );
     draw_button_label( r, label );
 
     return st.clicked;
@@ -108,7 +108,7 @@ gui_small_button( const char* label )
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_face_item( r, id, st, false );
+    draw_face_item_frame( r, id, st, false, COL_BORDER_IDLE, WIN_BORDER );
     draw_button_label( r, label );
 
     return st.clicked;
@@ -147,7 +147,7 @@ gui_arrow_button( const char* label, gui_dir_t dir )
 
     gui_item_state_t st = item_state( id, r, ITEM_BUTTON );
 
-    draw_face_item( r, id, st, false );
+    draw_face_item_frame( r, id, st, false, COL_BORDER_IDLE, WIN_BORDER );
     draw_arrow( r, dir, COL_TEXT_PRIMARY_IDLE );
 
     return st.clicked;

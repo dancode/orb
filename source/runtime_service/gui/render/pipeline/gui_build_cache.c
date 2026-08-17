@@ -435,7 +435,6 @@ typedef struct
     bool     changed;        // hash mismatched, window is new, or force_changed this frame
     bool     force_changed;  // a volatile row in this window needs a (re)capture -- tessellate
                              // regardless of the hash (which excludes volatile commands entirely)
-
 } render_win_hash_t;
 
 /* Per-window segment chain links, parallel to s_draw.segs (GUI_MAX_SEGS fits u16).  Rebuilt each

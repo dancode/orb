@@ -54,8 +54,9 @@ draw_collapse_arrow( gui_rect_t box, bool collapsed, u32 color )
 }
 
 /* Close glyph: the two-diagonal 'X' centered in `box` (Dear ImGui's CloseButton cross).  Shared
-   so the native caption close button and any other caller stroke the identical mark.  Styled by
-   the border metric: the stroke weight is WIN_BORDER so the cross tracks the frame weight. */
+   so the native caption close button and any other caller stroke the identical mark.  The stroke
+   weight derives from the glyph's own size with a 1 px floor -- it is INK, not a border, so a
+   border-0 theme keeps its glyphs (and the weight scales with DPI where a metric would not). */
 void
 draw_close_x( gui_rect_t box, u32 color )
 {
@@ -63,7 +64,7 @@ draw_close_x( gui_rect_t box, u32 color )
     f32 cy = box.y + box.h * 0.5f;
     f32 m  = box.w < box.h ? box.w : box.h;
     f32 s  = floorf( m * 0.18f );   /* glyph half-extent -- matches the caption min/max glyphs */
-    f32 t  = WIN_BORDER;
+    f32 t  = floorf( m * 0.06f );  if ( t < 1.0f ) t = 1.0f;
 
     gui_draw_line( cx - s, cy - s, cx + s, cy + s, t, color );
     gui_draw_line( cx - s, cy + s, cx + s, cy - s, t, color );
