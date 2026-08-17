@@ -29,6 +29,14 @@
 /* Capacity of the loaded-font registry.  Slot 0 is the default; loaded fonts occupy 1..MAX-1. */
 #define GUI_FONT_REGISTRY_MAX 16
 
+/* Per-font span of the render-side glyph uv table (gui_glyph_table.c): each registry slot owns a
+   fixed window of GUI_FONT_GLYPH_TABLE_PER_FONT entries, so a glyph's table index is stable per
+   (font id, codepoint) with no allocator -- the property that lets retained geometry reference a
+   glyph by id and survive an atlas repack.  ASCII fills indices 0..94; ext glyphs follow in their
+   sorted order; anything past the window resolves to '?' (font_glyph_table_index) and falls back
+   to baked UVs at the consumer. */
+#define GUI_FONT_GLYPH_TABLE_PER_FONT 512u
+
 /* The active-font measurement surface, resolved once at load -- pure type metrics, what layout and
    measurement code read.  Nothing here names a GPU resource (atlas-sampling parameters belong to
    the shared resource atlas and are read render-side). */
@@ -138,6 +146,13 @@ void            font_print_active  ( void );                   // log the active
    and a miss resolves to '?' -- the one lookup rule measure (font_char_advance) and draw
    (font_slot_glyph, render-side) both go through, so they can never disagree. */
 const orb_font_glyph_t* font_slot_cp( const font_slot_t* slot, u32 cp );
+
+/* The codepoint's index in the slot's glyph-table window (0..GUI_FONT_GLYPH_TABLE_PER_FONT-1):
+   ASCII dense at cp-32, ext records at 95 + their sorted position.  Total -- an ext record past
+   the window, and any miss, resolve to the '?' index -- so it follows font_slot_cp's resolution
+   in every case and the two can never name different glyphs.  STABILITY: the index moves only
+   when the font's own glyph set changes (a rebake), never on an atlas repack. */
+u32 font_glyph_table_index( const font_slot_t* slot, u32 cp );
 
 void            font_use                ( u32 id );     // make an already-loaded id active
 u32             font_active_id          ( void );       // id of the active slot (save/restore)

@@ -445,6 +445,8 @@ render_shutdown( void )
     if ( rhi_handle_valid( s_render.prim_buf ) )
         rhi()->buffer_destroy( s_render.prim_buf );
 
+    glyph_table_shutdown();   /* lazily created; a no-op when no font ever packed */
+
     if ( rhi_handle_valid( s_render.pipeline_wire ) )
         rhi()->pipeline_destroy( s_render.pipeline_wire );
     if ( rhi_handle_valid( s_render.pipeline ) )

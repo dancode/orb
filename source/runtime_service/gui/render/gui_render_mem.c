@@ -41,6 +41,7 @@ backend_memory( u32 live_viewports )
         s.gpu_table_bytes += (u32)( GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES );
     if ( rhi_handle_valid( s_render.prim_buf ) )
         s.gpu_table_bytes += (u32)( GUI_PRIM_REGION_COUNT * GUI_PRIM_REGION_BYTES );
+    s.gpu_table_bytes += glyph_table_gpu_bytes();   /* the glyph uv table (0 until a font packs) */
 
 #ifdef GUI_DEBUG_OVERLAY
 
@@ -77,10 +78,11 @@ backend_memory( u32 live_viewports )
        leaf and reports through the frontend bucket (gui_ui_mem.c). */
     s.cpu_draw_bytes = draw_unit_mem_bytes();
 
-    /* The three resource atlas instance records (packer nodes + tenant bookkeeping).  All three
-       are always-resident statics; their PIXEL buffers and tenant source copies are heap,
-       reported in cpu_atlas_bytes below. */
-    s.cpu_res_bytes = (u32)( sizeof( s_res ) + sizeof( s_spr ) + sizeof( s_sdf ) );
+    /* The three resource atlas instance records (packer nodes + tenant bookkeeping) plus the
+       glyph uv table's CPU mirror.  Always-resident statics; the atlases' PIXEL buffers and
+       tenant source copies are heap, reported in cpu_atlas_bytes below. */
+    s.cpu_res_bytes = (u32)( sizeof( s_res ) + sizeof( s_spr ) + sizeof( s_sdf )
+                           + sizeof( s_glyph_table ) );
 
     /* Atlas-owned heap: each atlas's resident staging mirror plus every tenant's retained source
        copy (fonts, icons, sprites keep a second CPU copy so a repack never goes back to disk).
