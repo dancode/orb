@@ -126,7 +126,7 @@ test_prim_ops( void )
     const u32 ops[] = { GUI_OP_BAND, GUI_OP_CUT, GUI_OP_INSET,
                         GUI_OP_PULSE, GUI_OP_STRIPES, GUI_OP_SELF,
                         GUI_OP_GRAD, GUI_OP_GRAD_RADIAL, GUI_OP_GRAD_CONIC,
-                        GUI_OP_SPIN, GUI_OP_DASH, GUI_OP_DITHER };
+                        GUI_OP_SPIN, GUI_OP_DASH, GUI_OP_DITHER, GUI_OP_FRAME };
 
     u32 seen = 0u;
     for ( u32 i = 0; i < ARRAY_COUNT( ops ); ++i )
@@ -136,7 +136,7 @@ test_prim_ops( void )
         test_equal( 0u, seen & ops[ i ] );                /* and not one already spent */
         seen |= ops[ i ];
     }
-    test_equal( 0xFFFu, seen );
+    test_equal( 0x1FFFu, seen );
 }
 
 /*============================================================================================*/

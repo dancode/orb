@@ -59,7 +59,7 @@ static const char* k_step_type_name[] = {
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
     "sprite", "fx_box", "round_rect_ex", "arc", "pie",
     "arc_dash", "arc_grad", "image_xf", "checker", "grid",
-    "ngon", "box_dash",
+    "ngon", "box_dash", "frame",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -138,6 +138,13 @@ step_cmd_detail( const step_cmd_info_t* ci )
                        c->rect_outline.w, c->rect_outline.h );
             fmt_snprintf( b2, sizeof( b2 ), "t %.1f   round %.1f", c->rect_outline.t,
                       c->rect_outline.rounding );
+            row2 = b2;
+            break;
+        case GUI_CMD_FRAME:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->frame.x, c->frame.y,
+                       c->frame.w, c->frame.h );
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   round %.1f", c->frame.t,
+                      c->frame.rounding );
             row2 = b2;
             break;
         case GUI_CMD_TRIANGLE:
@@ -292,6 +299,12 @@ step_cmd_detail( const step_cmd_info_t* ci )
         {
             f32 x = step_swatch( r, r.x, "col_a", c->checker.col_a );
             step_swatch( r, x, "col_b", c->checker.col_b );
+            break;
+        }
+        case GUI_CMD_FRAME:
+        {
+            f32 x = step_swatch( r, r.x, "fill", c->frame.abgr );
+            step_swatch( r, x, "border", c->frame.col_border );
             break;
         }
         case GUI_CMD_RECT_LIST:

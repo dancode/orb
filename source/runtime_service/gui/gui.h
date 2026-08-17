@@ -1951,6 +1951,10 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
                                          scrolled at anim_rate px/sec -- the marching ants     */
 #define GUI_OP_DITHER   ( 1u << 11 )  /* add +-0.5/255 screen-space noise to the output, so a
                                          wide soft ramp lands on 8-bit without banding         */
+#define GUI_OP_FRAME    ( 1u << 12 )  /* composite a border band of `border` px, coloured
+                                         col_b, OVER the fill -- body + border in ONE quad.
+                                         col_b is the band's colour here, so the op never
+                                         pairs with GUI_OP_GRAD (whose far colour it is)       */
 
 /* Which way a ramp runs, as a draw parameter.  The record carries it as the op bits above; this is
    the spelling a caller uses, where "at most one" is a property of the type rather than a rule. */
@@ -2151,6 +2155,8 @@ typedef enum
                              //   by the ambient rounding -- one quad, exact at any size
     GUI_CMD_BOX_DASH,        // rounded-box outline cut by a perimeter dash (GUI_OP_DASH): the
                              //   dashed border, and at a non-zero scroll rate the marching ants
+    GUI_CMD_FRAME,           // filled body + border band composited in the FRAGMENT
+                             //   (GUI_OP_FRAME): the widget bezel as ONE quad
 
 } gui_cmd_type_t;
 
@@ -2226,7 +2232,7 @@ gui_tex_index( u32 tex_idx )
 
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (22 values)
+    u8 type;       // gui_cmd_type_t, fits u8 (23 values)
     u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
     u8 _pad;
@@ -2234,6 +2240,11 @@ typedef struct
     {
         struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding, corner_pow; u32 tex_idx; u32 abgr; } rect;
         struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;              u32 abgr; } rect_outline;
+        /* Widget bezel: the filled body and its border band in one command, resolved by the
+           fragment as a single quad (GUI_OP_FRAME).  `t` is the band's width, lying inside the
+           boundary -- the emit site falls back to the fill + outline pair when the ambient
+           border alignment pushes the band outward, so this member never carries an align. */
+        struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;  u32 abgr, col_border; } frame;
         struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
         /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
            last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
@@ -3143,14 +3154,17 @@ typedef struct
     u32 clip_count_all;     // physical clip table fill, both bands (cap: GUI_MAX_CLIP_RECTS)
     u32 seg_count;          // physical segment count, both bands (cap: GUI_MAX_SEGS)
     u32 text_pool_used;     // physical text pool bytes, both bands (cap: GUI_MAX_TEXT_POOL)
-    u32 vert_count;         // tessellated vertices (total, including retained)
-    u32 tri_count;          // tessellated triangles (total, including retained)
-    u32 draw_calls;         // GPU indexed draw calls (batches), summed over surfaces
+    u32 vert_count;         // quad records tessellated (total, including retained; the name
+                            //   predates the quad cutover -- one record IS the whole shape)
+    u32 tri_count;          // rasterized triangles: always vert_count * 2
+    u32 prim_count;         // style records (gui_prim_t) live this frame, after dedup --
+                            //   dozens serve thousands of quads when the memo is healthy
+    u32 draw_calls;         // GPU draw calls (batches), summed over surfaces
 
     u32 win_total;          // windows tracked this frame
     u32 win_retained;       // windows whose geometry was reused (no re-tessellation)
-    u32 vert_retained;      // vertices that came from prev-frame copy, not re-tessellated
-    u32 tri_retained;       // triangles retained from prev-frame copy
+    u32 vert_retained;      // quad records that came from prev-frame copy, not re-tessellated
+    u32 tri_retained;       // triangles retained from prev-frame copy (vert_retained * 2)
 
     u32 upload_batches;     // number of buffer write calls per frame
     u32 upload_bytes;       // total bytes uploaded to GPU vertex and index buffers

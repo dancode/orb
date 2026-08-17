@@ -31,6 +31,7 @@
 #define OP_SPIN         0x200u
 #define OP_DASH         0x400u
 #define OP_DITHER       0x800u
+#define OP_FRAME        0x1000u
 
 #define TEX_MODE_SHIFT  28u
 #define TEX_INDEX_MASK  0x0FFFFFFFu
@@ -65,6 +66,10 @@ static uint g_tex;      // sampling model | bindless slot
 // below costs the same four multiplies either way.
 static float g_spin_c = 1.0;
 static float g_spin_s = 0.0;
+
+// OP_FRAME's border-band coverage, stashed by fx_coverage for main() to composite over the fill
+// -- the band and the fill resolve from the same field evaluation, so they cannot disagree.
+static float g_frame_band = 0.0;
 
 float4 prim_row( uint r )
 {
@@ -376,6 +381,17 @@ float fx_coverage( float2 px )
         d = box_field( local, rect.zw, rad, corner_pw );
     }
 
+    // GUI_OP_FRAME -- the border band's coverage, stashed for main() to composite over the fill.
+    // Measured from the field BEFORE any op bends it, so the band's outer edge lands exactly on
+    // the boundary the fill's own coverage resolves against.  feather 0 is the crisp square
+    // frame; the band's edges cut hard exactly as the fill's do.
+    if ( ( g_ops & OP_FRAME ) != 0u )
+    {
+        float db = abs( d + border * 0.5 ) - border * 0.5;
+        g_frame_band = ( feather <= 0.0 ) ? ( db <= 0.0 ? 1.0 : 0.0 )
+                                          : saturate( 0.5 - db / feather );
+    }
+
     // GUI_OP_BAND -- the band of `border` px lying inside the boundary: the rounded outline.
     // The one op that bends `d` rather than the coverage, because a band IS a different field and
     // everything downstream should measure from its edges, not the original boundary's.
@@ -674,6 +690,22 @@ float4 main( ps_in_t i ) : SV_Target0
         }
 
         return float4( i.color.rgb, i.color.a * cov * fill );
+    }
+
+    // GUI_OP_FRAME -- the border band, source-over the fill, in this one quad.  The band's
+    // coverage came from fx_coverage off the same field the fill resolved; the algebra is
+    // TEXT_EDGE's analytic source-over, so the result is pixel-identical to the fill + outline
+    // pair this replaces: the fill contributes only where the band's alpha does not, and the
+    // shared boundary antialiases once instead of double-darkening.  The clip cut scales the
+    // band here because `cov` already carries it for the fill.
+    if ( ( g_ops & OP_FRAME ) != 0u )
+    {
+        float4 bcol = unpack_col( asuint( prim_row( 3u ).w ) );
+        float  ab   = bcol.a * g_frame_band * ccov;
+        float  af   = vcol.a * cov * ( 1.0 - ab );
+        float  at   = ab + af;
+        vcol = float4( ( bcol.rgb * ab + vcol.rgb * af ) / max( at, 1e-6 ), 1.0 );
+        cov  = at;
     }
 
     // vcol.rgb is already linear light (i.color, or the field-10 sweep of it); alpha is coverage,

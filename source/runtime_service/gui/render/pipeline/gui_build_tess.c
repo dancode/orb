@@ -780,6 +780,7 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 ----------------------------------------------------------------------------------------------*/
 typedef struct
 {
+    u32 frame_col;        // GUI_OP_FRAME: the border band's colour (col_b -- never with GRAD)
     u32 grad_col;         // GUI_OP_GRAD: the ramp's far colour
     f32 grad_ang;         // GUI_OP_GRAD: axis, radians, box-local, 0 points +x (linear ramp only)
     f32 grad_mid;         // GUI_OP_GRAD: midpoint bend, already the exponent (0 = linear)
@@ -876,7 +877,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     s_tess.cur_prim.r_br    = rq[ 2 ];
     s_tess.cur_prim.r_bl    = rq[ 3 ];
     s_tess.cur_prim.feather = feather;
-    s_tess.cur_prim.border  = ( s_tess.cur_ops & GUI_OP_BAND ) ? border : 0.0f;
+    s_tess.cur_prim.border  = ( s_tess.cur_ops & ( GUI_OP_BAND | GUI_OP_FRAME ) ) ? border : 0.0f;
     s_tess.cur_prim.rot_cos = rcs;
     s_tess.cur_prim.rot_sin = rsn;
     s_tess.cur_prim.param_a = ( s_tess.cur_ops & GUI_OP_PULSE ) ? rate  : 0.0f;
@@ -905,6 +906,11 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         s_tess.cur_prim.anim_rate  = aux->anim_rate;
         s_tess.cur_prim.anim_phase = aux->anim_phase;
     }
+
+    /* GUI_OP_FRAME -- the border band's colour.  col_b is free here by construction: the frame
+       is a solid fill, and the op never pairs with GRAD (gui.h). */
+    if ( aux && ( s_tess.cur_ops & GUI_OP_FRAME ) )
+        s_tess.cur_prim.col_b = aux->frame_col;
 
     /* GUI_OP_GRAD -- the ramp's far colour and its axis.  The axis is stored ALREADY DIVIDED by
        the box's extent along it (the support width of a projected rectangle), so the ramp spans
@@ -1849,6 +1855,23 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                     tess_rect_outline( c->rect_outline.x, c->rect_outline.y,
                                        c->rect_outline.w, c->rect_outline.h,
                                        c->rect_outline.t, c->rect_outline.abgr );
+                break;
+
+            /* Body + border in one surface.  A square frame runs the field with feather 0 -- a
+               hard cut on the snapped boundary, matching the crisp edges the fill + four-rail
+               pair drew -- and a rounded one takes the standard AA band. */
+            case GUI_CMD_FRAME:
+                s_tess.cur_ops       |= GUI_OP_FRAME;
+                s_tess.cur_corner_pow = c->frame.corner_pow;
+                {
+                    tess_fx_aux_t aux = { 0 };
+                    aux.frame_col     = c->frame.col_border;
+                    tess_fx_box( c->frame.x, c->frame.y, c->frame.w, c->frame.h,
+                                 c->frame.rounding,
+                                 ( c->frame.rounding > 0.0f ) ? TESS_FX_AA : 0.0f,
+                                 c->frame.t, 0.0f, 0.0f, 0.0f,
+                                 0, 0, 1, 1, 0, c->frame.abgr, &aux );
+                }
                 break;
 
             /* The parameterized surface: a shadow is the wide feather (what used to be six

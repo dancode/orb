@@ -110,9 +110,7 @@ draw_frame( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
 {
     f32 save = draw_rounding();
     draw_set_rounding( ROUND_WIDGET );
-    draw_push_rect_filled( r.x, r.y, r.w, r.h, 0, 0, 1, 1, 0, col_bg );
-    if ( border > 0.0f )
-        draw_push_rect_outline( r.x, r.y, r.w, r.h, border, col_border );
+    draw_push_frame( r.x, r.y, r.w, r.h, border, col_bg, col_border );
     draw_set_rounding( save );
 }
 

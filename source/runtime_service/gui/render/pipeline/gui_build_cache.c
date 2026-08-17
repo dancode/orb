@@ -46,8 +46,8 @@ build_frame_reset( void )
     Per-frame render stats.
 
     accum is built by two phases that do NOT run on the same schedule: BUILD (cache_diff_windows /
-    cache_build_frame -- cmd_count, vert_count, tri_count, win_total, win_retained, vert_retained,
-    tri_retained) runs at most once per REAL frame, guarded by s_frame_built, and is skipped
+    cache_build_frame -- cmd_count, vert_count, tri_count, prim_count, win_total, win_retained,
+    vert_retained, tri_retained) runs at most once per REAL frame, guarded by s_frame_built, and is skipped
     entirely on an idle frame (frame_dirty()==false); SUBMIT (cache_count_draw_calls /
     cache_count_upload -- draw_calls, upload_batches, upload_bytes) runs every single frame, real
     or idle, once per surface flush, because the GPU replays cached geometry every frame regardless.
@@ -238,6 +238,7 @@ static u8               s_win_cached_live [ RENDER_MAX_WIN ];
    flush clears one bit per slab it uploads.  One bit per (frame-in-flight, viewport) region. */
 ORB_STATIC_ASSERT( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS <= 8,
                    "clip slab pending mask is a u8 -- one bit per (frame, viewport) region" );
+
 static u8               s_clip_slab_pending[ RENDER_MAX_WIN ];
 
 /* Record-range upload masks, keyed and shaped exactly like the clip masks above, and needed for a
@@ -1091,7 +1092,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
 typedef struct
 {
     u32      vert_retained, tri_retained, win_retained;   /* vert_* counts QUADS; tri = quads*2 */
-    u32      total_vert, total_tri, overlay_win;
+    u32      total_vert, total_tri, total_prim, overlay_win;
     u32      reserved_vert;                 /* sum of vert_alloc over ALL placed slots */
     gui_id_t overflow_win;
     u32      overflow_at_vert, overflow_at_cmd;
@@ -1196,6 +1197,7 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
         {
             st->total_vert += slot->vert_count;
             st->total_tri  += slot->vert_count * 2u;
+            st->total_prim += slot->prim_count;
 
             /* Band boundary: the far edge of the main band's reservations (band-major sort placed
                them first, but id-keyed slots keep historical positions, so track the max extent
@@ -1297,6 +1299,7 @@ cache_build_frame( void )
     /* Publish geometry and retained stats. */
     s_stats.accum.vert_count    = ps.total_vert;
     s_stats.accum.tri_count     = ps.total_tri;
+    s_stats.accum.prim_count    = ps.total_prim;
     s_stats.accum.win_total     = s_cache.cur_n - ps.overlay_win;
     s_stats.accum.win_retained  = ps.win_retained;
     s_stats.accum.vert_retained = ps.vert_retained;

@@ -377,6 +377,8 @@ step_cmd_bounds( const gui_cmd_t* c )
         case GUI_CMD_RECT_OUTLINE:
             return ( gui_rect_t ){ c->rect_outline.x, c->rect_outline.y,
                                    c->rect_outline.w, c->rect_outline.h };
+        case GUI_CMD_FRAME:
+            return ( gui_rect_t ){ c->frame.x, c->frame.y, c->frame.w, c->frame.h };
         case GUI_CMD_RECT_GRADIENT:
             return ( gui_rect_t ){ c->gradient.x, c->gradient.y, c->gradient.w, c->gradient.h };
         /* The soft skirt is real painted area, so the highlight has to cover it -- a shadow

@@ -300,6 +300,7 @@ void draw_push_grid             ( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f3
                                   f32 cell, f32 thickness, u32 abgr );
 
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr );
+void draw_push_frame            ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 col_bg, u32 col_border );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr );
 
 /* A regular polygon as one GUI_FX_NGON quad: `sides` flat edges inscribed in circumradius r,
@@ -626,6 +627,8 @@ void                gui_render_set_time     ( f32 seconds );
         dash_vol_t  vols[ GUI_MAX_VOLATILE ];    u32 vol_count;
 
         u32  tess_verts, vert_hwm;                       /* quads: live fill + lifetime peak */
+        u32  tess_prims, prim_hwm;                       /* style records: live fill + lifetime peak
+                                                            (both bands -- styles carry no band split) */
         u32  tess_cmds;                                  /* LIVE GPU draw cmds, both bands (dormant/empty excluded) */
         u32  tess_cmds_dbg;                              /* of tess_cmds, the debug band's share     */
         bool overflow_ever;

@@ -268,8 +268,8 @@ overlay_perf( int mode )
         {
             gui_render_stats_t rs = gui_render_stats();
             gui_new_line( 2.0f );
-            gui_textf( "verts   %6u", rs.vert_count );
-            gui_textf( "tris    %6u", rs.tri_count  );
+            gui_textf( "quads   %6u", rs.vert_count );
+            gui_textf( "styles  %6u", rs.prim_count );
             gui_textf( "batches %6u", rs.draw_calls );
             gui_textf( "cmds    %6u", rs.cmd_count  );
             gui_textf( "clips   %6u", rs.clip_count );
@@ -284,8 +284,7 @@ overlay_perf( int mode )
 
                 gui_new_line( 2.0f );
                 gui_textf( "wins ret  %u/%u", rs.win_retained,  rs.win_total   );
-                gui_textf( "verts ret %u/%u", rs.vert_retained, rs.vert_count  );
-                gui_textf( "tris ret  %u/%u", rs.tri_retained,  rs.tri_count   );
+                gui_textf( "quads ret %u/%u", rs.vert_retained, rs.vert_count  );
                 gui_textf( "vol patch %u",    rs.volatile_patched              );
                 gui_textf( "vol rows  %u/%u", volatile_row_count(), GUI_MAX_VOLATILE );
                 

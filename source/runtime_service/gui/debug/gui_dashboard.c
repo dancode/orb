@@ -585,7 +585,9 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
     static const char* tip[] = { "semantic draw commands", "command segments",
                                  "polyline points", "draw_rects batch entries",
                                  "text pool bytes", "clip rects",
-                                 "quad records", "GPU draw commands" };
+                                 "quad records",
+                                 "style records (both bands -- deduped, a handful per window)",
+                                 "GPU draw commands" };
     /* With "Second band" OFF (default) each bar is the main band alone (total minus the debug-band
        share the capture attributed), so the bars measure a real application against the caps.  The
        debug band's own footprint is always spelled out on the summary line below. */
@@ -598,6 +600,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
         { "text",  inc ? sn->emit_text  : sn->emit_text  - sn->emit_text_dbg,  GUI_MAX_TEXT_POOL,  0                           },
         { "clips", inc ? sn->emit_clips : sn->emit_clips - sn->emit_clips_dbg, GUI_MAX_CLIP_RECTS, 0                           },
         { "quads", inc ? sn->tess_verts : sn->band0_vert_end, GUI_MAX_QUADS,   inc ? sn->vert_hwm : sn->band0_vert_hwm         },
+        { "styles", sn->tess_prims,                           GUI_MAX_PRIMS,   sn->prim_hwm                                    },
         { "draws", inc ? sn->tess_cmds  : sn->tess_cmds - sn->tess_cmds_dbg,   GUI_MAX_CMDS,       0                           },
     };
     const u32 n     = sizeof( rows ) / sizeof( rows[ 0 ] );

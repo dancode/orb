@@ -864,6 +864,7 @@ draw_clamp_rounding( f32 w, f32 h )
 static const u8 k_cmd_hash_len[] = {
     [GUI_CMD_RECT_FILLED]   = sizeof( ( (gui_cmd_t*)0 )->rect ),
     [GUI_CMD_RECT_OUTLINE]  = sizeof( ( (gui_cmd_t*)0 )->rect_outline ),
+    [GUI_CMD_FRAME]         = sizeof( ( (gui_cmd_t*)0 )->frame ),
     [GUI_CMD_TRIANGLE]      = sizeof( ( (gui_cmd_t*)0 )->tri ),
     [GUI_CMD_LINE]          = sizeof( ( (gui_cmd_t*)0 )->line ),
     [GUI_CMD_DASHED_LINE]   = sizeof( ( (gui_cmd_t*)0 )->dash ),
@@ -1773,6 +1774,57 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     c->rect_outline.abgr     = col;
     c->rect_outline.rounding = rounding;
     c->rect_outline.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_frame -- the widget bezel: filled body + border band as ONE command.
+
+    The fragment composites the band (col_border, `t` px inside the boundary) over the fill in a
+    single quad (GUI_OP_FRAME), where the fill + outline pair costs two quads rounded and five
+    square.  The pair still exists below as the fallback for what one field cannot say.
+==============================================================================================*/
+
+void
+draw_push_frame( f32 x, f32 y, f32 w, f32 h, f32 t, u32 col_bg, u32 col_border )
+{
+    u32 fill = draw_apply_alpha( col_bg );
+    u32 bord = draw_apply_alpha( col_border );
+
+    /* One side invisible degenerates to the primitive the other side is; an outward-aligned
+       band reaches past the boundary the fill's field ends at, so it keeps the pair. */
+    if ( t <= 0.0f || ( bord >> 24 ) == 0u )
+    {
+        draw_push_rect_filled( x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col_bg );
+        return;
+    }
+    if ( ( fill >> 24 ) == 0u )
+    {
+        draw_push_rect_outline( x, y, w, h, t, col_border );
+        return;
+    }
+    if ( s_draw.border_align > 0.0f )
+    {
+        draw_push_rect_filled( x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col_bg );
+        draw_push_rect_outline( x, y, w, h, t, col_border );
+        return;
+    }
+
+    f32 rounding = draw_clamp_rounding( w, h );
+    f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_FRAME, fill | bord, x, y, w, h, pad );
+    if ( !c )
+        return;
+    c->frame.x          = x;
+    c->frame.y          = y;
+    c->frame.w          = w;
+    c->frame.h          = h;
+    c->frame.t          = t;
+    c->frame.rounding   = rounding;
+    c->frame.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    c->frame.abgr       = fill;
+    c->frame.col_border = bord;
     draw_cmd_seal();
 }
 
