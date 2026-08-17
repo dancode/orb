@@ -49,6 +49,8 @@ struct ps_in_t
     nointerpolation uint   prim   : TEXCOORD1;   // style record index, slot-local
     nointerpolation float4 rect   : TEXCOORD2;   // shape placement: centre + half-extent (per quad)
     nointerpolation uint   clip   : TEXCOORD3;   // clip-table entry index (per quad)
+    nointerpolation float4 col2   : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
+                                                  //   rides the quad, never the style
 };
 
 // The record this fragment's primitive named, resolved once at the top of main().  Row 0 is what
@@ -700,7 +702,7 @@ float4 main( ps_in_t i ) : SV_Target0
     // band here because `cov` already carries it for the fill.
     if ( ( g_ops & OP_FRAME ) != 0u )
     {
-        float4 bcol = unpack_col( asuint( prim_row( 3u ).w ) );
+        float4 bcol = i.col2;
         float  ab   = bcol.a * g_frame_band * ccov;
         float  af   = vcol.a * cov * ( 1.0 - ab );
         float  at   = ab + af;

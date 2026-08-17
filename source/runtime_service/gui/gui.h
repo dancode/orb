@@ -1954,10 +1954,10 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
                                          scrolled at anim_rate px/sec -- the marching ants     */
 #define GUI_OP_DITHER   ( 1u << 11 )  /* add +-0.5/255 screen-space noise to the output, so a
                                          wide soft ramp lands on 8-bit without banding         */
-#define GUI_OP_FRAME    ( 1u << 12 )  /* composite a border band of `border` px, coloured
-                                         col_b, OVER the fill -- body + border in ONE quad.
-                                         col_b is the band's colour here, so the op never
-                                         pairs with GUI_OP_GRAD (whose far colour it is)       */
+#define GUI_OP_FRAME    ( 1u << 12 )  /* composite a border band of `border` px OVER the fill --
+                                         body + border in ONE quad.  The band's colour rides the
+                                         QUAD's col_b (gui_quad_t), not the style -- an animated
+                                         border never adds a style record                       */
 
 /* Which way a ramp runs, as a draw parameter.  The record carries it as the op bits above; this is
    the spelling a caller uses, where "at most one" is a property of the type rather than a rule. */
@@ -2020,7 +2020,12 @@ typedef struct
     u32 flags;          // GUI_QUAD_RULE_* expansion rule (bits 0-1) | GUI_QUAD_GLYPH (bit 2)
     u32 cut;            // GLYPH straddlers: horizontal cut pair, two unorm16 fractions of the
                         //   glyph rect (lo | hi << 16); 0 = the whole glyph
-    u32 reserved_a;     // zero
+
+    // col_b: GUI_OP_FRAME: the border band's packed colour.  A SECOND colour rides the quad,
+    //   not the style (gui_prim_t), so an animated border -- or an animated fill, which was
+    //   already here in `abgr` -- never adds a style record: the style keeps stating only the
+    //   shape (rounding, border width, feather).  0 under every op that does not read it.
+    u32 col_b;
 
 } gui_quad_t;
 

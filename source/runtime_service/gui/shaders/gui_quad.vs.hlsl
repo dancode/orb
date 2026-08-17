@@ -39,6 +39,8 @@ struct vs_out_t
     nointerpolation uint   prim   : TEXCOORD1;   // style record index, slot-local
     nointerpolation float4 rect   : TEXCOORD2;   // shape placement: centre + stored half-extents
     nointerpolation uint   clip   : TEXCOORD3;   // clip-table entry index, region-absolute
+    nointerpolation float4 col2   : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
+                                                  //   rides the quad, never the style
 };
 
 float2 unpack_unorm16x2( uint p )
@@ -54,7 +56,7 @@ vs_out_t main( uint vid : SV_VertexID )
     uint   row = ( pc.quad_base + quad ) * QUAD_ROWS;
     float4 q0  = u_buffers[ pc.quad_buf ][ row ];        // cx, cy, hw, hh
     float4 q1  = u_buffers[ pc.quad_buf ][ row + 1u ];   // uv0, uv1, abgr, style
-    float4 q2  = u_buffers[ pc.quad_buf ][ row + 2u ];   // clip, flags, cut, reserved
+    float4 q2  = u_buffers[ pc.quad_buf ][ row + 2u ];   // clip, flags, cut, col_b
 
     uint style = asuint( q1.w );
     uint flags = asuint( q2.y );
@@ -124,5 +126,6 @@ vs_out_t main( uint vid : SV_VertexID )
     o.prim     = style;
     o.rect     = q0;
     o.clip     = asuint( q2.x );
+    o.col2     = unpack_col( asuint( q2.w ) );
     return o;
 }

@@ -107,6 +107,7 @@ test_quad_layout( void )
     test_equal( 28u, (u32)offsetof( gui_quad_t, style ) );
     test_equal( 36u, (u32)offsetof( gui_quad_t, flags ) );
     test_equal( 40u, (u32)offsetof( gui_quad_t, cut   ) );
+    test_equal( 44u, (u32)offsetof( gui_quad_t, col_b ) );
 
     /* The expansion rules share a 2-bit lane and the glyph flag sits above it -- the layout the
        quad vertex stage decodes with literal masks. */

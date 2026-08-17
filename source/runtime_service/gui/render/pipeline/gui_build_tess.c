@@ -88,6 +88,7 @@ static struct
        The floor rises wherever the records behind it stop being reusable: a new slot (previous
        slot's indices are relative to its own base), a volatile block's boundary in either
        direction (its records are a patch-rewritable reservation), and a patch's scratch. */
+
     gui_prim_t  cur_prim;
     u32         cur_prim_local;
     u32         prim_dedup_floor;
@@ -97,6 +98,13 @@ static struct
        horizontal cut pair for a clip straddler (0 = the whole glyph).  Cleared per command. */
     u32         cur_glyph;
     u32         cur_glyph_cut;
+
+    /* The ambient SECOND COLOUR -- rides the QUAD (gui_quad_t.col_b), never the style, so an
+       animated border or ramp never adds a style record: only the shape (rounding, border width,
+       feather) lives in cur_prim now.  Sits alongside cur_glyph as an ambient the command sets
+       before its tess_quad_push and tess_quad_push folds in unread by the style.  0 = unused;
+       cleared per command like every other ambient here. */
+    u32         cur_col2;
 
     /* per-slot tesellation context */
 
@@ -130,6 +138,7 @@ static struct
        (frame-in-flight, viewport) region); an append marks all bits so the flush re-uploads the
        slab.  clip_memo_ci memoizes the common run of consecutive same-clip commands (0xFF =
        empty). */
+
     gui_clip_entry_t* slot_clips;
     u32*              slot_clip_count;
     u8*               slot_clip_pending;
@@ -141,9 +150,9 @@ static struct
        command for the first primitive of a new slot, even when the previous slot's last
        command shares the same clip/vp (same-position windows would otherwise merge
        across the slot boundary and corrupt elem_count + first_index tracking). */
-    bool force_new_cmd;
 
-    bool overflow;   /* set per-primitive when a buffer fills; gates the geometry-drop escape path */
+    bool force_new_cmd;     
+    bool overflow;          /* set per-primitive when a buffer fills; gates the geometry-drop escape path */
 
 } s_tess;
 
@@ -290,6 +299,7 @@ tess_reset( void )
     s_tess.overflow          = false;
     s_tess.cur_glyph         = ~0u;
     s_tess.cur_glyph_cut     = 0;
+    s_tess.cur_col2          = 0;
 }
 
 /* Name the texture the next quad's style will CARRY (tess_quad_push folds it into the record).
@@ -407,24 +417,26 @@ tess_prim_local( void )
     u32 hi = s_tess.prim_count;
     u32 lo = ( s_tess.prim_dedup_floor > s_tess.slot_prim_base )
              ? s_tess.prim_dedup_floor : s_tess.slot_prim_base;
+
     if ( hi > lo )
     {
         u32 n = hi - lo;
         if ( n > TESS_PRIM_MEMO_DEPTH ) n = TESS_PRIM_MEMO_DEPTH;
-        for ( u32 k = 1; k <= n; ++k )
-            if ( memcmp( &s_tess.prims[ hi - k ], &s_tess.cur_prim,
-                         sizeof( gui_prim_t ) ) == 0 )
+        for ( u32 k = 1; k <= n; ++k ) {
+            if ( memcmp( &s_tess.prims[ hi - k ], &s_tess.cur_prim, sizeof( gui_prim_t )) == 0 ) {
                 return s_tess.cur_prim_local = ( hi - k ) - s_tess.slot_prim_base;
+            }
+        }
     }
 
     if ( hi >= GUI_MAX_PRIMS )
     {
-        s_tess.overflow         = true;
+        s_tess.overflow = true;
         s_tess.prim_dedup_floor = hi;
         return s_tess.cur_prim_local = 0u;
     }
 
-    s_tess.prims[ hi ]    = s_tess.cur_prim;
+    s_tess.prims[ hi ] = s_tess.cur_prim;
     s_tess.cur_prim_local = hi - s_tess.slot_prim_base;
     s_tess.prim_count++;
     return s_tess.cur_prim_local;
@@ -479,6 +491,7 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
         .clip  = s_tess.cur_clip_local,
         .flags = rule_flags,
         .cut   = cut,
+        .col_b = s_tess.cur_col2,
     };
 
     /* elem_count counts QUADS under this backend; the flush multiplies by six at the draw. */
@@ -780,7 +793,6 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 ----------------------------------------------------------------------------------------------*/
 typedef struct
 {
-    u32 frame_col;        // GUI_OP_FRAME: the border band's colour (col_b -- never with GRAD)
     u32 grad_col;         // GUI_OP_GRAD: the ramp's far colour
     f32 grad_ang;         // GUI_OP_GRAD: axis, radians, box-local, 0 points +x (linear ramp only)
     f32 grad_mid;         // GUI_OP_GRAD: midpoint bend, already the exponent (0 = linear)
@@ -907,10 +919,9 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         s_tess.cur_prim.anim_phase = aux->anim_phase;
     }
 
-    /* GUI_OP_FRAME -- the border band's colour.  col_b is free here by construction: the frame
-       is a solid fill, and the op never pairs with GRAD (gui.h). */
-    if ( aux && ( s_tess.cur_ops & GUI_OP_FRAME ) )
-        s_tess.cur_prim.col_b = aux->frame_col;
+    /* GUI_OP_FRAME's border colour does NOT land here -- it rides the quad's col_b (cur_col2,
+       set by the dispatcher before this call), so an animated border never adds a style record.
+       See gui_quad_t.col_b (gui.h) and the dispatch of GUI_CMD_FRAME below. */
 
     /* GUI_OP_GRAD -- the ramp's far colour and its axis.  The axis is stored ALREADY DIVIDED by
        the box's extent along it (the support width of a projected rectangle), so the ramp spans
@@ -1811,6 +1822,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
         s_tess.cur_corner_pow = 0.0f;
         s_tess.cur_glyph      = ~0u;
         s_tess.cur_glyph_cut  = 0u;
+        s_tess.cur_col2       = 0u;
 
         /* The record is cleared WHOLE, and it matters for two reasons: a leftover rect or radius
            does not merely paint wrong, it defeats the memo -- a run of flat fills carrying stale
@@ -1863,15 +1875,12 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_FRAME:
                 s_tess.cur_ops       |= GUI_OP_FRAME;
                 s_tess.cur_corner_pow = c->frame.corner_pow;
-                {
-                    tess_fx_aux_t aux = { 0 };
-                    aux.frame_col     = c->frame.col_border;
-                    tess_fx_box( c->frame.x, c->frame.y, c->frame.w, c->frame.h,
-                                 c->frame.rounding,
-                                 ( c->frame.rounding > 0.0f ) ? TESS_FX_AA : 0.0f,
-                                 c->frame.t, 0.0f, 0.0f, 0.0f,
-                                 0, 0, 1, 1, 0, c->frame.abgr, &aux );
-                }
+                s_tess.cur_col2       = c->frame.col_border;   /* rides the quad, not the style */
+                tess_fx_box( c->frame.x, c->frame.y, c->frame.w, c->frame.h,
+                             c->frame.rounding,
+                             ( c->frame.rounding > 0.0f ) ? TESS_FX_AA : 0.0f,
+                             c->frame.t, 0.0f, 0.0f, 0.0f,
+                             0, 0, 1, 1, 0, c->frame.abgr, NULL );
                 break;
 
             /* The parameterized surface: a shadow is the wide feather (what used to be six
