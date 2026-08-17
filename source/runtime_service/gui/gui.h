@@ -1845,14 +1845,17 @@ typedef struct
          BOX  cx, cy = centre        hw, hh = half size
          SEG  cx, cy = midpoint      hw     = half length   (hh unused)
          ARC  cx, cy = centre        hw, hh unused */
+
     f32 cx, cy, hw, hh;
 
     /* Row 2 -- per-field payload; see the alias table above. */
+
     f32 r_tl, r_tr, r_br, r_bl;
 
     /* Row 3 -- the softness and the turn.  Rotation is stored as its cosine and sine because the
        CPU already computes both once per shape; an angle here would put a cos/sin on every
        fragment of every rotated box.  An unrotated shape stores (1, 0). */
+
     f32 feather, border, rot_cos, rot_sin;
 
     /* Row 4 -- the scalar parameters and the second colour.
@@ -1868,6 +1871,7 @@ typedef struct
                                   amount and mapped once at the emit site (draw_set_corner_smooth).
          GUI_OP_PULSE   param_a = rate (Hz), param_b = depth      (on any field it modifies)
          GUI_OP_GRAD    col_b   = the ramp's far colour */
+
     f32 param_a, param_b, param_c;
     u32 col_b;
 
@@ -1880,6 +1884,7 @@ typedef struct
          GUI_OP_CUT   cut  = the centre of the boundary the cut is taken against, as an offset
                              from this shape's own centre.  (0,0) -- every caller before the
                              directional shadow -- cuts against the shape itself. */
+
     f32 grad_x, grad_y, cut_dx, cut_dy;
 
 } gui_prim_t;
@@ -1887,6 +1892,7 @@ typedef struct
 /* 96 bytes = six std430 rows of four 32-bit components, so the fragment indexes the buffer as
    `prim * GUI_PRIM_ROWS + row` with no padding to account for.  Pinned because the shaders spell
    that stride as a literal. */
+
 #define GUI_PRIM_ROWS   6u
 #define GUI_PRIM_BYTES  ( GUI_PRIM_ROWS * 16u )
 
@@ -1896,6 +1902,7 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
 /* The modifier bits.  They are a WORD OF THEIR OWN here, where in the packed layout they had to be
    carved out of the texture index: an op composes with any field and with any other op, so it can
    never share space with something a particular field re-partitions. */
+
 #define GUI_OP_BAND     ( 1u << 0 )   /* bend the field into a border of `border` px           */
 #define GUI_OP_CUT      ( 1u << 1 )   /* cut the interior away -- the drop shadow's skirt      */
 #define GUI_OP_INSET    ( 1u << 2 )   /* turn the falloff inward -- the inner shadow           */
@@ -1908,6 +1915,7 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
    tests radial first, so both set reads as radial rather than as undefined.  Bits rather than a
    small enum because they belong to the op word every other modifier lives in -- and unlike the
    modifiers they are alternatives, which is a property of what a ramp IS, not of the storage. */
+
 #define GUI_OP_GRAD_RADIAL  ( 1u << 7 )   /* centre -> rim, against the shape's own half-extent */
 #define GUI_OP_GRAD_CONIC   ( 1u << 8 )   /* angular, mirrored about the grad axis -- a sheen   */
 
@@ -1917,11 +1925,13 @@ typedef enum
 {
     GUI_GRAD_LINEAR = 0,   // along `angle`, spanning the shape's extent on that axis
     GUI_GRAD_RADIAL,       // centre -> rim, against the shape's own half-extent
+
     /* Angular and MIRRORED about `angle`: col_b sits on that axis, the fill's own colour at the
        far side, and the ramp is the same going either way around.  Not a wrapping sweep -- that
        meets itself at the axis as a hard light/dark edge.  This is the angular SHEEN across a
        knob, a badge, a dial face.  For a sweep that measures a VALUE, reach for a gradient arc
        (draw_arc_gradient), whose shape is the sweep. */
+
     GUI_GRAD_CONIC,
 
 } gui_grad_t;
@@ -1959,6 +1969,7 @@ typedef struct
    The assert is the point of this function: clamping is SILENT, and a primitive that quietly loses
    its tiling renders as one stretched texel rather than as an error.  Debug catches the mistake at
    the vertex that made it; release keeps the clamp, which at least stays inside the atlas. */
+
 static inline u32
 gui_uv_pack( f32 u, f32 v )
 {
@@ -2028,6 +2039,7 @@ gui_vert( f32 x, f32 y, f32 u, f32 v, u32 abgr )
    derive stable per-block variety (colors, phases) from it.  Position must not be used for
    that: the rect a block occupies legitimately moves (resize, relayout) and anything derived
    from it re-rolls with every pixel. */
+
 typedef void ( *gui_volatile_fn )( gui_id_t id, bool is_replay );
 
 /*==============================================================================================
@@ -2080,6 +2092,7 @@ typedef enum
 
 /* Sentinel half-extent for an unclipped text command: any real glyph sits well inside this, so
    the tessellator's clip test never triggers and the whole-run fast path is taken. */
+
 #define GUI_TEXT_NO_CLIP 1e30f
 
 /* THE SAMPLING MODEL -- the top 4 bits of a tex_idx.  What a texel MEANS to the fragment: the one
@@ -2101,6 +2114,7 @@ typedef enum
    TEX_MODE_SHIFT in gui.ps.hlsl.  The clip band,
    the self bit and the op band that used to sit under it are gone: all three are plain members of
    the record now, so the low 28 bits are the bindless index and nothing else. */
+
 #define GUI_TEX_MODE_SHIFT  28u
 #define GUI_TEX_MODE_MASK   ( 0xFu << GUI_TEX_MODE_SHIFT )
 #define GUI_TEX_MODE( m )   ( (u32)( m ) << GUI_TEX_MODE_SHIFT )
@@ -2120,6 +2134,7 @@ typedef enum
 } gui_tex_mode_t;
 
 /* Split a tex_idx into its parts: the model, and the bindless slot to sample. */
+
 static inline gui_tex_mode_t
 gui_tex_mode( u32 tex_idx )
 {
@@ -2144,6 +2159,7 @@ gui_tex_index( u32 tex_idx )
    text.off is a byte offset into the frame's text pool (s_draw.text_pool), not a pointer: the
    string lives in the pool until the next frame_begin, so the command is valid through flush.
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
+
 typedef struct
 {
     u8 type;       // gui_cmd_type_t, fits u8 (20 values)

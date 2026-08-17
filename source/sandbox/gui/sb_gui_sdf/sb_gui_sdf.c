@@ -1786,6 +1786,7 @@ static sdf_demo_t s_demos[] = {
 
 /* Show / hide one demo, keeping gui's internal CLOSEABLE latch in sync (a window the user
    X-closed stays latched shut inside gui until window_set_open re-opens it). */
+
 static void
 demo_set_open( sdf_demo_t* d, bool open )
 {
