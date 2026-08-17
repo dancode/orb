@@ -73,7 +73,6 @@ static gui_id_t g_dash_window_id = 0;
 #define DASH_COL_VOLATILE   GUI_COLOR( 0xFF, 0xFF, 0xFF, 0x60 )
 #define DASH_COL_FIF_IDLE   GUI_COLOR( 0x40, 0x40, 0x48, 0xFF )
 #define DASH_COL_SPAN_VERT  GUI_COLOR( 0x66, 0xBB, 0xEE, 0xFF )
-#define DASH_COL_SPAN_IDX   GUI_COLOR( 0xBB, 0x88, 0xEE, 0xFF )
 /* No CUT_TEX: a texture change stopped cutting batches when the texture moved into the vertex. */
 #define DASH_COL_CUT_CLIP   GUI_COLOR( 0xE0, 0x50, 0xE0, 0xFF )
 #define DASH_COL_CUT_FORCE  GUI_COLOR( 0xFF, 0xFF, 0xFF, 0xC0 )
@@ -238,33 +237,31 @@ dash_tip_at( gui_rect_t r )
     API and raises normal tooltips on hover (they inherit the debug band automatically).
 ==============================================================================================*/
 
-/* Shared memory-map body: the whole tess vertex (or index) arena as one horizontal bar.
-   Main-band slots first, the dashed band boundary, then (only when "Show second band" is on) the
-   debug band's own slots dimmed -- the observer marked, not hidden. */
+/* Memory-map body: the whole quad arena as one horizontal bar.  Main-band slots first, the
+   dashed band boundary, then (only when "Show second band" is on) the debug band's own slots
+   dimmed -- the observer marked, not hidden. */
 static void
-dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
+dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
 {
     const f32 lh  = font_line_h();
-    const u32 cap = vb_axis ? GUI_MAX_VERTS : GUI_MAX_IDX;
+    const u32 cap = GUI_MAX_QUADS;
 
     /* Header + arena scale honor the "Second band" toggle.  OFF (default): every figure -- used,
        high-water and the bar scale -- is the MAIN band alone, so the map reads as a real
        application's arena with the self-measuring dashboard filtered out.  ON: totals include the
        debug band and the band0/debug split is spelled out. */
-    const char* axis  = vb_axis ? "verts" : "indices";
-    u32         total = vb_axis ? sn->tess_verts     : sn->tess_idx;
-    u32         main0 = vb_axis ? sn->band0_vert_end : sn->band0_idx_end;
-    u32         pad   = vb_axis ? (u32)SLOT_VERT_PAD : (u32)SLOT_IDX_PAD;
-    u32         used  = s_show_second_band ? total : main0;
-    u32         hwm   = s_show_second_band ? ( vb_axis ? sn->vert_hwm       : sn->idx_hwm )
-                                           : ( vb_axis ? sn->band0_vert_hwm : sn->band0_idx_hwm );
+    u32 total = sn->tess_verts;
+    u32 main0 = sn->band0_vert_end;
+    u32 pad   = (u32)SLOT_VERT_PAD;
+    u32 used  = s_show_second_band ? total : main0;
+    u32 hwm   = s_show_second_band ? sn->vert_hwm : sn->band0_vert_hwm;
     if ( s_show_second_band )
         dash_textf( r.x + 2.0f, r.y, r.x + r.w, DASH_COL_TEXT_DIM,
-                    "%s  %u / %u   band0 %u  debug %u   hwm %u   pad %u",
-                    axis, used, cap, main0, total - main0, hwm, pad );
+                    "quads  %u / %u   band0 %u  debug %u   hwm %u   pad %u",
+                    used, cap, main0, total - main0, hwm, pad );
     else
         dash_textf( r.x + 2.0f, r.y, r.x + r.w, DASH_COL_TEXT_DIM,
-                    "%s  %u / %u   hwm %u   pad %u   (band 0)", axis, used, cap, hwm, pad );
+                    "quads  %u / %u   hwm %u   pad %u   (band 0)", used, cap, hwm, pad );
 
     gui_rect_t bar = { r.x, r.y + lh + 2.0f, r.w, r.h - lh - 4.0f };
     if ( bar.h < 12.0f ) return;
@@ -293,9 +290,9 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
         if ( !sl->valid ) continue;
         if ( sl->band != 0 && !s_show_second_band ) continue;   /* second band omitted by default */
 
-        u32 base  = vb_axis ? sl->vert_base  : sl->idx_base;
-        u32 count = vb_axis ? sl->vert_count : sl->idx_count;
-        u32 alloc = vb_axis ? sl->vert_alloc : sl->idx_alloc;
+        u32 base  = sl->vert_base;
+        u32 count = sl->vert_count;
+        u32 alloc = sl->vert_alloc;
 
         f32 x0 = bar.x + (f32)base * px_per;
         f32 xc = bar.x + (f32)( base + count ) * px_per;
@@ -316,20 +313,14 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
             dash_rb_push( &rb, x0, bar.y, xa - x0, bar.h, col );   /* whole reservation, one flat fill */
         }
 
-        /* Volatile sub-slots: brighter strips over the full height of their owner's extent.  Axis-
-           switched like every other figure in this shared body -- a block reserves headroom in BOTH
-           arenas (VOL_VERT_PAD / VOL_IDX_PAD), and the index reservation is what leaves the gaps
-           that make each GPU command carry its own first_index. */
+        /* Volatile sub-slots: brighter strips over the full height of their owner's extent. */
         for ( u32 v = 0; v < sn->vol_count; ++v )
         {
             const dash_vol_t* vo = &sn->vols[ v ];
             if ( !vo->active || vo->win != sl->win ) continue;
 
-            u32 vbase  = vb_axis ? vo->lvert_base : vo->lidx_base;
-            u32 valloc = vb_axis ? vo->vert_alloc : vo->idx_alloc;
-
-            f32 vx0 = bar.x + (f32)( base + vbase ) * px_per;
-            f32 vx1 = bar.x + (f32)( base + vbase + valloc ) * px_per;
+            f32 vx0 = bar.x + (f32)( base + vo->lvert_base ) * px_per;
+            f32 vx1 = bar.x + (f32)( base + vo->lvert_base + vo->vert_alloc ) * px_per;
             gui_rect_t vr = { vx0, bar.y + 1.0f, vx1 - vx0, bar.h - 2.0f };
             dash_rb_push( &rb, vr.x, vr.y, vr.w, vr.h, DASH_COL_VOLATILE );
 
@@ -342,10 +333,8 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
                     gui_stack();
                     gui_textf( "volatile %s  in %s", dash_name( vo->id, nb, sizeof( nb ) ),
                                dash_name( vo->win, wb, sizeof( wb ) ) );
-                    gui_textf( "verts +%u  %u / %u reserved", vo->lvert_base, vo->vert_count,
+                    gui_textf( "quads +%u  %u / %u reserved", vo->lvert_base, vo->vert_count,
                                vo->vert_alloc );
-                    gui_textf( "idx   +%u  %u / %u reserved", vo->lidx_base, vo->idx_count,
-                               vo->idx_alloc );
                 }
                 gui_tooltip_end();
             }
@@ -389,12 +378,9 @@ dash_panel_memmap( gui_rect_t r, bool vb_axis, const dash_snapshot_t* sn )
                 gui_textf( "window  %s%s%s", dash_name( sl->win, nb, sizeof( nb ) ),
                            sl->win == g_dash_window_id ? "  (this dashboard)" : "",
                            sl->band != 0 ? "  [debug band]" : "" );
-                gui_textf( "verts   [%u..%u)  alloc %u  (pad %u)", sl->vert_base,
+                gui_textf( "quads   [%u..%u)  alloc %u  (pad %u)", sl->vert_base,
                            sl->vert_base + sl->vert_count, sl->vert_alloc,
                            sl->vert_alloc - sl->vert_count );
-                gui_textf( "indices [%u..%u)  alloc %u  (pad %u)", sl->idx_base,
-                           sl->idx_base + sl->idx_count, sl->idx_alloc,
-                           sl->idx_alloc - sl->idx_count );
                 gui_textf( "cmds    [%u..%u)   z %u  vp %d  gen %u", sl->cmd_base,
                            sl->cmd_base + sl->cmd_count, sl->z, sl->vp, sl->tess_gen );
                 gui_textf( "%s this frame", sl->changed ? "re-tessellated" : "retained" );
@@ -451,20 +437,12 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
             dash_outline( box, ( frozen && act ) ? DASH_COL_FIF_ACTIVE : DASH_COL_FIF_IDLE );
             if ( act && sf->vtx_hi > sf->vtx_lo )
             {
-                /* Two stacked sub-bars in the box interior: vertex span on top, index span below,
-                   parted by a gutter so the two regions read as distinct rather than one block. */
+                /* The uploaded quad span as one sub-bar in the box interior. */
                 f32 inner_x = box.x + 1.0f;
                 f32 inner_w = box.w - 2.0f;
-                f32 gutter  = 2.0f;
-                f32 half    = ( box.h - 4.0f - gutter ) * 0.5f;
-                f32 vy      = box.y + 2.0f;
-                f32 iy      = vy + half + gutter;
-                f32 vx0     = inner_x + inner_w * (f32)sf->vtx_lo / (f32)GUI_MAX_VERTS;
-                f32 vx1     = inner_x + inner_w * (f32)sf->vtx_hi / (f32)GUI_MAX_VERTS;
-                gui_draw_rect( vx0, vy, vx1 - vx0, half, DASH_COL_SPAN_VERT );
-                f32 ix0     = inner_x + inner_w * (f32)sf->idx_lo / (f32)GUI_MAX_IDX;
-                f32 ix1     = inner_x + inner_w * (f32)sf->idx_hi / (f32)GUI_MAX_IDX;
-                gui_draw_rect( ix0, iy, ix1 - ix0, half, DASH_COL_SPAN_IDX );
+                f32 vx0     = inner_x + inner_w * (f32)sf->vtx_lo / (f32)GUI_MAX_QUADS;
+                f32 vx1     = inner_x + inner_w * (f32)sf->vtx_hi / (f32)GUI_MAX_QUADS;
+                gui_draw_rect( vx0, box.y + 2.0f, vx1 - vx0, box.h - 4.0f, DASH_COL_SPAN_VERT );
             }
         }
 
@@ -479,8 +457,7 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
                 gui_textf( "surface vp%d  in-flight region %u of %u", vp, sf->frame_index,
                            (u32)RHI_MAX_FRAMES_IN_FLIGHT );
                 if ( sf->vtx_hi > sf->vtx_lo )
-                    gui_textf( "uploaded verts [%u..%u)  idx [%u..%u)", sf->vtx_lo, sf->vtx_hi,
-                               sf->idx_lo, sf->idx_hi );
+                    gui_textf( "uploaded quads [%u..%u)", sf->vtx_lo, sf->vtx_hi );
                 else
                     gui_textf( "nothing uploaded (fully retained)" );
                 gui_textf( "%u B in %u writes   %u draw calls", sf->up_bytes, sf->up_batches,
@@ -570,11 +547,11 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
                 {
                     gui_stack();
                     gui_textf( "draw %u of %s", k, dash_name( sl->win, nb, sizeof( nb ) ) );
-                    gui_textf( "%u indices (%u tris)  first tex %u", dc->elem_count,
-                               dc->elem_count / 3u, dc->tex_idx );
+                    gui_textf( "%u quads (%u tris)  first tex %u", dc->elem_count,
+                               dc->elem_count * 2u, dc->tex_idx );
                     gui_textf( "clip %.0f,%.0f  %.0fx%.0f", dc->clip.x, dc->clip.y,
                                dc->clip.w, dc->clip.h );
-                    gui_textf( "vbase %u  first_index %u", dc->vbase, dc->ibase );
+                    gui_textf( "vbase %u", dc->vbase );
                 }
                 gui_tooltip_end();
             }
@@ -587,8 +564,8 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
             {
                 gui_stack();
                 gui_textf( "window  %s", dash_name( sl->win, nb, sizeof( nb ) ) );
-                gui_textf( "%u draw cmds  %u verts  %u tris", sl->cmd_count, sl->vert_count,
-                           sl->idx_count / 3u );
+                gui_textf( "%u draw cmds  %u quads  %u tris", sl->cmd_count, sl->vert_count,
+                           sl->vert_count * 2u );
                 gui_textf( "z %u  vp %d  gen %u  %s", sl->z, sl->vp, sl->tess_gen,
                            sl->changed ? "re-tessellated" : "retained" );
             }
@@ -608,8 +585,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
     static const char* tip[] = { "semantic draw commands", "command segments",
                                  "polyline points", "draw_rects batch entries",
                                  "text pool bytes", "clip rects",
-                                 "tessellated vertices", "tessellated indices",
-                                 "GPU draw commands" };
+                                 "quad records", "GPU draw commands" };
     /* With "Second band" OFF (default) each bar is the main band alone (total minus the debug-band
        share the capture attributed), so the bars measure a real application against the caps.  The
        debug band's own footprint is always spelled out on the summary line below. */
@@ -621,8 +597,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
         { "rects", inc ? sn->emit_rects : sn->emit_rects - sn->emit_rects_dbg, GUI_MAX_RECT_ENTRIES, 0                         },
         { "text",  inc ? sn->emit_text  : sn->emit_text  - sn->emit_text_dbg,  GUI_MAX_TEXT_POOL,  0                           },
         { "clips", inc ? sn->emit_clips : sn->emit_clips - sn->emit_clips_dbg, GUI_MAX_CLIP_RECTS, 0                           },
-        { "verts", inc ? sn->tess_verts : sn->band0_vert_end, GUI_MAX_VERTS,   inc ? sn->vert_hwm : sn->band0_vert_hwm         },
-        { "idx",   inc ? sn->tess_idx   : sn->band0_idx_end,  GUI_MAX_IDX,     inc ? sn->idx_hwm  : sn->band0_idx_hwm          },
+        { "quads", inc ? sn->tess_verts : sn->band0_vert_end, GUI_MAX_QUADS,   inc ? sn->vert_hwm : sn->band0_vert_hwm         },
         { "draws", inc ? sn->tess_cmds  : sn->tess_cmds - sn->tess_cmds_dbg,   GUI_MAX_CMDS,       0                           },
     };
     const u32 n     = sizeof( rows ) / sizeof( rows[ 0 ] );
@@ -670,8 +645,8 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
 
     /* The observer's own share of the shared pools -- honest attribution, not hidden. */
     dash_textf( r.x + 2.0f, r.y + r.h - lh - 1.0f, r.x + r.w, DASH_COL_TEXT_DIM,
-                "debug band:  %u cmds   %u verts   %u idx", sn->emit_cmds_dbg,
-                sn->tess_verts - sn->band0_vert_end, sn->tess_idx - sn->band0_idx_end );
+                "debug band:  %u cmds   %u quads", sn->emit_cmds_dbg,
+                sn->tess_verts - sn->band0_vert_end );
 }
 
 /* Volatile registry: one row per captured sub-slot with live-vs-reserved mini bars. */
@@ -715,13 +690,10 @@ dash_panel_volatile( gui_rect_t r, const dash_snapshot_t* sn )
 
         f32 bx = r.x + 216.0f, bw = 70.0f, bh = row_h - 6.0f;
         f32 vfrac = vo->vert_alloc ? (f32)vo->vert_count / (f32)vo->vert_alloc : 0.0f;
-        f32 ifrac = vo->idx_alloc  ? (f32)vo->idx_count  / (f32)vo->idx_alloc  : 0.0f;
         dash_rb_push( &rb, bx, y + 3.0f, bw, bh, DASH_COL_BG );
         dash_rb_push( &rb, bx, y + 3.0f, bw * vfrac, bh, DASH_COL_SPAN_VERT );
-        dash_rb_push( &rb, bx + bw + 6.0f, y + 3.0f, bw, bh, DASH_COL_BG );
-        dash_rb_push( &rb, bx + bw + 6.0f, y + 3.0f, bw * ifrac, bh, DASH_COL_SPAN_IDX );
 
-        dash_textf( bx + 2.0f * bw + 14.0f, y, r.x + r.w, stale ? DASH_COL_BAD : DASH_COL_TEXT_DIM,
+        dash_textf( bx + bw + 14.0f, y, r.x + r.w, stale ? DASH_COL_BAD : DASH_COL_TEXT_DIM,
                     stale ? "gen %u STALE" : "gen %u", vo->tess_gen );
 
         if ( dash_tip_at( ( gui_rect_t ){ r.x, y, r.w, row_h } ) )
@@ -731,10 +703,8 @@ dash_panel_volatile( gui_rect_t r, const dash_snapshot_t* sn )
                 gui_stack();
                 gui_textf( "volatile %s  in %s", dash_name( vo->id, nb, sizeof( nb ) ),
                            dash_name( vo->win, wb, sizeof( wb ) ) );
-                gui_textf( "verts +%u  %u / %u reserved", vo->lvert_base, vo->vert_count,
+                gui_textf( "quads +%u  %u / %u reserved", vo->lvert_base, vo->vert_count,
                            vo->vert_alloc );
-                gui_textf( "idx   +%u  %u / %u reserved", vo->lidx_base, vo->idx_count,
-                           vo->idx_alloc );
                 gui_textf( "cmds  %u / %u   gen %u   %s%s", vo->cmd_count, vo->cmd_alloc,
                            vo->tess_gen, vo->active ? "active" : "retired",
                            vo->hidden ? " (hidden)" : "" );
@@ -783,9 +753,6 @@ dash_shell_panel( const char* title, f32 h,
     painter( gui_canvas( h ), dash_snapshot() );
 }
 
-/* The memory maps share one painter parameterized by axis -- wrap them for the panel table. */
-static void dash_panel_vbmap( gui_rect_t r, const dash_snapshot_t* sn ) { dash_panel_memmap( r, true,  sn ); }
-static void dash_panel_ibmap( gui_rect_t r, const dash_snapshot_t* sn ) { dash_panel_memmap( r, false, sn ); }
 
 void
 dash_window( bool* open )
@@ -825,8 +792,7 @@ dash_window( bool* open )
         /* Panel heights derive from the live line height so text rows never clip mid-glyph. */
         f32 lh = font_line_h();
 
-        dash_shell_panel( "Vertex arena (slot memory map)", lh + 58.0f,                  dash_panel_vbmap    );
-        dash_shell_panel( "Index arena (slot memory map)",  lh + 58.0f,                  dash_panel_ibmap    );
+        dash_shell_panel( "Quad arena (slot memory map)",   lh + 58.0f,                  dash_panel_memmap   );
         dash_shell_panel( "Frames in flight / uploads",     96.0f,                       dash_panel_fif      );
         dash_shell_panel( "Draw batches (dispatch order)",  8.0f * ( lh + 3.0f ) + 6.0f, dash_panel_batch    );
         dash_shell_panel( "Emit + build buffers",           8.0f * ( lh + 2.0f ) + lh + 8.0f, dash_panel_emit );

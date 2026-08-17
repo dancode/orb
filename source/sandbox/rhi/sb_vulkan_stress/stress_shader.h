@@ -6,7 +6,7 @@
     textured pipeline (F4..F9 sampled modes).
 
     OWNED BY THIS SANDBOX ON PURPOSE.  Borrowing gui's compiled bytecode
-    (gui/shaders/gui.ps.hlsl) for a real textured draw would make an RHI test track
+    (gui/shaders/gui_fx.hlsli) for a real textured draw would make an RHI test track
     gui's vertex format: any time gui's vertex layout or push-constant shape changes, this
     pipeline's own attribute and push declarations would drift out of step with it, and
     pipeline_create would raise a validation error for inputs it no longer supplies -- with the

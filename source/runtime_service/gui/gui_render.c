@@ -58,8 +58,8 @@
     pipeline/gui_build_cache.c      -- BUILD: retained frame-geometry cache: cache_build_frame, s_cache, s_dispatch, the build_* seam.    
     pipeline/gui_render_init.c      -- RENDER: shared GPU resources, created once: pipeline, samplers,
                                         the push-constant layout (render_init/shutdown, TU-local)
-    pipeline/gui_render_submit.c    -- RENDER: per-surface GPU submit: surface_geo_create/destroy,
-                                        gui_render_flush, the debug-mode/time setters
+    pipeline/gui_render_submit.c    -- RENDER: per-surface GPU submit: gui_render_flush, the
+                                        debug-mode/time setters
     ------------------------------------------------------------------------------------------------
     Utility:
 
@@ -91,34 +91,34 @@
     * Only windows whose list actually changed go to step 3. 
     * On a totally idle frame, this whole step is skipped too!
 
-    Step 3 — Cut the shapes into triangles (BUILD: tessellate).
+    Step 3 — Turn the shapes into quad records (BUILD: tessellate).
 
-    * Changed windows get turned into actual triangles (vertices + indices) in one big CPU-side arena. 
-    * Unchanged windows keep the triangles they already had, sitting exactly where they were 
+    * Changed windows get turned into 48-byte quad records (gui_quad_t) in one big CPU-side
+      arena — one record per shape, no vertex buffer and no index buffer anywhere.
+    * Unchanged windows keep the records they already had, sitting exactly where they were
       last frame — nothing moves, nothing is repacked.
-    * While cutting, each triangle's vertices get stamped with a little tag: "clip me with rect #N".
+    * Each record carries its own clip tag: "clip me with rect #N".
     * N is a permanent address: this window's fixed shelf in the clip cupboard
-      (its cache slot x 16 + which clip). 
-    * Because the address is permanent, cached triangles stay correct forever.
+      (its cache slot x 16 + which clip).
+    * Because the address is permanent, cached records stay correct forever.
 
     Step 4 — Ship it (RENDER: flush, every presented frame).
 
     * This is the part that talks to the GPU, and here's exactly what gets uploaded now:
-    * Vertices: the live span of the arena, copied into this frame's buffer region. Same as always — 
-      the GPU rotates between 2 regions, so each frame's region must contain everything, changed or not.
-    * Indices: same deal, the live span, copied as-is. No rewriting, no rebasing — we kept that off the table.
-    * Clip rects: usually nothing at all. Each window's clips live on its fixed shelf in the GPU cupboard. 
-      A shelf is re-sent only if a little "stale" flag says its contents changed (max 512 bytes per shelf). 
+    * Quad records: the live span of the arena, copied into this frame's region of the global
+      quad table. The GPU rotates between 2 regions, so each frame's region must contain
+      everything, changed or not.
+    * Clip rects: usually nothing at all. Each window's clips live on its fixed shelf in the GPU cupboard.
+      A shelf is re-sent only if a little "stale" flag says its contents changed (max 512 bytes per shelf).
       Stable frame = zero clip bytes.
-    * Push constants: one single push per surface — matrix, samplers, clock, and "the cupboard starts here". 
-      The old "re-push per window" is gone, because every vertex already knows its exact shelf address.
+    * Push constants: one single push per surface — matrix, samplers, clock, and "the cupboard starts here".
 
-    * Then one draw call per window, back to front, and the fragment shader does the clipping itself by 
-      reading the shelf each pixel's vertex named.
+    * Then one bufferless draw call per window, back to front: cmd_draw of 6 * N bare vertices;
+      the vertex stage pulls each record by SV_VertexID and expands the corners itself, and the
+      fragment shader does the clipping by reading the shelf each quad named.
 
-    * So per frame: vertices + indices always (that's the frames-in-flight tax, unchanged), 
-      clips almost never, push constants once. And if the app is fully idle and nothing presents
-      — nothing at all.
+    * So per frame: quad records always (that's the frames-in-flight tax), clips almost never,
+      push constants once. And if the app is fully idle and nothing presents — nothing at all.
 
 ==============================================================================================*/
 
@@ -184,7 +184,7 @@
 // pipeline/ RENDER, part A: shared GPU resources (pipeline, samplers), created once.
 #include "runtime_service/gui/render/pipeline/gui_render_init.c"
 
-// pipeline/ RENDER, part B: per-surface GPU resources + submit (surface_geo_*, gui_render_flush).
+// pipeline/ RENDER, part B: per-surface submit (gui_render_flush).
 #include "runtime_service/gui/render/pipeline/gui_render_submit.c"
 
 // DEBUG OVERLAY: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY.  Stays at the

@@ -1,11 +1,11 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/pipeline/gui_build_tess.c -- CPU-side tessellation engine.
+    runtime_service/gui/render/pipeline/gui_build_tess.c -- CPU-side quad-record builder.
 
-    Translates the frame's semantic gui_cmd_t list (s_draw) into packed vertex/index
-    geometry in s_tess.  This is the CPU half of the command-list split: everything here
-    reads semantic commands and writes gui_draw_vert_t / u16 index data; nothing here
-    touches the GPU API.
+    Translates the frame's semantic gui_cmd_t list (s_draw) into quad records in s_tess:
+    ONE 48-byte gui_quad_t per shape (gui.h), expanded by SV_VertexID in gui_quad.vs.hlsl --
+    there is no vertex buffer and no index buffer.  Everything here reads semantic commands
+    and writes quad + style records; nothing here touches the GPU API.
 
     s_tess is read only by the two files included after: gui_build_cache.c (the BUILD phase
     fills it via tess_dispatch) and gui_render_submit.c (gui_render_flush uploads it and emits
@@ -21,27 +21,26 @@
 /* One GPU command plus its placement -- the AOS command record.  Every consumer (the merge check,
    the flush loop, the volatile copy-back, the dashboard capture) reads a WHOLE command at a given
    index; none sweeps a single field across all commands, so the fields that belong to one command
-   live together in one cache line rather than in four parallel arrays keyed on the same index.
-   ibase is explicit (not accumulated from elem_counts at flush) so the index buffer may hold
+   live together in one cache line rather than in parallel arrays keyed on the same index.
+   vbase is explicit (not accumulated from elem_counts at flush) so the quad arena may hold
    reserved gaps -- volatile block headroom -- between commands.  Mirrors dash_cmd_t (the snapshot
    type in gui_render.h), which was AOS from the start; this is the live half catching up. */
 
 typedef struct
 {
-    gui_gpu_cmd_t cmd;      // elem_count, tex_idx, clip_rect -- the GPU draw-call unit
+    gui_gpu_cmd_t cmd;      // elem_count (quads), tex_idx, clip_rect -- the GPU draw-call unit
     i32           vp;       // viewport for this command (GUI_VP_INVALID = dormant volatile pad)
-    u32           vbase;    // vtx slot -- first vertex of command
-    u32           ibase;    // idx slot -- first index of command (its draw call's first_index)
+    u32           vbase;    // quad slot -- first quad of command (its draw's first_vertex / 6)
 
 } tess_gpu_cmd_t;
 
 /*==============================================================================================
-    Tessellation state -- private vertex/index buffers populated from the semantic command list.
+    Tessellation state -- the quad and style arenas populated from the semantic command list.
 
     cache_build_frame tessellates the frame's gui_cmd_t list into s_tess (per window, via
-    tess_dispatch), then gui_render_flush uploads s_tess.verts/indices to the GPU.  s_tess is
+    tess_dispatch), then gui_render_flush uploads s_tess.quads/prims to the GPU.  s_tess is
     backend-private; nothing above the backend unit touches it.  s_draw holds only semantic
-    commands (gui_cmd_t) -- no vtx/idx buffers.
+    commands (gui_cmd_t) -- no geometry.
 
     cur_clip/cur_vp are written by tess_dispatch before each primitive and ARE the batch key, which
     is why tess_ensure_gpu_cmd takes no parameters -- it reads them from here.  cur_clip is
@@ -50,35 +49,35 @@ typedef struct
 
 static struct
 {
-    gui_draw_vert_t verts    [ GUI_MAX_VERTS ];    // geometry buffer
-    u16             indices  [ GUI_MAX_IDX   ];    // geometry buffer
-    gui_prim_t      prims    [ GUI_MAX_PRIMS ];    // primitive records (gui.h) -- the third arena
-    tess_gpu_cmd_t  gpu_cmds [ GUI_MAX_CMDS  ];    // gpu draw commands (AOS: cmd + vp/vbase/ibase)
+    gui_quad_t      quads    [ GUI_MAX_QUADS ];    // quad records -- the geometry arena (gui.h)
+    gui_prim_t      prims    [ GUI_MAX_PRIMS ];    // style records -- the second arena
+    tess_gpu_cmd_t  gpu_cmds [ GUI_MAX_CMDS  ];    // gpu draw commands (AOS: cmd + vp/vbase)
 
-    u32 vert_count, idx_count, prim_count, cmd_count;   // write head cursors
+    /* Write head cursors.  vert_count counts QUAD RECORDS -- the geometry element throughout
+       the backend (the cache's slot spans, the volatile reservations, the dirty spans and the
+       flush all share the vert_* vocabulary for it). */
+    u32 vert_count, prim_count, cmd_count;
 
     gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
     u32         cur_clip_local; /* the same clip as an ABSOLUTE frame-region entry index (the slot's
-                                   slab base + its local first-seen index) -- the clip-band bits
-                                   tess_verts_commit folds into every vertex's tex word           */
+                                   slab base + its local first-seen index) -- what every quad's
+                                   clip lane carries                                              */
     i32         cur_vp;     /* viewport baked from the current semantic command                    */
-    u32         cur_tex;    /* GUI_TEX_MODE | bindless slot stamped into every vertex committed --
-                               set by tess_set_tex, applied by tess_verts_commit.  NOT a batch key */
+    u32         cur_tex;    /* GUI_TEX_MODE | bindless slot the style record carries -- set by
+                               tess_set_tex, folded by tess_quad_push.  NOT a batch key           */
     u32         cur_ops;    /* GUI_OP_* -- the per-primitive modifiers (gui.h).  Cleared per
                                semantic command alongside the record: leaking a self flag would
                                blank a textured quad, and leaking an op would reshape the next
-                               fill.  tess_verts_commit maps these onto the tex word's op band
-                               while that word still exists, and copies them into the record. */
+                               fill.  tess_quad_push folds these into the style record. */
     f32         cur_corner_pow; /* corner profile exponent for the box family, ambient over one
                                command for the same reason cur_ops is: it reaches all four corners
                                of a shape without threading a parameter through every fill in the
                                library, and cannot leak onto the next command.  0 = circular arcs */
 
-    /* The ambient PRIMITIVE RECORD -- filled by
-       whichever tess_* emitter is running and appended (deduplicated) by tess_verts_commit.  Only
-       the fields the ambient FIELD actually reads are written; the rest stay zero, which is what
-       lets consecutive flat fills collapse onto one record (tess_prim_local).  Cleared per
-       semantic command.
+    /* The ambient STYLE RECORD -- filled by whichever tess_* emitter is running and appended
+       (deduplicated) by tess_quad_push via tess_prim_local.  Only the fields the ambient FIELD
+       actually reads are written; the rest stay zero, which is what lets consecutive flat fills
+       collapse onto one record (tess_prim_local).  Cleared per semantic command.
 
        cur_prim_local is the slot-local index of the record the last commit resolved to.
        prim_dedup_floor is the lowest record index the memo may reach BACK to: every record in
@@ -93,28 +92,32 @@ static struct
     u32         cur_prim_local;
     u32         prim_dedup_floor;
 
+    /* QUAD BACKEND ambient glyph addressing, set by the text tessellator around each glyph's
+       fill: the glyph table entry the quad names by stable id (~0u = none, bake uvs), and the
+       horizontal cut pair for a clip straddler (0 = the whole glyph).  Cleared per command. */
+    u32         cur_glyph;
+    u32         cur_glyph_cut;
+
     /* per-slot tesellation context */
 
-    /* Vertex base of the window slot currently being tessellated.  Index values emitted during
-       tess are (local_vert - slot_vert_base), making them 0-relative within the slot.  At draw
-       time vertex_offset = slot.vert_base shifts them to the correct absolute VB position. */
+    /* Quad base of the window slot currently being tessellated -- the origin volatile blocks
+       measure their slot-relative positions against. */
     u32 slot_vert_base;
 
-    /* Index/command base and tessellation generation of the window slot currently being
-       tessellated -- set alongside slot_vert_base by cache_build_frame's retess path.  Volatile
-       blocks record their position slot-RELATIVE (never absolute) so a later patch can resolve
-       the current absolute position from the live slot table, and stamp slot_tess_gen so a patch
-       only ever writes into geometry produced by the exact tessellation pass that captured it
+    /* Command base and tessellation generation of the window slot currently being tessellated --
+       set alongside slot_vert_base by cache_build_frame's retess path.  Volatile blocks record
+       their position slot-RELATIVE (never absolute) so a later patch can resolve the current
+       absolute position from the live slot table, and stamp slot_tess_gen so a patch only ever
+       writes into geometry produced by the exact tessellation pass that captured it
        (see render/pipeline/gui_build_volatile.c). */
 
-    u32 slot_idx_base;
     u32 slot_cmd_base;
     u32 slot_tess_gen;
 
-    /* Record base of the window slot being tessellated -- the counterpart of slot_vert_base for
-       the third arena.  Records bake SLOT-LOCAL indices (prim_count - slot_prim_base) and the
-       flush adds this base back through pc.prim_base, so a repack that moves the slot's records
-       leaves every cached vertex's index correct. */
+    /* Style-record base of the window slot being tessellated -- the counterpart of
+       slot_vert_base for the style arena.  Quads bake SLOT-LOCAL style indices
+       (prim_count - slot_prim_base) and the flush adds this base back through pc.prim_base, so
+       a repack that moves the slot's records leaves every cached quad's index correct. */
     u32 slot_prim_base;
 
     /* The slot's LOCAL clip table, written while its commands tessellate: first-seen distinct
@@ -122,7 +125,7 @@ static struct
        frames replay the exact rects the baked vertex indices mean.  slot_clips/slot_clip_count
        point into the win_geo_slot_t being tessellated (set alongside slot_vert_base); NULL
        between slots.  slot_clip_base is the window's fixed slab origin in the frame clip region
-       (stable cache slot * GUI_WIN_CLIP_MAX) -- tess_clip_local folds it in so vertices bake
+       (stable cache slot * GUI_WIN_CLIP_MAX) -- tess_clip_local folds it in so quads bake
        ABSOLUTE entry indices.  slot_clip_pending is the slot's upload mask (one bit per
        (frame-in-flight, viewport) region); an append marks all bits so the flush re-uploads the
        slab.  clip_memo_ci memoizes the common run of consecutive same-clip commands (0xFF =
@@ -144,13 +147,21 @@ static struct
 
 } s_tess;
 
+/* The geometry element copy: the cache's in-place relocation and the volatile patch both move
+   quad spans by element index. */
+static inline void
+tess_geo_copy( u32 dst, u32 src, u32 count )
+{
+    memcpy( &s_tess.quads[ dst ], &s_tess.quads[ src ], count * sizeof( gui_quad_t ) );
+}
+
 /*==============================================================================================
     Tessellation diagnostics -- the cold companion to s_tess.
 
     High-water marks, the sticky overflow flag, and the arena band boundary the dashboard reads.
     Every field here is written at most once per slot placement / band boundary / frame end --
     never on the per-vertex path -- so it lives apart from s_tess to keep the hot write cacheline
-    (vert_count / idx_count / cmd_count) small.  Read only by the dashboard capture and the render
+    (vert_count / cmd_count) small.  Read only by the dashboard capture and the render
     overlay; overflow itself stays in s_tess because it is written per-primitive on buffer-full.
 ==============================================================================================*/
 
@@ -177,8 +188,7 @@ static u32 s_geo_gen = 1;
    the flush attribute band-1 upload bytes to the overlay in the stats it displays. */
 static struct
 {
-    u32 v_lo, v_hi;   // pending vertex range, arena-absolute (empty when v_lo >= v_hi)
-    u32 i_lo, i_hi;   // pending index range, arena-absolute
+    u32 v_lo, v_hi;   // pending quad range, arena-absolute (empty when v_lo >= v_hi)
 
 } s_patch_pending[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ][ 2 ];
 
@@ -193,7 +203,7 @@ patch_range_union( u32* lo, u32* hi, u32 nlo, u32 nhi )
 }
 
 static void
-patch_span_union( u8 vp, u8 band, u32 v_lo, u32 v_hi, u32 i_lo, u32 i_hi )
+patch_span_union( u8 vp, u8 band, u32 v_lo, u32 v_hi )
 {
     if ( vp >= GUI_MAX_VIEWPORTS )
         return;
@@ -203,27 +213,25 @@ patch_span_union( u8 vp, u8 band, u32 v_lo, u32 v_hi, u32 i_lo, u32 i_hi )
         u32 r = f * GUI_MAX_VIEWPORTS + vp;
         patch_range_union( &s_patch_pending[ r ][ b ].v_lo, &s_patch_pending[ r ][ b ].v_hi,
                            v_lo, v_hi );
-        patch_range_union( &s_patch_pending[ r ][ b ].i_lo, &s_patch_pending[ r ][ b ].i_hi,
-                           i_lo, i_hi );
     }
 }
 
 static struct
 {
-    u32  vert_hwm, idx_hwm, prim_hwm;   /* lifetime peak of the TOTAL write head (both bands) */
-    bool overflow_ever;                 /* sticky: any frame this run overflowed a buffer     */
+    u32  vert_hwm, prim_hwm;   /* lifetime peak of the TOTAL write head (both bands) */
+    bool overflow_ever;        /* sticky: any frame this run overflowed a buffer     */
 
     /* Arena band boundary: the write head right after the last MAIN-band slot placed this frame
        (band-major placement packs every debug-band slot after it).  The dashboard's memory map
-       reads these as "main arena ends here"; the span up to vert_count/idx_count past them is
-       the debug UI's own attributed footprint.  Re-derived by cache_build_frame every build. */
-    u32 band0_vert_end, band0_idx_end;
+       reads this as "main arena ends here"; the span up to vert_count past it is the debug UI's
+       own attributed footprint.  Re-derived by cache_build_frame every build. */
+    u32 band0_vert_end;
 
     /* Lifetime peak of the MAIN-band (band 0) write head alone -- the real application's geometry
        ceiling, tracked apart from vert_hwm so the dashboard can show actual use limits with the
        self-measuring debug band filtered out.  Peaks on a different frame than vert_hwm, so it is a
        separate accumulator, not a subtraction. */
-    u32 band0_vert_hwm, band0_idx_hwm;
+    u32 band0_vert_hwm;
 
 } s_tess_stats;
 
@@ -264,11 +272,9 @@ static void
 tess_reset( void )
 {
     s_tess.vert_count      = 0;
-    s_tess.idx_count       = 0;
     s_tess.prim_count      = 0;
     s_tess.cmd_count       = 0;
     s_tess.slot_vert_base  = 0;
-    s_tess.slot_idx_base   = 0;
     s_tess.slot_cmd_base   = 0;
     s_tess.slot_prim_base  = 0;
     s_tess.slot_tess_gen   = 0;
@@ -282,13 +288,13 @@ tess_reset( void )
     s_tess.cur_clip_local    = 0;
     s_tess.force_new_cmd     = false;
     s_tess.overflow          = false;
+    s_tess.cur_glyph         = ~0u;
+    s_tess.cur_glyph_cut     = 0;
 }
 
-/* Name the texture the vertices about to be written will CARRY (tess_verts_commit stamps it onto
-   each one).  Deliberately NOT part of opening a batch, and separated from it so that reads: the
-   texture rides the vertex now, so a texture change costs nothing and must not open a command.
-   Pair it with tess_ensure_gpu_cmd below -- order between the two does not matter, only that both
-   happen before the primitive's vertices are committed. */
+/* Name the texture the next quad's style will CARRY (tess_quad_push folds it into the record).
+   Deliberately NOT part of opening a batch, and separated from it so that reads: the texture
+   rides the style record, so a texture change costs nothing and must not open a command. */
 static void
 tess_set_tex( u32 tex_idx )
 {
@@ -340,8 +346,8 @@ tess_clip_local( u8 ci )
 
 /* Ensure a GPU command is open whose viewport matches the ambient one, opening a new one at a
    mismatch.  THE VIEWPORT IS THE WHOLE BATCH KEY, which is why this takes no arguments: the
-   texture, the effect word and the clip all travel per vertex and cannot cut a draw call, and z
-   is per-segment rather than per-command (the segment system already guarantees every command in
+   texture, the style and the clip all travel per quad and cannot cut a draw call, and z is
+   per-segment rather than per-command (the segment system already guarantees every command in
    one window's tessellation pass shares a z).  A new primitive type therefore batches correctly
    by construction -- there is nothing left to pass in and get wrong.
    Returns false when the command table is full and no matching command is open -- the caller must
@@ -361,17 +367,15 @@ tess_ensure_gpu_cmd( void )
         return false;
     }
     s_tess.force_new_cmd = false;
-    /* Vertex span of this command starts at the current vert_count; the next command's vbase (or
-       the final vert_count for the last) bounds it.  Lets a surface upload only its own vertices.
-       ibase records where this command's indices start -- its draw call's first_index.
+    /* Quad span of this command starts at the current vert_count; the next command's vbase (or
+       the final vert_count for the last) bounds it.  Lets a surface upload only its own quads.
        tex_idx and clip_rect are the ambient values at the moment the command opened, i.e. the
-       FIRST primitive's, and are diagnostic only (the dashboard tooltip) -- both ride the vertex
+       FIRST primitive's, and are diagnostic only (the dashboard tooltip) -- both ride the quad
        now and the command may go on to span several of each. */
     s_tess.gpu_cmds[ s_tess.cmd_count++ ] = ( tess_gpu_cmd_t ){
         .cmd   = { .elem_count = 0, .tex_idx = s_tess.cur_tex, .clip_rect = s_tess.cur_clip },
         .vp    = s_tess.cur_vp,
         .vbase = s_tess.vert_count,
-        .ibase = s_tess.idx_count,
     };
     return true;
 }
@@ -394,7 +398,7 @@ tess_ensure_gpu_cmd( void )
 /* How far back the dedup scan reaches.  1 collapses a homogeneous run (a glyph run, consecutive
    flat fills); the extra depth collapses the ALTERNATION chrome actually emits -- text, a rounded
    widget's own record, text again -- which a 1-deep memo re-appended on every return.  Four
-   96-byte compares against L1-hot records is noise next to the tessellation around it. */
+   112-byte compares against L1-hot records is noise next to the tessellation around it. */
 #define TESS_PRIM_MEMO_DEPTH  4u
 
 static u32
@@ -426,109 +430,59 @@ tess_prim_local( void )
     return s_tess.cur_prim_local;
 }
 
-/* Take `n` vertices written at s_tess.verts[vert_count] into the buffer, stamping each with the
-   active texture and effect word.
-
-   EVERY vertex writer ends here -- this is the only place vert_count advances, which is what makes
-   the record impossible to forget.  It is applied from ambient state rather than passed in because
-   it is constant over a primitive while only the position/uv/colour vary: cur_tex is set by
-   tess_set_tex (which every writer calls alongside tess_ensure_gpu_cmd, to have a command to append
-   to), and the rest is cleared per semantic command and filled by the few emitters that want a
-   shape.  A new primitive type gets it correct by construction; the alternative -- naming the index
-   in each compound literal -- fails silently, since a missing trailing initializer is a legal zero
-   and zero is a valid record. */
-static void
-tess_verts_commit( u32 n )
-{
-    /* The record's three AMBIENT members are folded in here rather than at the emitters: an
-       emitter that has to remember them is an emitter that can forget.  What an emitter does set
-       is its FIELD and the geometry that field reads. */
-    s_tess.cur_prim.tex  = s_tess.cur_tex;
-    s_tess.cur_prim.ops  = s_tess.cur_ops;
-    s_tess.cur_prim.clip = s_tess.cur_clip_local;
-
-    u32 prim = tess_prim_local();
-
-    gui_draw_vert_t* v = &s_tess.verts[ s_tess.vert_count ];
-    for ( u32 i = 0; i < n; ++i )
-        v[ i ].prim = prim;
-    s_tess.vert_count += n;
-}
-
 /*==============================================================================================
-    tess_prim_begin / tess_prim_commit -- the reservation every primitive goes through.
+    tess_quad_push -- the ONE geometry writer.  Resolves the ambient style (placement and clip
+    live on the quad, never the style), appends the quad, and folds one element into the open
+    GPU command.
 
-    Four steps, in this order, and every one of them is a place a hand-written primitive gets it
-    subtly wrong:
-
-      1. Check BOTH budgets before writing anything, and set the sticky overflow flag rather than
-         truncating -- a primitive that emits its vertices and then discovers it has no room for
-         indices leaves geometry the index buffer never references.
-      2. Name the texture and open a GPU command, in that order relative to the writes.
-      3. Hand back a base that is SLOT-RELATIVE (vert_count - slot_vert_base).  Indices are
-         0-relative within a window slot and shifted at draw time by vertex_offset; an absolute
-         base here is the class of bug the force_new_cmd slot boundary was about, and it does not
-         show up until two windows land at the same position.
-      4. On commit, advance idx_count AND fold ni into the open command's elem_count.  Forgetting
-         the second silently drops the primitive -- the vertices are uploaded, the draw call just
-         never reads them.
-
-    tex_idx is a parameter rather than assumed because that is what stopped five primitives from
-    using this: it hardcoded the coverage atlas, so anything sampling its own texture (a glyph run,
-    an image, a nine-slice piece) had to repeat all four steps by hand.  The texture is no longer a
-    batch key, so passing it here costs nothing -- it only names what the vertices will carry.
+    `rule_flags` is the expansion rule (GUI_QUAD_RULE_*) plus GUI_QUAD_GLYPH when the ambient
+    glyph id below should ride the uv lanes.  Placement is the SHAPE's, by the rule's convention
+    (gui.h); uv0/uv1 are packed texcoord corners (ignored under the glyph flag).
 ==============================================================================================*/
 
-static bool
-tess_prim_begin_tex( u32 nv, u32 ni, u32 tex_idx,
-                     gui_draw_vert_t** out_v, u16** out_i, u16* out_base )
+static void
+tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
+                u32 uv0, u32 uv1, u32 tex_idx, u32 abgr )
 {
-    if ( s_tess.vert_count + nv > GUI_MAX_VERTS || s_tess.idx_count + ni > GUI_MAX_IDX )
+    if ( s_tess.vert_count + 1u > GUI_MAX_QUADS )
     {
         s_tess.overflow = true;
-        return false;
+        return;
     }
     tess_set_tex( tex_idx );
     if ( !tess_ensure_gpu_cmd() )
-        return false;
-    *out_base = (u16)( s_tess.vert_count - s_tess.slot_vert_base );
-    *out_v    = &s_tess.verts  [ s_tess.vert_count ];
-    *out_i    = &s_tess.indices[ s_tess.idx_count  ];
-    return true;
-}
+        return;
 
-/* The solid-colour form: the coverage atlas, plus its white texel's UV -- what every primitive
-   that paints a flat colour rather than sampling art wants. */
-static bool
-tess_prim_begin( u32 nv, u32 ni, f32* wu, f32* wv,
-                 gui_draw_vert_t** out_v, u16** out_i, u16* out_base )
-{
-    if ( !tess_prim_begin_tex( nv, ni, res_atlas_idx(), out_v, out_i, out_base ) )
-        return false;
-    res_atlas_white_uv( wu, wv );
-    return true;
-}
+    /* Fold the ambient texture and ops into the style; the clip entry rides the quad below,
+       never the style, so a style compares equal across scroll regions. */
+    s_tess.cur_prim.tex = s_tess.cur_tex;
+    s_tess.cur_prim.ops = s_tess.cur_ops;
 
-/* Close the reservation tess_prim_begin_* opened: stamp and account the vertices, then fold the
-   indices into the open command's element count.  The index half used to be callable on its own,
-   because the rounded box committed its vertices in four chunks -- one per quadrant, each under a
-   different packed word.  All four corners are in one record now, so every primitive commits once
-   and the split has nothing left to serve. */
-static void
-tess_prim_commit( u32 nv, u32 ni )
-{
-    tess_verts_commit( nv );
-    s_tess.idx_count += ni;
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += ni;
-}
+    u32 style = tess_prim_local();
+    u32 cut   = 0;
+    if ( s_tess.cur_glyph != ~0u )
+    {
+        rule_flags |= GUI_QUAD_GLYPH;
+        uv0         = s_tess.cur_glyph;
+        cut         = s_tess.cur_glyph_cut;
+    }
 
-/* Two triangles over four corners wound TL, TR, BR, BL -- the index pattern of every quad in this
-   file, written once.  `base` is the slot-relative index of the quad's first vertex. */
-static void
-tess_quad_idx( u16* idx, u16 base )
-{
-    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
-    idx[ 3 ] = base + 0; idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
+    s_tess.quads[ s_tess.vert_count++ ] = ( gui_quad_t ){
+        .cx    = qcx,
+        .cy    = qcy,
+        .hw    = qhw,
+        .hh    = qhh,
+        .uv0   = uv0,
+        .uv1   = uv1,
+        .abgr  = abgr,
+        .style = style,
+        .clip  = s_tess.cur_clip_local,
+        .flags = rule_flags,
+        .cut   = cut,
+    };
+
+    /* elem_count counts QUADS under this backend; the flush multiplies by six at the draw. */
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 1;
 }
 
 /* Tessellate a filled quad into s_tess.  abgr has alpha pre-baked by the emit side. */
@@ -537,59 +491,42 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
                   f32 u0, f32 v0, f32 u1, f32 v1,
                   u32 tex_idx, u32 abgr )
 {
-    /* tex_idx 0 = solid-color convention: route to the font atlas's white texel.  Resolved before
-       the reservation, because it decides which texture the vertices will carry. */
+    /* tex_idx 0 = solid-color convention: GUI_OP_SELF says "do not consult the texel", which
+       cuts the fill's last tie to atlas PLACEMENT (the texture INDEX it still carries is
+       repack-stable), so a plain fill's style never goes stale. */
     if ( tex_idx == 0 )
     {
         tex_idx = res_atlas_idx();
-        res_atlas_white_uv( &u0, &v0 );
-        u1 = u0; v1 = v0;
+        s_tess.cur_ops |= GUI_OP_SELF;
+        u0 = v0 = u1 = v1 = 0.0f;
     }
     x = tess_snap_px( x );
     y = tess_snap_px( y );
-
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin_tex( 4u, 6u, tex_idx, &v, &idx, &base ) )
-        return;
-
-    v[ 0 ] = gui_vert( x,     y,     u0, v0, abgr );
-    v[ 1 ] = gui_vert( x + w, y,     u1, v0, abgr );
-    v[ 2 ] = gui_vert( x + w, y + h, u1, v1, abgr );
-    v[ 3 ] = gui_vert( x,     y + h, u0, v1, abgr );
-    tess_quad_idx( idx, base );
-    tess_prim_commit( 4u, 6u );
+    tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
+                    gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr );
 }
 
-/* Tessellate a two-color gradient quad: col_a / col_b on opposite edges, sampled at the white
-   texel so the GPU's per-vertex color interpolation IS the gradient (one quad, exact blend --
-   replaces the old 32-band approximation).  Origin grid-snapped like tess_rect_filled. */
+/* Tessellate a two-color gradient quad: a GRAD style -- a quad record carries ONE colour, and
+   the fragment's linear ramp is the same photometric blend the old per-vertex corner
+   interpolation produced.  The axis is stored pre-divided by the extent (the tess_fx_box_core
+   convention), so the style dedups across same-size ramps.  Origin grid-snapped like
+   tess_rect_filled.  rot_cos is written explicitly: the ramp is evaluated in the shape-local
+   frame, and a zeroed rot pair would collapse it to a flat 50/50 blend. */
 static void
 tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horizontal )
 {
+    if ( w <= 0.0f || h <= 0.0f )
+        return;
     x = tess_snap_px( x );
     y = tess_snap_px( y );
 
-    f32              wu, wv;
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
-        return;
-
-    /* Corner colors walk col_a -> col_b along the chosen axis (TL, TR, BR, BL winding). */
-    u32 c0 = col_a;                          /* top-left  */
-    u32 c1 = horizontal ? col_b : col_a;     /* top-right */
-    u32 c2 = col_b;                          /* bottom-right */
-    u32 c3 = horizontal ? col_a : col_b;     /* bottom-left  */
-
-    v[ 0 ] = gui_vert( x,     y,     wu, wv, c0 );
-    v[ 1 ] = gui_vert( x + w, y,     wu, wv, c1 );
-    v[ 2 ] = gui_vert( x + w, y + h, wu, wv, c2 );
-    v[ 3 ] = gui_vert( x,     y + h, wu, wv, c3 );
-    tess_quad_idx( idx, base );
-    tess_prim_commit( 4u, 6u );
+    s_tess.cur_ops |= GUI_OP_SELF | GUI_OP_GRAD | GUI_OP_DITHER;
+    s_tess.cur_prim.col_b   = col_b;
+    s_tess.cur_prim.grad_x  = horizontal ? 1.0f / w : 0.0f;
+    s_tess.cur_prim.grad_y  = horizontal ? 0.0f : 1.0f / h;
+    s_tess.cur_prim.rot_cos = 1.0f;
+    tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
+                    0, 0, res_atlas_idx(), col_a );
 }
 
 /*==============================================================================================
@@ -786,48 +723,32 @@ tess_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
 /*==============================================================================================
     The SDF surface -- every rounded shape, in ONE quad.
 
-    A rounded box used to be tessellated: a cached quarter arc fanned into ~37 vertices with hard
-    stair-stepped edges, and a texture could not ride on it at all.  Here the CPU emits a covering
-    and the fragment shader resolves the boundary exactly (gui.h, the effect band).
+    The CPU emits a covering quad and the fragment shader resolves the boundary exactly (gui.h,
+    the effect band).  The covering is grown past the box by the falloff pad (the SKIRT rule) so
+    a feathered edge -- and a shadow's whole soft skirt -- has somewhere to land; the BOUNDARY
+    still sits exactly on the authored rect.
 
-    The covering is one quad.  It was four -- one per quadrant -- while the fragment received
-    `|p| - c` interpolated from the vertices: an absolute value folds at the centre lines and no
-    linear interpolator reproduces a fold, so the shape had to be cut into pieces on which the sign
-    of p was fixed.  The fragment derives that coordinate from its own pixel position now, so the
-    partition has nothing left to buy.
-
-    The geometry is grown by `pad` past the box so the falloff has somewhere to land: a feathered
-    edge (and a shadow's whole soft skirt) is OUTSIDE the shape's own rect.  The BOUNDARY still
-    sits exactly on the authored rect -- pad moves the triangles, never the shape.
-
-    A surface with nothing to paint inside carves its interior out, covered by a FRAME of four
-    quads around the hole instead of one quad spanning it -- where the 16/24 upper bound below
-    comes from.  Three ops qualify.  BAND paints a border only `border` px wide, so rasterizing the
-    whole inside of a window frame at zero coverage is a real cost on a large panel.  CUT paints
-    nothing at all inside its boundary: the elevation shadow under floating chrome is a band of
-    quads around the frame rather than a plate spanning the window, roughly a tenth of the area.
-    INSET paints `feather` px in from the boundary, so an inner shadow on a full panel costs the
-    rim.
+    A wide BAND/CUT/INSET surface rasterizes its interior at zero coverage (the fields early-out
+    cheaply); the hole-carving the old vertex path did for those has no home in a one-rectangle
+    record, and UI fill is nowhere near bound.
 
     Every SDF surface samples the same atlas as everything else and names its shape through a
-    RECORD, so it merges into whatever GPU command is already open: a soft shadow behind a panel
-    costs a batch split of zero.
+    STYLE record, so it merges into whatever GPU command is already open: a soft shadow behind a
+    panel costs a batch split of zero.
 ==============================================================================================*/
 
 /* Emit one SDF surface.  `r4` is the corner radius PER QUADRANT, in the tessellation order
    top-left, top-right, bottom-right, bottom-left (tess_fx_box passes four copies of one radius;
    only tess_round_rect_ex passes four different ones), and `feather` the total width of the falloff
    band straddling the boundary (0 = hard edge); both are always read.  The remaining parameters are
-   OP-SPECIFIC, mirroring the fx word's own re-partitioning -- `border` is the border width under
+   OP-SPECIFIC, mirroring the record's own re-partitioning -- `border` is the border width under
    GUI_OP_BAND, `rate`/`depth` the wave under GUI_OP_PULSE, and each ignores the other's.
    UVs span the AUTHORED box and are clamped over the grown skirt, so a textured rounded quad cannot
    bleed into its atlas neighbour where the coverage has already faded to nothing.
 
    The surface is always GUI_FX_BOX; which of the four ops it carries comes in on ambient state
-   (s_tess.cur_ops), set by the caller BEFORE this runs because the interior hole is sized from
-   it.  GUI_OP_CUT and GUI_OP_INSET take no parameter of their own -- they read radius and
-   feather exactly as a plain fill does and differ only in the hole below and one line in the
-   fragment.
+   (s_tess.cur_ops), set by the caller BEFORE this runs.  GUI_OP_CUT and GUI_OP_INSET take no
+   parameter of their own -- they read radius and feather exactly as a plain fill does.
 
    Per-corner radii are FREE: all four ride the record and the fragment picks the one its own
    quadrant wants, so the geometry does not change at all.
@@ -932,32 +853,24 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         y = tess_snap_px( y );
     }
 
-    /* tex_idx 0 = solid-color convention, same as tess_rect_filled: the atlas white texel. */
-    f32 wu, wv;
+    /* tex_idx 0 = solid-color convention, same as tess_rect_filled: GUI_OP_SELF, no texel
+       consulted at all. */
     if ( tex_idx == 0 )
     {
         tex_idx = res_atlas_idx();
-        res_atlas_white_uv( &wu, &wv );
-        u0 = u1 = wu;
-        v0 = v1 = wv;
+        s_tess.cur_ops |= GUI_OP_SELF;
+        u0 = v0 = u1 = v1 = 0.0f;
     }
 
-    f32 pad = feather * 0.5f + 1.0f;              /* room for the falloff, plus a pixel of slack */
-    f32 ehx = hx + pad, ehy = hy + pad;           /* grown half-extent (geometry only)           */
     f32 cx  = x + hx,   cy  = y + hy;
-    f32 rcs = 1.0f, rsn = 0.0f;                   /* the rotation, hoisted out of the corner loop */
+    f32 rcs = 1.0f, rsn = 0.0f;                   /* the rotation, computed once per shape */
     if ( rot != 0.0f ) { rcs = cosf( rot ); rsn = sinf( rot ); }
 
-    /* The record: the AUTHORED shape, after the clamps and the grid snap above but before the
-       geometry grows by `pad`.  The skirt is a rasterization detail -- the field the fragment
-       resolves is measured from the real boundary, so the record must state that one.  All four
-       radii travel, which is why the four quadrants below share a single record even when their
-       packed words differ. */
+    /* The style: the AUTHORED shape, after the clamps and the grid snap above.  The falloff
+       skirt is a rasterization detail the vertex stage grows the covering by (GUI_QUAD_RULE_
+       SKIRT) -- the field the fragment resolves is measured from the real boundary, so the
+       record states that one.  All four radii travel. */
     s_tess.cur_prim.field   = (u32)GUI_FX_BOX;
-    s_tess.cur_prim.cx      = cx;
-    s_tess.cur_prim.cy      = cy;
-    s_tess.cur_prim.hw      = hx;
-    s_tess.cur_prim.hh      = hy;
     s_tess.cur_prim.r_tl    = rq[ 0 ];
     s_tess.cur_prim.r_tr    = rq[ 1 ];
     s_tess.cur_prim.r_br    = rq[ 2 ];
@@ -1031,120 +944,14 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         s_tess.cur_prim.cut_dy = aux->cut_dy;
     }
 
-    /* `reach`: how deep past the boundary this surface paints nothing, so the geometry need not
-       reach there either.  A BAND stops at the far side of its border; a CUT stops at the boundary
-       itself, since its coverage is zero inside (a pixel of slack keeps the hole clear of the
-       boundary the rasterizer resolves); an INSET paints inward exactly `feather` px.  All three
-       are properties of the surface itself -- none makes any claim about what is drawn OVER it, so
-       none can be wrong about it.
-
-       The ops are read from ambient state rather than taken as parameters because they are already
-       there: they ride the tex word, which this function does not otherwise touch, and threading
-       them back in as arguments to restate what the vertices will carry anyway would be the only
-       alternative.
-
-       Two ops on one surface take the WIDEST reach, which is the conservative direction and not the
-       exact one: reach only sizes the interior hole, and a larger reach carves a SMALLER hole (the
-       eroded radius shrinks with it).  Erring large costs interior fragments nobody sees; erring
-       small would notch the frame, which is visible.  Each op alone still lands on exactly the
-       number it had as a mode. */
-    f32 reach = 0.0f;
-    if ( s_tess.cur_ops & GUI_OP_BAND )  reach = border + feather * 0.5f;
-    if ( s_tess.cur_ops & GUI_OP_INSET ) reach = ( feather > reach ) ? feather : reach;
-    if ( s_tess.cur_ops & GUI_OP_CUT )   reach = ( reach > 1.0f )    ? reach : 1.0f;
-
-    /* The COVERING: which rectangles have to be rasterized for the fragment to resolve the shape.
-       One quad normally -- the whole grown extent -- and a frame of four when there is an interior
-       worth skipping.  This is pure geometry now.  It used to be four QUADRANT quads whether or not
-       there was a hole, because the effect coordinate was |p| - c and the absolute value is not
-       affine across the centre lines; the fragment folds for itself, so the quadrant split has
-       nothing left to buy and a plain fill costs 4 vertices instead of 16.
-
-       Sizing the hole is the whole subtlety.  It must lie entirely at d <= -reach -- one pixel of
-       it inside the painted band would notch the frame -- and the binding case is its CORNER, which
-       pokes diagonally toward the arc.  So the hole is the largest axis-aligned box inscribed in
-       the shape ERODED by that reach, whose corner sits on the eroded arc at 45 degrees.  Erode
-       until nothing is left and there is simply no hole.
-
-       The erosion is derived from the LARGEST radius, which is the conservative direction: a bigger
-       radius rounds harder and inscribes a smaller box, so one number is safe for four different
-       corners.  It used to be gated on all four matching for want of that argument. */
-    f32 qlo_x[ 4 ], qlo_y[ 4 ], qhi_x[ 4 ], qhi_y[ 4 ];
-    u32 nq = 1;
-    qlo_x[ 0 ] = -ehx;  qlo_y[ 0 ] = -ehy;  qhi_x[ 0 ] = ehx;  qhi_y[ 0 ] = ehy;
-
-    if ( reach > 0.0f )
-    {
-        f32 er = rmax - reach;                    /* the eroded shape's radius */
-        if ( er < 0.0f ) er = 0.0f;
-        f32 hix = ( hx - reach - er ) + er * 0.70710678f;
-        f32 hiy = ( hy - reach - er ) + er * 0.70710678f;
-
-        /* The hole sits around the shape's own centre -- unless the cut boundary has moved off it,
-           in which case what paints nothing is the interior of BOTH, and the intersection of two
-           axis-aligned boxes is one axis-aligned box.  Intersecting is conservative where only the
-           cut is in play (the hole could be the whole offset box), and a few pixels of extra
-           interior costs less than a second rule. */
-        f32 hlo_x = -hix, hhi_x = hix;
-        f32 hlo_y = -hiy, hhi_y = hiy;
-        f32 cdx   = s_tess.cur_prim.cut_dx, cdy = s_tess.cur_prim.cut_dy;
-        if ( cdx != 0.0f || cdy != 0.0f )
-        {
-            if ( cdx - hix > hlo_x ) hlo_x = cdx - hix;
-            if ( cdx + hix < hhi_x ) hhi_x = cdx + hix;
-            if ( cdy - hiy > hlo_y ) hlo_y = cdy - hiy;
-            if ( cdy + hiy < hhi_y ) hhi_y = cdy + hiy;
-        }
-
-        if ( hhi_x > hlo_x && hhi_y > hlo_y )
-        {
-            qlo_x[ 0 ] = -ehx;   qlo_y[ 0 ] = -ehy;    qhi_x[ 0 ] = ehx;     qhi_y[ 0 ] = hlo_y; /* top   */
-            qlo_x[ 1 ] = -ehx;   qlo_y[ 1 ] =  hhi_y;  qhi_x[ 1 ] = ehx;     qhi_y[ 1 ] = ehy;   /* base  */
-            qlo_x[ 2 ] = -ehx;   qlo_y[ 2 ] =  hlo_y;  qhi_x[ 2 ] = hlo_x;   qhi_y[ 2 ] = hhi_y; /* left  */
-            qlo_x[ 3 ] =  hhi_x; qlo_y[ 3 ] =  hlo_y;  qhi_x[ 3 ] = ehx;     qhi_y[ 3 ] = hhi_y; /* right */
-            nq = 4;
-        }
-    }
-
-    u32              nv = nq * 4u, ni = nq * 6u;
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin_tex( nv, ni, tex_idx, &v, &idx, &base ) )
-        return;
-
-    f32 ulo = ( u0 < u1 ) ? u0 : u1, uhi = ( u0 < u1 ) ? u1 : u0;
-    f32 vlo = ( v0 < v1 ) ? v0 : v1, vhi = ( v0 < v1 ) ? v1 : v0;
-
-    /* Corner of one quad in its own lo/hi box, counter-clockwise from the low corner. */
-    static const f32 qu[ 4 ] = { 0.0f, 1.0f, 1.0f, 0.0f };
-    static const f32 qv[ 4 ] = { 0.0f, 0.0f, 1.0f, 1.0f };
-
-    for ( u32 n = 0; n < nq; ++n )
-    {
-        for ( u32 c = 0; c < 4; ++c )
-        {
-            f32 lx = qlo_x[ n ] + qu[ c ] * ( qhi_x[ n ] - qlo_x[ n ] );
-            f32 ly = qlo_y[ n ] + qv[ c ] * ( qhi_y[ n ] - qlo_y[ n ] );
-            f32 px = cx + lx, py = cy + ly;
-            f32 tu = uhi > ulo ? u0 + ( u1 - u0 ) * ( px - x ) / w : u0;
-            f32 tv = vhi > vlo ? v0 + ( v1 - v0 ) * ( py - y ) / h : v0;
-            if ( tu < ulo ) tu = ulo;  if ( tu > uhi ) tu = uhi;
-            if ( tv < vlo ) tv = vlo;  if ( tv > vhi ) tv = vhi;
-            /* The turn, LAST: uv came from the unrotated position, so only the world position
-               rotates about the centre.  The fragment un-rotates by the same pair to recover the
-               box-local coordinate it needs. */
-            if ( rot != 0.0f )
-            {
-                px = cx + lx * rcs - ly * rsn;
-                py = cy + lx * rsn + ly * rcs;
-            }
-            v[ n * 4 + c ] = gui_vert( px, py, tu, tv, abgr );
-        }
-        tess_quad_idx( &idx[ n * 6 ], (u16)( base + n * 4 ) );
-    }
-
-    tess_prim_commit( nv, ni );
+    /* The COVERING: one quad, the shape's true extents under the SKIRT rule (the vertex stage
+       grows them by the style's feather pad).  The old vertex path carved an interior hole out
+       of wide BAND/CUT/INSET surfaces; a record stores one rectangle, so the interior rasterizes
+       at zero coverage instead -- the fields early-out cheaply and UI fill is nowhere near
+       bound.  The uv rect is the authored span; the vertex stage scales it over the skirt and
+       clamps at the corners, so a textured rounded quad shows its picture at authored size. */
+    tess_quad_push( cx, cy, hx, hy, GUI_QUAD_RULE_SKIRT,
+                    gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr );
 }
 
 /* The uniform-radius entry every rounded shape in the library goes through.  Four copies of one
@@ -1163,22 +970,31 @@ tess_fx_box( f32 x, f32 y, f32 w, f32 h, f32 r, f32 feather, f32 border, f32 rat
 /* TESS_FX_AA -- the default 1 px antialiasing band -- lives in gui_render.h now: the emit side
    bakes it into commands (a pulse's feather) as well. */
 
-/* Tessellate a solid triangle into s_tess. */
+/* Tessellate a solid triangle into s_tess: the GUI_FX_TRI field -- one quad over the bbox,
+   three points about its centre in the style's radius + param lanes.  Centre-relative points
+   are what lets repeated arrow glyphs share one style; the edges antialias through the shared
+   feather, which the old rasterized triangle never had. */
 static void
 tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
 {
-    f32              wu, wv;
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin( 3u, 3u, &wu, &wv, &v, &idx, &base ) )
+    f32 lox = fminf( ax, fminf( bx, cx ) ), hix = fmaxf( ax, fmaxf( bx, cx ) );
+    f32 loy = fminf( ay, fminf( by, cy ) ), hiy = fmaxf( ay, fmaxf( by, cy ) );
+    if ( hix <= lox || hiy <= loy )
         return;
+    f32 qx = ( lox + hix ) * 0.5f, qy = ( loy + hiy ) * 0.5f;
 
-    v[ 0 ] = gui_vert( ax, ay, wu, wv, abgr );
-    v[ 1 ] = gui_vert( bx, by, wu, wv, abgr );
-    v[ 2 ] = gui_vert( cx, cy, wu, wv, abgr );
-    idx[ 0 ] = base + 0; idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
-    tess_prim_commit( 3u, 3u );
+    s_tess.cur_ops         |= GUI_OP_SELF;
+    s_tess.cur_prim.field   = (u32)GUI_FX_TRI;
+    s_tess.cur_prim.r_tl    = ax - qx;
+    s_tess.cur_prim.r_tr    = ay - qy;
+    s_tess.cur_prim.r_br    = bx - qx;
+    s_tess.cur_prim.r_bl    = by - qy;
+    s_tess.cur_prim.param_a = cx - qx;
+    s_tess.cur_prim.param_b = cy - qy;
+    s_tess.cur_prim.feather = TESS_FX_AA;
+    s_tess.cur_prim.rot_cos = 1.0f;
+    tess_quad_push( qx, qy, ( hix - lox ) * 0.5f, ( hiy - loy ) * 0.5f,
+                    GUI_QUAD_RULE_SKIRT, 0, 0, res_atlas_idx(), abgr );
 }
 
 /*==============================================================================================
@@ -1186,10 +1002,10 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
 
     There is no circle primitive anywhere in the pipeline and there does not need to be one:
     tess_fx_box clamps the corner radius to half the short side, so a SQUARE box asking for a
-    radius of its own half-extent degenerates exactly to a disc -- same field, same four quadrant
-    quads, same fragment, 16 verts / 24 idx at any size, antialiased.  The emit side agrees
-    (draw_push_circle_filled emits GUI_CMD_RECT_FILLED with rounding = r); this helper survives
-    for tess_fx_arc's full-turn PIE route.
+    radius of its own half-extent degenerates exactly to a disc -- same field, same one quad,
+    same fragment, antialiased at any size.  The emit side agrees (draw_push_circle_filled emits
+    GUI_CMD_RECT_FILLED with rounding = r); this helper survives for tess_fx_arc's full-turn PIE
+    route.
 
     NOT grid-snapped, and it does not have to ask: tess_fx_box derives it -- a square whose radius
     reached its half-extent has no straight edge for snapping to keep crisp, and quantizing a
@@ -1222,37 +1038,19 @@ tess_fx_ngon( f32 pcx, f32 pcy, f32 r, u32 sides, f32 rot, f32 rounding,
     if ( r <= 0.0f )
         return;
 
-    f32 pad = TESS_FX_AA * 0.5f + 1.0f;
-    f32 ext = r + pad;
-    f32 rcs = cosf( rot ), rsn = sinf( rot );
-
-    f32              wu, wv;
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
-        return;
-
     s_tess.cur_prim.field   = (u32)GUI_FX_NGON;
-    s_tess.cur_prim.cx      = pcx;
-    s_tess.cur_prim.cy      = pcy;
-    s_tess.cur_prim.hw      = r;
-    s_tess.cur_prim.hh      = r;
     s_tess.cur_prim.r_tl    = rounding;
     s_tess.cur_prim.r_tr    = (f32)sides;
     s_tess.cur_prim.feather = TESS_FX_AA;
     s_tess.cur_prim.border  = ( s_tess.cur_ops & GUI_OP_BAND ) ? border : 0.0f;
-    s_tess.cur_prim.rot_cos = rcs;
-    s_tess.cur_prim.rot_sin = rsn;
+    s_tess.cur_prim.rot_cos = cosf( rot );
+    s_tess.cur_prim.rot_sin = sinf( rot );
 
-    /* The quad covers the circumcircle -- no interior hole; the shapes this draws (badges,
-       markers, rating glyphs) are small enough that skipping interior fragments buys nothing. */
-    v[ 0 ] = gui_vert( pcx - ext, pcy - ext, wu, wv, abgr );
-    v[ 1 ] = gui_vert( pcx + ext, pcy - ext, wu, wv, abgr );
-    v[ 2 ] = gui_vert( pcx + ext, pcy + ext, wu, wv, abgr );
-    v[ 3 ] = gui_vert( pcx - ext, pcy + ext, wu, wv, abgr );
-    tess_quad_idx( idx, base );
-    tess_prim_commit( 4u, 6u );
+    /* The circumcircle covering under SKIRT: r on both axes, grown by the pad the vertex stage
+       derives from the feather.  Rotation-safe -- a rotated square covering of a circle is
+       still a covering. */
+    s_tess.cur_ops |= GUI_OP_SELF;
+    tess_quad_push( pcx, pcy, r, r, GUI_QUAD_RULE_SKIRT, 0, 0, res_atlas_idx(), abgr );
 }
 
 /*==============================================================================================
@@ -1417,18 +1215,9 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
         ymin = -ymax;
     }
 
-    f32              wu, wv;
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
-        return;
-
     /* The record.  (cm, sm) is the sector's own frame -- the bisector direction the local
        coordinate above is expressed in -- so it goes where every other field's turn goes. */
     s_tess.cur_prim.field   = (u32)mode;
-    s_tess.cur_prim.cx      = pcx;
-    s_tess.cur_prim.cy      = pcy;
     s_tess.cur_prim.rot_cos = cm;
     s_tess.cur_prim.rot_sin = sm;
     s_tess.cur_prim.param_a = ra;
@@ -1448,6 +1237,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     /* These two carry their parameter pair in the uv lanes instead of texcoords, which is what the
        self-sampled bit announces: the fragment forces coverage to 1 and never reads the texel, so
        the white texel is not needed and the atlas stays bound only to keep the index valid. */
+    f32 wu = 0.0f, wv = 0.0f;
     if ( mode == GUI_FX_ARC_DASH || mode == GUI_FX_ARC_GRAD )
     {
         wu = uvx;
@@ -1474,18 +1264,24 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     static const f32 lsx[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };
     static const u32 lsy[ 4 ] = {  0u,   0u,   1u,   1u   };
 
+    /* The sector's frame is a REFLECTION, which the vertex stage's rotation cannot reproduce,
+       so the covering goes out under the BBOX rule -- axis-aligned half-extents that reach
+       every reflected corner from the SHAPE centre (the fragment's rotation origin).  The fold
+       to the centre wastes the asymmetric slack a tight bbox would trim; sectors are small. */
+    s_tess.cur_ops |= GUI_OP_SELF;
+    f32 bhx = 0.0f, bhy = 0.0f;
     for ( u32 i = 0; i < 4; ++i )
     {
         f32 lx = lsx[ i ] * xext;
         f32 ly = lsy[ i ] ? ymax : ymin;
-        /* local -> world.  Reflection + rotation; the pipeline does not cull, so the winding this
-           flips for bisectors in the lower half plane costs nothing. */
-        f32 px = pcx - sm * lx + cm * ly;
-        f32 py = pcy + cm * lx + sm * ly;
-        v[ i ] = gui_vert( px, py, wu, wv, abgr );
+        f32 rx = -sm * lx + cm * ly;
+        f32 ry =  cm * lx + sm * ly;
+        if ( fabsf( rx ) > bhx ) bhx = fabsf( rx );
+        if ( fabsf( ry ) > bhy ) bhy = fabsf( ry );
     }
-    tess_quad_idx( idx, base );
-    tess_prim_commit( 4u, 6u );
+    tess_quad_push( pcx, pcy, bhx, bhy, GUI_QUAD_RULE_BBOX,
+                    gui_uv_pack( wu, wv ), gui_uv_pack( wu, wv ),
+                    res_atlas_idx(), abgr );
 }
 
 /*==============================================================================================
@@ -1520,30 +1316,15 @@ tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
     f32 phx    = ( x - period * floorf( x / period ) ) / period;
     f32 phy    = ( y - period * floorf( y / period ) ) / period;
 
-    f32              wu, wv;
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
-        return;
-
     s_tess.cur_prim.field   = (u32)GUI_FX_CHECKER;
     s_tess.cur_prim.param_a = cell;
     s_tess.cur_prim.param_b = phx;
     s_tess.cur_prim.param_c = phy;
     s_tess.cur_prim.col_b   = col_b;
-
-    /* col_b in the ARC_GRAD uv lanes; the fragment never samples there (self-sampled, gui.h). */
-    wu = (f32)(   col_b         & 0xFFFFu ) / 65535.0f;
-    wv = (f32)( ( col_b >> 16 ) & 0xFFFFu ) / 65535.0f;
     s_tess.cur_ops |= GUI_OP_SELF;
 
-    v[ 0 ] = gui_vert( x,     y,     wu, wv, col_a );
-    v[ 1 ] = gui_vert( x + w, y,     wu, wv, col_a );
-    v[ 2 ] = gui_vert( x + w, y + h, wu, wv, col_a );
-    v[ 3 ] = gui_vert( x,     y + h, wu, wv, col_a );
-    tess_quad_idx( idx, base );
-    tess_prim_commit( 4u, 6u );
+    tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
+                    0, 0, res_atlas_idx(), col_a );
 }
 
 static void
@@ -1574,13 +1355,6 @@ tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness,
     f32 phx = ( rx - cell * floorf( rx / cell ) ) / cell;
     f32 phy = ( ry - cell * floorf( ry / cell ) ) / cell;
 
-    f32              wu, wv;
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
-        return;
-
     s_tess.cur_prim.field   = (u32)GUI_FX_GRID;
     s_tess.cur_prim.param_a = cell;
     s_tess.cur_prim.param_b = thickness;
@@ -1589,19 +1363,10 @@ tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness,
     s_tess.cur_prim.r_tr    = phy;
     if ( stripes )
         s_tess.cur_ops |= GUI_OP_STRIPES;
-
-    /* The lattice is one colour -- the vertex colour -- so the uv word is free to carry the
-       per-axis phase instead of texcoords (self-sampled, gui.h). */
-    wu = phx;
-    wv = phy;
     s_tess.cur_ops |= GUI_OP_SELF;
 
-    v[ 0 ] = gui_vert( x,     y,     wu, wv, abgr );
-    v[ 1 ] = gui_vert( x + w, y,     wu, wv, abgr );
-    v[ 2 ] = gui_vert( x + w, y + h, wu, wv, abgr );
-    v[ 3 ] = gui_vert( x,     y + h, wu, wv, abgr );
-    tess_quad_idx( idx, base );
-    tess_prim_commit( 4u, 6u );
+    tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
+                    0, 0, res_atlas_idx(), abgr );
 }
 
 /* The ambient TEXT_EDGE, straight onto the record: a band `width` px outside the glyph boundary,
@@ -1651,6 +1416,13 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
             f32 gx0 = cx + ox;          /* glyph bitmap left/right in screen px */
             f32 gx1 = gx0 + gw;
 
+            /* Address the glyph by its stable table id (gui_glyph_table.c) so the quad's uv
+               resolves at draw time -- an atlas repack rewrites the table in place and retained
+               text never re-tessellates for it.  No table (or no entry) leaves the ambient id
+               unset and the baked-uv fallback below still renders. */
+            if ( glyph_table_idx() != 0 )
+                s_tess.cur_glyph = glyph_table_slot( font_active_id(), cp );
+
             if ( !clipped || ( gx0 >= clip_x0 && gx1 <= clip_x1 ) )
             {
                 /* Whole glyph (or no clipping): emit as-is -- the hot interior path. */
@@ -1658,22 +1430,32 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
             }
             else if ( gx1 > clip_x0 && gx0 < clip_x1 )
             {
-                /* Straddler: cut to the window and walk U by the same fraction on each cut edge. */
+                /* Straddler: cut to the window and walk U by the same fraction on each cut edge.
+                   The same fractions ride the quad's cut lane, so an id-addressed straddler cuts
+                   the TABLE's rect identically. */
                 f32 du   = u1 - u0;
                 f32 nx0  = gx0, nx1 = gx1, nu0 = u0, nu1 = u1;
+                f32 f0   = 0.0f, f1 = 1.0f;
                 if ( nx0 < clip_x0 )    /* left edge cut  */
                 {
-                    nu0 = u0 + du * ( ( clip_x0 - gx0 ) / gw );
+                    f0  = ( clip_x0 - gx0 ) / gw;
+                    nu0 = u0 + du * f0;
                     nx0 = clip_x0;
                 }
                 if ( nx1 > clip_x1 )    /* right edge cut */
                 {
-                    nu1 = u0 + du * ( ( clip_x1 - gx0 ) / gw );
+                    f1  = ( clip_x1 - gx0 ) / gw;
+                    nu1 = u0 + du * f1;
                     nx1 = clip_x1;
                 }
+                s_tess.cur_glyph_cut = (u32)( f0 * 65535.0f + 0.5f )
+                                     | ( (u32)( f1 * 65535.0f + 0.5f ) << 16 );
                 tess_rect_filled( nx0, y + oy, nx1 - nx0, gh, nu0, v0, nu1, v1, tex, abgr );
             }
             /* else: glyph wholly outside the window -- drop it. */
+
+            s_tess.cur_glyph     = ~0u;
+            s_tess.cur_glyph_cut = 0;
         }
 
         cx += advance;
@@ -1683,36 +1465,26 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
 }
 
 /* One textured quad placed by an affine map: the local rect (lx, ly, lw, lh) is rotated by the
-   prebuilt (cs, sn) and translated to the run origin (px, py).  Same four vertices and two
-   triangles tess_rect_filled writes -- and one thing it does NOT do: SNAP.  tess_rect_filled
-   floors the origin to the pixel grid so straight edges stay crisp, which is right for chrome and
-   wrong here twice over.  Snapping only the origin of a rotated quad moves the whole shape without
-   straightening anything, and snapping a scaled run's per-glyph origins quantizes the advances --
-   the pen drifts by up to half a pixel per glyph and the word visibly breathes as the scale
-   animates.  A transformed run is sub-pixel by nature; the distance field is what makes that
-   legible (gui.h, GUI_TEX_SDF). */
+   prebuilt (cs, sn) and translated to the run origin (px, py) -- centre mapped through the
+   transform, half-extents stored true, the style's rot pair doing the turn in the vertex stage.
+   One style per (angle x scale) run: every glyph of a transformed run shares it.
+   One thing this does NOT do: SNAP.  tess_rect_filled floors the origin to the pixel grid so
+   straight edges stay crisp, which is right for chrome and wrong here twice over.  Snapping only
+   the origin of a rotated quad moves the whole shape without straightening anything, and
+   snapping a scaled run's per-glyph origins quantizes the advances -- the pen drifts by up to
+   half a pixel per glyph and the word visibly breathes as the scale animates.  A transformed run
+   is sub-pixel by nature; the distance field is what makes that legible (gui.h, GUI_TEX_SDF). */
 static void
 tess_quad_xf( f32 px, f32 py, f32 cs, f32 sn,
               f32 lx, f32 ly, f32 lw, f32 lh,
               f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin_tex( 4u, 6u, tex_idx, &v, &idx, &base ) )
-        return;
-
-    f32 qx[ 4 ] = { lx,      lx + lw, lx + lw, lx      };
-    f32 qy[ 4 ] = { ly,      ly,      ly + lh, ly + lh };
-    f32 qu[ 4 ] = { u0,      u1,      u1,      u0      };
-    f32 qv[ 4 ] = { v0,      v0,      v1,      v1      };
-
-    for ( u32 i = 0; i < 4; ++i )
-        v[ i ] = gui_vert( px + qx[ i ] * cs - qy[ i ] * sn,
-                           py + qx[ i ] * sn + qy[ i ] * cs,
-                           qu[ i ], qv[ i ], abgr );
-    tess_quad_idx( idx, base );
-    tess_prim_commit( 4u, 6u );
+    f32 ccx = lx + lw * 0.5f, ccy = ly + lh * 0.5f;
+    s_tess.cur_prim.rot_cos = cs;
+    s_tess.cur_prim.rot_sin = sn;
+    tess_quad_push( px + ccx * cs - ccy * sn, py + ccx * sn + ccy * cs,
+                    lw * 0.5f, lh * 0.5f, GUI_QUAD_RULE_EXACT,
+                    gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr );
 }
 
 /* Tessellate a glyph run under a uniform scale and a rotation about its origin (the text_xf
@@ -1747,9 +1519,16 @@ tess_text_xf( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 scale, f32 rot
         font_glyph( cp, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
 
         if ( gw > 0.0f && gh > 0.0f )
+        {
+            /* Stable glyph id, exactly as the 1:1 run does -- the uv rect is scale-independent,
+               so a transformed run is repack-safe too. */
+            if ( glyph_table_idx() != 0 )
+                s_tess.cur_glyph = glyph_table_slot( font_active_id(), cp );
             tess_quad_xf( x, y, cs, sn,
                           ( pen + ox ) * scale, oy * scale, gw * scale, gh * scale,
                           u0, v0, u1, v1, tex, abgr );
+            s_tess.cur_glyph = ~0u;
+        }
 
         pen += advance;
     }
@@ -1770,40 +1549,37 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
         return;
     f32 inv  = 1.0f / len;
     f32 ux   = dx * inv, uy = dy * inv;          /* unit vector along the line  */
-    f32 nx   = -uy,      ny = ux;                /* unit normal across the line */
     f32 half = thickness * 0.5f;
     f32 umax = len / period;                     /* number of tiled periods -> U span */
     f32 vv   = res_atlas_dash_v( duty );
 
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin_tex( 4u, 6u, res_atlas_idx(), &v, &idx, &base ) )
-        return;
-
-    /* U runs 0..1 in the VERTEX and is multiplied back up to `umax` periods by the vertex stage:
-       the packed UV cannot hold a coordinate past 1, and the sampler's REPEAT-U is what tiles the
-       atlas dash row (gui.h, GUI_FX_TILE_U).  Interpolation is unaffected -- both ends are stored
-       exactly and a lerp commutes with the scale. */
+    /* U runs 0..1 in the quad's uv lanes and is multiplied back up to `umax` periods by the
+       fragment: the packed UV cannot hold a coordinate past 1, and the sampler's REPEAT-U is
+       what tiles the atlas dash row (gui.h, GUI_FX_TILE_U).  The line's direction is the style's
+       rot pair -- a style per direction; dashed lines are rare enough that the dedup loss is
+       noise. */
     s_tess.cur_prim.field   = (u32)GUI_FX_TILE_U;
     s_tess.cur_prim.param_a = umax;
-
-    v[ 0 ] = gui_vert( x0 + nx * half, y0 + ny * half, 0.0f, vv, abgr );
-    v[ 1 ] = gui_vert( x1 + nx * half, y1 + ny * half, 1.0f, vv, abgr );
-    v[ 2 ] = gui_vert( x1 - nx * half, y1 - ny * half, 1.0f, vv, abgr );
-    v[ 3 ] = gui_vert( x0 - nx * half, y0 - ny * half, 0.0f, vv, abgr );
-    tess_quad_idx( idx, base );
-    tess_prim_commit( 4u, 6u );
+    s_tess.cur_prim.rot_cos = ux;
+    s_tess.cur_prim.rot_sin = uy;
+    tess_quad_push( ( x0 + x1 ) * 0.5f, ( y0 + y1 ) * 0.5f, len * 0.5f, half,
+                    GUI_QUAD_RULE_EXACT,
+                    gui_uv_pack( 0.0f, vv ), gui_uv_pack( 1.0f, vv ),
+                    res_atlas_idx(), abgr );
 }
 
 /*==============================================================================================
-    tess_stroke_poly_aa -- antialiased polyline tessellation for the render backend.
-
-    Mirrors the old stroke_poly_aa but writes into
-    s_tess via tess_prim_begin/commit.  abgr is pre-baked (alpha folded in at emit time).
-    v2 / seg_normal / stroke_center_offset are defined in gui_emit_path.c (included before
-    this file in the unity build) so they are visible here without forward declarations.
+    tess_stroke_poly_aa -- the polyline as a CAPSULE CHAIN: one SEG quad per segment, endpoints
+    offset along the miter normals so alignment matches the old ribbon stroker.  Every quad
+    resolves to ONE shared style (the direction rides the quad, tess_fx_segment), so a long path
+    costs segments, not records.  Joins are the round caps overlapping, which composites darker
+    on a translucent stroke -- the accepted trade for retiring the miter ribbon.
+    abgr is pre-baked (alpha folded in at emit time).  v2 / seg_normal / stroke_center_offset
+    are defined in gui_emit_path.c (included before this file in the unity build).
 ==============================================================================================*/
+
+static void tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border,
+                             u32 abgr );   /* the quad backend's polyline expansion, defined below */
 
 static void
 tess_stroke_poly_aa( const gui_vec2_t* pts, u32 n, f32 thickness, f32 center_off,
@@ -1814,7 +1590,9 @@ tess_stroke_poly_aa( const gui_vec2_t* pts, u32 n, f32 thickness, f32 center_off
     if ( n > GUI_MAX_PATH_PTS )
          n = GUI_MAX_PATH_PTS;
 
-    /* Sub-pixel coverage: hold a 1px footprint, fade peak alpha by the requested thickness. */
+    /* Sub-pixel coverage: hold a 1px footprint, fade peak alpha by the requested thickness.
+       Done here rather than left to tess_fx_segment's own clamp so the fold below is already
+       final -- the segment's re-fold is then a no-op and every segment shares one colour. */
     f32 a_scale = 1.0f;
     if ( thickness < 1.0f )
     {
@@ -1822,14 +1600,7 @@ tess_stroke_poly_aa( const gui_vec2_t* pts, u32 n, f32 thickness, f32 center_off
         thickness = 1.0f;
     }
     u32 a_in = (u32)( ( ( abgr >> 24 ) & 0xFFu ) * a_scale + 0.5f );
-    u32 col  = ( abgr & 0x00FFFFFFu ) | ( a_in << 24 );   /* inner / solid color */
-    u32 col0 = ( abgr & 0x00FFFFFFu );                     /* outer feather, alpha 0 */
-
-    f32 half     = thickness * 0.5f;
-    f32 core_min = ( half < STROKE_CORE_MIN ) ? half : STROKE_CORE_MIN;
-    f32 inner    = half - STROKE_AA;
-    if ( inner < core_min )
-        inner = core_min;
+    u32 col  = ( abgr & 0x00FFFFFFu ) | ( a_in << 24 );
 
     u32 seg = closed ? n : n - 1;
 
@@ -1866,66 +1637,29 @@ tess_stroke_poly_aa( const gui_vec2_t* pts, u32 n, f32 thickness, f32 center_off
         }
     }
 
-    u32 nv = 4u * n, ni = 18u * seg;
-    f32 wu, wv;
-    gui_draw_vert_t* v;
-    u16* idx;
-    u16  base;
-    if ( !tess_prim_begin( nv, ni, &wu, &wv, &v, &idx, &base ) )
-        return;
-
-    for ( u32 i = 0; i < n; ++i )
+    for ( u32 s2 = 0; s2 < seg; ++s2 )
     {
-        gui_vec2_t m  = nrm[ i ];
-        f32          cx = pts[ i ].x + m.x * center_off;
-        f32          cy = pts[ i ].y + m.y * center_off;
-        v[ 4*i+0 ] = gui_vert( cx + m.x*half,  cy + m.y*half,  wu, wv, col0 );
-        v[ 4*i+1 ] = gui_vert( cx + m.x*inner, cy + m.y*inner, wu, wv, col  );
-        v[ 4*i+2 ] = gui_vert( cx - m.x*inner, cy - m.y*inner, wu, wv, col  );
-        v[ 4*i+3 ] = gui_vert( cx - m.x*half,  cy - m.y*half,  wu, wv, col0 );
+        u32 j = ( s2 + 1u ) % n;
+        tess_fx_segment( pts[ s2 ].x + nrm[ s2 ].x * center_off,
+                         pts[ s2 ].y + nrm[ s2 ].y * center_off,
+                         pts[ j ].x + nrm[ j ].x * center_off,
+                         pts[ j ].y + nrm[ j ].y * center_off,
+                         thickness, 0.0f, col );
     }
-
-    static const int band[ 3 ][ 2 ] = { { 0, 1 }, { 1, 2 }, { 2, 3 } };
-    u32 k = 0;
-    for ( u32 s = 0; s < seg; ++s )
-    {
-        u16 i0 = (u16)( base + 4u * s );
-        u16 i1 = (u16)( base + 4u * ( ( s + 1 ) % n ) );
-        for ( int q = 0; q < 3; ++q )
-        {
-            u16 a0 = (u16)( i0 + band[q][0] ), a1 = (u16)( i0 + band[q][1] );
-            u16 b0 = (u16)( i1 + band[q][0] ), b1 = (u16)( i1 + band[q][1] );
-            idx[k++]=a0; idx[k++]=a1; idx[k++]=b1;
-            idx[k++]=a0; idx[k++]=b1; idx[k++]=b0;
-        }
-    }
-    tess_prim_commit( nv, ni );
 }
 
 /*==============================================================================================
-    tess_fx_segment -- one line segment as a CAPSULE distance field.
+    tess_fx_segment -- one line segment as a CAPSULE distance field: the distance from a point
+    to a segment, minus the half-thickness.  One quad under the CAPSULE rule, an edge that is
+    correct at any angle, and round caps that cost nothing because they ARE the field.
 
-    The diagonal stroke, resolved by the fragment instead of approximated in geometry.  What the
-    ribbon stroker above does for a single segment is lay three bands across it -- a solid core and
-    two outer bands dropped to alpha 0 -- so the hardware's colour interpolation fakes an edge
-    gradient.  That is 18 indices, a fixed one-pixel falloff, and square butt caps, and it is an
-    approximation on both axes at once.  A capsule is the exact same shape written down: the
-    distance from a point to a segment, minus the half-thickness.  Two quads, 12 indices, an edge
-    that is correct at any angle, and round caps that cost nothing because they ARE the field.
+    Round caps extend half a thickness past each endpoint.  On a polyline (the capsule chain,
+    tess_stroke_poly_aa) they are also the JOINS: neighbouring capsules overlap there, which
+    composites darker on a translucent stroke -- the accepted cost of per-segment records.
 
-    TWO quads, not the box's four: the fold is forced by the SUBTRACTION of a half-extent (gui.h),
-    and a capsule subtracts only along its axis.  The across-axis offset rides signed and the
-    fragment squares it inside length().
-
-    Round caps extend half a thickness past each endpoint, where the ribbon stopped square.  That
-    is a real visual change, it is what a stroke is supposed to look like, and at the widths this
-    path sees (diagonal hairlines and connector wires) it is a sub-pixel difference.
-
-    Only DIAGONALS come here.  Axis-aligned lines keep the grid-snapped quad below -- 4 verts, 6
-    indices, and crisper than any field, since a horizontal edge has nothing to antialias.  And
-    POLYLINES keep the ribbon: N capsules would overlap at every joint, and two overlapping
-    translucent strokes composite darker than one, so a semi-transparent path would grow a bead at
-    each vertex.  The ribbon's miter solve exists precisely to emit each pixel once.
+    Axis-aligned single lines never come here: gui_draw_line routes them through a grid-snapped
+    rect at EMIT (stroke_axis_aligned_rect, gui_emit_path.c), which is crisper than any field
+    since a horizontal edge has nothing to antialias.
 ==============================================================================================*/
 
 static void
@@ -1954,34 +1688,18 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 
 
     f32 inv = 1.0f / len;
     f32 ux  = dx * inv, uy = dy * inv;      /* unit vector along the segment  */
-    f32 nx  = -uy,      ny = ux;            /* unit normal across it          */
     f32 r   = thickness * 0.5f;             /* the capsule radius             */
     f32 hl  = len * 0.5f;                   /* half-length: what q.x subtracts */
     f32 mx  = ( x0 + x1 ) * 0.5f, my = ( y0 + y1 ) * 0.5f;
 
-    /* Geometry must clear the boundary by the falloff plus a pixel of slack, exactly as the box
-       surface does -- the round cap needs the radius on top, since the cap bulges past the end. */
-    f32 pad = TESS_FX_AA * 0.5f + 1.0f;
-    f32 ea  = hl + r + pad;                 /* extent along the axis, from the midpoint */
-    f32 ec  = r + pad;                      /* extent across it                         */
-
-    f32              wu, wv;
-    gui_draw_vert_t* v;
-    u16*             idx;
-    u16              base;
-    if ( !tess_prim_begin( 4u, 6u, &wu, &wv, &v, &idx, &base ) )
-        return;
-    /* The record states the capsule outright: midpoint, half-length, the axis as the shape's turn,
-       and the radius in the corner-radius lane.  That is what collapsed the geometry to one quad --
-       the along-axis fold that used to force two lives in the fragment now. */
+    /* The style states the capsule's radius in the corner-radius lane.  The DIRECTION rides the
+       quad's uv lanes (a unorm16-mapped unit vector), NOT the style's rot pair, so every segment
+       of every stroke at one thickness shares ONE style -- the dedup a per-direction rot pair
+       would forfeit on the shape polylines expand into.  The half-length rides the quad
+       (rect.z); the fragment reads the direction back from the interpolated uv. */
     s_tess.cur_prim.field   = (u32)GUI_FX_SEG;
-    s_tess.cur_prim.cx      = mx;
-    s_tess.cur_prim.cy      = my;
-    s_tess.cur_prim.hw      = hl;
     s_tess.cur_prim.r_tl    = r;
     s_tess.cur_prim.feather = TESS_FX_AA;
-    s_tess.cur_prim.rot_cos = ux;
-    s_tess.cur_prim.rot_sin = uy;
 
     /* A HOLLOW capsule is the same field under GUI_OP_BAND -- the op that makes a rounded outline
        out of a filled box, reaching this shape because an op modifies whatever field arrived.  A
@@ -1993,18 +1711,10 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 
         s_tess.cur_prim.border  = border;
     }
 
-    /* One quad, oriented along the segment: `a` spans the full length signed, `b` the full width. */
-    static const f32 qa[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };
-    static const f32 qb[ 4 ] = { -1.0f, -1.0f, 1.0f, 1.0f };
-
-    for ( u32 c = 0; c < 4; ++c )
-    {
-        f32 a = qa[ c ] * ea, b = qb[ c ] * ec;
-        v[ c ] = gui_vert( mx + a * ux + b * nx, my + a * uy + b * ny, wu, wv, col );
-    }
-    tess_quad_idx( idx, base );
-
-    tess_prim_commit( 4u, 6u );
+    s_tess.cur_ops |= GUI_OP_SELF;
+    u32 dir = gui_uv_pack( ux * 0.5f + 0.5f, uy * 0.5f + 0.5f );
+    tess_quad_push( mx, my, hl, r, GUI_QUAD_RULE_CAPSULE, dir, dir,
+                    res_atlas_idx(), col );
 }
 
 /* Volatile-widget seam (render/pipeline/gui_build_volatile.c, included right after this file in
@@ -2015,8 +1725,7 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 
    TU) and set by volatile_patch around its scratch re-tessellation so the range tracking below
    stays inert during a patch -- a patch must never look like a fresh capture. */
 static bool s_volatile_patching;
-static void volatile_range_close( gui_id_t id, u32 vb_open, u32 ib_open, u32 pb_open,
-                                  u32 cmd_open );
+static void volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd_open );
 
 /* Tessellate one frame's semantic command list into s_tess geometry.
 
@@ -2050,7 +1759,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
        independently rewritable by a later patch.  Tracking is inert during a patch's own scratch
        re-tessellation (s_volatile_patching). */
     gui_id_t open_vid = GUI_ID_NONE;
-    u32      vb_open = 0, ib_open = 0, pb_open = 0, cmd_open = 0;
+    u32      vb_open = 0, pb_open = 0, cmd_open = 0;
     (void)win;
 
     for ( u32 oi = 0; oi < count; ++oi )
@@ -2062,7 +1771,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
         if ( vid != open_vid )
         {
             if ( open_vid != GUI_ID_NONE )
-                volatile_range_close( open_vid, vb_open, ib_open, pb_open, cmd_open );
+                volatile_range_close( open_vid, vb_open, pb_open, cmd_open );
             open_vid = vid;
 
             /* The dedup floor rises at BOTH sides of a volatile boundary.  Entering: the block's
@@ -2078,7 +1787,6 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             {
                 s_tess.force_new_cmd = true;   /* block owns its GPU commands from the first primitive */
                 vb_open  = s_tess.vert_count;
-                ib_open  = s_tess.idx_count;
                 pb_open  = s_tess.prim_count;
                 cmd_open = s_tess.cmd_count;
             }
@@ -2088,13 +1796,15 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
         s_tess.cur_clip_local = tess_clip_local( c->clip_idx );
         s_tess.cur_vp         = c->vp;
 
-        /* The effect word is ambient over ONE command and cleared here, so a case that sets it
-           cannot leak the effect onto the next primitive.  That containment is the whole reason it
-           can be ambient at all -- it lets an outline reach every glyph of a run, and a shape's
-           word reach all 16 of its quadrant vertices, without threading a parameter through
-           tess_rect_filled, which every fill in the library shares. */
+        /* The op word is ambient over ONE command and cleared here, so a case that sets it
+           cannot leak the effect onto the next primitive.  That containment is the whole reason
+           it can be ambient at all -- it lets an outline reach every glyph of a run without
+           threading a parameter through tess_rect_filled, which every fill in the library
+           shares. */
         s_tess.cur_ops        = 0u;
         s_tess.cur_corner_pow = 0.0f;
+        s_tess.cur_glyph      = ~0u;
+        s_tess.cur_glyph_cut  = 0u;
 
         /* The record is cleared WHOLE, and it matters for two reasons: a leftover rect or radius
            does not merely paint wrong, it defeats the memo -- a run of flat fills carrying stale
@@ -2362,7 +2072,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
     }
 
     if ( open_vid != GUI_ID_NONE )
-        volatile_range_close( open_vid, vb_open, ib_open, pb_open, cmd_open );
+        volatile_range_close( open_vid, vb_open, pb_open, cmd_open );
 
     /* Leave the global font state as we found it -- the next frame's emit/layout depends on it. */
     if ( cur_font != saved_font )

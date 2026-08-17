@@ -374,8 +374,7 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
    below size their arrays with them; both unity units see one definition. */
 #define RENDER_MAX_WIN    32    // distinct windows tracked per frame (32)
 #define GUI_MAX_VOLATILE  16    // registered volatile sub-slot rows
-#define SLOT_VERT_PAD     64u   // per-slot vertex headroom: absorbs minor growth in-place
-#define SLOT_IDX_PAD      128u  // per-slot index headroom (~2x vertex count for quads)
+#define SLOT_VERT_PAD     64u   // per-slot quad headroom: absorbs minor growth in-place
 #define SLOT_PRIM_PAD     8u    // per-slot record headroom; records are per state change, not
                                 //   per primitive, so a window holds few and grows by few
 
@@ -384,7 +383,7 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
    indices -- the window's fixed slab (its id-keyed cache slot * GUI_WIN_CLIP_MAX) plus a local
    first-seen index -- so the flush uploads each slab at its fixed offset, and only when its
    content changed (s_clip_slab_pending).  The fragment resolves them against the frame clip
-   buffer (gui.ps.hlsl, clip_coverage) with clip_base flush-constant at the region origin.
+   buffer (gui_fx.hlsli, clip_coverage) with clip_base flush-constant at the region origin.
    Lives beside the slot's cached geometry so a cache-hit frame replays baked indices against the
    exact rects they meant, however the per-frame global clip table shuffled its indices. */
 typedef struct
@@ -428,8 +427,8 @@ bool                build_retained_skip     ( void );
 
 bool                build_any_changed       ( void );
 
-/* Debug: print the cached-geometry slot table (window, z/vp, vertex/index/command bounds) to
-   stdout.  On-demand companion to the per-frame disjoint-layout assert that runs in debug builds. */
+/* Debug: print the cached-geometry slot table (window, z/vp, quad/command bounds) to stdout.
+   On-demand companion to the per-frame disjoint-layout assert that runs in debug builds. */
 
 void                build_dump_geometry     ( void );
 
@@ -453,7 +452,7 @@ void                build_dump_geometry     ( void );
     CONFINES it to the cell the block just measured (see there -- the clip the block should always
     have had, and the reason its geometry can batch apart from the rest of the window).
     tess_dispatch (gui_build_tess.c) then reserves the block a padded region of its window's slot
-    (vertices, indices, and its own GPU commands, each with headroom past the live geometry).
+    (quads, style records, and its own GPU commands, each with headroom past the live geometry).
     volatile_update is called internally by gui_frame_end on frames where
     frame_dirty() is false: it re-invokes each row's callback standalone, re-tessellates the
     result, and patches it into the reserved region -- any output that FITS the reservation is
@@ -497,14 +496,13 @@ void     replay_scope_exit   ( bool force_redraw );
     detail of backend_init/exit (above) called directly within the gui_render.c unity TU.
 ==============================================================================================*/
 
-void                gui_render_flush        ( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
-                                              i32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h );
+void                gui_render_flush        ( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd,
+                                              i32 win_w, i32 win_h );
 
-/* Fill the backend-owned buckets of the memory breakdown: GPU device memory (geometry buffers
-   scaled by the caller-supplied live-surface count, atlas textures, debug-overlay buffers) and
-   every fixed CPU static the backend TU defines (see render/gui_render_mem.c).  The CPU-heap
-   context bytes and the totals are filled by the frontend (gui_mem_stats), which owns the
-   context pool. */
+/* Fill the backend-owned buckets of the memory breakdown: GPU device memory (atlas textures,
+   the storage-buffer tables, debug-overlay buffers) and every fixed CPU static the backend TU
+   defines (see render/gui_render_mem.c).  The CPU-heap context bytes and the totals are filled
+   by the frontend (gui_mem_stats), which owns the context pool. */
 gui_mem_stats_t     backend_memory          ( u32 live_viewports );
 
 /* The accounting seam: the font/icon resources live one unit up (draw), so this server
@@ -524,13 +522,6 @@ gui_render_mode_t   gui_render_get_mode     ( void );
 
 void                gui_render_set_time     ( f32 seconds );
 
-/* A surface's own GPU geometry ring (one vb/ib region per frame-in-flight, sized by the
-   server's caps).  The SURFACE RECORD (gui_viewport_t, core/gui_ctx.h) is not this server's
-   to see: the orchestrator's viewport_create/destroy (frame/gui_viewport.c) wrap these and
-   own every other field. */
-bool                surface_geo_create      ( rhi_buffer_t* vb, rhi_buffer_t* ib );
-void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib );
-
 /*==============================================================================================
     DEBUG OVERLAY (gui_debug_overlay.c) -- Debug builds only.
 
@@ -544,7 +535,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
 /*==============================================================================================
     PIPELINE DASHBOARD (render/gui_dash_capture.c + gui_dashboard.c) -- Debug builds only.
 
-    A visual diagnostic of the render pipeline itself: memory maps of the shared vertex/index
+    A visual diagnostic of the render pipeline itself: memory maps of the shared quad
     arena (per-window geometry slots with their padded reservations, volatile sub-slots, the
     debug-band boundary, high-water marks), the per-surface frames-in-flight regions and upload
     spans, the dispatch-order draw batches, and the EMIT buffer usage vs caps.
@@ -590,8 +581,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
         gui_id_t win;
         u32      z, band;
         i32 vp;
-        u32      vert_base, vert_count, vert_alloc;
-        u32      idx_base,  idx_count,  idx_alloc;
+        u32      vert_base, vert_count, vert_alloc;   /* quads */
         u32      cmd_base,  cmd_count;
         u32      tess_gen;
         bool     valid, changed;
@@ -600,7 +590,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
 
     typedef struct                       /* gui_gpu_cmd_t + its parallel arrays, flattened */
     {
-        u32        elem_count, tex_idx, vbase, ibase;
+        u32        elem_count, tex_idx, vbase;        /* elem_count and vbase count quads */
         i32        vp;                   /* GUI_VP_INVALID = dormant volatile pad */
         gui_rect_t clip;
 
@@ -610,8 +600,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
     {
         gui_id_t id, win;
         u32      tess_gen;
-        u32      lvert_base, vert_count, vert_alloc;
-        u32      lidx_base,  idx_count,  idx_alloc;
+        u32      lvert_base, vert_count, vert_alloc;  /* quads */
         u32      cmd_count,  cmd_alloc;
         bool     active, hidden;
 
@@ -621,7 +610,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
     {
         bool live;
         u32  frame_index;
-        u32  vtx_lo, vtx_hi, idx_lo, idx_hi;             /* lo >= hi means nothing uploaded */
+        u32  vtx_lo, vtx_hi;                             /* quad span; lo >= hi = nothing uploaded */
         u32  up_bytes, up_batches, draw_calls;
 
     } dash_surf_t;
@@ -636,12 +625,12 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
         dash_cmd_t  cmds[ GUI_MAX_CMDS ];        u32 cmd_count;
         dash_vol_t  vols[ GUI_MAX_VOLATILE ];    u32 vol_count;
 
-        u32  tess_verts, tess_idx, vert_hwm, idx_hwm;
+        u32  tess_verts, vert_hwm;                       /* quads: live fill + lifetime peak */
         u32  tess_cmds;                                  /* LIVE GPU draw cmds, both bands (dormant/empty excluded) */
         u32  tess_cmds_dbg;                              /* of tess_cmds, the debug band's share     */
         bool overflow_ever;
-        u32  band0_vert_end, band0_idx_end;              /* main arena ends here; past = debug band */
-        u32  band0_vert_hwm, band0_idx_hwm;              /* lifetime peak of the main band alone     */
+        u32  band0_vert_end;                             /* main arena ends here; past = debug band */
+        u32  band0_vert_hwm;                             /* lifetime peak of the main band alone     */
         u32  emit_cmds, emit_segs, emit_pts, emit_rects, emit_text, emit_clips;
         u32  emit_cmds_hwm;                              /* running high-water of emit_cmds across captures */
         /* Debug-band share of each shared emit pool, derived from the segment table at capture (the
@@ -675,7 +664,7 @@ void                surface_geo_destroy     ( rhi_buffer_t* vb, rhi_buffer_t* ib
          dash_capture_flush -- end of gui_render_flush: one surface's frame index, upload spans,
                                upload bytes/batches and draw calls. */
     void dash_capture_build( void );
-    void dash_capture_flush( i32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 idx_hi,
+    void dash_capture_flush( i32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi,
                              u32 bytes, u32 batches, u32 draws );
 
     #define DASH_CAPTURE_BUILD()        dash_capture_build()

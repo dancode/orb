@@ -23,7 +23,7 @@
 
 // clang-format off
 /*==============================================================================================
-    Push constant layout -- must match gui_pc_t in shaders/gui.{vs,ps}.hlsl.
+    Push constant layout -- must match gui_pc_t in shaders/gui_common.hlsli.
 
     The cooked container reflects the block's SIZE, and pipeline_create checks this struct
     against it; field ORDER is on the two comment blocks to keep in step.
@@ -39,10 +39,13 @@ typedef struct
     f32 time;           // frame clock, wrapped seconds     4 bytes
     u32 clip_buf;       // bindless slot: frame clip table  4 bytes (0 = no table, no clipping)
     u32 clip_base;      // draw's first clip-table entry    4 bytes
-    u32 prim_buf;       // bindless slot: primitive records 4 bytes (0 = no records bound)
+    u32 prim_buf;       // bindless slot: style records     4 bytes (0 = no records bound)
     u32 prim_base;      // the SLOT's first record          4 bytes
+    u32 quad_buf;       // bindless slot: quad-record table 4 bytes
+    u32 quad_base;      // flush's region origin            4 bytes (quads, not float4s)
+    u32 glyph_buf;      // glyph uv table                   4 bytes (0 = none; baked-uv fallback)
 
-} gui_push_t;           // total 100 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;           // total 112 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved into the vertex (gui.h): the fragment
@@ -68,7 +71,7 @@ typedef struct
 #define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, samp_point ) ) )
 
 /*==============================================================================================
-    Frame clip table sizing -- the storage buffer clip_coverage reads (gui.ps.hlsl).
+    Frame clip table sizing -- the storage buffer clip_coverage reads (gui_fx.hlsli).
 
     An ENTRY is two vec4s: (x0, y0, x1, y1) snapped pixel edges, then (radius, 0, 0, 0).  A
     REGION is an array of fixed per-window SLABS -- one per stable cache slot, GUI_WIN_CLIP_MAX
@@ -95,14 +98,26 @@ typedef struct
 ==============================================================================================*/
 
 /* One past the arena, because the DEBUG OVERLAY needs a record of its own and has no window slot
-   to get one from.  It builds its vertices through gui_vert() outside the tessellator entirely,
-   yet it still has to name a texture -- the atlas slot, which is only known at flush time -- so
-   "carry index 0 and inherit" was never available to it.  One entry at the top of every region,
-   written by dbg_flush, is the whole cost. */
+   to get one from.  It builds its quads outside the tessellator entirely, yet it still has to
+   name a texture -- the atlas slot, which is only known at flush time -- so "carry style 0 and
+   inherit" was never available to it.  One entry at the top of every region, written by
+   dbg_flush, is the whole cost. */
 #define GUI_PRIM_OVERLAY_ENTRY   GUI_MAX_PRIMS
 #define GUI_PRIM_REGION_MAX    ( GUI_MAX_PRIMS + 1u )                    /* records per region */
 #define GUI_PRIM_REGION_BYTES  ( GUI_PRIM_REGION_MAX * GUI_PRIM_BYTES )
 #define GUI_PRIM_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
+
+/*==============================================================================================
+    Quad record region sizing -- the geometry table (gui.h, gui_quad_t).
+
+    Quads are packed per window slot exactly as the records above are, in one global buffer with
+    the same (frame-in-flight, viewport) region scheme, and the flush pushes the region origin
+    (pc.quad_base) once -- a draw's first_vertex carries the arena-absolute quad offset.
+==============================================================================================*/
+
+#define GUI_QUAD_REGION_MAX    GUI_MAX_QUADS
+#define GUI_QUAD_REGION_BYTES  ( GUI_QUAD_REGION_MAX * GUI_QUAD_BYTES )
+#define GUI_QUAD_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
 
 ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
                    "the mvp must lead gui_push_t -- the per-draw push writes everything after it" );
@@ -128,8 +143,8 @@ ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF % 4 == 0 && GUI_PUSH_TAIL_SIZE % 4 == 0,
 
 static struct
 {
-    rhi_pipeline_t  pipeline;           // compiled pipeline: gui shaders + vertex layout + alpha blend
-    rhi_pipeline_t  pipeline_wire;      // same pipeline in VK_POLYGON_MODE_LINE (wireframe debug view)
+    rhi_pipeline_t  pipeline_quad;      // THE pipeline: bufferless gui_quad shaders + alpha blend
+    rhi_pipeline_t  pipeline_quad_wire; // same in VK_POLYGON_MODE_LINE (wireframe debug view)
     rhi_sampler_t   font_sampler;       // coverage sampler: point, U repeats (dash tiling), V clamps
     u32             font_sampler_idx;   // bindless slot for font_sampler
 
@@ -144,7 +159,7 @@ static struct
     rhi_sampler_t   image_sampler;      // sampler for RGBA images (bilinear clamp)
     u32             image_sampler_idx;  // bindless slot for image_sampler
 
-    /* The frame clip table -- the storage buffer clip_coverage reads (gui.ps.hlsl).  One region
+    /* The frame clip table -- the storage buffer clip_coverage reads (gui_fx.hlsli).  One region
        per (frame-in-flight, viewport): the flush writes each surface's dispatched slots' local
        clip entries into its own region, so no surface's upload can overwrite entries another
        surface's in-flight draws still read.  Registered bindless once; the slot index rides
@@ -153,12 +168,17 @@ static struct
     rhi_buffer_t    clip_buf;           // storage buffer: all clip regions
     u32             clip_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
-    /* The primitive record table (gui.h, gui_prim_t) -- one region per (frame-in-flight,
+    /* The style record table (gui.h, gui_prim_t) -- one region per (frame-in-flight,
        viewport), written per window slot by the flush.  Registered bindless once; the slot index
        rides pc.prim_buf and the window's own record base rides pc.prim_base. */
 
     rhi_buffer_t    prim_buf;           // storage buffer: all record regions
     u32             prim_buf_idx;       // bindless buffer slot (never 0 after a successful init)
+
+    /* The quad-record geometry table (GUI_QUAD_REGION_* above). */
+
+    rhi_buffer_t    quad_buf;           // storage buffer: all quad regions
+    u32             quad_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
     gui_render_mode_t debug_mode;       // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
 
@@ -187,11 +207,11 @@ static struct
 /*==============================================================================================
     render_load_shaders -- the cooked pair, which is the only way the gui gets a pipeline.
 
-    bin/shaders/gui.{vs,ps}.oshd are cooked from shaders/gui.{vs,ps}.hlsl by the build itself
-    (the 'shader' lines on the gui target in orb.targets), so the .hlsl files are the single
-    source for what the GPU runs -- there is no embedded SPIR-V array and no GLSL transcript to
-    drift against them.  The containers carry reflection, which is what lets pipeline_create
-    validate the vertex layout and push range below against the actual SPIR-V.
+    bin/shaders/gui_quad.{vs,ps}.oshd are cooked from shaders/gui_quad.{vs,ps}.hlsl by the build
+    itself (the 'shader' lines on the gui target in orb.targets), so the .hlsl files are the
+    single source for what the GPU runs -- there is no embedded SPIR-V array and no GLSL
+    transcript to drift against them.  The containers carry reflection, which is what lets
+    pipeline_create validate the push range below against the actual SPIR-V.
 
     All-or-nothing, and a missing file is a hard failure with the path in it: an out-of-date or
     absent cook must say so at init rather than paint a frame from stale bytes.
@@ -204,10 +224,10 @@ render_load_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
     sys_exe_dir( dir, ( int )sizeof( dir ) );
 
     char vs_path[ 576 ], ps_path[ 576 ];
-    fmt_snprintf( vs_path, sizeof( vs_path ), "%s/shaders/gui.vs.oshd", dir );
-    fmt_snprintf( ps_path, sizeof( ps_path ), "%s/shaders/gui.ps.oshd", dir );
+    fmt_snprintf( vs_path, sizeof( vs_path ), "%s/shaders/gui_quad.vs.oshd", dir );
+    fmt_snprintf( ps_path, sizeof( ps_path ), "%s/shaders/gui_quad.ps.oshd", dir );
 
-    rhi_shader_t vert = rhi()->shader_load_oshd( vs_path, "gui_vert(oshd)" );
+    rhi_shader_t vert = rhi()->shader_load_oshd( vs_path, "gui_quad_vert(oshd)" );
     if ( !rhi_handle_valid( vert ) )
     {
         gui_log( GUI_LOG_ERROR, "gui shaders not found -- expected %s (build the gui target to cook them)",
@@ -215,7 +235,7 @@ render_load_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
         return false;
     }
 
-    rhi_shader_t frag = rhi()->shader_load_oshd( ps_path, "gui_frag(oshd)" );
+    rhi_shader_t frag = rhi()->shader_load_oshd( ps_path, "gui_quad_frag(oshd)" );
     if ( !rhi_handle_valid( frag ) )
     {
         gui_log( GUI_LOG_ERROR, "gui shaders not found -- expected %s (build the gui target to cook them)",
@@ -240,31 +260,6 @@ render_init( void )
     if ( !render_load_shaders( &vert, &frag ) )
         return false;
 
-    // Vertex layout: FLOAT2 pos @0, UNORM16X2 uv @8, UNORM8X4 color @12, UINT prim record @16,
-    // stride=20.  What used to sit here as well -- a packed effect word, a packed texture word, and
-    // a HALF2 shape-local coordinate -- is all per-PRIMITIVE, and location 3 names the record that
-    // holds it (gui.h, gui_prim_t).  The coordinate went last and took the quadrant tessellation
-    // with it: the fragment derives it from SV_Position, so an SDF box is four vertices.
-    //
-    // TWO of the four are packed formats, and the shaders declare both as plain floats: vertex
-    // fetch widens normalized attributes on the way in, so the packing is invisible above this
-    // line.  It is validated, not assumed -- pipeline_create checks every attribute against the
-    // reflected shader input for numeric class and component count, and rejects the pipeline
-    // (rather than fetching garbage) if the device cannot read one of these formats at all.
-    rhi_vertex_attrib_t attribs[ 4 ] = {
-        { .binding = 0, .location = 0, .offset =  0, .format = RHI_VERTEX_FORMAT_FLOAT2     },
-        { .binding = 0, .location = 1, .offset =  8, .format = RHI_VERTEX_FORMAT_UNORM16X2  },
-        { .binding = 0, .location = 2, .offset = 12, .format = RHI_VERTEX_FORMAT_UNORM8X4   },
-        { .binding = 0, .location = 3, .offset = 16, .format = RHI_VERTEX_FORMAT_UINT       },
-    };
-
-    /* The layout above is spelled in literal offsets, so pin it to the struct it must mirror --
-       a field inserted into gui_draw_vert_t would otherwise shift every attribute silently. */
-    ORB_STATIC_ASSERT( sizeof( gui_draw_vert_t ) == 20, "gui vertex layout is stated in literal offsets" );
-    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, uv   ) ==  8, "uv attribute offset drifted" );
-    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, abgr ) == 12, "colour attribute offset drifted" );
-    ORB_STATIC_ASSERT( offsetof( gui_draw_vert_t, prim ) == 16, "prim attribute offset drifted" );
-
     // Alpha blend: out = src_rgb*src_a + dst_rgb*(1-src_a).
     rhi_color_target_t color_target = {
         .format       = RHI_FORMAT_BGRA8_SRGB,
@@ -277,15 +272,16 @@ render_init( void )
         .alpha_op     = RHI_BLEND_OP_ADD,
     };
 
-    /* One descriptor shared by both pipelines; only polygon_mode differs.  The wireframe variant
-       (VK_POLYGON_MODE_LINE) lets the debug render mode draw triangle edges through the same shaders,
-       vertex layout, and push range -- the flush just binds whichever the mode selects. */
+    /* BUFFERLESS: no attributes and vertex_stride 0, so the RHI creates the pipeline with no
+       vertex binding at all -- the stage pulls everything from the quad table by SV_VertexID.
+       One descriptor shared by both pipelines; only polygon_mode differs.  The wireframe variant
+       (VK_POLYGON_MODE_LINE) lets the debug render mode draw triangle edges through the same
+       shaders and push range -- the flush just binds whichever the mode selects. */
     rhi_pipeline_desc_t pdesc = {
         .vert               = vert,
         .frag               = frag,
-        .attribs            = { attribs[ 0 ], attribs[ 1 ], attribs[ 2 ], attribs[ 3 ] },
-        .attrib_count       = 4,
-        .vertex_stride      = sizeof( gui_draw_vert_t ),
+        .attrib_count       = 0,
+        .vertex_stride      = 0,
         .cull               = RHI_CULL_NONE,
         .polygon_mode       = RHI_POLYGON_FILL,
         .depth_test         = false,
@@ -294,23 +290,23 @@ render_init( void )
         .color_target_count = 1,
         .depth_format       = RHI_FORMAT_UNKNOWN,
         .push_const_size    = sizeof( gui_push_t ),
-        .debug_name         = "gui",
+        .debug_name         = "gui_quad",
     };
-    s_render.pipeline = rhi()->pipeline_create( &pdesc );
+    s_render.pipeline_quad = rhi()->pipeline_create( &pdesc );
 
     /* Wireframe pipeline: the debug-view (normal / wireframe / batch-tint) toggle's only extra
        GPU resource.  gui_render_flush falls back to the fill pipeline if this one ever fails to
-       create (see the fallback below). */
+       create. */
     pdesc.polygon_mode = RHI_POLYGON_LINE;
-    pdesc.debug_name   = "gui_wire";
-    s_render.pipeline_wire = rhi()->pipeline_create( &pdesc );
+    pdesc.debug_name   = "gui_quad_wire";
+    s_render.pipeline_quad_wire = rhi()->pipeline_create( &pdesc );
 
     rhi()->shader_destroy( frag );
     rhi()->shader_destroy( vert );
 
     /* The wireframe pipeline is a debug convenience -- a failure there is non-fatal (the mode just
        falls back to the fill pipeline at flush time); only the fill pipeline is required. */
-    if ( !rhi_handle_valid( s_render.pipeline ) )
+    if ( !rhi_handle_valid( s_render.pipeline_quad ) )
         return false;
 
     /* Font sampler: nearest filter.  V/W clamp-to-edge (no bleeding between atlas glyph rows); U
@@ -326,7 +322,9 @@ render_init( void )
     } );
     if ( !rhi_handle_valid( s_render.font_sampler ) )
     {
-        rhi()->pipeline_destroy( s_render.pipeline );
+        if ( rhi_handle_valid( s_render.pipeline_quad_wire ) )
+            rhi()->pipeline_destroy( s_render.pipeline_quad_wire );
+        rhi()->pipeline_destroy( s_render.pipeline_quad );
         return false;
     }
     s_render.font_sampler_idx = rhi()->register_sampler( s_render.font_sampler );
@@ -381,6 +379,23 @@ render_init( void )
         return false;
     }
 
+    /* The quad-record geometry table.  REQUIRED like the two tables above: every draw pulls its
+       placement from it. */
+    s_render.quad_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+        .size       = GUI_QUAD_REGION_COUNT * GUI_QUAD_REGION_BYTES,
+        .usage      = RHI_BUFFER_USAGE_STORAGE,
+        .memory     = RHI_MEMORY_CPU_TO_GPU,
+        .debug_name = "gui_quad_table",
+    } );
+    if ( rhi_handle_valid( s_render.quad_buf ) )
+        s_render.quad_buf_idx = rhi()->register_buffer( s_render.quad_buf );
+    if ( s_render.quad_buf_idx == 0 )
+    {
+        gui_log( GUI_LOG_ERROR, "quad record buffer unavailable -- gui render disabled" );
+        render_shutdown();
+        return false;
+    }
+
     /* Fonts boot in the DRAW unit now (gui_draw_boot, after the whole server stands up) --
        the shared atlas carries the opaque white texel solid-color draws sample, so solids
        and text still share one texture and merge into one draw. */
@@ -392,10 +407,8 @@ render_shutdown( void )
 {
     // Peak draw-list usage over the run, so the caps can be tuned with real numbers.
     gui_log( GUI_LOG_INFO,
-             "peak draw-list usage: verts %u/%u (%.1f%%), idx %u/%u (%.1f%%), "
-             "records %u/%u (%.1f%%)%s",
-             s_tess_stats.vert_hwm, GUI_MAX_VERTS, 100.0f * s_tess_stats.vert_hwm / (f32)GUI_MAX_VERTS,
-             s_tess_stats.idx_hwm,  GUI_MAX_IDX,   100.0f * s_tess_stats.idx_hwm  / (f32)GUI_MAX_IDX,
+             "peak draw-list usage: quads %u/%u (%.1f%%), styles %u/%u (%.1f%%)%s",
+             s_tess_stats.vert_hwm, GUI_MAX_QUADS, 100.0f * s_tess_stats.vert_hwm / (f32)GUI_MAX_QUADS,
              s_tess_stats.prim_hwm, GUI_MAX_PRIMS, 100.0f * s_tess_stats.prim_hwm / (f32)GUI_MAX_PRIMS,
              s_tess_stats.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
 
@@ -447,12 +460,16 @@ render_shutdown( void )
 
     glyph_table_shutdown();   /* lazily created; a no-op when no font ever packed */
 
-    if ( rhi_handle_valid( s_render.pipeline_wire ) )
-        rhi()->pipeline_destroy( s_render.pipeline_wire );
-    if ( rhi_handle_valid( s_render.pipeline ) )
-        rhi()->pipeline_destroy( s_render.pipeline );
+    if ( s_render.quad_buf_idx )
+        rhi()->unregister_buffer( s_render.quad_buf_idx );
+    if ( rhi_handle_valid( s_render.quad_buf ) )
+        rhi()->buffer_destroy( s_render.quad_buf );
 
-    // Per-viewport geometry buffers are released by viewport_destroy (driven from gui_shutdown).
+    if ( rhi_handle_valid( s_render.pipeline_quad_wire ) )
+        rhi()->pipeline_destroy( s_render.pipeline_quad_wire );
+    if ( rhi_handle_valid( s_render.pipeline_quad ) )
+        rhi()->pipeline_destroy( s_render.pipeline_quad );
+
     memset( &s_render, 0, sizeof( s_render ) );
 }
 

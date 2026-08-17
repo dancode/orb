@@ -631,7 +631,7 @@ gui_render( i32 vp, rhi_cmd_t cmd )
 
     f64 t0 = perf_render_begin();
 
-    gui_render_flush( v->vb, v->ib, v->target, vp, cmd, v->disp_w, v->disp_h );
+    gui_render_flush( v->target, vp, cmd, v->disp_w, v->disp_h );
 
     #ifdef GUI_DEBUG_OVERLAY
     dbg_flush( vp, cmd, v->disp_w, v->disp_h );   /* each viewport flushes its own rects */

@@ -136,7 +136,7 @@ gui_type_prewarm( void )
             for ( i32 v = 0; v < s_vp_count; ++v )
             {
                 gui_viewport_t* vp = &s_vp_pool[ v ];
-                if ( !rhi_handle_valid( vp->vb ) )
+                if ( !vp->live )
                     continue;   /* slot not live */
 
                 u32 size = vp->dpi_size_px;

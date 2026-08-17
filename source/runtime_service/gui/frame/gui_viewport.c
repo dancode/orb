@@ -62,9 +62,11 @@ viewport_create( i32 vp, rhi_texture_t target, i32 win_id )
     v->dock_root       = GUI_DOCK_REF_NONE;  // free-float until docking assigns a tree
     v->dock_seen_frame = 0;                  // never emitted; frame clock starts at 1 so 0 = dormant
 
-    /* create the GPU geometry ring for this surface -- the host owns the swapchain, gui owns the vb/ib */
+    /* No per-surface GPU geometry: quads live in the global quad table (gui_render_init.c),
+       one region per (frame-in-flight, viewport). */
 
-    return surface_geo_create( &v->vb, &v->ib );
+    v->live = true;
+    return true;
 }
 
 void
@@ -82,10 +84,6 @@ viewport_destroy( i32 vp )
         rhi()->context_destroy( v->rhi_ctx );
     }
 
-    /* all viewports: destroy the GPU geometry ring (vb/ib) */
-
-    surface_geo_destroy( &v->vb, &v->ib );
-
     /* owned floater: destroy the gui owned OS window */
 
     if ( v->owned && v->win_id >= 0 )
@@ -93,6 +91,7 @@ viewport_destroy( i32 vp )
         app()->window_close( v->win_id );
     }
 
+    v->live          = false;            // slot freed
     v->win_id        = APP_WIN_INVALID;  // slot freed -> no window matches it for input routing
     v->rhi_ctx       = RHI_CTX_INVALID;  // slot freed -> no context matches it for flush
     v->owned         = false;
@@ -108,11 +107,9 @@ viewport_destroy( i32 vp )
 static bool
 viewport_slot_live( i32 vp )
 {
-    /* True if viewport currently holds a live surface -- created and not yet destroyed.
-       vb is the tell: viewport_create only writes it a valid handle on success, and 
-       viewport_destroy always resets it back to invalid */
+    /* True if viewport currently holds a live surface -- created and not yet destroyed. */
 
-    return rhi_handle_valid( s_vp_pool[ vp ].vb );
+    return s_vp_pool[ vp ].live;
 }
 
 static void

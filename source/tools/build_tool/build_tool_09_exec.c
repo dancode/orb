@@ -142,6 +142,40 @@ build_cook_shaders( build_context_t* ctx, target_info_t* target )
             return false;
         }
 
+        /* Shared .hlsli code beside the source counts toward staleness: dxc resolves #include
+           relative to the including file, so an edit to a sibling include changes the cooked
+           bytes without touching the .hlsl's own mtime.  The whole directory is folded in rather
+           than the actual include graph -- shader dirs hold a handful of files, and one spurious
+           recook costs less than a parser. */
+        {
+            char dir[ PATH_MAX ];
+            snprintf( dir, sizeof( dir ), "%s", src );
+            char* sep = strrchr( dir, PATH_SEP[ 0 ] );
+            char* alt = strrchr( dir, '/' );
+            if ( alt > sep ) sep = alt;
+            if ( sep )
+            {
+                *sep = '\0';
+                char pattern[ PATH_MAX ];
+                snprintf( pattern, sizeof( pattern ), "%s" PATH_SEP "*.hlsli", dir );
+
+                platform_find_data_t fd;
+                platform_find_t      h = platform_find_first( pattern, &fd );
+                if ( h != PLATFORM_FIND_INVALID )
+                {
+                    do
+                    {
+                        char inc[ PATH_MAX ];
+                        snprintf( inc, sizeof( inc ), "%s" PATH_SEP "%s", dir, fd.name );
+                        platform_mtime_t m = platform_get_mtime( inc );
+                        if ( m > src_mtime )
+                            src_mtime = m;
+                    } while ( platform_find_next( h, &fd ) );
+                    platform_find_close( h );
+                }
+            }
+        }
+
         /* Keyed on the OUTPUT, not on this target.  Two targets built from one source tree can
            declare the same shader, and under the parallel scheduler they reach this at the same
            moment; so can two build_tool invocations.  The staleness test is inside the lock with

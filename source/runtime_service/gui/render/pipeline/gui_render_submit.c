@@ -5,16 +5,13 @@
     Last of the three render phases:
 
         EMIT    gui_emit_draw.c    widgets -> s_draw semantic command list
-        BUILD   gui_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
-        RENDER  this file          upload each surface's slots + emit indexed draw calls
+        BUILD   gui_build_cache.c  diff + tessellate -> s_tess quad records + s_dispatch slots
+        RENDER  this file          upload each surface's slots + emit draw calls
 
-    Two jobs, both per-surface:
-
-        1. Own each surface's vertex/index buffers (surface_geo_create/destroy). The shared
-           pipeline and samplers those buffers draw with live elsewhere (gui_render_init.c).
-
-        2. Flush a surface (gui_render_flush): trigger the once-per-frame BUILD if it hasn't
-           run yet, then upload that surface's geometry and issue one draw call per command.
+    One job, per-surface: flush (gui_render_flush) -- trigger the once-per-frame BUILD if it
+    hasn't run yet, then upload that surface's quad/clip/style spans into its (frame-in-flight,
+    viewport) regions of the global tables and issue one bufferless draw call per command.
+    Surfaces own no geometry buffers of their own.
 
     Included by gui_render.c right after gui_render_init.c, whose gui_push_t layout and s_render
     static this file reads.
@@ -22,68 +19,6 @@
 ==============================================================================================*/
 
 // clang-format off
-/*==============================================================================================
-    Per-frame geometry regions.
-
-    The CPU records up to RHI_MAX_FRAMES_IN_FLIGHT frames ahead of the GPU, so each surface's VB/IB
-    holds one independent region per in-flight slot.  Each frame writes and binds only its own region
-    (selected by cmd_frame_index), so this frame's upload never overwrites geometry the GPU is still
-    reading for a previous in-flight frame.
-==============================================================================================*/
-
-#define GUI_VB_REGION_BYTES  ( GUI_MAX_VERTS * sizeof( gui_draw_vert_t ) )
-#define GUI_IB_REGION_BYTES  ( GUI_MAX_IDX   * sizeof( u16 ) )
-
-/*==============================================================================================
-    Per-surface geometry ring -- a surface's own GPU geometry buffers.
-
-    Per surface so each has an independent vb/ib ring (one region per frame-in-flight).  Called
-    once per surface by the orchestrator's viewport_create/destroy (frame/gui_viewport.c), which
-    own every non-GPU field of the surface record -- this server only mints and frees the pair.
-    The shared pipeline / sampler / atlas are NOT here -- those are created once in render_init
-    (pipeline/gui_render_init.c).
-==============================================================================================*/
-
-bool
-surface_geo_create( rhi_buffer_t* vb, rhi_buffer_t* ib )
-{
-    // Vertex buffer (CPU_TO_GPU): one region per frame-in-flight, written every frame.
-    *vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = RHI_MAX_FRAMES_IN_FLIGHT * GUI_VB_REGION_BYTES,
-        .usage      = RHI_BUFFER_USAGE_VERTEX,
-        .memory     = RHI_MEMORY_CPU_TO_GPU,
-        .debug_name = "gui_vb",
-    } );
-    if ( !rhi_handle_valid( *vb ) )
-        return false;
-
-    // Index buffer (CPU_TO_GPU, u16 indices): one region per frame-in-flight.
-    *ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = RHI_MAX_FRAMES_IN_FLIGHT * GUI_IB_REGION_BYTES,
-        .usage      = RHI_BUFFER_USAGE_INDEX,
-        .memory     = RHI_MEMORY_CPU_TO_GPU,
-        .debug_name = "gui_ib",
-    } );
-    if ( !rhi_handle_valid( *ib ) )
-    {
-        rhi()->buffer_destroy( *vb );
-        *vb = ( rhi_buffer_t ){ 0 };
-        return false;
-    }
-
-    return true;
-}
-
-void
-surface_geo_destroy( rhi_buffer_t* vb, rhi_buffer_t* ib )
-{
-    if ( rhi_handle_valid( *ib ) ) rhi()->buffer_destroy( *ib );
-    if ( rhi_handle_valid( *vb ) ) rhi()->buffer_destroy( *vb );
-
-    *vb = ( rhi_buffer_t ){ 0 };
-    *ib = ( rhi_buffer_t ){ 0 };
-}
-
 /*==============================================================================================
     Debug render mode -- the debug view (normal / wireframe / batch-tint).
 
@@ -161,28 +96,26 @@ render_batch_debug_color( u32 i )
 /*==============================================================================================
     gui_render_flush -- upload one surface's geometry and emit its draw calls (SUBMIT phase).
 
-    Paints into the surface at index `vp_index`, whose GPU pieces (vb / ib / target) arrive as
-    parameters -- the orchestrator (frame/gui_frame_loop.c) passes the record's fields; this server
-    never sees the record.  First kicks the once-per-frame BUILD (cache_build_frame, lazy --
-    only the first surface this frame pays for it; the rest reuse the result).  Then uploads
-    this surface's slice of the shared geometry into its own vb/ib region and opens a LOAD pass
-    on the target, so a surface's geometry and target travel together.  The host calls this
-    once per live surface with that surface's drawable size; slots tagged for another viewport
-    are skipped (each command carries its own first_index in s_tess.gpu_cmds[].ibase).
+    Paints into the surface at index `vp_index`, whose target arrives as a parameter -- the
+    orchestrator (frame/gui_frame_loop.c) passes the record's fields; this server never sees the
+    record.  First kicks the once-per-frame BUILD (cache_build_frame, lazy -- only the first
+    surface this frame pays for it; the rest reuse the result).  Then uploads this surface's
+    slice of the shared quad arena into its own (frame-in-flight, viewport) region of the global
+    quad table and opens a LOAD pass on the target.  The host calls this once per live surface
+    with that surface's drawable size; slots tagged for another viewport are skipped.
 
-    Geometry is shared and indices are slot-local (vertex_offset = slot->vert_base shifts them to the
-    absolute VB position), so the whole vertex/index list is uploaded to every surface's buffer and
-    each surface draws only its own slots.  LOAD preserves the scene rendered before this call.
+    Geometry is shared: the whole quad span is uploaded to every surface's region and each
+    surface draws only its own slots (a draw's first_vertex carries the arena-absolute quad
+    offset * 6).  LOAD preserves the scene rendered before this call.
 
     The scissor is set ONCE, to the full surface: clipping is resolved per fragment against the
-    frame clip table (gui.ps.hlsl, clip_coverage), which this flush also uploads -- each
+    frame clip table (gui_fx.hlsli, clip_coverage), which this flush also uploads -- each
     dispatched slot's local clip entries, concatenated into this (frame, viewport) region, with
     the slot's base entry pushed per draw (pc.clip_base).
 ==============================================================================================*/
 
 void
-gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
-                  i32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
+gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     // Nothing was recorded this frame, or the caller's command buffer isn't ready to record into.
     if ( s_draw.cmd_count == 0 || !rhi_cmd_valid( cmd ) )
@@ -191,17 +124,14 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
     // Tessellate + sort the shared list once per frame; this surface reuses the cached result.
     cache_build_frame();
 
-    // Select this frame's geometry region so the upload cannot clobber data the GPU is still reading
+    // Select this frame's quad region so the upload cannot clobber data the GPU is still reading
     // for another in-flight frame.
-    u32 frame  = rhi()->cmd_frame_index( cmd );
-    u32 vb_off = frame * (u32)GUI_VB_REGION_BYTES;
-    u32 ib_off = frame * (u32)GUI_IB_REGION_BYTES;
+    u32 frame = rhi()->cmd_frame_index( cmd );
 
-    /* This surface's vertex + index upload span, taken from the slot table.  Slots tagged for this
-       viewport contribute their [vert_base, +count) and [idx_base, +count) ranges; the union is what
-       we upload.  For a single surface this covers the whole buffer. */
+    /* This surface's quad upload span, taken from the slot table.  Slots tagged for this
+       viewport contribute their [vert_base, +count) ranges; the union is what we upload.  For a
+       single surface this covers the whole arena. */
     u32 vtx_lo = s_tess.vert_count, vtx_hi = 0;
-    u32 idx_lo = s_tess.idx_count,  idx_hi = 0;
 
     u32 overlay_bytes = 0;   // debug-band windows' share, excluded from the upload stats
 
@@ -211,15 +141,10 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         if ( sl->vp != vp_index || sl->vert_count == 0 ) continue;
 
         if ( sl->band != 0 )
-        {
-            overlay_bytes += sl->vert_count * sizeof( gui_draw_vert_t );
-            overlay_bytes += sl->idx_count * sizeof( u16 );
-        }
+            overlay_bytes += sl->vert_count * (u32)sizeof( gui_quad_t );
 
         if ( sl->vert_base                     < vtx_lo ) vtx_lo = sl->vert_base;
         if ( sl->vert_base + sl->vert_count    > vtx_hi ) vtx_hi = sl->vert_base + sl->vert_count;
-        if ( sl->idx_base                      < idx_lo ) idx_lo = sl->idx_base;
-        if ( sl->idx_base  + sl->idx_count     > idx_hi ) idx_hi = sl->idx_base  + sl->idx_count;
     }
 
     u32 up_batches = 0;   // geometry buffer_write calls this flush issued (full spans or patch spans)
@@ -237,25 +162,14 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
     if ( geo_dirty )
         s_region_geo_gen[ clip_region ] = s_geo_gen;
 
-    // Upload the vertex span, then the index span -- each only if this surface actually
-    // touched geometry in that range (and the region is stale at all).
+    // Upload the quad span into this surface's region of the global quad table -- only if this
+    // surface actually touched geometry in that range (and the region is stale at all).
+    u32 quad_off = clip_region * (u32)GUI_QUAD_REGION_BYTES;
     if ( geo_dirty && vtx_hi > vtx_lo )
     {
-        u32 bytes = ( vtx_hi - vtx_lo ) * sizeof( gui_draw_vert_t );
-        rhi()->buffer_write( vb,
-                             &s_tess.verts[ vtx_lo ],
-                             bytes,
-                             vb_off + vtx_lo * (u32)sizeof( gui_draw_vert_t ) );
-        up_batches++;
-        up_bytes += bytes;
-    }
-    if ( geo_dirty && idx_hi > idx_lo )
-    {
-        u32 bytes = ( idx_hi - idx_lo ) * sizeof( u16 );
-        rhi()->buffer_write( ib,
-                             &s_tess.indices[ idx_lo ],
-                             bytes,
-                             ib_off + idx_lo * (u32)sizeof( u16 ) );
+        u32 bytes = ( vtx_hi - vtx_lo ) * (u32)sizeof( gui_quad_t );
+        rhi()->buffer_write( s_render.quad_buf, &s_tess.quads[ vtx_lo ], bytes,
+                             quad_off + vtx_lo * (u32)sizeof( gui_quad_t ) );
         up_batches++;
         up_bytes += bytes;
     }
@@ -270,28 +184,16 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
     {
         u32 pv_lo = s_patch_pending[ clip_region ][ b ].v_lo;
         u32 pv_hi = s_patch_pending[ clip_region ][ b ].v_hi;
-        u32 pi_lo = s_patch_pending[ clip_region ][ b ].i_lo;
-        u32 pi_hi = s_patch_pending[ clip_region ][ b ].i_hi;
 
         s_patch_pending[ clip_region ][ b ].v_lo = s_patch_pending[ clip_region ][ b ].v_hi = 0;
-        s_patch_pending[ clip_region ][ b ].i_lo = s_patch_pending[ clip_region ][ b ].i_hi = 0;
         if ( geo_dirty )
-            continue;   // the full spans above already carried these bytes
+            continue;   // the full span above already carried these bytes
 
         if ( pv_hi > pv_lo )
         {
-            u32 bytes = ( pv_hi - pv_lo ) * sizeof( gui_draw_vert_t );
-            rhi()->buffer_write( vb, &s_tess.verts[ pv_lo ], bytes,
-                                 vb_off + pv_lo * (u32)sizeof( gui_draw_vert_t ) );
-            up_batches++;
-            up_bytes += bytes;
-            if ( b != 0 ) up_overlay += bytes;
-        }
-        if ( pi_hi > pi_lo )
-        {
-            u32 bytes = ( pi_hi - pi_lo ) * sizeof( u16 );
-            rhi()->buffer_write( ib, &s_tess.indices[ pi_lo ], bytes,
-                                 ib_off + pi_lo * (u32)sizeof( u16 ) );
+            u32 bytes = ( pv_hi - pv_lo ) * (u32)sizeof( gui_quad_t );
+            rhi()->buffer_write( s_render.quad_buf, &s_tess.quads[ pv_lo ], bytes,
+                                 quad_off + pv_lo * (u32)sizeof( gui_quad_t ) );
             up_batches++;
             up_bytes += bytes;
             if ( b != 0 ) up_overlay += bytes;
@@ -393,16 +295,14 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
         .x = 0, .y = 0, .width = win_w, .height = win_h } );
     ++s_render.state_scissors;
 
-    // Wireframe mode binds the LINE pipeline (falling back to fill if it failed to compile); normal +
-    // batch modes both rasterize filled triangles.
+    // Bufferless: one pipeline, nothing bound but the bindless set.  Wireframe mode binds the
+    // LINE twin (falling back to fill if it failed to compile); batch mode rasterizes filled
+    // triangles under the per-draw tint below.
     rhi_pipeline_t pipe = ( s_render.debug_mode == GUI_RENDER_WIREFRAME
-                            && rhi_handle_valid( s_render.pipeline_wire ) )
-                        ? s_render.pipeline_wire : s_render.pipeline;
+                            && rhi_handle_valid( s_render.pipeline_quad_wire ) )
+                        ? s_render.pipeline_quad_wire : s_render.pipeline_quad;
     rhi()->cmd_bind_pipeline( cmd, pipe );
     rhi()->cmd_bind_bindless( cmd );
-    // Bind this frame's region; index values and first_index stay region-relative.
-    rhi()->cmd_bind_vertex_buffer( cmd, vb, vb_off );
-    rhi()->cmd_bind_index_buffer( cmd, ib, ib_off, RHI_INDEX_TYPE_UINT16 );
 
     // Ortho matrix: pixel [0,w]x[0,h] -> NDC [-1,+1]x[-1,+1].
     gui_push_t push;
@@ -427,7 +327,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        the effect band's clock costs no batch split and no per-draw work (gui.h, GUI_FX_TIME_WRAP). */
     push.time = s_render.fx_time;
 
-    /* Fragment-clip plumbing (gui.ps.hlsl, "the clip band").  Both fields are flush-constant:
+    /* Fragment-clip plumbing (gui_fx.hlsli, "the clip band").  Both fields are flush-constant:
        vertices bake ABSOLUTE region entry indices (each window's fixed slab), so clip_base is
        just this region's origin. */
     push.clip_buf  = s_render.clip_buf_idx;
@@ -440,6 +340,13 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        that a rendering question rather than an out-of-range storage-buffer read. */
     push.prim_buf  = s_render.prim_buf_idx;
     push.prim_base = clip_region * (u32)GUI_PRIM_REGION_MAX;
+
+    /* Quad plumbing, all flush-constant: the quad table's slot and this region's origin (a
+       draw's first_vertex carries the arena-absolute quad offset on top), plus the glyph uv
+       table for id-addressed text. */
+    push.quad_buf  = s_render.quad_buf_idx;
+    push.quad_base = clip_region * (u32)GUI_QUAD_REGION_MAX;
+    push.glyph_buf = glyph_table_idx();
 
     /* Push the whole struct once, before the walk. tex_idx/tex_mode/samp_idx live in the vertex,
        not the push constant, so everything left here -- both sampler slots, dbg_flat, the frame
@@ -455,13 +362,12 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
 
     u32 draw_calls = 0;   // indexed draws actually emitted this surface (one per non-empty command)
 
-    /* Walk s_dispatch[] (z-sorted slot pointers) back-to-front.  Each slot owns a contiguous region
-       of s_tess.verts[]/indices[]; its GPU commands reference those via 0-relative indices +
-       vertex_offset = slot->vert_base.  Slots for other viewports are skipped entirely, as are
-       commands with a mismatched vp (including a volatile block's dormant reserved commands,
-       tagged GUI_VP_INVALID).  first_index comes straight off each command's own ibase --
-       explicit rather than accumulated, since the index buffer may contain reserved headroom gaps
-       between a volatile block's live indices and the commands that follow it. */
+    /* Walk s_dispatch[] (z-sorted slot pointers) back-to-front.  Each slot owns a contiguous
+       region of s_tess.quads[]; its GPU commands reference it via their own arena-absolute
+       vbase -- explicit rather than accumulated, since the arena may contain reserved headroom
+       gaps between a volatile block's live quads and the commands that follow it.  Slots for
+       other viewports are skipped entirely, as are commands with a mismatched vp (including a
+       volatile block's dormant reserved commands, tagged GUI_VP_INVALID). */
     for ( u32 d = 0; d < s_dispatch_count; ++d )
     {
         const win_geo_slot_t* slot = s_dispatch[ d ];
@@ -504,11 +410,12 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
                 ++s_render.state_pushes;
             }
 
-            rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){
-                .index_count    = dc->elem_count,
+            /* elem_count is QUADS and vbase the arena-absolute first quad; the pull vertex stage
+               divides VertexIndex (which includes first_vertex) back down. */
+            rhi()->cmd_draw( cmd, &( rhi_draw_args_t ){
+                .vertex_count   = dc->elem_count * 6u,
                 .instance_count = 1,
-                .first_index    = gc->ibase,
-                .vertex_offset  = (i32)slot->vert_base,   // slot-local indices + vert_base = absolute
+                .first_vertex   = gc->vbase * 6u,
                 .first_instance = 0,
             } );
 
@@ -524,7 +431,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
 
     /* Pipeline-dashboard flush capture: what physically hit the GPU for this surface (frame
        region, upload spans, bytes/writes, draws).  A no-op unless GUI_PIPELINE_DASHBOARD. */
-    DASH_CAPTURE_FLUSH( vp_index, frame, vtx_lo, vtx_hi, idx_lo, idx_hi,
+    DASH_CAPTURE_FLUSH( vp_index, frame, vtx_lo, vtx_hi,
                         up_bytes, up_batches, draw_calls );
 }
 

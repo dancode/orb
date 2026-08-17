@@ -322,10 +322,9 @@ typedef u16 gui_dock_ref_t;
 
 typedef struct
 {
-    rhi_buffer_t  vb;       // CPU_TO_GPU vertex buffer, one region per frame-in-flight
-    rhi_buffer_t  ib;       // CPU_TO_GPU index buffer (u16), one region per frame-in-flight
+    bool live;              // slot holds a live surface (viewport_create .. viewport_destroy)
 
-    /* Color target that flush draws into -- main swapchain or a floater's swapchain image 
+    /* Color target that flush draws into -- main swapchain or a floater's swapchain image
        -- mostly RHI_SWAPCHAIN_COLOR sentinel (whatever swapchain image is current)
        -- Eventually offscreen target to render to (requires create function) */
     rhi_texture_t target;

@@ -8,16 +8,16 @@
     bands, window frames (with the hover window highlighted), and the clip/scissor stack.
 
     It is deliberately NOT intertwined with the main draw list (s_draw):
-      - its own verts/idx/cmds with their own (small) caps, so it can never starve the UI
+      - its own quad records with their own (small) caps, so it can never starve the UI
         budget and make real widgets overflow;
-      - its own GPU buffers, reusing only the shared gui pipeline + font sampler;
+      - its own quad storage buffer, reusing only the shared gui pipeline + samplers;
       - no z-sort and no per-window clip on flush -- overlay order is emit order, always topmost;
       - the whole subsystem (state, buffers, capture, flush) is compiled out unless
         GUI_DEBUG_OVERLAY is defined (Debug builds), leaving only the two no-op public setters.
 
     Capture stores compact rect commands tagged with a viewport index.  At flush time for
-    viewport V, commands are filtered and expanded inline into scratch VB/IB, uploaded once,
-    and drawn -- no per-viewport pre-allocated vertex arrays.
+    viewport V, commands are filtered and expanded inline into scratch quad records, uploaded
+    once, and drawn bufferless through the shared quad pipeline.
 
     Active layers are chosen at runtime with gui()->debug_set_layers( gui_dbg_layer_t mask ).
 
@@ -37,15 +37,13 @@
 /* Max rect commands accumulated per frame across all viewports. */
 #define GUI_DBG_MAX_CMDS  1024
 
-/* Scratch geometry caps for one viewport flush.  Worst case: every command is an outline
-   (4 edge quads) = 16 verts / 24 idx each.  u16 indices are safe up to 65535 verts. */
-#define GUI_DBG_FLUSH_MAX_VERTS ( GUI_DBG_MAX_CMDS * 16 )
-#define GUI_DBG_FLUSH_MAX_IDX   ( GUI_DBG_MAX_CMDS * 24 )
+/* Scratch quad cap for one viewport flush.  Worst case: every command is an outline (4 edge
+   quads). */
+#define GUI_DBG_FLUSH_MAX_QUADS ( GUI_DBG_MAX_CMDS * 4 )
 
-/* GPU buffer regions: one per viewport per frame-in-flight so concurrent viewport flushes
+/* Quad-table regions: one per viewport per frame-in-flight so concurrent viewport flushes
    (same frame index) do not overwrite each other. */
-#define GUI_DBG_VB_REGION_BYTES ( GUI_DBG_FLUSH_MAX_VERTS * sizeof( gui_draw_vert_t ) )
-#define GUI_DBG_IB_REGION_BYTES ( GUI_DBG_FLUSH_MAX_IDX   * sizeof( u16 ) )
+#define GUI_DBG_QUAD_REGION_BYTES ( GUI_DBG_FLUSH_MAX_QUADS * sizeof( gui_quad_t ) )
 
 /*==============================================================================================
     Debug Colors
@@ -91,13 +89,12 @@ static struct
 
     dbg_cmd_t  cmds[ GUI_DBG_MAX_CMDS ];
 
-    /* Scratch buffers: filled per-viewport at flush time, discarded after upload. */
+    /* Scratch quads: filled per-viewport at flush time, discarded after upload. */
 
-    gui_draw_vert_t scratch_verts [ GUI_DBG_FLUSH_MAX_VERTS ];
-    u16               scratch_idx   [ GUI_DBG_FLUSH_MAX_IDX   ];
+    gui_quad_t scratch_quads[ GUI_DBG_FLUSH_MAX_QUADS ];
 
-    rhi_buffer_t vb;        /* one region per viewport per frame-in-flight */
-    rhi_buffer_t ib;
+    rhi_buffer_t quads;      /* storage buffer: one region per viewport per frame-in-flight */
+    u32          quads_idx;  /* bindless buffer slot (0 = init failed) */
 
 } s_dbg;
 
@@ -286,24 +283,19 @@ dbg_capture_resize( gui_rect_t band, u8 hot_edges )
 bool
 dbg_init( void )
 {
-    s_dbg.vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS * GUI_DBG_VB_REGION_BYTES,
-        .usage      = RHI_BUFFER_USAGE_VERTEX,
+    s_dbg.quads = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+        .size       = RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS * GUI_DBG_QUAD_REGION_BYTES,
+        .usage      = RHI_BUFFER_USAGE_STORAGE,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
-        .debug_name = "gui_dbg_vb",
+        .debug_name = "gui_dbg_quads",
     } );
-    if ( !rhi_handle_valid( s_dbg.vb ) ) return false;
+    if ( !rhi_handle_valid( s_dbg.quads ) ) return false;
 
-    s_dbg.ib = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS * GUI_DBG_IB_REGION_BYTES,
-        .usage      = RHI_BUFFER_USAGE_INDEX,
-        .memory     = RHI_MEMORY_CPU_TO_GPU,
-        .debug_name = "gui_dbg_ib",
-    } );
-    if ( !rhi_handle_valid( s_dbg.ib ) )
+    s_dbg.quads_idx = rhi()->register_buffer( s_dbg.quads );
+    if ( s_dbg.quads_idx == 0 )
     {
-        rhi()->buffer_destroy( s_dbg.vb );
-        s_dbg.vb = ( rhi_buffer_t ){ 0 };
+        rhi()->buffer_destroy( s_dbg.quads );
+        s_dbg.quads = ( rhi_buffer_t ){ 0 };
         return false;
     }
     return true;
@@ -312,8 +304,10 @@ dbg_init( void )
 void
 dbg_shutdown( void )
 {
-    if ( rhi_handle_valid( s_dbg.ib ) ) rhi()->buffer_destroy( s_dbg.ib );
-    if ( rhi_handle_valid( s_dbg.vb ) ) rhi()->buffer_destroy( s_dbg.vb );
+    if ( s_dbg.quads_idx )
+        rhi()->unregister_buffer( s_dbg.quads_idx );
+    if ( rhi_handle_valid( s_dbg.quads ) )
+        rhi()->buffer_destroy( s_dbg.quads );
     memset( &s_dbg, 0, sizeof( s_dbg ) );
 }
 
@@ -325,34 +319,25 @@ dbg_reset( void )
 }
 
 /*==============================================================================================
-    Flush -- expand commands for viewport vp into scratch geometry, upload, draw.
+    Flush -- expand commands for viewport vp into scratch quad records, upload, draw.
     Scratch memory is treated as write-once per call: overwritten next flush, never read back.
 ==============================================================================================*/
 
-/* Emit one quad into the scratch buffers.  Caller guarantees capacity. */
+/* Emit one filled rect as a quad record.  Caller guarantees capacity.  Every lane the overlay
+   does not use stays zero: style 0 (the one record dbg_flush writes at the overlay entry),
+   clip 0 (clip_buf 0 means no clipping), rule EXACT, uv unused under the record's OP_SELF. */
 static void
-dbg_expand_quad( f32 wu, f32 wv, f32 x, f32 y, f32 w, f32 h, u32 abgr,
-                 u32* vc, u32* ic )
+dbg_expand_quad( f32 x, f32 y, f32 w, f32 h, u32 abgr, u32* qc )
 {
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
-
-    /* The overlay is entirely coverage-atlas geometry (white texel + glyphs), so every vertex
-       names the same primitive record -- index 0 against the base dbg_flush pushes, which is the
-       one record it writes (the atlas slot is only known at flush time).  gui_vert already zeroes
-       the index, so there is nothing to stamp here. */
-    u16 base = (u16)*vc;
-    gui_draw_vert_t* v = &s_dbg.scratch_verts[ *vc ];
-    v[ 0 ] = gui_vert( x,     y,     wu, wv, abgr );
-    v[ 1 ] = gui_vert( x + w, y,     wu, wv, abgr );
-    v[ 2 ] = gui_vert( x + w, y + h, wu, wv, abgr );
-    v[ 3 ] = gui_vert( x,     y + h, wu, wv, abgr );
-    *vc += 4;
-
-    u16* idx = &s_dbg.scratch_idx[ *ic ];
-    idx[ 0 ] = base;     idx[ 1 ] = base + 1; idx[ 2 ] = base + 2;
-    idx[ 3 ] = base;     idx[ 4 ] = base + 2; idx[ 5 ] = base + 3;
-    *ic += 6;
+    s_dbg.scratch_quads[ ( *qc )++ ] = ( gui_quad_t ){
+        .cx   = x + w * 0.5f,
+        .cy   = y + h * 0.5f,
+        .hw   = w * 0.5f,
+        .hh   = h * 0.5f,
+        .abgr = abgr,
+    };
 }
 
 void
@@ -360,14 +345,12 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 {
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS ) return;
     if ( s_dbg.cmd_count == 0 || !rhi_cmd_valid( cmd ) ) return;
+    if ( s_dbg.quads_idx == 0 ) return;
 
     u8  v  = (u8)vp;
-    u32 vc = 0, ic = 0;
+    u32 qc = 0;
 
-    f32 wu, wv_uv;
-    res_atlas_white_uv( &wu, &wv_uv );
-
-    /* Filter and expand commands for this viewport into scratch geometry. */
+    /* Filter and expand commands for this viewport into scratch quads. */
     for ( u32 i = 0; i < s_dbg.cmd_count; ++i )
     {
         const dbg_cmd_t* c = &s_dbg.cmds[ i ];
@@ -375,37 +358,36 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 
         if ( c->thickness <= 0.0f )
         {
-            /* Filled quad -- 4 verts, 6 idx. */
-            if ( vc + 4 > GUI_DBG_FLUSH_MAX_VERTS || ic + 6 > GUI_DBG_FLUSH_MAX_IDX ) break;
-            dbg_expand_quad( wu, wv_uv, c->r.x, c->r.y, c->r.w, c->r.h, c->abgr, &vc, &ic );
+            /* Filled rect -- one quad. */
+            if ( qc + 1 > GUI_DBG_FLUSH_MAX_QUADS ) break;
+            dbg_expand_quad( c->r.x, c->r.y, c->r.w, c->r.h, c->abgr, &qc );
         }
         else
         {
-            /* Hollow outline -- 4 edge quads = 16 verts, 24 idx. */
-            if ( vc + 16 > GUI_DBG_FLUSH_MAX_VERTS || ic + 24 > GUI_DBG_FLUSH_MAX_IDX ) break;
+            /* Hollow outline -- 4 edge quads. */
+            if ( qc + 4 > GUI_DBG_FLUSH_MAX_QUADS ) break;
             f32 t  = c->thickness;
             f32 rw = c->r.w, rh = c->r.h;
             f32 rx = c->r.x, ry = c->r.y;
             if ( t > rh * 0.5f ) t = rh * 0.5f;
-            dbg_expand_quad( wu, wv_uv, rx,          ry,              rw,        t,              c->abgr, &vc, &ic );  /* top    */
-            dbg_expand_quad( wu, wv_uv, rx,          ry + rh - t,     rw,        t,              c->abgr, &vc, &ic );  /* bottom */
-            dbg_expand_quad( wu, wv_uv, rx,          ry + t,          t,         rh - 2.0f * t,  c->abgr, &vc, &ic );  /* left   */
-            dbg_expand_quad( wu, wv_uv, rx + rw - t, ry + t,          t,         rh - 2.0f * t,  c->abgr, &vc, &ic );  /* right  */
+            dbg_expand_quad( rx,          ry,          rw, t,             c->abgr, &qc );  /* top    */
+            dbg_expand_quad( rx,          ry + rh - t, rw, t,             c->abgr, &qc );  /* bottom */
+            dbg_expand_quad( rx,          ry + t,      t,  rh - 2.0f * t, c->abgr, &qc );  /* left   */
+            dbg_expand_quad( rx + rw - t, ry + t,      t,  rh - 2.0f * t, c->abgr, &qc );  /* right  */
         }
     }
 
-    if ( ic == 0 ) return;
+    if ( qc == 0 ) return;
 
     if ( s_dbg.overflow )
         GUI_WARN_ONCE( "debug overlay command list overflow -- some rects dropped (cap %u).\n",
                        GUI_DBG_MAX_CMDS );
 
-    u32 frame  = rhi()->cmd_frame_index( cmd );
-    u32 vb_off = ( frame * GUI_MAX_VIEWPORTS + vp ) * (u32)GUI_DBG_VB_REGION_BYTES;
-    u32 ib_off = ( frame * GUI_MAX_VIEWPORTS + vp ) * (u32)GUI_DBG_IB_REGION_BYTES;
+    u32 frame    = rhi()->cmd_frame_index( cmd );
+    u32 region   = frame * GUI_MAX_VIEWPORTS + (u32)vp;
+    u32 quad_off = region * (u32)GUI_DBG_QUAD_REGION_BYTES;
 
-    rhi()->buffer_write( s_dbg.vb, s_dbg.scratch_verts, vc * sizeof( gui_draw_vert_t ), vb_off );
-    rhi()->buffer_write( s_dbg.ib, s_dbg.scratch_idx,   ic * sizeof( u16 ),               ib_off );
+    rhi()->buffer_write( s_dbg.quads, s_dbg.scratch_quads, qc * sizeof( gui_quad_t ), quad_off );
 
     rhi_color_attachment_t color_att = {
         .texture  = { .id = RHI_SWAPCHAIN_COLOR },
@@ -418,14 +400,10 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
         .x = 0.0f, .y = 0.0f, .width = (f32)win_w, .height = (f32)win_h,
         .min_depth = 0.0f, .max_depth = 1.0f,
     } );
-    rhi()->cmd_bind_pipeline     ( cmd, s_render.pipeline );
-    rhi()->cmd_bind_bindless     ( cmd );
-    rhi()->cmd_bind_vertex_buffer( cmd, s_dbg.vb, vb_off );
-    rhi()->cmd_bind_index_buffer ( cmd, s_dbg.ib, ib_off, RHI_INDEX_TYPE_UINT16 );
-    rhi()->cmd_set_scissor       ( cmd, &( rhi_rect_t ){ .x = 0, .y = 0, .width = win_w, .height = win_h } );
+    rhi()->cmd_bind_pipeline( cmd, s_render.pipeline_quad );
+    rhi()->cmd_bind_bindless( cmd );
+    rhi()->cmd_set_scissor  ( cmd, &( rhi_rect_t ){ .x = 0, .y = 0, .width = win_w, .height = win_h } );
 
-    /* The texture and its sampling model left this block for the vertex; what remains is the two
-       sampler slots the fragment picks between, and the debug-view state the overlay never uses. */
     gui_push_t push;
     render_ortho( push.mvp, (f32)win_w, (f32)win_h );
     push.samp_point = s_render.font_sampler_idx;
@@ -433,19 +411,24 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
                                                  : s_render.font_sampler_idx;
     push.dbg_flat   = 0u;   /* the overlay always renders normally, never flat/batch-tinted */
     push.dbg_tint   = 0u;
-    push.clip_buf   = 0u;   /* no clip table: overlay verts carry clip band 0 and clip nothing */
+    push.clip_buf   = 0u;   /* no clip table: overlay quads carry clip 0 and clip nothing */
     push.clip_base  = 0u;
     push.time       = s_render.fx_time;   /* overlay geometry is fx-free, but the block must be
-                                             fully initialized -- this field used to be garbage */
+                                             fully initialized */
+    push.quad_buf   = s_dbg.quads_idx;    /* the overlay's OWN quad table, this flush's region */
+    push.quad_base  = region * (u32)GUI_DBG_FLUSH_MAX_QUADS;
+    push.glyph_buf  = 0u;
 
-    /* The overlay's single primitive record, refreshed every flush because the one thing in it
-       that is not a constant -- the atlas bindless slot -- can move when the atlas is rebuilt.
-       Every overlay vertex carries index 0 against this base, so one entry serves the whole
-       surface.  It sits past the arena in each region (GUI_PRIM_OVERLAY_ENTRY) and therefore
-       cannot collide with a window's records however full the arena is. */
-    u32        prim_region = frame * GUI_MAX_VIEWPORTS + (u32)vp;
+    /* The overlay's single style record, refreshed every flush because the one thing in it that
+       is not a constant -- the atlas bindless slot -- can move when the atlas is rebuilt.  Every
+       overlay quad carries style 0 against this base, so one entry serves the whole surface.
+       OP_SELF: solid colour, the texel is never consulted.  It sits past the arena in each
+       region (GUI_PRIM_OVERLAY_ENTRY) and therefore cannot collide with a window's records
+       however full the arena is. */
+    u32        prim_region = region;
     gui_prim_t overlay_rec = {
         .field = (u32)GUI_FX_NONE,
+        .ops   = GUI_OP_SELF,
         .tex   = res_atlas_idx() | GUI_TEX_MODE( GUI_TEX_COVERAGE ),
     };
     rhi()->buffer_write( s_render.prim_buf, &overlay_rec, (u32)GUI_PRIM_BYTES,
@@ -457,11 +440,10 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
 
     rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
 
-    rhi()->cmd_draw_indexed( cmd, &( rhi_draw_indexed_args_t ){
-        .index_count    = ic,
+    rhi()->cmd_draw( cmd, &( rhi_draw_args_t ){
+        .vertex_count   = qc * 6u,
         .instance_count = 1,
-        .first_index    = 0,
-        .vertex_offset  = 0,
+        .first_vertex   = 0,
         .first_instance = 0,
     } );
 

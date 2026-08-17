@@ -58,7 +58,6 @@ dash_capture_build( void )
         d->win        = sl->win;
         d->z          = sl->z;          d->vp        = sl->vp;         d->band = sl->band;
         d->vert_base  = sl->vert_base;  d->vert_count = sl->vert_count;  d->vert_alloc = sl->vert_alloc;
-        d->idx_base   = sl->idx_base;   d->idx_count  = sl->idx_count;   d->idx_alloc  = sl->idx_alloc;
         d->cmd_base   = sl->cmd_base;   d->cmd_count  = sl->cmd_count;
         d->tess_gen   = sl->tess_gen;   d->valid      = sl->valid;
 
@@ -80,7 +79,6 @@ dash_capture_build( void )
         sn->cmds[ c ].clip       = gc->cmd.clip_rect;
         sn->cmds[ c ].vp         = gc->vp;
         sn->cmds[ c ].vbase      = gc->vbase;
-        sn->cmds[ c ].ibase      = gc->ibase;
     }
 
     sn->vol_count = s_volatile_count < GUI_MAX_VOLATILE ? s_volatile_count : GUI_MAX_VOLATILE;
@@ -91,18 +89,15 @@ dash_capture_build( void )
         d->id         = vs->id;               d->win        = vs->win;
         d->tess_gen   = vs->tess_gen;
         d->lvert_base = vs->local_vert_base;  d->vert_count = vs->vert_count;  d->vert_alloc = vs->vert_alloc;
-        d->lidx_base  = vs->local_idx_base;   d->idx_count  = vs->idx_count;   d->idx_alloc  = vs->idx_alloc;
         d->cmd_count  = vs->cmd_count;        d->cmd_alloc  = vs->cmd_alloc;
         d->active     = vs->active;           d->hidden     = vs->hidden;
     }
 
-    sn->tess_verts     = s_tess.vert_count;   sn->tess_idx = s_tess.idx_count;   /* tess_cmds below */
-    sn->vert_hwm       = s_tess_stats.vert_hwm;     sn->idx_hwm  = s_tess_stats.idx_hwm;
+    sn->tess_verts     = s_tess.vert_count;   /* quads; tess_cmds below */
+    sn->vert_hwm       = s_tess_stats.vert_hwm;
     sn->overflow_ever  = s_tess_stats.overflow_ever;
     sn->band0_vert_end = s_tess_stats.band0_vert_end;
-    sn->band0_idx_end  = s_tess_stats.band0_idx_end;
     sn->band0_vert_hwm = s_tess_stats.band0_vert_hwm;
-    sn->band0_idx_hwm  = s_tess_stats.band0_idx_hwm;
 
     /* GPU DRAW commands per band -- what actually dispatches, matching the renderer's draw-call
        count and the perf tracker.  A slot's cmd_count includes dormant volatile-pad commands
@@ -183,14 +178,14 @@ dash_capture_build( void )
 /* End of one surface's gui_render_flush: what physically hit the GPU for that surface.  Runs
    every frame (real or idle) since cached geometry is replayed regardless. */
 void
-dash_capture_flush( i32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi, u32 idx_lo, u32 idx_hi,
+dash_capture_flush( i32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi,
                     u32 bytes, u32 batches, u32 draws )
 {
     if ( !s_dash.enabled || s_dash.freeze || vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
     s_dash.snap.surf[ vp ] = ( dash_surf_t ){
         .live = true, .frame_index = frame,
-        .vtx_lo = vtx_lo, .vtx_hi = vtx_hi, .idx_lo = idx_lo, .idx_hi = idx_hi,
+        .vtx_lo = vtx_lo, .vtx_hi = vtx_hi,
         .up_bytes = bytes, .up_batches = batches, .draw_calls = draws,
     };
 }

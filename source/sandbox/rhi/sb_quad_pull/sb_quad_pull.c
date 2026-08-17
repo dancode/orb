@@ -10,7 +10,7 @@
               from a bindless storage buffer, fetches its style's feather for the expansion
               pad, and expands centre +- (half-extent + pad) itself.
         VB    the control arm: the CPU expands every quad into six 20-byte vertices
-              (gui_draw_vert_t layout) and the vertex stage transforms what arrives, exactly
+              (qp_vert_t layout) and the vertex stage transforms what arrives, exactly
               like today's gui pipeline.
 
     Both run through the real cook path -- the 'shader' lines on this target produce
@@ -45,11 +45,22 @@
 #include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_host.h"
 
-/* Types only: gui_quad_t (the record under proof), gui_prim_t (the style record), and the
-   packed vertex + gui_uv_pack the VB arm expands into.  Nothing from the gui library links in. */
+/* Types only: gui_quad_t (the record under proof), gui_prim_t (the style record), and
+   gui_uv_pack.  Nothing from the gui library links in. */
 #include "runtime_service/gui/gui.h"
 
 // clang-format off
+
+/* The VB arm's 20-byte packed vertex -- the layout the gui's retired vertex-buffer pipeline
+   used, kept local so the control arm stays measurable against history. */
+typedef struct
+{
+    f32 x, y;     // pixel position
+    u32 uv;       // texture UV, two unorm16 (gui_uv_pack)
+    u32 abgr;     // packed color
+    u32 prim;     // style record index
+
+} qp_vert_t;
 
 /*==============================================================================================
     Tunables
@@ -79,7 +90,7 @@ typedef struct
 
 } qp_push_t;
 
-/* The style feathers.  The pull vertex stage fetches style row 3 for its expansion pad; the VB
+/* The style feathers.  The pull vertex stage fetches style row 2 for its expansion pad; the VB
    arm applies the same pad on the CPU during expansion, so both arms rasterize identical quads. */
 static const f32 k_style_feather[ QP_STYLES ] = { 0.0f, 0.0f, 0.5f, 0.5f, 1.0f, 1.0f, 2.0f, 2.0f };
 
@@ -88,7 +99,7 @@ static const f32 k_style_feather[ QP_STYLES ] = { 0.0f, 0.0f, 0.5f, 0.5f, 1.0f, 
 ==============================================================================================*/
 
 static gui_quad_t*      s_quads;       /* the authoritative quads, uploaded whole for the pull arm */
-static gui_draw_vert_t* s_verts;       /* the VB arm's CPU expansion of the same quads             */
+static qp_vert_t* s_verts;       /* the VB arm's CPU expansion of the same quads             */
 
 static rhi_pipeline_t   s_pipe_pull;
 static rhi_pipeline_t   s_pipe_vb;
@@ -180,10 +191,10 @@ expand_vb( u32 count )
         f32               x1  = q->cx + ( q->hw + pad );
         f32               y1  = q->cy + ( q->hh + pad );
 
-        gui_draw_vert_t* v = &s_verts[ i * 6u ];
+        qp_vert_t* v = &s_verts[ i * 6u ];
         for ( u32 c = 0; c < 6u; ++c )
         {
-            v[ c ] = ( gui_draw_vert_t ){
+            v[ c ] = ( qp_vert_t ){
                 .x    = x0 + ( x1 - x0 ) * k_cx[ c ],
                 .y    = y0 + ( y1 - y0 ) * k_cy[ c ],
                 .uv   = gui_uv_pack( k_cx[ c ], k_cy[ c ] ),
@@ -203,7 +214,7 @@ upload_quads( u32 count )
 static void
 upload_vb( u32 count )
 {
-    rhi()->buffer_write( s_vb, s_verts, count * 6u * sizeof( gui_draw_vert_t ), 0 );
+    rhi()->buffer_write( s_vb, s_verts, count * 6u * sizeof( qp_vert_t ), 0 );
 }
 
 /*==============================================================================================
@@ -263,7 +274,7 @@ gpu_init( void )
     } );
 
     /* The control arm: today's 20-byte gui vertex, literal offsets pinned to the struct. */
-    ORB_STATIC_ASSERT( sizeof( gui_draw_vert_t ) == 20, "the VB arm states these offsets as literals" );
+    ORB_STATIC_ASSERT( sizeof( qp_vert_t ) == 20, "the VB arm states these offsets as literals" );
 
     s_pipe_vb = rhi()->pipeline_create( &( rhi_pipeline_desc_t ){
         .vert               = vs_vb,
@@ -275,7 +286,7 @@ gpu_init( void )
             { .binding = 0, .location = 3, .offset = 16, .format = RHI_VERTEX_FORMAT_UINT      },
         },
         .attrib_count       = 4,
-        .vertex_stride      = sizeof( gui_draw_vert_t ),
+        .vertex_stride      = sizeof( qp_vert_t ),
         .cull               = RHI_CULL_NONE,
         .depth_test         = false,
         .depth_write        = false,
@@ -305,8 +316,8 @@ gpu_init( void )
     if ( s_quad_buf_idx == 0 )
         return false;
 
-    /* The style table: gui_prim_t records whose placement row and clip are dead lanes; the pull
-       stage fetches row 3 (feather) per vertex for the expansion pad. */
+    /* The style table: gui_prim_t records; the pull stage fetches row 2 (feather) per vertex
+       for the expansion pad. */
     s_style_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
         .size       = QP_STYLES * sizeof( gui_prim_t ),
         .usage      = RHI_BUFFER_USAGE_STORAGE,
@@ -325,7 +336,7 @@ gpu_init( void )
 
     /* The control arm's vertex buffer. */
     s_vb = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = QP_MAX_QUADS * 6u * sizeof( gui_draw_vert_t ),
+        .size       = QP_MAX_QUADS * 6u * sizeof( qp_vert_t ),
         .usage      = RHI_BUFFER_USAGE_VERTEX,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "qp_vb",
@@ -573,7 +584,7 @@ main( int argc, char** argv )
     }
 
     s_quads = malloc( QP_MAX_QUADS * sizeof( gui_quad_t ) );
-    s_verts = malloc( QP_MAX_QUADS * 6u * sizeof( gui_draw_vert_t ) );
+    s_verts = malloc( QP_MAX_QUADS * 6u * sizeof( qp_vert_t ) );
 
     int rc = 1;
     if ( s_quads && s_verts && gpu_init() )

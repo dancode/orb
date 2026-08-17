@@ -97,12 +97,11 @@ gui_ui_memory( void )
 gui_mem_stats_t
 gui_mem_stats( void )
 {
-    /* Count live GPU surfaces in the one global viewport table (a viewport is live once it owns
-       geometry buffers) so the backend can scale the per-surface VB/IB by the true surface count --
-       the old report assumed a single surface and undercounted every floater / secondary window. */
+    /* Count live surfaces in the one global viewport table so the backend can report per-surface
+       costs against the true surface count. */
     u32 live_viewports = 0;
     for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
-        if ( rhi_handle_valid( s_vp_pool[ v ].vb ) )
+        if ( s_vp_pool[ v ].live )
             ++live_viewports;
 
     /* Backend fills GPU + CPU .bss; this unit adds the frontend statics, the CPU-heap context
@@ -147,8 +146,6 @@ gui_print_mem_stats( void )
 
     gui_log( GUI_LOG_INFO, "  -- GPU device (%u live surface%s) ------------------------",
              s.viewport_count, s.viewport_count == 1u ? "" : "s" );
-    GUI_MEM_ROW( "vertex buffers",   s.gpu_vertex_bytes  );
-    GUI_MEM_ROW( "index buffers",    s.gpu_index_bytes   );
     GUI_MEM_ROW( "atlas textures",   s.gpu_texture_bytes );
     GUI_MEM_ROW( "clip + prim tables", s.gpu_table_bytes );
     if ( s.gpu_debug_bytes )

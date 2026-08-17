@@ -11,8 +11,8 @@
                                    then z-sort the result into a dispatch table.
         RENDER (gui_render_submit.c) once per surface: upload the surface's slot-union span (each
                                    frame-in-flight region must hold complete geometry, so the
-                                   cache saves TESSELLATION, not upload) and emit one indexed
-                                   draw call per cached GPU command.
+                                   cache saves TESSELLATION, not upload) and emit one draw
+                                   call per cached GPU command.
 
     BUILD runs lazily on the first surface flush (cache_build_frame, guarded by s_frame_built)
     because the semantic command list is shared across every surface -- the geometry it produces
@@ -145,7 +145,7 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
 /*==============================================================================================
     Window geometry slots -- the retained geometry store.
 
-    Each window owns one slot that caches its tessellated geometry: a vertex span, an index
+    Each window owns one slot that caches its tessellated geometry: a quad span, a style-record
     span, and the GPU draw commands that replay them.  An unchanged window replays its commands
     from the stable cache instead of re-tessellating; a changed window tessellates into its slot.
     Slots are z-sorted into the dispatch table that SUBMIT walks.
@@ -153,14 +153,14 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
     Slot tables ping-pong between two backing stores (s_slots_a / s_slots_b) so this frame can
     read last frame's geometry positions (s_slots_prev) while building this frame's (s_slots).
 
-    No separate prev-geometry buffer: s_tess.verts/indices persist between frames, so each
+    No separate prev-geometry buffer: s_tess.quads/prims persist between frames, so each
     window's geometry remains at its prev->vert_base until overwritten.  The reuse path advances
     the write head by vert_alloc (not vert_count) to keep the SLOT_VERT_PAD gap intact, which
     absorbs minor in-place growth without touching adjacent slots.
 ==============================================================================================*/
 
-/* RENDER_MAX_WIN / SLOT_VERT_PAD / SLOT_IDX_PAD live in gui_render.h (the dashboard snapshot
-   types are sized by them). */
+/* RENDER_MAX_WIN / SLOT_VERT_PAD live in gui_render.h (the dashboard snapshot types are sized
+   by them). */
 /* Max GPU draw commands cached per slot; most windows have 2-4, but every volatile block adds
    its own commands + reserved dormant pads (unmergeable across the reservation seams), so a
    window dense with volatile widgets multiplies fast.  A window that exceeds the cap is NOT
@@ -179,17 +179,16 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
    hard overflow.  Padding (vert_alloc - vert_count) is NOT counted as dead, so a freshly repacked
    arena reads ~0% and the trigger cannot thrash frame-to-frame. */
 #define GUI_REPACK_FRAG_PCT   25
-#define GUI_REPACK_FRAG_FLOOR 2048   /* skip the check below this many dead verts/idx -- noise */
+#define GUI_REPACK_FRAG_FLOOR 2048   /* skip the check below this many dead quads -- noise */
 
 /* One cached GPU draw command.  Packed AOS so replaying a slot's commands touches one region.
-   z is per-slot (the window's max segment z), not per-command; lvbase/libase are slot-local so
-   the reuse path needs no fixup when the slot's absolute vert_base/idx_base is unchanged. */
+   z is per-slot (the window's max segment z), not per-command; lvbase is slot-local so the
+   reuse path needs no fixup when the slot's absolute vert_base is unchanged. */
 typedef struct
 {
-    gui_gpu_cmd_t cmd;     // clip rect, texture slot, element count
+    gui_gpu_cmd_t cmd;     // clip rect, texture slot, element count (quads)
     i32           vp;      // viewport this command targets (GUI_VP_INVALID = dormant volatile pad)
-    u32           lvbase;  // vertex base relative to slot->vert_base (0-relative)
-    u32           libase;  // index base relative to slot->idx_base (the cmd's first_index seed)
+    u32           lvbase;  // quad base relative to slot->vert_base (0-relative)
 
 } win_slot_cmd_t;
 
@@ -198,9 +197,8 @@ typedef struct
 {
     gui_id_t win;
     u32      z;
-    u32      vert_base, vert_count, vert_alloc;  // VB: absolute position, actual count, padded reservation
-    u32      idx_base,  idx_count,  idx_alloc;   // IB: absolute position, actual count, padded reservation
-    u32      prim_base, prim_count, prim_alloc;  // records: same three, in the primitive arena
+    u32      vert_base, vert_count, vert_alloc;  // quads: absolute position, actual count, padded reservation
+    u32      prim_base, prim_count, prim_alloc;  // style records: same three, in their own arena
     u32      cmd_base,  cmd_count;               // range into s_tess.gpu_cmds[] for this window
     u32      tess_gen;                           // generation of the tess pass that produced the geometry
     u8       vp;                                 // viewport (GUI_MAX_VIEWPORTS = 4)
@@ -298,7 +296,7 @@ static u32 s_tess_gen_next;
    on idle frames that is the last completed frame's table; during cache_build_frame's slot loop
    it already contains this frame's slots built so far -- both exactly what a caller wants. */
 static bool
-cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* prim_base, u32* cmd_base,
+cache_slot_lookup( gui_id_t win, u32* vert_base, u32* prim_base, u32* cmd_base,
                    u32* tess_gen )
 {
     for ( u32 i = 0; i < s_slot_count; ++i )
@@ -306,7 +304,6 @@ cache_slot_lookup( gui_id_t win, u32* vert_base, u32* idx_base, u32* prim_base, 
         if ( s_slots[ i ].win != win || !s_slots[ i ].valid )
             continue;
         *vert_base = s_slots[ i ].vert_base;
-        *idx_base  = s_slots[ i ].idx_base;
         *prim_base = s_slots[ i ].prim_base;
         *cmd_base  = s_slots[ i ].cmd_base;
         *tess_gen  = s_slots[ i ].tess_gen;
@@ -382,18 +379,16 @@ cache_slot_clips_bind( gui_id_t win )
    !RELEASE only, matching the sole call site (that assert). */
 #if !RELEASE
 static void
-cache_slots_extent( u32* out_vert_end, u32* out_idx_end, u32* out_prim_end )
+cache_slots_extent( u32* out_vert_end, u32* out_prim_end )
 {
-    u32 ve = 0, ie = 0, pe = 0;
+    u32 ve = 0, pe = 0;
     for ( u32 i = 0; i < s_slot_count; ++i )
     {
         if ( !s_slots[ i ].valid )
             continue;
         u32 v = s_slots[ i ].vert_base + s_slots[ i ].vert_alloc;
-        u32 x = s_slots[ i ].idx_base  + s_slots[ i ].idx_alloc;
         u32 p = s_slots[ i ].prim_base + s_slots[ i ].prim_alloc;
         if ( v > ve ) ve = v;
-        if ( x > ie ) ie = x;
         if ( p > pe ) pe = p;
     }
     for ( u32 i = 0; i < s_slot_prev_count; ++i )
@@ -401,14 +396,11 @@ cache_slots_extent( u32* out_vert_end, u32* out_idx_end, u32* out_prim_end )
         if ( !s_slots_prev[ i ].valid )
             continue;
         u32 v = s_slots_prev[ i ].vert_base + s_slots_prev[ i ].vert_alloc;
-        u32 x = s_slots_prev[ i ].idx_base  + s_slots_prev[ i ].idx_alloc;
         u32 p = s_slots_prev[ i ].prim_base + s_slots_prev[ i ].prim_alloc;
         if ( v > ve ) ve = v;
-        if ( x > ie ) ie = x;
         if ( p > pe ) pe = p;
     }
     *out_vert_end = ve;
-    *out_idx_end  = ie;
     *out_prim_end = pe;
 }
 #endif
@@ -563,27 +555,19 @@ cache_diff_windows( void )
             s_seg_next[ s_cache.cur[ bi ].seg_tail ] = (u16)si;
         s_cache.cur[ bi ].seg_tail = (u16)si;
 
-        /* Fold z, vp, band and EVERY atlas generation into the hash.  The FONT ID is no longer
-           folded here because it is no longer on the segment -- it rides each text command and is
-           folded by draw_hash_cmd, whose result this loop already accumulates below, so a font
-           change still dirties its window exactly as before.
-           The generations are a separate requirement and are unchanged: an id alone was never
-           enough, because a live re-bake (font_load_into) changes glyph geometry and a shared-atlas
-           repack can shift every tenant's UVs, all while the font id and the (shared, stable)
-           bindless index stay put.  The generations bump on any such structural change, so folding
-           them forces the affected windows to re-tessellate against the new packing.  The sprite
-           atlas is folded on the same rule and for a sharper reason: a sprite command carries only
-           its ID, so its UVs are resolved fresh at every tessellation -- this is what makes that
-           re-tessellation actually happen after a repack.  The SDF atlas is folded because a
-           distance-field font's glyphs are its tenants and repack exactly the same way -- and
-           because its FIRST creation moves a font's draws from tex 0 to a real slot. */
-        u32 gen = res_atlas_generation() ^ ( res_sprite_generation() * 2654435761u )
-                                         ^ ( res_sdf_generation()    * 2246822519u );
+        /* Fold z, vp and band into the hash.  The FONT ID is not folded here because it rides
+           each text command and is folded by draw_hash_cmd, whose result this loop already
+           accumulates below, so a font change still dirties its window.
+           NO blanket atlas-generation fold: text addresses glyphs by stable table id (the glyph
+           table rewrites in place on a repack), fills are GUI_OP_SELF, and emit-baked uvs
+           (icons, images) re-resolve on the dirty frame the atlas upload itself raises -- so a
+           coverage or SDF repack invalidates NOTHING here, which is the repack-free prize the
+           glyph table exists for.  The two tess-time-resolved uv consumers left are folded per
+           COMMAND in the loop below (sprites, dash rows). */
         u32 h   = s_cache.cur[ bi ].hash;
         h = fnv1a_u32( h, segs[ si ].z    );
         h = fnv1a_u32( h, segs[ si ].vp   );
         h = fnv1a_u32( h, segs[ si ].band );   /* band flip must re-tessellate (slot changes ends) */
-        h = fnv1a_u32( h, gen              );
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
         {
             /* Clip usage is marked before the volatile skip below -- a volatile command still
@@ -607,6 +591,16 @@ cache_diff_windows( void )
                 continue;
             }
             h = fnv1a_u32( h, s_draw.cmd_hashes[ i ] );
+
+            /* Per-command generation folds: the two commands whose uvs are still resolved at
+               TESS time against a movable atlas placement.  A sprite bakes its atlas rect fresh
+               each tessellation; a dashed line bakes the assist row's V, which moves when the
+               coverage atlas grows.  Folding only on the commands that carry the dependency
+               keeps every other window repack-immune. */
+            if ( s_draw.cmds[ i ].type == GUI_CMD_SPRITE )
+                h = fnv1a_u32( h, res_sprite_generation() );
+            else if ( s_draw.cmds[ i ].type == GUI_CMD_DASHED_LINE )
+                h = fnv1a_u32( h, res_atlas_generation() );
         }
         s_cache.cur[ bi ].hash = h;
 
@@ -785,17 +779,16 @@ cache_tess_window( const render_win_hash_t* wh )
 static void
 cache_dump_slots( const char* tag )
 {
-    gui_log( GUI_LOG_INFO, "cached geometry [%s]: %u slots  tess v=%u/%u i=%u/%u c=%u/%u",
-             tag ? tag : "dump", s_slot_count, s_tess.vert_count, GUI_MAX_VERTS,
-             s_tess.idx_count, GUI_MAX_IDX, s_tess.cmd_count, GUI_MAX_CMDS );
+    gui_log( GUI_LOG_INFO, "cached geometry [%s]: %u slots  tess q=%u/%u c=%u/%u",
+             tag ? tag : "dump", s_slot_count, s_tess.vert_count, GUI_MAX_QUADS,
+             s_tess.cmd_count, GUI_MAX_CMDS );
     for ( u32 i = 0; i < s_slot_count; ++i )
     {
         const win_geo_slot_t* s = &s_slots[ i ];
         gui_log( GUI_LOG_INFO,
-                 "  [%2u] win=%-11u z=%-4u vp=%d  vert[%u..%u)/%u  idx[%u..%u)/%u  cmd[%u..%u)  gen=%u%s",
+                 "  [%2u] win=%-11u z=%-4u vp=%d  quad[%u..%u)/%u  cmd[%u..%u)  gen=%u%s",
                  i, s->win, s->z, s->vp,
                  s->vert_base, s->vert_base + s->vert_count, s->vert_alloc,
-                 s->idx_base,  s->idx_base  + s->idx_count,  s->idx_alloc,
                  s->cmd_base,  s->cmd_base  + s->cmd_count,  s->tess_gen,
                  s->valid ? "" : "  (INVALID)" );
     }
@@ -812,30 +805,24 @@ cache_validate_geometry( void )
             continue;
 
         /* Live geometry must fit inside the reservation it was measured into. */
-        if ( sa->vert_count > sa->vert_alloc || sa->idx_count > sa->idx_alloc )
+        if ( sa->vert_count > sa->vert_alloc )
             cache_dump_slots( "OVERFLOW" );
         ORB_ASSERT_MSG( sa->vert_count <= sa->vert_alloc,
-                        "gui cache: slot live vertex count exceeds its reservation" );
-        ORB_ASSERT_MSG( sa->idx_count <= sa->idx_alloc,
-                        "gui cache: slot live index count exceeds its reservation" );
+                        "gui cache: slot live quad count exceeds its reservation" );
 
         u32 av0 = sa->vert_base, av1 = sa->vert_base + sa->vert_alloc;
-        u32 ai0 = sa->idx_base,  ai1 = sa->idx_base  + sa->idx_alloc;
 
-        /* No two slots may share buffer space (adjacency at a shared boundary is fine). */
+        /* No two slots may share arena space (adjacency at a shared boundary is fine). */
         for ( u32 b = a + 1; b < s_slot_count; ++b )
         {
             const win_geo_slot_t* sb = &s_slots[ b ];
             if ( !sb->valid )
                 continue;
             u32  bv0 = sb->vert_base, bv1 = sb->vert_base + sb->vert_alloc;
-            u32  bi0 = sb->idx_base,  bi1 = sb->idx_base  + sb->idx_alloc;
             bool vhit = ( av0 < bv1 && bv0 < av1 );
-            bool ihit = ( ai0 < bi1 && bi0 < ai1 );
-            if ( vhit || ihit )
+            if ( vhit )
                 cache_dump_slots( "OVERLAP" );
-            ORB_ASSERT_MSG( !vhit, "gui cache: two window slots share vertex-buffer space" );
-            ORB_ASSERT_MSG( !ihit, "gui cache: two window slots share index-buffer space" );
+            ORB_ASSERT_MSG( !vhit, "gui cache: two window slots share quad-arena space" );
         }
     }
 }
@@ -870,9 +857,6 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
     slot->vert_base  = prev->vert_base;
     slot->vert_count = prev->vert_count;
     slot->vert_alloc = prev->vert_alloc;
-    slot->idx_base   = prev->idx_base;
-    slot->idx_count  = prev->idx_count;
-    slot->idx_alloc  = prev->idx_alloc;
     slot->prim_base  = prev->prim_base;
     slot->prim_count = prev->prim_count;
     slot->prim_alloc = prev->prim_alloc;
@@ -887,13 +871,11 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
     /* Keep the write head (== the arena tail every fresh tessellation targets) past this slot. */
     if ( prev->vert_base + prev->vert_alloc > s_tess.vert_count )
         s_tess.vert_count = prev->vert_base + prev->vert_alloc;
-    if ( prev->idx_base + prev->idx_alloc > s_tess.idx_count )
-        s_tess.idx_count = prev->idx_base + prev->idx_alloc;
     if ( prev->prim_base + prev->prim_alloc > s_tess.prim_count )
         s_tess.prim_count = prev->prim_base + prev->prim_alloc;
 
-    /* Replay GPU commands from the stable cache.  lvbase/libase are slot-local, so
-       adding slot->vert_base/idx_base gives the absolute offsets for this frame. */
+    /* Replay GPU commands from the stable cache.  lvbase is slot-local, so adding
+       slot->vert_base gives the absolute offset for this frame. */
     slot->cmd_base = s_tess.cmd_count;
     u32  nc        = s_win_cached_count[ cache_idx ];
     bool truncated = slot->cmd_base + nc > GUI_MAX_CMDS;
@@ -918,7 +900,6 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
         s_tess.gpu_cmds[ ci ].cmd   = s_win_cached[ cache_idx ][ k ].cmd;
         s_tess.gpu_cmds[ ci ].vp    = s_win_cached[ cache_idx ][ k ].vp;
         s_tess.gpu_cmds[ ci ].vbase = slot->vert_base + s_win_cached[ cache_idx ][ k ].lvbase;
-        s_tess.gpu_cmds[ ci ].ibase = slot->idx_base  + s_win_cached[ cache_idx ][ k ].libase;
     }
     s_tess.cmd_count += nc;
 
@@ -937,7 +918,7 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
    over another window's live geometry, whatever it turns out to measure.  Then:
 
      - fits its own previous reservation -> the geometry is memcpy'd back into that hole (indices
-       are slot-relative, so only the slot bases and the absolute vbase/ibase shift) and
+       are slot-relative, so only the slot bases and the absolute vbase shift) and
        the tail rewinds -- the steady interactive case (the focused window changing every frame)
        reuses its home and the arena layout is byte-stable.
      - outgrew it (or is new)           -> it keeps the tail position with a fresh reservation
@@ -953,16 +934,13 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
                        const win_geo_slot_t* prev, u32 cache_idx )
 {
     u32 tail_v = s_tess.vert_count;   /* invariant: the write head is past every live reservation */
-    u32 tail_i = s_tess.idx_count;
     u32 tail_p = s_tess.prim_count;
 
     slot->vert_base       = tail_v;
-    slot->idx_base        = tail_i;
     slot->prim_base       = tail_p;
     slot->cmd_base        = s_tess.cmd_count;
     slot->tess_gen        = ++s_tess_gen_next;   /* fresh pass: volatile captures bind to it */
     s_tess.slot_vert_base = tail_v;
-    s_tess.slot_idx_base  = tail_i;
     s_tess.slot_prim_base = tail_p;
     s_tess.slot_cmd_base  = s_tess.cmd_count;
     s_tess.slot_tess_gen  = slot->tess_gen;
@@ -992,7 +970,6 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_tess.slot_clip_base    = 0;
 
     slot->vert_count = s_tess.vert_count - slot->vert_base;
-    slot->idx_count  = s_tess.idx_count  - slot->idx_base;
     slot->prim_count = s_tess.prim_count - slot->prim_base;
     slot->cmd_count  = s_tess.cmd_count  - slot->cmd_base;
 
@@ -1002,45 +979,34 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
 
     bool fits = ( prev && prev->valid
                   && slot->vert_count <= prev->vert_alloc
-                  && slot->idx_count  <= prev->idx_alloc
                   && slot->prim_count <= prev->prim_alloc );
     if ( fits )
     {
         /* Relocate from the tail scratch back into the window's own reservation.  The spans are
-           disjoint by the tail invariant (tail >= prev base + alloc), so memcpy is safe.  Indices
-           are slot-relative and move verbatim; only the absolute per-command bases shift. */
+           disjoint by the tail invariant (tail >= prev base + alloc), so memcpy is safe; only
+           the absolute per-command bases shift. */
         u32 dv = tail_v - prev->vert_base;
-        u32 di = tail_i - prev->idx_base;
         u32 dp = tail_p - prev->prim_base;
-        if ( dv || di )
+        if ( dv )
         {
-            memcpy( &s_tess.verts  [ prev->vert_base ], &s_tess.verts  [ tail_v ],
-                    slot->vert_count * sizeof( gui_draw_vert_t ) );
-            memcpy( &s_tess.indices[ prev->idx_base ],  &s_tess.indices[ tail_i ],
-                    slot->idx_count * sizeof( u16 ) );
+            tess_geo_copy( prev->vert_base, tail_v, slot->vert_count );
             for ( u32 k = 0; k < slot->cmd_count; ++k )
-            {
                 s_tess.gpu_cmds[ slot->cmd_base + k ].vbase -= dv;
-                s_tess.gpu_cmds[ slot->cmd_base + k ].ibase -= di;
-            }
         }
-        /* Records move on their own axis: the record arena is packed independently of the vertex
-           one, so a slot can land back in its vertex hole while its records still shift.  Their
-           baked indices are slot-local, so like the index values they travel verbatim. */
+        /* Records move on their own axis: the record arena is packed independently of the quad
+           one, so a slot can land back in its quad hole while its records still shift.  Their
+           baked indices are slot-local, so they travel verbatim. */
         if ( dp )
             memcpy( &s_tess.prims[ prev->prim_base ], &s_tess.prims[ tail_p ],
                     slot->prim_count * sizeof( gui_prim_t ) );
 
         slot->vert_base  = prev->vert_base;
         slot->vert_alloc = prev->vert_alloc;
-        slot->idx_base   = prev->idx_base;
-        slot->idx_alloc  = prev->idx_alloc;
         slot->prim_base  = prev->prim_base;
         slot->prim_alloc = prev->prim_alloc;
 
         /* Rewind the tail: the scratch bytes are abandoned, nothing references them. */
         s_tess.vert_count = tail_v;
-        s_tess.idx_count  = tail_i;
         s_tess.prim_count = tail_p;
     }
     else
@@ -1048,23 +1014,18 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
         /* Stays at the tail.  Geometric headroom: a quarter of the live size, floored at the
            fixed pads, so growth relocates logarithmically instead of once per grown frame. */
         u32 pad_v = slot->vert_count / 4u;  if ( pad_v < SLOT_VERT_PAD ) pad_v = SLOT_VERT_PAD;
-        u32 pad_i = slot->idx_count  / 4u;  if ( pad_i < SLOT_IDX_PAD  ) pad_i = SLOT_IDX_PAD;
         u32 pad_p = slot->prim_count / 4u;  if ( pad_p < SLOT_PRIM_PAD ) pad_p = SLOT_PRIM_PAD;
         slot->vert_alloc = slot->vert_count + pad_v;
-        slot->idx_alloc  = slot->idx_count  + pad_i;
         slot->prim_alloc = slot->prim_count + pad_p;
 
         /* Clamp to the arena like volatile_range_close: headroom shrinks before the write head
            can pass the cap, so fill ratios and the overflow report never read past the pools. */
-        if ( slot->vert_base + slot->vert_alloc > GUI_MAX_VERTS )
-            slot->vert_alloc = GUI_MAX_VERTS - slot->vert_base;
-        if ( slot->idx_base + slot->idx_alloc > GUI_MAX_IDX )
-            slot->idx_alloc = GUI_MAX_IDX - slot->idx_base;
+        if ( slot->vert_base + slot->vert_alloc > GUI_MAX_QUADS )
+            slot->vert_alloc = GUI_MAX_QUADS - slot->vert_base;
         if ( slot->prim_base + slot->prim_alloc > GUI_MAX_PRIMS )
             slot->prim_alloc = GUI_MAX_PRIMS - slot->prim_base;
 
         s_tess.vert_count = slot->vert_base + slot->vert_alloc;
-        s_tess.idx_count  = slot->idx_base  + slot->idx_alloc;
         s_tess.prim_count = slot->prim_base + slot->prim_alloc;
     }
 
@@ -1073,8 +1034,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
        than bumping s_geo_gen -- a steadily-changing window (the focused one, a stats overlay)
        costs its own span per present, not the whole arena.  The repack retry bumps the
        generation instead (cache_build_frame): there every slot moves. */
-    patch_span_union( slot->vp, slot->band, slot->vert_base, slot->vert_base + slot->vert_count,
-                      slot->idx_base, slot->idx_base + slot->idx_count );
+    patch_span_union( slot->vp, slot->band, slot->vert_base, slot->vert_base + slot->vert_count );
 
     /* Write GPU commands into the stable cache for reuse next retained frame.  A run that exceeds
        the cache must NOT be truncated: dropping trailing commands blanks the window's deferred
@@ -1099,7 +1059,6 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
         s_win_cached[ cache_idx ][ k ].cmd    = s_tess.gpu_cmds[ ci ].cmd;
         s_win_cached[ cache_idx ][ k ].vp     = s_tess.gpu_cmds[ ci ].vp;
         s_win_cached[ cache_idx ][ k ].lvbase = s_tess.gpu_cmds[ ci ].vbase - slot->vert_base;
-        s_win_cached[ cache_idx ][ k ].libase = s_tess.gpu_cmds[ ci ].ibase - slot->idx_base;
     }
     slot->cmd_cached = true;
     slot->valid      = true;
@@ -1108,7 +1067,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
 /*==============================================================================================
     cache_build_frame (BUILD step 2) -- diff, reuse or re-tessellate per window, z-sort.
 
-    Runs once per frame (guarded by s_frame_built).  Produces the geometry (s_tess.verts/indices),
+    Runs once per frame (guarded by s_frame_built).  Produces the geometry (s_tess.quads/prims),
     the per-window slot table, and the back-to-front dispatch order -- all surface-independent.
 
     ID-KEYED in-place geometry reuse:
@@ -1131,11 +1090,11 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
 /* Accumulators one placement pass produces for the stats/report code after it. */
 typedef struct
 {
-    u32      vert_retained, tri_retained, win_retained;
+    u32      vert_retained, tri_retained, win_retained;   /* vert_* counts QUADS; tri = quads*2 */
     u32      total_vert, total_tri, overlay_win;
-    u32      reserved_vert, reserved_idx;   /* sum of vert_alloc/idx_alloc over ALL placed slots */
+    u32      reserved_vert;                 /* sum of vert_alloc over ALL placed slots */
     gui_id_t overflow_win;
-    u32      overflow_at_vert, overflow_at_idx, overflow_at_cmd;
+    u32      overflow_at_vert, overflow_at_cmd;
     gui_id_t reused_volatile_wins[ RENDER_MAX_WIN ];
     u32      reused_volatile_n;
 
@@ -1156,7 +1115,6 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
 
     tess_reset();
     s_tess_stats.band0_vert_end = 0;   /* re-derived below as main-band slots place; 0 when none exist */
-    s_tess_stats.band0_idx_end  = 0;
 
     /* Seed the write head at the arena tail: past every live prev reservation, so a fresh
        tessellation can never land inside geometry a later window still wants to reuse.  In
@@ -1167,10 +1125,8 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
         {
             if ( !s_slots_prev[ i ].valid ) continue;
             u32 ve = s_slots_prev[ i ].vert_base + s_slots_prev[ i ].vert_alloc;
-            u32 ie = s_slots_prev[ i ].idx_base  + s_slots_prev[ i ].idx_alloc;
             u32 pe = s_slots_prev[ i ].prim_base + s_slots_prev[ i ].prim_alloc;
             if ( ve > s_tess.vert_count ) s_tess.vert_count = ve;
-            if ( ie > s_tess.idx_count  ) s_tess.idx_count  = ie;
             if ( pe > s_tess.prim_count ) s_tess.prim_count = pe;
         }
     }
@@ -1212,7 +1168,7 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
             if ( wh->band == 0 )
             {
                 st->vert_retained += slot->vert_count;
-                st->tri_retained  += slot->idx_count / 3u;
+                st->tri_retained  += slot->vert_count * 2u;
                 ++st->win_retained;
             }
         }
@@ -1226,14 +1182,12 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
         {
             st->overflow_win     = wh->win;
             st->overflow_at_vert = s_tess.vert_count;
-            st->overflow_at_idx  = s_tess.idx_count;
             st->overflow_at_cmd  = s_tess.cmd_count;
         }
 
         /* Space this slot owns (live count + retained padding).  Summed over every slot, the tail
            minus this is the dead space the proactive-repack check reclaims. */
         st->reserved_vert += slot->vert_alloc;
-        st->reserved_idx  += slot->idx_alloc;
 
         /* Accumulate per-slot geometry stats; exclude self-measuring debug-band windows from totals. */
         if ( wh->band != 0 )
@@ -1241,16 +1195,14 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
         else
         {
             st->total_vert += slot->vert_count;
-            st->total_tri  += slot->idx_count / 3u;
+            st->total_tri  += slot->vert_count * 2u;
 
             /* Band boundary: the far edge of the main band's reservations (band-major sort placed
                them first, but id-keyed slots keep historical positions, so track the max extent
                rather than the loop's write head).  The dashboard's memory map draws "main arena
                ends here" at this mark; everything past it is the debug band's own footprint. */
             u32 ve = slot->vert_base + slot->vert_alloc;
-            u32 ie = slot->idx_base  + slot->idx_alloc;
             if ( ve > s_tess_stats.band0_vert_end ) s_tess_stats.band0_vert_end = ve;
-            if ( ie > s_tess_stats.band0_idx_end  ) s_tess_stats.band0_idx_end  = ie;
         }
 
         s_dispatch[ s_dispatch_count++ ] = slot;
@@ -1306,9 +1258,8 @@ cache_build_frame( void )
             instead of waiting for a user event or a hard overflow.  Floored so a near-empty arena
             never trips on a high percentage of a tiny number. */
     u32  dead_v = s_tess.vert_count > ps.reserved_vert ? s_tess.vert_count - ps.reserved_vert : 0;
-    u32  dead_i = s_tess.idx_count  > ps.reserved_idx  ? s_tess.idx_count  - ps.reserved_idx  : 0;
-    bool frag   = ( dead_v >= GUI_REPACK_FRAG_FLOOR && dead_v * 100u >= s_tess.vert_count * GUI_REPACK_FRAG_PCT )
-               || ( dead_i >= GUI_REPACK_FRAG_FLOOR && dead_i * 100u >= s_tess.idx_count  * GUI_REPACK_FRAG_PCT );
+    bool frag   = ( dead_v >= GUI_REPACK_FRAG_FLOOR
+                    && dead_v * 100u >= s_tess.vert_count * GUI_REPACK_FRAG_PCT );
 
     if ( s_tess.overflow || frag )
     {
@@ -1354,10 +1305,8 @@ cache_build_frame( void )
     /* Track geometry high-water marks and warn once on overflow.  The total (both bands) and the
        main band alone peak independently, so each gets its own accumulator. */
     if ( s_tess.vert_count           > s_tess_stats.vert_hwm       ) s_tess_stats.vert_hwm       = s_tess.vert_count;
-    if ( s_tess.idx_count            > s_tess_stats.idx_hwm        ) s_tess_stats.idx_hwm        = s_tess.idx_count;
     if ( s_tess.prim_count           > s_tess_stats.prim_hwm       ) s_tess_stats.prim_hwm       = s_tess.prim_count;
     if ( s_tess_stats.band0_vert_end > s_tess_stats.band0_vert_hwm ) s_tess_stats.band0_vert_hwm = s_tess_stats.band0_vert_end;
-    if ( s_tess_stats.band0_idx_end  > s_tess_stats.band0_idx_hwm  ) s_tess_stats.band0_idx_hwm  = s_tess_stats.band0_idx_end;
 
     /* Single overflow catch for the whole build: the reservation sites just latch s_tess.overflow
        and drop their primitive (non-fatal -- the frame still submits everything that fit, the app
@@ -1370,7 +1319,6 @@ cache_build_frame( void )
     if ( s_tess.overflow && ps.overflow_win == GUI_ID_NONE )
     {
         ps.overflow_at_vert = s_tess.vert_count;
-        ps.overflow_at_idx  = s_tess.idx_count;
         ps.overflow_at_cmd  = s_tess.cmd_count;
     }
 
@@ -1383,10 +1331,10 @@ cache_build_frame( void )
         /* The default sink flushes, so this lands before the once-assert below can trap. */
         gui_log( GUI_LOG_WARN,
                  "draw list overflow -- geometry dropped tessellating window '%s' "
-                 "(id 0x%08X); arena filled to %u/%u verts, %u/%u idx, %u/%u gpu cmds. "
-                 "Raise GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS.",
+                 "(id 0x%08X); arena filled to %u/%u quads, %u/%u gpu cmds. "
+                 "Raise GUI_MAX_QUADS / GUI_MAX_CMDS.",
                  nm ? nm : "<unnamed>", (unsigned)ps.overflow_win,
-                 ps.overflow_at_vert, GUI_MAX_VERTS, ps.overflow_at_idx, GUI_MAX_IDX,
+                 ps.overflow_at_vert, GUI_MAX_QUADS,
                  ps.overflow_at_cmd, GUI_MAX_CMDS );
     }
     if ( s_tess.overflow )
@@ -1396,7 +1344,7 @@ cache_build_frame( void )
        macro self-latches, so a persistent overflow does not re-trap every frame.  Non-fatal: skip
        past it (or a release build) and the app keeps running with the dropped geometry. */
     ORB_ASSERT_MSG_ONCE( !s_tess.overflow, "gui draw list overflow -- geometry dropped; raise "
-                                           "GUI_MAX_VERTS / GUI_MAX_IDX / GUI_MAX_CMDS (gui.h)" );
+                                           "GUI_MAX_QUADS / GUI_MAX_CMDS (gui.h)" );
 
     /* Pipeline-dashboard snapshot: everything above is final for the frame -- slots placed,
        dispatch z-sorted, stats accumulated.  A no-op unless GUI_PIPELINE_DASHBOARD. */

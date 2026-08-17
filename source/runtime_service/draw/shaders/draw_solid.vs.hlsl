@@ -8,7 +8,7 @@
 // Reads only pos (location 0) and color (location 1); the shared vertex also carries uv at
 // location 2, which this pipeline ignores.  The mvp is authored in Vulkan clip space (the
 // GLSL twin compiles without a y flip), so negate y once to cancel the cook's baked
-// -fvk-invert-y -- see gui.vs.hlsl for the full story.
+// -fvk-invert-y -- see gui_quad.vs.hlsl for the full story.
 
 struct draw_pc_t
 {

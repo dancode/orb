@@ -25,7 +25,7 @@ struct qp_pc_t
 [[vk::binding( 2, 0 )]] StructuredBuffer<float4> u_buffers[] : register( t0, space1 );
 
 #define QUAD_ROWS   3u   // gui.h GUI_QUAD_ROWS: cx/cy/hw/hh | uv0/uv1/abgr/style | clip/flags
-#define STYLE_ROWS  8u   // gui.h GUI_PRIM_ROWS: a style is a gui_prim_t with placement dead
+#define STYLE_ROWS  7u   // gui.h GUI_PRIM_ROWS: a style is a gui_prim_t
 
 // Corner of the two-triangle quad, in (0,0)..(1,1): triangles 0-1-2 and 0-2-3 of the corner
 // ring TL, TR, BR, BL.
@@ -61,11 +61,11 @@ vs_out_t main( uint vid : SV_VertexID )
     float4 r0  = u_buffers[ pc.quad_buf ][ row ];        // cx, cy, hw, hh -- the TRUE extents
     float4 r1  = u_buffers[ pc.quad_buf ][ row + 1u ];   // uv0, uv1, abgr, style
 
-    // The expansion pad comes from the STYLE, not the quad: feather (style row 3 leads with it)
+    // The expansion pad comes from the STYLE, not the quad: feather (style row 2 leads with it)
     // plus a one-pixel AA guard.  This dependent fetch is the cost under measurement -- the
     // real replay backend pays exactly this to keep pre-inflated extents out of the record.
     uint   style   = asuint( r1.w );
-    float4 srow    = u_buffers[ pc.style_buf ][ ( pc.style_base + style ) * STYLE_ROWS + 3u ];
+    float4 srow    = u_buffers[ pc.style_buf ][ ( pc.style_base + style ) * STYLE_ROWS + 2u ];
     float  pad     = srow.x + 1.0;
 
     float2 sgn = corner * 2.0 - 1.0;

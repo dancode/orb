@@ -23,17 +23,17 @@
 /*==============================================================================================
     gui_gpu_cmd_t -- backend-private GPU draw command.
 
-    One bounded range of indices sharing a texture slot and scissor rect -- the unit the GPU
-    sees.  Not exposed in gui.h.  The public gui_cmd_t carries semantic shapes; the BUILD phase
-    (gui_build_tess.c) tessellates those into these.
+    One bounded range of quads -- the unit the GPU sees.  Not exposed in gui.h.  The public
+    gui_cmd_t carries semantic shapes; the BUILD phase (gui_build_tess.c) tessellates those
+    into these.
 ==============================================================================================*/
 
 typedef struct
 {
-    u32          elem_count; // number of indices to emit
+    u32          elem_count; // number of quads to draw (6 vertices each)
     /* The texture of the command's FIRST primitive, kept for diagnostics only (the dashboard
        tooltip).  It is no longer a batch key and no longer describes the whole command: the
-       texture rides the vertex now (gui.h, gui_draw_vert_t), so one command can span several. */
+       texture rides the style record (gui.h, gui_prim_t), so one command can span several. */
     u32          tex_idx;    // first primitive's model|slot -- diagnostic, not a batch key
     gui_rect_t   clip_rect;  // scissor rect (pixels)
 
@@ -405,7 +405,7 @@ draw_cull_box( f32 x, f32 y, f32 w, f32 h )
 }
 
 /* The shared push body.  `radius` rounds the clip's own corners -- the per-fragment cut the
-   scissor could never express (gui.ps.hlsl, clip_coverage).  It applies to THIS entry only: a
+   scissor could never express (gui_fx.hlsli, clip_coverage).  It applies to THIS entry only: a
    clip nested inside a rounded one intersects against the parent's RECT (the corner arcs do not
    compose through rect_intersect), which errs by letting a child paint into its parent's corner
    arc -- the parent's own chrome overpaints there in practice. */

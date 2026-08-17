@@ -272,7 +272,7 @@ static i32
 viewport_index_for_window( i32 win_id )
 {
     for ( i32 i = 0; i < APP_WIN_MAX; ++i ) {
-        if ( rhi_handle_valid( s_vp_pool[ i ].vb ) && s_vp_pool[ i ].win_id == win_id )
+        if ( s_vp_pool[ i ].live && s_vp_pool[ i ].win_id == win_id )
             return i;
     }
     return GUI_VP_INVALID;
@@ -323,7 +323,7 @@ i32 vp_resolve( i32 vp )
     if ( vp <= 0 || vp >= APP_WIN_MAX )
          return GUI_VP_MAIN;
 
-    return rhi_handle_valid( s_vp_pool[ vp ].vb ) ? vp : 0;
+    return s_vp_pool[ vp ].live ? vp : 0;
 }
 
 /*==============================================================================================

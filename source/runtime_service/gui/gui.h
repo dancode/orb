@@ -1708,9 +1708,11 @@ typedef enum
                               Lands in the shared decode, so BAND / GRAD / CUT / INSET compose --
                               a stroked hexagon badge is this field plus the band op, one quad. */
 
-    /* 3 is unnamed.  It was PULSE -- a BOX plus a post-op rather than a shape of its own -- see
-       GUI_OP_PULSE, which is where it lives now.  (2 was RING, likewise an op now; NGON above
-       reclaimed the value.) */
+    GUI_FX_TRI       = 3,  /* solid triangle: three points about the shape centre, in the record's
+                              radius + param lanes (a = r_tl,r_tr  b = r_br,r_bl  c = param_a,_b).
+                              Exact signed distance, so BAND strokes it and the feather antialiases
+                              it like any field.  Quad-record path only -- the vertex pipeline
+                              rasterizes a real triangle instead.  (3 was PULSE, an op now.) */
 
     /* The two modes that are not SHAPES.  Both leave coverage at 1 and act somewhere else in the
        pipeline -- proof the word is really "what the fragment does", not "which SDF to evaluate". */
@@ -1803,69 +1805,62 @@ typedef enum
 #define GUI_FX_TIME_WRAP     1024.0
 
 /*==============================================================================================
-    GUI_DRAW -- the primitive record: per-shape constants, stored once instead of per vertex.
+    GUI_DRAW -- the STYLE record: per-shape-kind constants, stored once and shared.
 
-    A rounded box emits 16 vertices and every one of them carries a byte-identical copy of the
-    effect word and the texture word.  That is 128 bytes to say one 8-byte thing, and it is the
-    reason those 8 bytes have to be bit-packed at all: the container is per-vertex, so widening a
-    field taxes every glyph on screen.
+    Per-shape constants live in a bindless storage buffer, the quad names one by index, and the
+    fragment resolves it with a dependent load -- exactly the shape the clip band already runs
+    (gui_clip_entry_t, gui_render.h), generalized to the whole effect band.  Fields are PLAIN,
+    not packed: a corner radius is an f32 in pixels, a shape is an enum in a 32-bit word, and
+    there is no bit budget to run out of.
 
-    The record breaks that link.  Per-shape constants live in a bindless storage buffer, the vertex
-    names one by index, and the fragment resolves it with a dependent load -- exactly the shape the
-    clip band already runs (gui_clip_entry_t, gui_render.h), generalized to the whole effect band.
-    Fields are PLAIN, not packed: a corner radius is an f32 in pixels, a shape is an enum in a
-    32-bit word, and there is no bit budget left to run out of.
+    Placement and clip are deliberately ABSENT -- both ride the quad record (gui_quad_t), which
+    is what lets identically-styled shapes share one record across placements and scroll
+    regions (tess_prim_local's dedup).
 
     Indices are SLOT-LOCAL -- relative to the window cache slot's own run of records -- and the
-    flush adds the slot's base through a push constant, the same arrangement index values already
-    use (vertex_offset = slot->vert_base).  That is what lets a record index survive in cached
-    geometry across a repack: the arena moves, the baked index does not.
+    flush adds the slot's base through a push constant.  That is what lets a record index
+    survive in cached geometry across a repack: the arena moves, the baked index does not.
 
-    ROW [2] IS PER-FIELD.  Corner radii are what the box family stores there and what it is named
+    ROW [1] IS PER-FIELD.  Corner radii are what the box family stores there and what it is named
     for; the fields that have no corners reuse the row rather than pad it out:
 
         BOX / SEG      r_tl, r_tr, r_br, r_bl   -- per-corner radii (SEG: r_tl = half-thickness)
         NGON           r_tl = corner rounding (px), r_tr = side count
+        TRI            r_tl..r_bl = two of the three points, about the quad's centre
         ARC_DASH       r_tl = dash period (turns), r_tr = on-duty fraction
         GRID           r_tl, r_tr = lattice phase per axis
         everything else                          -- unused, left zero
 
     Leaving unused fields ZERO is not tidiness, it is what makes the record memo work: two plain
-    fills differ only in the geometry their vertices carry, so their records compare equal and
-    collapse to one entry (tess_prim_local).  A writer that scribbled a rect into a NONE record
-    would give every fill its own record and blow the arena.
+    fills differ only in the placement their quads carry, so their records compare equal and
+    collapse to one entry (tess_prim_local).  A writer that scribbled a parameter into a NONE
+    record would give every fill its own record and blow the arena.
 ==============================================================================================*/
 
 typedef struct
 {
-    /* Row 0 -- read by EVERY fragment, which is why it leads: a glyph or a flat fill resolves its
-       texture and its clip from here and never touches the four rows below. */
+    /* Row 0 -- read by EVERY fragment, which is why it leads: a glyph or a flat fill resolves
+       its texture from here and never touches the rows below.  Placement and clip are NOT here
+       -- both ride the quad record (gui_quad_t), which is what lets one style serve every
+       placement and every scroll region. */
     u32 field;      // gui_fx_mode_t -- which field the fragment evaluates (0 = none)
     u32 ops;        // GUI_OP_* -- modifiers on whatever field arrived, orthogonal to it
     u32 tex;        // sampling model | bindless slot (GUI_TEX_MODE | index)
-    u32 clip;       // clip-table entry index, absolute within the frame clip region
+    u32 reserved_head;   // zero
 
-    /* Row 1 -- the shape rect in screen pixels, stated as CENTRE and HALF-EXTENT rather than as
-       an origin and a size.  That is the form every field actually wants: a box folds about its
-       centre, a sector IS its centre, and a capsule's axis runs through it.  A field that needs
-       no rect (the screen-space patterns) leaves the row zero.
-         BOX  cx, cy = centre        hw, hh = half size
-         SEG  cx, cy = midpoint      hw     = half length   (hh unused)
-         ARC  cx, cy = centre        hw, hh unused */
-
-    f32 cx, cy, hw, hh;
-
-    /* Row 2 -- per-field payload; see the alias table above. */
+    /* Row 1 -- per-field payload; see the alias table above. */
 
     f32 r_tl, r_tr, r_br, r_bl;
 
-    /* Row 3 -- the softness and the turn.  Rotation is stored as its cosine and sine because the
+    /* Row 2 -- the softness and the turn.  Rotation is stored as its cosine and sine because the
        CPU already computes both once per shape; an angle here would put a cos/sin on every
-       fragment of every rotated box.  An unrotated shape stores (1, 0). */
+       fragment of every rotated box.  A shape whose FIELD reads the local frame stores (1, 0)
+       when unrotated; a plain fill (no field) leaves (0, 0) -- the vertex stage reads the zero
+       pair as identity, which is what keeps flat fills deduping onto one record. */
 
     f32 feather, border, rot_cos, rot_sin;
 
-    /* Row 4 -- the scalar parameters and the second colour.
+    /* Row 3 -- the scalar parameters and the second colour.
          ARC / PIE      param = radius, tube half-thickness, aperture (radians, HALF the sweep)
          CHECKER        param = cell, phase x, phase y            col_b = the alternate colour
          GRID           param = cell, line thickness, angle
@@ -1882,7 +1877,7 @@ typedef struct
     f32 param_a, param_b, param_c;
     u32 col_b;
 
-    /* Row 5 -- the two things that are a SECOND of something the rows above state once, both in
+    /* Row 4 -- the two things that are a SECOND of something the rows above state once, both in
        the shape's local frame (prim_local's frame, so both turn with the shape).
          GUI_OP_GRAD  grad = the ramp's axis, ALREADY DIVIDED by the shape's extent along it, so
                              the fragment spans the shape with one dot product.  Under GRAD_CONIC
@@ -1894,7 +1889,7 @@ typedef struct
 
     f32 grad_x, grad_y, cut_dx, cut_dy;
 
-    /* Row 6 -- the ANIMATION lane, plus the ramp's midpoint.  anim_rate / anim_phase belong to
+    /* Row 5 -- the ANIMATION lane, plus the ramp's midpoint.  anim_rate / anim_phase belong to
        whichever animating op the record carries; at most one interpretation is live per record.
          GUI_OP_SPIN   anim_rate = turns/sec the local frame rotates at (on pc.time), anim_phase
                        = the starting angle in turns.  The frame carries every field and op with
@@ -1908,20 +1903,20 @@ typedef struct
                        once at the emit site (ln 0.5 / ln mid); 0 means the linear default. */
     f32 anim_rate, anim_phase, grad_mid, reserved_a;
 
-    /* Row 7 -- GUI_OP_DASH's pattern, in ARC-LENGTH px along the shape's perimeter (the
+    /* Row 6 -- GUI_OP_DASH's pattern, in ARC-LENGTH px along the shape's perimeter (the
        draw_arc_dashed vocabulary, walked around a box instead of a circle).  The emit site snaps
        the period so whole cycles fit the perimeter -- a closed dashed border meets itself.  Its
-       own row for the reason row 5 exists: PULSE owns param_a/b, and a dash that fought it for
+       own row for the reason row 4 exists: PULSE owns param_a/b, and a dash that fought it for
        them would rebuild the "ops that cannot compose" trap the record deleted. */
     f32 dash_period, dash_duty, reserved_b, reserved_c;
 
 } gui_prim_t;
 
-/* 128 bytes = eight std430 rows of four 32-bit components, so the fragment indexes the buffer as
+/* 112 bytes = seven std430 rows of four 32-bit components, so the fragment indexes the buffer as
    `prim * GUI_PRIM_ROWS + row` with no padding to account for.  Pinned because the shaders spell
    that stride as a literal. */
 
-#define GUI_PRIM_ROWS   8u
+#define GUI_PRIM_ROWS   7u
 #define GUI_PRIM_BYTES  ( GUI_PRIM_ROWS * 16u )
 
 ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
@@ -1975,22 +1970,18 @@ typedef enum
 } gui_grad_t;
 
 /*==============================================================================================
-    The QUAD RECORD -- the per-shape unit of the bufferless renderer (the quad-record path).
+    The QUAD RECORD -- the renderer's per-shape geometry unit.
 
-    Where the vertex model above stores a shape as four positioned corners plus a record index,
-    this one stores the shape ONCE: a draw is a plain `cmd_draw` of 6 * N bare vertices, and the
-    vertex stage computes quad = SV_VertexID / 6, corner = SV_VertexID % 6, fetches this record
-    from a bindless storage buffer and expands `centre +- (half-extent + pad)` itself.  The pad
-    is the style's feather plus the AA guard, applied at expansion -- cx/cy/hw/hh here are the
-    TRUE shape extents, never pre-inflated.
+    There is no vertex buffer and no index buffer.  A shape is stored ONCE: a draw is a plain
+    `cmd_draw` of 6 * N bare vertices, and the vertex stage computes quad = SV_VertexID / 6,
+    corner = SV_VertexID % 6, fetches this record from a bindless storage buffer and expands
+    `centre +- (half-extent + pad)` itself.  The pad is the style's feather plus the AA guard,
+    applied at expansion -- cx/cy/hw/hh here are the TRUE shape extents, never pre-inflated.
 
-    `style` names a gui_prim_t used as a pure STYLE record: its placement row (cx..hh) and its
-    `clip` are dead lanes there -- both live here, per quad -- which is what finally lets styles
-    dedup across placements.  Rotation stays in the style (rot_cos / rot_sin): a rotated one-off
-    costs one style, and OP_SPIN needs no placement at all.
-
-    Consumed today by the sb_quad_pull proof sandbox; the gui replay backend adopts it behind a
-    boot-time toggle (the quad-record campaign, stages 1-4).
+    `style` names a gui_prim_t used as a pure STYLE record; placement and clip live here, per
+    quad, which is what lets styles dedup across placements.  Rotation stays in the style
+    (rot_cos / rot_sin): a rotated one-off costs one style, and OP_SPIN needs no placement
+    at all.
 ==============================================================================================*/
 
 typedef struct
@@ -2010,9 +2001,10 @@ typedef struct
     /* Row 2 -- clip and per-quad flags.  Clip is per QUAD, not per style: two identically
        styled rows in different scroll regions must still share one style. */
     u32 clip;         // clip-table entry index, absolute within the frame clip region
-    u32 flags;        // per-quad controls; zero today, reserved for the replay backend
+    u32 flags;        // GUI_QUAD_RULE_* expansion rule (bits 0-1) | GUI_QUAD_GLYPH (bit 2)
+    u32 cut;          // GLYPH straddlers: horizontal cut pair, two unorm16 fractions of the
+                      //   glyph rect (lo | hi << 16); 0 = the whole glyph
     u32 reserved_a;   // zero
-    u32 reserved_b;   // zero
 
 } gui_quad_t;
 
@@ -2025,39 +2017,27 @@ typedef struct
 ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
                    "gui_quad_t must stay whole 16-byte rows -- the vertex stage indexes it as vec4[]" );
 
-/*----------------------------------------------------------------------------------------------
-    The packed vertex, and the two constructors that are the ONLY supported way to build one.
+/* The vertex stage's EXPANSION RULE (flags bits 0-1): how the covering corners derive from the
+   stored extents.  The rule is per quad rather than per style because it is a property of the
+   SHAPE KIND, and one style (a plain fill) serves shapes whose coverings differ. */
+#define GUI_QUAD_RULE_EXACT    0u   /* corners at +-hw/hh, rotated by the style's rot pair       */
+#define GUI_QUAD_RULE_SKIRT    1u   /* grown by the SDF pad (style feather/2 + 1) on both axes   */
+#define GUI_QUAD_RULE_CAPSULE  2u   /* hw = half-length, hh = radius: along grows by hh + pad    */
+#define GUI_QUAD_RULE_BBOX     3u   /* stored extents ARE the covering, expanded axis-aligned
+                                       (the arc family -- its local frame is a reflection)       */
 
-    Positional compound literals are what a struct of six scalars invites, and they are exactly
-    what this layout cannot survive: `{ x, y, u, v, abgr }` against the packed fields would put a
-    float U into a u32 UV slot -- a legal implicit conversion, so a warning at best and a silently
-    black quad at worst.  The constructors take the same plain floats a positional literal would,
-    and do the packing themselves, so a call site reads the same way and a wrong one does not
-    compile.
+/* flags bit 2: uv0 is a glyph-table entry index (stable per (font, codepoint), gui_glyph_table.c)
+   rather than packed texcoords -- the indirection that lets retained text survive an atlas
+   repack.  `cut` narrows the rect for clip-straddling glyphs. */
+#define GUI_QUAD_GLYPH  ( 1u << 2 )
 
-    Note what they do NOT set: `tex`, `fx` and `prim` stay 0 here on purpose.  All three are
-    stamped by the tessellator's single commit point (tess_verts_commit) from ambient state, which
-    is what makes them impossible to forget -- see the comment there.  All three are
-    PRIMITIVE-constant (a shape has one effect word, a glyph run has one outline, a quad has one
-    texture) while the effect COORDINATE is the only part of the band that varies per corner,
-    which is why that is the one thing a constructor still takes.
-----------------------------------------------------------------------------------------------*/
-
-typedef struct
-{
-    f32 x, y;     // pixel position
-    u32 uv;       // texture UV, two unorm16 over [0,1] (gui_uv_pack)
-    u32 abgr;     // packed color
-    u32 prim;     // primitive record index, SLOT-LOCAL (gui_prim_t; + the flush's prim_base)
-
-} gui_draw_vert_t;
-
-/* UV -> two unorm16.  Clamped, because that is the only thing the format can do with an out-of-
-   range coordinate -- a caller that wants U past 1 asks for GUI_FX_TILE_U instead.
+/* UV -> two unorm16 -- the packing the quad record's uv0/uv1 lanes carry.  Clamped, because that
+   is the only thing the format can do with an out-of-range coordinate -- a caller that wants U
+   past 1 asks for GUI_FX_TILE_U instead.
 
    The assert is the point of this function: clamping is SILENT, and a primitive that quietly loses
    its tiling renders as one stretched texel rather than as an error.  Debug catches the mistake at
-   the vertex that made it; release keeps the clamp, which at least stays inside the atlas. */
+   the quad that made it; release keeps the clamp, which at least stays inside the atlas. */
 
 static inline u32
 gui_uv_pack( f32 u, f32 v )
@@ -2066,15 +2046,6 @@ gui_uv_pack( f32 u, f32 v )
     u = ( u < 0.0f ) ? 0.0f : ( ( u > 1.0f ) ? 1.0f : u );
     v = ( v < 0.0f ) ? 0.0f : ( ( v > 1.0f ) ? 1.0f : v );
     return (u32)( u * 65535.0f + 0.5f ) | ( (u32)( v * 65535.0f + 0.5f ) << 16 );
-}
-
-/* THE vertex constructor.  There used to be a second one taking the per-corner effect coordinate;
-   the fragment derives that from its own pixel position and the record now, so a vertex is
-   position, texcoord, colour, and the number naming everything else. */
-static inline gui_draw_vert_t
-gui_vert( f32 x, f32 y, f32 u, f32 v, u32 abgr )
-{
-    return ( gui_draw_vert_t ){ x, y, gui_uv_pack( u, v ), abgr, 0u };
 }
 
 /*==============================================================================================
@@ -2135,11 +2106,11 @@ typedef void ( *gui_volatile_fn )( gui_id_t id, bool is_replay );
     GUI_DRAW -- semantic draw commands
 
     The UI build pass emits one gui_cmd_t per visible shape into a list.  The render backend
-    (gui_render.c) tessellates each command into vertices and indices at flush time.  This
-    separates the UI logic from any graphics API knowledge.
+    (gui_render.c) tessellates each command into quad records at flush time.  This separates
+    the UI logic from any graphics API knowledge.
 
     GPU draw commands (gui_gpu_cmd_t) are a backend-private type defined in gui_emit_draw.c;
-    they carry index ranges and bind state for one GPU draw call.
+    they carry a quad range and diagnostic state for one GPU draw call.
 ==============================================================================================*/
 
 typedef enum
@@ -2204,7 +2175,7 @@ typedef enum
 
    The word travels from the emit site into the primitive record's `tex` member (gui_prim_t), and
    the model's shift is the one bit-layout contract the shaders still share with this header --
-   TEX_MODE_SHIFT in gui.ps.hlsl.  The clip band,
+   TEX_MODE_SHIFT in gui_fx.hlsli.  The clip band,
    the self bit and the op band that used to sit under it are gone: all three are plain members of
    the record now, so the low 28 bits are the bindless index and nothing else. */
 
@@ -3050,42 +3021,31 @@ typedef struct
     GUI_FRAME -- limits
 ==============================================================================================*/
 
-/* 32K verts covers the busiest measured frame (all sb_gui demo windows + the pipeline
-   dashboard peak ~9K) several times over, and stays well inside u16 vertex indices (64K
-   would sit right at the 65535 ceiling).  The 3x index ratio clears both mixes with room
-   to spare -- quads run 6 idx per 4 verts (1.5:1) and AA paths / arcs stay under 2:1 --
-   so geometry that would exceed it overflows a frame's tessellation, not the buffer
-   sizing.  The per-frame region sizes that fall out of these (VB 640 KB at the 20-byte
-   vertex, IB 192 KB) are both 256-byte aligned, so each frame-in-flight region
-   stays independently addressable -- note that this only matters if the VB/IB are ever
-   moved off HOST_COHERENT memory, in which case regions would need rounding up to
-   nonCoherentAtomSize to flush apart.
+/* 8K quad records covers the busiest measured frame (all sb_gui demo windows + the pipeline
+   dashboard) several times over -- a quad is one SHAPE (a fill, a glyph, a capsule segment), so
+   the cap is the old 32K-vertex arena's shape count carried forward.  Storage cost is per
+   (frame-in-flight, viewport) region: 8192 quads x 48 B x 8 regions = 3 MB.
 
    ONE set of caps: the ~4x stress-bench fork these carried is retired, and sb_gui_stress
    benches the shipping numbers.  Several of its routines deliberately push a pool past its
    capacity -- the sticky overflow flag and the dashboard are how that reads. */
 
-#define GUI_MAX_VERTS        ( 32 * 1024 )   /* per-frame tessellated vertices                   */
-#define GUI_MAX_PRIMS        2048            /* per-frame primitive records (gui_prim_t)         */
+#define GUI_MAX_QUADS        8192            /* per-frame quad records (gui_quad_t)              */
+#define GUI_MAX_PRIMS        2048            /* per-frame style records (gui_prim_t)             */
 #define GUI_MAX_CMDS         1024            /* per-frame semantic draw commands                 */
 #define GUI_MAX_PATH_PTS     2048            /* per-frame total polyline / path point pool       */
 #define GUI_MAX_RECT_ENTRIES 4096            /* per-frame total draw_rects batch pool            */
 #define GUI_MAX_TEXT_POOL    ( 16 * 1024 )   /* per-frame flat string copy pool for text cmds    */
 #define GUI_MAX_CLIP_RECTS   64              /* per-frame clip table entries; u8 index caps at 256 */
 
-#define GUI_MAX_IDX          ( GUI_MAX_VERTS * 3 )   /* 3x clears quads (1.5:1) and AA strips     */
 #define GUI_CLIP_DEPTH       32                      /* push_clip / pop_clip nesting depth       */
 
-/* Records are counted per STATE CHANGE, not per primitive -- a glyph run is one, and a run of flat
-   fills sharing a texture and a clip is one -- so the cap sits far below the vertex cap rather
-   than at verts/4.  What consumes records is shapes with distinct GEOMETRY in them: rounded
-   panels, shadows, arcs.  Measured: the sandbox demos peak at 22-72 records against 500-5000
-   vertices, so the ratio is roughly a record per 70 vertices and the cap here is generous by an
-   order of magnitude.
-   The GPU cost is the multiplier to watch, because the storage buffer holds this many records for
-   EVERY (frame-in-flight, viewport) region: 2048 records is 1.3 MB, the stress bench's 8192 is
-   5.2 MB.  Both the shutdown log and the dashboard report the high-water mark -- move the cap from
-   what those measure, not from a guess. */
+/* Style records are counted per STATE CHANGE, not per quad -- a glyph run is one, a run of flat
+   fills sharing a texture and a clip is one, and identically-styled shapes dedup across
+   placements -- so the cap sits far below the quad cap.  The GPU cost is the multiplier to
+   watch, because the storage buffer holds this many records for EVERY (frame-in-flight,
+   viewport) region: 2048 records is 2 MB across 8 regions.  Both the shutdown log and the
+   dashboard report the high-water mark -- move the cap from what those measure, not a guess. */
 
 /* Command segments: one contiguous span of the command list per (win, z, vp, band) the emit path
    stamps, cut wherever a window seam, draw_set_sort_key, draw_set_viewport or draw_set_band
@@ -3121,19 +3081,18 @@ typedef struct
 {
     /* --- GPU device memory (dynamic). --- */
 
-    u32 gpu_vertex_bytes;       // per-viewport VB regions, summed over live surfaces x frames-in-flight
-    u32 gpu_index_bytes;        // per-viewport IB regions, summed over live surfaces x frames-in-flight
     u32 gpu_texture_bytes;      // the three resource atlases (coverage incl. assist rows, sprite, SDF)
-    u32 gpu_table_bytes;        // the two per-frame storage-buffer tables: clip entries + primitive
-                                //   records.  Sized by the pools, not by how many surfaces are open
-    u32 gpu_debug_bytes;        // debug-overlay VB/IB (Debug builds; 0 when compiled out / not created)
+    u32 gpu_table_bytes;        // the per-frame storage-buffer tables: clip entries, style records,
+                                //   quad records, glyph uvs.  Sized by the pools, not by how many
+                                //   surfaces are open
+    u32 gpu_debug_bytes;        // debug-overlay quad table (Debug builds; 0 when compiled out)
     u32 gpu_total;              // sum of the section above
-    u32 viewport_count;         // live GPU surfaces contributing to gpu_vertex/index_bytes
+    u32 viewport_count;         // live GPU surfaces
 
     /* --- CPU static memory (.bss + .rdata; fixed backend buffers, resident the whole run). --- */
 
     u32 cpu_drawlist_bytes;     // EMIT: s_draw (cmds + hashes + point/rect/text/clip pools) + path stroker
-    u32 cpu_tess_bytes;         // BUILD: s_tess CPU vertex / index / GPU-command staging
+    u32 cpu_tess_bytes;         // BUILD: s_tess CPU quad / style / GPU-command staging
     u32 cpu_cache_bytes;        // retained cache: slot tables, stable cmd cache, diff records, seg chains,
                                 //   permutation scratch, volatile registry, stats
     u32 cpu_draw_bytes;         // DRAW unit statics: icon + sprite registries (the font registry

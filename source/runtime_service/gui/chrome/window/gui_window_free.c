@@ -856,7 +856,7 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         win->reopen.floater = false;
 
     /* Closed-viewport fallback: if this window's surface was destroyed, revert to primary. */
-    if ( win->viewport > 0 && !rhi_handle_valid( s_vp_pool[ win->viewport ].vb ) )
+    if ( win->viewport > 0 && !s_vp_pool[ win->viewport ].live )
         win->viewport = 0;
 
     /* Ask the dock who places this window (the route seam, chrome/dock/gui_dock_route.c): any pending

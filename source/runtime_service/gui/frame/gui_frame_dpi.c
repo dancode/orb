@@ -247,7 +247,7 @@ gui_dpi_poll( void )
     for ( i32 v = 0; v < s_vp_count; ++v )
     {
         gui_viewport_t* vp = &s_vp_pool[ v ];
-        if ( !rhi_handle_valid( vp->vb ) )
+        if ( !vp->live )
             continue;   /* slot not live */
 
         /* Snapshot the hosting window's own OS scale to tell an OS-driven change (WM_DPICHANGED

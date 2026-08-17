@@ -25,34 +25,34 @@ backend_memory( u32 live_viewports )
     gui_mem_stats_t s;
     memset( &s, 0, sizeof( s ) );
 
-    /* GPU: per-surface geometry buffers x live surfaces, plus the font atlas textures. */
+    /* GPU: the atlas textures, plus the storage-buffer tables below.  Surfaces own no geometry
+       buffers of their own -- the quad table's (frame-in-flight, viewport) regions are baked
+       into its size. */
     s.viewport_count    = live_viewports;
-    s.gpu_vertex_bytes  = live_viewports * RHI_MAX_FRAMES_IN_FLIGHT * (u32)GUI_VB_REGION_BYTES;
-    s.gpu_index_bytes   = live_viewports * RHI_MAX_FRAMES_IN_FLIGHT * (u32)GUI_IB_REGION_BYTES;
     /* Sprite and SDF atlases report 0 until something creates them. */
     s.gpu_texture_bytes = res_atlas_bytes() + res_sprite_bytes() + res_sdf_bytes();
 
-    /* The two storage-buffer tables the fragment resolves through: clip entries and primitive
-       records.  Both are allocated whole at init and are NOT per-surface -- one region per
-       (frame-in-flight, viewport) is baked into the size -- so unlike the geometry above they do
-       not scale with live_viewports.  The record table dominates by two orders of magnitude,
-       which is why it is worth reporting rather than folding into a "misc". */
+    /* The storage-buffer tables the pipeline resolves through: clip entries, style records, the
+       quad-record geometry, and the glyph uv table.  All allocated whole at init and NOT
+       per-surface -- one region per (frame-in-flight, viewport) is baked into each size -- so
+       none scales with live_viewports. */
     if ( rhi_handle_valid( s_render.clip_buf ) )
         s.gpu_table_bytes += (u32)( GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES );
     if ( rhi_handle_valid( s_render.prim_buf ) )
         s.gpu_table_bytes += (u32)( GUI_PRIM_REGION_COUNT * GUI_PRIM_REGION_BYTES );
     s.gpu_table_bytes += glyph_table_gpu_bytes();   /* the glyph uv table (0 until a font packs) */
+    if ( rhi_handle_valid( s_render.quad_buf ) )
+        s.gpu_table_bytes += (u32)( GUI_QUAD_REGION_COUNT * GUI_QUAD_REGION_BYTES );
 
 #ifdef GUI_DEBUG_OVERLAY
 
-    /* The overlay's own VB/IB (one region per viewport per frame-in-flight, dbg_init). */
-    if ( rhi_handle_valid( s_dbg.vb ) )
+    /* The overlay's own quad table (one region per viewport per frame-in-flight, dbg_init). */
+    if ( rhi_handle_valid( s_dbg.quads ) )
         s.gpu_debug_bytes = (u32)( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS
-                                 * ( GUI_DBG_VB_REGION_BYTES + GUI_DBG_IB_REGION_BYTES ) );
+                                 * GUI_DBG_QUAD_REGION_BYTES );
 #endif
 
-    s.gpu_total = s.gpu_vertex_bytes + s.gpu_index_bytes + s.gpu_texture_bytes
-                + s.gpu_table_bytes  + s.gpu_debug_bytes;
+    s.gpu_total = s.gpu_texture_bytes + s.gpu_table_bytes + s.gpu_debug_bytes;
 
     /* EMIT: the semantic draw list and the line/path stroker built on it. */
     s.cpu_drawlist_bytes = (u32)( sizeof( s_draw ) + sizeof( s_path ) );
