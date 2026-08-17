@@ -31,9 +31,11 @@
 typedef struct
 {
     u32          elem_count; // number of quads to draw (6 vertices each)
+
     /* The texture of the command's FIRST primitive, kept for diagnostics only (the dashboard
        tooltip).  It is no longer a batch key and no longer describes the whole command: the
        texture rides the style record (gui.h, gui_prim_t), so one command can span several. */
+
     u32          tex_idx;    // first primitive's model|slot -- diagnostic, not a batch key
     gui_rect_t   clip_rect;  // scissor rect (pixels)
 
@@ -63,6 +65,7 @@ typedef struct
    full copies (segs + disp_segs).  Every narrow field's range is capped by construction: lo/hi
    by GUI_MAX_CMDS (asserted below), vp by GUI_MAX_VIEWPORTS (4), band is 0/1.  z stays u32 -- it
    carries full sort keys (popup/overlay z-bands). */
+
 typedef struct
 {
     gui_id_t win;

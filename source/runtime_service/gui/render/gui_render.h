@@ -49,7 +49,7 @@
 #define GUI_MAX_VIEWPORTS APP_WIN_MAX       // one surface per OS window / rhi context
 
 ORB_STATIC_ASSERT( APP_WIN_MAX == RHI_CTX_MAX,
-                   "a gui viewport pairs an OS window with an rhi context; the maxes must agree" );
+                "a gui viewport pairs an OS window with an rhi context; the maxes must agree" );
 
 // clang-format off
 /*==============================================================================================

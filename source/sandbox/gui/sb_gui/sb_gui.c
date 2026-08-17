@@ -120,6 +120,7 @@ show_demo_window( bool* p_open )
     if (gui()->window_begin("Basic Gui Demo", window_flags))
     {
         gui()->stack();
+        gui()->button( "test" );
         gui()->text("This is some useful text."); gui()->same_line(0);
         gui()->help_marker("This is a help marker for the text above.\nIt can be very useful to explain things.");
 

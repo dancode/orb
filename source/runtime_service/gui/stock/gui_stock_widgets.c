@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/stock/gui_stock_widgets.c -- The stock_* rect-consuming widget renders.
+    gui/stock/gui_stock_widgets.c -- The stock_* rect-consuming widget renders.
 
     The REFERENCE widget set: one plain render per component, the thing a user reads and forks,
     not a privileged default.  Every stock_* fills EXACTLY the rect it is handed -- no hidden
@@ -103,7 +103,9 @@ stock_visible_text( const char* label, char* buf, u32 bufsz )
 }
 
 /*==============================================================================================
+
     The stock renders -- every one fills exactly its rect.
+
 ==============================================================================================*/
 
 /* Inert framed backdrop: the DIM surface.  Chrome for grouping, never interactive.  One of the
@@ -127,6 +129,7 @@ gui_stock_label( gui_rect_t r, gui_align_t align, const char* text )
    oversized label truncates cleanly instead of spilling past both edges.  The stock twin of
    chrome's draw_button_label -- same face, which is what lets a stock button delegate here.
    text is the already-visible span (the caller stripped the "##id" suffix). */
+
 static void
 stock_button_label( gui_rect_t r, const char* text )
 {
@@ -138,6 +141,7 @@ stock_button_label( gui_rect_t r, const char* text )
        wrong way makes a button ellipsize its OWN label ("snap (all 0)" -> "snap (all..."), which
        is the one thing a self-fitting widget must never do at its natural size.  Nothing
        sub-pixel is drawable, so the slack cannot cost a legible glyph. */
+
     if ( label_width( text ) <= avail + 0.5f )
         gui_draw_text_in( r, GUI_ALIGN_CENTER, STYLE_COL( TEXT_PRIMARY, IDLE ), text );
     else
@@ -152,12 +156,14 @@ stock_button_label( gui_rect_t r, const char* text )
    the quiet BORDER[IDLE] frame every framed control wears (checkbox, input); an authored face or
    a border-0 theme suppresses it inside the painter.
    A user forks it by keeping gui_comp_button and swapping only these draw_* calls.  True on click. */
+
 bool
 gui_stock_button( gui_rect_t r, const char* label )
 {
     gui_id_t          id = item_id( label );       /* the keyed id for the animation damper */
     gui_comp_button_t b  = gui_comp_button( label, r );
 
+    /* rect, id, item_state, selected, border_color, border_width */
     draw_face_item_frame( r, id, b.state, false, STYLE_COL( BORDER, IDLE ), WIN_BORDER );
 
     char vis[ 128 ];

@@ -1843,10 +1843,11 @@ typedef struct
        its texture from here and never touches the rows below.  Placement and clip are NOT here
        -- both ride the quad record (gui_quad_t), which is what lets one style serve every
        placement and every scroll region. */
-    u32 field;      // gui_fx_mode_t -- which field the fragment evaluates (0 = none)
-    u32 ops;        // GUI_OP_* -- modifiers on whatever field arrived, orthogonal to it
-    u32 tex;        // sampling model | bindless slot (GUI_TEX_MODE | index)
-    u32 reserved_head;   // zero
+
+    u32 field;          // gui_fx_mode_t -- which field the fragment evaluates (0 = none)
+    u32 ops;            // GUI_OP_* -- modifiers on whatever field arrived, orthogonal to it
+    u32 tex;            // sampling model | bindless slot (GUI_TEX_MODE | index)
+    u32 reserved_head;  // zero
 
     /* Row 1 -- per-field payload; see the alias table above. */
 
@@ -1901,6 +1902,7 @@ typedef struct
                        in lockstep (rate and depth stay in param_a / param_b).
          GUI_OP_GRAD   grad_mid = the exponent bending the ramp's t about its midpoint, mapped
                        once at the emit site (ln 0.5 / ln mid); 0 means the linear default. */
+
     f32 anim_rate, anim_phase, grad_mid, reserved_a;
 
     /* Row 6 -- GUI_OP_DASH's pattern, in ARC-LENGTH px along the shape's perimeter (the
@@ -1908,6 +1910,7 @@ typedef struct
        the period so whole cycles fit the perimeter -- a closed dashed border meets itself.  Its
        own row for the reason row 4 exists: PULSE owns param_a/b, and a dash that fought it for
        them would rebuild the "ops that cannot compose" trap the record deleted. */
+
     f32 dash_period, dash_duty, reserved_b, reserved_c;
 
 } gui_prim_t;
@@ -1976,6 +1979,8 @@ typedef enum
 /*==============================================================================================
     The QUAD RECORD -- the renderer's per-shape geometry unit.
 
+    Note: each 4 element group translates to a <float4> in the shader (see GUI_QUAD_ROWS) 
+
     There is no vertex buffer and no index buffer.  A shape is stored ONCE: a draw is a plain
     `cmd_draw` of 6 * N bare vertices, and the vertex stage computes quad = SV_VertexID / 6,
     corner = SV_VertexID % 6, fetches this record from a bindless storage buffer and expands
@@ -1991,24 +1996,31 @@ typedef enum
 typedef struct
 {
     /* Row 0 -- placement: centre and half-extent in screen pixels, the true shape rect. */
+
     f32 cx, cy, hw, hh;
 
     /* Row 1 -- the per-quad payload: texcoord corners, colour, and the style naming the rest.
        uv0/uv1 are the min/max corners, each two unorm16 over [0,1] (gui_uv_pack); the vertex
        stage selects per corner.  A glyph-id indirection can replace uv0/uv1 later (the 32-B
        record), which only touches this row. */
-    u32 uv0;      // texcoord min corner, packed unorm16 pair
-    u32 uv1;      // texcoord max corner, packed unorm16 pair
-    u32 abgr;     // packed colour
-    u32 style;    // style-record index, slot-local (gui_prim_t as a style)
+
+    // uv0: CAPSULE: dir GUI_QUAD_GLYPH: glyph-table entry id. 
+    // uv1: CAPSULE: dir GUI_QUAD_GLYPH: n/a
+    // uv1: SKIRT: vertex stage for untextured shapes, grows for feathered edge, not shape.
+
+    u32 uv0;            // texcoord min corner, packed unorm16 pair
+    u32 uv1;            // texcoord max corner, packed unorm16 pair
+    u32 abgr;           // packed colour
+    u32 style;          // style-record index, slot-local (gui_prim_t as a style)
 
     /* Row 2 -- clip and per-quad flags.  Clip is per QUAD, not per style: two identically
        styled rows in different scroll regions must still share one style. */
-    u32 clip;         // clip-table entry index, absolute within the frame clip region
-    u32 flags;        // GUI_QUAD_RULE_* expansion rule (bits 0-1) | GUI_QUAD_GLYPH (bit 2)
-    u32 cut;          // GLYPH straddlers: horizontal cut pair, two unorm16 fractions of the
-                      //   glyph rect (lo | hi << 16); 0 = the whole glyph
-    u32 reserved_a;   // zero
+
+    u32 clip;           // clip-table entry index, absolute within the frame clip region
+    u32 flags;          // GUI_QUAD_RULE_* expansion rule (bits 0-1) | GUI_QUAD_GLYPH (bit 2)
+    u32 cut;            // GLYPH straddlers: horizontal cut pair, two unorm16 fractions of the
+                        //   glyph rect (lo | hi << 16); 0 = the whole glyph
+    u32 reserved_a;     // zero
 
 } gui_quad_t;
 
@@ -2024,6 +2036,7 @@ ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
 /* The vertex stage's EXPANSION RULE (flags bits 0-1): how the covering corners derive from the
    stored extents.  The rule is per quad rather than per style because it is a property of the
    SHAPE KIND, and one style (a plain fill) serves shapes whose coverings differ. */
+
 #define GUI_QUAD_RULE_EXACT    0u   /* corners at +-hw/hh, rotated by the style's rot pair       */
 #define GUI_QUAD_RULE_SKIRT    1u   /* grown by the SDF pad (style feather/2 + 1) on both axes   */
 #define GUI_QUAD_RULE_CAPSULE  2u   /* hw = half-length, hh = radius: along grows by hh + pad    */

@@ -148,10 +148,11 @@ face_paint( gui_rect_t r, u8 role, u8 rest_role, u8 rest_phase,
         return;                            /* art carries its own edge -- no border over the top */
     }
 
-    /* No art anywhere on this span: the plain colour path, and still exactly one quad.  The
-       spender is the EXACT one (style_col_mix / col_frame_bg_mix), not the two-cell span above --
+    /* No art anywhere on this span: the plain color path, and still exactly one quad.  
+       The spender is the EXACT one (style_col_mix / col_frame_bg_mix), not the two-cell span above --
        colour has no reason to approximate, and a face-painted widget must read identically to a
        colour-painted one that never asked about art. */
+
     u32 col = ( rest_role == role && rest_phase == GUI_PHASE_IDLE )
             ? style_col_mix( role, m )                                        /* the item shape */
             : col_frame_bg_mix( m, style_col( rest_role, rest_phase ) );

@@ -40,7 +40,7 @@ draw_button_label( gui_rect_t r, const char* label )
 
 /*==============================================================================================
 
-    button -- returns true on the frame the button is released while hovered
+    button -- returns true on the frame the button-click is released while hovered
 
 ==============================================================================================*/
 
@@ -52,6 +52,7 @@ gui_button( const char* label )
        Since the color seam closed (stock_button uses the same animated face over the same
        style_col palette), the core paints exactly what this widget used to -- this is the
        canonical four-line widget collapsed to composer + core. */
+
     gui_rect_t r = cell_next_w( label_natural_w( label ), WIDGET_H );
     return gui_stock_button( r, label );
 }
