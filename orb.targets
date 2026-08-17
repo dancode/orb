@@ -641,6 +641,19 @@ target sb_vulkan_stress					# multi-context rhi sync stress test
     dep         mod sys ref job app core
     dep         rhi
 
+target sb_quad_pull						# bufferless quad-record proof: SV_VertexID pull vs classic VB
+
+    type        exe
+    root        source/sandbox/rhi/sb_quad_pull
+    folder      09_SANDBOX/RHI
+    unit        sb_quad_pull.c
+    shader      shaders/qp_pull.vs.hlsl	# cooked to bin/shaders/qp_pull.vs.oshd
+    shader      shaders/qp_vb.vs.hlsl	# cooked to bin/shaders/qp_vb.vs.oshd
+    shader      shaders/qp.ps.hlsl		# cooked to bin/shaders/qp.ps.oshd
+    dep         mod sys ref app core
+    dep         rhi
+    tool_dep    asset_tool shader_tool	# the shader cookers, ordered ahead of this target
+
 # ==============================================================================
 # 09_SANDBOX -- GUI
 # ==============================================================================
@@ -1125,6 +1138,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     add         sb_gui_stress   	# gui load-limit stress bench
 	
     add         sb_vulkan_stress   	# multi-context sync stress exe
+    add         sb_quad_pull   		# bufferless quad-record proof (pull vs VB A/B)
 
     add         sb_host_runtime   	# runtime test
     add         sb_host_editor  	# editor test

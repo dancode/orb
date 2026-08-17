@@ -1974,6 +1974,57 @@ typedef enum
 
 } gui_grad_t;
 
+/*==============================================================================================
+    The QUAD RECORD -- the per-shape unit of the bufferless renderer (the quad-record path).
+
+    Where the vertex model above stores a shape as four positioned corners plus a record index,
+    this one stores the shape ONCE: a draw is a plain `cmd_draw` of 6 * N bare vertices, and the
+    vertex stage computes quad = SV_VertexID / 6, corner = SV_VertexID % 6, fetches this record
+    from a bindless storage buffer and expands `centre +- (half-extent + pad)` itself.  The pad
+    is the style's feather plus the AA guard, applied at expansion -- cx/cy/hw/hh here are the
+    TRUE shape extents, never pre-inflated.
+
+    `style` names a gui_prim_t used as a pure STYLE record: its placement row (cx..hh) and its
+    `clip` are dead lanes there -- both live here, per quad -- which is what finally lets styles
+    dedup across placements.  Rotation stays in the style (rot_cos / rot_sin): a rotated one-off
+    costs one style, and OP_SPIN needs no placement at all.
+
+    Consumed today by the sb_quad_pull proof sandbox; the gui replay backend adopts it behind a
+    boot-time toggle (the quad-record campaign, stages 1-4).
+==============================================================================================*/
+
+typedef struct
+{
+    /* Row 0 -- placement: centre and half-extent in screen pixels, the true shape rect. */
+    f32 cx, cy, hw, hh;
+
+    /* Row 1 -- the per-quad payload: texcoord corners, colour, and the style naming the rest.
+       uv0/uv1 are the min/max corners, each two unorm16 over [0,1] (gui_uv_pack); the vertex
+       stage selects per corner.  A glyph-id indirection can replace uv0/uv1 later (the 32-B
+       record), which only touches this row. */
+    u32 uv0;      // texcoord min corner, packed unorm16 pair
+    u32 uv1;      // texcoord max corner, packed unorm16 pair
+    u32 abgr;     // packed colour
+    u32 style;    // style-record index, slot-local (gui_prim_t as a style)
+
+    /* Row 2 -- clip and per-quad flags.  Clip is per QUAD, not per style: two identically
+       styled rows in different scroll regions must still share one style. */
+    u32 clip;         // clip-table entry index, absolute within the frame clip region
+    u32 flags;        // per-quad controls; zero today, reserved for the replay backend
+    u32 reserved_a;   // zero
+    u32 reserved_b;   // zero
+
+} gui_quad_t;
+
+/* 48 bytes = three std430 rows, indexed by the vertex stage as `quad * GUI_QUAD_ROWS + row`
+   with no padding to account for.  Pinned because the shaders spell that stride as a literal. */
+
+#define GUI_QUAD_ROWS   3u
+#define GUI_QUAD_BYTES  ( GUI_QUAD_ROWS * 16u )
+
+ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
+                   "gui_quad_t must stay whole 16-byte rows -- the vertex stage indexes it as vec4[]" );
+
 /*----------------------------------------------------------------------------------------------
     The packed vertex, and the two constructors that are the ONLY supported way to build one.
 

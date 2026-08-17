@@ -108,6 +108,30 @@ test_prim_layout( void )
     test_equal( 116u, (u32)offsetof( gui_prim_t, dash_duty  ) );
 }
 
+static void
+test_quad_layout( void )
+{
+    /* Three 16-byte rows, no tail padding.  GUI_QUAD_ROWS is what the vertex stage multiplies
+       by when it pulls the record through the bindless float4 buffer. */
+    test_equal( 3u,  GUI_QUAD_ROWS );
+    test_equal( 48u, (u32)GUI_QUAD_BYTES );
+    test_equal( 48u, (u32)sizeof( gui_quad_t ) );
+
+    /* Row starts. */
+    test_equal(  0u, (u32)offsetof( gui_quad_t, cx   ) );
+    test_equal( 16u, (u32)offsetof( gui_quad_t, uv0  ) );
+    test_equal( 32u, (u32)offsetof( gui_quad_t, clip ) );
+
+    /* Within-row order, since a row is read as one vec4 and its components are positional. */
+    test_equal(  4u, (u32)offsetof( gui_quad_t, cy    ) );
+    test_equal(  8u, (u32)offsetof( gui_quad_t, hw    ) );
+    test_equal( 12u, (u32)offsetof( gui_quad_t, hh    ) );
+    test_equal( 20u, (u32)offsetof( gui_quad_t, uv1   ) );
+    test_equal( 24u, (u32)offsetof( gui_quad_t, abgr  ) );
+    test_equal( 28u, (u32)offsetof( gui_quad_t, style ) );
+    test_equal( 36u, (u32)offsetof( gui_quad_t, flags ) );
+}
+
 /* The op bits are single bits and DISJOINT, which is the whole claim the op word makes: any op
    composes with any field and with any other op.  A shared bit would silently turn a neighbour on
    -- the failure the tex word's op band was carved out to avoid, restated where it now lives. */
