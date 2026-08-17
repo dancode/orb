@@ -16,7 +16,6 @@
         Depth & Motion      shadow elevation, glow, pulse, badges, a capsule toggle
         Radial Menu         pie/arc wedges as hit-tested interactive UI
         Dials               a draggable knob, a clock, a compass with rotated labels
-        Frontier Notes      what is one small piece short of working (read it)
 
     Every animated window owes gui()->request_redraw() per frame (the gui is idle-skipped and
     sandbox memory changing is not an event it can see) -- keep_awake() below.
@@ -1560,36 +1559,6 @@ win_corners( void )
 }
 
 /*==============================================================================================
-    WINDOW: Frontier Notes -- what the suite could NOT draw, and how close each miss is.
-
-    Kept in the sandbox on purpose: the demos above are the argument for each of these, and the
-    next person exploring here should find the map next to the territory.
-==============================================================================================*/
-
-static void
-win_frontier( void )
-{
-    gui()->stack();
-
-    gui()->separator_text( "shipped 2026-07-29 -- see the New Verbs window" );
-    gui()->text_wrapped( "ROTATED SDF BOXES (draw_box_xf), ROTATED ICONS/IMAGES (draw_icon_xf / "
-        "draw_texture_xf), PER-CORNER SOFT SHADOW (draw_round_rect_shadow), DASHED ARCS "
-        "(draw_arc_dashed, fx mode 9) and SWEEP GRADIENT ARCS (draw_arc_gradient, fx mode 10) "
-        "were all built from this window's original list.  The two new fx modes are SELF-SAMPLED: "
-        "the fragment skips the texel and the freed 32-bit uv word carries their parameters -- "
-        "no vertex format change, no batch key change." );
-
-    gui()->separator_text( "unblocked, needs an asset pipeline step" );
-    gui()->text_wrapped( "MSDF.  The sampling-model field is 4 bits with 3 spent, so multi-"
-        "channel SDF is a mode VALUE now, not a format change -- the work is the font_tool bake "
-        "and an RGBA atlas page.  Buys sharp corners at extreme scales.  Deliberately deferred." );
-
-    gui()->separator_text( "genuinely far" );
-    gui()->text_wrapped( "BACKDROP BLUR / FROST.  Needs a PostProcess seam (sample-what-is-"
-        "behind), which the renderer does not have.  Not an fx mode." );
-}
-
-/*==============================================================================================
     Fills -- the two shapes that cost the effect band nothing.
 
     Both are here for the same reason: neither needed an fx mode.  The gradient rides the sixteen
@@ -1811,7 +1780,6 @@ static sdf_demo_t s_demos[] = {
     { "Backdrops",      "Backdrops",      "checker + line grid as one-quad fragment patterns",     win_backdrops, 760.0f, 560.0f, false },
     { "Fills",          "Fills",          "gradients (linear / radial / conic) + inset + drop shadows", win_fills, 940.0f, 900.0f, false },
     { "Corners & Pills","Corners & Pills","corner smoothing + the capsule, filled and hollow",     win_corners,   860.0f, 780.0f, false },
-    { "Frontier Notes", "Frontier Notes", "what shipped and what is still out",                    win_frontier,  640.0f, 480.0f, false },
 };
 
 #define SDF_DEMO_COUNT ( (i32)( sizeof( s_demos ) / sizeof( s_demos[ 0 ] ) ) )
