@@ -216,6 +216,25 @@ gui_draw_polyline( const gui_vec2_t* pts, u32 count, f32 thickness,
     draw_push_polyline_cmd( pts, count, thickness, align, closed, abgr );
 }
 
+/* The shared body behind the line and the capsule: one CMD_LINE, tessellated at flush into a
+   single quad carrying a capsule distance field.  `col` has already had the ambient alpha folded
+   in and been tested for transparency by both callers. */
+static void
+stroke_capsule_cmd( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 col )
+{
+    if ( draw_emit_blocked() )
+        return;
+    if ( stroke_seg_culled( x0, y0, x1, y1, thickness ) )
+        return;
+    gui_cmd_t* c      = draw_cmd_claim( GUI_CMD_LINE );
+    c->line.x0        = x0; c->line.y0 = y0;
+    c->line.x1        = x1; c->line.y1 = y1;
+    c->line.thickness = thickness;
+    c->line.border    = border;
+    c->line.abgr      = col;
+    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+}
+
 /* Stroke a single segment.  Horizontal / vertical lines render pixel-crisp (snapped rect);
    diagonal lines are pushed as CMD_LINE and resolved by the FRAGMENT as a capsule distance field
    (tess_fx_segment) -- exact at any angle, with round caps. */
@@ -235,17 +254,44 @@ gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     /* H/V fast path: axis-aligned lines become a snapped solid rect -- crisp like a separator. */
     if ( stroke_axis_aligned_rect( x0, y0, x1, y1, thickness, GUI_STROKE_CENTER_BIASED, abgr ) )
         return;
-    /* Diagonal: push a CMD_LINE; tessellated at flush into two quads carrying a capsule field. */
-    if ( draw_emit_blocked() )
+    /* Diagonal: push a CMD_LINE; tessellated at flush into one quad carrying a capsule field. */
+    stroke_capsule_cmd( x0, y0, x1, y1, thickness, 0.0f, col );
+}
+
+/*==============================================================================================
+    gui_draw_capsule / gui_draw_capsule_outline -- the pill, named as the shape it is.
+
+    A capsule states what gui_draw_line only produces by accident: round caps at both ends, an
+    exact boundary at any angle, and one quad.  It takes NO axis-aligned shortcut, because that
+    shortcut is a snapped rect with SQUARE caps -- the right answer for a rule or a separator and
+    the wrong one for a pill, which has to keep its ends round however it is oriented.
+
+    The outline form is the same field under GUI_OP_BAND (tess_fx_segment) -- one quad, not a
+    stroked perimeter -- so a hollow pill costs exactly what a filled one does.  `border` is the
+    wall thickness, measured inward from the boundary; at or past the half-thickness there is no
+    interior left and the shape simply stays filled.
+==============================================================================================*/
+
+void
+gui_draw_capsule( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
+{
+    if ( thickness <= 0.0f )
         return;
-    if ( stroke_seg_culled( x0, y0, x1, y1, thickness ) )
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
         return;
-    gui_cmd_t* c      = draw_cmd_claim( GUI_CMD_LINE );
-    c->line.x0        = x0; c->line.y0 = y0;
-    c->line.x1        = x1; c->line.y1 = y1;
-    c->line.thickness = thickness;
-    c->line.abgr      = col;
-    s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
+    stroke_capsule_cmd( x0, y0, x1, y1, thickness, 0.0f, col );
+}
+
+void
+gui_draw_capsule_outline( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 abgr )
+{
+    if ( thickness <= 0.0f || border <= 0.0f )
+        return;
+    u32 col = draw_apply_alpha( abgr );
+    if ( ( col >> 24 ) == 0u )
+        return;
+    stroke_capsule_cmd( x0, y0, x1, y1, thickness, border, col );
 }
 
 /* Dashed / dotted line: one CMD_DASHED_LINE, tessellated at flush into a single textured quad

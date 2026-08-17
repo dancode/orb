@@ -82,6 +82,7 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
     [ GUI_VAR_GRID_Q          ] = { "Grid Quantum",    GUI_CLASS_PITCH,  32 },
 
     [ GUI_VAR_DISABLED_ALPHA  ] = { "Disabled Alpha",  GUI_CLASS_RATIO,  1  },
+    [ GUI_VAR_CORNER_SMOOTH   ] = { "Corner Smooth",   GUI_CLASS_RATIO,  1  },
 
     [ GUI_VAR_ANIM_HOT        ] = { "Hover Rate",      GUI_CLASS_RATE,   40 },
     [ GUI_VAR_ANIM_ACTIVE     ] = { "Press Rate",      GUI_CLASS_RATE,   40 },
@@ -291,6 +292,7 @@ var_is_pixels( u8 cls )
         [ GUI_VAR_GRID_Q          ] = ( GRID_Q ), \
         /* 3. RATIOS -- unitless */ \
         [ GUI_VAR_DISABLED_ALPHA  ] = 0.5f, \
+        [ GUI_VAR_CORNER_SMOOTH   ] = 0.0f,   /* circular corner arcs; a theme opts out of them */ \
         /* 4. RATES -- Hz-like damper speeds; 0 snaps.  Press is quicker than hover on purpose: \
               a hover is an invitation and may drift, a press is an answer and must land. \
               SIZE is quicker still: it is not expressing anything, it is covering the frame of \

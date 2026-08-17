@@ -396,6 +396,23 @@ gui_draw_rounding( void )
     return draw_rounding();
 }
 
+/* The corner PROFILE that rides with the radius (gui_api.h): 0 = the circular arc, 1 = curvature
+   ramped across the whole corner.  Same ambient discipline as the radius above -- the theme
+   installs it once a frame from GUI_VAR_CORNER_SMOOTH, and a caller that overrides it for one
+   shape saves and restores. */
+
+void
+gui_draw_set_corner_smooth( f32 t )
+{
+    draw_set_corner_smooth( t );
+}
+
+f32
+gui_draw_corner_smooth( void )
+{
+    return draw_corner_smooth();
+}
+
 /*==============================================================================================
     Text edge -- the same ambient discipline, for the second colour outside a glyph.
 

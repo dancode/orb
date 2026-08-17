@@ -183,6 +183,8 @@ void gui_draw_sprite_in( gui_rect_t r, gui_sprite_id_t id, u32 tint_abgr );
 void gui_draw_brush( gui_rect_t r, const gui_brush_t* brush );
 void gui_draw_set_rounding( f32 r );
 f32  gui_draw_rounding( void );
+void gui_draw_set_corner_smooth( f32 t );
+f32  gui_draw_corner_smooth( void );
 
 /* ambient second colour outside the glyph edge -- outlined / shadowed SDF text from one quad */
 void gui_draw_set_text_edge( f32 width, u32 abgr );
@@ -232,6 +234,8 @@ void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 
 
 /* lines + paths */
 void gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+void gui_draw_capsule( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+void gui_draw_capsule_outline( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 abgr );
 void gui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 abgr );
 void gui_draw_polyline( const gui_vec2_t* pts, u32 count, f32 thickness, gui_stroke_align_t align, bool closed, u32 abgr );
 void gui_path_clear( void );
@@ -407,6 +411,7 @@ void gui_field_label_right( f32 width );
 /* the ambient label layout -- set once, every labeled widget's own label aligns to it (gui_field_t).
    gui_field_row (gui()->field_row) is the seam a widget routes its label through; skip_label
    drops it for the next widget. */
+
 void         gui_field_set( const gui_field_t* f );
 gui_field_t* gui_field_get( void );
 void         gui_skip_label( void );

@@ -137,6 +137,14 @@ static struct
        that draw a different category; 0 emits square shapes (the fast path). */
     f32 rounding;
 
+    /* Ambient corner PROFILE, folded in beside the radius: the exponent of the norm the corner
+       arc is measured in (gui.h, gui_prim_t param_c).  Held as the exponent rather than as the
+       0..1 smoothing a caller authors, so the conversion happens once in draw_set_corner_smooth
+       instead of per pushed shape.  0 = circular, which is what every shape gets until a theme
+       says otherwise -- it is installed once per frame from GUI_VAR_CORNER_SMOOTH, so a caller
+       only touches it to override one shape. */
+    f32 corner_pow;
+
     /* Ambient horizontal text-clip window: glyph-level [x0, x1] hard-clip folded into every pushed
        text run that does not carry its own explicit window.  The sentinel (-/+ GUI_TEXT_NO_CLIP)
        means unclipped (the common path).  A seam that draws text into a bounded slot -- a table cell
@@ -282,6 +290,7 @@ draw_reset( i32 display_w, i32 display_h )
 
     s_draw.alpha                = 1.0f;
     s_draw.rounding             = 0.0f;                 /* square until a seam sets the resolved radius */
+    s_draw.corner_pow           = 0.0f;                 /* circular arcs until the frame installs the style */
     s_draw.text_clip_x0         = -GUI_TEXT_NO_CLIP;    /* unclipped until a seam sets a window */
     s_draw.text_clip_x1         =  GUI_TEXT_NO_CLIP;
     s_draw.text_edge_w          = 0.0f;                 /* plain runs until a caller asks for an edge */
@@ -670,6 +679,33 @@ draw_rounding( void )
     return s_draw.rounding;
 }
 
+/* The corner PROFILE that rides with the radius: how much of the corner is curved, rather than
+   how big the curve is.  0 leaves the arc circular, 1 ramps its curvature across the whole
+   corner -- the same control Figma spells "corner smoothing" and the shape a rounded rect has to
+   have before it can sit next to a modern OS's chrome without looking pinched.
+   The 0..1 knob becomes an exponent HERE, once, because that is the number the field is measured
+   with (gui.h): 2 is the circle, and the useful range stops well before the corner is square. */
+void
+draw_set_corner_smooth( f32 t )
+{
+    if ( t <= 0.0f )
+    {
+        s_draw.corner_pow = 0.0f;    /* circular -- the fragment's default branch */
+        return;
+    }
+    if ( t > 1.0f )
+        t = 1.0f;
+    s_draw.corner_pow = 2.0f + 4.0f * t;
+}
+
+/* The installed profile as the 0..1 amount that was authored, so a site can save / override /
+   restore it the way it already does with the radius. */
+f32
+draw_corner_smooth( void )
+{
+    return ( s_draw.corner_pow <= 2.0f ) ? 0.0f : ( s_draw.corner_pow - 2.0f ) * 0.25f;
+}
+
 /*==============================================================================================
     Text edge -- the ambient second colour painted OUTSIDE the glyph boundary.
 
@@ -944,11 +980,13 @@ draw_cmd_seal( void )
 }
 
 /* The shared body.  `rounding` arrives explicit and already resolved -- the wrappers below fold
-   the ambient radius in (or not: see the roundable rule on each), and the disc passes its own. */
+   the ambient radius in (or not: see the roundable rule on each), and the disc passes its own.
+   `corner_pow` travels the same way and for the same reason: a disc's corner IS the shape, so
+   the one caller that names its own radius names its own profile too, and gets the circle. */
 static void
 draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
                f32 u0, f32 v0, f32 u1, f32 v1,
-               u32 tex_idx, u32 abgr, f32 rounding )
+               u32 tex_idx, u32 abgr, f32 rounding, f32 corner_pow )
 {
     /* A rounded quad becomes an SDF surface whose AA skirt reaches past the authored rect
        (tess_fx_box), so cull it with one pixel of slack -- a shape flush against the clip edge
@@ -968,8 +1006,9 @@ draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
     c->rect.u1       = u1;
     c->rect.v1       = v1;
     c->rect.tex_idx  = tex_idx;
-    c->rect.abgr     = col;
-    c->rect.rounding = rounding;
+    c->rect.abgr       = col;
+    c->rect.rounding   = rounding;
+    c->rect.corner_pow = ( rounding > 0.0f ) ? corner_pow : 0.0f;
     draw_cmd_seal();
 }
 
@@ -987,7 +1026,7 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      /* rect */
                        u32 tex_idx, u32 abgr )          /* texture slot + color */
 {
     draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr,
-                   ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f );
+                   ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f, s_draw.corner_pow );
 }
 
 /*  An IMAGE: an arbitrary bindless texture the caller is showing as a picture (a scene render
@@ -1002,7 +1041,8 @@ draw_push_image( f32 x, f32 y, f32 w, f32 h,
                  f32 u0, f32 v0, f32 u1, f32 v1,
                  u32 tex_idx, u32 abgr )
 {
-    draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr, draw_clamp_rounding( w, h ) );
+    draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr,
+                   draw_clamp_rounding( w, h ), s_draw.corner_pow );
 }
 
 /*==============================================================================================
@@ -1017,7 +1057,7 @@ draw_push_image( f32 x, f32 y, f32 w, f32 h,
 void
 draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 abgr )
 {
-    draw_rect_cmd( cx - r, cy - r, r * 2.0f, r * 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, abgr, r );
+    draw_rect_cmd( cx - r, cy - r, r * 2.0f, r * 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, abgr, r, 0.0f );
 }
 
 /*==============================================================================================
@@ -1255,6 +1295,7 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
     c->fx_box.w        = w;
     c->fx_box.h        = h;
     c->fx_box.rounding = rounding;
+    c->fx_box.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
     c->fx_box.feather  = feather;
     c->fx_box.rate     = rate;
     c->fx_box.depth    = depth;
@@ -1353,6 +1394,7 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
     c->round_rect.rbr      = rbr;
     c->round_rect.rbl      = rbl;
     c->round_rect.feather  = feather;
+    c->round_rect.corner_pow = s_draw.corner_pow;
     c->round_rect.abgr     = col;
     c->round_rect.col_b    = cb;
     c->round_rect.grad_ang  = grad_ang;
@@ -1576,6 +1618,7 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     c->rect_outline.t        = t;
     c->rect_outline.abgr     = col;
     c->rect_outline.rounding = rounding;
+    c->rect_outline.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
     draw_cmd_seal();
 }
 

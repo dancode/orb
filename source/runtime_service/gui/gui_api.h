@@ -732,6 +732,18 @@ typedef struct gui_api_s
     void ( *draw_set_rounding )( f32 r );
     f32  ( *draw_rounding     )( void );
 
+    /* The corner PROFILE that rides with that radius: 0..1, where 0 is the circular arc every
+       rounded shape has always had and 1 ramps the curvature across the whole corner -- the
+       continuous corner ("corner smoothing" in a design tool).  It changes the shape of the
+       curve, never its size, so a radius still means exactly what it meant.
+
+       The theme owns it: GUI_VAR_CORNER_SMOOTH is installed into this ambient once per frame,
+       so a look is one number and no widget has to know.  These two are for the same local
+       override the radius pair serves -- save, set, draw, restore. */
+
+    void ( *draw_set_corner_smooth )( f32 t );
+    f32  ( *draw_corner_smooth     )( void );
+
     /* Ambient TEXT EDGE -- draws an outline or drop-shadow color around text, in the same draw
        call as the glyph itself: a second colour painted OUTSIDE the glyph boundary.  Slate spends a whole extra vertex field (SecondaryColor) on this; here
        it is a packed word on the text command, because once a glyph is a distance field the outline
@@ -866,16 +878,24 @@ typedef struct gui_api_s
 
     /* Line / path stroking (gui_stroke_align_t; see gui.h for the pixel model).
        draw_line     -- one segment, CENTER_BIASED: H/V lines render pixel-crisp, others antialiased.
+       draw_capsule  -- the PILL: the same segment named as a shape, so it keeps its round caps and
+                        its exact boundary at every angle instead of straightening into a snapped
+                        rect when it happens to be horizontal.  The _outline form hollows it to a
+                        `border` px wall -- still one quad, since the fragment bends the same field.
        draw_polyline -- a connected point array with miter-limited corners (always antialiased);
                         `closed` joins the last point back to the first (rect / polygon outlines).
        path_*        -- the retained form: clear, append points with path_line_to, then path_stroke
                         (which strokes and clears the buffer).  Up to GUI_PATH_MAX points.
 
            gui()->draw_line( 10, 10, 200, 80, 2.0f, col );      // a 2px antialiased diagonal
+           gui()->draw_capsule( 20, 40, 90, 40, 14.0f, col );   // a 14px tall pill
            gui()->path_line_to( x0, y0 ); gui()->path_line_to( x1, y1 ); ...
            gui()->path_stroke( 1.5f, GUI_STROKE_CENTER, false, col ); */
 
     void ( *draw_line     )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+    void ( *draw_capsule  )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+    void ( *draw_capsule_outline )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness,
+                                    f32 border, u32 abgr );
     void ( *draw_polyline )( const gui_vec2_t* pts, u32 count, f32 thickness,
                              gui_stroke_align_t align, bool closed, u32 abgr );
     void ( *path_clear    )( void );

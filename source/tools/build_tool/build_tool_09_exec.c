@@ -141,8 +141,19 @@ build_cook_shaders( build_context_t* ctx, target_info_t* target )
             printf( ORB_INDENT "[orb error] '%s' shader source not found: %s\n", target->name, src );
             return false;
         }
+
+        /* Keyed on the OUTPUT, not on this target: two targets can declare the same shader (gui
+           and gui_stress are one source tree built twice), and under the parallel scheduler they
+           reach this at the same moment.  The staleness test is inside the lock with the cook,
+           so the loser of the race sees the winner's fresh .oshd and skips instead of writing the
+           same file underneath it -- which is what a shared cook temp file turns into. */
+        void* cook_lock = build_lock_target( stem );
+
         if ( !ctx->force_rebuild && platform_get_mtime( dst ) >= src_mtime )
+        {
+            build_unlock_target( cook_lock );
             continue;
+        }
 
         if ( g_out_flags & ORB_OUT_REFLECT )
         {
@@ -154,7 +165,9 @@ build_cook_shaders( build_context_t* ctx, target_info_t* target )
 
         char cmd[ PATH_MAX * 2 ];
         snprintf( cmd, sizeof( cmd ), "bin" PATH_SEP "asset_tool.exe cook %s %s", src, dst );
-        if ( build_run_cmd( cmd ) != 0 )
+        int ret = build_run_cmd( cmd );
+        build_unlock_target( cook_lock );
+        if ( ret != 0 )
         {
             printf( ORB_INDENT "[orb error] '%s' shader cook failed: %s\n", target->name, src );
             return false;

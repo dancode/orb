@@ -32,7 +32,7 @@ struct gui_pc_t
 
 // The bindless storage-buffer array (set 0, binding 2).  The gui reads TWO tables through it:
 //   - the frame's clip entries, two float4s each (see clip_coverage below)
-//   - the frame's PRIMITIVE RECORDS, five float4s each (gui.h, gui_prim_t)
+//   - the frame's PRIMITIVE RECORDS, six float4s each (gui.h, gui_prim_t)
 // Both are declared as float4[] because that is the one element type the array can have; the
 // record's integer row comes back through asuint, which is a reinterpret, not a convert.
 [[vk::binding( 2, 0 )]] StructuredBuffer<float4> u_buffers[] : register( t0, space1 );
@@ -104,12 +104,31 @@ float2 prim_local( float2 px, float4 rect, float4 soft )
 // depth rather than proximity -- a border wider than the radius (the whole interior lands in the
 // band and fills), and a shadow whose falloff is wider than the radius (its core never reaches
 // full opacity).
-float box_field( float2 p, float2 half_ext, float4 rad )
+//
+// `pw` is the corner's PROFILE: the exponent of the norm the outside term is measured in.  At 2
+// that norm is length() and the corner is a circular arc; above it the arc fills out toward the
+// square it is inset from, which is the continuous "squircle" corner -- curvature that ramps in
+// over the whole corner instead of starting abruptly where the arc meets the edge.  0 means the
+// default, and the compare below sends it down the exact same instruction as 2.
+//
+// The Lp form is not a Euclidean distance, so the field's gradient is shorter along the corner
+// diagonal than on the flats -- about 0.84 at pw 4 -- and the antialiasing band there is wider by
+// the reciprocal.  At the exponents a UI wants (2..6) that is a fraction of a pixel on the one
+// part of the outline that is already curved.
+float box_field( float2 p, float2 half_ext, float4 rad, float pw )
 {
     float  r = ( p.y <= 0.0 ) ? ( ( p.x <= 0.0 ) ? rad.x : rad.y )
                               : ( ( p.x <= 0.0 ) ? rad.w : rad.z );
     float2 q = abs( p ) - ( half_ext - float2( r, r ) );
-    return min( max( q.x, q.y ), 0.0 ) + length( max( q, float2( 0.0, 0.0 ) ) ) - r;
+    float2 m = max( q, float2( 0.0, 0.0 ) );
+
+    float outside;
+    if ( pw > 2.0 )
+        outside = pow( pow( m.x, pw ) + pow( m.y, pw ), 1.0 / pw );
+    else
+        outside = length( m );
+
+    return min( max( q.x, q.y ), 0.0 ) + outside - r;
 }
 
 
@@ -267,6 +286,11 @@ float fx_coverage( float2 px )
     float2 local = prim_local( px, rect, soft );
     float  d;
 
+    // The corner profile, fetched only on the path that has a corner to profile: a capsule's is
+    // its cap, and a blunted cap is not a thing a stroke wants.  Both box_field calls in this
+    // block -- the shape, and the cut's second boundary -- read the one value.
+    float corner_pw = 0.0;
+
     // field 6 SEG -- a CAPSULE: the distance to a line segment, minus its half-thickness.  The
     // record's rotation IS the segment's axis, so local is (along, across) about the midpoint;
     // fold the along axis against the half-length and leave the across axis signed, because
@@ -278,7 +302,10 @@ float fx_coverage( float2 px )
         d = length( float2( max( q.x, 0.0 ), q.y ) ) - rad.x;  // a capsule has one radius, not four
     }
     else
-        d = box_field( local, rect.zw, rad );
+    {
+        corner_pw = prim_row( 4u ).z;
+        d = box_field( local, rect.zw, rad, corner_pw );
+    }
 
     // GUI_OP_BAND -- the band of `border` px lying inside the boundary: the rounded outline.
     // The one op that bends `d` rather than the coverage, because a band IS a different field and
@@ -302,7 +329,7 @@ float fx_coverage( float2 px )
     // the shape cutting itself, which lands on exactly `d` again.  Always the rounded box -- a
     // capsule never carries this op.
     if ( ( g_ops & OP_CUT ) != 0u
-      && box_field( local - prim_row( 5u ).zw, rect.zw, rad ) <= 0.0 )
+      && box_field( local - prim_row( 5u ).zw, rect.zw, rad, corner_pw ) <= 0.0 )
         cov = 0.0;
 
     // GUI_OP_INSET -- the inner shadow.  The falloff is re-measured INWARD from the boundary:

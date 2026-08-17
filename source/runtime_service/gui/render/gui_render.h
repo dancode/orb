@@ -134,6 +134,8 @@ void draw_set_alpha             ( f32 a );          // global opacity multiplier
 f32  draw_get_alpha             ( void );           // ...read back, so a nested fade can multiply and restore
 void draw_set_rounding          ( f32 r );          // corner radius folded into every pushed filled/outline rect
 f32  draw_rounding              ( void );           // current ambient radius (save/restore around a sub-element)
+void draw_set_corner_smooth     ( f32 t );          // 0..1 corner profile riding with the radius; 0 = circular arc
+f32  draw_corner_smooth         ( void );           // ...read it back, same save/restore rule as the radius
 void draw_set_text_edge         ( f32 width, u32 abgr ); // second colour outside the glyph edge (SDF fonts)
 void draw_text_edge             ( f32* width, u32* abgr );  // read it back (save/restore around a run)
 void draw_set_text_clip_x       ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run

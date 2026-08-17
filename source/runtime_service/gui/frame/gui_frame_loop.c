@@ -375,6 +375,13 @@ gui_frame_begin( f32 dt )
         /* Full rebuild: clear the draw list and tessellation so the emit phase writes fresh
            commands, and reset global interaction state for this frame's hit tests. */
         draw_reset( disp_w, disp_h );
+
+        /* The corner PROFILE is theme-wide where the radius is per-category, so it is installed
+           once here rather than resolved at every seam that sets a radius.  A site that wants a
+           different profile for one shape brackets it with draw_set_corner_smooth, exactly as it
+           already does with draw_set_rounding. */
+        draw_set_corner_smooth( style_var( GUI_VAR_CORNER_SMOOTH ) );
+
         build_frame_reset();   /* s_frame_built = false; rebuilt on first render() */
 
         /* Reset global interaction state exactly once per app frame.  hover_win promotion and

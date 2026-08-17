@@ -1448,6 +1448,118 @@ win_backdrops( void )
 }
 
 /*==============================================================================================
+    Corners & Pills -- two shapes the record made free.
+
+    Neither is a new field.  The corner PROFILE is one more number on the box record (param_c),
+    read where the corner arc is measured; the pill is the capsule the diagonal line already
+    resolved to, named as a shape so it keeps its round caps at every angle, and hollowed by the
+    same GUI_OP_BAND that turns a filled box into a rounded outline.
+==============================================================================================*/
+
+static f32 s_cs_smooth = 0.6f;    /* live corner smoothing, 0..1 */
+static f32 s_cs_round  = 26.0f;   /* the radius the profile reshapes */
+static f32 s_cs_wall   = 4.0f;    /* pill wall thickness */
+static f32 s_cs_ang    = 20.0f;   /* pill angle, degrees */
+
+static void
+win_corners( void )
+{
+    gui()->stack();
+
+    gui()->separator_text( "corner smoothing -- the same radius, a different curve" );
+    gui()->slider_float( "smooth", &s_cs_smooth, 0.0f, 1.0f );
+    gui()->slider_float( "radius", &s_cs_round,  0.0f, 48.0f );
+
+    /* The fixed ladder: 0 is the circular arc every rounded rect has always drawn, 1 fills the
+       corner out toward the square it is inset from.  One quad each, at any of them. */
+    {
+        gui_rect_t   r = gui()->canvas( 150.0f );
+        const f32    t[ 5 ] = { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f };
+        const f32    save   = gui()->draw_corner_smooth();
+        f32          cell   = r.w / 5.0f;
+        f32          side   = ( cell < 130.0f ? cell : 130.0f ) - 24.0f;
+
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+        for ( u32 i = 0; i < 5; ++i )
+        {
+            gui_rect_t b = { r.x + cell * (f32)i + ( cell - side ) * 0.5f,
+                             r.y + ( r.h - side ) * 0.5f - 8.0f, side, side };
+            gui()->draw_set_corner_smooth( t[ i ] );
+            gui()->draw_round_rect( b, s_cs_round, s_cs_round, s_cs_round, s_cs_round,
+                                    true, 0.0f, ACCENT );
+            char lbl[ 16 ];
+            snprintf( lbl, sizeof( lbl ), "%.2f", t[ i ] );
+            gui()->draw_text( b.x, b.y + b.h + 4.0f, INK_DIM, lbl );
+        }
+        gui()->draw_set_corner_smooth( save );
+    }
+
+    /* The live one, filled and outlined, so the profile is visible on a BAND as well: the op
+       bends the field, so the wall follows the same curve on both of its edges. */
+    {
+        gui_rect_t r    = gui()->canvas( 170.0f );
+        f32        save = gui()->draw_corner_smooth();
+        f32        side = 130.0f;
+        gui_rect_t a    = { r.x + 40.0f,          r.y + ( r.h - side ) * 0.5f, side, side };
+        gui_rect_t b    = { a.x + side + 50.0f,   a.y, side, side };
+
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+        gui()->draw_set_corner_smooth( s_cs_smooth );
+        gui()->draw_round_rect( a, s_cs_round, s_cs_round, s_cs_round, s_cs_round,
+                                true, 0.0f, TEAL );
+        gui()->draw_round_rect( b, s_cs_round, s_cs_round, s_cs_round, s_cs_round,
+                                false, 6.0f, TEAL );
+        gui()->draw_set_corner_smooth( save );
+
+        gui()->draw_text( a.x, a.y + side + 6.0f, INK_DIM, "filled" );
+        gui()->draw_text( b.x, b.y + side + 6.0f, INK_DIM, "GUI_OP_BAND -- one quad, not a perimeter" );
+    }
+
+    gui()->text_wrapped( "The theme owns this: GUI_VAR_CORNER_SMOOTH installs the profile once a "
+        "frame, so every panel, field and button in a look changes together.  The pair above is "
+        "the local override, saved and restored like the ambient radius it rides with." );
+
+    gui()->separator_text( "pills -- the capsule, named as a shape" );
+    gui()->slider_float( "wall",  &s_cs_wall, 1.0f, 12.0f );
+    gui()->slider_float( "angle", &s_cs_ang,  0.0f, 180.0f );
+    {
+        gui_rect_t r  = gui()->canvas( 190.0f );
+        f32        cy = r.y + r.h * 0.5f;
+        f32        th = 34.0f;
+
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        /* Horizontal: where draw_line would take the snapped-rect fast path and give it SQUARE
+           caps.  A pill has to stay a pill at every angle, which is the whole reason it is its
+           own verb rather than a thickness on a line. */
+        gui()->draw_capsule( r.x + 40.0f, cy - 50.0f, r.x + 190.0f, cy - 50.0f, th, AMBER );
+        gui()->draw_capsule_outline( r.x + 220.0f, cy - 50.0f, r.x + 370.0f, cy - 50.0f,
+                                     th, s_cs_wall, AMBER );
+
+        /* Turned: the same two records with a different rotation -- the field is exact at any
+           angle, so nothing is re-tessellated to hold the shape together. */
+        {
+            f32 a  = gui_radians( s_cs_ang );
+            f32 ux = cosf( a ), uy = sinf( a );
+            f32 hx = 75.0f;
+            f32 c0x = r.x + 115.0f, c1x = r.x + 295.0f, ccy = cy + 45.0f;
+            gui()->draw_capsule( c0x - ux * hx, ccy - uy * hx,
+                                 c0x + ux * hx, ccy + uy * hx, th, TEAL );
+            gui()->draw_capsule_outline( c1x - ux * hx, ccy - uy * hx,
+                                         c1x + ux * hx, ccy + uy * hx, th, s_cs_wall, TEAL );
+        }
+
+        gui()->draw_text( r.x + 400.0f, cy - 60.0f, INK_DIM, "draw_capsule" );
+        gui()->draw_text( r.x + 400.0f, cy - 40.0f, INK_DIM, "draw_capsule_outline" );
+    }
+
+    gui()->text_wrapped( "A hollow pill costs exactly what a filled one does: GUI_OP_BAND bends "
+        "the capsule's own distance field, so the wall is one quad rather than a stroked "
+        "perimeter.  The op reaches this shape without a field value of its own -- that is what "
+        "the op word being separate from the field buys." );
+}
+
+/*==============================================================================================
     WINDOW: Frontier Notes -- what the suite could NOT draw, and how close each miss is.
 
     Kept in the sandbox on purpose: the demos above are the argument for each of these, and the
@@ -1499,6 +1611,7 @@ win_fills( void )
 {
     gui()->stack();
 
+    gui()->field_label_right( 240.0f );
     gui()->slider_float( "angle (deg)", &s_fill_ang,   0.0f, 360.0f );
     gui()->slider_float( "rounding",    &s_fill_round, 0.0f, 40.0f  );
     gui()->checkbox( "spin the angle", &s_fill_spin );
@@ -1666,6 +1779,8 @@ win_fills( void )
         gui()->text( "left: draw_hatch, 1 quad (was up to 512 line commands)   "
                      "middle: draw_stripes at the live angle   right: the unturned lattice" );
     }
+
+    gui()->field_label_right( 0.0f );
 }
 
 /*==============================================================================================
@@ -1695,6 +1810,7 @@ static sdf_demo_t s_demos[] = {
     { "New Verbs",      "New Verbs",      "box_xf / icon_xf / corner shadow / dashed + gradient arcs", win_five,  980.0f, 760.0f, false },
     { "Backdrops",      "Backdrops",      "checker + line grid as one-quad fragment patterns",     win_backdrops, 760.0f, 560.0f, false },
     { "Fills",          "Fills",          "gradients (linear / radial / conic) + inset + drop shadows", win_fills, 940.0f, 900.0f, false },
+    { "Corners & Pills","Corners & Pills","corner smoothing + the capsule, filled and hollow",     win_corners,   860.0f, 780.0f, false },
     { "Frontier Notes", "Frontier Notes", "what shipped and what is still out",                    win_frontier,  640.0f, 480.0f, false },
 };
 

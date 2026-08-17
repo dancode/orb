@@ -735,6 +735,10 @@ typedef enum
        pixels in it to scale and no lattice to land on. */
 
     GUI_VAR_DISABLED_ALPHA, // opacity a disabled item draws at (1 = no dim at all)
+    GUI_VAR_CORNER_SMOOTH,  // how much a rounded corner's curvature RAMPS instead of starting at
+                            //   the arc: 0 = a circular arc (the default), 1 = the corner fills
+                            //   out toward the square it is inset from.  Applies wherever a radius
+                            //   already does -- it changes the profile, never the radius.
 
     /* 4. RATE -- how fast an item travels between cells, in Hz-like damper speed (10 ~ 250 ms to
        95%, 20 ~ 150 ms).  These are the whole motion budget of the widget set: every surface,
@@ -1857,6 +1861,11 @@ typedef struct
          GRID           param = cell, line thickness, angle
          TILE_U         param_a = repeat count
          TEXT_EDGE      param_a = outline width                   col_b = the outline colour
+         BOX            param_c = corner profile: the EXPONENT of the norm the corner arc is
+                                  measured in.  2 (and 0, the default) is a circular arc; higher
+                                  fills the arc out toward the square it is inset from, which is
+                                  the continuously-curved corner.  Authored as a 0..1 smoothing
+                                  amount and mapped once at the emit site (draw_set_corner_smooth).
          GUI_OP_PULSE   param_a = rate (Hz), param_b = depth      (on any field it modifies)
          GUI_OP_GRAD    col_b   = the ramp's far colour */
     f32 param_a, param_b, param_c;
@@ -2129,7 +2138,9 @@ gui_tex_index( u32 tex_idx )
    repeated here.  Reducing the header from 28 bytes to 4 bytes brings the struct from 72 -> 48 bytes.
    tex_idx == 0 in rect means solid color (white texel).
    rounding (rect / rect_outline) is the corner radius baked from the ambient draw rounding at emit
-   time, already clamped to the rect; 0 tessellates as a plain square shape.
+   time, already clamped to the rect; 0 tessellates as a plain square shape.  corner_pow rides
+   beside it on every command a radius can reach, baked from the ambient profile the same way
+   (0 = circular); it is the exponent the record carries, not the 0..1 amount a caller authors.
    text.off is a byte offset into the frame's text pool (s_draw.text_pool), not a pointer: the
    string lives in the pool until the next frame_begin, so the command is valid through flush.
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
@@ -2141,8 +2152,8 @@ typedef struct
     u8 _pad;
     union
     {
-        struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding; u32 tex_idx; u32 abgr; } rect;
-        struct { f32 x, y, w, h, t;              f32 rounding;              u32 abgr; } rect_outline;
+        struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding, corner_pow; u32 tex_idx; u32 abgr; } rect;
+        struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;              u32 abgr; } rect_outline;
         struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
         /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
            last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
@@ -2176,7 +2187,13 @@ typedef struct
            Nothing here is snapped to the pixel grid -- see tess_text_xf. */
         struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr;
                  f32 edge_w; u32 edge_col; u16 font; } text_xf;
-        struct { f32 x0, y0, x1, y1, thickness;                  u32 abgr; } line;
+        /* A stroke segment, resolved as a CAPSULE by the fragment (round caps, exact at any
+           angle).  `border` > 0 hollows it into a tube of that width lying inside the capsule
+           boundary -- GUI_OP_BAND, the same op that turns a filled box into a rounded outline,
+           which reaches this shape for free because an op modifies whatever field arrived.
+           gui_draw_line pushes border 0 and only for diagonals; gui_draw_capsule* pushes at any
+           angle, since a snapped rect has square caps and is not the same shape. */
+        struct { f32 x0, y0, x1, y1, thickness, border;          u32 abgr; } line;
         struct { u32 pt_offset; u32 pt_count; f32 thickness;
                  gui_stroke_align_t align; bool closed;         u32 abgr; } polyline;
         /* Dashed line tessellates to one oriented textured quad: U spans 0..len/period so the
@@ -2229,8 +2246,8 @@ typedef struct
            what makes a cast DIRECTIONAL, and 0 is the even one every caller had before.  The
            offset is in the shape's LOCAL frame -- the same as screen for the axis-aligned boxes
            that are the only things which cast. */
-        struct { f32 x, y, w, h; f32 rounding, feather, rate, depth, rot; u32 abgr, variant;
-                 f32 cut_dx, cut_dy; } fx_box;
+        struct { f32 x, y, w, h; f32 rounding, corner_pow, feather, rate, depth, rot;
+                 u32 abgr, variant; f32 cut_dx, cut_dy; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME one quad a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape
@@ -2253,8 +2270,8 @@ typedef struct
            the op is simply left off.
            The ramp reaches the fragment through the RECORD (GUI_OP_GRAD), which is why radial and
            conic exist at all -- neither can be described by colours at a rectangle's corners. */
-        struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather; u32 abgr; u32 col_b;
-                 f32 grad_ang; u32 grad_kind; } round_rect;
+        struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather, corner_pow; u32 abgr;
+                 u32 col_b; f32 grad_ang; u32 grad_kind; } round_rect;
         /* Circular sector -- ONE member serving GUI_CMD_ARC and GUI_CMD_PIE, which differ only in
            the field the fragment evaluates, not in anything they carry.  Angles are radians in
            screen space (0 points +x, positive turns clockwise, matching text_xf.rot); a1 < a0 is

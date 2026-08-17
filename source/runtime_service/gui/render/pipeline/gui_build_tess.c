@@ -69,6 +69,10 @@ static struct
                                blank a textured quad, and leaking an op would reshape the next
                                fill.  tess_verts_commit maps these onto the tex word's op band
                                while that word still exists, and copies them into the record. */
+    f32         cur_corner_pow; /* corner profile exponent for the box family, ambient over one
+                               command for the same reason cur_ops is: it reaches all four corners
+                               of a shape without threading a parameter through every fill in the
+                               library, and cannot leak onto the next command.  0 = circular arcs */
 
     /* The ambient PRIMITIVE RECORD -- filled by
        whichever tess_* emitter is running and appended (deduplicated) by tess_verts_commit.  Only
@@ -941,6 +945,11 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     s_tess.cur_prim.param_a = ( s_tess.cur_ops & GUI_OP_PULSE ) ? rate  : 0.0f;
     s_tess.cur_prim.param_b = ( s_tess.cur_ops & GUI_OP_PULSE ) ? depth : 0.0f;
 
+    /* The corner profile -- ambient over the command, like the ops, and applied only where there
+       is a corner to profile: a square box has no arc to reshape, and leaving the lane at zero is
+       what keeps square fills deduping onto one record. */
+    s_tess.cur_prim.param_c = ( rmax > 0.0f ) ? s_tess.cur_corner_pow : 0.0f;
+
     /* GUI_OP_GRAD -- the ramp's far colour and its axis.  The axis is stored ALREADY DIVIDED by
        the box's extent along it (the support width of a projected rectangle), so the ramp spans
        the shape at any angle and the fragment recovers t with one dot product instead of
@@ -1805,7 +1814,7 @@ tess_stroke_poly_aa( const gui_vec2_t* pts, u32 n, f32 thickness, f32 center_off
 ==============================================================================================*/
 
 static void
-tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
+tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 abgr )
 {
     if ( thickness <= 0.0f )
         return;
@@ -1858,6 +1867,16 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr )
     s_tess.cur_prim.feather = TESS_FX_AA;
     s_tess.cur_prim.rot_cos = ux;
     s_tess.cur_prim.rot_sin = uy;
+
+    /* A HOLLOW capsule is the same field under GUI_OP_BAND -- the op that makes a rounded outline
+       out of a filled box, reaching this shape because an op modifies whatever field arrived.  A
+       border at or past the radius has no interior left to remove, so it stays filled rather than
+       inverting into one. */
+    if ( border > 0.0f && border < r )
+    {
+        s_tess.cur_ops         |= GUI_OP_BAND;
+        s_tess.cur_prim.border  = border;
+    }
 
     /* One quad, oriented along the segment: `a` spans the full length signed, `b` the full width. */
     static const f32 qa[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };
@@ -1955,7 +1974,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
            can be ambient at all -- it lets an outline reach every glyph of a run, and a shape's
            word reach all 16 of its quadrant vertices, without threading a parameter through
            tess_rect_filled, which every fill in the library shares. */
-        s_tess.cur_ops = 0u;
+        s_tess.cur_ops        = 0u;
+        s_tess.cur_corner_pow = 0.0f;
 
         /* The record is cleared WHOLE, and it matters for two reasons: a leftover rect or radius
            does not merely paint wrong, it defeats the memo -- a run of flat fills carrying stale
@@ -1970,10 +1990,13 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                lets a rounded quad carry an image, which the arc fan never could. */
             case GUI_CMD_RECT_FILLED:
                 if ( c->rect.rounding > 0.0f )
+                {
+                    s_tess.cur_corner_pow = c->rect.corner_pow;
                     tess_fx_box( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
                                  c->rect.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f,
                                  c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
                                  c->rect.tex_idx, c->rect.abgr, NULL );
+                }
                 else
                     tess_rect_filled( c->rect.x, c->rect.y, c->rect.w, c->rect.h,
                                       c->rect.u0, c->rect.v0, c->rect.u1, c->rect.v1,
@@ -1985,7 +2008,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_RECT_OUTLINE:
                 if ( c->rect_outline.rounding > 0.0f )
                 {
-                    s_tess.cur_ops |= GUI_OP_BAND;
+                    s_tess.cur_ops       |= GUI_OP_BAND;
+                    s_tess.cur_corner_pow = c->rect_outline.corner_pow;
                     tess_fx_box( c->rect_outline.x, c->rect_outline.y,
                                  c->rect_outline.w, c->rect_outline.h,
                                  c->rect_outline.rounding, TESS_FX_AA, c->rect_outline.t,
@@ -2020,6 +2044,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                     tess_fx_aux_t aux = { 0 };
                     aux.cut_dx = c->fx_box.cut_dx;
                     aux.cut_dy = c->fx_box.cut_dy;
+                    s_tess.cur_corner_pow = c->fx_box.corner_pow;
                     tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
                                  c->fx_box.rounding, c->fx_box.feather, 0.0f,
                                  c->fx_box.rate, c->fx_box.depth, c->fx_box.rot,
@@ -2030,6 +2055,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             /* Four radii and a ramp -- and still one surface, one command and no batch split,
                exactly like the uniform fill it generalizes. */
             case GUI_CMD_ROUND_RECT_EX:
+                s_tess.cur_corner_pow = c->round_rect.corner_pow;
                 tess_round_rect_ex( c->round_rect.x, c->round_rect.y,
                                     c->round_rect.w, c->round_rect.h,
                                     c->round_rect.rtl, c->round_rect.rtr,
@@ -2132,7 +2158,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                no joints, which is the only thing that kept the ribbon (see tess_fx_segment). */
             case GUI_CMD_LINE:
                 tess_fx_segment( c->line.x0, c->line.y0, c->line.x1, c->line.y1,
-                                 c->line.thickness, c->line.abgr );
+                                 c->line.thickness, c->line.border, c->line.abgr );
                 break;
 
             case GUI_CMD_POLYLINE:
