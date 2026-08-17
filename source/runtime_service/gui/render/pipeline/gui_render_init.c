@@ -18,12 +18,15 @@
     as a shared constant and never writes it.
 
 ==============================================================================================*/
-#include "engine/sys/sys_host.h"  // sys_exe_dir -- probe for cooked .oshd shaders
+#include "engine/sys/sys_host.h"  // sys_exe_dir -- locate the cooked .oshd shaders
                                   // (gui is a static lib: sys is always in the host)
 
 // clang-format off
 /*==============================================================================================
-    Push constant layout (92 bytes; must match gui_shader.h GLSL source)
+    Push constant layout -- must match gui_pc_t in shaders/gui.{vs,ps}.hlsl.
+
+    The cooked container reflects the block's SIZE, and pipeline_create checks this struct
+    against it; field ORDER is on the two comment blocks to keep in step.
 ==============================================================================================*/
 
 typedef struct
@@ -65,7 +68,7 @@ typedef struct
 #define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, samp_point ) ) )
 
 /*==============================================================================================
-    Frame clip table sizing -- the storage buffer clip_coverage reads (gui_shader.h).
+    Frame clip table sizing -- the storage buffer clip_coverage reads (gui.ps.hlsl).
 
     An ENTRY is two vec4s: (x0, y0, x1, y1) snapped pixel edges, then (radius, 0, 0, 0).  A
     REGION is an array of fixed per-window SLABS -- one per stable cache slot, GUI_WIN_CLIP_MAX
@@ -141,7 +144,7 @@ static struct
     rhi_sampler_t   image_sampler;      // sampler for RGBA images (bilinear clamp)
     u32             image_sampler_idx;  // bindless slot for image_sampler
 
-    /* The frame clip table -- the storage buffer clip_coverage reads (gui_shader.h).  One region
+    /* The frame clip table -- the storage buffer clip_coverage reads (gui.ps.hlsl).  One region
        per (frame-in-flight, viewport): the flush writes each surface's dispatched slots' local
        clip entries into its own region, so no surface's upload can overwrite entries another
        surface's in-flight draws still read.  Registered bindless once; the slot index rides
@@ -182,18 +185,20 @@ static struct
 ==============================================================================================*/
 
 /*==============================================================================================
-    render_try_oshd_shaders -- the OPTIONAL cooked-shader path.
+    render_load_shaders -- the cooked pair, which is the only way the gui gets a pipeline.
 
-    If cook_shaders.bat has produced bin/shaders/gui.{vs,ps}.oshd next to the exe (cooked from
-    shaders/gui.{vs,ps}.hlsl), load that pair instead of the embedded arrays -- the containers
-    carry reflection, so pipeline_create validates the vertex layout and push range against the
-    actual SPIR-V.  All-or-nothing: both files must exist and load, or the caller falls back to
-    the embedded fallback in gui_shader.h.  Absent files are NOT an error -- the cooked path is
-    additive, never a dependency (delete bin/shaders to turn it off).
+    bin/shaders/gui.{vs,ps}.oshd are cooked from shaders/gui.{vs,ps}.hlsl by the build itself
+    (the 'shader' lines on the gui target in orb.targets), so the .hlsl files are the single
+    source for what the GPU runs -- there is no embedded SPIR-V array and no GLSL transcript to
+    drift against them.  The containers carry reflection, which is what lets pipeline_create
+    validate the vertex layout and push range below against the actual SPIR-V.
+
+    All-or-nothing, and a missing file is a hard failure with the path in it: an out-of-date or
+    absent cook must say so at init rather than paint a frame from stale bytes.
 ==============================================================================================*/
 
 static bool
-render_try_oshd_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
+render_load_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
 {
     char dir[ 512 ];
     sys_exe_dir( dir, ( int )sizeof( dir ) );
@@ -202,22 +207,19 @@ render_try_oshd_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
     fmt_snprintf( vs_path, sizeof( vs_path ), "%s/shaders/gui.vs.oshd", dir );
     fmt_snprintf( ps_path, sizeof( ps_path ), "%s/shaders/gui.ps.oshd", dir );
 
-    /* Probe with fopen first so a missing pair stays silent (the normal fallback case);
-       shader_load_oshd would LOG_ERROR on a missing file. */
-    FILE* fv = fopen( vs_path, "rb" );
-    FILE* fp = fopen( ps_path, "rb" );
-    if ( fv ) fclose( fv );
-    if ( fp ) fclose( fp );
-    if ( !fv || !fp )
-        return false;
-
     rhi_shader_t vert = rhi()->shader_load_oshd( vs_path, "gui_vert(oshd)" );
     if ( !rhi_handle_valid( vert ) )
+    {
+        gui_log( GUI_LOG_ERROR, "gui shaders not found -- expected %s (build the gui target to cook them)",
+                 vs_path );
         return false;
+    }
 
     rhi_shader_t frag = rhi()->shader_load_oshd( ps_path, "gui_frag(oshd)" );
     if ( !rhi_handle_valid( frag ) )
     {
+        gui_log( GUI_LOG_ERROR, "gui shaders not found -- expected %s (build the gui target to cook them)",
+                 ps_path );
         rhi()->shader_destroy( vert );
         return false;
     }
@@ -232,31 +234,11 @@ static void render_shutdown( void );   /* the clip-table failure path below unwi
 static bool
 render_init( void )
 {
-    /* Cooked .oshd pair when present, embedded SPIR-V otherwise (see render_try_oshd_shaders). */
     rhi_shader_t vert = { RHI_NULL_HANDLE };
     rhi_shader_t frag = { RHI_NULL_HANDLE };
 
-    if ( render_try_oshd_shaders( &vert, &frag ) )
-    {
-        gui_log( GUI_LOG_INFO, "using cooked shaders (bin/shaders/gui.{vs,ps}.oshd)" );
-    }
-    else
-    {
-        vert = rhi()->shader_load_memory(
-            s_gui_vert_spirv, sizeof( s_gui_vert_spirv ),
-            RHI_SHADER_STAGE_VERTEX, "main", "gui_vert" );
-        if ( !rhi_handle_valid( vert ) )
-            return false;
-
-        frag = rhi()->shader_load_memory(
-            s_gui_frag_spirv, sizeof( s_gui_frag_spirv ),
-            RHI_SHADER_STAGE_FRAGMENT, "main", "gui_frag" );
-        if ( !rhi_handle_valid( frag ) )
-        {
-            rhi()->shader_destroy( vert );
-            return false;
-        }
-    }
+    if ( !render_load_shaders( &vert, &frag ) )
+        return false;
 
     // Vertex layout: FLOAT2 pos @0, UNORM16X2 uv @8, UNORM8X4 color @12, UINT prim record @16,
     // stride=20.  What used to sit here as well -- a packed effect word, a packed texture word, and

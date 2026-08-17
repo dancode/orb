@@ -7,6 +7,7 @@
 
       0. Dependency resolution  -- recurse into link deps and tool deps first.
       1. Per-target mutex lock  -- serialize concurrent invocations on the same target.
+      1.5 Shader cook           -- asset_tool over every 'shader' line, into bin/shaders.
       2. Path preparation       -- obj_dir, gen_dir, out_path.
       3. Up-to-date check       -- four freshness tests (A-D); short-circuit if clean.
       4. Directory creation     -- ensure every write destination exists.
@@ -77,6 +78,91 @@ platform_embed_manifest( const char* exe_path, const char* manifest_src )
         printf( ORB_INDENT "[orb warn] mt.exe failed (exit %d) -- manifest not embedded\n", ret );
 }
 #endif
+
+/*==============================================================================================
+    --- Shader Cook ---
+
+    Every 'shader' line on a target names a stage-tagged .hlsl under its root, and the cook
+    turns it into bin/shaders/<stem>.oshd -- the reflected container the runtime loads.  The
+    cooker is asset_tool, which reads the stage tag out of the filename (gui.vs.hlsl -> vs_6_0)
+    and forwards to shader_tool; both must therefore be listed as tool deps by any target that
+    declares shaders, which is also what orders them ahead of it under the parallel scheduler.
+
+    Staleness is a plain mtime compare against the .oshd.  It deliberately does NOT consult the
+    target's artifact: a shader and the C code that draws with it change on their own schedules,
+    and coupling them would either recompile the world after a one-line shader edit or leave a
+    stale .oshd next to a fresh .lib.
+==============================================================================================*/
+
+bool
+build_cook_shaders( build_context_t* ctx, target_info_t* target )
+{
+    if ( !target->shaders[ 0 ] )
+        return true;
+
+    if ( !platform_file_exists( "bin" PATH_SEP "asset_tool.exe" ) )
+    {
+        printf( ORB_INDENT "[orb error] '%s' declares shaders but bin/asset_tool.exe is missing"
+                           " -- add 'tool_dep asset_tool shader_tool' to the target\n", target->name );
+        return false;
+    }
+
+    ensure_dir( "bin" PATH_SEP "shaders" );
+
+    for ( int i = 0; target->shaders[ i ]; ++i )
+    {
+        char src[ PATH_MAX ];
+        snprintf( src, sizeof( src ), "%s" PATH_SEP "%s", target->root_dir, target->shaders[ i ] );
+
+        /* The output name is the source's, with .hlsl traded for .oshd -- the stage tag stays
+           part of the stem, so gui.vs.hlsl and gui.ps.hlsl land as a distinguishable pair. */
+        const char* base = target->shaders[ i ];
+        for ( const char* p = base; *p; ++p )
+            if ( *p == '/' || *p == '\\' )
+                base = p + 1;
+
+        char stem[ PATH_MAX ];
+        snprintf( stem, sizeof( stem ), "%s", base );
+        char* dot = strrchr( stem, '.' );
+        if ( !dot || strcmp( dot, ".hlsl" ) != 0 )
+        {
+            printf( ORB_INDENT "[orb error] '%s' shader '%s' is not a .hlsl\n",
+                    target->name, target->shaders[ i ] );
+            return false;
+        }
+        *dot = '\0';
+
+        char dst[ PATH_MAX ];
+        snprintf( dst, sizeof( dst ), "bin" PATH_SEP "shaders" PATH_SEP "%s.oshd", stem );
+
+        platform_mtime_t src_mtime = platform_get_mtime( src );
+        if ( src_mtime == 0 )
+        {
+            printf( ORB_INDENT "[orb error] '%s' shader source not found: %s\n", target->name, src );
+            return false;
+        }
+        if ( !ctx->force_rebuild && platform_get_mtime( dst ) >= src_mtime )
+            continue;
+
+        if ( g_out_flags & ORB_OUT_REFLECT )
+        {
+            const char* lp = sched_log_path();
+            FILE*       lf = lp ? fopen( lp, "a" ) : NULL;
+            fprintf( lf ? lf : stdout, ORB_INDENT "[orb shader] %s\n", stem );
+            if ( lf ) fclose( lf );
+        }
+
+        char cmd[ PATH_MAX * 2 ];
+        snprintf( cmd, sizeof( cmd ), "bin" PATH_SEP "asset_tool.exe cook %s %s", src, dst );
+        if ( build_run_cmd( cmd ) != 0 )
+        {
+            printf( ORB_INDENT "[orb error] '%s' shader cook failed: %s\n", target->name, src );
+            return false;
+        }
+    }
+
+    return true;
+}
 
 bool
 build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, uint64_t* out_elapsed_ms )
@@ -156,6 +242,23 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
 
     void* target_lock = build_lock_target( target->name );
     bool  result      = true;
+
+    // --- 1.5 Shader Cook ---
+    //
+    // Inside the lock for the same reason everything else is -- two invocations must not
+    // write one .oshd at once -- but ahead of the up-to-date check, because the cooked file
+    // is an input to the RUNTIME and not to the compiler: a shader edit must re-cook without
+    // dragging a recompile behind it, and an unchanged shader must not make the target look
+    // stale. Idempotent, and one mtime compare per declared shader when there is nothing to do.
+    //
+    // Returns directly rather than through cleanup: nothing has been renamed yet, and the
+    // variables that label reads are not declared until after the up-to-date check.
+
+    if ( !build_cook_shaders( ctx, target ) )
+    {
+        build_unlock_target( target_lock );
+        return false;
+    }
 
     // --- 2. Path Preparation ---
 

@@ -361,7 +361,7 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
    indices -- the window's fixed slab (its id-keyed cache slot * GUI_WIN_CLIP_MAX) plus a local
    first-seen index -- so the flush uploads each slab at its fixed offset, and only when its
    content changed (s_clip_slab_pending).  The fragment resolves them against the frame clip
-   buffer (gui_shader.h, clip_coverage) with clip_base flush-constant at the region origin.
+   buffer (gui.ps.hlsl, clip_coverage) with clip_base flush-constant at the region origin.
    Lives beside the slot's cached geometry so a cache-hit frame replays baked indices against the
    exact rects they meant, however the per-frame global clip table shuffled its indices. */
 typedef struct

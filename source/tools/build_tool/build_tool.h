@@ -415,6 +415,14 @@ typedef struct target_info_s
 
     const char*     units[ TARGET_MAX_SLOTS ];
 
+    /*  Shader sources, relative to root_dir like units. Each is cooked into
+        bin/shaders/<stem>.oshd before this target compiles, by asset_tool (which
+        derives the dxc profile from the .vs/.ps stage tag in the name). A target
+        declaring these must also carry 'tool_dep asset_tool shader_tool', which is
+        what orders the cookers ahead of it under the parallel scheduler. */
+
+    const char*     shaders[ TARGET_MAX_SLOTS ];
+
     /*  Link Dependencies: Other targets that produce .libs this target must link against.
         Drives both the linker's input list and the parallel scheduler's topological order. */
 
@@ -679,6 +687,14 @@ bool build_target_compile_single( build_context_t* ctx, target_info_t* target,
     Used by -compile-only (VS Ctrl+F7 via NMakeCompileFileCommandLine). */
 
 bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
+
+/*  Cooks every shader the target declares into bin/shaders/<stem>.oshd, skipping
+    any whose .oshd is already newer than its source. Runs ahead of the artifact's
+    up-to-date check rather than inside it: the cooked file is an input to the
+    RUNTIME, not to the compiler, so editing a shader must re-cook without also
+    forcing a recompile of C code that did not change. */
+
+bool build_cook_shaders( build_context_t* ctx, target_info_t* target );
 
 /*  Links or archives the target's objects into the final artifact: lib.exe
     for static libs, link.exe (with /DLL or as an exe) for the rest. PDB paths

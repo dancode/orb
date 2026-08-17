@@ -183,8 +183,12 @@ target gui
     unit        gui_debug.c   				# GUI_DEBUG unit: dashboard + command stepper (severable)
     unit        gui_flow.c  				# GUI_FLOW unit: layout composition (metrics in, rects out)
     unit        gui_chrome.c   				# GUI_CHROME unit: widgets/table/window/dock/popup/nav
-	
+
+    shader      shaders/gui.vs.hlsl			# cooked to bin/shaders/gui.vs.oshd; the only gui shader source
+    shader      shaders/gui.ps.hlsl			# cooked to bin/shaders/gui.ps.oshd
+
     dep         app rhi base
+    tool_dep    asset_tool shader_tool		# the shader cookers, ordered ahead of this target
 
 target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the load bench
 
@@ -206,9 +210,13 @@ target gui_stress		# gui compiled with GUI_STRESS_TEST: ~4x pool caps for the lo
     unit        gui_debug.c   				# GUI_DEBUG unit: dashboard + command stepper (severable)
     unit        gui_flow.c   				# GUI_FLOW unit: layout composition (metrics in, rects out)
     unit        gui_chrome.c   				# GUI_CHROME unit: widgets/table/window/dock/popup/nav
-	
+
+    shader      shaders/gui.vs.hlsl			# same pair as 'gui' -- whichever builds first cooks it
+    shader      shaders/gui.ps.hlsl
+
     dep         app rhi base
-	
+    tool_dep    asset_tool shader_tool
+
     define      GUI_STRESS_TEST
     define      GUI_STATIC   	# target name derives GUI_STRESS_STATIC; the gateway switch needs GUI_STATIC
 

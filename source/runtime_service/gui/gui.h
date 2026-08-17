@@ -2089,7 +2089,7 @@ typedef enum
 
    The word travels from the emit site into the primitive record's `tex` member (gui_prim_t), and
    the model's shift is the one bit-layout contract the shaders still share with this header --
-   TEX_MODE_SHIFT in gui.frag / gui.ps.hlsl, and the paraphrase in gui_shader.h.  The clip band,
+   TEX_MODE_SHIFT in gui.ps.hlsl.  The clip band,
    the self bit and the op band that used to sit under it are gone: all three are plain members of
    the record now, so the low 28 bits are the bindless index and nothing else. */
 #define GUI_TEX_MODE_SHIFT  28u

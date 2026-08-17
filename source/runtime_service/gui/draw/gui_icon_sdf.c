@@ -154,7 +154,7 @@ icon_sdf_encode( const f32* dist, u32 w, u32 h, u8* out, u32 ow, u32 oh )
                 }
 
             /* 128 is ON the outline and positive is INSIDE -- the same convention the SDF font
-               atlas uses, because the fragment tests one threshold for both (gui.frag). */
+               atlas uses, because the fragment tests one threshold for both (gui.ps.hlsl). */
             f32 d = ( n ? acc / (f32)n : 0.0f ) / scale;
             i32 v = (i32)( 128.0f + d * ( 127.0f / ICON_SDF_SPREAD ) + 0.5f );
             if ( v < 0 )   v = 0;

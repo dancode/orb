@@ -1,9 +1,10 @@
 @echo off
 :: cook_shaders.bat -- cook the engine's HLSL shaders into bin\shaders\*.oshd.
 ::
-:: The cooked files are OPTIONAL: gui and draw prefer them when present next to the exe and
-:: fall back to their embedded SPIR-V arrays when absent -- delete bin\shaders to turn the
-:: cooked path off.  Requires bin\asset_tool.exe and bin\shader_tool.exe (build_tool -config
+:: The gui pair does not need this script: build_tool cooks it while building the gui target
+:: ('shader' lines in orb.targets), and the gui has no embedded fallback to run from.  The draw
+:: shaders still do -- draw prefers a cooked file when present and falls back to its embedded
+:: SPIR-V arrays when absent.  Requires bin\asset_tool.exe and bin\shader_tool.exe (build_tool -config
 :: Debug) plus dxc.exe from %%VULKAN_SDK%%.  asset_tool derives each dxc profile from the
 :: .vs/.ps stage tag in the filename and forwards to shader_tool.
 setlocal

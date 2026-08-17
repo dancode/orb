@@ -313,6 +313,12 @@ The design constraint, set explicitly at the start of the phase: **the cooked pa
 additive, never a dependency.** The engine must compile and run with zero cook steps, and the
 new pipeline must be switch-off-able. This shaped everything that follows.
 
+> **Since superseded for the gui.** Carrying a shader twice -- an HLSL source and a GLSL
+> transcript compiled into an array -- meant every edit landed in two places and only one of
+> them was what ran. The gui now has exactly one source, `shaders/gui.{vs,ps}.hlsl`, cooked by
+> the build itself (`shader` lines on the gui target in `orb.targets`), and `render_init` fails
+> loudly when the pair is missing. The draw service still carries its fallback.
+
 ### The HLSL twins
 
 Each GLSL shader got an HLSL twin living next to it, a faithful port down to the comments:
@@ -361,7 +367,7 @@ The off switch is therefore: delete `bin\shaders`. No build flag, no cvar, no ho
 (gui and draw are static libs always linked into hosts, so they can call `sys_exe_dir`
 directly to locate the exe -- rhi.c set that precedent.)
 
-`scriptsok_shaders.bat` cooks all six shaders through asset_tool's stage-tag
+`scripts/cook_shaders.bat` cooks all six shaders through asset_tool's stage-tag
 dispatch into `bin\shaders`. Run it after editing an HLSL twin; skip it entirely and the
 engine runs on the frozen arrays.
 
@@ -459,18 +465,23 @@ yields identical layout hashes; and `sb_asset_shader` demonstrates both hot-relo
 
 ## Part 9: Quick reference
 
-**Cook the engine shaders:** `scriptsok_shaders.bat` (needs `bin\asset_tool.exe`,
+**Cook the engine shaders:** the gui pair is cooked by `build_tool` as part of building the
+gui target. `scripts/cook_shaders.bat` cooks all six by hand (needs `bin\asset_tool.exe`,
 `bin\shader_tool.exe`, and dxc from `%VULKAN_SDK%`)
 
-**Turn the cooked path off:** delete (or rename) `bin\shaders`
+**Turn the cooked path off:** delete (or rename) `bin\shaders` -- draw falls back to its
+embedded arrays, the gui refuses to init
 
 **Inspect any shader's interface:** `bin\shader_tool.exe reflect <file.oshd|file.spv>`
 
 **Generate a C layout header:** `bin\shader_tool.exe header <file.oshd> -o <out.h>`
 
-**Edit an engine shader:** edit the `.hlsl` twin, run `cook_shaders.bat`. Only regenerate the
-embedded arrays (glslc recipe in `gui_shader.h` / `draw_shader.h`) if the *interface* changed,
-and then keep GLSL + HLSL byte-identical in push constants and vertex inputs.
+**Edit a gui shader:** edit `gui.{vs,ps}.hlsl` and rebuild -- the build re-cooks it. There is
+no second copy.
+
+**Edit a draw shader:** edit the `.hlsl` twin, run `cook_shaders.bat`. Only regenerate the
+embedded arrays (glslc recipe in `draw_shader.h`) if the *interface* changed, and then keep
+GLSL + HLSL byte-identical in push constants and vertex inputs.
 
 **Key files:**
 
@@ -481,9 +492,9 @@ and then keep GLSL + HLSL byte-identical in push constants and vertex inputs.
 | `source/runtime_service/rhi/vk_shader_load.c` | `.oshd` parser + bindless contract enforcement |
 | `source/runtime_service/rhi/vk_pipeline_graphics.c` | attrib/pc derivation + compatibility validation |
 | `source/runtime_service/asset/loaders/asset_shader.c` | "shader" asset type + hot-reload |
-| `source/runtime_service/gui/shaders/*.hlsl` | gui HLSL twins (live source) |
+| `source/runtime_service/gui/shaders/*.hlsl` | the gui shaders -- sole source, cooked by the build |
 | `source/runtime_service/draw/shaders/*.hlsl` | draw HLSL twins (live source) |
-| `gui_shader.h` / `draw_shader.h` | frozen fallback SPIR-V arrays |
+| `draw_shader.h` | draw's frozen fallback SPIR-V arrays |
 | `cook_shaders.bat` | cooks all six engine shaders into `bin\shaders` |
 
 **Invariants to remember:**
@@ -493,4 +504,5 @@ and then keep GLSL + HLSL byte-identical in push constants and vertex inputs.
 - All shaders must speak the bindless contract (set 0 / b0 textures, b1 samplers, unbounded);
   the loader rejects anything else.
 - Vulkan-style CPU matrices + `-fvk-invert-y` cook = the shader needs the one-line y cancel.
-- The cooked path is additive: the engine must always build and run with `bin\shaders` empty.
+- The cooked path is additive for draw, which keeps its fallback. It is the ONLY path for the
+  gui: the build cooks that pair, and a missing `.oshd` is an init failure with the path in it.

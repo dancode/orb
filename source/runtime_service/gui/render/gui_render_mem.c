@@ -87,9 +87,9 @@ backend_memory( u32 live_viewports )
        A dynamic bucket -- it exists only once an atlas / tenant does. */
     s.cpu_atlas_bytes = res_atlas_cpu_bytes();
 
-    /* RENDER: pipeline/sampler/push state + the embedded SPIR-V bytecode (.rdata). */
-    s.cpu_render_bytes = (u32)( sizeof( s_render )
-                              + sizeof( s_gui_vert_spirv ) + sizeof( s_gui_frag_spirv ) );
+    /* RENDER: pipeline / sampler / push state.  The shader bytecode used to be counted here as
+       well; it is loaded from bin/shaders now and never sits in the exe's .rdata. */
+    s.cpu_render_bytes = (u32)sizeof( s_render );
 
     /* Text-selection run capture (always compiled; a product feature). */
     s.cpu_select_bytes = (u32)sizeof( s_select_cap );

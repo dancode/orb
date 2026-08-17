@@ -175,7 +175,7 @@ render_batch_debug_color( u32 i )
     each surface draws only its own slots.  LOAD preserves the scene rendered before this call.
 
     The scissor is set ONCE, to the full surface: clipping is resolved per fragment against the
-    frame clip table (gui_shader.h, clip_coverage), which this flush also uploads -- each
+    frame clip table (gui.ps.hlsl, clip_coverage), which this flush also uploads -- each
     dispatched slot's local clip entries, concatenated into this (frame, viewport) region, with
     the slot's base entry pushed per draw (pc.clip_base).
 ==============================================================================================*/
@@ -427,7 +427,7 @@ gui_render_flush( rhi_buffer_t vb, rhi_buffer_t ib, rhi_texture_t target,
        the effect band's clock costs no batch split and no per-draw work (gui.h, GUI_FX_TIME_WRAP). */
     push.time = s_render.fx_time;
 
-    /* Fragment-clip plumbing (gui_shader.h, "the clip band").  Both fields are flush-constant:
+    /* Fragment-clip plumbing (gui.ps.hlsl, "the clip band").  Both fields are flush-constant:
        vertices bake ABSOLUTE region entry indices (each window's fixed slab), so clip_base is
        just this region's origin. */
     push.clip_buf  = s_render.clip_buf_idx;

@@ -1,15 +1,16 @@
-// gui.vs.hlsl -- HLSL twin of gui.vert (the cooked-shader path).
+// gui.vs.hlsl -- the gui vertex stage.  THE source: build_tool cooks this file into
+// bin/shaders/gui.vs.oshd (the 'shader' lines on the gui target in orb.targets) and
+// gui_render_init loads that container.  There is no second copy of this shader anywhere
+// and no embedded fallback -- edit here, rebuild, run.
 //
-// Cooked by shader_tool (via cook_shaders.bat) into bin/shaders/gui.vs.oshd; gui_render_init
-// prefers the cooked pair when both files sit next to the exe and falls back to the embedded
-// SPIR-V in pipeline/gui_shader.h (compiled from the GLSL twins) when they are absent.  Keep
-// this file, the GLSL, and gui_push_t in gui_render.c in lockstep -- the push constant block
-// and vertex inputs must stay byte-identical or the cooked and fallback paths diverge.
+// The one thing that must stay in step outside this directory is the push constant block
+// below, which mirrors gui_push_t in gui_render.h.  The cooked container carries reflection,
+// so a mismatch in its SIZE is caught by pipeline_create rather than rendering garbage;
+// a mismatch in field ORDER is not, and that is what the comments on both sides are for.
 //
-// The mvp is authored in VULKAN clip space (render_ortho maps top-left to -1,-1 with +y down),
-// which is why the GLSL twin compiles without any y flip.  shader_tool bakes -fvk-invert-y
-// into every vertex-stage cook (house convention: HLSL sources are D3D +y-up), so this shader
-// negates y once to cancel it and match the fallback exactly.
+// The mvp is authored in VULKAN clip space (render_ortho maps top-left to -1,-1 with +y down).
+// shader_tool bakes -fvk-invert-y into every vertex-stage cook (house convention: HLSL sources
+// are D3D +y-up), so this shader negates y once to cancel it.
 
 struct gui_pc_t
 {
@@ -24,6 +25,10 @@ struct gui_pc_t
     uint     prim_buf;     // bindless buffer slot of the primitive records (fragment-only)
     uint     prim_base;    // this window slot's first record (fragment-only)
 };
+
+// Everything in the block is FLUSH-constant except prim_base, which is per window SLOT: the
+// record arena is packed rather than slabbed, so a window's records start wherever they were
+// placed and the dispatch walk re-pushes the tail as it crosses a slot boundary.
 [[vk::push_constant]] gui_pc_t pc;
 
 // TWO of these attributes are PACKED in memory (gui.h): uv is two unorm16 and color is four

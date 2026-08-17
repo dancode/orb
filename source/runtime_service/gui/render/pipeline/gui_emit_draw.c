@@ -387,7 +387,7 @@ draw_cull_box( f32 x, f32 y, f32 w, f32 h )
 }
 
 /* The shared push body.  `radius` rounds the clip's own corners -- the per-fragment cut the
-   scissor could never express (gui_shader.h, clip_coverage).  It applies to THIS entry only: a
+   scissor could never express (gui.ps.hlsl, clip_coverage).  It applies to THIS entry only: a
    clip nested inside a rounded one intersects against the parent's RECT (the corner arcs do not
    compose through rect_intersect), which errs by letting a child paint into its parent's corner
    arc -- the parent's own chrome overpaints there in practice. */

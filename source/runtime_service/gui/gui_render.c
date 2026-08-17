@@ -51,7 +51,6 @@
     ------------------------------------------------------------------------------------------------
     Pipeline:
 
-    pipeline/gui_shader.h           -- embedded SPIR-V arrays (s_gui_vert_spirv, s_gui_frag_spirv)
     pipeline/gui_emit_draw.c        -- EMIT: CPU draw list: draw_reset, draw_push_* (incl. draw_push_icon), s_draw
     pipeline/gui_emit_path.c        -- EMIT: line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)    
     pipeline/gui_build_tess.c       -- BUILD: CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
@@ -159,9 +158,6 @@
 /* Fonts, icons and sprites live in the draw unit (gui_draw.c) -- the server
    renders from the atlases they push into; glyph/icon/sprite UV lookups at tess/emit time go
    through the glyph/sprite source contract in gui_render.h. */
-
-// pipeline/ -- types and embedded shader bytecode only, no logic.
-#include "runtime_service/gui/render/pipeline/gui_shader.h"
 
 // pipeline/ EMIT: the semantic draw list (s_draw) and the line/path stroker built on it.
 // draw_push_icon lives here rather than with the icon resource (the draw unit's now): it queues

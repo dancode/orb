@@ -1,6 +1,15 @@
-// gui.ps.hlsl -- HLSL twin of gui.frag (the cooked-shader path).
+// gui.ps.hlsl -- the gui fragment stage: the whole effect band.  THE source, cooked into
+// bin/shaders/gui.ps.oshd by the build (see gui.vs.hlsl); no second copy, no fallback.
 //
-// Cooked into bin/shaders/gui.ps.oshd; see gui.vs.hlsl for the cooked-vs-fallback contract.
+// What this stage resolves, and where the model it implements is written down:
+//   - the PRIMITIVE RECORD (gui.h, gui_prim_t) -- shape, modifiers, texture, clip, and every
+//     shape parameter, reached through the one slot-local index the vertex carries.  gui.h is
+//     the layout and the field / op catalogue; the code below is the evaluation.
+//   - the CLIP TABLE -- resolved here rather than by the hardware scissor, so a clip change
+//     never opens a draw call and a clip can have a corner radius.
+//   - the SAMPLING MODEL -- the top 4 bits of the record's `tex`, which chooses both what a
+//     texel means and which sampler reads it.
+//
 // Keep the push constant block identical to the vertex stage and to gui_push_t.
 
 struct gui_pc_t
@@ -28,8 +37,9 @@ struct gui_pc_t
 // record's integer row comes back through asuint, which is a reinterpret, not a convert.
 [[vk::binding( 2, 0 )]] StructuredBuffer<float4> u_buffers[] : register( t0, space1 );
 
-// Mirrors gui.h: the record's op bits and the sampling model in its `tex` field.  Keep gui.h,
-// gui.frag and gui.ps.hlsl in step, then resplice the SPIR-V and re-cook.
+// Mirrors gui.h: the record's op bits and the sampling model in its `tex` field.  These two
+// declarations of the same constants are the only duplication the record model still carries;
+// keep them in step and rebuild.
 #define OP_BAND         0x01u
 #define OP_CUT          0x02u
 #define OP_INSET        0x04u
