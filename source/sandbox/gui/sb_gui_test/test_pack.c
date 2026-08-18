@@ -70,16 +70,14 @@ test_prim_layout( void )
     test_equal( 20u, (u32)offsetof( gui_prim_t, r_tr    ) );
     test_equal( 24u, (u32)offsetof( gui_prim_t, r_br    ) );
     test_equal( 28u, (u32)offsetof( gui_prim_t, r_bl    ) );
-    test_equal( 36u, (u32)offsetof( gui_prim_t, border  ) );
-    test_equal( 40u, (u32)offsetof( gui_prim_t, rot_cos ) );
-    test_equal( 44u, (u32)offsetof( gui_prim_t, rot_sin ) );
+    test_equal( 36u, (u32)offsetof( gui_prim_t, border     ) );
+    test_equal( 40u, (u32)offsetof( gui_prim_t, corner_pow ) );
     test_equal( 52u, (u32)offsetof( gui_prim_t, param_b ) );
     test_equal( 56u, (u32)offsetof( gui_prim_t, param_c ) );
     test_equal( 60u, (u32)offsetof( gui_prim_t, col_b   ) );
     test_equal( 68u, (u32)offsetof( gui_prim_t, grad_y  ) );
     test_equal( 72u, (u32)offsetof( gui_prim_t, cut_dx  ) );
     test_equal( 76u, (u32)offsetof( gui_prim_t, cut_dy  ) );
-    test_equal( 84u, (u32)offsetof( gui_prim_t, anim_phase ) );
     test_equal( 88u, (u32)offsetof( gui_prim_t, grad_mid   ) );
     test_equal( 100u, (u32)offsetof( gui_prim_t, dash_duty  ) );
 }
@@ -106,15 +104,47 @@ test_quad_layout( void )
     test_equal( 24u, (u32)offsetof( gui_quad_t, abgr  ) );
     test_equal( 28u, (u32)offsetof( gui_quad_t, style ) );
     test_equal( 36u, (u32)offsetof( gui_quad_t, flags ) );
-    test_equal( 40u, (u32)offsetof( gui_quad_t, reserved_b ) );
+    test_equal( 40u, (u32)offsetof( gui_quad_t, xform ) );
     test_equal( 44u, (u32)offsetof( gui_quad_t, col_b ) );
 
-    /* The expansion rules share a 2-bit lane -- the layout the quad vertex stage decodes with
-       literal masks. */
+    /* The expansion rules share the low 2 bits of `flags` and the animation phase takes the high
+       half -- the layout the quad vertex stage decodes with literal masks. */
     test_equal( 0u, GUI_QUAD_RULE_EXACT );
     test_equal( 1u, GUI_QUAD_RULE_SKIRT );
     test_equal( 2u, GUI_QUAD_RULE_CAPSULE );
     test_equal( 3u, GUI_QUAD_RULE_BBOX );
+    test_equal( 16u,         GUI_QUAD_PHASE_SHIFT );
+    test_equal( 0xFFFF0000u, GUI_QUAD_PHASE_MASK );
+
+    /* The rule lane and the phase lane cannot reach each other. */
+    test_equal( 0u, GUI_QUAD_RULE_BBOX & GUI_QUAD_PHASE_MASK );
+}
+
+/* The two per-instance packings the quad carries, and the one property each rests on: identity
+   states itself as ZERO (so an unrotated shape leaves the lane alone, like every other record
+   lane here), and a phase wraps rather than clamping. */
+static void
+test_quad_instance_pack( void )
+{
+    /* Identity is the reserved zero, and nothing else packs to it. */
+    test_equal( 0u, gui_xform_pack( 1.0f, 0.0f ) );
+    test_true( gui_xform_pack( -1.0f, 0.0f ) != 0u );
+    test_true( gui_xform_pack(  0.0f, 1.0f ) != 0u );
+
+    /* A quarter turn round-trips through the unorm16 pair: (0, 1) sits at (half, full). */
+    u32 q = gui_xform_pack( 0.0f, 1.0f );
+    test_equal( 32768u, q & 0xFFFFu );
+    test_equal( 65535u, q >> 16 );
+
+    /* Phase lands in the high half and nowhere else. */
+    test_equal( 0u, gui_phase_pack( 0.0f ) );
+    test_equal( 0u, gui_phase_pack( 0.5f ) & 0xFFFFu );
+    test_equal( 32768u, gui_phase_pack( 0.5f ) >> GUI_QUAD_PHASE_SHIFT );
+
+    /* Whole cycles wrap away -- 1.25 and 0.25 are the same point in the wave, and a NEGATIVE
+       phase is the same point measured backwards rather than a clamp to zero. */
+    test_equal( gui_phase_pack( 0.25f ), gui_phase_pack(  1.25f ) );
+    test_equal( gui_phase_pack( 0.75f ), gui_phase_pack( -0.25f ) );
 }
 
 /* The op bits are single bits and DISJOINT, which is the whole claim the op word makes: any op

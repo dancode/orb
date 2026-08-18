@@ -5,7 +5,7 @@
 // array, and expands the covering corner itself.  Cooked to bin/shaders/gui_quad.vs.oshd.
 //
 // What the expansion does per quad, keyed by the record's flags (gui.h, GUI_QUAD_RULE_*):
-//   EXACT    the stored half-extents, rotated by the style's (rot_cos, rot_sin)
+//   EXACT    the stored half-extents, rotated by the quad's own (cos, sin)
 //   SKIRT    grown by the SDF falloff pad -- feather/2 + 1 -- from the style's row 3
 //   CAPSULE  hw is the half-length and hh the radius: the along axis grows by hh as well,
 //            so the round caps are covered
@@ -39,6 +39,9 @@ struct vs_out_t
     nointerpolation uint   clip   : TEXCOORD3;   // clip-table entry index, region-absolute
     nointerpolation float4 col2   : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
                                                   //   rides the quad, never the style
+    nointerpolation float4 inst   : TEXCOORD5;   // per-instance lanes off the quad:
+                                                  //   xy = the turn (cos, sin), z = animation
+                                                  //   phase in cycles, w unused
 };
 
 float2 unpack_unorm16x2( uint p )
@@ -54,22 +57,23 @@ vs_out_t main( uint vid : SV_VertexID )
     uint   row = ( pc.quad_base + quad ) * QUAD_ROWS;
     float4 q0  = u_buffers[ pc.quad_buf ][ row ];        // cx, cy, hw, hh
     float4 q1  = u_buffers[ pc.quad_buf ][ row + 1u ];   // uv0, uv1, abgr, style
-    float4 q2  = u_buffers[ pc.quad_buf ][ row + 2u ];   // clip, flags, reserved, col_b
+    float4 q2  = u_buffers[ pc.quad_buf ][ row + 2u ];   // clip, flags, xform, col_b
 
     uint style = asuint( q1.w );
     uint flags = asuint( q2.y );
     uint rule  = flags & 3u;
 
-    // The one style fetch the expansion needs: row 2 leads with feather and carries the shape's
-    // rotation.  Cache-hot -- a window's quads share a handful of styles.
-    float4 s3 = u_buffers[ pc.prim_buf ][ ( pc.prim_base + style ) * STYLE_ROWS + 2u ];
+    // The shape's TURN, per instance -- a unit (cos, sin) packed like a uv pair, with the all-zero
+    // word reserved for identity (gui.h, gui_xform_pack).  This is the frame every field works in,
+    // a CAPSULE's direction included: one style serves a whole polyline because the direction was
+    // never in the style to begin with.
+    uint   xw = asuint( q2.z );
+    float2 rt = ( xw == 0u ) ? float2( 1.0, 0.0 )
+                             : normalize( unpack_unorm16x2( xw ) * 2.0 - 1.0 );
 
-    // The shape's turn.  A zeroed rot pair reads as IDENTITY -- the zero-when-unused record rule:
-    // a plain fill's style never wrote the lanes.  A CAPSULE's direction rides the quad's own uv
-    // lanes instead of the style (one style serves a whole polyline), so it overrides here.
-    float2 rt = ( s3.z == 0.0 && s3.w == 0.0 ) ? float2( 1.0, 0.0 ) : s3.zw;
-    if ( rule == 2u )
-        rt = normalize( unpack_unorm16x2( asuint( q1.x ) ) * 2.0 - 1.0 );
+    // The one style fetch the expansion needs: row 2 leads with the feather the SDF pad derives
+    // from.  Cache-hot -- a window's quads share a handful of styles.
+    float4 s3 = u_buffers[ pc.prim_buf ][ ( pc.prim_base + style ) * STYLE_ROWS + 2u ];
 
     float pad = ( rule == 1u || rule == 2u ) ? s3.x * 0.5 + 1.0 : 0.0;
 
@@ -112,5 +116,6 @@ vs_out_t main( uint vid : SV_VertexID )
     o.rect     = q0;
     o.clip     = asuint( q2.x );
     o.col2     = unpack_col( asuint( q2.w ) );
+    o.inst     = float4( rt, float( flags >> 16u ) / 65535.0, 0.0 );
     return o;
 }

@@ -93,11 +93,16 @@ static struct
     u32         cur_prim_local;
     u32         prim_dedup_floor;
 
-    /* The ambient SECOND COLOUR -- rides the QUAD (gui_quad_t.col_b), never the style, so an
-       animated border or ramp never adds a style record: only the shape (rounding, border width,
-       feather) lives in cur_prim now.  An ambient the command sets before its tess_quad_push,
-       which folds it into the quad unread by the style.  0 = unused; cleared per command. */
+    /* The ambient PER-INSTANCE lanes -- all three ride the QUAD, never the style, so an animated
+       border, a turning shape and a staggered pulse never add style records: cur_prim states only
+       what is shared (shape, widths, rates).  Each is an ambient the command sets before its
+       tess_quad_push, which folds it into the quad unread by the style.  Cleared per command.
+         cur_col2   second colour (0 = unused)
+         cur_rot_c  the turn, as a unit pair; (1, 0) is the identity a plain shape leaves
+         cur_phase  animation phase in cycles (0 = in step with the clock) */
     u32         cur_col2;
+    f32         cur_rot_c, cur_rot_s;
+    f32         cur_phase;
 
     /* per-slot tesellation context */
 
@@ -291,6 +296,9 @@ tess_reset( void )
     s_tess.force_new_cmd     = false;
     s_tess.overflow          = false;
     s_tess.cur_col2          = 0;
+    s_tess.cur_rot_c         = 1.0f;
+    s_tess.cur_rot_s         = 0.0f;
+    s_tess.cur_phase         = 0.0f;
 }
 
 /* Name the texture the next quad's style will CARRY (tess_quad_push folds it into the record).
@@ -473,7 +481,8 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
         .abgr  = abgr,
         .style = style,
         .clip  = s_tess.cur_clip_local,
-        .flags = rule_flags,
+        .flags = rule_flags | gui_phase_pack( s_tess.cur_phase ),
+        .xform = gui_xform_pack( s_tess.cur_rot_c, s_tess.cur_rot_s ),
         .col_b = s_tess.cur_col2,
     };
 
@@ -520,7 +529,7 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
     s_tess.cur_prim.col_b   = col_b;
     s_tess.cur_prim.grad_x  = horizontal ? 1.0f / w : 0.0f;
     s_tess.cur_prim.grad_y  = horizontal ? 0.0f : 1.0f / h;
-    s_tess.cur_prim.rot_cos = 1.0f;
+    s_tess.cur_rot_c = 1.0f;
     tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
                     0, 0, res_atlas_idx(), col_a );
 }
@@ -781,7 +790,8 @@ typedef struct
     f32 grad_mid;         // GUI_OP_GRAD: midpoint bend, already the exponent (0 = linear)
     f32 cut_dx, cut_dy;   // GUI_OP_CUT: the cut boundary's centre, offset from this shape's
     f32 anim_rate;        // GUI_OP_DASH: pattern scroll px/sec; GUI_OP_PULSE: unused (rate = param_a)
-    f32 anim_phase;       // GUI_OP_DASH: static px offset; GUI_OP_PULSE: cycle offset
+    f32 anim_phase;       // CYCLES, for every animating op -- one unit the quad's phase lane
+                          //   carries whatever the op means by a period (gui.h)
     f32 dash_period;      // GUI_OP_DASH: px per on+off cycle, already snapped to the perimeter
     f32 dash_duty;        // GUI_OP_DASH: on-fraction of the period
 
@@ -873,15 +883,15 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     s_tess.cur_prim.r_bl    = rq[ 3 ];
     s_tess.cur_prim.feather = feather;
     s_tess.cur_prim.border  = ( s_tess.cur_ops & ( GUI_OP_BAND | GUI_OP_FRAME ) ) ? border : 0.0f;
-    s_tess.cur_prim.rot_cos = rcs;
-    s_tess.cur_prim.rot_sin = rsn;
+    s_tess.cur_rot_c = rcs;
+    s_tess.cur_rot_s = rsn;
     s_tess.cur_prim.param_a = ( s_tess.cur_ops & GUI_OP_PULSE ) ? rate  : 0.0f;
     s_tess.cur_prim.param_b = ( s_tess.cur_ops & GUI_OP_PULSE ) ? depth : 0.0f;
 
     /* The corner profile -- ambient over the command, like the ops, and applied only where there
        is a corner to profile: a square box has no arc to reshape, and leaving the lane at zero is
        what keeps square fills deduping onto one record. */
-    s_tess.cur_prim.param_c = ( rmax > 0.0f ) ? s_tess.cur_corner_pow : 0.0f;
+    s_tess.cur_prim.corner_pow = ( rmax > 0.0f ) ? s_tess.cur_corner_pow : 0.0f;
 
     /* DITHER, derived rather than asked for: a wide falloff and a colour ramp are the two shapes
        that band on an 8-bit target, and half a step of screen noise is invisible everywhere else
@@ -899,7 +909,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     if ( aux && ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_PULSE | GUI_OP_SPIN ) ) )
     {
         s_tess.cur_prim.anim_rate  = aux->anim_rate;
-        s_tess.cur_prim.anim_phase = aux->anim_phase;
+        s_tess.cur_phase = aux->anim_phase;
     }
 
     /* GUI_OP_FRAME's border colour does NOT land here -- it rides the quad's col_b (cur_col2,
@@ -992,7 +1002,7 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     s_tess.cur_prim.param_a = cx - qx;
     s_tess.cur_prim.param_b = cy - qy;
     s_tess.cur_prim.feather = TESS_FX_AA;
-    s_tess.cur_prim.rot_cos = 1.0f;
+    s_tess.cur_rot_c = 1.0f;
     tess_quad_push( qx, qy, ( hix - lox ) * 0.5f, ( hiy - loy ) * 0.5f,
                     GUI_QUAD_RULE_SKIRT, 0, 0, res_atlas_idx(), abgr );
 }
@@ -1043,8 +1053,8 @@ tess_fx_ngon( f32 pcx, f32 pcy, f32 r, u32 sides, f32 rot, f32 rounding,
     s_tess.cur_prim.r_tr    = (f32)sides;
     s_tess.cur_prim.feather = TESS_FX_AA;
     s_tess.cur_prim.border  = ( s_tess.cur_ops & GUI_OP_BAND ) ? border : 0.0f;
-    s_tess.cur_prim.rot_cos = cosf( rot );
-    s_tess.cur_prim.rot_sin = sinf( rot );
+    s_tess.cur_rot_c = cosf( rot );
+    s_tess.cur_rot_s = sinf( rot );
 
     /* The circumcircle covering under SKIRT: r on both axes, grown by the pad the vertex stage
        derives from the feather.  Rotation-safe -- a rotated square covering of a circle is
@@ -1135,13 +1145,14 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
 #define TESS_HALF_PI  1.57079632679490f
 #define TESS_TAU      6.28318530717959f
 
-/* `mode` is one of the four sector modes: GUI_FX_ARC / GUI_FX_PIE take the classic path, and the
-   two SELF-SAMPLED variants (GUI_FX_ARC_DASH / GUI_FX_ARC_GRAD) additionally carry (uvx, uvy) --
-   the parameter pair the fragment recovers from the quad's flat uv word (gui.h).  ARC/PIE ignore
-   the pair and stamp the white texel as every solid shape does. */
+/* `mode` is GUI_FX_ARC, GUI_FX_PIE, or the SELF-SAMPLED GUI_FX_ARC_GRAD, which additionally
+   carries its second colour in (uvx, uvy) -- the pair the fragment recovers from the quad's flat
+   uv word (gui.h).  ARC/PIE ignore the pair and stamp the white texel as every solid shape does.
+   A non-zero `dash_turns` dashes the sector through GUI_OP_DASH, in period-turns and on-duty. */
 static void
 tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
-             gui_fx_mode_t mode, f32 uvx, f32 uvy, f32 spin_rate, f32 spin_phase, u32 abgr )
+             gui_fx_mode_t mode, f32 uvx, f32 uvy, f32 dash_turns, f32 dash_duty,
+             f32 spin_rate, f32 spin_phase, u32 abgr )
 {
     if ( r <= 0.0f )
         return;
@@ -1165,10 +1176,11 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
        field, so a thick ring fell through to the sector formula (exact at aperture pi, it merely
        rasterizes the hole); the record has no such ceiling, so every full-turn ring takes the
        cheaper path now.
-       The SELF-SAMPLED variants never reroute: their pattern / gradient lives in the sector decode,
-       which the exact ring does not run -- and at aperture pi the sector formula serves them
-       exactly, so a closed dashed ring is this same one quad. */
-    if ( sweep >= TESS_TAU && ( mode == GUI_FX_ARC || mode == GUI_FX_PIE ) )
+       A dashed or gradient sector never reroutes: the dash cut and the sweep both measure against
+       the sector's own frame, which the exact ring does not build -- and at aperture pi the sector
+       formula serves them exactly, so a closed dashed ring is this same one quad. */
+    if ( sweep >= TESS_TAU && dash_turns <= 0.0f
+      && ( mode == GUI_FX_ARC || mode == GUI_FX_PIE ) )
     {
         if ( pie )
         {
@@ -1218,8 +1230,8 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     /* The record.  (cm, sm) is the sector's own frame -- the bisector direction the local
        coordinate above is expressed in -- so it goes where every other field's turn goes. */
     s_tess.cur_prim.field   = (u32)mode;
-    s_tess.cur_prim.rot_cos = cm;
-    s_tess.cur_prim.rot_sin = sm;
+    s_tess.cur_rot_c = cm;
+    s_tess.cur_rot_s = sm;
     s_tess.cur_prim.param_a = ra;
     s_tess.cur_prim.param_b = rb;
     s_tess.cur_prim.param_c = ap;
@@ -1231,34 +1243,41 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     {
         s_tess.cur_ops |= GUI_OP_SPIN;
         s_tess.cur_prim.anim_rate  = spin_rate;
-        s_tess.cur_prim.anim_phase = spin_phase;
+        s_tess.cur_phase = spin_phase;
     }
 
-    /* These two carry their parameter pair in the uv lanes instead of texcoords, which is what the
-       self-sampled bit announces: the fragment forces coverage to 1 and never reads the texel, so
-       the white texel is not needed and the atlas stays bound only to keep the index valid. */
+    /* A DASHED sector is the plain sector plus GUI_OP_DASH now -- the sector states arc-length as
+       its boundary coordinate, which is the one axis the dash op cuts on whatever the shape.  The
+       caller still speaks in turns, so convert once here: a period of `uvx` turns is that fraction
+       of the full circumference at this radius.  The snap keeps whole cycles around the sweep, so
+       a closed dashed ring meets itself exactly as the retired ARC_DASH field arranged. */
     f32 wu = 0.0f, wv = 0.0f;
-    if ( mode == GUI_FX_ARC_DASH || mode == GUI_FX_ARC_GRAD )
+    if ( dash_turns > 0.0f )
+    {
+        f32 arc_len = sweep * ra;
+        f32 period  = dash_turns * TESS_TAU * ra;
+        f32 cycles  = ( period > 0.0f ) ? arc_len / period : 0.0f;
+        if ( cycles >= 1.0f )
+            period = arc_len / (f32)(i32)( cycles + 0.5f );
+
+        s_tess.cur_ops |= GUI_OP_SELF | GUI_OP_DASH;
+        s_tess.cur_prim.dash_period = period;
+        s_tess.cur_prim.dash_duty   = dash_duty;
+    }
+
+    /* ARC_GRAD still carries its second colour as a packed pair, which the self-sampled bit
+       announces: the fragment forces coverage to 1 and never reads the texel, so the white texel
+       is not needed and the atlas stays bound only to keep the index valid. */
+    if ( mode == GUI_FX_ARC_GRAD )
     {
         wu = uvx;
         wv = uvy;
         s_tess.cur_ops |= GUI_OP_SELF;
 
-        /* Unpacked, the pair stops being a uv payload: a dash is a period and a duty, a gradient
-           is a second colour.  Both come in already encoded the way the uv lanes wanted them --
-           the emit side owns that encoding until the packed path goes (gui_emit_draw.c). */
-        if ( mode == GUI_FX_ARC_DASH )
-        {
-            s_tess.cur_prim.r_tl = uvx;                       /* period, as a fraction of a turn */
-            s_tess.cur_prim.r_tr = uvy;                       /* on-duty fraction                */
-        }
-        else
-        {
-            u32 bu = (u32)( uvx * 65535.0f + 0.5f );
-            u32 bv = (u32)( uvy * 65535.0f + 0.5f );
-            s_tess.cur_prim.col_b = ( bu & 0xFFu ) | ( ( bu >> 8 ) << 8 )
-                                  | ( ( bv & 0xFFu ) << 16 ) | ( ( bv >> 8 ) << 24 );
-        }
+        u32 bu = (u32)( uvx * 65535.0f + 0.5f );
+        u32 bv = (u32)( uvy * 65535.0f + 0.5f );
+        s_tess.cur_prim.col_b = ( bu & 0xFFu ) | ( ( bu >> 8 ) << 8 )
+                              | ( ( bv & 0xFFu ) << 16 ) | ( ( bv >> 8 ) << 24 );
     }
 
     static const f32 lsx[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };
@@ -1464,8 +1483,8 @@ tess_quad_xf( f32 px, f32 py, f32 cs, f32 sn,
               f32 u0, f32 v0, f32 u1, f32 v1, u32 tex_idx, u32 abgr )
 {
     f32 ccx = lx + lw * 0.5f, ccy = ly + lh * 0.5f;
-    s_tess.cur_prim.rot_cos = cs;
-    s_tess.cur_prim.rot_sin = sn;
+    s_tess.cur_rot_c = cs;
+    s_tess.cur_rot_s = sn;
     tess_quad_push( px + ccx * cs - ccy * sn, py + ccx * sn + ccy * cs,
                     lw * 0.5f, lh * 0.5f, GUI_QUAD_RULE_EXACT,
                     gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr );
@@ -1537,8 +1556,8 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
        noise. */
     s_tess.cur_prim.field   = (u32)GUI_FX_TILE_U;
     s_tess.cur_prim.param_a = umax;
-    s_tess.cur_prim.rot_cos = ux;
-    s_tess.cur_prim.rot_sin = uy;
+    s_tess.cur_rot_c = ux;
+    s_tess.cur_rot_s = uy;
     tess_quad_push( ( x0 + x1 ) * 0.5f, ( y0 + y1 ) * 0.5f, len * 0.5f, half,
                     GUI_QUAD_RULE_EXACT,
                     gui_uv_pack( 0.0f, vv ), gui_uv_pack( 1.0f, vv ),
@@ -1669,11 +1688,10 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 
     f32 hl  = len * 0.5f;                   /* half-length: what q.x subtracts */
     f32 mx  = ( x0 + x1 ) * 0.5f, my = ( y0 + y1 ) * 0.5f;
 
-    /* The style states the capsule's radius in the corner-radius lane.  The DIRECTION rides the
-       quad's uv lanes (a unorm16-mapped unit vector), NOT the style's rot pair, so every segment
-       of every stroke at one thickness shares ONE style -- the dedup a per-direction rot pair
-       would forfeit on the shape polylines expand into.  The half-length rides the quad
-       (rect.z); the fragment reads the direction back from the interpolated uv. */
+    /* The style states the capsule's radius in the corner-radius lane.  The DIRECTION is the
+       quad's own turn, like every other shape's -- which is exactly why every segment of every
+       stroke at one thickness shares ONE style: the turn was never in the style to forfeit.  The
+       half-length rides the quad (rect.z). */
     s_tess.cur_prim.field   = (u32)GUI_FX_SEG;
     s_tess.cur_prim.r_tl    = r;
     s_tess.cur_prim.feather = TESS_FX_AA;
@@ -1688,9 +1706,10 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 
         s_tess.cur_prim.border  = border;
     }
 
-    s_tess.cur_ops |= GUI_OP_SELF;
-    u32 dir = gui_uv_pack( ux * 0.5f + 0.5f, uy * 0.5f + 0.5f );
-    tess_quad_push( mx, my, hl, r, GUI_QUAD_RULE_CAPSULE, dir, dir,
+    s_tess.cur_ops  |= GUI_OP_SELF;
+    s_tess.cur_rot_c = ux;
+    s_tess.cur_rot_s = uy;
+    tess_quad_push( mx, my, hl, r, GUI_QUAD_RULE_CAPSULE, 0, 0,
                     res_atlas_idx(), col );
 }
 
@@ -1781,6 +1800,9 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
         s_tess.cur_ops        = 0u;
         s_tess.cur_corner_pow = 0.0f;
         s_tess.cur_col2       = 0u;
+        s_tess.cur_rot_c      = 1.0f;
+        s_tess.cur_rot_s      = 0.0f;
+        s_tess.cur_phase      = 0.0f;
 
         /* The record is cleared WHOLE, and it matters for two reasons: a leftover rect or radius
            does not merely paint wrong, it defeats the memo -- a run of flat fills carrying stale
@@ -1886,38 +1908,37 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 break;
 
             /* The sectors share their geometry and differ only in the field the fragment
-               evaluates: round caps on a band, sharp radial edges on a wedge, and the two
-               self-sampled variants whose extra word rides the quad's flat uv. */
+               evaluates: round caps on a band, sharp radial edges on a wedge.  A dashed sector is
+               no longer a field of its own -- it is this same ARC under GUI_OP_DASH. */
             case GUI_CMD_ARC:
                 tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, c->arc.thickness,
-                             c->arc.a0, c->arc.a1, GUI_FX_ARC, 0.0f, 0.0f,
+                             c->arc.a0, c->arc.a1, GUI_FX_ARC, 0.0f, 0.0f, 0.0f, 0.0f,
                              c->arc.spin_rate, c->arc.spin_phase, c->arc.abgr );
                 break;
 
             case GUI_CMD_PIE:
                 tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, 0.0f,
-                             c->arc.a0, c->arc.a1, GUI_FX_PIE, 0.0f, 0.0f,
+                             c->arc.a0, c->arc.a1, GUI_FX_PIE, 0.0f, 0.0f, 0.0f, 0.0f,
                              c->arc.spin_rate, c->arc.spin_phase, c->arc.abgr );
                 break;
 
-            /* uv lane packing is the shader contract for the self-sampled pair (gui.h): DASH
-               sends (period / TAU, duty), GRAD splits col_b's four bytes across the two unorm16
-               lanes.  Both values are k/65535 exact through the pack and back. */
             case GUI_CMD_ARC_DASH:
                 tess_fx_arc( c->arc_dash.cx, c->arc_dash.cy, c->arc_dash.r,
                              c->arc_dash.thickness, c->arc_dash.a0, c->arc_dash.a1,
-                             GUI_FX_ARC_DASH,
+                             GUI_FX_ARC, 0.0f, 0.0f,
                              c->arc_dash.period / TESS_TAU, c->arc_dash.duty,
                              0.0f, 0.0f, c->arc_dash.abgr );
                 break;
 
+            /* GRAD splits col_b's four bytes across the two unorm16 uv lanes -- the shader
+               contract for the self-sampled sweep (gui.h).  Exact k/65535 through pack and back. */
             case GUI_CMD_ARC_GRAD:
                 tess_fx_arc( c->arc_grad.cx, c->arc_grad.cy, c->arc_grad.r,
                              c->arc_grad.thickness, c->arc_grad.a0, c->arc_grad.a1,
                              GUI_FX_ARC_GRAD,
                              (f32)(   c->arc_grad.col_b         & 0xFFFFu ) / 65535.0f,
                              (f32)( ( c->arc_grad.col_b >> 16 ) & 0xFFFFu ) / 65535.0f,
-                             0.0f, 0.0f, c->arc_grad.col_a );
+                             0.0f, 0.0f, 0.0f, 0.0f, c->arc_grad.col_a );
                 break;
 
             /* The framebuffer-tiling patterns: the fragment does the tiling, the CPU's share is
@@ -1964,7 +1985,11 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 aux.dash_period = L / n;
                 aux.dash_duty   = c->box_dash.dash / period;
                 aux.anim_rate   = c->box_dash.rate;
-                aux.anim_phase  = c->box_dash.phase;
+
+                /* The caller states its static offset in PERIMETER PX; the quad's phase lane is in
+                   cycles, the one unit every animating op reads.  Convert once, here. */
+                aux.anim_phase  = ( aux.dash_period > 0.0f )
+                                ? c->box_dash.phase / aux.dash_period : 0.0f;
 
                 s_tess.cur_ops |= GUI_OP_BAND | GUI_OP_DASH;
                 tess_fx_box( c->box_dash.x, c->box_dash.y, c->box_dash.w, c->box_dash.h,

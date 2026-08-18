@@ -51,6 +51,8 @@ struct ps_in_t
     nointerpolation uint   clip   : TEXCOORD3;   // clip-table entry index (per quad)
     nointerpolation float4 col2   : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
                                                   //   rides the quad, never the style
+    nointerpolation float4 inst   : TEXCOORD5;   // per-instance lanes off the quad: xy = the turn
+                                                  //   (cos, sin), z = animation phase in cycles
 };
 
 // The record this fragment's primitive named, resolved once at the top of main().  Row 0 is what
@@ -62,6 +64,12 @@ static uint g_row;      // first float4 of the record, absolute in the buffer
 static uint g_field;    // gui_fx_mode_t
 static uint g_ops;      // GUI_OP_*
 static uint g_tex;      // sampling model | bindless slot
+
+// The per-instance lanes, off the quad rather than the style: the shape's turn, and the animation
+// phase in cycles.  Every animating op reads the phase the same way, which is what lets one style
+// drive a whole staggered set.
+static float2 g_rot   = float2( 1.0, 0.0 );
+static float  g_phase = 0.0;
 
 // OP_SPIN's rotation on the frame clock, resolved once per fragment in main() and composed into
 // every shape-local frame prim_local derives.  Identity when the op is absent, so the compose
@@ -81,25 +89,24 @@ float4 prim_row( uint r )
 // The shape's PLACEMENT -- centre and half-extent, off the per-quad interpolant and cached in a
 // global by main(), which is what lets one style serve every placement.
 static float4 g_rect;
-static float2 g_uv;      // the quad's interpolated uv -- SEG reads its capsule direction from it
 float4 prim_rect( void ) { return g_rect; }
 
-// The shape-local coordinate: the pixel position, moved to the record's centre and un-rotated by
-// its (rot_cos, rot_sin).  Every field that has a shape works in this frame, and every one of them
-// used to receive it interpolated from a per-vertex HALF2 -- which could only be correct within
-// one quadrant, because the fold that produced it is not affine.  Derived here it is exact
-// everywhere, which is what collapsed the box from four quads to one.
+// The shape-local coordinate: the pixel position, moved to the quad's centre and un-rotated by the
+// quad's own turn.  Every field that has a shape works in this frame, and every one of them used
+// to receive it interpolated from a per-vertex HALF2 -- which could only be correct within one
+// quadrant, because the fold that produced it is not affine.  Derived here it is exact everywhere,
+// which is what collapsed the box from four quads to one.
 //
-// SV_Position is the pixel CENTRE (i + 0.5) and the record's centre is in the same pixel space,
-// the same convention clip_coverage already relies on.
-float2 prim_local( float2 px, float4 rect, float4 soft )
+// SV_Position is the pixel CENTRE (i + 0.5) and the quad's centre is in the same pixel space, the
+// same convention clip_coverage already relies on.
+float2 prim_local( float2 px, float4 rect )
 {
-    // OP_SPIN adds its clock-driven angle to the record's rotation by composing the two
-    // (cos, sin) pairs -- the angle-sum identity, not a second rotate.  g_spin is identity when
-    // the op is absent.  The frame carries every field and op with it, which is what makes a
-    // spinner, a radar sweep and a rotating dashed ring one op over shapes that already exist.
-    float cz = soft.z * g_spin_c - soft.w * g_spin_s;
-    float sw = soft.w * g_spin_c + soft.z * g_spin_s;
+    // OP_SPIN adds its clock-driven angle to the quad's turn by composing the two (cos, sin) pairs
+    // -- the angle-sum identity, not a second rotate.  g_spin is identity when the op is absent.
+    // The frame carries every field and op with it, which is what makes a spinner, a radar sweep
+    // and a rotating dashed ring one op over shapes that already exist.
+    float cz = g_rot.x * g_spin_c - g_rot.y * g_spin_s;
+    float sw = g_rot.y * g_spin_c + g_rot.x * g_spin_s;
     float2 d = px - rect.xy;
     return float2( d.x * cz + d.y * sw, -d.x * sw + d.y * cz );
 }
@@ -183,40 +190,86 @@ float box_perimeter_s( float2 p, float2 he, float4 rad )
                           : s_b + clamp( he.x - rad.z - p.x, 0.0, lb );
 }
 
-// The effect band (gui.h): coverage of the shape this fragment's record names, 1.0 when it names
-// none.  The shape-local coordinate is derived here (prim_local), not interpolated, so the corner
-// arc is simply where both components of `|local| - c` go positive at once.
-//   field 1 BOX -- fill inside the boundary
-//   field 6 SEG -- a capsule (below)
-// Those are the two shapes that reach the shared decode at the bottom, and the OP bits modify
-// whichever one arrived: BAND bends the field into a border, CUT and INSET cut the coverage
-// against the boundary in opposite directions, PULSE breathes it on pc.time.  Every op therefore
-// applies to both shapes -- a stroked capsule needs no field of its own.
-// feather is the total width of the transition, straddling the boundary, so coverage is 0.5
-// exactly on it; feather 0 means a hard edge (no antialiasing).
-//
-// pc.time -- the wrapped frame clock -- is the band's animation seam, and PULSE is what reading it
-// looks like: frame-constant, so it costs no vertex change, no re-emit and no batch split.
-float fx_coverage( float2 px )
+/*==================================================================================================
+    THE EFFECT BAND, AS A CASCADE.
+
+    Every field resolves to the same four values and then STOPS.  The ops that follow read only
+    those, so no op has to know which shape it landed on and no shape reimplements an op -- that
+    symmetry is the whole point, and its absence is what used to force separate fields for
+    "an arc, but dashed".
+
+        d       signed distance to the boundary, px, negative inside
+        s       the coordinate ALONG the boundary, px -- the axis DASH cuts on
+        aa      the width d resolves through (the style's feather, or a field's own default)
+        mul     coverage from a field that has no boundary at all -- the lattice multiplies here
+        shaped  false = no boundary: the d-based ops sit this one out, the rest still apply
+
+    pc.time -- the wrapped frame clock -- is the animation seam, read through g_phase so a set of
+    elements sharing one style can still stagger.  Frame-constant: no re-emit, no batch split.
+==================================================================================================*/
+
+struct fx_field_t
 {
-    // 0 NONE, and the two fields that are not shapes: 4 TILE_U acts on the texcoord in main(), 5
-    // TEXT_EDGE acts on the COLOR in the SDF branch below.  All three contribute full coverage --
-    // the band names what the fragment does, and "nothing, here" is a legal answer.
+    float d;
+    float s;
+    float aa;
+    float mul;
+    bool  shaped;
+};
+
+// d -> coverage.  aa 0 is a hard edge on purpose: a crisp square frame asks for exactly that.
+float fx_resolve( float d, float aa )
+{
+    return ( aa <= 0.0 ) ? ( d <= 0.0 ? 1.0 : 0.0 ) : saturate( 0.5 - d / aa );
+}
+
+// The band of `w` px lying inside the boundary -- the shared construction under BAND and FRAME.
+float fx_to_band( float d, float w )
+{
+    return abs( d + w * 0.5 ) - w * 0.5;
+}
+
+// A dash pattern cut on the boundary coordinate, antialiased in the px the pattern is stated in.
+// The mod is floor-based on purpose: the phase can go negative and fmod truncates.
+float fx_dash_cut( float s, float period, float duty )
+{
+    float T    = max( period, 1e-3 );
+    float m    = s - T * floor( s / T );
+    float d_on = min( m, duty * T - m );          // signed px: > 0 inside an on-run
+    return saturate( 0.5 + d_on );
+}
+
+/*--------------------------------------------------------------------------------------------------
+    STAGE 1 -- THE FIELD.  Every shape writes the vocabulary and returns; nothing paints here.
+--------------------------------------------------------------------------------------------------*/
+
+fx_field_t fx_field( float2 px )
+{
+    fx_field_t f;
+    f.d      = 0.0;
+    f.s      = 0.0;
+    f.aa     = 0.0;
+    f.mul    = 1.0;
+    f.shaped = false;
+
+    // 0 NONE, and the two modes that are not shapes: 4 TILE_U acts on the texcoord in main(), 5
+    // TEXT_EDGE acts on the COLOR in the SDF branch.  All three state no boundary -- and still
+    // reach the coverage ops below, which is why a plain fill can pulse.
     if ( g_field == 0u || g_field == 4u || g_field == 5u )
-        return 1.0;
+        return f;
 
     // fields 11 CHECKER / 12 GRID -- the framebuffer-tiling patterns (gui.h).  Both compute in
-    // SV_Position pixels: exact at any panel size, where the HALF2 effect coordinate's ulp
-    // reaches a full pixel at the corners of a fullscreen backdrop.  The phase re-anchors the
-    // pattern to the shape; the CPU derived it against the same quantized cell the record carries.
+    // SV_Position pixels: exact at any panel size, where a shape-local coordinate's ulp reaches a
+    // full pixel at the corners of a fullscreen backdrop.  The phase re-anchors the pattern to the
+    // shape; the CPU derived it against the same quantized cell the record carries.  Neither has a
+    // boundary, so both contribute through `mul` and leave the d-based ops alone.
     if ( g_field == 11u || g_field == 12u )
     {
         if ( g_field == 11u )
-            return 1.0;   // CHECKER cuts nothing: it picks between two colours in main()
+            return f;     // CHECKER cuts nothing: it picks between two colours in main()
 
-        // GRID: distance to the nearest lattice line, the line `thickness` px wide straddling
-        // it, resolved with a 1 px AA band.  The mod is floor-based on purpose: fmod truncates,
-        // and the phase-shifted coordinate can go negative near the origin.
+        // GRID: distance to the nearest lattice line, the line `thickness` px wide straddling it,
+        // resolved with a 1 px AA band.
         float4 parm = prim_row( 3u );
         float  cell = parm.x;
         float  ht   = parm.y * 0.5;      // HALF the line width
@@ -240,13 +293,18 @@ float fx_coverage( float2 px )
 
         // STRIPES cuts on ONE axis instead of both: a lattice becomes a stripe field, and a stripe
         // field at an angle is the diagonal hatch.  Same quad, same cost.
-        float d = ( ( g_ops & OP_STRIPES ) != 0u ) ? dl.x : min( dl.x, dl.y );
-        return saturate( 0.5 + ht - d );
+        float dd = ( ( g_ops & OP_STRIPES ) != 0u ) ? dl.x : min( dl.x, dl.y );
+        f.mul = saturate( 0.5 + ht - dd );
+        return f;
     }
 
-    // fields 7 ARC and 8 PIE -- circular sectors, plus their two self-sampled variants.  Taken
-    // before the shared decode below because a sector has no feather (it gets a fixed 1 px band,
-    // which is what `0.5 - d` is) and reads an aperture nothing else has.
+    float4 rect = prim_rect();
+    float4 rad  = prim_row( 1u );
+    float4 soft = prim_row( 2u );
+
+    // fields 7 ARC / 8 PIE, and 10 ARC_GRAD which is an ARC that sweeps its colour.  A sector has
+    // no feather of its own, so it states the 1 px band it always drew with -- a caller that wants
+    // a soft sector now simply sets one.
     //
     // The coordinate is SIGNED here, folded only on x.  That is the whole trick: the sign is the
     // ANGLE, without which neither of these shapes can be expressed at all.
@@ -260,9 +318,8 @@ float fx_coverage( float2 px )
         // The sector's frame is a REFLECTION about its bisector rather than a rotation, which
         // works out to prim_local's expression with the components swapped.  det -1 is harmless:
         // the shape is symmetric about the bisector and the pipeline does not cull.
-        float2 sl   = prim_local( px, prim_rect(), prim_row( 2u ) ).yx;
+        float2 sl   = prim_local( px, rect ).yx;
         float2 q    = float2( abs( sl.x ), sl.y );
-        float  ds;
 
         if ( g_field == 8u )
         {
@@ -272,75 +329,43 @@ float fx_coverage( float2 px )
             // the edges SHARP where the arc's round caps would have rounded them.
             float l = length( q ) - ra;
             float m = length( q - sc * clamp( dot( q, sc ), 0.0, ra ) );
-            ds = max( l, m * sign( sc.y * q.x - sc.x * q.y ) );
+            f.d = max( l, m * sign( sc.y * q.x - sc.x * q.y ) );
         }
         else
         {
             // ARC: exact distance to the circle of radius ra, cut to the aperture, then thickened
             // by the tube.  Inside the wedge it is the annulus; outside it is the distance to the
             // nearest endpoint, which is what gives the stroke its round caps for free.
-            // Fields 9 (ARC_DASH) and 10 (ARC_GRAD) are this same band -- the dash cut is below,
-            // the gradient acts on the COLOR in main() (the TEXT_EDGE precedent).
-            ds = ( ( sc.y * q.x > sc.x * q.y ) ? length( q - sc * ra )
-                                               : abs( length( q ) - ra ) ) - rb;
+            f.d = ( ( sc.y * q.x > sc.x * q.y ) ? length( q - sc * ra )
+                                                : abs( length( q ) - ra ) ) - rb;
         }
-        float cov = saturate( 0.5 - ds );
 
-        // field 9 ARC_DASH -- the band cut by an angular dash pattern.  theta is the SIGNED angle
-        // from the bisector (the same signed coordinate the aperture cut uses); the pattern anchors
-        // at the sweep start, and the emit side pre-quantized the period so whole cycles fit -- a
-        // closed ring has no seam.  The cut edge is antialiased in ARC-LENGTH pixels (angle error
-        // times ra).  The mod is floor-based on purpose: fmod truncates and goes wrong for the
-        // cap's small negatives.
-        if ( g_field == 9u )
-        {
-            float2 dash = prim_row( 1u ).xy;                   // period (turns), on-duty fraction
-            float  T    = max( dash.x, 1.0 / 65535.0 ) * 6.28318531;
-            float  duty = dash.y;
-            float  t    = atan2( sl.x, sl.y ) + ap;
-            float  m    = t - T * floor( t / T );
-            float  d_on = min( m, duty * T - m );          // signed: > 0 inside an on-run
-            cov = min( cov, saturate( 0.5 + d_on * ra ) );
-        }
-        return cov;
+        // ARC-LENGTH from the sweep's start, which is what makes GUI_OP_DASH mean the same thing
+        // on a sector as on a box: theta is the SIGNED angle from the bisector, so theta + ap is
+        // the angle travelled, and radius times that is the distance along the stroke.
+        f.s      = ( atan2( sl.x, sl.y ) + ap ) * ra;
+        f.aa     = max( soft.x, 1.0 );
+        f.shaped = true;
+        return f;
     }
 
-    float4 rect    = prim_rect();
-    float4 rad     = prim_row( 1u );
-    float4 soft    = prim_row( 2u );
-    float  feather = soft.x;
-    float  border  = soft.y;
-
-    float2 local = prim_local( px, rect, soft );
-    float  d;
-
-    // The corner profile, fetched only on the path that has a corner to profile: a capsule's is
-    // its cap, and a blunted cap is not a thing a stroke wants.  Both box_field calls in this
-    // block -- the shape, and the cut's second boundary -- read the one value.
-    float corner_pw = 0.0;
+    float2 local = prim_local( px, rect );
 
     // field 6 SEG -- a CAPSULE: the distance to a line segment, minus its half-thickness.  The
-    // record's rotation IS the segment's axis, so local is (along, across) about the midpoint;
-    // fold the along axis against the half-length and leave the across axis signed, because
-    // length() squares it anyway.  No interior term -- this form is already the exact signed
+    // quad's turn IS the segment's axis, so prim_local already hands back (along, across) about the
+    // midpoint -- fold the along axis against the half-length and leave the across axis signed,
+    // because length() squares it anyway.  No interior term: this form is already the exact signed
     // distance in the core, where the rounded box's length-only form saturates.
     if ( g_field == 6u )
     {
-        // The capsule's axis rides the quad's uv lanes (a unorm16-mapped unit vector), NOT the
-        // style's rot pair -- one style serves every segment of a polyline.  Rebuild the local
-        // frame from it; SPIN never applies to a segment.
-        float2 dirv = normalize( g_uv * 2.0 - 1.0 );
-        float2 dd   = px - rect.xy;
-        local = float2( dd.x * dirv.x + dd.y * dirv.y, -dd.x * dirv.y + dd.y * dirv.x );
-
         float2 q = float2( abs( local.x ) - rect.z, local.y );
-        d = length( float2( max( q.x, 0.0 ), q.y ) ) - rad.x;  // a capsule has one radius, not four
+        f.d = length( float2( max( q.x, 0.0 ), q.y ) ) - rad.x;   // a capsule has one radius
+        f.s = local.x + rect.z;                                   // distance from the start cap
     }
     // field 2 NGON -- the regular polygon: rad.y flat sides inscribed in circumradius hw, corners
     // rounded by rad.x px.  The fold reduces the plane to one edge's sector; the distance is then
     // to that edge SEGMENT, so corners are exact rather than the apothem approximation.  Rounding
     // shrinks the polygon and inflates the field back out, so the stated radius is the size drawn.
-    // OP_CUT's second boundary stays the box's; emit sites never pair it with this field.
     else if ( g_field == 2u )
     {
         float  rr  = rad.x;
@@ -353,13 +378,16 @@ float fx_coverage( float2 px )
         float2 q   = length( local ) * float2( cos( bn ), abs( sin( bn ) ) );
         q -= R * acs;
         q.y += clamp( -q.y, 0.0, R * acs.y );
-        d = length( q ) * sign( q.x ) - rr;
+        f.d = length( q ) * sign( q.x ) - rr;
+        f.s = a0 * rect.z;    // circumcircle arc-length: the polygon's own perimeter to within the
+                              // apothem ratio, which a dash pattern cannot see
     }
     // field 3 TRI -- a solid triangle: three points about the shape centre, in the style's
     // radius + param lanes (a = r_tl,r_tr  b = r_br,r_bl  c = param_a,param_b).  Exact signed
     // distance, so the edges antialias through the shared feather and BAND strokes it like any
     // other field.  The points ride the STYLE rather than the quad: a triangle is a rare shape
     // (arrowheads, markers), so a record per triangle costs less than widening every quad.
+    // States no boundary coordinate -- a dashed triangle is not a shape anything asks for.
     else if ( g_field == 3u )
     {
         float4 parm = prim_row( 3u );
@@ -371,92 +399,94 @@ float fx_coverage( float2 px )
         float2 pq0 = v0 - e0 * clamp( dot( v0, e0 ) / dot( e0, e0 ), 0.0, 1.0 );
         float2 pq1 = v1 - e1 * clamp( dot( v1, e1 ) / dot( e1, e1 ), 0.0, 1.0 );
         float2 pq2 = v2 - e2 * clamp( dot( v2, e2 ) / dot( e2, e2 ), 0.0, 1.0 );
-        float  s  = sign( e0.x * e2.y - e0.y * e2.x );
-        float2 dm = min( min( float2( dot( pq0, pq0 ), s * ( v0.x * e0.y - v0.y * e0.x ) ),
-                              float2( dot( pq1, pq1 ), s * ( v1.x * e1.y - v1.y * e1.x ) ) ),
-                              float2( dot( pq2, pq2 ), s * ( v2.x * e2.y - v2.y * e2.x ) ) );
-        d = -sqrt( dm.x ) * sign( dm.y );
+        float  sg = sign( e0.x * e2.y - e0.y * e2.x );
+        float2 dm = min( min( float2( dot( pq0, pq0 ), sg * ( v0.x * e0.y - v0.y * e0.x ) ),
+                              float2( dot( pq1, pq1 ), sg * ( v1.x * e1.y - v1.y * e1.x ) ) ),
+                              float2( dot( pq2, pq2 ), sg * ( v2.x * e2.y - v2.y * e2.x ) ) );
+        f.d = -sqrt( dm.x ) * sign( dm.y );
     }
     else
     {
-        corner_pw = prim_row( 3u ).z;
-        d = box_field( local, rect.zw, rad, corner_pw );
+        f.d = box_field( local, rect.zw, rad, soft.z );
+        f.s = box_perimeter_s( local, rect.zw, rad );
     }
 
-    // GUI_OP_FRAME -- the border band's coverage, stashed for main() to composite over the fill.
-    // Measured from the field BEFORE any op bends it, so the band's outer edge lands exactly on
-    // the boundary the fill's own coverage resolves against.  feather 0 is the crisp square
-    // frame; the band's edges cut hard exactly as the fill's do.
-    if ( ( g_ops & OP_FRAME ) != 0u )
-    {
-        float db = abs( d + border * 0.5 ) - border * 0.5;
-        g_frame_band = ( feather <= 0.0 ) ? ( db <= 0.0 ? 1.0 : 0.0 )
-                                          : saturate( 0.5 - db / feather );
-    }
+    f.aa     = soft.x;
+    f.shaped = true;
+    return f;
+}
 
-    // GUI_OP_BAND -- the band of `border` px lying inside the boundary: the rounded outline.
-    // The one op that bends `d` rather than the coverage, because a band IS a different field and
-    // everything downstream should measure from its edges, not the original boundary's.
-    if ( ( g_ops & OP_BAND ) != 0u )
-        d = abs( d + border * 0.5 ) - border * 0.5;
+/*--------------------------------------------------------------------------------------------------
+    STAGES 2-4 -- the ops, in the order they have to run: bend the field, resolve it, cut it.
+--------------------------------------------------------------------------------------------------*/
 
-    float cov = ( feather <= 0.0 ) ? ( d <= 0.0 ? 1.0 : 0.0 )
-                                   : saturate( 0.5 - d / feather );
+float fx_coverage( float2 px )
+{
+    fx_field_t f      = fx_field( px );
+    float      border = prim_row( 2u ).y;
 
-    // GUI_OP_DASH -- coverage cut by a dash pattern along the box PERIMETER: the dashed border,
-    // and with anim_rate driving the phase, the marching ants.  Same construction as ARC_DASH's
-    // angular cut, on the arc-length coordinate box_perimeter_s walks; the cut edge antialiases
-    // in the same px the pattern is stated in.  Box family only -- a capsule or ngon never
-    // carries the op (their perimeter is not this function).
-    if ( ( g_ops & OP_DASH ) != 0u )
-    {
-        float4 dsh  = prim_row( 6u );
-        float4 anim = prim_row( 5u );
-        float  T    = max( dsh.x, 1e-3 );
-        float  s    = box_perimeter_s( local, rect.zw, rad )
-                      - ( anim.x * pc.time + anim.y );
-        float  m    = s - T * floor( s / T );              // floor-mod: the phase can go negative
-        float  d_on = min( m, dsh.y * T - m );             // signed px: > 0 inside an on-run
-        cov = min( cov, saturate( 0.5 + d_on ) );
-    }
-
-    // GUI_OP_CUT -- the interior cut away.  The outward half of the falloff is untouched, so a
-    // cut surface and a filled one are pixel-identical everywhere the fill was visible; what goes
-    // is the saturated core, which a drop shadow only ever showed through whatever it sits behind.
-    // Taken here rather than folded into `d` because the cut is on COVERAGE: bending the distance
-    // would move the boundary the outward falloff is measured from.
+    // STAGE 2 -- the ops that bend the FIELD.  Both need a boundary to measure from.
     //
-    // The cut has a boundary of its OWN, offset from this shape's by the record's cut vector, and
-    // that second boundary is the whole of what makes a cast DIRECTIONAL: the falloff is measured
-    // from the shadow's outline while the hole is taken against the caster's, so the near side is
-    // cut flush against the caster while the far side reaches its full spread.  A zero offset is
-    // the shape cutting itself, which lands on exactly `d` again.  Always the rounded box -- a
-    // capsule never carries this op.
-    if ( ( g_ops & OP_CUT ) != 0u
-      && box_field( local - prim_row( 4u ).zw, rect.zw, rad, corner_pw ) <= 0.0 )
-        cov = 0.0;
+    // FRAME's band is taken from the field BEFORE BAND touches it, so the band's outer edge lands
+    // exactly on the boundary the fill's own coverage resolves against.  BAND then bends `d`
+    // itself -- the one op that does -- because a band IS a different field and everything
+    // downstream should measure from its edges, not the original boundary's.
+    if ( f.shaped && ( g_ops & OP_FRAME ) != 0u )
+        g_frame_band = fx_resolve( fx_to_band( f.d, border ), f.aa );
 
-    // GUI_OP_INSET -- the inner shadow.  The falloff is re-measured INWARD from the boundary:
-    // full strength against the edge, gone `feather` px in, and nothing outside it.  Taken on
-    // COVERAGE for the same reason the cut is (bending d would move the boundary both
-    // terms are measured from), and the second factor is the ordinary 1 px edge band, so the outer
-    // rim antialiases exactly as the filled box's does rather than stair-stepping.
-    if ( ( g_ops & OP_INSET ) != 0u )
-        cov = saturate( 1.0 + d / max( feather, 1e-4 ) ) * saturate( 0.5 - d );
+    if ( f.shaped && ( g_ops & OP_BAND ) != 0u )
+        f.d = fx_to_band( f.d, border );
 
-    // GUI_OP_PULSE -- breathe the coverage on the frame clock.  It composes with BAND now: rate
-    // and depth are their own fields in the record, where the packed word had to spend `border`'s
-    // bits on them and the two ops could never be set together.
-    // The wave starts at its PEAK (cos 0 = 1 -> no attenuation), so a pulse fading in from nothing
-    // is never what the first frame shows.
+    // STAGE 3 -- field to coverage.  A field with no boundary contributes only its multiplier.
+    float cov = f.shaped ? fx_resolve( f.d, f.aa ) : 1.0;
+    cov *= f.mul;
+
+    // STAGE 4 -- the ops that cut COVERAGE.
+    //
+    // DASH: cut along the boundary coordinate the field stated -- perimeter px on a box, arc-length
+    // on a sector, distance along the axis on a segment.  anim_rate scrolls it (the marching ants)
+    // and the phase, in cycles off the quad, staggers one style across many elements.
+    if ( f.shaped && ( g_ops & OP_DASH ) != 0u )
+    {
+        float4 dsh = prim_row( 6u );
+        float  rate = prim_row( 5u ).x;
+        cov = min( cov, fx_dash_cut( f.s - ( rate * pc.time + g_phase * dsh.x ),
+                                     dsh.x, dsh.y ) );
+    }
+
+    // CUT -- the interior cut away.  The outward half of the falloff is untouched, so a cut surface
+    // and a filled one are pixel-identical everywhere the fill was visible; what goes is the
+    // saturated core, which a drop shadow only ever showed through whatever it sits behind.
+    //
+    // The cut has a boundary of its OWN, offset by the record's cut vector, and that second
+    // boundary is the whole of what makes a cast DIRECTIONAL: the falloff is measured from the
+    // shadow's outline while the hole is taken against the caster's, so the near side is cut flush
+    // against the caster while the far side reaches its full spread.  A zero offset is the shape
+    // cutting itself.  Always the rounded box -- no other field carries this op.
+    if ( f.shaped && ( g_ops & OP_CUT ) != 0u )
+    {
+        float4 soft = prim_row( 2u );
+        if ( box_field( prim_local( px, prim_rect() ) - prim_row( 4u ).zw,
+                        prim_rect().zw, prim_row( 1u ), soft.z ) <= 0.0 )
+            cov = 0.0;
+    }
+
+    // INSET -- the inner shadow.  The falloff is re-measured INWARD from the boundary: full
+    // strength against the edge, gone `aa` px in, and nothing outside it.  The second factor is the
+    // ordinary 1 px edge band, so the outer rim antialiases exactly as the filled box's does rather
+    // than stair-stepping.
+    if ( f.shaped && ( g_ops & OP_INSET ) != 0u )
+        cov = saturate( 1.0 + f.d / max( f.aa, 1e-4 ) ) * saturate( 0.5 - f.d );
+
+    // PULSE -- breathe the coverage on the frame clock.  The one op here that needs no boundary,
+    // so it reaches every field including a plain fill.  The wave starts at its PEAK (cos 0 = 1,
+    // no attenuation), so a pulse fading in from nothing is never what the first frame shows.
     if ( ( g_ops & OP_PULSE ) != 0u )
     {
         float4 parm  = prim_row( 3u );
         float  rate  = parm.x;
         float  depth = parm.y;
-        // anim_phase in CYCLES, so same-rate pulses can stagger instead of beating in lockstep.
-        cov *= 1.0 - depth * ( 0.5 - 0.5 * cos( 6.28318531
-                                                * ( rate * pc.time + prim_row( 5u ).y ) ) );
+        cov *= 1.0 - depth * ( 0.5 - 0.5 * cos( 6.28318531 * ( rate * pc.time + g_phase ) ) );
     }
 
     return cov;
@@ -501,19 +531,20 @@ float4 main( ps_in_t i ) : SV_Target0
     g_ops       = asuint( head.y );
     g_tex       = asuint( head.z );
 
-    // Placement and clip come off the per-quad interpolants, which is what frees the style to
-    // dedup across placements and scroll regions.
+    // Placement, clip, the turn and the animation phase all come off the per-quad interpolants,
+    // which is what frees the style to dedup across placements, angles and scroll regions.
     g_rect          = i.rect;
-    g_uv            = i.uv;
+    g_rot           = i.inst.xy;
+    g_phase         = i.inst.z;
     uint clip_entry = i.clip;
 
     // OP_SPIN: the clock-driven angle, resolved once and composed into every shape-local frame
-    // below (prim_local).  anim_rate is turns/sec, anim_phase the start in turns; both ride the
-    // record, so the animation re-emits nothing -- only pc.time moves.
+    // below (prim_local).  anim_rate is turns/sec off the style, the phase is turns off the quad,
+    // so the animation re-emits nothing -- only pc.time moves -- and a staggered set of spinners
+    // still shares one style.
     if ( ( g_ops & OP_SPIN ) != 0u )
     {
-        float4 anim = prim_row( 5u );
-        float  a    = 6.28318531 * ( anim.x * pc.time + anim.y );
+        float a = 6.28318531 * ( prim_row( 5u ).x * pc.time + g_phase );
         g_spin_c = cos( a );
         g_spin_s = sin( a );
     }
@@ -587,7 +618,7 @@ float4 main( ps_in_t i ) : SV_Target0
             float4 parm = prim_row( 3u );
             float4 c2   = unpack_col( asuint( parm.w ) );
             float  ap   = parm.z;
-            float2 sl   = prim_local( i.sv_pos.xy, prim_rect(), prim_row( 2u ) ).yx;
+            float2 sl   = prim_local( i.sv_pos.xy, prim_rect() ).yx;
             float  t    = saturate( ( atan2( sl.x, sl.y ) + ap )
                                     / max( 2.0 * ap, 1e-4 ) );
             vcol = lerp( vcol, c2, t );
@@ -617,7 +648,7 @@ float4 main( ps_in_t i ) : SV_Target0
     if ( ( g_ops & OP_GRAD ) != 0u )
     {
         float4 grect = prim_rect();
-        float2 lp    = prim_local( i.sv_pos.xy, grect, prim_row( 2u ) );
+        float2 lp    = prim_local( i.sv_pos.xy, grect );
         float2 g     = prim_row( 4u ).xy;
         float  t;
 
@@ -645,27 +676,34 @@ float4 main( ps_in_t i ) : SV_Target0
         vcol = lerp( vcol, unpack_col( asuint( prim_row( 3u ).w ) ), t );
     }
 
-    // GUI_TEX_RGBA -- full-RGBA image (scene viewport / arbitrary bindless texture): the texel IS
-    // the color, with the vertex color acting as a tint.  The texel arrives LINEAR: _SRGB-format
-    // textures are hardware-decoded at sample time, and UNORM render targets hold linear data.
-    // The tint is linear too (decoded in the vertex stage), so both sides of this multiply are
-    // light and the product means something.
-    // Compared against the exact model rather than "non-zero" so a model added later falls through
-    // to the coverage path only if that is what it actually wants.
-    if ( tex_mode == 1u )
-        return float4( s.rgb * i.color.rgb, s.a * i.color.a * cov );
+    /* THE TEXEL, FOLDED IN.  Each sampling model contributes to the SAME colour and alpha rather
+       than returning its own pixel, which is what lets everything downstream -- the ramp above,
+       the frame below, the dither at the end -- reach text and images too.  Each model is compared
+       exactly rather than by "non-zero", so a model added later lands on the coverage path only if
+       that is what it actually wants. */
+    float alpha = vcol.a;
 
-    // GUI_TEX_SDF -- distance-field text.  The texel is not coverage: 128/255 is exactly ON the
-    // outline, above is inside, below is outside (orb_font.h).  Coverage is recovered from the
-    // SCREEN-SPACE DERIVATIVE of that field, which is the whole reason this mode exists:
-    // fwidth(d) is how much the distance changes across one pixel HERE, so d/fwidth(d) is the
-    // distance to the edge measured in pixels no matter how the quad was scaled or rotated.  The
-    // AA band is therefore always one pixel wide, and no per-vertex or per-draw parameter has to
-    // carry the scale -- which is why an SDF font costs the vertex format nothing.
-    // The max() guards the degenerate case: deep inside or far outside the field is flat, fwidth
-    // is 0, and d/0 would be a NaN rather than the saturated 1 or 0 that is wanted there.
-    if ( tex_mode == 2u )
+    if ( tex_mode == 1u )
     {
+        // GUI_TEX_RGBA -- full-RGBA image (scene viewport / arbitrary bindless texture): the texel
+        // IS the colour, with the fill colour acting as a tint.  The texel arrives LINEAR:
+        // _SRGB-format textures are hardware-decoded at sample time and UNORM render targets hold
+        // linear data.  The tint is linear too (decoded in the vertex stage), so both sides of this
+        // multiply are light and the product means something.
+        vcol.rgb *= s.rgb;
+        alpha    *= s.a;
+    }
+    else if ( tex_mode == 2u )
+    {
+        // GUI_TEX_SDF -- distance-field text.  The texel is not coverage: 128/255 is exactly ON the
+        // outline, above is inside, below is outside (orb_font.h).  Coverage is recovered from the
+        // SCREEN-SPACE DERIVATIVE of that field, which is the whole reason this mode exists:
+        // fwidth(d) is how much the distance changes across one pixel HERE, so d/fwidth(d) is the
+        // distance to the edge measured in pixels no matter how the quad was scaled or rotated.
+        // The AA band is therefore always one pixel wide, and no per-vertex or per-draw parameter
+        // has to carry the scale -- which is why an SDF font costs the vertex format nothing.
+        // The max() guards the degenerate case: deep inside or far outside the field is flat,
+        // fwidth is 0, and d/0 would be a NaN rather than the saturated 1 or 0 that is wanted.
         float d    = s.r - ( 128.0 / 255.0 );
         float dpx  = d / max( fwidth( d ), 1e-6 );        // signed distance to the edge, in PIXELS
         float fill = clamp( dpx + 0.5, 0.0, 1.0 );
@@ -685,35 +723,46 @@ float4 main( ps_in_t i ) : SV_Target0
             // only where the fill does not (1 - fill), so the seam between them is antialiased by
             // the same coverage that antialiases the glyph, and the two never double-darken.
             float outer = clamp( dpx + wpx + 0.5, 0.0, 1.0 );
-            float af    = i.color.a * fill;
+            float af    = alpha * fill;
             float ao    = ecol.a * outer * ( 1.0 - fill );
             float at    = af + ao;
-            return float4( ( i.color.rgb * af + ecol.rgb * ao ) / max( at, 1e-6 ), at * cov );
+            vcol.rgb = ( vcol.rgb * af + ecol.rgb * ao ) / max( at, 1e-6 );
+            alpha    = at;
         }
-
-        return float4( i.color.rgb, i.color.a * cov * fill );
+        else
+        {
+            alpha *= fill;
+        }
+    }
+    else
+    {
+        // The coverage atlas: s.r is the glyph's coverage, and 1.0 for the white solid-colour texel
+        // and for every self-sampled field, so non-text draws pass straight through.
+        alpha *= s.r;
     }
 
-    // GUI_OP_FRAME -- the border band, source-over the fill, in this one quad.  The band's
-    // coverage came from fx_coverage off the same field the fill resolved; the algebra is
-    // TEXT_EDGE's analytic source-over, so the result is pixel-identical to the fill + outline
-    // pair this replaces: the fill contributes only where the band's alpha does not, and the
-    // shared boundary antialiases once instead of double-darkening.  The clip cut scales the
-    // band here because `cov` already carries it for the fill.
+    // Coverage folds in here, once, for every model.
+    alpha *= cov;
+
+    // GUI_OP_FRAME -- the border band, source-over the fill, in this one quad.  The band's coverage
+    // came from fx_coverage off the same field the fill resolved; the algebra is TEXT_EDGE's
+    // analytic source-over, so the result is pixel-identical to the fill + outline pair it
+    // replaces: the fill contributes only where the band's alpha does not, and the shared boundary
+    // antialiases once instead of double-darkening.  The clip cut scales the band directly because
+    // `alpha` already carries it for the fill.
     if ( ( g_ops & OP_FRAME ) != 0u )
     {
         float4 bcol = i.col2;
         float  ab   = bcol.a * g_frame_band * ccov;
-        float  af   = vcol.a * cov * ( 1.0 - ab );
+        float  af   = alpha * ( 1.0 - ab );
         float  at   = ab + af;
-        vcol = float4( ( bcol.rgb * ab + vcol.rgb * af ) / max( at, 1e-6 ), 1.0 );
-        cov  = at;
+        vcol.rgb = ( bcol.rgb * ab + vcol.rgb * af ) / max( at, 1e-6 );
+        alpha    = at;
     }
 
-    // vcol.rgb is already linear light (i.color, or the field-10 sweep of it); alpha is coverage,
-    // which was linear all along.  s.r is the glyph coverage from the R8 atlas (1.0 for the white
-    // solid-color pixel and for the self-sampled fields, so non-text draws pass through).
-    float4 outc = float4( vcol.rgb, vcol.a * s.r * cov );
+    // vcol.rgb is linear light throughout (the fill colour arrived decoded from the vertex stage,
+    // and every stage above worked in that space); alpha is coverage, which was linear all along.
+    float4 outc = float4( vcol.rgb, alpha );
 
     // GUI_OP_DITHER -- half an 8-bit step of screen-space noise on the output, so a wide soft
     // ramp (a drop shadow's falloff, a gradient across a panel) quantizes to distinct pixels

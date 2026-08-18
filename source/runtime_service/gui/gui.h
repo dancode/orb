@@ -1730,8 +1730,11 @@ typedef enum
     /* The SELF-SAMPLED sector modes.  Both emit with GUI_OP_SELF set, so the fragment forces
        coverage to 1 and never consults the texel.  They read the same ra / tube / aperture the
        plain sector does and add their own record members on top. */
-    GUI_FX_ARC_DASH  = 9,  /* ARC whose coverage is cut by an angular dash pattern: uv.x = the dash
-                              period as a fraction of a full turn, uv.y = the on-duty fraction   */
+    /* 9 is unnamed.  It was ARC_DASH -- an ARC whose coverage an angular dash pattern cut -- which
+       existed only because GUI_OP_DASH could not reach a sector.  Every field states a boundary
+       coordinate now (see below), so a dashed arc is GUI_FX_ARC + GUI_OP_DASH like every other
+       dashed shape. */
+
     GUI_FX_ARC_GRAD  = 10, /* ARC whose colour sweeps from the vertex colour at the sector start
                               to the record's col_b at its end                                   */
 
@@ -1751,12 +1754,31 @@ typedef enum
 
 } gui_fx_mode_t;
 
+/* WHAT A FIELD STATES, AND WHY THE OPS COMPOSE.
+
+   The fragment does not branch per field and then paint.  Each field resolves to the same four
+   values, and every op afterwards reads only those -- so an op never has to know which shape it
+   landed on, and a shape never has to reimplement an op:
+
+       d        signed distance to the boundary in px, negative inside.  BAND bends it into a
+                border, FRAME measures its band from it, the feather resolves it to coverage.
+       s        the coordinate ALONG the boundary, in px.  This is what DASH cuts on, and it is
+                why one dash op serves every shape: a box states perimeter arc-length, a sector
+                states radius * angle, a segment states distance along its axis.
+       aa       the width d resolves through.  Usually the style's feather; a field with no
+                feather of its own (a sector) states the 1 px band it wants instead.
+       mul      coverage a field contributes without having a boundary at all -- the lattice
+                fields multiply here rather than cutting d.
+
+   Fields that state no boundary (NONE, TILE_U, TEXT_EDGE, the lattice pair) sit out the d-based
+   ops and still take the ones that only touch coverage, PULSE among them. */
+
 /* HOW THE FRAGMENT GETS ITS SHAPE-LOCAL COORDINATE.  Every field below works in a frame of its
    own, and every one of them derives it the same way: take the pixel position, subtract the
-   record's centre, and un-rotate by the record's (rot_cos, rot_sin).
+   quad's centre, and un-rotate by the quad's (cos, sin) -- gui_quad_t.xform, per instance.
 
        d     = SV_Position.xy - (cx, cy)
-       local = ( d.x * rot_cos + d.y * rot_sin, -d.x * rot_sin + d.y * rot_cos )
+       local = ( d.x * cos + d.y * sin, -d.x * sin + d.y * cos )
 
    BOX folds that itself -- `q = |local| - c`, where c is the half-extent minus the corner radius
    -- and picks WHICH corner radius from the sign of local, since the sign says which quadrant the
@@ -1853,13 +1875,17 @@ typedef struct
 
     f32 r_tl, r_tr, r_br, r_bl;
 
-    /* Row 2 -- the softness and the turn.  Rotation is stored as its cosine and sine because the
-       CPU already computes both once per shape; an angle here would put a cos/sin on every
-       fragment of every rotated box.  A shape whose FIELD reads the local frame stores (1, 0)
-       when unrotated; a plain fill (no field) leaves (0, 0) -- the vertex stage reads the zero
-       pair as identity, which is what keeps flat fills deduping onto one record. */
+    /* Row 2 -- the EDGE: how wide the transition is, how thick a band is, and how the corner
+       curves.  The turn is NOT here -- it rides the quad (gui_quad_t.xform), because an angle is
+       per-instance and a style that carried one would mint a record per angle.
 
-    f32 feather, border, rot_cos, rot_sin;
+       corner_pow is the corner PROFILE: the exponent of the norm the corner arc is measured in.
+       2 (and 0, the default) is a circular arc; higher fills the arc out toward the square it is
+       inset from -- the continuously-curved corner.  Authored as a 0..1 smoothing amount and
+       mapped once at the emit site (draw_set_corner_smooth).  It sits in this row rather than with
+       the scalar parameters because every box fragment already loads this row for the feather. */
+
+    f32 feather, border, corner_pow, reserved_edge;
 
     /* Row 3 -- the scalar parameters and the second colour.
          ARC / PIE      param = radius, tube half-thickness, aperture (radians, HALF the sweep)
@@ -1867,13 +1893,9 @@ typedef struct
          GRID           param = cell, line thickness, angle
          TILE_U         param_a = repeat count
          TEXT_EDGE      param_a = outline width                   col_b = the outline colour
-         BOX            param_c = corner profile: the EXPONENT of the norm the corner arc is
-                                  measured in.  2 (and 0, the default) is a circular arc; higher
-                                  fills the arc out toward the square it is inset from, which is
-                                  the continuously-curved corner.  Authored as a 0..1 smoothing
-                                  amount and mapped once at the emit site (draw_set_corner_smooth).
          GUI_OP_PULSE   param_a = rate (Hz), param_b = depth      (on any field it modifies)
-         GUI_OP_GRAD    col_b   = the ramp's far colour */
+         GUI_OP_GRAD    col_b   = the ramp's far colour
+       (BOX's corner profile moved to row 2, beside the feather that shares its fetch.) */
 
     f32 param_a, param_b, param_c;
     u32 col_b;
@@ -1890,20 +1912,20 @@ typedef struct
 
     f32 grad_x, grad_y, cut_dx, cut_dy;
 
-    /* Row 5 -- the ANIMATION lane, plus the ramp's midpoint.  anim_rate / anim_phase belong to
-       whichever animating op the record carries; at most one interpretation is live per record.
-         GUI_OP_SPIN   anim_rate = turns/sec the local frame rotates at (on pc.time), anim_phase
-                       = the starting angle in turns.  The frame carries every field and op with
-                       it, so a spinner, a radar sweep and a rotating dashed ring are all this
-                       one op over shapes that already exist.
-         GUI_OP_DASH   anim_rate = px/sec the dash pattern scrolls along the perimeter -- the
-                       marching ants; anim_phase = the static offset in px.
-         GUI_OP_PULSE  anim_phase = cycles, so same-rate pulses can stagger instead of beating
-                       in lockstep (rate and depth stay in param_a / param_b).
+    /* Row 5 -- the ANIMATION RATE, plus the ramp's midpoint.  anim_rate belongs to whichever
+       animating op the record carries; at most one interpretation is live per record.  The PHASE
+       is deliberately absent -- it rides the quad (gui_quad_t, flags bits 16-31), since a set of
+       staggered elements shares one rate and differs only in phase.
+         GUI_OP_SPIN   anim_rate = turns/sec the local frame rotates at (on pc.time).  The frame
+                       carries every field and op with it, so a spinner, a radar sweep and a
+                       rotating dashed ring are all this one op over shapes that already exist.
+         GUI_OP_DASH   anim_rate = px/sec the dash pattern scrolls along the shape's boundary
+                       coordinate -- the marching ants.
+         GUI_OP_PULSE  anim_rate is unused here; the pulse states its rate in param_a.
          GUI_OP_GRAD   grad_mid = the exponent bending the ramp's t about its midpoint, mapped
                        once at the emit site (ln 0.5 / ln mid); 0 means the linear default. */
 
-    f32 anim_rate, anim_phase, grad_mid, reserved_a;
+    f32 anim_rate, reserved_anim, grad_mid, reserved_a;
 
     /* Row 6 -- GUI_OP_DASH's pattern, in ARC-LENGTH px along the shape's perimeter (the
        draw_arc_dashed vocabulary, walked around a box instead of a circle).  The emit site snaps
@@ -1987,10 +2009,11 @@ typedef enum
     `centre +- (half-extent + pad)` itself.  The pad is the style's feather plus the AA guard,
     applied at expansion -- cx/cy/hw/hh here are the TRUE shape extents, never pre-inflated.
 
-    `style` names a gui_prim_t used as a pure STYLE record; placement and clip live here, per
-    quad, which is what lets styles dedup across placements.  Rotation stays in the style
-    (rot_cos / rot_sin): a rotated one-off costs one style, and OP_SPIN needs no placement
-    at all.
+    `style` names a gui_prim_t used as a pure STYLE record.  Everything that varies per INSTANCE
+    while the shape stays the same lives here instead: placement, clip, the second colour, the
+    turn (`xform`) and the animation phase.  That is the whole rule the split follows -- a value
+    on the wrong side either mints a style record per instance or costs four bytes on every glyph
+    that will never read it.
 ==============================================================================================*/
 
 typedef struct
@@ -2017,8 +2040,14 @@ typedef struct
        styled rows in different scroll regions must still share one style. */
 
     u32 clip;           // clip-table entry index, absolute within the frame clip region
-    u32 flags;          // GUI_QUAD_RULE_* expansion rule (bits 0-1)
-    u32 reserved_b;     // free lane -- row 2 must stay whole (see GUI_QUAD_ROWS below)
+    u32 flags;          // GUI_QUAD_RULE_* rule (bits 0-1) | animation phase (bits 16-31)
+
+    // xform: the shape's TURN, as a unit (cos, sin) packed like a uv pair (gui_xform_pack).
+    //   Per QUAD, not per style: a rotation is per-instance by nature, so keeping it here is what
+    //   stops every distinct angle from minting its own style record.  A CAPSULE's direction is
+    //   this same pair.  Exactly 0 means IDENTITY -- the zero-when-unused rule every record lane
+    //   here follows, and what an unrotated shape leaves behind.
+    u32 xform;
 
     // col_b: GUI_OP_FRAME: the border band's packed colour.  A SECOND colour rides the quad,
     //   not the style (gui_prim_t), so an animated border -- or an animated fill, which was
@@ -2048,6 +2077,14 @@ ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
 #define GUI_QUAD_RULE_BBOX     3u   /* stored extents ARE the covering, expanded axis-aligned
                                        (the arc family -- its local frame is a reflection)       */
 
+/* flags bits 16-31: the animation PHASE, a unorm16 over one cycle.  Rate stays on the style (every
+   spinner in a set turns at the same speed) and phase rides the quad, because staggering a set is
+   the only thing phase is for -- on the style it would cost one record per element.  0 = in step
+   with the clock, which is what a lone animating shape wants. */
+
+#define GUI_QUAD_PHASE_SHIFT   16u
+#define GUI_QUAD_PHASE_MASK    0xFFFF0000u
+
 /* UV -> two unorm16 -- the packing the quad record's uv0/uv1 lanes carry.  Clamped, because that
    is the only thing the format can do with an out-of-range coordinate -- a caller that wants U
    past 1 asks for GUI_FX_TILE_U instead.
@@ -2063,6 +2100,28 @@ gui_uv_pack( f32 u, f32 v )
     u = ( u < 0.0f ) ? 0.0f : ( ( u > 1.0f ) ? 1.0f : u );
     v = ( v < 0.0f ) ? 0.0f : ( ( v > 1.0f ) ? 1.0f : v );
     return (u32)( u * 65535.0f + 0.5f ) | ( (u32)( v * 65535.0f + 0.5f ) << 16 );
+}
+
+/* The turn, packed into the quad's `xform`: a unit (cos, sin) through the same unorm16 pair, so
+   both sides share one encoding.  The all-zero word is reserved for IDENTITY and cannot collide --
+   (1, 0) packs to (0xFFFF, 0x8000). */
+
+static inline u32
+gui_xform_pack( f32 cs, f32 sn )
+{
+    if ( cs == 1.0f && sn == 0.0f )
+        return 0u;                        /* identity, the common case, states itself as zero */
+    return gui_uv_pack( cs * 0.5f + 0.5f, sn * 0.5f + 0.5f );
+}
+
+/* The animation phase into the quad's `flags` band: cycles, wrapped to [0,1), as a unorm16. */
+
+static inline u32
+gui_phase_pack( f32 cycles )
+{
+    f32 f = cycles - (f32)(i32)cycles;             /* wrap; the sign is handled just below */
+    if ( f < 0.0f ) f += 1.0f;
+    return ( (u32)( f * 65535.0f + 0.5f ) & 0xFFFFu ) << GUI_QUAD_PHASE_SHIFT;
 }
 
 /*==============================================================================================
