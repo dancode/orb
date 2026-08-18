@@ -24,7 +24,7 @@ struct qp_pc_t
 // array can have.  Integer lanes come back through asuint, a reinterpret, not a convert.
 [[vk::binding( 2, 0 )]] StructuredBuffer<float4> u_buffers[] : register( t0, space1 );
 
-#define QUAD_ROWS   2u   // gui.h GUI_QUAD_ROWS: cx/cy/hw/hh | uv0/uv1/abgr/idx
+#define QUAD_ROWS   1u   // gui.h GUI_QUAD_ROWS: one row -- cx/cy | hw/hh | abgr | idx
 #define STYLE_ROWS  8u   // gui.h GUI_PRIM_ROWS: a style is a gui_prim_t
 
 // Corner of the two-triangle quad, in (0,0)..(1,1): triangles 0-1-2 and 0-2-3 of the corner
@@ -42,11 +42,6 @@ struct vs_out_t
     nointerpolation uint  style  : TEXCOORD1;
 };
 
-float2 unpack_unorm16x2( uint p )
-{
-    return float2( p & 0xFFFFu, p >> 16u ) / 65535.0;
-}
-
 float4 unpack_unorm8x4( uint c )
 {
     return float4( c & 0xFFu, ( c >> 8u ) & 0xFFu, ( c >> 16u ) & 0xFFu, c >> 24u ) / 255.0;
@@ -57,25 +52,30 @@ vs_out_t main( uint vid : SV_VertexID )
     uint   quad   = vid / 6u;
     float2 corner = k_corner[ vid % 6u ];
 
-    uint   row = ( pc.quad_base + quad ) * QUAD_ROWS;
-    float4 r0  = u_buffers[ pc.quad_buf ][ row ];        // cx, cy, hw, hh -- the TRUE extents
-    float4 r1  = u_buffers[ pc.quad_buf ][ row + 1u ];   // uv0, uv1, abgr, idx
+    float4 r0 = u_buffers[ pc.quad_buf ][ ( pc.quad_base + quad ) * QUAD_ROWS ];
+
+    // Placement is quarter-pixel fixed point (gui.h): a signed centre and an unsigned half-extent
+    // packed two to a lane.  These are the TRUE extents -- the pad below is what grows them.
+    uint  cw   = asuint( r0.x ), ew = asuint( r0.y );
+    int2  ci   = int2( asint( cw << 16 ) >> 16, asint( cw ) >> 16 );
+    float2 ctr = float2( ci ) * 0.25;
+    float2 ext = float2( ew & 0xFFFFu, ew >> 16u ) * 0.25;
 
     // The expansion pad comes from the STYLE, not the quad: feather (style row 2 leads with it)
     // plus a one-pixel AA guard.  This dependent fetch is the cost under measurement -- the
     // real replay backend pays exactly this to keep pre-inflated extents out of the record.
-    uint   style   = ( asuint( r1.w ) >> 6u ) & 0x7FFu;   // gui.h GUI_QUAD_STYLE_SHIFT/MASK
+    uint   style   = ( asuint( r0.w ) >> 6u ) & 0x7FFu;   // gui.h GUI_QUAD_STYLE_SHIFT/MASK
     float4 srow    = u_buffers[ pc.style_buf ][ ( pc.style_base + style ) * STYLE_ROWS + 2u ];
     float  pad     = srow.x + 1.0;
 
     float2 sgn = corner * 2.0 - 1.0;
-    float2 p   = r0.xy + sgn * ( r0.zw + pad );
+    float2 p   = ctr + sgn * ( ext + pad );
 
     vs_out_t o;
     o.sv_pos   = float4( p * pc.scale + pc.offset, 0.0, 1.0 );
     o.sv_pos.y = -o.sv_pos.y;   // cancel the cook's -fvk-invert-y: pc maps +y down already
-    o.color    = unpack_unorm8x4( asuint( r1.z ) );
-    o.uv       = lerp( unpack_unorm16x2( asuint( r1.x ) ), unpack_unorm16x2( asuint( r1.y ) ), corner );
+    o.color    = unpack_unorm8x4( asuint( r0.z ) );
+    o.uv       = corner;    // the record carries no uv rect; the VB arm writes this same span
     o.style    = style;
     return o;
 }

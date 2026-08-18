@@ -1,8 +1,9 @@
 // gui_quad.vs.hlsl -- the QUAD-RECORD pipeline's vertex stage: no vertex buffer at all.  A draw
 // is cmd_draw of 6 * N bare vertices; this stage computes quad = SV_VertexID / 6 and corner =
 // SV_VertexID % 6 (VertexIndex includes firstVertex under Vulkan, and every draw's firstVertex
-// is a multiple of 6), fetches the 32-byte quad record (gui.h, gui_quad_t) from the bindless
-// array, and expands the covering corner itself.  Cooked to bin/shaders/gui_quad.vs.oshd.
+// is a multiple of 6), fetches the 16-byte quad record (gui.h, gui_quad_t) from the bindless
+// array in ONE load, and expands the covering corner itself.  Cooked to
+// bin/shaders/gui_quad.vs.oshd.
 //
 // What the expansion does per quad, keyed by the record's flags (gui.h, GUI_QUAD_RULE_*):
 //   EXACT    the stored half-extents, rotated by the quad's own (cos, sin)
@@ -54,13 +55,18 @@ vs_out_t main( uint vid : SV_VertexID )
     uint   quad   = vid / 6u;
     float2 corner = k_corner[ vid % 6u ];
 
-    uint   row = ( pc.quad_base + quad ) * QUAD_ROWS;
-    float4 q0  = u_buffers[ pc.quad_buf ][ row ];        // cx, cy, hw, hh
-    float4 q1  = u_buffers[ pc.quad_buf ][ row + 1u ];   // uv0, uv1, abgr, idx
+    float4 q = u_buffers[ pc.quad_buf ][ ( pc.quad_base + quad ) * QUAD_ROWS ];
+
+    // Placement is quarter-pixel fixed point (gui.h): a signed centre and an unsigned half-extent
+    // packed two to a lane.  The signed halves are sign-extended by shifting them up to the top of
+    // an int and arithmetic-shifting back down.
+    uint  cw = asuint( q.x ), ew = asuint( q.y );
+    int2  ci = int2( asint( cw << 16 ) >> 16, asint( cw ) >> 16 );
+    float4 q0 = float4( float2( ci ), float2( ew & 0xFFFFu, ew >> 16u ) ) * 0.25;
 
     // The index word is a tagged union (gui.h): a whole GLYPH carries an atlas ID where every
     // other quad carries a style record, and neither has to make room for the other.
-    uint idx     = asuint( q1.w );
+    uint idx     = asuint( q.w );
     uint tag     = idx >> GUI_QUAD_TAG_SHIFT;
     bool isglyph = ( tag == GUI_QUAD_TAG_GLYPH );
 
@@ -70,8 +76,9 @@ vs_out_t main( uint vid : SV_VertexID )
     // The instance extras: turn, animation phase, border colour.  Most quads name no record and
     // take the all-zero row, which IS the default -- an unrotated shape in step with the clock and
     // no border band (gui.h, gui_fx_t).
-    float4 fxr = fx_record( isglyph ? ( ( idx >> GUI_QUAD_GFX_SHIFT ) & GUI_QUAD_GFX_MASK )
-                                    : ( ( idx >> GUI_QUAD_FX_SHIFT  ) & GUI_QUAD_FX_MASK  ) );
+    uint   fxrow = isglyph ? ( ( idx >> GUI_QUAD_GFX_SHIFT ) & GUI_QUAD_GFX_MASK )
+                           : ( ( idx >> GUI_QUAD_FX_SHIFT  ) & GUI_QUAD_FX_MASK  );
+    float4 fxr   = fx_record( fxrow, 0u );
 
     // The shape's TURN, per instance -- a unit (cos, sin) packed like a uv pair, with the all-zero
     // word reserved for identity (gui.h, gui_xform_pack).  This is the frame every field works in,
@@ -98,13 +105,14 @@ vs_out_t main( uint vid : SV_VertexID )
               ? q0.xy + lp     // BBOX: pre-baked covering, axis-aligned
               : q0.xy + float2( lp.x * rt.x - lp.y * rt.y, lp.x * rt.y + lp.y * rt.x );
 
-    // The uv rect.  A whole glyph names a glyph-table entry inside the index word and leaves both
-    // uv lanes inert; everything else -- fills, icons, sprites, and the narrowed rect a glyph cut
-    // to its window carries -- bakes both corners at tessellation.  The indirection is what lets
-    // cached text geometry outlive an atlas repack: the table rewrites in place and the ID does
-    // not move.
+    // The uv rect, which the quad record has no lane for at all.  A whole glyph names a
+    // glyph-table entry inside the index word -- the indirection that lets cached text outlive an
+    // atlas repack, since the table rewrites in place and the ID does not move.  Everything that
+    // samples a texture without being a glyph -- icons, sprites, a dashed line's stipple row, the
+    // narrowed rect a glyph cut to its window carries -- takes it from row B of its instance
+    // record.  A flat fill names no record and reads the zero rect it never samples.
     uint2 uvw = isglyph ? glyph_uv( ( idx >> GUI_QUAD_GLYPH_SHIFT ) & GUI_QUAD_GLYPH_MASK )
-                        : uint2( asuint( q1.x ), asuint( q1.y ) );
+                        : asuint( fx_record( fxrow, 1u ).xy );
     float2 uv0 = unpack_unorm16x2( uvw.x );
     float2 uv1 = unpack_unorm16x2( uvw.y );
 
@@ -121,7 +129,7 @@ vs_out_t main( uint vid : SV_VertexID )
         uv1 = clamp( uvc + ( uv1 - uvc ) * grow, lo, hi );
     }
 
-    float4 col = unpack_col( asuint( q1.z ) );   // sRGB -> linear, alpha untouched (coverage)
+    float4 col = unpack_col( asuint( q.z ) );    // sRGB -> linear, alpha untouched (coverage)
 
     vs_out_t o;
     o.sv_pos   = mul( pc.mvp, float4( wp, 0.0, 1.0 ) );

@@ -3,7 +3,7 @@
     runtime_service/gui/render/pipeline/gui_build_tess.c -- CPU-side quad-record builder.
 
     Translates the frame's semantic gui_cmd_t list (s_draw) into quad records in s_tess:
-    ONE 32-byte gui_quad_t per shape (gui.h), expanded by SV_VertexID in gui_quad.vs.hlsl --
+    ONE 16-byte gui_quad_t per shape (gui.h), expanded by SV_VertexID in gui_quad.vs.hlsl --
     there is no vertex buffer and no index buffer.  Everything here reads semantic commands
     and writes quad + style records; nothing here touches the GPU API.
 
@@ -104,10 +104,10 @@ static struct
     u32         cur_prim_local;
     u32         prim_dedup_floor;
 
-    /* The open FX PAGE -- a style-arena record carrying eight gui_fx_t rows (gui.h).  fx_page is
-       the record's slot-local index and fx_page_used how many of its eight rows are spent; a
-       ninth record takes a new page.  fx_memo_row is the last row committed, so a run of quads
-       wanting the same turn / phase / border shares one record -- the common case, since all three
+    /* The open FX PAGE -- a style-arena record carrying four gui_fx_t records (gui.h).  fx_page is
+       the record's slot-local index and fx_page_used how many of its four entries are spent; a
+       fifth takes a new page.  fx_memo_row is the last row committed, so a run of quads wanting
+       the same turn / phase / border shares one record -- the common case, since those lanes
        are ambient over a command.  Both reset wherever prim_dedup_floor rises (a new slot, a
        volatile boundary, a patch's scratch): a page below the floor belongs to a reservation this
        pass does not own, and writing another row into it would corrupt it.
@@ -512,30 +512,35 @@ tess_prim_local( void )
     return s_tess.cur_prim_local;
 }
 
-/* Resolve the ambient turn / phase / border colour to an fx record, returning its SLOT-LOCAL row
-   index in the style arena (0 = the quad needs none, which the shader reads as identity turn, zero
-   phase, no border).
+/* Resolve the ambient turn / phase / border colour plus this quad's texture rect to an fx record,
+   returning its SLOT-LOCAL row index in the style arena (0 = the quad needs none, which the shader
+   reads as identity turn, zero phase, no border and no texture rect).
 
-   Records pack eight to a style-arena slot, so a page costs one gui_prim_t and serves eight
-   instances.  The memo is one deep and that is enough: all three lanes are ambient over a semantic
-   command, so the quads that share them arrive consecutively -- a framed row, a polyline of one
-   direction, a set of glyph quads wanting nothing at all. */
+   Records pack four to a style-arena slot, so a page costs one gui_prim_t and serves four
+   instances.  The memo is one deep and that is enough: the instance lanes are ambient over a
+   semantic command, so the quads that share them arrive consecutively -- a framed row, a polyline
+   of one direction, a set of glyph quads wanting nothing at all.  A uv rect breaks the memo by
+   nature (consecutive icons sample different cells), which is the honest cost of the sprite path
+   and still one QUARTER of a record each. */
 
-#define TESS_FX_PER_PAGE   GUI_PRIM_ROWS   /* a style record is eight 16-byte rows */
+#define TESS_FX_PER_PAGE   ( GUI_PRIM_ROWS / GUI_FX_ROWS )   /* a style record is four fx records */
 
 static u32
-tess_fx_local( void )
+tess_fx_local( u32 uv0, u32 uv1 )
 {
     gui_fx_t fx = {
         .xform      = gui_xform_pack( s_tess.cur_rot_c, s_tess.cur_rot_s ),
         .phase      = gui_phase_pack( s_tess.cur_phase ),
         .col_border = s_tess.cur_col_border,
+        .uv0        = uv0,
+        .uv1        = uv1,
     };
-    if ( fx.xform == 0u && fx.phase == 0u && fx.col_border == 0u )
+    if ( fx.xform == 0u && fx.phase == 0u && fx.col_border == 0u
+      && fx.uv0 == 0u && fx.uv1 == 0u )
         return 0u;      /* the whole record is the default -- the majority of quads, text included */
 
-    /* The page is a style-arena record read as eight rows; the rows are addressed as bytes rather
-       than through a second struct pointer, so the two record types never alias one another. */
+    /* The page is a style-arena record read as rows; the rows are addressed as bytes rather than
+       through a second struct pointer, so the two record types never alias one another. */
     u8* page_p = (u8*)&s_tess.prims[ s_tess.slot_prim_base + s_tess.fx_page ];
     if ( s_tess.fx_memo_row
       && memcmp( page_p + ( s_tess.fx_page_used - 1u ) * GUI_FX_BYTES, &fx, sizeof fx ) == 0 )
@@ -567,7 +572,7 @@ tess_fx_local( void )
         }
 
         u32 page = s_tess.prim_count - s_tess.slot_prim_base;
-        if ( page > ( GUI_QUAD_FX_MASK / TESS_FX_PER_PAGE ) )
+        if ( page * GUI_PRIM_ROWS + ( TESS_FX_PER_PAGE - 1u ) * GUI_FX_ROWS > GUI_QUAD_FX_MASK )
         {
             s_tess.overflow = true;     /* past what the quad's fx field can name */
             return 0u;
@@ -582,7 +587,7 @@ tess_fx_local( void )
     }
 
     memcpy( page_p + s_tess.fx_page_used * GUI_FX_BYTES, &fx, sizeof fx );
-    s_tess.fx_memo_row = s_tess.fx_page * GUI_PRIM_ROWS + s_tess.fx_page_used;
+    s_tess.fx_memo_row = s_tess.fx_page * GUI_PRIM_ROWS + s_tess.fx_page_used * GUI_FX_ROWS;
     s_tess.fx_page_used++;
     return s_tess.fx_memo_row;
 }
@@ -609,7 +614,10 @@ tess_glyph_uv( u32 glyph_id, u32* uv0, u32* uv1 )
     GPU command.
 
     `rule` is the expansion rule (GUI_QUAD_RULE_*).  Placement is the SHAPE's, by the rule's
-    convention (gui.h); uv0/uv1 are packed texcoord corners.
+    convention (gui.h), in pixels -- quantized to the record's quarter-pixel grid here, which is
+    the only place that conversion happens.  uv0/uv1 are packed texcoord corners; a non-zero pair
+    goes into the instance record beside the turn, since a texture rect is per-instance and the
+    quad has no lane for one.
 
     `glyph_id` past GUI_GLYPH_ID_NONE asks for the GLYPH tag: the quad names a glyph-table entry
     instead of carrying an atlas rect, and names no style record at all -- the fragment resolves
@@ -633,6 +641,18 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
     if ( !tess_ensure_gpu_cmd() )
         return;
 
+    /* BBOX states a covering the vertex stage takes no pad on, so it is the one rule with no slack
+       to absorb the quantization below.  A quarter pixel of margin restores it; every other rule
+       either grows by the SDF pad or defines the rect it is mapped against, which must not move. */
+    if ( rule == GUI_QUAD_RULE_BBOX )
+    {
+        qhw += 0.25f;
+        qhh += 0.25f;
+    }
+
+    i16 pcx = gui_quad_pos_pack( qcx ), pcy = gui_quad_pos_pack( qcy );
+    u16 phw = gui_quad_ext_pack( qhw ), phh = gui_quad_ext_pack( qhh );
+
     /* A glyph keeps the tag only while the style would have said nothing: no ops, no field, and an
        fx row inside the narrower field the GLYPH layout has room for.  Anything else -- an SDF
        outline, a pattern, a rotation past the twelfth bit -- takes the table's rect and rejoins
@@ -646,14 +666,14 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
         ORB_ASSERT( gui_tex_index( tex_idx ) == ( gui_tex_mode( tex_idx ) == GUI_TEX_SDF
                                                   ? res_sdf_idx() : res_atlas_idx() ) );
 
-        u32 fx = tess_fx_local();
+        u32 fx = tess_fx_local( 0u, 0u );
         if ( fx <= GUI_QUAD_GFX_MASK )
         {
             s_tess.quads[ s_tess.vert_count++ ] = ( gui_quad_t ){
-                .cx   = qcx,
-                .cy   = qcy,
-                .hw   = qhw,
-                .hh   = qhh,
+                .cx   = pcx,
+                .cy   = pcy,
+                .hw   = phw,
+                .hh   = phh,
                 .idx  = gui_quad_idx_glyph( s_tess.cur_clip_local, glyph_id,
                                             gui_tex_mode( tex_idx ) == GUI_TEX_SDF, fx ),
                 .abgr = abgr,
@@ -661,8 +681,9 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
             goto counted;
         }
         /* The fx row is past what the GLYPH layout can name -- fall through and let the SHAPED
-           arm carry it, where the field is a bit wider.  The record itself is already written;
-           the memo hands the same row back below. */
+           arm carry it, where the field is a bit wider.  The record written just above is left
+           behind: the SHAPED arm asks for one carrying the table's rect as well, which is a
+           different record.  One wasted entry at the far end of a slot's fx pages. */
     }
 
     if ( glyph_id != GUI_GLYPH_ID_NONE )
@@ -674,15 +695,13 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
     s_tess.cur_prim.ops = s_tess.cur_ops;
 
     u32 style = tess_prim_local();
-    u32 fx    = tess_fx_local();
+    u32 fx    = tess_fx_local( uv0, uv1 );
 
     s_tess.quads[ s_tess.vert_count++ ] = ( gui_quad_t ){
-        .cx    = qcx,
-        .cy    = qcy,
-        .hw    = qhw,
-        .hh    = qhh,
-        .uv0   = uv0,
-        .uv1   = uv1,
+        .cx    = pcx,
+        .cy    = pcy,
+        .hw    = phw,
+        .hh    = phh,
         .abgr  = abgr,
         .idx   = gui_quad_idx( rule, s_tess.cur_clip_local, style, fx ),
     };
@@ -1147,7 +1166,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     /* GUI_OP_FRAME's border colour does NOT land here -- it rides the quad (cur_col_border, set by
        the dispatcher before this call), so an animated border never adds a style record.  This
        record's own col_b is the SHAPE's second colour (GRAD, CHECKER, TEXT_EDGE, ARC_GRAD); the
-       two are different lanes on purpose.  See gui_quad_t.col_border (gui.h) and the dispatch of
+       two are different lanes on purpose.  See gui_fx_t.col_border (gui.h) and the dispatch of
        GUI_CMD_FRAME below. */
 
     /* GUI_OP_GRAD -- the ramp's far colour and its axis, stored as a UNIT direction.  The
@@ -1480,7 +1499,6 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
        caller still speaks in turns, so convert once here: a period of `uvx` turns is that fraction
        of the full circumference at this radius.  The snap keeps whole cycles around the sweep, so
        a closed dashed ring meets itself exactly as the retired ARC_DASH field arranged. */
-    f32 wu = 0.0f, wv = 0.0f;
     if ( dash_turns > 0.0f )
     {
         f32 arc_len = sweep * ra;
@@ -1513,8 +1531,6 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
        is not needed and the atlas stays bound only to keep the index valid. */
     if ( mode == GUI_FX_ARC_GRAD )
     {
-        wu = uvx;
-        wv = uvy;
         s_tess.cur_ops |= GUI_OP_SELF;
 
         u32 bu = (u32)( uvx * 65535.0f + 0.5f );
@@ -1542,8 +1558,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
         if ( fabsf( ry ) > bhy ) bhy = fabsf( ry );
     }
     tess_quad_push( pcx, pcy, bhx, bhy, GUI_QUAD_RULE_BBOX,
-                    gui_uv_pack( wu, wv ), gui_uv_pack( wu, wv ),
-                    res_atlas_idx(), abgr, GUI_GLYPH_ID_NONE );
+                    0, 0, res_atlas_idx(), abgr, GUI_GLYPH_ID_NONE );
 }
 
 /*==============================================================================================
@@ -1561,7 +1576,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     pitch would let phase and pitch disagree by up to 1/8 px per cell, which walks the pattern
     off its anchor across a wide panel.  The checker's phase is a fraction of the TWO-cell
     colour period (one cell of phase would swap the colours); the grid's is a fraction of one
-    cell, in the uv lanes the single-colour lattice leaves free.
+    cell.  Both ride the style record's pattern row (gui_prim_t, pat_phase).
 ==============================================================================================*/
 
 /* A pattern quad, with the shape it lands in.  A zero radius is the plain rectangle the pattern

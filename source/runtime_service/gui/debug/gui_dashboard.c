@@ -648,7 +648,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
 
     /* Glyph share of the DRAWN quads -- what a per-run text record would collapse.  Follows the
        "quads" bar's band filter so the two numbers are read against each other, and spells out
-       glyphs-per-run: that is the factor one 32-byte quad record would amortise over.
+       glyphs-per-run: that is the factor one 16-byte quad record would amortise over.
 
        Measured against live_quads, not the arena write head the bar above shows: the head includes
        every slot's vert_alloc padding (SLOT_QUAD_PAD minimum each), which on a small UI can outweigh

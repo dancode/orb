@@ -93,30 +93,42 @@ test_prim_layout( void )
 static void
 test_quad_layout( void )
 {
-    /* Two 16-byte rows, no tail padding.  GUI_QUAD_ROWS is what the vertex stage multiplies
-       by when it pulls the record through the bindless float4 buffer. */
-    test_equal( 2u,  GUI_QUAD_ROWS );
-    test_equal( 32u, (u32)GUI_QUAD_BYTES );
-    test_equal( 32u, (u32)sizeof( gui_quad_t ) );
+    /* ONE 16-byte row, no tail padding.  GUI_QUAD_ROWS is what the vertex stage multiplies by
+       when it pulls the record through the bindless float4 buffer. */
+    test_equal( 1u,  GUI_QUAD_ROWS );
+    test_equal( 16u, (u32)GUI_QUAD_BYTES );
+    test_equal( 16u, (u32)sizeof( gui_quad_t ) );
 
-    /* Row starts. */
+    /* Within-row order, since the row is read as one vec4 and its components are positional: the
+       centre pair shares lane x and the half-extent pair lane y, low half first. */
     test_equal(  0u, (u32)offsetof( gui_quad_t, cx   ) );
-    test_equal( 16u, (u32)offsetof( gui_quad_t, uv0  ) );
+    test_equal(  2u, (u32)offsetof( gui_quad_t, cy   ) );
+    test_equal(  4u, (u32)offsetof( gui_quad_t, hw   ) );
+    test_equal(  6u, (u32)offsetof( gui_quad_t, hh   ) );
+    test_equal(  8u, (u32)offsetof( gui_quad_t, abgr ) );
+    test_equal( 12u, (u32)offsetof( gui_quad_t, idx  ) );
 
-    /* Within-row order, since a row is read as one vec4 and its components are positional. */
-    test_equal(  4u, (u32)offsetof( gui_quad_t, cy    ) );
-    test_equal(  8u, (u32)offsetof( gui_quad_t, hw    ) );
-    test_equal( 12u, (u32)offsetof( gui_quad_t, hh    ) );
-    test_equal( 20u, (u32)offsetof( gui_quad_t, uv1   ) );
-    test_equal( 24u, (u32)offsetof( gui_quad_t, abgr  ) );
-    test_equal( 28u, (u32)offsetof( gui_quad_t, idx   ) );
+    /* Placement is quarter-pixel fixed point: a snapped fill and a whole glyph land on the grid
+       exactly, and out-of-range coordinates clamp instead of wrapping back into view. */
+    test_equal( (u32)(i32)   4, (u32)(i32)gui_quad_pos_pack(  1.0f  ) );
+    test_equal( (u32)(i32)  -6, (u32)(i32)gui_quad_pos_pack( -1.5f  ) );
+    test_equal( (u32)(i32)   1, (u32)(i32)gui_quad_pos_pack(  0.25f ) );
+    test_equal( (u32)(i32)32767, (u32)(i32)gui_quad_pos_pack(  1.0e6f ) );
+    test_equal( (u32)(i32)-32768, (u32)(i32)gui_quad_pos_pack( -1.0e6f ) );
+    test_equal(  10u, gui_quad_ext_pack( 2.5f  ) );
+    test_equal(   0u, gui_quad_ext_pack( -3.0f ) );
+    test_equal( 65535u, gui_quad_ext_pack( 1.0e6f ) );
 
-    /* The instance-extras record is exactly one row: the quad names it by ROW index, so any other
-       size would make that index mean nothing. */
-    test_equal( 16u, (u32)sizeof( gui_fx_t ) );
+    /* The instance-extras record is exactly two rows: the quad names it by ROW index, so any
+       other size would make that index mean nothing, and four of them tile one style record. */
+    test_equal(  2u, GUI_FX_ROWS );
+    test_equal( 32u, (u32)sizeof( gui_fx_t ) );
     test_equal(  0u, (u32)offsetof( gui_fx_t, xform      ) );
     test_equal(  4u, (u32)offsetof( gui_fx_t, phase      ) );
     test_equal(  8u, (u32)offsetof( gui_fx_t, col_border ) );
+    test_equal( 16u, (u32)offsetof( gui_fx_t, uv0        ) );
+    test_equal( 20u, (u32)offsetof( gui_fx_t, uv1        ) );
+    test_equal(  0u, GUI_PRIM_ROWS % GUI_FX_ROWS );
 
     test_equal( 0u, GUI_QUAD_RULE_EXACT );
     test_equal( 1u, GUI_QUAD_RULE_SKIRT );
@@ -125,7 +137,7 @@ test_quad_layout( void )
 
     /* BOTH arms of the tagged union are exactly full: their fields tile all 32 bits with no gap
        and no overlap.  Every one sits at a structural ceiling (16 clips per window slab, 2048
-       style records, eight fx rows per record, 8192 glyph-table entries), so a raised cap is a
+       style records, four fx records per style record, 8192 glyph-table entries), so a raised cap is a
        re-plan of the union, not an edit. */
     test_equal( 0xFFFFFFFFu, ( GUI_QUAD_CLIP_MASK  << GUI_QUAD_CLIP_SHIFT  )
                            | ( 3u                  << GUI_QUAD_RULE_SHIFT  )

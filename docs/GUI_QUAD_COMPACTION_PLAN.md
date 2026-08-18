@@ -63,7 +63,7 @@ pressure.
 
 ```
   offset  size  field
-  0       8     pos.x, pos.y, size.w, size.h   -- i16 x4, 1/4 px, WINDOW-RELATIVE
+  0       8     pos.x, pos.y | size.w, size.h  -- i16 x2 + u16 x2, 1/4 px, SURFACE space
   8       4     abgr                            -- unchanged
   12      4     index                           -- TAGGED UNION, see below
 ```
@@ -87,21 +87,28 @@ glyph cap forces a re-plan of the union, not a one-line constant bump.
 `SOLID` carries no texture reference at all, so the shader skips the sample rather than reading a
 known-white texel.
 
-### Why coordinates are window-relative i16
+### Why the centre is signed -- and why it is NOT window-relative
 
 Clipping is a **fragment**-stage operation (the bindless clip slab is what keeps the batch key at
 viewport only), so scrolled-out geometry is still dispatched carrying its real coordinates. A
-long scrolled region emits quads at large negative Y. Unsigned `u16` cannot encode that.
+long scrolled region emits quads at large negative Y. Unsigned `u16` cannot encode that, which is
+why the centre is `i16` and the half-extent -- never negative, and wanting more reach for a
+fullscreen backdrop -- is `u16`.
 
-Window-relative `i16` at 1/4 px gives +/-8191 px about the slot origin: enough for any window,
-keeps sub-pixel precision for arcs and plot geometry, and makes slot relocation cheaper as a side
-effect. `rows_clip` already culls far-offscreen rows, but the encoding must not depend on that.
+Window-relative was planned and then dropped as a cost with no benefit. The mvp is already a
+per-surface pixel ortho, so a coordinate is surface-local before any origin is subtracted; a
+window origin is at most a few thousand pixels, smaller than the scroll excursions that are the
+real tail risk. Subtracting it would have cost a slot field, a push lane and a volatile-patch
+interaction to buy nothing. Out-of-range placements clamp instead: past +-8192 px a quad is far
+outside every clip rect either way, and wrapping would drag it back into view.
 
-### Why UV can move into the style record
+### Why UV does NOT go in the style record
 
-Putting uv/tex on the deduped medium table is only safe **because glyphs get their own path**.
-Per-glyph UVs in a deduped record would explode the prim count -- the same failure that pushed
-`col_b` off `gui_prim_t` and onto the quad. The two halves of this design depend on each other.
+That was the plan and it was wrong. A uv rect is per-INSTANCE: on the deduped style table every
+icon in a toolbar mints its own 128-byte record -- the same failure that pushed `col_b` off
+`gui_prim_t`. It belongs beside the other per-instance lanes, so the fx record grew to two rows
+(row A the turn/phase/border, row B the uv pair) and a textured quad costs 32 B shared four to a
+page. Glyphs never come here at all; their rect is ID-addressed through the glyph table.
 
 ---
 
@@ -254,11 +261,37 @@ is a union, and a glyph's 11 style bits were spent on carrying its atlas ID inst
 - `tess_fx_local` now leaves slot record 0 alone explicitly. A rotated glyph resolves no style, so
   "the style claimed record 0 first" stopped being a guarantee.
 
-**Stage 4 -- fixed-point coordinates.** pos/size to window-relative i16 at 1/4 px. 32 -> 16 B,
-one row, one load.
+**Stage 4 -- fixed-point coordinates + the uv lanes retired. BUILT.** 32 -> 16 B, one row, one
+load. The two were staged apart originally and cannot be: 8 B of placement plus 8 B of uv plus
+colour and index is 24 B, which is not a whole number of rows. The uv lanes had to go first for
+the record to collapse at all, so stage 5 landed inside stage 4.
 
-**Stage 5 -- uv/tex into the style record.** Retires the UV lanes for the non-glyph textured
-cases (icons, nine-slice, sprites).
+- Placement is **quarter-pixel fixed point in SURFACE space**: `i16 cx, cy` (+-8192 px) and
+  `u16 hw, hh` (0..16383.75 px), `gui_quad_pos_pack` / `gui_quad_ext_pack`. A snapped fill and a
+  whole glyph are exact on that grid -- integer origin and integer size make both the centre and
+  the half-extent multiples of 1/2 -- and the shapes that deliberately do not snap (a disc, a
+  rotated box, a polyline segment) keep a quarter pixel, finer than the AA band they wear.
+- **Window-relative was dropped.** It buys nothing here: the mvp is already a per-surface pixel
+  ortho, so coordinates are surface-local before any origin is subtracted, and a window origin is
+  smaller than the scroll excursions that are the actual tail risk. It would have cost a slot
+  field, a push lane, and a volatile-patch interaction for that nothing.
+- Out-of-range placements **clamp**. A coordinate past +-8192 px is scrolled-out content far
+  outside every clip rect, so the clamped quad is discarded exactly as the true one would be;
+  wrapping would drag it back into view.
+- BBOX is the one rule the vertex stage grants no pad, so `tess_quad_push` adds a quarter pixel to
+  its extents before packing. Every other rule either grows by the SDF pad or defines the rect its
+  texture is mapped against, which must not move.
+- **The uv rect moved into the fx record**, which grew to 2 rows: row A is the instance lanes
+  (turn, phase, border colour), row B is the uv pair. Not the style record, which the stage
+  heading proposed: a uv rect is per-INSTANCE, so on the style side every icon in a toolbar mints
+  its own 128-byte record, while in the fx record it costs 32 B and shares a page with three
+  neighbours. The vertex stage reads row B only when the quad is not a glyph.
+- `tess_fx_arc` stopped writing a white-texel uv. It has set `GUI_OP_SELF` all along, so the
+  fragment never read it -- the lanes were already dead.
+- Cost, stated plainly: an SDF-**outlined** glyph run now takes one fx record per character, since
+  the outline forces the SHAPED fallback and each character's baked rect differs. A heading is
+  fine; a log view in outlined text is not. That is what tag 2 (`GLYPH_STYLED`) is still unspent
+  for.
 
 ### Where fx records live -- DECIDED, and it was neither option
 
@@ -302,15 +335,16 @@ pass before the record layout churns.
 
 ---
 
-## 6. What this buys
+## 6. What this bought
 
-At ~78% glyphs, on three axes at once:
+At ~78% glyphs, on three axes at once. All four stages are in:
 
-| axis | today | after stage 4 |
-|------|-------|---------------|
+| axis | before | now |
+|------|--------|-----|
 | tess CPU per glyph | write 48 B, bake 4 UVs | write 16 B, emit 1 id |
 | memory per glyph | 48 B | 16 B |
 | vertex fetch per glyph | 3 row loads | 1 |
+| fragment fetch per glyph | one 128 B style record | none |
 
-Roughly 3x the geometry inside the same `GUI_MAX_QUADS` 8192, and the arena ceiling stops being
-a live constraint.
+Three times the geometry inside the same `GUI_MAX_QUADS` 8192, the quad region halved to 128 KB,
+and the arena ceiling has stopped being a live constraint.

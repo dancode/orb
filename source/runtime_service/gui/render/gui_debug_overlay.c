@@ -333,10 +333,10 @@ dbg_expand_quad( f32 x, f32 y, f32 w, f32 h, u32 abgr, u32* qc )
     x = floorf( x + 0.5f );
     y = floorf( y + 0.5f );
     s_dbg.scratch_quads[ ( *qc )++ ] = ( gui_quad_t ){
-        .cx   = x + w * 0.5f,
-        .cy   = y + h * 0.5f,
-        .hw   = w * 0.5f,
-        .hh   = h * 0.5f,
+        .cx   = gui_quad_pos_pack( x + w * 0.5f ),
+        .cy   = gui_quad_pos_pack( y + h * 0.5f ),
+        .hw   = gui_quad_ext_pack( w * 0.5f ),
+        .hh   = gui_quad_ext_pack( h * 0.5f ),
         .abgr = abgr,
     };
 }

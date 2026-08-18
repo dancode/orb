@@ -1922,7 +1922,7 @@ typedef struct
        anim_rate is CYCLES PER SECOND for every op -- turns/sec for a spin, dash-periods/sec for
        the ants, Hz for a pulse are all the same number -- so one timebase serves all three and a
        record carrying several animates them coherently instead of letting them drift.  The PHASE
-       is deliberately absent from this row: it rides the quad (gui_quad_t, flags bits 16-31),
+       is deliberately absent from this row: it rides the instance record (gui_fx_t.phase),
        since a set of staggered elements shares one rate and differs only in phase.
 
        anim_curve / anim_param are the shaping stage (gui_curve_t): what a normalized phase does
@@ -2034,7 +2034,7 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
 
 #define GUI_OP_FRAME    ( 1u << 12 )  /* composite a border band of `border` px OVER the fill --
                                          body + border in ONE quad.  The band's colour rides the
-                                         QUAD (gui_quad_t.col_border), not the style -- an
+                                         INSTANCE record (gui_fx_t.col_border), not the style -- an
                                          animated border never adds a style record              */
 
 /* The SHAPING stage of the animation clock (gui_prim_t row 5): what a normalized phase 0..1 does
@@ -2090,10 +2090,10 @@ typedef enum
 
     The record names a gui_prim_t used as a pure STYLE record.  Everything that varies per INSTANCE
     while the shape stays the same lives off the style: placement, colour and clip here, and the
-    three rarer lanes -- turn, animation phase, border colour -- one indirection away in a gui_fx_t.
-    That is the whole rule the split follows: a value on the style side mints a record per instance,
-    a value on the quad side costs four bytes on every glyph that will never read it, and a value in
-    the fx record costs neither as long as most quads want none of it.
+    rarer lanes -- turn, animation phase, border colour, texture rect -- one indirection away in a
+    gui_fx_t.  That is the whole rule the split follows: a value on the style side mints a record
+    per instance, a value on the quad side costs four bytes on every glyph that will never read it,
+    and a value in the fx record costs neither as long as most quads want none of it.
 ==============================================================================================*/
 
 /* One resident glyph's atlas rect, ID-indexed (draw/gui_glyph_table.c).  A glyph quad names an
@@ -2118,49 +2118,84 @@ typedef struct
 
 typedef struct
 {
-    /* Row 0 -- placement: centre and half-extent in screen pixels, the true shape rect. */
+    /* Placement, in QUARTER-PIXEL fixed point (gui_quad_pos_pack / gui_quad_ext_pack).  The
+       coordinate space is the SURFACE's, the same pixel-space ortho the mvp is built in, so no
+       origin travels with the record.
 
-    f32 cx, cy, hw, hh;
+       The centre is signed because clipping happens in the fragment: a scrolled-out row still
+       reaches the vertex stage with its real coordinates and is discarded per pixel, so negative
+       placements are ordinary traffic rather than an error.  The half-extents are unsigned and
+       reach four times further, which is what a fullscreen backdrop on a large display needs. */
 
-    /* Row 1 -- the per-quad payload: texcoord corners, colour, and the packed index word.
-       uv0/uv1 are the min/max corners, each two unorm16 over [0,1] (gui_uv_pack); the vertex
-       stage selects per corner.  Both lanes are INERT for a whole glyph, which names a
-       glyph-table entry inside the index word instead, and for a self-sampled quad
-       (GUI_OP_SELF), which never reads the texel. */
+    i16 cx, cy;         // centre,      1/4 px, +-8192 px
+    u16 hw, hh;         // half-extent, 1/4 px, 0..16383.75 px
 
-    u32 uv0;            // texcoord min corner, packed unorm16 pair
-    u32 uv1;            // texcoord max corner, packed unorm16 pair
     u32 abgr;           // packed colour
-    u32 idx;            // rule | glyph flag | clip | style | fx -- see gui_quad_idx below
+    u32 idx;            // tag | clip | rule | style | glyph | fx -- see gui_quad_idx below
 
 } gui_quad_t;
 
-/* 32 bytes = two std430 rows, indexed by the vertex stage as `quad * GUI_QUAD_ROWS + row`
-   with no padding to account for.  Pinned because the shaders spell that stride as a literal. */
+/* 16 bytes = ONE std430 row, indexed by the vertex stage as `quad * GUI_QUAD_ROWS`, so a shape
+   costs a single load.  Pinned because the shaders spell that stride as a literal. */
 
-#define GUI_QUAD_ROWS   2u
+#define GUI_QUAD_ROWS   1u
 #define GUI_QUAD_BYTES  ( GUI_QUAD_ROWS * 16u )
 
 ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
                    "gui_quad_t must stay whole 16-byte rows -- the vertex stage indexes it as vec4[]" );
 
+/* The placement quantum: quarter pixels.  A snapped fill and a whole glyph land on it exactly --
+   both have integer origins and integer sizes, so their centres and half-extents are multiples of
+   1/2 -- and the shapes that deliberately do NOT snap (a disc, a rotated box, a polyline segment)
+   keep a quarter-pixel of positional detail, which is finer than the antialiasing band they are
+   drawn with.
+
+   Out-of-range placements CLAMP rather than wrap.  A coordinate past +-8192 px is scrolled-out
+   content far outside every clip rect, so the clamped quad lands outside them too and is discarded
+   exactly as the true one would have been; wrapping would drag it back into view. */
+
+#define GUI_QUAD_POS_SCALE   4.0f
+#define GUI_QUAD_POS_MAX     32767.0f
+#define GUI_QUAD_EXT_MAX     65535.0f
+
+static inline i16
+gui_quad_pos_pack( f32 px )
+{
+    f32 q = px * GUI_QUAD_POS_SCALE;
+    q = ( q < 0.0f ) ? q - 0.5f : q + 0.5f;
+    if ( q >  GUI_QUAD_POS_MAX ) q =  GUI_QUAD_POS_MAX;
+    if ( q < -GUI_QUAD_POS_MAX - 1.0f ) q = -GUI_QUAD_POS_MAX - 1.0f;
+    return (i16)q;
+}
+
+static inline u16
+gui_quad_ext_pack( f32 px )
+{
+    f32 q = px * GUI_QUAD_POS_SCALE + 0.5f;
+    if ( q < 0.0f ) q = 0.0f;
+    if ( q > GUI_QUAD_EXT_MAX ) q = GUI_QUAD_EXT_MAX;
+    return (u16)q;
+}
+
 /* The INSTANCE EXTRAS record -- the lanes only a minority of quads carry, named by the quad's fx
-   index instead of costing sixteen bytes on every glyph that will never read them.
+   index instead of costing bytes on every glyph that will never read them.
 
-   All three are per-INSTANCE, not per-shape: a rotation, a stagger and a border colour each vary
-   while the shape stays the same, so putting them on the style record would mint one style per
-   angle, per stagger, per animated frame.  They are also rare TOGETHER -- text carries none of
-   them -- which is what makes a side record cheaper than a lane.  Consecutive quads that want the
-   same three values share one record (tess_fx_local), so a run of identically framed rows or a
-   polyline of one direction costs a single entry.
+   All of them are per-INSTANCE, not per-shape: a rotation, a stagger, a border colour and a
+   texture rect each vary while the shape stays the same, so putting them on the style record would
+   mint one style per angle, per stagger, per animated frame, per icon.  They are also rare
+   TOGETHER -- text carries none of them -- which is what makes a side record cheaper than a lane.
+   Consecutive quads that want the same values share one record (tess_fx_local), so a run of
+   identically framed rows or a polyline of one direction costs a single entry.
 
-   Records live in the STYLE ARENA, eight to a gui_prim_t slot ("fx page"), and the quad names one
+   Records live in the STYLE ARENA, four to a gui_prim_t slot ("fx page"), and the quad names one
    by its slot-local ROW index.  That is what keeps the whole feature free of new bookkeeping: the
    record arena's per-slot base, relocation, volatile reservation and upload ranges already carry
    anything stored there, and a row index is as repack-stable as the style index beside it. */
 
 typedef struct
 {
+    /* Row A -- the instance lanes every fetch of this record starts with. */
+
     // xform: the shape's TURN, as a unit (cos, sin) through the uv pair's encoding, remapped from
     //   [-1,1] (gui_xform_pack).  Exactly 0 means IDENTITY, which is what an unrotated shape
     //   leaves behind -- so a quad with no fx record reads as unrotated.  A CAPSULE's direction is
@@ -2184,14 +2219,36 @@ typedef struct
     //   rides the quad in `abgr` -- would otherwise mint a style record per frame.
     u32 col_border;
 
-    u32 reserved;       // pads the record to a whole row; written zero so dedup compares cleanly
+    u32 reserved_a;     // pads row A to a whole row; written zero so dedup compares cleanly
+
+    /* Row B -- the TEXTURE RECT, the min and max corners of the atlas span this instance samples,
+       each two unorm16 over [0,1] (gui_uv_pack).  It sits here for the same reason the three lanes
+       above do: a sprite's rect is per-instance, so on the style record it would mint one style per
+       icon, and on the quad it would cost eight bytes on every glyph and every flat fill that will
+       never sample a texel.
+
+       Most textured quads need nothing from row A, and most quads that need row A sample no
+       texture, so a record usually carries one half or the other.  The pair is kept as ONE record
+       kind anyway -- two would need a second tag bit the index word does not have.
+
+       Whole GLYPHS never come here: their rect is resolved from the glyph table by ID (gui_quad_
+       idx_glyph), which is what lets cached text survive an atlas repack. */
+
+    u32 uv0;            // texcoord min corner, packed unorm16 pair
+    u32 uv1;            // texcoord max corner, packed unorm16 pair
+    u32 reserved_b;     // both zero-written, for the dedup memo above
+    u32 reserved_c;
 
 } gui_fx_t;
 
-#define GUI_FX_BYTES    16u
+#define GUI_FX_ROWS     2u
+#define GUI_FX_BYTES    ( GUI_FX_ROWS * 16u )
 
 ORB_STATIC_ASSERT( sizeof( gui_fx_t ) == GUI_FX_BYTES,
-                   "gui_fx_t must be exactly one 16-byte row -- it is addressed by row index" );
+                   "gui_fx_t must stay whole 16-byte rows -- it is addressed by row index" );
+
+ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
+                   "fx records tile a style record exactly -- a page holds GUI_PRIM_ROWS/GUI_FX_ROWS" );
 
 /* The vertex stage's EXPANSION RULE (flags bits 0-1): how the covering corners derive from the
    stored extents.  Only SKIRT and CAPSULE take the pad; the other two cover exactly what they
@@ -2296,7 +2353,7 @@ static inline u32 gui_quad_style( u32 idx ) { return ( idx >> GUI_QUAD_STYLE_SHI
 static inline u32 gui_quad_fx   ( u32 idx ) { return ( idx >> GUI_QUAD_FX_SHIFT    ) & GUI_QUAD_FX_MASK;    }
 static inline u32 gui_quad_glyph( u32 idx ) { return ( idx >> GUI_QUAD_GLYPH_SHIFT ) & GUI_QUAD_GLYPH_MASK; }
 
-/* UV -> two unorm16 -- the packing the quad record's uv0/uv1 lanes carry.  Clamped, because that
+/* UV -> two unorm16 -- the packing the instance record's uv0/uv1 lanes carry.  Clamped, because that
    is the only thing the format can do with an out-of-range coordinate -- a caller that wants U
    past 1 asks for GUI_OP_TILE_U instead.
 

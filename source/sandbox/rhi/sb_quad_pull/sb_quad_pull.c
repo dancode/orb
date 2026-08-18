@@ -6,7 +6,7 @@
     Two pipelines draw the same N quads and are measured against each other:
 
         PULL  no vertex buffer at all.  cmd_draw of 6 * N bare vertices; the vertex stage
-              computes quad / corner from SV_VertexID, fetches the 32-byte gui_quad_t record
+              computes quad / corner from SV_VertexID, fetches the 16-byte gui_quad_t record
               from a bindless storage buffer, fetches its style's feather for the expansion
               pad, and expands centre +- (half-extent + pad) itself.
         VB    the control arm: the CPU expands every quad into six 20-byte vertices
@@ -149,12 +149,10 @@ gen_quads( u32 count, bool large )
                  |   ( 0x40u + ( qp_rand( &rng ) & 0xBFu ) );
 
         s_quads[ i ] = ( gui_quad_t ){
-            .cx    = cx,
-            .cy    = cy,
-            .hw    = hw,
-            .hh    = hh,
-            .uv0   = gui_uv_pack( 0.0f, 0.0f ),
-            .uv1   = gui_uv_pack( 1.0f, 1.0f ),
+            .cx    = gui_quad_pos_pack( cx ),
+            .cy    = gui_quad_pos_pack( cy ),
+            .hw    = gui_quad_ext_pack( hw ),
+            .hh    = gui_quad_ext_pack( hh ),
             .abgr  = abgr,
             .idx   = gui_quad_idx( GUI_QUAD_RULE_EXACT, 0u, i % QP_STYLES, 0u ),
         };
@@ -169,8 +167,10 @@ jitter_quads( u32 count, u64 frame )
     f32 t = (f32)( frame % 628u ) * 0.01f;
     for ( u32 i = 0; i < count; ++i )
     {
-        s_quads[ i ].cx += sinf( t + (f32)( i & 63u ) ) * 0.25f;
-        s_quads[ i ].cy += cosf( t + (f32)( i & 31u ) ) * 0.25f;
+        s_quads[ i ].cx = gui_quad_pos_pack( (f32)s_quads[ i ].cx * 0.25f
+                                            + sinf( t + (f32)( i & 63u ) ) * 0.25f );
+        s_quads[ i ].cy = gui_quad_pos_pack( (f32)s_quads[ i ].cy * 0.25f
+                                            + cosf( t + (f32)( i & 31u ) ) * 0.25f );
     }
 }
 
@@ -187,10 +187,12 @@ expand_vb( u32 count )
         const gui_quad_t* q     = &s_quads[ i ];
         u32               style = gui_quad_style( q->idx );
         f32               pad   = k_style_feather[ style ] + 1.0f;
-        f32               x0  = q->cx - ( q->hw + pad );
-        f32               y0  = q->cy - ( q->hh + pad );
-        f32               x1  = q->cx + ( q->hw + pad );
-        f32               y1  = q->cy + ( q->hh + pad );
+        f32               cx  = (f32)q->cx * 0.25f, cy = (f32)q->cy * 0.25f;
+        f32               hw  = (f32)q->hw * 0.25f, hh = (f32)q->hh * 0.25f;
+        f32               x0  = cx - ( hw + pad );
+        f32               y0  = cy - ( hh + pad );
+        f32               x1  = cx + ( hw + pad );
+        f32               y1  = cy + ( hh + pad );
 
         qp_vert_t* v = &s_verts[ i * 6u ];
         for ( u32 c = 0; c < 6u; ++c )

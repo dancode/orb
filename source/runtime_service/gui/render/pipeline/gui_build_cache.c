@@ -25,6 +25,7 @@
    report below to name the window that blew the geometry caps.  Returns the registered title in
    debug builds (windows register via DBG_NAME in window_begin_ex), NULL when the name registry is
    compiled out (release) or the id was never registered. */
+
 const char* gui_debug_name( gui_id_t id );
 
 /*==============================================================================================
