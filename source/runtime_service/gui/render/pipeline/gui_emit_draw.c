@@ -148,6 +148,15 @@ static struct
        only touches it to override one shape. */
     f32 corner_pow;
 
+    /* Ambient ANIMATION CURVE, folded into every shape that carries a clock -- the pulse, the
+       spinner, the marching ants (gui_curve_t, gui_prim_t row 5).  Ambient rather than a
+       parameter on each of those calls because it is one property of MOTION, and a seam that
+       wants its whole panel to move on the same easing should say so once.  GUI_CURVE_LINEAR
+       leaves the phase unshaped, which is what a spin and a scroll want; a pulse that names no
+       curve gets the raised cosine it has always had, resolved at push time below. */
+    u32 anim_curve;
+    f32 anim_curve_param;
+
     /* Ambient BORDER ALIGNMENT for the stroked box family: where the band sits against the
        authored boundary.  0 = inside (the band's outer edge on the boundary -- the default every
        outline has always had), 0.5 = centred, 1 = outside (the band's inner edge on it).
@@ -708,6 +717,24 @@ draw_set_corner_smooth( f32 t )
     if ( t > 1.0f )
         t = 1.0f;
     s_draw.corner_pow = 2.0f + 4.0f * t;
+}
+
+/* The curve every animating shape pushed after this call is shaped by, and the parameter that
+   curve reads (an exponent, a step count, a duty -- gui_curve_t says which).  Ambient like the
+   radius: set it around the shapes it should affect and restore it after.
+   GUI_CURVE_LINEAR, the default, means the phase drives the effect unshaped. */
+void
+draw_set_anim_curve( u32 curve, f32 param )
+{
+    s_draw.anim_curve       = curve;
+    s_draw.anim_curve_param = param;
+}
+
+void
+draw_get_anim_curve( u32* curve, f32* param )
+{
+    if ( curve ) *curve = s_draw.anim_curve;
+    if ( param ) *param = s_draw.anim_curve_param;
 }
 
 /* The installed profile as the 0..1 amount that was authored, so a site can save / override /
@@ -1338,6 +1365,15 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
     c->fx_box.variant  = variant;
     c->fx_box.cut_dx   = cut_dx;
     c->fx_box.cut_dy   = cut_dy;
+    /* A pulse that names no curve breathes on the raised cosine it always has: a sawtooth would
+       snap back to full every cycle, which is not what breathing is.  Resolved here, at the one
+       site that knows the shape is pulsing at all.  A shadow is not animated, so it takes no
+       curve however the ambient is set -- the command hash must not move for a shape whose
+       motion nothing reads. */
+    c->fx_box.curve       = ( rate <= 0.0f ) ? 0u
+                          : ( ( s_draw.anim_curve == GUI_CURVE_LINEAR )
+                              ? (u32)GUI_CURVE_SINE : s_draw.anim_curve );
+    c->fx_box.curve_param = ( rate > 0.0f ) ? s_draw.anim_curve_param : 0.0f;
     draw_cmd_seal();
 }
 
@@ -1478,6 +1514,8 @@ draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     c->arc.spin_rate  = spin_rate;
     c->arc.spin_phase = spin_phase;
     c->arc.abgr       = col;
+    c->arc.curve       = s_draw.anim_curve;
+    c->arc.curve_param = s_draw.anim_curve_param;
     draw_cmd_seal();
 }
 
@@ -1734,6 +1772,8 @@ draw_push_box_dashed( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
     c->box_dash.rate     = rate;
     c->box_dash.phase    = phase;
     c->box_dash.abgr     = col;
+    c->box_dash.curve       = s_draw.anim_curve;
+    c->box_dash.curve_param = s_draw.anim_curve_param;
     draw_cmd_seal();
 }
 

@@ -955,6 +955,58 @@ win_depth( void )
         keep_awake();
     }
 
+    /* The shaping stage, on its own.  Every chip below is the SAME pulse at the SAME rate; what
+       differs is the curve the phase is bent through before it reaches the coverage.  The last
+       two show the same eight curves driving something other than a pulse -- a rotation and a
+       dash offset -- which is the whole reason the stage sits between the clock and the effect
+       rather than inside any one op. */
+    gui()->separator_text( "draw_set_anim_curve -- one clock, eight shapes of motion" );
+    {
+        static const struct { u32 curve; f32 param; const char* label; } k_curves[] = {
+            { GUI_CURVE_SINE,     0.0f, "sine"   },
+            { GUI_CURVE_TRIANGLE, 0.0f, "tri"    },
+            { GUI_CURVE_SMOOTH,   0.0f, "smooth" },
+            { GUI_CURVE_EASE,     3.0f, "ease3"  },
+            { GUI_CURVE_STAIR,    4.0f, "stair4" },
+            { GUI_CURVE_SQUARE,   0.7f, "blink"  },
+            { GUI_CURVE_DECAY,    5.0f, "decay"  },
+        };
+
+        gui_rect_t cell = gui()->canvas( 132.0f );
+        gui()->draw_rect( cell.x, cell.y, cell.w, cell.h, PANEL );
+
+        f32 save = gui()->draw_rounding();
+        f32 x    = cell.x + 22.0f;
+        for ( u32 i = 0; i < ARRAY_COUNT( k_curves ); ++i, x += 74.0f )
+        {
+            gui()->draw_set_anim_curve( k_curves[ i ].curve, k_curves[ i ].param );
+            gui()->draw_set_rounding( 6.0f );
+            gui()->draw_pulse( ( gui_rect_t ){ x, cell.y + 22.0f, 58.0f, 34.0f },
+                               0.8f, 0.75f, 0.0f, GUI_COLOR( 0x30, 0x38, 0x58, 0xFF ) );
+            gui()->draw_set_rounding( save );
+            gui()->draw_set_anim_curve( GUI_CURVE_LINEAR, 0.0f );
+            gui()->draw_text( x + 4.0f, cell.y + 60.0f, INK_DIM, k_curves[ i ].label );
+        }
+
+        /* STAIR on a spin: the clock-hand spinner, which ticks between positions instead of
+           sweeping -- the same arc the smooth spinner draws, one curve apart. */
+        gui()->draw_set_anim_curve( GUI_CURVE_STAIR, 8.0f );
+        gui()->draw_spinner( ( gui_rect_t ){ cell.x + 24.0f, cell.y + 84.0f, 32.0f, 32.0f },
+                             1.0f, 3.0f, ACCENT );
+        gui()->draw_set_anim_curve( GUI_CURVE_LINEAR, 0.0f );
+        gui()->draw_text( cell.x + 64.0f, cell.y + 92.0f, INK_DIM, "stair8 spin -- ticks" );
+
+        /* STAIR on the marching ants: the dashes jump a whole period at a time. */
+        gui()->draw_set_anim_curve( GUI_CURVE_STAIR, 6.0f );
+        gui()->draw_round_rect_dashed( ( gui_rect_t ){ cell.x + 250.0f, cell.y + 86.0f,
+                                                      150.0f, 30.0f },
+                                       6.0f, 1.5f, 7.0f, 5.0f, 26.0f, ACCENT );
+        gui()->draw_set_anim_curve( GUI_CURVE_LINEAR, 0.0f );
+        gui()->draw_text( cell.x + 412.0f, cell.y + 94.0f, INK_DIM, "stair6 ants -- jump" );
+
+        keep_awake();
+    }
+
     gui()->text( "a pulse's command bytes never change -- its hash never changes -- the window's "
                  "retained geometry stays valid the whole time it breathes" );
 }

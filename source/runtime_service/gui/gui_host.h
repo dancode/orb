@@ -185,6 +185,8 @@ void gui_draw_set_rounding( f32 r );
 f32  gui_draw_rounding( void );
 void gui_draw_set_corner_smooth( f32 t );
 f32  gui_draw_corner_smooth( void );
+void gui_draw_set_anim_curve( u32 curve, f32 param );
+void gui_draw_get_anim_curve( u32* curve, f32* param );
 void gui_draw_set_border_align( f32 a );
 f32  gui_draw_border_align( void );
 

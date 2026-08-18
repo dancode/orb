@@ -789,11 +789,14 @@ typedef struct
     f32 grad_ang;         // GUI_OP_GRAD: axis, radians, box-local, 0 points +x (linear ramp only)
     f32 grad_mid;         // GUI_OP_GRAD: midpoint bend, already the exponent (0 = linear)
     f32 cut_dx, cut_dy;   // GUI_OP_CUT: the cut boundary's centre, offset from this shape's
-    f32 anim_rate;        // GUI_OP_DASH: pattern scroll px/sec; GUI_OP_PULSE: unused (rate = param_a)
-    f32 anim_phase;       // CYCLES, for every animating op -- one unit the quad's phase lane
-                          //   carries whatever the op means by a period (gui.h)
+    f32 anim_rate;        // CYCLES/SEC, for every animating op -- one unit, whatever a cycle
+                          //   means to the op reading it (gui.h row 5)
+    f32 anim_phase;       // CYCLES, the static offset that staggers same-rate elements
+    u32 anim_curve;       // gui_curve_t: what the phase does between its endpoints
+    f32 anim_param;       // the curve's own parameter -- exponent, step count, duty
     f32 dash_period;      // GUI_OP_DASH: px per on+off cycle, already snapped to the perimeter
     f32 dash_duty;        // GUI_OP_DASH: on-fraction of the period
+    f32 dash_scroll;      // GUI_OP_DASH: periods slid per cycle -- 1 marches, 0 pins to the shape
 
 } tess_fx_aux_t;
 
@@ -885,8 +888,12 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     s_tess.cur_prim.border  = ( s_tess.cur_ops & ( GUI_OP_BAND | GUI_OP_FRAME ) ) ? border : 0.0f;
     s_tess.cur_rot_c = rcs;
     s_tess.cur_rot_s = rsn;
-    s_tess.cur_prim.param_a = ( s_tess.cur_ops & GUI_OP_PULSE ) ? rate  : 0.0f;
-    s_tess.cur_prim.param_b = ( s_tess.cur_ops & GUI_OP_PULSE ) ? depth : 0.0f;
+    /* The pulse states only its DEPTH as a parameter of its own; its rate joins the shared
+       animation clock, which is what lets a curve authored once shape the breath, the spin and
+       the marching ants alike. */
+    s_tess.cur_prim.param_a = ( s_tess.cur_ops & GUI_OP_PULSE ) ? depth : 0.0f;
+    if ( s_tess.cur_ops & GUI_OP_PULSE )
+        s_tess.cur_prim.anim_rate = rate;
 
     /* The corner profile -- ambient over the command, like the ops, and applied only where there
        is a corner to profile: a square box has no arc to reshape, and leaving the lane at zero is
@@ -905,10 +912,14 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     {
         s_tess.cur_prim.dash_period = aux->dash_period;
         s_tess.cur_prim.dash_duty   = aux->dash_duty;
+        s_tess.cur_prim.dash_scroll = aux->dash_scroll;
     }
+    if ( aux && ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_SPIN ) ) )
+        s_tess.cur_prim.anim_rate = aux->anim_rate;
     if ( aux && ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_PULSE | GUI_OP_SPIN ) ) )
     {
-        s_tess.cur_prim.anim_rate  = aux->anim_rate;
+        s_tess.cur_prim.anim_curve = aux->anim_curve;
+        s_tess.cur_prim.anim_param = aux->anim_param;
         s_tess.cur_phase = aux->anim_phase;
     }
 
@@ -1152,7 +1163,7 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
 static void
 tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
              gui_fx_mode_t mode, f32 uvx, f32 uvy, f32 dash_turns, f32 dash_duty,
-             f32 spin_rate, f32 spin_phase, u32 abgr )
+             f32 spin_rate, f32 spin_phase, u32 curve, f32 curve_param, u32 abgr )
 {
     if ( r <= 0.0f )
         return;
@@ -1263,6 +1274,20 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
         s_tess.cur_ops |= GUI_OP_SELF | GUI_OP_DASH;
         s_tess.cur_prim.dash_period = period;
         s_tess.cur_prim.dash_duty   = dash_duty;
+
+        /* A spinning sector already carries its dashes around with it -- the boundary coordinate
+           they are cut on is measured in the frame the spin rotates -- so the pattern is pinned
+           to the shape rather than scrolled a second time along it.  A static sector has no
+           rotation to ride, so there the clock is what moves the pattern at all. */
+        s_tess.cur_prim.dash_scroll = ( spin_rate != 0.0f ) ? 0.0f : 1.0f;
+    }
+
+    /* The curve belongs to the clock, not to any one op that reads it, so it lands once here for
+       whichever of the two the sector turned on. */
+    if ( s_tess.cur_ops & ( GUI_OP_SPIN | GUI_OP_DASH ) )
+    {
+        s_tess.cur_prim.anim_curve = curve;
+        s_tess.cur_prim.anim_param = curve_param;
     }
 
     /* ARC_GRAD still carries its second colour as a packed pair, which the self-sampled bit
@@ -1886,6 +1911,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                     aux.cut_dx     = c->fx_box.cut_dx;
                     aux.cut_dy     = c->fx_box.cut_dy;
                     aux.anim_phase = c->fx_box.phase;
+                    aux.anim_curve = c->fx_box.curve;
+                    aux.anim_param = c->fx_box.curve_param;
                     s_tess.cur_corner_pow = c->fx_box.corner_pow;
                     tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
                                  c->fx_box.rounding, c->fx_box.feather, 0.0f,
@@ -1913,13 +1940,15 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_ARC:
                 tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, c->arc.thickness,
                              c->arc.a0, c->arc.a1, GUI_FX_ARC, 0.0f, 0.0f, 0.0f, 0.0f,
-                             c->arc.spin_rate, c->arc.spin_phase, c->arc.abgr );
+                             c->arc.spin_rate, c->arc.spin_phase,
+                             c->arc.curve, c->arc.curve_param, c->arc.abgr );
                 break;
 
             case GUI_CMD_PIE:
                 tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, 0.0f,
                              c->arc.a0, c->arc.a1, GUI_FX_PIE, 0.0f, 0.0f, 0.0f, 0.0f,
-                             c->arc.spin_rate, c->arc.spin_phase, c->arc.abgr );
+                             c->arc.spin_rate, c->arc.spin_phase,
+                             c->arc.curve, c->arc.curve_param, c->arc.abgr );
                 break;
 
             case GUI_CMD_ARC_DASH:
@@ -1927,7 +1956,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              c->arc_dash.thickness, c->arc_dash.a0, c->arc_dash.a1,
                              GUI_FX_ARC, 0.0f, 0.0f,
                              c->arc_dash.period / TESS_TAU, c->arc_dash.duty,
-                             0.0f, 0.0f, c->arc_dash.abgr );
+                             0.0f, 0.0f, 0u, 0.0f, c->arc_dash.abgr );
                 break;
 
             /* GRAD splits col_b's four bytes across the two unorm16 uv lanes -- the shader
@@ -1938,7 +1967,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              GUI_FX_ARC_GRAD,
                              (f32)(   c->arc_grad.col_b         & 0xFFFFu ) / 65535.0f,
                              (f32)( ( c->arc_grad.col_b >> 16 ) & 0xFFFFu ) / 65535.0f,
-                             0.0f, 0.0f, 0.0f, 0.0f, c->arc_grad.col_a );
+                             0.0f, 0.0f, 0.0f, 0.0f, 0u, 0.0f, c->arc_grad.col_a );
                 break;
 
             /* The framebuffer-tiling patterns: the fragment does the tiling, the CPU's share is
@@ -1984,10 +2013,15 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 tess_fx_aux_t aux = { 0 };
                 aux.dash_period = L / n;
                 aux.dash_duty   = c->box_dash.dash / period;
-                aux.anim_rate   = c->box_dash.rate;
+                aux.dash_scroll = 1.0f;                   /* the ants: one period per cycle */
+                aux.anim_curve  = c->box_dash.curve;
+                aux.anim_param  = c->box_dash.curve_param;
 
-                /* The caller states its static offset in PERIMETER PX; the quad's phase lane is in
-                   cycles, the one unit every animating op reads.  Convert once, here. */
+                /* The caller speaks in PERIMETER PX -- px/sec of scroll, a px offset.  The clock
+                   speaks in cycles, the one unit every animating op reads.  Convert both once,
+                   here, against the period the snap above just settled. */
+                aux.anim_rate   = ( aux.dash_period > 0.0f )
+                                ? c->box_dash.rate  / aux.dash_period : 0.0f;
                 aux.anim_phase  = ( aux.dash_period > 0.0f )
                                 ? c->box_dash.phase / aux.dash_period : 0.0f;
 

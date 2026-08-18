@@ -62,6 +62,8 @@ test_prim_layout( void )
     test_equal( 48u, (u32)offsetof( gui_prim_t, param_a ) );
     test_equal( 64u, (u32)offsetof( gui_prim_t, grad_x  ) );
     test_equal( 80u, (u32)offsetof( gui_prim_t, anim_rate   ) );
+    test_equal( 84u, (u32)offsetof( gui_prim_t, anim_curve  ) );
+    test_equal( 88u, (u32)offsetof( gui_prim_t, anim_param  ) );
     test_equal( 96u, (u32)offsetof( gui_prim_t, dash_period ) );
 
     /* Within-row order, since a row is read as one vec4 and its components are positional. */
@@ -78,8 +80,9 @@ test_prim_layout( void )
     test_equal( 68u, (u32)offsetof( gui_prim_t, grad_y  ) );
     test_equal( 72u, (u32)offsetof( gui_prim_t, cut_dx  ) );
     test_equal( 76u, (u32)offsetof( gui_prim_t, cut_dy  ) );
-    test_equal( 88u, (u32)offsetof( gui_prim_t, grad_mid   ) );
-    test_equal( 100u, (u32)offsetof( gui_prim_t, dash_duty  ) );
+    test_equal( 92u, (u32)offsetof( gui_prim_t, grad_mid    ) );
+    test_equal( 100u, (u32)offsetof( gui_prim_t, dash_duty   ) );
+    test_equal( 104u, (u32)offsetof( gui_prim_t, dash_scroll ) );
 }
 
 static void

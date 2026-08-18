@@ -33,6 +33,20 @@
 #define OP_DITHER       0x800u
 #define OP_FRAME        0x1000u
 
+// The ops that read the animation clock.  One test decides whether row 5 is fetched at all, so a
+// static shape never pays for the timebase it does not use.
+#define OP_ANIMATED     ( OP_PULSE | OP_SPIN | OP_DASH )
+
+// gui_curve_t: the shaping stage between the timebase and the effect.
+#define CURVE_LINEAR    0u
+#define CURVE_SINE      1u
+#define CURVE_TRIANGLE  2u
+#define CURVE_SMOOTH    3u
+#define CURVE_EASE      4u
+#define CURVE_STAIR     5u
+#define CURVE_SQUARE    6u
+#define CURVE_DECAY     7u
+
 #define TEX_MODE_SHIFT  28u
 #define TEX_INDEX_MASK  0x0FFFFFFFu
 
@@ -71,6 +85,14 @@ static uint g_tex;      // sampling model | bindless slot
 static float2 g_rot   = float2( 1.0, 0.0 );
 static float  g_phase = 0.0;
 
+// The animation clock, resolved once in main() and read by every animating op instead of pc.time.
+// g_phi is where in the cycle this fragment sits; g_k is that phase after the record's curve has
+// shaped it.  Splitting them is what makes a stepped spinner, an eased dash and a square-wave
+// blink the same mechanism -- and what keeps two ops on one record moving together, since they
+// share the phase rather than each deriving their own.
+static float g_phi = 0.0;
+static float g_k   = 0.0;
+
 // OP_SPIN's rotation on the frame clock, resolved once per fragment in main() and composed into
 // every shape-local frame prim_local derives.  Identity when the op is absent, so the compose
 // below costs the same four multiplies either way.
@@ -84,6 +106,30 @@ static float g_frame_band = 0.0;
 float4 prim_row( uint r )
 {
     return u_buffers[ pc.prim_buf ][ g_row + r ];
+}
+
+// The SHAPING stage: a normalized phase in, a normalized amount out.  It knows nothing about what
+// it drives, which is the point -- the same eight curves bend a rotation, a dash offset and a
+// coverage breath, so easing is one mechanism rather than one per effect.
+//
+// Every curve leaves 0 at phase 0 except DECAY, which starts at its peak and falls: a flash is
+// exactly the thing that has already happened by the time you see it start.
+float fx_curve( float phi, uint kind, float p )
+{
+    switch ( kind )
+    {
+        case CURVE_SINE:     return 0.5 - 0.5 * cos( 6.28318531 * phi );
+        case CURVE_TRIANGLE: return 1.0 - abs( 2.0 * phi - 1.0 );
+        case CURVE_SMOOTH:   return phi * phi * ( 3.0 - 2.0 * phi );
+        case CURVE_EASE:     return pow( phi, max( p, 1e-3 ) );
+        // Steps of equal height, the last one landing exactly on 1 -- a hand that ticks between
+        // positions.  Fewer than two steps is not a staircase, so it clamps rather than dividing
+        // by zero.
+        case CURVE_STAIR:  { float n = max( p, 2.0 ); return floor( phi * n ) / ( n - 1.0 ); }
+        case CURVE_SQUARE:   return ( phi < p ) ? 0.0 : 1.0;
+        case CURVE_DECAY:    return exp( -max( p, 0.0 ) * phi );
+        default:             return phi;                                  // CURVE_LINEAR
+    }
 }
 
 // The shape's PLACEMENT -- centre and half-extent, off the per-quad interpolant and cached in a
@@ -204,8 +250,9 @@ float box_perimeter_s( float2 p, float2 he, float4 rad )
         mul     coverage from a field that has no boundary at all -- the lattice multiplies here
         shaped  false = no boundary: the d-based ops sit this one out, the rest still apply
 
-    pc.time -- the wrapped frame clock -- is the animation seam, read through g_phase so a set of
-    elements sharing one style can still stagger.  Frame-constant: no re-emit, no batch split.
+    pc.time -- the wrapped frame clock -- is the animation seam, and no op reads it directly: it
+    becomes g_phi (where in the cycle, staggered per quad by g_phase) and then g_k (that phase
+    shaped by the record's curve).  Frame-constant: no re-emit, no batch split.
 ==================================================================================================*/
 
 struct fx_field_t
@@ -449,9 +496,7 @@ float fx_coverage( float2 px )
     if ( f.shaped && ( g_ops & OP_DASH ) != 0u )
     {
         float4 dsh = prim_row( 6u );
-        float  rate = prim_row( 5u ).x;
-        cov = min( cov, fx_dash_cut( f.s - ( rate * pc.time + g_phase * dsh.x ),
-                                     dsh.x, dsh.y ) );
+        cov = min( cov, fx_dash_cut( f.s - g_k * dsh.x * dsh.z, dsh.x, dsh.y ) );
     }
 
     // CUT -- the interior cut away.  The outward half of the falloff is untouched, so a cut surface
@@ -479,15 +524,11 @@ float fx_coverage( float2 px )
         cov = saturate( 1.0 + f.d / max( f.aa, 1e-4 ) ) * saturate( 0.5 - f.d );
 
     // PULSE -- breathe the coverage on the frame clock.  The one op here that needs no boundary,
-    // so it reaches every field including a plain fill.  The wave starts at its PEAK (cos 0 = 1,
-    // no attenuation), so a pulse fading in from nothing is never what the first frame shows.
+    // so it reaches every field including a plain fill.  k is the depth reached, and every curve
+    // but DECAY leaves it at 0 on the first frame -- a pulse fading in from nothing is not what
+    // the shape shows before it has moved.
     if ( ( g_ops & OP_PULSE ) != 0u )
-    {
-        float4 parm  = prim_row( 3u );
-        float  rate  = parm.x;
-        float  depth = parm.y;
-        cov *= 1.0 - depth * ( 0.5 - 0.5 * cos( 6.28318531 * ( rate * pc.time + g_phase ) ) );
-    }
+        cov *= 1.0 - prim_row( 3u ).x * g_k;
 
     return cov;
 }
@@ -538,13 +579,22 @@ float4 main( ps_in_t i ) : SV_Target0
     g_phase         = i.inst.z;
     uint clip_entry = i.clip;
 
-    // OP_SPIN: the clock-driven angle, resolved once and composed into every shape-local frame
-    // below (prim_local).  anim_rate is turns/sec off the style, the phase is turns off the quad,
-    // so the animation re-emits nothing -- only pc.time moves -- and a staggered set of spinners
-    // still shares one style.
+    // The animation clock, resolved once for every op that reads it.  anim_rate is cycles/sec off
+    // the style and the phase is cycles off the quad, so the animation re-emits nothing -- only
+    // pc.time moves -- and a staggered set still shares one style.  The curve then shapes the
+    // phase; ops downstream see only g_k and never the clock.
+    if ( ( g_ops & OP_ANIMATED ) != 0u )
+    {
+        float4 anim = prim_row( 5u );
+        g_phi = frac( anim.x * pc.time + g_phase );
+        g_k   = fx_curve( g_phi, asuint( anim.y ), anim.z );
+    }
+
+    // OP_SPIN turns the local frame through one revolution per cycle, composed into every
+    // shape-local frame prim_local derives below.
     if ( ( g_ops & OP_SPIN ) != 0u )
     {
-        float a = 6.28318531 * ( prim_row( 5u ).x * pc.time + g_phase );
+        float a = 6.28318531 * g_k;
         g_spin_c = cos( a );
         g_spin_s = sin( a );
     }
@@ -669,7 +719,7 @@ float4 main( ps_in_t i ) : SV_Target0
         // The midpoint bend: grad_mid is the EXPONENT the emit site mapped the authored 0..1
         // midpoint to (ln 0.5 / ln mid), so t = 0.5 lands where the author put it.  0 means the
         // linear default and skips the pow.
-        float e = prim_row( 5u ).z;
+        float e = prim_row( 5u ).w;
         if ( e > 0.0 )
             t = pow( t, e );
 

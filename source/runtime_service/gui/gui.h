@@ -1893,7 +1893,7 @@ typedef struct
          GRID           param = cell, line thickness, angle
          TILE_U         param_a = repeat count
          TEXT_EDGE      param_a = outline width                   col_b = the outline colour
-         GUI_OP_PULSE   param_a = rate (Hz), param_b = depth      (on any field it modifies)
+         GUI_OP_PULSE   param_a = depth 0..1   (the rate and its wave are row 5)
          GUI_OP_GRAD    col_b   = the ramp's far colour
        (BOX's corner profile moved to row 2, beside the feather that shares its fetch.) */
 
@@ -1912,28 +1912,49 @@ typedef struct
 
     f32 grad_x, grad_y, cut_dx, cut_dy;
 
-    /* Row 5 -- the ANIMATION RATE, plus the ramp's midpoint.  anim_rate belongs to whichever
-       animating op the record carries; at most one interpretation is live per record.  The PHASE
-       is deliberately absent -- it rides the quad (gui_quad_t, flags bits 16-31), since a set of
-       staggered elements shares one rate and differs only in phase.
-         GUI_OP_SPIN   anim_rate = turns/sec the local frame rotates at (on pc.time).  The frame
-                       carries every field and op with it, so a spinner, a radar sweep and a
-                       rotating dashed ring are all this one op over shapes that already exist.
-         GUI_OP_DASH   anim_rate = px/sec the dash pattern scrolls along the shape's boundary
+    /* Row 5 -- the ANIMATION CLOCK, plus the ramp's midpoint.  The clock is decomposed into a
+       TIMEBASE and a SHAPE, and every animating op reads the result rather than pc.time:
+
+           phi = frac( anim_rate * time + phase )     where in the cycle we are, 0..1
+           k   = curve( phi )                          how far along the effect that is, 0..1
+
+       anim_rate is CYCLES PER SECOND for every op -- turns/sec for a spin, dash-periods/sec for
+       the ants, Hz for a pulse are all the same number -- so one timebase serves all three and a
+       record carrying several animates them coherently instead of letting them drift.  The PHASE
+       is deliberately absent from this row: it rides the quad (gui_quad_t, flags bits 16-31),
+       since a set of staggered elements shares one rate and differs only in phase.
+
+       anim_curve / anim_param are the shaping stage (gui_curve_t): what a normalized phase does
+       between its endpoints.  The param's meaning belongs to the curve -- an exponent, a step
+       count, a duty -- the same way anim_rate's unit belongs to its op.  This is what makes a
+       stepped spinner, an eased dash and a square-wave blink one mechanism rather than three.
+
+       What each op does with k:
+         GUI_OP_SPIN   k turns the local frame through one full revolution.  The frame carries
+                       every field and op with it, so a spinner, a radar sweep and a rotating
+                       dashed ring are all this one op over shapes that already exist.
+         GUI_OP_DASH   k slides the pattern one dash period along the shape's boundary
                        coordinate -- the marching ants.
-         GUI_OP_PULSE  anim_rate is unused here; the pulse states its rate in param_a.
+         GUI_OP_PULSE  k is the depth of the breath: coverage *= 1 - param_a * k.
          GUI_OP_GRAD   grad_mid = the exponent bending the ramp's t about its midpoint, mapped
                        once at the emit site (ln 0.5 / ln mid); 0 means the linear default. */
 
-    f32 anim_rate, reserved_anim, grad_mid, reserved_a;
+    f32 anim_rate;
+    u32 anim_curve;
+    f32 anim_param, grad_mid;
 
     /* Row 6 -- GUI_OP_DASH's pattern, in ARC-LENGTH px along the shape's perimeter (the
        draw_arc_dashed vocabulary, walked around a box instead of a circle).  The emit site snaps
        the period so whole cycles fit the perimeter -- a closed dashed border meets itself.  Its
-       own row for the reason row 4 exists: PULSE owns param_a/b, and a dash that fought it for
-       them would rebuild the "ops that cannot compose" trap the record deleted. */
+       own row for the reason row 4 exists: PULSE owns param_a, and a dash that fought it for the
+       lane would rebuild the "ops that cannot compose" trap the record deleted.
 
-    f32 dash_period, dash_duty, reserved_b, reserved_c;
+       dash_scroll is how far the clock slides the pattern: periods per animation cycle, so 1 is
+       the marching ants and 0 pins the dashes to the shape.  0 is what a SPINNING dashed ring
+       wants -- its boundary coordinate is measured in the rotating frame, so the dashes already
+       travel with it and any scroll on top of that is a second, unwanted crawl. */
+
+    f32 dash_period, dash_duty, dash_scroll, reserved_c;
 
 } gui_prim_t;
 
@@ -1980,6 +2001,26 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
                                          body + border in ONE quad.  The band's colour rides the
                                          QUAD's col_b (gui_quad_t), not the style -- an animated
                                          border never adds a style record                       */
+
+/* The SHAPING stage of the animation clock (gui_prim_t row 5): what a normalized phase 0..1 does
+   between its endpoints.  It sits between the timebase and the effect, so one curve bends whatever
+   the record animates -- a spin, the marching ants, a pulse -- and any two of them driven by one
+   phase stay in step.  Every curve rises from 0 at phase 0 except DECAY, which is the flash.
+
+   `param` belongs to the curve, the way anim_rate's unit belongs to its op; the curves that name
+   no param ignore it. */
+typedef enum
+{
+    GUI_CURVE_LINEAR = 0,   // k = phase.  The sawtooth: ramp, snap back.  Ambient default.
+    GUI_CURVE_SINE,         // raised cosine, 0 -> 1 -> 0.  The breath every pulse had before
+                            //   curves existed, and what a pulse still gets when none is named.
+    GUI_CURVE_TRIANGLE,     // linear out and back -- the sine's cheap, sharper twin
+    GUI_CURVE_SMOOTH,       // smoothstep: ease in AND out, still ending where it started+1
+    GUI_CURVE_EASE,         // pow( phase, param ).  param > 1 eases in, < 1 eases out, 1 = linear
+    GUI_CURVE_STAIR,        // param steps of equal height -- the mechanical clock-hand spinner
+    GUI_CURVE_SQUARE,       // holds 0 for the first `param` of the cycle, then 1: the blink
+    GUI_CURVE_DECAY,        // exp( -param * phase ).  Starts at 1 and falls: the flash that fades
+} gui_curve_t;
 
 /* Which way a ramp runs, as a draw parameter.  The record carries it as the op bits above; this is
    the spelling a caller uses, where "at most one" is a property of the type rather than a rule. */
@@ -2409,10 +2450,12 @@ typedef struct
            what makes a cast DIRECTIONAL, and 0 is the even one every caller had before.  The
            offset is in the shape's LOCAL frame -- the same as screen for the axis-aligned boxes
            that are the only things which cast. */
-        /* `phase` offsets the pulse wave in CYCLES (record anim_phase), so same-rate pulses can
-           stagger instead of beating in lockstep; 0 for every non-pulsing variant. */
+        /* `phase` offsets the pulse wave in CYCLES, so same-rate pulses can stagger instead of
+           beating in lockstep; 0 for every non-pulsing variant.  `curve`/`curve_param` shape the
+           wave (gui_curve_t), baked from the ambient at push time. */
         struct { f32 x, y, w, h; f32 rounding, corner_pow, feather, rate, depth, rot;
-                 u32 abgr, variant; f32 cut_dx, cut_dy; f32 phase; } fx_box;
+                 u32 abgr, variant; f32 cut_dx, cut_dy; f32 phase;
+                 u32 curve; f32 curve_param; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME one quad a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape
@@ -2450,7 +2493,10 @@ typedef struct
         /* spin_rate (turns/sec) + spin_phase (turns) put the sector under GUI_OP_SPIN: the whole
            frame rotates on pc.time in the FRAGMENT, so a spinner's bytes are identical every
            frame and it re-tessellates nothing -- the pulse contract for rotation.  0 = static. */
-        struct { f32 cx, cy, r, thickness, a0, a1; f32 spin_rate, spin_phase; u32 abgr; } arc;
+        /* `curve`/`curve_param` shape the revolution (gui_curve_t): STAIR is the clock-hand
+           spinner that ticks between positions rather than sweeping. */
+        struct { f32 cx, cy, r, thickness, a0, a1; f32 spin_rate, spin_phase; u32 abgr;
+                 u32 curve; f32 curve_param; } arc;
         /* The arc under an angular dash cut.  `period` is radians per dash+gap cycle -- the emit
            side quantizes it so a WHOLE number of cycles fits the sweep, which is what keeps a
            closed dashed ring from showing a seam where the pattern meets itself; `duty` is the
@@ -2484,9 +2530,10 @@ typedef struct
            arc-length px (the draw_dashed_line vocabulary); the tessellator snaps the period so
            whole cycles fit the perimeter.  `rate` scrolls the pattern in px/sec on pc.time --
            the marching ants -- and `phase` is a static px offset; both animate in the FRAGMENT,
-           so the ants re-tessellate nothing. */
+           so the ants re-tessellate nothing.  `curve`/`curve_param` shape how the pattern crosses
+           one period (gui_curve_t): STAIR is the ants that jump a dash at a time. */
         struct { f32 x, y, w, h; f32 rounding, t; f32 dash, gap; f32 rate, phase;
-                 u32 abgr; } box_dash;
+                 u32 abgr; u32 curve; f32 curve_param; } box_dash;
     };
 } gui_cmd_t;
 

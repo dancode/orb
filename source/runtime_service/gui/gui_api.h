@@ -743,6 +743,10 @@ typedef struct gui_api_s
 
     void ( *draw_set_corner_smooth )( f32 t );
     f32  ( *draw_corner_smooth     )( void );
+    /* The curve every animating shape pushed after this is shaped by (gui_curve_t), and that
+       curve's own parameter.  Ambient like the radius: save, override, restore. */
+    void ( *draw_set_anim_curve    )( u32 curve, f32 param );
+    void ( *draw_get_anim_curve    )( u32* curve, f32* param );
 
     /* Where a stroked box's band sits against its boundary -- the stroke alignment every design
        tool offers: 0 inside (the default every outline has always had), 0.5 centred, 1 outside.

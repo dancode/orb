@@ -136,6 +136,8 @@ void draw_set_rounding          ( f32 r );          // corner radius folded into
 f32  draw_rounding              ( void );           // current ambient radius (save/restore around a sub-element)
 void draw_set_corner_smooth     ( f32 t );          // 0..1 corner profile riding with the radius; 0 = circular arc
 f32  draw_corner_smooth         ( void );           // ...read it back, same save/restore rule as the radius
+void draw_set_anim_curve        ( u32 curve, f32 param );   // gui_curve_t shaping every animating shape pushed after
+void draw_get_anim_curve        ( u32* curve, f32* param ); // ...read it back, for save/restore
 void draw_set_border_align      ( f32 a );          // stroked-box band alignment: 0 inside, 0.5 centred, 1 outside
 f32  draw_border_align          ( void );           // ...read it back, same save/restore rule as the radius
 void draw_set_text_edge         ( f32 width, u32 abgr ); // second colour outside the glyph edge (SDF fonts)

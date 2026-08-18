@@ -413,6 +413,22 @@ gui_draw_corner_smooth( void )
     return draw_corner_smooth();
 }
 
+/* The animation CURVE (gui_api.h): what a normalized phase does between its endpoints, shared by
+   every shape that carries a clock -- the pulse, the spinner, the marching ants.  Ambient on the
+   same save/restore discipline as the radius above. */
+
+void
+gui_draw_set_anim_curve( u32 curve, f32 param )
+{
+    draw_set_anim_curve( curve, param );
+}
+
+void
+gui_draw_get_anim_curve( u32* curve, f32* param )
+{
+    draw_get_anim_curve( curve, param );
+}
+
 /* Border ALIGNMENT for the stroked box family (gui_api.h): 0 inside, 0.5 centred, 1 outside.
    Same ambient discipline as the radius -- save, set, draw, restore. */
 
