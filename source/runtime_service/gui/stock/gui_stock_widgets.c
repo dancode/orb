@@ -160,7 +160,7 @@ stock_button_label( gui_rect_t r, const char* text )
 bool
 gui_stock_button( gui_rect_t r, const char* label )
 {
-    gui_id_t          id = item_id( label );       /* the keyed id for the animation damper */
+    gui_id_t          id = item_id( label );                /* the keyed id for the animation damper */
     gui_comp_button_t b  = gui_comp_button( label, r );
 
     /* rect, id, item_state, selected, border_color, border_width */

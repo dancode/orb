@@ -91,44 +91,6 @@ test_font_cp_ext_search( void )
     test_true( font_slot_cp( slot, 0x0101u )->advance == '?' );
 }
 
-static void
-test_font_glyph_table_index_cases( void )
-{
-    static const u32 cps[] = { 0x00E9u, 0x0394u, 0x20ACu };
-    orb_font_glyph_t store[ ARRAY_COUNT( cps ) ];
-    font_slot_t*     slot = font_case_slot( cps, ARRAY_COUNT( cps ), store );
-
-    /* The dense tier: index == cp - 32, across the whole printable span. */
-    test_equal(  0u, font_glyph_table_index( slot, ' ' ) );
-    test_equal( 33u, font_glyph_table_index( slot, 'A' ) );
-    test_equal( 94u, font_glyph_table_index( slot, '~' ) );
-
-    /* Ext hits follow the dense tier at 95 + sorted position. */
-    test_equal( 95u, font_glyph_table_index( slot, 0x00E9u ) );
-    test_equal( 96u, font_glyph_table_index( slot, 0x0394u ) );
-    test_equal( 97u, font_glyph_table_index( slot, 0x20ACu ) );
-
-    /* Every miss lands on the '?' index (31), matching font_slot_cp's resolution: below the
-       ASCII span, above it, and in an ext gap. */
-    test_equal( 31u, font_glyph_table_index( slot, 0u ) );
-    test_equal( 31u, font_glyph_table_index( slot, 127u ) );
-    test_equal( 31u, font_glyph_table_index( slot, 0x00E8u ) );
-    test_equal( 31u, font_glyph_table_index( slot, 0x21ACu ) );
-
-    /* The window clamp: an ext record whose index would pass GUI_FONT_GLYPH_TABLE_PER_FONT
-       resolves to '?' while its in-window neighbour keeps its id -- the fixed-stride contract. */
-    static u32              big_cps[ GUI_FONT_GLYPH_TABLE_PER_FONT ];
-    static orb_font_glyph_t big_store[ GUI_FONT_GLYPH_TABLE_PER_FONT ];
-    for ( u32 i = 0; i < GUI_FONT_GLYPH_TABLE_PER_FONT; ++i )
-        big_cps[ i ] = 0x100u + i;
-    slot = font_case_slot( big_cps, GUI_FONT_GLYPH_TABLE_PER_FONT, big_store );
-
-    u32 last_in = GUI_FONT_GLYPH_TABLE_PER_FONT - ORB_FONT_CP_COUNT - 1u;   /* ext pos 416 */
-    test_equal( GUI_FONT_GLYPH_TABLE_PER_FONT - 1u,
-                font_glyph_table_index( slot, 0x100u + last_in ) );
-    test_equal( 31u, font_glyph_table_index( slot, 0x100u + last_in + 1u ) );
-}
-
 /* Fill the LAST registry slot with the synthetic font (advance == codepoint & 0xFFFF, ext
    carries e-acute / euro / the grinning-face emoji) and activate it.  Shared by the measure
    case below and the caret cases in test_edit.c -- the readers under test all measure through

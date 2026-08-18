@@ -19,14 +19,13 @@ struct gui_pc_t
     uint     prim_base;    // this window SLOT's first record (records, not float4s)
     uint     quad_buf;     // bindless buffer slot of the quad records (gui_quad_t)
     uint     quad_base;    // the flush's quad-region origin (quads, not float4s)
-    uint     glyph_buf;    // bindless slot of the glyph uv table (0 = none)
 };
 [[vk::push_constant]] gui_pc_t pc;
 
-// The bindless storage-buffer array (set 0, binding 2).  The gui reads FOUR tables through it:
-// the frame's clip entries, the style records, the quad records, and the glyph uv table.
-// Declared float4[] because that is the one element type the array can have; integer lanes
-// come back through asuint, a reinterpret, not a convert.
+// The bindless storage-buffer array (set 0, binding 2).  The gui reads THREE tables through it:
+// the frame's clip entries, the style records, and the quad records.  Declared float4[] because
+// that is the one element type the array can have; integer lanes come back through asuint, a
+// reinterpret, not a convert.
 [[vk::binding( 2, 0 )]] StructuredBuffer<float4> u_buffers[] : register( t0, space1 );
 
 // Decode an sRGB-encoded color to linear light.  UI colors are authored sRGB; the swapchain is

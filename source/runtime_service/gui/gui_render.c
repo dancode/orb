@@ -154,8 +154,6 @@
 #include "runtime_service/gui/render/resource/gui_atlas.c"
 #include "runtime_service/gui/render/resource/gui_res_atlas.h"
 #include "runtime_service/gui/render/resource/gui_res_atlas.c"
-#include "runtime_service/gui/render/resource/gui_glyph_table.h"
-#include "runtime_service/gui/render/resource/gui_glyph_table.c"
 
 /* Fonts, icons and sprites live in the draw unit (gui_draw.c) -- the server
    renders from the atlases they push into; glyph/icon/sprite UV lookups at tess/emit time go

@@ -2001,11 +2001,11 @@ typedef struct
 
     /* Row 1 -- the per-quad payload: texcoord corners, colour, and the style naming the rest.
        uv0/uv1 are the min/max corners, each two unorm16 over [0,1] (gui_uv_pack); the vertex
-       stage selects per corner.  A glyph-id indirection can replace uv0/uv1 later (the 32-B
-       record), which only touches this row. */
+       stage selects per corner.  Glyphs are no exception: the text tessellator has the live
+       atlas rect in hand from font_glyph and bakes it here like any other textured quad. */
 
-    // uv0: CAPSULE: dir GUI_QUAD_GLYPH: glyph-table entry id. 
-    // uv1: CAPSULE: dir GUI_QUAD_GLYPH: n/a
+    // uv0: CAPSULE: dir
+    // uv1: CAPSULE: dir
     // uv1: SKIRT: vertex stage for untextured shapes, grows for feathered edge, not shape.
 
     u32 uv0;            // texcoord min corner, packed unorm16 pair
@@ -2017,14 +2017,14 @@ typedef struct
        styled rows in different scroll regions must still share one style. */
 
     u32 clip;           // clip-table entry index, absolute within the frame clip region
-    u32 flags;          // GUI_QUAD_RULE_* expansion rule (bits 0-1) | GUI_QUAD_GLYPH (bit 2)
-    u32 cut;            // GLYPH straddlers: horizontal cut pair, two unorm16 fractions of the
-                        //   glyph rect (lo | hi << 16); 0 = the whole glyph
+    u32 flags;          // GUI_QUAD_RULE_* expansion rule (bits 0-1)
+    u32 reserved_b;     // free lane -- row 2 must stay whole (see GUI_QUAD_ROWS below)
 
     // col_b: GUI_OP_FRAME: the border band's packed colour.  A SECOND colour rides the quad,
     //   not the style (gui_prim_t), so an animated border -- or an animated fill, which was
     //   already here in `abgr` -- never adds a style record: the style keeps stating only the
     //   shape (rounding, border width, feather).  0 under every op that does not read it.
+
     u32 col_b;
 
 } gui_quad_t;
@@ -2047,11 +2047,6 @@ ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
 #define GUI_QUAD_RULE_CAPSULE  2u   /* hw = half-length, hh = radius: along grows by hh + pad    */
 #define GUI_QUAD_RULE_BBOX     3u   /* stored extents ARE the covering, expanded axis-aligned
                                        (the arc family -- its local frame is a reflection)       */
-
-/* flags bit 2: uv0 is a glyph-table entry index (stable per (font, codepoint), gui_glyph_table.c)
-   rather than packed texcoords -- the indirection that lets retained text survive an atlas
-   repack.  `cut` narrows the rect for clip-straddling glyphs. */
-#define GUI_QUAD_GLYPH  ( 1u << 2 )
 
 /* UV -> two unorm16 -- the packing the quad record's uv0/uv1 lanes carry.  Clamped, because that
    is the only thing the format can do with an out-of-range coordinate -- a caller that wants U

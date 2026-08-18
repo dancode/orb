@@ -106,16 +106,15 @@ test_quad_layout( void )
     test_equal( 24u, (u32)offsetof( gui_quad_t, abgr  ) );
     test_equal( 28u, (u32)offsetof( gui_quad_t, style ) );
     test_equal( 36u, (u32)offsetof( gui_quad_t, flags ) );
-    test_equal( 40u, (u32)offsetof( gui_quad_t, cut   ) );
+    test_equal( 40u, (u32)offsetof( gui_quad_t, reserved_b ) );
     test_equal( 44u, (u32)offsetof( gui_quad_t, col_b ) );
 
-    /* The expansion rules share a 2-bit lane and the glyph flag sits above it -- the layout the
-       quad vertex stage decodes with literal masks. */
+    /* The expansion rules share a 2-bit lane -- the layout the quad vertex stage decodes with
+       literal masks. */
     test_equal( 0u, GUI_QUAD_RULE_EXACT );
     test_equal( 1u, GUI_QUAD_RULE_SKIRT );
     test_equal( 2u, GUI_QUAD_RULE_CAPSULE );
     test_equal( 3u, GUI_QUAD_RULE_BBOX );
-    test_equal( 4u, GUI_QUAD_GLYPH );
 }
 
 /* The op bits are single bits and DISJOINT, which is the whole claim the op word makes: any op

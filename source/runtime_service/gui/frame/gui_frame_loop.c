@@ -370,11 +370,6 @@ gui_frame_begin( f32 dt )
     if ( res_atlas_flush_upload() )
         s_frame_dirty = true;
 
-    /* Re-key the glyph uv table to the placements the flush just committed.  Deliberately NOT a
-       dirty source: the table rewrites in place under stable glyph ids, so geometry referencing
-       glyphs by id stays valid across the very repack that would retess a uv-baking consumer. */
-    glyph_table_sync();
-
     if ( s_frame_dirty )
     {
         /* Full rebuild: clear the draw list and tessellation so the emit phase writes fresh

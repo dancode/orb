@@ -341,12 +341,10 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     push.prim_buf  = s_render.prim_buf_idx;
     push.prim_base = clip_region * (u32)GUI_PRIM_REGION_MAX;
 
-    /* Quad plumbing, all flush-constant: the quad table's slot and this region's origin (a
-       draw's first_vertex carries the arena-absolute quad offset on top), plus the glyph uv
-       table for id-addressed text. */
+    /* Quad plumbing, both flush-constant: the quad table's slot and this region's origin (a
+       draw's first_vertex carries the arena-absolute quad offset on top). */
     push.quad_buf  = s_render.quad_buf_idx;
     push.quad_base = clip_region * (u32)GUI_QUAD_REGION_MAX;
-    push.glyph_buf = glyph_table_idx();
 
     /* Push the whole struct once, before the walk. tex_idx/tex_mode/samp_idx live in the vertex,
        not the push constant, so everything left here -- both sampler slots, dbg_flat, the frame

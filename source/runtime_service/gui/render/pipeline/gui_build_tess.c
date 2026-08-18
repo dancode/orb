@@ -93,17 +93,10 @@ static struct
     u32         cur_prim_local;
     u32         prim_dedup_floor;
 
-    /* QUAD BACKEND ambient glyph addressing, set by the text tessellator around each glyph's
-       fill: the glyph table entry the quad names by stable id (~0u = none, bake uvs), and the
-       horizontal cut pair for a clip straddler (0 = the whole glyph).  Cleared per command. */
-    u32         cur_glyph;
-    u32         cur_glyph_cut;
-
     /* The ambient SECOND COLOUR -- rides the QUAD (gui_quad_t.col_b), never the style, so an
        animated border or ramp never adds a style record: only the shape (rounding, border width,
-       feather) lives in cur_prim now.  Sits alongside cur_glyph as an ambient the command sets
-       before its tess_quad_push and tess_quad_push folds in unread by the style.  0 = unused;
-       cleared per command like every other ambient here. */
+       feather) lives in cur_prim now.  An ambient the command sets before its tess_quad_push,
+       which folds it into the quad unread by the style.  0 = unused; cleared per command. */
     u32         cur_col2;
 
     /* per-slot tesellation context */
@@ -297,8 +290,6 @@ tess_reset( void )
     s_tess.cur_clip_local    = 0;
     s_tess.force_new_cmd     = false;
     s_tess.overflow          = false;
-    s_tess.cur_glyph         = ~0u;
-    s_tess.cur_glyph_cut     = 0;
     s_tess.cur_col2          = 0;
 }
 
@@ -362,6 +353,7 @@ tess_clip_local( u8 ci )
    by construction -- there is nothing left to pass in and get wrong.
    Returns false when the command table is full and no matching command is open -- the caller must
    drop its primitive, or its geometry would append to a command with the wrong viewport. */
+
 static bool
 tess_ensure_gpu_cmd( void )
 {
@@ -447,9 +439,8 @@ tess_prim_local( void )
     live on the quad, never the style), appends the quad, and folds one element into the open
     GPU command.
 
-    `rule_flags` is the expansion rule (GUI_QUAD_RULE_*) plus GUI_QUAD_GLYPH when the ambient
-    glyph id below should ride the uv lanes.  Placement is the SHAPE's, by the rule's convention
-    (gui.h); uv0/uv1 are packed texcoord corners (ignored under the glyph flag).
+    `rule_flags` is the expansion rule (GUI_QUAD_RULE_*).  Placement is the SHAPE's, by the
+    rule's convention (gui.h); uv0/uv1 are packed texcoord corners.
 ==============================================================================================*/
 
 static void
@@ -471,13 +462,6 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
     s_tess.cur_prim.ops = s_tess.cur_ops;
 
     u32 style = tess_prim_local();
-    u32 cut   = 0;
-    if ( s_tess.cur_glyph != ~0u )
-    {
-        rule_flags |= GUI_QUAD_GLYPH;
-        uv0         = s_tess.cur_glyph;
-        cut         = s_tess.cur_glyph_cut;
-    }
 
     s_tess.quads[ s_tess.vert_count++ ] = ( gui_quad_t ){
         .cx    = qcx,
@@ -490,7 +474,6 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
         .style = style,
         .clip  = s_tess.cur_clip_local,
         .flags = rule_flags,
-        .cut   = cut,
         .col_b = s_tess.cur_col2,
     };
 
@@ -1433,13 +1416,6 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
             f32 gx0 = cx + ox;          /* glyph bitmap left/right in screen px */
             f32 gx1 = gx0 + gw;
 
-            /* Address the glyph by its stable table id (gui_glyph_table.c) so the quad's uv
-               resolves at draw time -- an atlas repack rewrites the table in place and retained
-               text never re-tessellates for it.  No table (or no entry) leaves the ambient id
-               unset and the baked-uv fallback below still renders. */
-            if ( glyph_table_idx() != 0 )
-                s_tess.cur_glyph = glyph_table_slot( font_active_id(), cp );
-
             if ( !clipped || ( gx0 >= clip_x0 && gx1 <= clip_x1 ) )
             {
                 /* Whole glyph (or no clipping): emit as-is -- the hot interior path. */
@@ -1447,32 +1423,23 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
             }
             else if ( gx1 > clip_x0 && gx0 < clip_x1 )
             {
-                /* Straddler: cut to the window and walk U by the same fraction on each cut edge.
-                   The same fractions ride the quad's cut lane, so an id-addressed straddler cuts
-                   the TABLE's rect identically. */
+                /* Straddler: cut to the window and walk U by the same fraction on each cut edge,
+                   so the narrowed rect samples exactly the visible part of the glyph bitmap. */
                 f32 du   = u1 - u0;
                 f32 nx0  = gx0, nx1 = gx1, nu0 = u0, nu1 = u1;
-                f32 f0   = 0.0f, f1 = 1.0f;
                 if ( nx0 < clip_x0 )    /* left edge cut  */
                 {
-                    f0  = ( clip_x0 - gx0 ) / gw;
-                    nu0 = u0 + du * f0;
+                    nu0 = u0 + du * ( ( clip_x0 - gx0 ) / gw );
                     nx0 = clip_x0;
                 }
                 if ( nx1 > clip_x1 )    /* right edge cut */
                 {
-                    f1  = ( clip_x1 - gx0 ) / gw;
-                    nu1 = u0 + du * f1;
+                    nu1 = u0 + du * ( ( clip_x1 - gx0 ) / gw );
                     nx1 = clip_x1;
                 }
-                s_tess.cur_glyph_cut = (u32)( f0 * 65535.0f + 0.5f )
-                                     | ( (u32)( f1 * 65535.0f + 0.5f ) << 16 );
                 tess_rect_filled( nx0, y + oy, nx1 - nx0, gh, nu0, v0, nu1, v1, tex, abgr );
             }
             /* else: glyph wholly outside the window -- drop it. */
-
-            s_tess.cur_glyph     = ~0u;
-            s_tess.cur_glyph_cut = 0;
         }
 
         cx += advance;
@@ -1536,16 +1503,9 @@ tess_text_xf( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 scale, f32 rot
         font_glyph( cp, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
 
         if ( gw > 0.0f && gh > 0.0f )
-        {
-            /* Stable glyph id, exactly as the 1:1 run does -- the uv rect is scale-independent,
-               so a transformed run is repack-safe too. */
-            if ( glyph_table_idx() != 0 )
-                s_tess.cur_glyph = glyph_table_slot( font_active_id(), cp );
             tess_quad_xf( x, y, cs, sn,
                           ( pen + ox ) * scale, oy * scale, gw * scale, gh * scale,
                           u0, v0, u1, v1, tex, abgr );
-            s_tess.cur_glyph = ~0u;
-        }
 
         pen += advance;
     }
@@ -1820,8 +1780,6 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
            shares. */
         s_tess.cur_ops        = 0u;
         s_tess.cur_corner_pow = 0.0f;
-        s_tess.cur_glyph      = ~0u;
-        s_tess.cur_glyph_cut  = 0u;
         s_tess.cur_col2       = 0u;
 
         /* The record is cleared WHOLE, and it matters for two reasons: a leftover rect or radius

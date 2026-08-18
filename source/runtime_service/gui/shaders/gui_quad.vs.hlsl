@@ -12,9 +12,7 @@
 //   BBOX     the stored extents ARE the covering (pad baked by the tessellator), expanded
 //            axis-aligned -- the arc family, whose local frame is a reflection this rotation
 //            could not reproduce
-// The rotation is applied for the first three (identity in most styles); glyph-flagged quads
-// resolve their uv rect from the glyph table by stable id, with an optional horizontal cut pair
-// for clipped straddlers.
+// The rotation is applied for the first three (identity in most styles).
 //
 // The mvp is authored in VULKAN clip space; shader_tool bakes -fvk-invert-y into every
 // vertex-stage cook, so this shader negates y once to cancel it.
@@ -56,7 +54,7 @@ vs_out_t main( uint vid : SV_VertexID )
     uint   row = ( pc.quad_base + quad ) * QUAD_ROWS;
     float4 q0  = u_buffers[ pc.quad_buf ][ row ];        // cx, cy, hw, hh
     float4 q1  = u_buffers[ pc.quad_buf ][ row + 1u ];   // uv0, uv1, abgr, style
-    float4 q2  = u_buffers[ pc.quad_buf ][ row + 2u ];   // clip, flags, cut, col_b
+    float4 q2  = u_buffers[ pc.quad_buf ][ row + 2u ];   // clip, flags, reserved, col_b
 
     uint style = asuint( q1.w );
     uint flags = asuint( q2.y );
@@ -85,23 +83,10 @@ vs_out_t main( uint vid : SV_VertexID )
               ? q0.xy + lp     // BBOX: pre-baked covering, axis-aligned
               : q0.xy + float2( lp.x * rt.x - lp.y * rt.y, lp.x * rt.y + lp.y * rt.x );
 
-    // The uv rect: packed corners, or -- under the glyph flag -- the glyph table entry the quad
-    // names by stable id, so an atlas repack rewrites the table and never the quad.  The cut pair
-    // narrows the rect horizontally for clip-straddling glyphs (0 = the whole glyph).
-    float2 uv0, uv1;
-    if ( ( flags & 4u ) != 0u )
-    {
-        float4 ge  = u_buffers[ pc.glyph_buf ][ asuint( q1.x ) ];
-        uint   cw  = asuint( q2.z );
-        float2 cut = ( cw == 0u ) ? float2( 0.0, 1.0 ) : unpack_unorm16x2( cw );
-        uv0 = float2( lerp( ge.x, ge.z, cut.x ), ge.y );
-        uv1 = float2( lerp( ge.x, ge.z, cut.y ), ge.w );
-    }
-    else
-    {
-        uv0 = unpack_unorm16x2( asuint( q1.x ) );
-        uv1 = unpack_unorm16x2( asuint( q1.y ) );
-    }
+    // The uv rect: packed corners, glyphs included -- the tessellator has the live atlas rect
+    // from font_glyph and bakes it, so nothing here indirects.
+    float2 uv0 = unpack_unorm16x2( asuint( q1.x ) );
+    float2 uv1 = unpack_unorm16x2( asuint( q1.y ) );
 
     // A SKIRT quad's uv was authored over the TRUE extents; the corners sit `pad` outside them,
     // so the span scales out by the same ratio and clamps at the rect -- reproducing the vertex

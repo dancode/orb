@@ -117,7 +117,6 @@ main( int argc, char* argv[] )
     test_register( "font_cp_ascii",       test_font_cp_ascii );
     test_register( "font_cp_ext_search",  test_font_cp_ext_search );
     test_register( "font_cp_ext_empty",   test_font_cp_ext_empty );
-    test_register( "font_glyph_table_index", test_font_glyph_table_index_cases );
     test_register( "font_measure_utf8",   test_font_measure_utf8 );
     test_register( "font_name_normalize", test_font_name_normalize );
     test_register( "font_ship_name_parse", test_font_ship_name_parse );

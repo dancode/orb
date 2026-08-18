@@ -417,7 +417,6 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
                                              fully initialized */
     push.quad_buf   = s_dbg.quads_idx;    /* the overlay's OWN quad table, this flush's region */
     push.quad_base  = region * (u32)GUI_DBG_FLUSH_MAX_QUADS;
-    push.glyph_buf  = 0u;
 
     /* The overlay's single style record, refreshed every flush because the one thing in it that
        is not a constant -- the atlas bindless slot -- can move when the atlas is rebuilt.  Every

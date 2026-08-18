@@ -79,39 +79,6 @@ font_slot_cp( const font_slot_t* slot, u32 cp )
 }
 
 /*==============================================================================================
-    font_glyph_table_index -- the codepoint's stable index in the slot's glyph-table window.
-
-    The same three tiers as font_slot_cp, answered as a POSITION rather than a record: ASCII
-    dense at cp-32, an ext hit at 95 + its sorted position, everything else -- a genuine miss OR
-    an ext record past GUI_FONT_GLYPH_TABLE_PER_FONT -- at the '?' index.  The overflow clamp is
-    what lets the table stay fixed-stride: a font richer than the window still addresses its
-    first 417 ext glyphs by id, and the tail keeps rendering through baked UVs at the consumer.
-==============================================================================================*/
-
-u32
-font_glyph_table_index( const font_slot_t* slot, u32 cp )
-{
-    if ( cp - ORB_FONT_CP_FIRST < ORB_FONT_CP_COUNT )
-        return cp - ORB_FONT_CP_FIRST;
-
-    u32 lo = 0, hi = slot->ext_count;
-    while ( lo < hi )
-    {
-        u32 mid = ( lo + hi ) >> 1;
-        u32 c   = slot->ext[ mid ].codepoint;
-        if ( c == cp )
-        {
-            u32 idx = ORB_FONT_CP_COUNT + mid;
-            return ( idx < GUI_FONT_GLYPH_TABLE_PER_FONT ) ? idx
-                                                           : (u32)'?' - ORB_FONT_CP_FIRST;
-        }
-        if ( c < cp )  lo = mid + 1;
-        else           hi = mid;
-    }
-    return (u32)'?' - ORB_FONT_CP_FIRST;
-}
-
-/*==============================================================================================
     Metric readers -- every one resolves through font_live_slot(), aimed by font_activate().
 ==============================================================================================*/
 

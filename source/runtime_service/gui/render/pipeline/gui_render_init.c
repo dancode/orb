@@ -43,9 +43,8 @@ typedef struct
     u32 prim_base;      // the SLOT's first record          4 bytes
     u32 quad_buf;       // bindless slot: quad-record table 4 bytes
     u32 quad_base;      // flush's region origin            4 bytes (quads, not float4s)
-    u32 glyph_buf;      // glyph uv table                   4 bytes (0 = none; baked-uv fallback)
 
-} gui_push_t;           // total 112 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;           // total 108 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved into the vertex (gui.h): the fragment
@@ -457,8 +456,6 @@ render_shutdown( void )
         rhi()->unregister_buffer( s_render.prim_buf_idx );
     if ( rhi_handle_valid( s_render.prim_buf ) )
         rhi()->buffer_destroy( s_render.prim_buf );
-
-    glyph_table_shutdown();   /* lazily created; a no-op when no font ever packed */
 
     if ( s_render.quad_buf_idx )
         rhi()->unregister_buffer( s_render.quad_buf_idx );

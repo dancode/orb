@@ -118,11 +118,6 @@ bool sprite_get    ( gui_sprite_id_t id,
 
 bool            res_atlas_flush_upload  ( void );   // re-upload if dirty; true when pixels were sent
 
-/* The glyph uv table (resource/gui_glyph_table.c): stable-id glyph addressing for the quad-record
-   renderer.  Synced right after the atlas flush so it captures this latch's placements; a rebuild
-   dirties nothing -- entries are rewritten in place under ids that never move on a repack. */
-bool            glyph_table_sync        ( void );
-
 /* Occupancy diagnostics (mem stats print): percent of the packable region covered, live tenant
    count, current dimensions (the atlases grow under pressure; 0-dims = never created). */
 void            res_atlas_occupancy     ( f32* pct, u32* tenants, u32* w, u32* h );
