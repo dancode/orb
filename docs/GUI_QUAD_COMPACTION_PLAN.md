@@ -195,8 +195,12 @@ Each stage is independently shippable and independently revertable.
   placement from one record lookup, so the hot loop does not search `ext[]` twice).
 - `gui_glyph_uv_t` + `GUI_GLYPH_SLOT_STRIDE` / `GUI_GLYPH_TABLE_MAX` + `GUI_QUAD_F_GLYPH`
   (flags bit 2) in `gui.h`.
-- Fourth bindless slot `glyph_buf`, regioned per frame in flight only; `pc.glyph_buf` /
-  `pc.glyph_base` in the push block (now 116 B). Uploaded on generation change alone.
+- Fourth bindless slot `glyph_buf` -- **not regioned**. The three per-frame tables are rewritten
+  every frame and so need a copy per (frame-in-flight, viewport); this one is written only when
+  its generation moves, so a rebuild REPLACES the buffer and hands the old handle and bindless
+  slot to rhi's deferred destroy (`vk_garbage_push` / `vk_retire_safe_at`), which already holds
+  both until no frame in flight can read them. Nothing is overwritten in place, so there is no
+  hazard to buy copies against. One table, no `glyph_base`; push block stays 112 B.
 - `glyph_table_sync()` at the head of `cache_build_frame`; `glyph_table_mark_dirty()` on font
   upload, upload failure, and `font_slot_release`.
 - `tess_rect_glyph` / `tess_glyph_xf` emit by ID; `gui_quad.vs.hlsl` resolves through

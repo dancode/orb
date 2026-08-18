@@ -44,9 +44,9 @@ typedef struct
     u32 quad_buf;       // bindless slot: quad-record table 4 bytes
     u32 quad_base;      // flush's region origin            4 bytes (quads, not float4s)
     u32 glyph_buf;      // bindless slot: glyph UV table    4 bytes (0 = no table bound)
-    u32 glyph_base;     // frame's region origin            4 bytes (entries, not float4s)
+                        //   no base: the table is not regioned, so an ID indexes it directly
 
-} gui_push_t;           // total 116 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;           // total 112 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved into the vertex (gui.h): the fragment
@@ -121,21 +121,20 @@ typedef struct
 #define GUI_QUAD_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
 
 /*==============================================================================================
-    Glyph UV table region sizing -- the ID-indexed atlas rects (gui.h, gui_glyph_uv_t).
+    Glyph UV table sizing -- the ID-indexed atlas rects (gui.h, gui_glyph_uv_t).
 
-    Regioned per FRAME IN FLIGHT ONLY, not per (frame, viewport) like the three tables above.
-    The table is global: every surface reads the same rects, so a per-viewport copy would be the
-    identical 64 KB repeated once per window for nothing.  Frames still need their own copy for
-    the usual reason -- a rebuild must not overwrite entries an in-flight draw is still reading.
+    NOT regioned, unlike the three tables above.  Those are rewritten every frame, so each
+    (frame-in-flight, viewport) needs somewhere of its own to land.  This one is written when its
+    generation changes -- a font's pixels entering the atlas, or a repack moving a page -- which is
+    a boot-time event and then essentially never, and its contents are identical for every surface.
 
-    A region is rewritten only when the table's generation changes (a font's pixels moved or an
-    atlas repacked), which is a boot-time event and then essentially never.
+    So instead of N copies to write into, there is ONE buffer, replaced wholesale on the rare
+    rebuild: render_glyph_buf_refresh creates the new one and hands the old to rhi's deferred
+    destroy, which already holds it until no frame in flight can be reading it.  Nothing is ever
+    overwritten in place, so there is nothing for an in-flight draw to race.
 ==============================================================================================*/
 
-#define GUI_GLYPH_ENTRY_BYTES  ( (u32)sizeof( gui_glyph_uv_t ) )
-#define GUI_GLYPH_REGION_MAX   GUI_GLYPH_TABLE_MAX                       /* entries per region */
-#define GUI_GLYPH_REGION_BYTES ( GUI_GLYPH_REGION_MAX * GUI_GLYPH_ENTRY_BYTES )
-#define GUI_GLYPH_REGION_COUNT RHI_MAX_FRAMES_IN_FLIGHT
+#define GUI_GLYPH_TABLE_BYTES  ( GUI_GLYPH_TABLE_MAX * (u32)sizeof( gui_glyph_uv_t ) )
 
 ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
                    "the mvp must lead gui_push_t -- the per-draw push writes everything after it" );
@@ -198,12 +197,13 @@ static struct
     rhi_buffer_t    quad_buf;           // storage buffer: all quad regions
     u32             quad_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
-    /* The glyph UV table: one region per frame in flight (the table is viewport-independent),
-       rewritten only when its generation changes.  The slot index rides pc.glyph_buf and the
-       frame's region origin rides pc.glyph_base. */
+    /* The glyph UV table: ONE buffer, replaced wholesale when its generation changes rather than
+       regioned per frame (see the sizing note above).  The slot index rides pc.glyph_buf; there is
+       no base to push, since there is only ever one table. */
 
-    rhi_buffer_t    glyph_buf;          // storage buffer: all glyph-table regions
+    rhi_buffer_t    glyph_buf;          // storage buffer: the whole glyph table
     u32             glyph_buf_idx;      // bindless buffer slot (never 0 after a successful init)
+    u32             glyph_buf_gen;      // table generation the buffer currently holds
 
     gui_render_mode_t debug_mode;       // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
 
@@ -275,6 +275,67 @@ render_load_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
 }
 
 static void render_shutdown( void );   /* the clip-table failure path below unwinds through it */
+
+/*==============================================================================================
+    The glyph UV table's buffer -- created once, then REPLACED (never rewritten) on a rebuild.
+
+    render_glyph_buf_create allocates, registers bindless, and uploads whatever the table holds
+    right now.  render_glyph_buf_refresh is the per-flush check: when the table's generation has
+    moved, it builds a fresh buffer and retires the old handle and slot, both of which rhi holds
+    until no frame in flight can still be reading them (vk_garbage_push / vk_retire_safe_at).
+
+    Replacing rather than overwriting is what makes ONE buffer correct here.  The alternative --
+    a copy per frame in flight, like the three per-frame tables -- would be paying 3x for a table
+    that is identical every frame, to solve a write hazard that only exists if you write in place.
+==============================================================================================*/
+
+static bool
+render_glyph_buf_create( void )
+{
+    s_render.glyph_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+        .size       = GUI_GLYPH_TABLE_BYTES,
+        .usage      = RHI_BUFFER_USAGE_STORAGE,
+        .memory     = RHI_MEMORY_CPU_TO_GPU,
+        .debug_name = "gui_glyph_table",
+    } );
+    if ( !rhi_handle_valid( s_render.glyph_buf ) )
+        return false;
+
+    s_render.glyph_buf_idx = rhi()->register_buffer( s_render.glyph_buf );
+    if ( s_render.glyph_buf_idx == 0 )
+        return false;
+
+    rhi()->buffer_write( s_render.glyph_buf, glyph_table_data(), GUI_GLYPH_TABLE_BYTES, 0 );
+    s_render.glyph_buf_gen = glyph_table_generation();
+    return true;
+}
+
+static void
+render_glyph_buf_refresh( void )
+{
+    u32 gen = glyph_table_generation();
+    if ( s_render.glyph_buf_gen == gen )
+        return;
+
+    rhi_buffer_t old_buf = s_render.glyph_buf;
+    u32          old_idx = s_render.glyph_buf_idx;
+
+    if ( !render_glyph_buf_create() )
+    {
+        /* Keep drawing from the buffer we have: its rects are one generation stale, which is a
+           wrong glyph rectangle, where a zeroed bindless slot is every character gone. */
+        s_render.glyph_buf     = old_buf;
+        s_render.glyph_buf_idx = old_idx;
+        GUI_WARN_ONCE( "glyph table rebuild could not allocate -- holding generation %u\n",
+                       s_render.glyph_buf_gen );
+        return;
+    }
+
+    if ( old_idx )
+        rhi()->unregister_buffer( old_idx );
+    if ( rhi_handle_valid( old_buf ) )
+        rhi()->buffer_destroy( old_buf );
+}
 
 static bool
 render_init( void )
@@ -423,15 +484,7 @@ render_init( void )
 
     /* The glyph UV table.  REQUIRED: a glyph quad carries a table ID in place of its atlas rect,
        so without the table every character samples texel zero. */
-    s_render.glyph_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = GUI_GLYPH_REGION_COUNT * GUI_GLYPH_REGION_BYTES,
-        .usage      = RHI_BUFFER_USAGE_STORAGE,
-        .memory     = RHI_MEMORY_CPU_TO_GPU,
-        .debug_name = "gui_glyph_table",
-    } );
-    if ( rhi_handle_valid( s_render.glyph_buf ) )
-        s_render.glyph_buf_idx = rhi()->register_buffer( s_render.glyph_buf );
-    if ( s_render.glyph_buf_idx == 0 )
+    if ( !render_glyph_buf_create() )
     {
         gui_log( GUI_LOG_ERROR, "glyph table buffer unavailable -- gui render disabled" );
         render_shutdown();

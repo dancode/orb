@@ -19,8 +19,10 @@ struct gui_pc_t
     uint     prim_base;    // this window SLOT's first record (records, not float4s)
     uint     quad_buf;     // bindless buffer slot of the quad records (gui_quad_t)
     uint     quad_base;    // the flush's quad-region origin (quads, not float4s)
-    uint     glyph_buf;    // bindless buffer slot of the glyph UV table (gui_glyph_uv_t)
-    uint     glyph_base;   // this FRAME's glyph-region origin (entries, not float4s)
+    uint     glyph_buf;    // bindless buffer slot of the glyph UV table (gui_glyph_uv_t).  No base
+                           //   companion: unlike the three tables above, the glyph table is not
+                           //   regioned per (frame, viewport) -- it is written only when its
+                           //   generation moves, so one copy serves every frame and surface.
 };
 [[vk::push_constant]] gui_pc_t pc;
 
@@ -52,10 +54,9 @@ float3 srgb_to_linear( float3 c )
 
 uint2 glyph_uv( uint id )
 {
-    uint   e   = pc.glyph_base + id;
-    float4 row = u_buffers[ pc.glyph_buf ][ e >> 1u ];
-    return ( e & 1u ) ? uint2( asuint( row.z ), asuint( row.w ) )
-                      : uint2( asuint( row.x ), asuint( row.y ) );
+    float4 row = u_buffers[ pc.glyph_buf ][ id >> 1u ];
+    return ( id & 1u ) ? uint2( asuint( row.z ), asuint( row.w ) )
+                       : uint2( asuint( row.x ), asuint( row.y ) );
 }
 
 // A pair of unorm16 as two floats over [0,1], x in the LOW half -- the packing gui_uv_pack writes
