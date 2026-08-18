@@ -79,10 +79,14 @@ vs_out_t main( uint vid : SV_VertexID )
               ? q0.xy + lp     // BBOX: pre-baked covering, axis-aligned
               : q0.xy + float2( lp.x * rt.x - lp.y * rt.y, lp.x * rt.y + lp.y * rt.x );
 
-    // The uv rect: packed corners, glyphs included -- the tessellator has the live atlas rect
-    // from font_glyph and bakes it, so nothing here indirects.
-    float2 uv0 = unpack_unorm16x2( asuint( q1.x ) );
-    float2 uv1 = unpack_unorm16x2( asuint( q1.y ) );
+    // The uv rect.  A whole glyph names a glyph-table entry in the uv0 lane and leaves uv1 inert;
+    // everything else -- fills, icons, sprites, and the narrowed rect a glyph cut to its window
+    // carries -- bakes both corners at tessellation.  The indirection is what lets cached text
+    // geometry outlive an atlas repack: the table rewrites in place and the ID does not move.
+    uint2 uvw = ( flags & GUI_QUAD_F_GLYPH ) ? glyph_uv( asuint( q1.x ) )
+                                             : uint2( asuint( q1.x ), asuint( q1.y ) );
+    float2 uv0 = unpack_unorm16x2( uvw.x );
+    float2 uv1 = unpack_unorm16x2( uvw.y );
 
     // A SKIRT quad's uv was authored over the TRUE extents; the corners sit `pad` outside them,
     // so the span scales out by the same ratio and clamps at the rect -- reproducing the vertex

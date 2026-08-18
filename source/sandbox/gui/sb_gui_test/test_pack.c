@@ -113,7 +113,7 @@ test_quad_layout( void )
     test_equal( 28u, (u32)offsetof( gui_quad_t, style ) );
     test_equal( 36u, (u32)offsetof( gui_quad_t, flags ) );
     test_equal( 40u, (u32)offsetof( gui_quad_t, xform ) );
-    test_equal( 44u, (u32)offsetof( gui_quad_t, col_b ) );
+    test_equal( 44u, (u32)offsetof( gui_quad_t, col_border ) );
 
     /* The expansion rules share the low 2 bits of `flags` and the animation phase takes the high
        half -- the layout the quad vertex stage decodes with literal masks. */
@@ -123,6 +123,20 @@ test_quad_layout( void )
     test_equal( 3u, GUI_QUAD_RULE_BBOX );
     test_equal( 16u,         GUI_QUAD_PHASE_SHIFT );
     test_equal( 0xFFFF0000u, GUI_QUAD_PHASE_MASK );
+
+    /* The glyph-ID flag sits above the rule lane and below the phase, so a glyph quad's rule and
+       phase decode exactly as any other quad's. */
+    test_equal( 4u, GUI_QUAD_F_GLYPH );
+    test_equal( 0u, GUI_QUAD_F_GLYPH & 3u );
+    test_equal( 0u, GUI_QUAD_F_GLYPH & GUI_QUAD_PHASE_MASK );
+
+    /* Two glyph table entries per float4 row is what the vertex stage's ID -> row split assumes,
+       and the region must hold a whole number of rows. */
+    test_equal(  8u, (u32)sizeof( gui_glyph_uv_t ) );
+    test_equal(  0u, (u32)offsetof( gui_glyph_uv_t, uv0 ) );
+    test_equal(  4u, (u32)offsetof( gui_glyph_uv_t, uv1 ) );
+    test_equal(  0u, GUI_GLYPH_TABLE_MAX & 1u );
+    test_equal( 8192u, GUI_GLYPH_TABLE_MAX );
 
     /* The rule lane and the phase lane cannot reach each other. */
     test_equal( 0u, GUI_QUAD_RULE_BBOX & GUI_QUAD_PHASE_MASK );

@@ -86,6 +86,26 @@ void font_glyph    ( u32 cp, f32* u0, f32* v0, f32* u1, f32* v1,
    distance-field font packs elsewhere and samples differently.  0 when the atlas is not up yet. */
 u32  font_tex      ( void );
 
+/* The glyph UV table (draw/gui_glyph_table.c).  A glyph quad carries a table ID rather than a
+   baked atlas rect, so the vertex stage resolves the rect and cached text geometry survives an
+   atlas repack -- IDs address (registry slot, glyph) and never move, where a baked UV goes stale
+   the moment a tenant's page origin does.
+
+   glyph_table_sync must run before tessellation each frame: it rebuilds when a font's tenant
+   changed or an atlas generation bumped, so the IDs a run emits and the rects behind them come
+   from one build.  The generation is the upload's staleness key. */
+void                  glyph_table_sync      ( void );
+void                  glyph_table_mark_dirty( void );
+u32                   font_glyph_id         ( u32 cp );   /* ID for cp in the ACTIVE font slot */
+
+/* The table path's per-character dispatch: ID plus placement from ONE record lookup.  What the
+   text tessellator calls instead of font_glyph -- the atlas rect it would compute is the table's
+   job now, and resolving the ID separately would search ext[] twice per character. */
+void font_glyph_placed( u32 cp, u32* id, f32* ox, f32* oy, f32* gw, f32* gh, f32* advance );
+const gui_glyph_uv_t* glyph_table_data      ( void );
+u32                   glyph_table_count     ( void );
+u32                   glyph_table_generation( void );
+
 /* Icon lookup: cached UVs (+ optional pixel size) for a registered icon id. */
 bool icon_get      ( gui_icon_id_t id,
                      f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h );

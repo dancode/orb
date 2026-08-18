@@ -61,6 +61,7 @@ font_slot_upload( font_slot_t* slot )
             else                    res_atlas_remove( slot->atlas_tenant );
             slot->atlas_tenant  = 0;
             slot->upload_failed = true;
+            glyph_table_mark_dirty();
             return false;
         }
         tenant = slot->atlas_tenant;
@@ -80,6 +81,11 @@ font_slot_upload( font_slot_t* slot )
     slot->tenant_sdf    = slot->sdf_range != 0;
     slot->needs_upload  = false;
     slot->upload_failed = false;
+
+    /* New pixels, and possibly a new page: the glyph table's rects for this slot are stale.  An
+       atlas generation bump covers a repack, but a same-footprint re-blit moves nothing and would
+       otherwise go unnoticed. */
+    glyph_table_mark_dirty();
     return true;
 }
 

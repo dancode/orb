@@ -78,6 +78,11 @@ font_slot_release( u32 id )
         else                    res_atlas_remove( slot->atlas_tenant );
     }
     font_slot_clear( id );
+
+    /* Zero this slot's glyph table block, so a stale ID from geometry that outlived the font
+       resolves to an empty rect rather than whatever tenant lands on those pixels next.  A
+       remove raises no atlas generation (no surviving origin moved), so nothing else would. */
+    glyph_table_mark_dirty();
 }
 
 /*==============================================================================================

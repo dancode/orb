@@ -564,6 +564,21 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
                     gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr );
 }
 
+/* Tessellate one whole glyph: same placement as tess_rect_filled, but the quad names a glyph-table
+   entry instead of carrying an atlas rect.  The rect is resolved in the vertex stage, so this quad
+   survives an atlas repack that would leave a baked uv sampling another tenant's pixels.
+   Only for a glyph drawn ENTIRELY -- a run cut to its window narrows one glyph's uv span, which is
+   per-instance and has no table entry, so that case stays on tess_rect_filled. */
+static void
+tess_rect_glyph( f32 x, f32 y, f32 w, f32 h, u32 glyph_id, u32 tex_idx, u32 abgr )
+{
+    x = tess_snap_px( x );
+    y = tess_snap_px( y );
+    tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f,
+                    GUI_QUAD_RULE_EXACT | GUI_QUAD_F_GLYPH,
+                    glyph_id, 0u, tex_idx, abgr );
+}
+
 /* Tessellate a two-color gradient quad: a GRAD style -- a quad record carries ONE colour, and
    the fragment's linear ramp is the same photometric blend the old per-vertex corner
    interpolation produced.  The axis is stored pre-divided by the extent (the tess_fx_box_core
@@ -1515,8 +1530,10 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
         u32 cp = utf8_decode( &str[ i ], &adv_b );
         i += adv_b;
 
-        f32 u0, v0, u1, v1, ox, oy, gw, gh, advance;
-        font_glyph( cp, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
+        /* ID + placement in one record lookup; the atlas rect is the glyph table's now. */
+        u32 gid;
+        f32 ox, oy, gw, gh, advance;
+        font_glyph_placed( cp, &gid, &ox, &oy, &gw, &gh, &advance );
 
         if ( gw > 0.0f && gh > 0.0f )
         {
@@ -1525,13 +1542,18 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
 
             if ( !clipped || ( gx0 >= clip_x0 && gx1 <= clip_x1 ) )
             {
-                /* Whole glyph (or no clipping): emit as-is -- the hot interior path. */
-                tess_rect_filled( gx0, y + oy, gw, gh, u0, v0, u1, v1, tex, abgr );
+                /* Whole glyph (or no clipping): emit by table ID -- the hot interior path. */
+                tess_rect_glyph( gx0, y + oy, gw, gh, gid, tex, abgr );
             }
             else if ( gx1 > clip_x0 && gx0 < clip_x1 )
             {
                 /* Straddler: cut to the window and walk U by the same fraction on each cut edge,
-                   so the narrowed rect samples exactly the visible part of the glyph bitmap. */
+                   so the narrowed rect samples exactly the visible part of the glyph bitmap.  The
+                   narrowed span is per-instance and has no table entry, so this one glyph pays the
+                   second lookup and bakes its own rect -- at most two per run, at its ends. */
+                f32 u0, v0, u1, v1, sox, soy, sgw, sgh, sadv;
+                font_glyph( cp, &u0, &v0, &u1, &v1, &sox, &soy, &sgw, &sgh, &sadv );
+
                 f32 du   = u1 - u0;
                 f32 nx0  = gx0, nx1 = gx1, nu0 = u0, nu1 = u1;
                 if ( nx0 < clip_x0 )    /* left edge cut  */
@@ -1580,12 +1602,27 @@ tess_quad_xf( f32 px, f32 py, f32 cs, f32 sn,
                     gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr );
 }
 
+/* tess_quad_xf for a glyph: the same affine placement, the atlas rect named by table ID.  A
+   transformed run is never cut mid-glyph (it has no window-relative pen to test), so every glyph
+   of one takes this path. */
+static void
+tess_glyph_xf( f32 px, f32 py, f32 cs, f32 sn,
+               f32 lx, f32 ly, f32 lw, f32 lh, u32 glyph_id, u32 tex_idx, u32 abgr )
+{
+    f32 ccx = lx + lw * 0.5f, ccy = ly + lh * 0.5f;
+    s_tess.cur_rot_c = cs;
+    s_tess.cur_rot_s = sn;
+    tess_quad_push( px + ccx * cs - ccy * sn, py + ccx * sn + ccy * cs,
+                    lw * 0.5f, lh * 0.5f, GUI_QUAD_RULE_EXACT | GUI_QUAD_F_GLYPH,
+                    glyph_id, 0u, tex_idx, abgr );
+}
+
 /* Tessellate a glyph run under a uniform scale and a rotation about its origin (the text_xf
    command).  The run is laid out in its OWN space -- pen at 0, the font's unscaled advances -- and
    the whole of it is mapped once per glyph quad, so the transform never accumulates: 200 glyphs in
    and the pen is still exactly `sum(advance) * scale` from the origin along the rotated axis.
 
-   Nothing about the ATLAS side changes: the same font_glyph UVs, the same tex, the same batch key
+   Nothing about the ATLAS side changes: the same glyph-table IDs, the same tex, the same batch key
    as the 1:1 path, so a rotated run merges into the very same draw call as the upright text beside
    it as long as both are in the same font.  What makes it LOOK right rather than merely be placed
    right is the sampling model -- a coverage font is point-sampled and will show its texels here,
@@ -1611,13 +1648,14 @@ tess_text_xf( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 scale, f32 rot
         u32 cp = utf8_decode( &str[ i ], &adv_b );
         i += adv_b;
 
-        f32 u0, v0, u1, v1, ox, oy, gw, gh, advance;
-        font_glyph( cp, &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &advance );
+        u32 gid;
+        f32 ox, oy, gw, gh, advance;
+        font_glyph_placed( cp, &gid, &ox, &oy, &gw, &gh, &advance );
 
         if ( gw > 0.0f && gh > 0.0f )
-            tess_quad_xf( x, y, cs, sn,
-                          ( pen + ox ) * scale, oy * scale, gw * scale, gh * scale,
-                          u0, v0, u1, v1, tex, abgr );
+            tess_glyph_xf( x, y, cs, sn,
+                           ( pen + ox ) * scale, oy * scale, gw * scale, gh * scale,
+                           gid, tex, abgr );
 
         pen += advance;
     }

@@ -18,6 +18,7 @@
     Constituents (draw/), in include order:
         gui_glyph_internal.c / gui_glyph.c   -- glyph atlas upload + UV dispatch (the metrics half
                                                  of fonts is the font/ leaf, below this unit)
+        gui_glyph_table.c                    -- ID-indexed glyph UV table the vertex stage reads
         gui_icon.c / gui_icon_load.c         -- icon registry + PNG -> R8 loader
         gui_sprite.c                         -- sprite registry + nine-slice + PNG -> RGBA loader
                                                  (shares gui_icon_load.c's stb_image + file slurp)
@@ -52,6 +53,7 @@
 ==============================================================================================*/
 
 #include "runtime_service/gui/draw/gui_glyph_internal.c"
+#include "runtime_service/gui/draw/gui_glyph_table.c"
 #include "runtime_service/gui/draw/gui_glyph.c"
 #include "runtime_service/gui/draw/gui_icon_sdf.c"
 #include "runtime_service/gui/draw/gui_icon.c"

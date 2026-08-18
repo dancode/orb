@@ -2095,6 +2095,26 @@ typedef enum
     that will never read it.
 ==============================================================================================*/
 
+/* One resident glyph's atlas rect, ID-indexed (draw/gui_glyph_table.c).  A glyph quad names an
+   entry instead of carrying the rect: the table rewrites in place when the atlas repacks, so
+   cached text geometry survives a move that would leave a baked UV pointing at another tenant's
+   pixels.  Both corners use the gui_uv_pack encoding, x in the low half. */
+typedef struct
+{
+    u32 uv0;            // texcoord min corner, packed unorm16 pair
+    u32 uv1;            // texcoord max corner, packed unorm16 pair
+
+} gui_glyph_uv_t;
+
+/* Entries per font registry slot: the dense ASCII block plus room for extended codepoints, as a
+   FIXED stride rather than a packed per-slot base.  Packing would be smaller and would shift every
+   later slot's IDs when a font loads or is released, invalidating IDs already baked into retained
+   window geometry -- so an ID depends on nothing that moves.  The table's 8192 entries are exactly
+   the 13 bits the compacted quad record reserves for one.  Sized against GUI_FONT_REGISTRY_MAX by
+   a static assert in draw/gui_glyph_table.c, which owns the build. */
+#define GUI_GLYPH_SLOT_STRIDE  512u
+#define GUI_GLYPH_TABLE_MAX    ( 16u * GUI_GLYPH_SLOT_STRIDE )
+
 typedef struct
 {
     /* Row 0 -- placement: centre and half-extent in screen pixels, the true shape rect. */
@@ -2167,7 +2187,8 @@ ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
 /* The `flags` word, low to high:
 
      bits 0-1    GUI_QUAD_RULE_* -- the expansion rule
-     bits 2-15   unused; the tessellator writes zero and the shader masks them off
+     bit  2      GUI_QUAD_F_GLYPH -- the uv0 lane is a glyph-table ID, not a packed corner
+     bits 3-15   unused; the tessellator writes zero and the shader masks them off
      bits 16-31  the animation PHASE, a unorm16 over one cycle
 
    The phase rides the quad while the RATE stays on the style: every spinner in a set turns at the
@@ -2176,6 +2197,11 @@ ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
 
    The rule is per quad rather than per style because it is a property of the SHAPE KIND, and one
    style (a plain fill) serves shapes whose coverings differ. */
+
+/* uv0 holds a glyph-table ID (gui_glyph_uv_t) and uv1 is inert; the vertex stage fetches the
+   atlas rect from the table instead of unpacking the lanes.  Set by the whole-glyph text path
+   only -- a straddling glyph carries a narrowed rect of its own and stays a plain textured quad. */
+#define GUI_QUAD_F_GLYPH       ( 1u << 2 )
 
 #define GUI_QUAD_PHASE_SHIFT   16u
 #define GUI_QUAD_PHASE_MASK    0xFFFF0000u

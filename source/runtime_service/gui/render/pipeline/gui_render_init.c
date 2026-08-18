@@ -43,8 +43,10 @@ typedef struct
     u32 prim_base;      // the SLOT's first record          4 bytes
     u32 quad_buf;       // bindless slot: quad-record table 4 bytes
     u32 quad_base;      // flush's region origin            4 bytes (quads, not float4s)
+    u32 glyph_buf;      // bindless slot: glyph UV table    4 bytes (0 = no table bound)
+    u32 glyph_base;     // frame's region origin            4 bytes (entries, not float4s)
 
-} gui_push_t;           // total 108 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;           // total 116 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved into the vertex (gui.h): the fragment
@@ -118,6 +120,23 @@ typedef struct
 #define GUI_QUAD_REGION_BYTES  ( GUI_QUAD_REGION_MAX * GUI_QUAD_BYTES )
 #define GUI_QUAD_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
 
+/*==============================================================================================
+    Glyph UV table region sizing -- the ID-indexed atlas rects (gui.h, gui_glyph_uv_t).
+
+    Regioned per FRAME IN FLIGHT ONLY, not per (frame, viewport) like the three tables above.
+    The table is global: every surface reads the same rects, so a per-viewport copy would be the
+    identical 64 KB repeated once per window for nothing.  Frames still need their own copy for
+    the usual reason -- a rebuild must not overwrite entries an in-flight draw is still reading.
+
+    A region is rewritten only when the table's generation changes (a font's pixels moved or an
+    atlas repacked), which is a boot-time event and then essentially never.
+==============================================================================================*/
+
+#define GUI_GLYPH_ENTRY_BYTES  ( (u32)sizeof( gui_glyph_uv_t ) )
+#define GUI_GLYPH_REGION_MAX   GUI_GLYPH_TABLE_MAX                       /* entries per region */
+#define GUI_GLYPH_REGION_BYTES ( GUI_GLYPH_REGION_MAX * GUI_GLYPH_ENTRY_BYTES )
+#define GUI_GLYPH_REGION_COUNT RHI_MAX_FRAMES_IN_FLIGHT
+
 ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
                    "the mvp must lead gui_push_t -- the per-draw push writes everything after it" );
 ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF == sizeof( ( (gui_push_t*)0 )->mvp ),
@@ -178,6 +197,13 @@ static struct
 
     rhi_buffer_t    quad_buf;           // storage buffer: all quad regions
     u32             quad_buf_idx;       // bindless buffer slot (never 0 after a successful init)
+
+    /* The glyph UV table: one region per frame in flight (the table is viewport-independent),
+       rewritten only when its generation changes.  The slot index rides pc.glyph_buf and the
+       frame's region origin rides pc.glyph_base. */
+
+    rhi_buffer_t    glyph_buf;          // storage buffer: all glyph-table regions
+    u32             glyph_buf_idx;      // bindless buffer slot (never 0 after a successful init)
 
     gui_render_mode_t debug_mode;       // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
 
@@ -395,6 +421,23 @@ render_init( void )
         return false;
     }
 
+    /* The glyph UV table.  REQUIRED: a glyph quad carries a table ID in place of its atlas rect,
+       so without the table every character samples texel zero. */
+    s_render.glyph_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+        .size       = GUI_GLYPH_REGION_COUNT * GUI_GLYPH_REGION_BYTES,
+        .usage      = RHI_BUFFER_USAGE_STORAGE,
+        .memory     = RHI_MEMORY_CPU_TO_GPU,
+        .debug_name = "gui_glyph_table",
+    } );
+    if ( rhi_handle_valid( s_render.glyph_buf ) )
+        s_render.glyph_buf_idx = rhi()->register_buffer( s_render.glyph_buf );
+    if ( s_render.glyph_buf_idx == 0 )
+    {
+        gui_log( GUI_LOG_ERROR, "glyph table buffer unavailable -- gui render disabled" );
+        render_shutdown();
+        return false;
+    }
+
     /* Fonts boot in the DRAW unit now (gui_draw_boot, after the whole server stands up) --
        the shared atlas carries the opaque white texel solid-color draws sample, so solids
        and text still share one texture and merge into one draw. */
@@ -461,6 +504,11 @@ render_shutdown( void )
         rhi()->unregister_buffer( s_render.quad_buf_idx );
     if ( rhi_handle_valid( s_render.quad_buf ) )
         rhi()->buffer_destroy( s_render.quad_buf );
+
+    if ( s_render.glyph_buf_idx )
+        rhi()->unregister_buffer( s_render.glyph_buf_idx );
+    if ( rhi_handle_valid( s_render.glyph_buf ) )
+        rhi()->buffer_destroy( s_render.glyph_buf );
 
     if ( rhi_handle_valid( s_render.pipeline_quad_wire ) )
         rhi()->pipeline_destroy( s_render.pipeline_quad_wire );

@@ -163,6 +163,20 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     if ( geo_dirty )
         s_region_geo_gen[ clip_region ] = s_geo_gen;
 
+    /* The glyph UV table, keyed on its own generation rather than the geometry's: the rects only
+       move when a font's pixels enter the atlas or a repack shifts a page, so this writes at boot
+       and then essentially never.  Regioned by FRAME alone -- the table is the same for every
+       surface, so the second viewport of a frame finds the region already current and skips. */
+    static u32 s_region_glyph_gen[ RHI_MAX_FRAMES_IN_FLIGHT ];
+
+    u32 glyph_gen = glyph_table_generation();
+    if ( s_region_glyph_gen[ frame ] != glyph_gen )
+    {
+        rhi()->buffer_write( s_render.glyph_buf, glyph_table_data(),
+                             GUI_GLYPH_REGION_BYTES, frame * (u32)GUI_GLYPH_REGION_BYTES );
+        s_region_glyph_gen[ frame ] = glyph_gen;
+    }
+
     // Upload the quad span into this surface's region of the global quad table -- only if this
     // surface actually touched geometry in that range (and the region is stale at all).
     u32 quad_off = clip_region * (u32)GUI_QUAD_REGION_BYTES;
@@ -346,6 +360,12 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
        draw's first_vertex carries the arena-absolute quad offset on top). */
     push.quad_buf  = s_render.quad_buf_idx;
     push.quad_base = clip_region * (u32)GUI_QUAD_REGION_MAX;
+
+    /* Glyph table plumbing: the table's slot and this FRAME's region origin.  Regioned by frame
+       alone -- one table serves every viewport -- so this is the one base that does not fold the
+       viewport in. */
+    push.glyph_buf  = s_render.glyph_buf_idx;
+    push.glyph_base = frame * (u32)GUI_GLYPH_REGION_MAX;
 
     /* Push the whole struct once, before the walk. tex_idx/tex_mode/samp_idx live in the vertex,
        not the push constant, so everything left here -- both sampler slots, dbg_flat, the frame

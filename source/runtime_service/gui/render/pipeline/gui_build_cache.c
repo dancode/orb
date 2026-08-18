@@ -567,7 +567,14 @@ cache_diff_windows( void )
            (icons, images) re-resolve on the dirty frame the atlas upload itself raises -- so a
            coverage or SDF repack invalidates NOTHING here, which is the repack-free prize the
            glyph table exists for.  The two tess-time-resolved uv consumers left are folded per
-           COMMAND in the loop below (sprites, dash rows). */
+           COMMAND in the loop below (sprites, dash rows).
+
+           One text case is NOT repack-proof: a glyph straddling its run's window edge carries a
+           narrowed uv span, which is per-instance and has no table entry, so it bakes a rect like
+           any other textured quad (gui_build_tess.c, tess_text_n).  At most the two end glyphs of
+           a cut run, and a repack leaves them sampling the wrong pixels until that window changes
+           for another reason.  Folding the generation for every TEXT command would cost the prize
+           above to fix a glyph-wide artefact on a boot-time event. */
         u32 h   = s_cache.cur[ bi ].hash;
         h = fnv1a_u32( h, segs[ si ].z    );
         h = fnv1a_u32( h, segs[ si ].vp   );
@@ -1246,6 +1253,11 @@ cache_build_frame( void )
     if ( s_frame_built )
         return;
     s_frame_built = true;
+
+    /* Before anything tessellates: refresh the glyph UV table if a font's tenant changed or an
+       atlas repacked, so every ID emitted this frame and every rect behind it come from one
+       build. */
+    glyph_table_sync();
 
     /* Close the still-open final segment so diff and tess see its full [lo, hi) range. */
     if ( s_draw.seg_count > 0 )

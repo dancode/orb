@@ -19,13 +19,15 @@ struct gui_pc_t
     uint     prim_base;    // this window SLOT's first record (records, not float4s)
     uint     quad_buf;     // bindless buffer slot of the quad records (gui_quad_t)
     uint     quad_base;    // the flush's quad-region origin (quads, not float4s)
+    uint     glyph_buf;    // bindless buffer slot of the glyph UV table (gui_glyph_uv_t)
+    uint     glyph_base;   // this FRAME's glyph-region origin (entries, not float4s)
 };
 [[vk::push_constant]] gui_pc_t pc;
 
-// The bindless storage-buffer array (set 0, binding 2).  The gui reads THREE tables through it:
-// the frame's clip entries, the style records, and the quad records.  Declared float4[] because
-// that is the one element type the array can have; integer lanes come back through asuint, a
-// reinterpret, not a convert.
+// The bindless storage-buffer array (set 0, binding 2).  The gui reads FOUR tables through it:
+// the frame's clip entries, the style records, the quad records, and the glyph UV table.  Declared
+// float4[] because that is the one element type the array can have; integer lanes come back
+// through asuint, a reinterpret, not a convert.
 [[vk::binding( 2, 0 )]] StructuredBuffer<float4> u_buffers[] : register( t0, space1 );
 
 // Decode an sRGB-encoded color to linear light.  UI colors are authored sRGB; the swapchain is
@@ -43,6 +45,18 @@ float3 srgb_to_linear( float3 c )
 // read two different records and the mismatch shows up as a shape, not as an error.
 #define QUAD_ROWS       3u
 #define PRIM_ROWS       8u
+
+// A glyph table entry is TWO uints, so two entries share one float4 row: the ID's high bits pick
+// the row and its low bit picks the half.  Mirrors gui_glyph_uv_t (gui.h).
+#define GUI_QUAD_F_GLYPH  ( 1u << 2 )
+
+uint2 glyph_uv( uint id )
+{
+    uint   e   = pc.glyph_base + id;
+    float4 row = u_buffers[ pc.glyph_buf ][ e >> 1u ];
+    return ( e & 1u ) ? uint2( asuint( row.z ), asuint( row.w ) )
+                      : uint2( asuint( row.x ), asuint( row.y ) );
+}
 
 // A pair of unorm16 as two floats over [0,1], x in the LOW half -- the packing gui_uv_pack writes
 // (gui.h).  Shared so the one place that knows the encoding is not two places: the vertex stage
