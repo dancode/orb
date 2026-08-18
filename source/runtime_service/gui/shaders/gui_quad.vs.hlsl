@@ -6,7 +6,7 @@
 //
 // What the expansion does per quad, keyed by the record's flags (gui.h, GUI_QUAD_RULE_*):
 //   EXACT    the stored half-extents, rotated by the quad's own (cos, sin)
-//   SKIRT    grown by the SDF falloff pad -- feather/2 + 1 -- from the style's row 3
+//   SKIRT    grown by the SDF falloff pad -- feather/2 + 1 -- from the style's row 2
 //   CAPSULE  hw is the half-length and hh the radius: the along axis grows by hh as well,
 //            so the round caps are covered
 //   BBOX     the stored extents ARE the covering (pad baked by the tessellator), expanded
@@ -34,7 +34,7 @@ struct vs_out_t
     nointerpolation uint   prim   : TEXCOORD1;   // style record index, slot-local
     nointerpolation float4 rect   : TEXCOORD2;   // shape placement: centre + stored half-extents
     nointerpolation uint   clip   : TEXCOORD3;   // clip-table entry index, region-absolute
-    nointerpolation float4 col2   : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
+    nointerpolation float4 border : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
                                                   //   rides the quad, never the style
     nointerpolation float4 inst   : TEXCOORD5;   // per-instance lanes off the quad:
                                                   //   xy = the turn (cos, sin), z = animation
@@ -49,7 +49,7 @@ vs_out_t main( uint vid : SV_VertexID )
     uint   row = ( pc.quad_base + quad ) * QUAD_ROWS;
     float4 q0  = u_buffers[ pc.quad_buf ][ row ];        // cx, cy, hw, hh
     float4 q1  = u_buffers[ pc.quad_buf ][ row + 1u ];   // uv0, uv1, abgr, style
-    float4 q2  = u_buffers[ pc.quad_buf ][ row + 2u ];   // clip, flags, xform, col_b
+    float4 q2  = u_buffers[ pc.quad_buf ][ row + 2u ];   // clip, flags, xform, col_border
 
     uint style = asuint( q1.w );
     uint flags = asuint( q2.y );
@@ -107,7 +107,7 @@ vs_out_t main( uint vid : SV_VertexID )
     o.prim     = style;
     o.rect     = q0;
     o.clip     = asuint( q2.x );
-    o.col2     = unpack_col( asuint( q2.w ) );
+    o.border   = unpack_col( asuint( q2.w ) );
     o.inst     = float4( rt, float( flags >> 16u ) / 65535.0, 0.0 );
     return o;
 }

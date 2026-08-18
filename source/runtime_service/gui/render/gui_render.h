@@ -285,7 +285,8 @@ void draw_push_arc_dashed       ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, 
                                   f32 dash, f32 gap, u32 abgr );
 
 /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1) by ANGLE -- the gradient a 4-corner
-   vertex colour cannot express.  col_b rides the quad's flat uv word (GUI_FX_ARC_GRAD). */
+   vertex colour cannot express.  col_b belongs to the shape, so it rides the STYLE record
+   (gui_prim_t.col_b), quantized through the uv pair's unorm16 on the way (GUI_FX_ARC_GRAD). */
 void draw_push_arc_gradient     ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
                                   u32 col_a, u32 col_b );
 

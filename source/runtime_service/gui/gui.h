@@ -2034,8 +2034,8 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
 
 #define GUI_OP_FRAME    ( 1u << 12 )  /* composite a border band of `border` px OVER the fill --
                                          body + border in ONE quad.  The band's colour rides the
-                                         QUAD's col_b (gui_quad_t), not the style -- an animated
-                                         border never adds a style record                       */
+                                         QUAD (gui_quad_t.col_border), not the style -- an
+                                         animated border never adds a style record              */
 
 /* The SHAPING stage of the animation clock (gui_prim_t row 5): what a normalized phase 0..1 does
    between its endpoints.  It sits between the timebase and the effect, so one curve bends whatever
@@ -2130,14 +2130,15 @@ typedef struct
     //   every field works in from it -- composed with OP_SPIN's clock angle, when that op is set.
     u32 xform;
 
-    // col_b: GUI_OP_FRAME's border band colour, and nothing else -- every other second colour
-    //   (GRAD's far end, CHECKER's alternate, ARC_GRAD's sweep target) is a property of the shape
-    //   and lives on the style.  This one rides the quad because a border colour is not: an
-    //   animated border -- or an animated fill, which was already here in `abgr` -- would
-    //   otherwise mint a style record per frame, where the style should state only the shape
-    //   (rounding, border width, feather).  0 when GUI_OP_FRAME is absent.
-
-    u32 col_b;
+    // col_border: GUI_OP_FRAME's border band colour, and nothing else.  Named for the one thing it
+    //   carries rather than "the second colour", because the STYLE has a second colour of its own
+    //   (gui_prim_t.col_b) and the two are not interchangeable: every second colour belonging to
+    //   the SHAPE -- GRAD's far end, CHECKER's alternate, TEXT_EDGE's outline, ARC_GRAD's sweep
+    //   target -- lives on the style and deduplicates with it.  A border colour does not belong to
+    //   the shape, so it rides the quad: an animated border -- or an animated fill, which was
+    //   already here in `abgr` -- would otherwise mint a style record per frame, where the style
+    //   should state only the shape (rounding, border width, feather).  0 when the op is absent.
+    u32 col_border;
 
 } gui_quad_t;
 

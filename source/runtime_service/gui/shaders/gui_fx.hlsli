@@ -67,7 +67,7 @@ struct ps_in_t
     nointerpolation uint   prim   : TEXCOORD1;   // style record index, slot-local
     nointerpolation float4 rect   : TEXCOORD2;   // shape placement: centre + half-extent (per quad)
     nointerpolation uint   clip   : TEXCOORD3;   // clip-table entry index (per quad)
-    nointerpolation float4 col2   : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
+    nointerpolation float4 border : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
                                                   //   rides the quad, never the style
     nointerpolation float4 inst   : TEXCOORD5;   // per-instance lanes off the quad: xy = the turn
                                                   //   (cos, sin), z = animation phase in cycles
@@ -813,7 +813,7 @@ float4 main( ps_in_t i ) : SV_Target0
     // `alpha` already carries it for the fill.
     if ( ( g_ops & OP_FRAME ) != 0u )
     {
-        float4 bcol = i.col2;
+        float4 bcol = i.border;
         float  ab   = bcol.a * g_frame_band * ccov;
         float  af   = alpha * ( 1.0 - ab );
         float  at   = ab + af;

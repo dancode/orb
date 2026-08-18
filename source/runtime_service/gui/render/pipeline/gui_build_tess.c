@@ -97,10 +97,10 @@ static struct
        border, a turning shape and a staggered pulse never add style records: cur_prim states only
        what is shared (shape, widths, rates).  Each is an ambient the command sets before its
        tess_quad_push, which folds it into the quad unread by the style.  Cleared per command.
-         cur_col2   second colour (0 = unused)
-         cur_rot_c  the turn, as a unit pair; (1, 0) is the identity a plain shape leaves
-         cur_phase  animation phase in cycles (0 = in step with the clock) */
-    u32         cur_col2;
+         cur_col_border  GUI_OP_FRAME's border band colour (0 = unused)
+         cur_rot_c       the turn, as a unit pair; (1, 0) is the identity a plain shape leaves
+         cur_phase       animation phase in cycles (0 = in step with the clock) */
+    u32         cur_col_border;
     f32         cur_rot_c, cur_rot_s;
     f32         cur_phase;
 
@@ -295,7 +295,7 @@ tess_reset( void )
     s_tess.cur_clip_local    = 0;
     s_tess.force_new_cmd     = false;
     s_tess.overflow          = false;
-    s_tess.cur_col2          = 0;
+    s_tess.cur_col_border    = 0;
     s_tess.cur_rot_c         = 1.0f;
     s_tess.cur_rot_s         = 0.0f;
     s_tess.cur_phase         = 0.0f;
@@ -483,7 +483,7 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
         .clip  = s_tess.cur_clip_local,
         .flags = rule_flags | gui_phase_pack( s_tess.cur_phase ),
         .xform = gui_xform_pack( s_tess.cur_rot_c, s_tess.cur_rot_s ),
-        .col_b = s_tess.cur_col2,
+        .col_border = s_tess.cur_col_border,
     };
 
     /* elem_count counts QUADS under this backend; the flush multiplies by six at the draw. */
@@ -923,9 +923,11 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         s_tess.cur_phase = aux->anim_phase;
     }
 
-    /* GUI_OP_FRAME's border colour does NOT land here -- it rides the quad's col_b (cur_col2,
-       set by the dispatcher before this call), so an animated border never adds a style record.
-       See gui_quad_t.col_b (gui.h) and the dispatch of GUI_CMD_FRAME below. */
+    /* GUI_OP_FRAME's border colour does NOT land here -- it rides the quad (cur_col_border, set by
+       the dispatcher before this call), so an animated border never adds a style record.  This
+       record's own col_b is the SHAPE's second colour (GRAD, CHECKER, TEXT_EDGE, ARC_GRAD); the
+       two are different lanes on purpose.  See gui_quad_t.col_border (gui.h) and the dispatch of
+       GUI_CMD_FRAME below. */
 
     /* GUI_OP_GRAD -- the ramp's far colour and its axis, stored as a UNIT direction.  The
        fragment divides by the extent the shape spans along it, recovered from the placement it
@@ -1828,7 +1830,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
            shares. */
         s_tess.cur_ops        = 0u;
         s_tess.cur_corner_pow = 0.0f;
-        s_tess.cur_col2       = 0u;
+        s_tess.cur_col_border = 0u;
         s_tess.cur_rot_c      = 1.0f;
         s_tess.cur_rot_s      = 0.0f;
         s_tess.cur_phase      = 0.0f;
@@ -1884,7 +1886,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_FRAME:
                 s_tess.cur_ops       |= GUI_OP_FRAME;
                 s_tess.cur_corner_pow = c->frame.corner_pow;
-                s_tess.cur_col2       = c->frame.col_border;   /* rides the quad, not the style */
+                s_tess.cur_col_border = c->frame.col_border;   /* rides the quad, not the style */
                 tess_fx_box( c->frame.x, c->frame.y, c->frame.w, c->frame.h,
                              c->frame.rounding,
                              ( c->frame.rounding > 0.0f ) ? TESS_FX_AA : 0.0f,
