@@ -641,7 +641,7 @@ typedef struct gui_api_s
        The _sdf twins register the same coverage as a DISTANCE FIELD instead: the bytes are
        transformed and land in the distance-field atlas, and the fragment then recovers the edge
        from the field's screen-space derivative rather than from a texel.  What that buys is an
-       icon that is exact at ANY size, survives rotation, and can take a GUI_FX_TEXT_EDGE outline
+       icon that is exact at ANY size, survives rotation, and can take a GUI_OP_TEXT_EDGE outline
        or glow -- none of which a coverage icon can do, because a coverage atlas must be sampled
        NEAREST or bitmap text stops being crisp.
 

@@ -1504,7 +1504,7 @@ win_backdrops( void )
 
     gui()->slider_float( "cell (px)", &s_bd_cell, 4.0f, 64.0f );
 
-    gui()->separator_text( "checker (mode 11) -- one quad, any area, any cell" );
+    gui()->separator_text( "checker -- one quad, any area, any cell" );
     {
         gui_rect_t r = gui()->canvas( 110.0f );
         gui()->draw_checker( r, s_bd_cell, GUI_COLOR( 0x2A, 0x2A, 0x30, 0xFF ),
@@ -1521,7 +1521,37 @@ win_backdrops( void )
                             GUI_COLOR( 0x60, 0xE0, 0x80, 0x40 ) );
     }
 
-    gui()->separator_text( "line grid (mode 12) -- fill + minor + major = three quads" );
+    /* Both patterns are OPS now, not fields, so the shape a pattern lands in is whatever the
+       record's field draws.  The ambient rounding reaches them exactly as it reaches a plain
+       fill: the chequerboard IS the swatch, the lattice ENDS at the panel's boundary -- still
+       one quad each, where a field could only ever have been the rectangle. */
+    gui()->separator_text( "patterns inside a shape -- the ambient rounding reaches them" );
+    {
+        gui_rect_t r    = gui()->canvas( 100.0f );
+        f32        save = gui()->draw_rounding();
+
+        gui()->draw_set_rounding( 40.0f );
+        gui()->draw_checker( ( gui_rect_t ){ r.x + 20.0f, r.y + 10.0f, 80.0f, 80.0f },
+                             10.0f, GUI_COLOR( 0x3A, 0x3A, 0x44, 0xFF ),
+                             GUI_COLOR( 0x22, 0x22, 0x2A, 0xFF ) );
+
+        gui()->draw_set_rounding( 14.0f );
+        gui()->draw_checker( ( gui_rect_t ){ r.x + 120.0f, r.y + 10.0f, 120.0f, 80.0f },
+                             10.0f, GUI_COLOR( 0x3A, 0x3A, 0x44, 0xFF ),
+                             GUI_COLOR( 0x22, 0x22, 0x2A, 0xFF ) );
+
+        gui()->draw_set_rounding( 18.0f );
+        gui()->draw_rect( r.x + 262.0f, r.y + 10.0f, 190.0f, 80.0f, PANEL );
+        gui()->draw_grid( ( gui_rect_t ){ r.x + 262.0f, r.y + 10.0f, 190.0f, 80.0f },
+                          14.0f, 1.0f, r.x + 262.0f, r.y + 10.0f,
+                          GUI_COLOR( 0x50, 0x50, 0x60, 0xFF ) );
+
+        gui()->draw_set_rounding( save );
+        gui()->draw_text( r.x + 470.0f, r.y + 40.0f, INK_DIM,
+                          "one quad each -- the pattern is cut to the shape" );
+    }
+
+    gui()->separator_text( "line grid -- fill + minor + major = three quads" );
     gui()->checkbox( "pan", &s_bd_pan );
     {
         gui_rect_t r = gui()->canvas( 240.0f );

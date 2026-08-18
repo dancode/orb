@@ -4,7 +4,7 @@
 
     The one piece of NEW math the icon SDF fork needed.  Everything else it rides on already
     existed: the SDF atlas is a generic tenant packer (res_sdf_add), the fragment already recovers
-    coverage from a distance field, and GUI_FX_TEXT_EDGE already paints an outline from one.  What
+    coverage from a distance field, and GUI_OP_TEXT_EDGE already paints an outline from one.  What
     was missing is that icons arrive as COVERAGE -- alpha from a PNG -- and a coverage byte is not
     a distance.  This file is the converter, and it is a pure function on a bitmap: no atlas, no
     registry, no GPU.
@@ -36,7 +36,7 @@
 /* The stored field's half-range, in TEXELS of the stored (downsampled) field: byte 128 is on the
    outline, 255 is this far inside, 1 this far outside.  It bounds two things and neither is the
    antialiasing -- the fragment recovers that from fwidth() and does not care what the spread is.
-   What it bounds is (a) how wide a GUI_FX_TEXT_EDGE outline can grow before the field saturates
+   What it bounds is (a) how wide a GUI_OP_TEXT_EDGE outline can grow before the field saturates
    and the outline stops growing, and (b) the quantization: 127 levels over the spread, so 4 px
    gives ~32 levels across the one-pixel AA band.  Widening it to 16 would leave 8, which bands
    visibly.  Four is the balance. */

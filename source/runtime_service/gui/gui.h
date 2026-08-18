@@ -1679,7 +1679,7 @@ typedef enum
       uv as UNORM16X2 -- 1/65535, against a largest atlas of 1024 px, is 64 steps per texel, so a
         glyph's sample lands where it did.  What it cannot represent is U OUTSIDE [0,1], and one
         primitive needs that: a dashed line spans U 0..len/period and lets the sampler's REPEAT
-        tile the atlas stipple row.  That is what GUI_FX_TILE_U exists for -- the repeat count
+        tile the atlas stipple row.  That is what GUI_OP_TILE_U exists for -- the repeat count
         lives in the record and the FRAGMENT multiplies, so the stored UV stays inside [0,1] and
         the sampled one is unchanged.  Any future primitive that wants to tile does the same;
         storing U > 1 directly would silently CLAMP.
@@ -1714,10 +1714,10 @@ typedef enum
                               it like any field.  Quad-record path only -- the vertex pipeline
                               rasterizes a real triangle instead.  (3 was PULSE, an op now.) */
 
-    /* The two modes that are not SHAPES.  Both leave coverage at 1 and act somewhere else in the
-       pipeline -- proof the word is really "what the fragment does", not "which SDF to evaluate". */
-    GUI_FX_TILE_U    = 4,  /* FRAGMENT: multiply u by the record's repeat count before sampling */
-    GUI_FX_TEXT_EDGE = 5,  /* SDF text drawn with a second colour OUTSIDE the glyph boundary    */
+    /* 4 and 5 are unnamed.  They were TILE_U and TEXT_EDGE -- a texcoord scale, and a second
+       colour outside the glyph boundary.  Neither was ever a shape, and holding the field slot
+       meant an outlined glyph or a tiled strip could be nothing else.  Both are ops now
+       (GUI_OP_TILE_U, GUI_OP_TEXT_EDGE). */
 
     GUI_FX_SEG       = 6,  /* CAPSULE: a line segment `radius` px thick, with round caps        */
 
@@ -1738,16 +1738,10 @@ typedef enum
     GUI_FX_ARC_GRAD  = 10, /* ARC whose colour sweeps from the vertex colour at the sector start
                               to the record's col_b at its end                                   */
 
-    /* The FRAMEBUFFER-TILING pattern modes.  Self-sampled like the two above (same bit), but the pattern
-       coordinate is gl_FragCoord / SV_Position -- exact float pixels straight from the
-       rasterizer -- rather than a shape-local frame, because these two do not HAVE a rect: a
-       backdrop's pattern belongs to the screen grid.  The phase rides the record, so the pattern
-       anchors to the SHAPE: a backdrop drags with its window instead of sliding under it. */
-    GUI_FX_CHECKER   = 11, /* two colours alternating in cell-sized squares: the record's col_b
-                              is the alternate; cell + per-axis phase are param_a / _b / _c     */
-    GUI_FX_GRID      = 12, /* line lattice every `cell` px, `thickness` px wide, antialiased.
-                              The vertex colour draws the LINES only -- layer it over any fill.
-                              Phase is a per-axis fraction of the cell (record r_tl / r_tr)     */
+    /* 11 and 12 are unnamed.  They were CHECKER and GRID -- the framebuffer-tiling patterns --
+       and as FIELDS they could only ever cover a rectangle's whole area.  They are ops now
+       (GUI_OP_CHECKER, GUI_OP_GRID), so a lattice or a checkerboard composes with a rounded
+       panel's boundary, with a sector, with a capsule, in ONE quad. */
 
     /* 13 is unnamed.  It was SKIRT -- a BOX with its interior cut away -- which is now
        GUI_OP_CUT, the exact mirror of the inset op it used to sit opposite. */
@@ -1885,7 +1879,12 @@ typedef struct
        mapped once at the emit site (draw_set_corner_smooth).  It sits in this row rather than with
        the scalar parameters because every box fragment already loads this row for the feather. */
 
-    f32 feather, border, corner_pow, reserved_edge;
+    f32 feather, border, corner_pow;
+
+    /* The PATTERN ops' rotation, radians, wrapped to [0, pi) -- a lattice at `a` and at `a + pi`
+       are the same lattice.  It sits in this row because row 7 has no lane left and every shape
+       that carries a pattern already loads this one. */
+    f32 pat_angle;
 
     /* Row 3 -- the scalar parameters and the second colour.
          ARC / PIE      param = radius, tube half-thickness, aperture (radians, HALF the sweep)
@@ -1956,13 +1955,37 @@ typedef struct
 
     f32 dash_period, dash_duty, dash_scroll, reserved_c;
 
+    /* Row 7 -- the PATTERN ops, which paint or cut across a shape rather than being one.  At most
+       one of them is live per record: they share this row, and a quad that wanted a checkerboard
+       AND a lattice is two quads by nature.  They were fields once, which is exactly why they
+       could not sit inside a rounded panel or a sector -- a field IS the shape.
+
+       CHECKER and GRID work in SV_Position pixels, not the shape's local frame: a backdrop's
+       pattern belongs to the screen grid, and a shape-local coordinate's ulp reaches a full pixel
+       at the corners of a fullscreen panel.  pat_phase re-anchors the pattern to the SHAPE, so a
+       backdrop drags with its window instead of sliding under it; the emit site derives it against
+       the same quantized pitch this row carries, since a phase and a pitch that disagree walk the
+       pattern off its anchor across a wide panel.
+
+         GUI_OP_TILE_U     pat_size = repeat count multiplied into u before sampling
+         GUI_OP_TEXT_EDGE  pat_size = outline width px      pat_col = the outline colour
+         GUI_OP_CHECKER    pat_cell = cell px               pat_col = the alternate colour
+                           pat_phase = per-axis phase, a fraction of the TWO-cell colour period
+                           (one cell of phase would simply swap the two colours)
+         GUI_OP_GRID       pat_cell = cell px, pat_size = line width px, pat_angle = row 2
+                           pat_phase = per-axis phase, a fraction of ONE cell
+       pat_phase is a unorm16 pair through gui_uv_pack, x in the low half. */
+
+    f32 pat_cell, pat_size;
+    u32 pat_phase, pat_col;
+
 } gui_prim_t;
 
-/* 112 bytes = seven std430 rows of four 32-bit components, so the fragment indexes the buffer as
+/* 128 bytes = eight std430 rows of four 32-bit components, so the fragment indexes the buffer as
    `prim * GUI_PRIM_ROWS + row` with no padding to account for.  Pinned because the shaders spell
    that stride as a literal. */
 
-#define GUI_PRIM_ROWS   7u
+#define GUI_PRIM_ROWS   8u
 #define GUI_PRIM_BYTES  ( GUI_PRIM_ROWS * 16u )
 
 ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
@@ -1997,6 +2020,16 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
                                          scrolled at anim_rate px/sec -- the marching ants     */
 #define GUI_OP_DITHER   ( 1u << 11 )  /* add +-0.5/255 screen-space noise to the output, so a
                                          wide soft ramp lands on 8-bit without banding         */
+/* The PATTERN ops -- what a shape is FILLED or CUT with, as opposed to what shape it is.  Each
+   was a field until it became clear that occupying the field slot is what stopped a checkerboard
+   from being round.  All four read row 7; at most one per record. */
+#define GUI_OP_TILE_U     ( 1u << 13 )  /* multiply u by pat_size before sampling -- the tiled
+                                           atlas strip a dashed line's stipple row wants        */
+#define GUI_OP_TEXT_EDGE  ( 1u << 14 )  /* SDF text with pat_col OUTSIDE the glyph boundary      */
+#define GUI_OP_CHECKER    ( 1u << 15 )  /* alternate the fill with pat_col in cell-sized squares */
+#define GUI_OP_GRID       ( 1u << 16 )  /* cut coverage to a line lattice; the fill colour draws
+                                           the LINES, so it layers over anything                */
+
 #define GUI_OP_FRAME    ( 1u << 12 )  /* composite a border band of `border` px OVER the fill --
                                          body + border in ONE quad.  The band's colour rides the
                                          QUAD's col_b (gui_quad_t), not the style -- an animated
@@ -2131,7 +2164,7 @@ ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
 
 /* UV -> two unorm16 -- the packing the quad record's uv0/uv1 lanes carry.  Clamped, because that
    is the only thing the format can do with an out-of-range coordinate -- a caller that wants U
-   past 1 asks for GUI_FX_TILE_U instead.
+   past 1 asks for GUI_OP_TILE_U instead.
 
    The assert is the point of this function: clamping is SILENT, and a primitive that quietly loses
    its tiling renders as one stretched texel rather than as an error.  Debug catches the mistake at
@@ -2287,10 +2320,10 @@ typedef enum
                              //   (GUI_FX_ARC_GRAD): the hot/cold value arc -- still one quad
     GUI_CMD_IMAGE_XF,        // textured quad under a rotation about its centre: rotated icons,
                              //   images, markers -- the text_xf treatment for one quad
-    GUI_CMD_CHECKER,         // two-colour cell pattern resolved in the FRAGMENT (GUI_FX_CHECKER):
+    GUI_CMD_CHECKER,         // two-colour cell pattern resolved in the FRAGMENT (GUI_OP_CHECKER):
                              //   the transparency backdrop as ONE quad, versus the 64 commands /
                              //   4096 quads a rect-pool expansion would cost at its 64x64 clamp
-    GUI_CMD_GRID,            // line lattice (GUI_FX_GRID): graph-paper / node-graph backdrop in
+    GUI_CMD_GRID,            // line lattice (GUI_OP_GRID): graph-paper / node-graph backdrop in
                              //   one quad; the lattice anchors to (ox, oy) so it pans with content
     GUI_CMD_NGON,            // regular polygon (GUI_FX_NGON): filled or stroked, corners rounded
                              //   by the ambient rounding -- one quad, exact at any size
@@ -2541,15 +2574,20 @@ typedef struct
            turns about its own middle -- the one pivot every caller was computing anyway. */
         struct { f32 x, y, w, h; f32 u0, v0, u1, v1; f32 rot; u32 tex_idx; u32 abgr; } image_xf;
         /* The cell pattern: col_a fills even cells, col_b odd, anchored at the box origin.  The
-           fragment tiles it in framebuffer space (GUI_FX_CHECKER), so this is ONE quad at any
-           area and any cell, where a rect-pool expansion would cap at 64x64 cells. */
-        struct { f32 x, y, w, h; f32 cell; u32 col_a, col_b; } checker;
+           fragment tiles it in framebuffer space (GUI_OP_CHECKER), so this is ONE quad at any
+           area and any cell, where a rect-pool expansion would cap at 64x64 cells.
+           `rounding` is the ambient radius, folded in like any other fill's: the pattern is an OP
+           now, so it lands inside the shape's own boundary instead of being the shape.  That is
+           what makes the transparency chequerboard behind a colour swatch the SWATCH, one quad. */
+        struct { f32 x, y, w, h; f32 cell; u32 col_a, col_b;
+                 f32 rounding, corner_pow; } checker;
         /* The line lattice: a line every `cell` px, `thickness` px wide, in abgr over NOTHING --
            the caller layers it on its own fill.  (ox, oy) is the lattice anchor in screen px:
            lines land on ox + k*cell, so a panning canvas passes its content origin and the grid
-           rides along (GUI_FX_GRID). */
+           rides along (GUI_OP_GRID).  `rounding` is the ambient radius: the lattice ends at the
+           panel's rounded boundary rather than at a rectangle over it. */
         struct { f32 x, y, w, h; f32 cell, thickness, ox, oy; f32 angle; u32 stripes;
-                 u32 abgr; } grid;
+                 u32 abgr; f32 rounding, corner_pow; } grid;
         /* Regular polygon (GUI_FX_NGON): `sides` flat edges inscribed in circumradius r, rotated
            by `rot` (radians, 0 = a vertex pointing up), corners rounded by `rounding` px.
            thickness > 0 strokes it (GUI_OP_BAND); 0 fills. */

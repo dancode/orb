@@ -33,6 +33,13 @@
 #define OP_DITHER       0x800u
 #define OP_FRAME        0x1000u
 
+// The PATTERN ops: what a shape is filled or cut WITH, rather than what shape it is.  All read
+// row 7 and at most one is live per record.
+#define OP_TILE_U       0x2000u
+#define OP_TEXT_EDGE    0x4000u
+#define OP_CHECKER      0x8000u
+#define OP_GRID         0x10000u
+
 // The ops that read the animation clock.  One test decides whether row 5 is fetched at all, so a
 // static shape never pays for the timebase it does not use.
 #define OP_ANIMATED     ( OP_PULSE | OP_SPIN | OP_DASH )
@@ -49,9 +56,6 @@
 
 #define TEX_MODE_SHIFT  28u
 #define TEX_INDEX_MASK  0x0FFFFFFFu
-
-// Seven float4 rows per record, no padding (gui.h pins the struct to that).
-#define PRIM_ROWS       7u
 
 #define PI              3.14159265
 
@@ -286,6 +290,43 @@ float fx_dash_cut( float s, float period, float duty )
     return saturate( 0.5 + d_on );
 }
 
+// OP_GRID -- the line lattice, as coverage.  It works in SV_Position pixels, not the shape's local
+// frame: a backdrop's pattern belongs to the screen grid, and a shape-local coordinate's ulp
+// reaches a full pixel at the corners of a fullscreen panel.  pat_phase re-anchors it to the shape
+// so a backdrop drags with its window instead of sliding under it.
+//
+// Being an op rather than a field is the whole difference between "a rectangle of graph paper" and
+// "graph paper inside whatever shape this is" -- the coverage below multiplies into the field's,
+// so the lattice ends at a rounded panel's boundary, a sector's caps, a capsule's ends.
+float fx_grid_mul( float2 px )
+{
+    float4 pat  = prim_row( 7u );
+    float  cell = pat.x;
+    float  ht   = pat.y * 0.5;                      // HALF the line width
+    float  ang  = prim_row( 2u ).w;
+    float2 ph   = unpack_unorm16x2( asuint( pat.z ) );
+
+    // Into LATTICE space first, so everything below is the axis-aligned case it always was.  The
+    // rotation is of the pixel coordinate, not of the pattern: the phase the emit site sent was
+    // computed against the ROTATED anchor for exactly this reason (tess_grid), so the lines still
+    // land on the anchor after the turn instead of sliding off it.
+    float2 q = px;
+    if ( ang != 0.0 )
+    {
+        float cs = cos( ang ), sn = sin( ang );
+        q = float2( px.x * cs + px.y * sn, -px.x * sn + px.y * cs );
+    }
+
+    float2 p  = q - ph * cell;
+    float2 m  = p - cell * floor( p / cell );
+    float2 dl = min( m, float2( cell, cell ) - m );
+
+    // STRIPES cuts on ONE axis instead of both: a lattice becomes a stripe field, and a stripe
+    // field at an angle is the diagonal hatch.  Same quad, same cost.
+    float dd = ( ( g_ops & OP_STRIPES ) != 0u ) ? dl.x : min( dl.x, dl.y );
+    return saturate( 0.5 + ht - dd );
+}
+
 /*--------------------------------------------------------------------------------------------------
     STAGE 1 -- THE FIELD.  Every shape writes the vocabulary and returns; nothing paints here.
 --------------------------------------------------------------------------------------------------*/
@@ -299,51 +340,10 @@ fx_field_t fx_field( float2 px )
     f.mul    = 1.0;
     f.shaped = false;
 
-    // 0 NONE, and the two modes that are not shapes: 4 TILE_U acts on the texcoord in main(), 5
-    // TEXT_EDGE acts on the COLOR in the SDF branch.  All three state no boundary -- and still
-    // reach the coverage ops below, which is why a plain fill can pulse.
-    if ( g_field == 0u || g_field == 4u || g_field == 5u )
+    // 0 NONE -- a plain fill or a glyph.  No boundary of its own, and it still reaches every
+    // coverage op below, which is why a flat rect can pulse or wear a lattice.
+    if ( g_field == 0u )
         return f;
-
-    // fields 11 CHECKER / 12 GRID -- the framebuffer-tiling patterns (gui.h).  Both compute in
-    // SV_Position pixels: exact at any panel size, where a shape-local coordinate's ulp reaches a
-    // full pixel at the corners of a fullscreen backdrop.  The phase re-anchors the pattern to the
-    // shape; the CPU derived it against the same quantized cell the record carries.  Neither has a
-    // boundary, so both contribute through `mul` and leave the d-based ops alone.
-    if ( g_field == 11u || g_field == 12u )
-    {
-        if ( g_field == 11u )
-            return f;     // CHECKER cuts nothing: it picks between two colours in main()
-
-        // GRID: distance to the nearest lattice line, the line `thickness` px wide straddling it,
-        // resolved with a 1 px AA band.
-        float4 parm = prim_row( 3u );
-        float  cell = parm.x;
-        float  ht   = parm.y * 0.5;      // HALF the line width
-        float  ang  = parm.z;
-        float2 ph   = prim_row( 1u ).xy; // per-axis phase, as a fraction of the cell
-
-        // Into LATTICE space first, so everything below is the axis-aligned case it always was.
-        // The rotation is of the pixel coordinate, not of the pattern: the phase the CPU sent was
-        // computed against the ROTATED anchor for exactly this reason (tess_grid), so the lines
-        // still land on the anchor after the turn instead of sliding off it.
-        float2 q = px;
-        if ( ang != 0.0 )
-        {
-            float cs = cos( ang ), sn = sin( ang );
-            q = float2( px.x * cs + px.y * sn, -px.x * sn + px.y * cs );
-        }
-
-        float2 p  = q - ph * cell;
-        float2 m  = p - cell * floor( p / cell );
-        float2 dl = min( m, float2( cell, cell ) - m );
-
-        // STRIPES cuts on ONE axis instead of both: a lattice becomes a stripe field, and a stripe
-        // field at an angle is the diagonal hatch.  Same quad, same cost.
-        float dd = ( ( g_ops & OP_STRIPES ) != 0u ) ? dl.x : min( dl.x, dl.y );
-        f.mul = saturate( 0.5 + ht - dd );
-        return f;
-    }
 
     float4 rect = prim_rect();
     float4 rad  = prim_row( 1u );
@@ -530,6 +530,11 @@ float fx_coverage( float2 px )
     if ( ( g_ops & OP_PULSE ) != 0u )
         cov *= 1.0 - prim_row( 3u ).x * g_k;
 
+    // GRID -- the lattice, cut into whatever coverage the field produced.  Like PULSE it needs no
+    // boundary, so it reaches every shape and a plain fill alike.
+    if ( ( g_ops & OP_GRID ) != 0u )
+        cov *= fx_grid_mul( px );
+
     return cov;
 }
 
@@ -638,14 +643,14 @@ float4 main( ps_in_t i ) : SV_Target0
     uint tex_slot = g_tex & TEX_INDEX_MASK;
     uint samp     = ( tex_mode == 0u ) ? pc.samp_point : pc.samp_image;
 
-    /* GUI_FX_TILE_U: the stored U is normalized 0..1 (all UNORM16X2 can hold) and the repeat count
+    /* GUI_OP_TILE_U: the stored U is normalized 0..1 (all UNORM16X2 can hold) and the repeat count
        rides the record.  Scaling HERE rather than in the vertex stage is exactly equivalent -- the
        multiply is affine and commutes with interpolation -- and it keeps the vertex shader a pure
        pass-through, so a dashed line is still one quad tiling the atlas stipple row under the
        sampler's REPEAT. */
     float2 uv = i.uv;
-    if ( g_field == 4u )
-        uv.x *= prim_row( 3u ).x;
+    if ( ( g_ops & OP_TILE_U ) != 0u )
+        uv.x *= prim_row( 7u ).y;
 
     float4 s   = u_textures[ NonUniformResourceIndex( tex_slot ) ]
                      .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], uv );
@@ -673,21 +678,22 @@ float4 main( ps_in_t i ) : SV_Target0
                                     / max( 2.0 * ap, 1e-4 ) );
             vcol = lerp( vcol, c2, t );
         }
-        // field 11 CHECKER -- the cell pitch and the parity phase come from the record, the phase
-        // as a fraction of the TWO-cell colour period (one cell of phase would swap the colours).
-        // Parity is floor-based like every pattern mod here (fmod truncates), and odd cells take
-        // the second colour.
-        else if ( g_field == 11u )
-        {
-            float4 parm = prim_row( 3u );
-            float4 c2   = unpack_col( asuint( parm.w ) );
-            float  cell = parm.x;
-            float2 ph   = parm.yz * ( 2.0 * cell );
-            float2 t    = ( i.sv_pos.xy - ph ) / cell;
-            float  k    = floor( t.x ) + floor( t.y );
-            if ( k - 2.0 * floor( k * 0.5 ) >= 0.5 )
-                vcol = c2;
-        }
+    }
+
+    // OP_CHECKER -- alternate the fill with the record's pattern colour in cell-sized squares.  The
+    // pitch and the parity phase come from row 7, the phase as a fraction of the TWO-cell colour
+    // period (one cell of phase would simply swap the colours).  Parity is floor-based like every
+    // pattern mod here, since fmod truncates.  As an op it lands on whatever shape the field drew,
+    // so the transparency chequerboard behind a swatch is the swatch's own rounded rect.
+    if ( ( g_ops & OP_CHECKER ) != 0u )
+    {
+        float4 pat  = prim_row( 7u );
+        float  cell = pat.x;
+        float2 ph   = unpack_unorm16x2( asuint( pat.z ) ) * ( 2.0 * cell );
+        float2 t    = ( i.sv_pos.xy - ph ) / cell;
+        float  k    = floor( t.x ) + floor( t.y );
+        if ( k - 2.0 * floor( k * 0.5 ) >= 0.5 )
+            vcol = unpack_col( asuint( pat.w ) );
     }
 
     // GUI_OP_GRAD -- the ramp from the fill's own colour toward the record's second one.  Resolved
@@ -758,16 +764,16 @@ float4 main( ps_in_t i ) : SV_Target0
         float dpx  = d / max( fwidth( d ), 1e-6 );        // signed distance to the edge, in PIXELS
         float fill = clamp( dpx + 0.5, 0.0, 1.0 );
 
-        // GUI_FX_TEXT_EDGE -- a second colour outside the glyph boundary (Slate's SecondaryColor,
+        // GUI_OP_TEXT_EDGE -- a second colour outside the glyph boundary (Slate's SecondaryColor,
         // without Slate's vertex field).  Because dpx is already a pixel distance, "outline" is
         // just the same threshold moved out by `width`: one extra clamp on a number this branch had
         // to compute anyway, from the ONE texture sample it had already taken.  No second quad, no
         // offset copy of the run, no batch split -- which is what makes it affordable on body text.
-        if ( g_field == 5u )
+        if ( ( g_ops & OP_TEXT_EDGE ) != 0u )
         {
-            float4 parm = prim_row( 3u );
-            float  wpx  = parm.x;
-            float4 ecol = unpack_col( asuint( parm.w ) );
+            float4 pat  = prim_row( 7u );
+            float  wpx  = pat.y;
+            float4 ecol = unpack_col( asuint( pat.w ) );
 
             // Source-over of the fill onto the band, resolved analytically: the band contributes
             // only where the fill does not (1 - fill), so the seam between them is antialiased by

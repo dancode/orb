@@ -390,7 +390,7 @@ draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
 
 /* Checkerboard fill of `box` with `cell`-sized squares alternating col_a / col_b -- the classic
    transparency backdrop behind a color swatch.  ONE quad: the fragment tiles the pattern in
-   framebuffer space (GUI_FX_CHECKER), so any area at any cell costs four vertices.  This used to
+   framebuffer space (GUI_OP_CHECKER), so any area at any cell costs four vertices.  This used to
    be a rect-pool expansion capped at 64x64 cells -- 64 commands and up to 4096 quads per call,
    with the pattern coarsening past the clamp; both the cost and the clamp are gone. */
 void
@@ -425,7 +425,7 @@ draw_hatch( gui_rect_t box, f32 spacing, f32 thickness, u32 col )
    (radians; 0 gives vertical lines, and the hatch above is simply this at 45 degrees).  Anchored
    to the box origin, so the pattern travels with the shape rather than sliding under it.
 
-   One quad, resolved in the fragment (GUI_FX_GRID with its stripe bit).  The lines are a lattice
+   One quad, resolved in the fragment (GUI_OP_GRID with its stripe bit).  The lines are a lattice
    cut on ONE axis, which is why an arbitrary angle costs nothing extra -- the fragment rotates
    its own pixel coordinate and everything downstream is the axis-aligned case. */
 void

@@ -19,9 +19,6 @@
 
 #include "gui_common.hlsli"
 
-#define QUAD_ROWS   3u    // gui.h GUI_QUAD_ROWS
-#define STYLE_ROWS  7u    // gui.h GUI_PRIM_ROWS -- a style is a gui_prim_t
-
 // Corner of the two-triangle quad in (0,0)..(1,1): triangles 0-1-2 / 0-2-3 of the ring
 // TL, TR, BR, BL -- the winding every legacy quad used (the pipeline does not cull).
 static const float2 k_corner[ 6 ] = {
@@ -43,11 +40,6 @@ struct vs_out_t
                                                   //   xy = the turn (cos, sin), z = animation
                                                   //   phase in cycles, w unused
 };
-
-float2 unpack_unorm16x2( uint p )
-{
-    return float2( p & 0xFFFFu, p >> 16u ) / 65535.0;
-}
 
 vs_out_t main( uint vid : SV_VertexID )
 {
@@ -73,7 +65,7 @@ vs_out_t main( uint vid : SV_VertexID )
 
     // The one style fetch the expansion needs: row 2 leads with the feather the SDF pad derives
     // from.  Cache-hot -- a window's quads share a handful of styles.
-    float4 s3 = u_buffers[ pc.prim_buf ][ ( pc.prim_base + style ) * STYLE_ROWS + 2u ];
+    float4 s3 = u_buffers[ pc.prim_buf ][ ( pc.prim_base + style ) * PRIM_ROWS + 2u ];
 
     float pad = ( rule == 1u || rule == 2u ) ? s3.x * 0.5 + 1.0 : 0.0;
 

@@ -49,10 +49,10 @@ test_uv_pack( void )
 static void
 test_prim_layout( void )
 {
-    /* Seven 16-byte rows, no tail padding.  GUI_PRIM_ROWS is what the shaders multiply by. */
-    test_equal( 7u,   GUI_PRIM_ROWS );
-    test_equal( 112u, (u32)GUI_PRIM_BYTES );
-    test_equal( 112u, (u32)sizeof( gui_prim_t ) );
+    /* Eight 16-byte rows, no tail padding.  GUI_PRIM_ROWS is what the shaders multiply by. */
+    test_equal( 8u,   GUI_PRIM_ROWS );
+    test_equal( 128u, (u32)GUI_PRIM_BYTES );
+    test_equal( 128u, (u32)sizeof( gui_prim_t ) );
 
     /* Row starts.  The hot word leads on purpose: a glyph or a flat fill reads row 0 and stops.
        No placement row and no clip lane -- both ride the quad record (gui_quad_t). */
@@ -65,6 +65,7 @@ test_prim_layout( void )
     test_equal( 84u, (u32)offsetof( gui_prim_t, anim_curve  ) );
     test_equal( 88u, (u32)offsetof( gui_prim_t, anim_param  ) );
     test_equal( 96u, (u32)offsetof( gui_prim_t, dash_period ) );
+    test_equal( 112u, (u32)offsetof( gui_prim_t, pat_cell ) );
 
     /* Within-row order, since a row is read as one vec4 and its components are positional. */
     test_equal(  4u, (u32)offsetof( gui_prim_t, ops     ) );
@@ -83,6 +84,10 @@ test_prim_layout( void )
     test_equal( 92u, (u32)offsetof( gui_prim_t, grad_mid    ) );
     test_equal( 100u, (u32)offsetof( gui_prim_t, dash_duty   ) );
     test_equal( 104u, (u32)offsetof( gui_prim_t, dash_scroll ) );
+    test_equal( 44u,  (u32)offsetof( gui_prim_t, pat_angle ) );
+    test_equal( 116u, (u32)offsetof( gui_prim_t, pat_size  ) );
+    test_equal( 120u, (u32)offsetof( gui_prim_t, pat_phase ) );
+    test_equal( 124u, (u32)offsetof( gui_prim_t, pat_col   ) );
 }
 
 static void
@@ -191,7 +196,8 @@ test_prim_ops( void )
     const u32 ops[] = { GUI_OP_BAND, GUI_OP_CUT, GUI_OP_INSET,
                         GUI_OP_PULSE, GUI_OP_STRIPES, GUI_OP_SELF,
                         GUI_OP_GRAD, GUI_OP_GRAD_RADIAL, GUI_OP_GRAD_CONIC,
-                        GUI_OP_SPIN, GUI_OP_DASH, GUI_OP_DITHER, GUI_OP_FRAME };
+                        GUI_OP_SPIN, GUI_OP_DASH, GUI_OP_DITHER, GUI_OP_FRAME,
+                        GUI_OP_TILE_U, GUI_OP_TEXT_EDGE, GUI_OP_CHECKER, GUI_OP_GRID };
 
     u32 seen = 0u;
     for ( u32 i = 0; i < ARRAY_COUNT( ops ); ++i )
@@ -201,7 +207,7 @@ test_prim_ops( void )
         test_equal( 0u, seen & ops[ i ] );                /* and not one already spent */
         seen |= ops[ i ];
     }
-    test_equal( 0x1FFFu, seen );
+    test_equal( 0x1FFFFu, seen );
 }
 
 /*============================================================================================*/

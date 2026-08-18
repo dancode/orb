@@ -1346,8 +1346,26 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     cell, in the uv lanes the single-colour lattice leaves free.
 ==============================================================================================*/
 
+/* A pattern quad, with the shape it lands in.  A zero radius is the plain rectangle the pattern
+   used to be able to be and nothing else: one bare quad, no field, no falloff.  A non-zero radius
+   routes the same record through the BOX field, so the lattice or the chequerboard is cut to a
+   rounded boundary -- the whole point of these being ops rather than fields.  Either way it is ONE
+   quad and one style. */
 static void
-tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
+tess_pattern_push( f32 x, f32 y, f32 w, f32 h, f32 rounding, u32 abgr )
+{
+    if ( rounding > 0.0f )
+    {
+        tess_fx_box( x, y, w, h, rounding, TESS_FX_AA, 0.0f,
+                     0.0f, 0.0f, 0.0f, 0, 0, 1, 1, 0, abgr, NULL );
+        return;
+    }
+    tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
+                    0, 0, res_atlas_idx(), abgr );
+}
+
+static void
+tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, f32 rounding, u32 col_a, u32 col_b )
 {
     /* Snap like tess_rect_filled: the pattern anchors at the box origin, so the box must land
        where the plain fill under it does. */
@@ -1360,20 +1378,17 @@ tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
     f32 phx    = ( x - period * floorf( x / period ) ) / period;
     f32 phy    = ( y - period * floorf( y / period ) ) / period;
 
-    s_tess.cur_prim.field   = (u32)GUI_FX_CHECKER;
-    s_tess.cur_prim.param_a = cell;
-    s_tess.cur_prim.param_b = phx;
-    s_tess.cur_prim.param_c = phy;
-    s_tess.cur_prim.col_b   = col_b;
-    s_tess.cur_ops |= GUI_OP_SELF;
+    s_tess.cur_prim.pat_cell  = cell;
+    s_tess.cur_prim.pat_phase = gui_uv_pack( phx, phy );
+    s_tess.cur_prim.pat_col   = col_b;
+    s_tess.cur_ops |= GUI_OP_SELF | GUI_OP_CHECKER;
 
-    tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
-                    0, 0, res_atlas_idx(), col_a );
+    tess_pattern_push( x, y, w, h, rounding, col_a );
 }
 
 static void
 tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness,
-           f32 angle, bool stripes, u32 abgr )
+           f32 angle, f32 rounding, bool stripes, u32 abgr )
 {
     x = tess_snap_px( x );
     y = tess_snap_px( y );
@@ -1399,18 +1414,15 @@ tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness,
     f32 phx = ( rx - cell * floorf( rx / cell ) ) / cell;
     f32 phy = ( ry - cell * floorf( ry / cell ) ) / cell;
 
-    s_tess.cur_prim.field   = (u32)GUI_FX_GRID;
-    s_tess.cur_prim.param_a = cell;
-    s_tess.cur_prim.param_b = thickness;
-    s_tess.cur_prim.param_c = angle;
-    s_tess.cur_prim.r_tl    = phx;
-    s_tess.cur_prim.r_tr    = phy;
+    s_tess.cur_prim.pat_cell  = cell;
+    s_tess.cur_prim.pat_size  = thickness;
+    s_tess.cur_prim.pat_angle = angle;
+    s_tess.cur_prim.pat_phase = gui_uv_pack( phx, phy );
     if ( stripes )
         s_tess.cur_ops |= GUI_OP_STRIPES;
-    s_tess.cur_ops |= GUI_OP_SELF;
+    s_tess.cur_ops |= GUI_OP_SELF | GUI_OP_GRID;
 
-    tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
-                    0, 0, res_atlas_idx(), abgr );
+    tess_pattern_push( x, y, w, h, rounding, abgr );
 }
 
 /* The ambient TEXT_EDGE, straight onto the record: a band `width` px outside the glyph boundary,
@@ -1422,9 +1434,9 @@ tess_text_edge_prim( f32 width, u32 abgr )
     if ( width <= 0.0f )
         return;
 
-    s_tess.cur_prim.field   = (u32)GUI_FX_TEXT_EDGE;
-    s_tess.cur_prim.param_a = width;
-    s_tess.cur_prim.col_b   = abgr;
+    s_tess.cur_prim.pat_size = width;
+    s_tess.cur_prim.pat_col  = abgr;
+    s_tess.cur_ops |= GUI_OP_TEXT_EDGE;
 }
 
 /* Tessellate a glyph run from the font atlas into s_tess, hard-clipped to the horizontal pixel
@@ -1576,11 +1588,10 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
 
     /* U runs 0..1 in the quad's uv lanes and is multiplied back up to `umax` periods by the
        fragment: the packed UV cannot hold a coordinate past 1, and the sampler's REPEAT-U is
-       what tiles the atlas dash row (gui.h, GUI_FX_TILE_U).  The line's direction is the style's
-       rot pair -- a style per direction; dashed lines are rare enough that the dedup loss is
-       noise. */
-    s_tess.cur_prim.field   = (u32)GUI_FX_TILE_U;
-    s_tess.cur_prim.param_a = umax;
+       what tiles the atlas dash row (gui.h, GUI_OP_TILE_U).  The line's direction is the quad's
+       turn -- a style per direction; dashed lines are rare enough that the dedup loss is noise. */
+    s_tess.cur_prim.pat_size = umax;
+    s_tess.cur_ops |= GUI_OP_TILE_U;
     s_tess.cur_rot_c = ux;
     s_tess.cur_rot_s = uy;
     tess_quad_push( ( x0 + x1 ) * 0.5f, ( y0 + y1 ) * 0.5f, len * 0.5f, half,
@@ -1973,14 +1984,18 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             /* The framebuffer-tiling patterns: the fragment does the tiling, the CPU's share is
                the quantized pitch + anchor phase (see tess_checker). */
             case GUI_CMD_CHECKER:
+                s_tess.cur_corner_pow = c->checker.corner_pow;
                 tess_checker( c->checker.x, c->checker.y, c->checker.w, c->checker.h,
-                              c->checker.cell, c->checker.col_a, c->checker.col_b );
+                              c->checker.cell, c->checker.rounding,
+                              c->checker.col_a, c->checker.col_b );
                 break;
 
             case GUI_CMD_GRID:
+                s_tess.cur_corner_pow = c->grid.corner_pow;
                 tess_grid( c->grid.x, c->grid.y, c->grid.w, c->grid.h,
                            c->grid.ox, c->grid.oy, c->grid.cell, c->grid.thickness,
-                           c->grid.angle, c->grid.stripes != 0u, c->grid.abgr );
+                           c->grid.angle, c->grid.rounding, c->grid.stripes != 0u,
+                           c->grid.abgr );
                 break;
 
             /* The regular polygon: filled, or stroked under GUI_OP_BAND -- the op set here for

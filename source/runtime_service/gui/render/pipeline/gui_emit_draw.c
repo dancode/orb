@@ -141,7 +141,7 @@ static struct
     f32 rounding;
 
     /* Ambient corner PROFILE, folded in beside the radius: the exponent of the norm the corner
-       arc is measured in (gui.h, gui_prim_t param_c).  Held as the exponent rather than as the
+       arc is measured in (gui.h, gui_prim_t row 2).  Held as the exponent rather than as the
        0..1 smoothing a caller authors, so the conversion happens once in draw_set_corner_smooth
        instead of per pushed shape.  0 = circular, which is what every shape gets until a theme
        says otherwise -- it is installed once per frame from GUI_VAR_CORNER_SMOOTH, so a caller
@@ -1653,8 +1653,8 @@ draw_push_arc_gradient( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
 /*==============================================================================================
     draw_push_checker / draw_push_grid -- the framebuffer-tiling pattern quads.
 
-    Each is ONE quad whose fragment tiles the pattern in framebuffer pixels (GUI_FX_CHECKER /
-    GUI_FX_GRID, gui.h); the CPU's share -- quantizing the cell pitch and deriving the anchor
+    Each is ONE quad whose fragment tiles the pattern in framebuffer pixels (GUI_OP_CHECKER /
+    GUI_OP_GRID, gui.h); the CPU's share -- quantizing the cell pitch and deriving the anchor
     phase against it -- runs at tessellation, where the box has been snapped.  Emit just gates
     and stores the semantic fields.
 ==============================================================================================*/
@@ -1679,6 +1679,8 @@ draw_push_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
     c->checker.cell  = cell;
     c->checker.col_a = ca;
     c->checker.col_b = cb;
+    c->checker.rounding   = s_draw.rounding;
+    c->checker.corner_pow = ( s_draw.rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
     draw_cmd_seal();
 }
 
@@ -1708,6 +1710,8 @@ draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 angle, bool stri
     c->grid.angle     = angle;
     c->grid.stripes   = stripes ? 1u : 0u;
     c->grid.abgr      = col;
+    c->grid.rounding   = s_draw.rounding;
+    c->grid.corner_pow = ( s_draw.rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
     draw_cmd_seal();
 }
 

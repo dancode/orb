@@ -37,6 +37,21 @@ float3 srgb_to_linear( float3 c )
     return lerp( hi, lo, step( c, 0.04045 ) );    // c <= 0.04045 selects lo (GLSL mix + cutoff)
 }
 
+// The record strides, mirroring gui.h (GUI_QUAD_ROWS / GUI_PRIM_ROWS).  BOTH stages index the
+// style buffer -- the vertex stage reads the feather to grow a skirt quad, the fragment reads
+// everything -- so the stride lives here rather than once per stage: two copies that disagree
+// read two different records and the mismatch shows up as a shape, not as an error.
+#define QUAD_ROWS       3u
+#define PRIM_ROWS       8u
+
+// A pair of unorm16 as two floats over [0,1], x in the LOW half -- the packing gui_uv_pack writes
+// (gui.h).  Shared so the one place that knows the encoding is not two places: the vertex stage
+// reads uvs and the shape's turn with it, the fragment reads a pattern phase.
+float2 unpack_unorm16x2( uint p )
+{
+    return float2( p & 0xFFFFu, p >> 16u ) / 65535.0;
+}
+
 // An RGBA8 word (R in the low byte) as linear-light colour.
 float4 unpack_col( uint c )
 {
