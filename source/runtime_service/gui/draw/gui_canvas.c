@@ -429,6 +429,18 @@ gui_draw_get_anim_curve( u32* curve, f32* param )
     draw_get_anim_curve( curve, param );
 }
 
+void
+gui_draw_set_anim_phase( f32 cycles )
+{
+    draw_set_anim_phase( cycles );
+}
+
+f32
+gui_draw_anim_phase( void )
+{
+    return draw_anim_phase();
+}
+
 /* Border ALIGNMENT for the stroked box family (gui_api.h): 0 inside, 0.5 centred, 1 outside.
    Same ambient discipline as the radius -- save, set, draw, restore. */
 

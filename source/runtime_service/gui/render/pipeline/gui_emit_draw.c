@@ -157,6 +157,12 @@ static struct
     u32 anim_curve;
     f32 anim_curve_param;
 
+    /* Ambient animation PHASE, in cycles, ADDED to whatever phase an animating call states of
+       its own.  The two compose because they answer different questions: a call's phase staggers
+       one element against its neighbours, this one anchors the whole cycle to an EVENT (see
+       anim_once, gui_api.h).  A shape can want both. */
+    f32 anim_phase;
+
     /* Ambient BORDER ALIGNMENT for the stroked box family: where the band sits against the
        authored boundary.  0 = inside (the band's outer edge on the boundary -- the default every
        outline has always had), 0.5 = centred, 1 = outside (the band's inner edge on it).
@@ -735,6 +741,21 @@ draw_get_anim_curve( u32* curve, f32* param )
 {
     if ( curve ) *curve = s_draw.anim_curve;
     if ( param ) *param = s_draw.anim_curve_param;
+}
+
+/* The cycle offset every animating shape pushed after this is anchored by, in cycles, added to
+   whatever offset the call itself states.  This is how a one-shot reaches the draws that take no
+   phase of their own -- the spinner, the marching ants. */
+void
+draw_set_anim_phase( f32 cycles )
+{
+    s_draw.anim_phase = cycles;
+}
+
+f32
+draw_anim_phase( void )
+{
+    return s_draw.anim_phase;
 }
 
 /* The installed profile as the 0..1 amount that was authored, so a site can save / override /
@@ -1359,7 +1380,7 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
     c->fx_box.feather  = feather;
     c->fx_box.rate     = rate;
     c->fx_box.depth    = depth;
-    c->fx_box.phase    = phase;
+    c->fx_box.phase    = phase + s_draw.anim_phase;
     c->fx_box.rot      = rot;
     c->fx_box.abgr     = col;
     c->fx_box.variant  = variant;
@@ -1512,7 +1533,7 @@ draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     c->arc.a0         = a0;
     c->arc.a1         = a1;
     c->arc.spin_rate  = spin_rate;
-    c->arc.spin_phase = spin_phase;
+    c->arc.spin_phase = spin_phase + s_draw.anim_phase;
     c->arc.abgr       = col;
     c->arc.curve       = s_draw.anim_curve;
     c->arc.curve_param = s_draw.anim_curve_param;
@@ -1771,6 +1792,7 @@ draw_push_box_dashed( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
     c->box_dash.gap      = gap;
     c->box_dash.rate     = rate;
     c->box_dash.phase    = phase;
+    c->box_dash.anim_phase = s_draw.anim_phase;
     c->box_dash.abgr     = col;
     c->box_dash.curve       = s_draw.anim_curve;
     c->box_dash.curve_param = s_draw.anim_curve_param;

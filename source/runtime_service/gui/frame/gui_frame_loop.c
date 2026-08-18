@@ -313,7 +313,7 @@ gui_frame_begin( f32 dt )
        unconditionally, before the dirty test: a clean frame still presents, and an effect driven
        by pc.time must keep advancing across the idle skip or it would stutter to a stop the
        moment nothing else in the UI moved. */
-    gui_render_set_time( (f32)fmod( s_io.time, GUI_FX_TIME_WRAP ) );
+    gui_render_set_time( gui_anim_time() );
 
     /* Frontend dirty: true when the frame must emit widgets.
          - io_dirty          : any input change this frame (mouse move/button/key/wheel/text)

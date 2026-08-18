@@ -2019,7 +2019,10 @@ typedef enum
     GUI_CURVE_EASE,         // pow( phase, param ).  param > 1 eases in, < 1 eases out, 1 = linear
     GUI_CURVE_STAIR,        // param steps of equal height -- the mechanical clock-hand spinner
     GUI_CURVE_SQUARE,       // holds 0 for the first `param` of the cycle, then 1: the blink
-    GUI_CURVE_DECAY,        // exp( -param * phase ).  Starts at 1 and falls: the flash that fades
+    GUI_CURVE_DECAY,        // exp( -param * phase ).  The one curve that starts at 1 and falls.
+                            //   Under PULSE, which SUBTRACTS k from coverage, that reads as
+                            //   fading IN; pair it with a target k drives upward, or use EASE
+                            //   with param < 1 for a pulse that flashes and settles.
 } gui_curve_t;
 
 /* Which way a ramp runs, as a draw parameter.  The record carries it as the op bits above; this is
@@ -2163,6 +2166,31 @@ gui_phase_pack( f32 cycles )
     f32 f = cycles - (f32)(i32)cycles;             /* wrap; the sign is handled just below */
     if ( f < 0.0f ) f += 1.0f;
     return ( (u32)( f * 65535.0f + 0.5f ) & 0xFFFFu ) << GUI_QUAD_PHASE_SHIFT;
+}
+
+/* The phase that makes a cycle BEGIN at t0 -- the whole of what turns the periodic shader clock
+   into a one-shot, and the reason a per-instance start time never had to reach the quad.
+
+   The fragment computes phase = frac( rate*time + phase ), so choosing phase = -t0*rate puts a
+   cycle boundary exactly on t0: from there the phase rises 0 -> 1 across one duration and IS the
+   transition's progress.  What the shader cannot tell on its own is WHICH cycle it is in, so the
+   caller stops asking for the animation when the duration is up (gui_api.h, anim_once) -- which
+   is the same frame it would switch to drawing the settled state anyway.
+
+   `duration` is seconds; the rate that goes with this phase is 1/duration.  The result is in
+   cycles and may be far outside [0,1) -- gui_phase_pack wraps it, in either direction.
+
+   The half-step bias is what keeps the transition from starting at its END.  The phase lane is
+   unorm16, so packing rounds either way; a phase that rounds DOWN puts t0 a hair before the cycle
+   boundary, where the fragment's frac() reads ~1 rather than 0.  Biasing by half a step makes the
+   rounding error one-sided, so the first instant is always at the beginning of the wave. */
+
+static inline f32
+gui_phase_anchor( f32 t0, f32 duration )
+{
+    if ( duration <= 0.0f )
+        return 0.0f;
+    return -( t0 / duration ) + ( 0.5f / 65535.0f );
 }
 
 /*==============================================================================================
@@ -2533,7 +2561,7 @@ typedef struct
            so the ants re-tessellate nothing.  `curve`/`curve_param` shape how the pattern crosses
            one period (gui_curve_t): STAIR is the ants that jump a dash at a time. */
         struct { f32 x, y, w, h; f32 rounding, t; f32 dash, gap; f32 rate, phase;
-                 u32 abgr; u32 curve; f32 curve_param; } box_dash;
+                 u32 abgr; u32 curve; f32 curve_param; f32 anim_phase; } box_dash;
     };
 } gui_cmd_t;
 

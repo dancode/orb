@@ -747,6 +747,10 @@ typedef struct gui_api_s
        curve's own parameter.  Ambient like the radius: save, override, restore. */
     void ( *draw_set_anim_curve    )( u32 curve, f32 param );
     void ( *draw_get_anim_curve    )( u32* curve, f32* param );
+    /* The cycle offset added to every animating shape pushed after this -- how anim_once reaches
+       the draws that state no phase of their own (the spinner, the marching ants). */
+    void ( *draw_set_anim_phase    )( f32 cycles );
+    f32  ( *draw_anim_phase        )( void );
 
     /* Where a stroked box's band sits against its boundary -- the stroke alignment every design
        tool offers: 0 inside (the default every outline has always had), 0.5 centred, 1 outside.
@@ -983,6 +987,17 @@ typedef struct gui_api_s
     u32      ( *anim_color  )( gui_id_t id, u32 target_abgr, f32 speed );
     gui_vec2_t ( *anim_vec2 )( gui_id_t id, gui_vec2_t target, f32 speed );
     gui_rect_t ( *anim_rect )( gui_id_t id, gui_rect_t target, f32 speed );
+
+    /* The SHADER-side one-shot, for a shape that animates in the FRAGMENT rather than by moving:
+       a chip that flashes once, a border whose ants run a single lap, a spinner that ticks through
+       one revolution.  anim_time stamps the fx clock when the event happens; anim_once turns that
+       stamp into the (rate, phase) an animating draw call is emitted with, holds request_redraw
+       while it runs, and returns false on the frame the duration is up -- draw the settled state
+       from there.  The emitted bytes never change in between, so unlike anim_ease (which is the
+       right tool when the geometry itself moves) the window keeps its retained geometry for the
+       whole transition.  The curve the phase is shaped through is draw_set_anim_curve's. */
+    f32      ( *anim_time   )( void );
+    bool     ( *anim_once   )( f32 t0, f32 duration, f32* out_rate, f32* out_phase );
 
     /*=================================  identity + item flags + drag and drop  =================================*/
 

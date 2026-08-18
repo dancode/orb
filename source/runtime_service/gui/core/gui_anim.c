@@ -296,6 +296,63 @@ gui_anim_ease( gui_id_t id, gui_ease_t ease, bool* out_active )
     return gui_anim_timer( id, ease_lookup( ease ), out_active );
 }
 
+/*==============================================================================================
+    The SHADER-side one-shot.
+
+    gui_anim_ease above runs a tween on the CPU: the caller lerps its own values and re-emits the
+    shape every frame, which dirties the window's hash and throws its retained geometry away for
+    the length of the transition.  That is the right tool when what moves is a POSITION or a
+    LAYOUT, since the geometry genuinely changes.
+
+    This is the other case: the shape stays put and the fragment does the moving (a chip that
+    flashes, a border whose ants run once, a spinner that ticks through one revolution).  The
+    fragment's clock is periodic, so the only thing an event has to supply is a phase that puts a
+    cycle boundary on the event itself -- gui_phase_anchor, gui.h -- plus someone to stop asking
+    once the cycle is done, which is this.  Between those two frames the emitted bytes never
+    change, so the window keeps its geometry for the whole transition.
+==============================================================================================*/
+
+/* The clock the fx band animates on, in wrapped seconds (GUI_FX_TIME_WRAP).  Stamp it when the
+   event happens and hand that stamp back to gui_anim_once for as long as the shape should move. */
+f32
+gui_anim_time( void )
+{
+    return (f32)fmod( s_io.time, GUI_FX_TIME_WRAP );
+}
+
+/* Resolve an event stamp into the (rate, phase) pair a shader-side animation is emitted with, and
+   report whether the transition is still running.  While it is, this holds wants_redraw -- the
+   clock advancing does not schedule a frame by itself, and forgetting that is what makes an fx
+   animation appear to freeze on an idle UI.
+
+   Returns false once `duration` has elapsed, which is the caller's cue to draw the settled state
+   instead.  The outputs are left at rest in that case, so a caller that ignores the return value
+   gets a static shape rather than a wrong one. */
+bool
+gui_anim_once( f32 t0, f32 duration, f32* out_rate, f32* out_phase )
+{
+    if ( out_rate )  *out_rate  = 0.0f;
+    if ( out_phase ) *out_phase = 0.0f;
+
+    if ( duration <= 0.0f )
+        return false;
+
+    /* Elapsed across the clock's wrap: the stamp and the reading are both wrapped seconds, so a
+       transition straddling the wrap sees a negative difference and adds one period back. */
+    f32 elapsed = gui_anim_time() - t0;
+    if ( elapsed < 0.0f )
+        elapsed += (f32)GUI_FX_TIME_WRAP;
+
+    if ( elapsed >= duration )
+        return false;
+
+    if ( out_rate )  *out_rate  = 1.0f / duration;
+    if ( out_phase ) *out_phase = gui_phase_anchor( t0, duration );
+
+    g_ctx->retained.wants_redraw = true;
+    return true;
+}
+
 /* The typed channels are all "chase" animations -- glide to a new data state, no intro from a rest
    value -- so each rides gui_anim4 with rest == target (snap on first sight, then damp on change) at
    one uniform speed across its channels.  One peek / one 16-byte slot apiece; unused channels (vec2's

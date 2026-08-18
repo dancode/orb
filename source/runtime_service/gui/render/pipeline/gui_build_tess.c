@@ -2022,8 +2022,9 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                    here, against the period the snap above just settled. */
                 aux.anim_rate   = ( aux.dash_period > 0.0f )
                                 ? c->box_dash.rate  / aux.dash_period : 0.0f;
-                aux.anim_phase  = ( aux.dash_period > 0.0f )
-                                ? c->box_dash.phase / aux.dash_period : 0.0f;
+                aux.anim_phase  = c->box_dash.anim_phase
+                                + ( ( aux.dash_period > 0.0f )
+                                    ? c->box_dash.phase / aux.dash_period : 0.0f );
 
                 s_tess.cur_ops |= GUI_OP_BAND | GUI_OP_DASH;
                 tess_fx_box( c->box_dash.x, c->box_dash.y, c->box_dash.w, c->box_dash.h,

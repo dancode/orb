@@ -150,6 +150,38 @@ test_quad_instance_pack( void )
     test_equal( gui_phase_pack( 0.75f ), gui_phase_pack( -0.25f ) );
 }
 
+/* The one-shot rests entirely on this: choosing the phase as -t0/duration puts a cycle boundary
+   exactly on t0, so the periodic clock the fragment already runs BECOMES the transition's
+   progress.  The property is checked the way the fragment computes it -- through the quantized
+   unorm16 the quad actually carries, not the exact float -- since that quantization is the only
+   thing that could make the anchor land off the event. */
+static void
+test_phase_anchor( void )
+{
+    const f32 t0  = 12.5f;
+    const f32 dur = 0.4f;
+
+    /* The phase as the fragment receives it: packed to unorm16, read back over 65535. */
+    f32 phase = (f32)( gui_phase_pack( gui_phase_anchor( t0, dur ) ) >> GUI_QUAD_PHASE_SHIFT )
+              / 65535.0f;
+
+    /* frac( time/dur + phase ) is the progress, at the start, through, and just short of the end. */
+    const f32 at[] = { 0.0f, 0.25f, 0.5f, 0.75f, 0.999f };
+    for ( u32 i = 0; i < ARRAY_COUNT( at ); ++i )
+    {
+        f32 x   = ( t0 + at[ i ] * dur ) / dur + phase;
+        f32 phi = x - (f32)(i32)x;
+        if ( phi < 0.0f ) phi += 1.0f;
+        f32 err = phi - at[ i ];
+        test_true( ( err < 0.0f ? -err : err ) < 0.001f );
+    }
+
+    /* A zero or negative duration is the "no animation" request, and states itself as no offset
+       rather than as a division. */
+    test_true( gui_phase_anchor( 12.5f,  0.0f ) == 0.0f );
+    test_true( gui_phase_anchor( 12.5f, -1.0f ) == 0.0f );
+}
+
 /* The op bits are single bits and DISJOINT, which is the whole claim the op word makes: any op
    composes with any field and with any other op.  A shared bit would silently turn a neighbour on
    -- the failure the tex word's op band was carved out to avoid, restated where it now lives. */

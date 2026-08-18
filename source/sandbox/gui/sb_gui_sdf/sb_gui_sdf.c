@@ -845,6 +845,10 @@ win_charts( void )
     re-tessellation -- the retained window stays byte-identical.
 ==============================================================================================*/
 
+/* The event stamp the one-shot row is anchored to: the fx clock at the moment of the click.
+   Negative until something has been clicked, which anim_once reads as long finished. */
+static f32 s_flash_t0 = -1000.0f;
+
 static bool s_toggle_on  = true;
 static f32  s_toggle_pos = 1.0f;   /* knob position 0..1, eased toward the state */
 
@@ -1005,6 +1009,62 @@ win_depth( void )
         gui()->draw_text( cell.x + 412.0f, cell.y + 94.0f, INK_DIM, "stair6 ants -- jump" );
 
         keep_awake();
+    }
+
+    /* The ONE-SHOT: the same periodic clock, with its phase anchored to an event so the cycle
+       begins the instant the button is pressed.  Nothing new reaches the GPU for this -- the
+       shape is emitted once with a rate and a phase that do not change while it runs, and the
+       caller simply stops asking when the duration is up.  Contrast anim_ease, which moves the
+       value on the CPU and re-tessellates the window on every frame of the transition. */
+    gui()->separator_text( "anim_once -- an event anchors the clock, the geometry never moves" );
+    {
+        gui_rect_t cell = gui()->canvas( 78.0f );
+        gui()->draw_rect( cell.x, cell.y, cell.w, cell.h, PANEL );
+
+        f32 save = gui()->draw_rounding();
+        f32 rate = 0.0f, phase = 0.0f;
+
+        /* Flash: EASE with an exponent below 1 leaves k near 1 almost at once, so the chip is
+           bright on the first frame and settles back over the rest of the cycle. */
+        gui_rect_t chip = { cell.x + 22.0f, cell.y + 22.0f, 104.0f, 34.0f };
+        if ( gui()->item( "flash", chip ).clicked )
+            s_flash_t0 = gui()->anim_time();
+
+        gui()->draw_set_rounding( 6.0f );
+        if ( gui()->anim_once( s_flash_t0, 0.5f, &rate, &phase ) )
+        {
+            gui()->draw_set_anim_curve( GUI_CURVE_EASE, 0.35f );
+            gui()->draw_pulse( chip, rate, 0.8f, phase, HIT );
+            gui()->draw_set_anim_curve( GUI_CURVE_LINEAR, 0.0f );
+        }
+        else
+        {
+            gui()->draw_rect( chip.x, chip.y, chip.w, chip.h, EDGE );
+        }
+        gui()->draw_set_rounding( save );
+        dial_label( chip.x + chip.w * 0.5f, chip.y + chip.h * 0.5f, INK, "flash", 0.95f );
+
+        /* One lap of the ants and one tick-through of a spinner, both on the SAME stamp: the
+           phase reaches them through the ambient, since neither call states a phase of its own.
+           Same clock, same anchor, so all three start together. */
+        gui_rect_t lap = { cell.x + 170.0f, cell.y + 22.0f, 170.0f, 34.0f };
+        if ( gui()->anim_once( s_flash_t0, 0.5f, &rate, &phase ) )
+        {
+            gui()->draw_set_anim_phase( phase );
+            gui()->draw_round_rect_dashed( lap, 6.0f, 1.5f, 7.0f, 5.0f, rate * 24.0f, ACCENT );
+            gui()->draw_set_anim_curve( GUI_CURVE_SMOOTH, 0.0f );
+            gui()->draw_spinner( ( gui_rect_t ){ cell.x + 356.0f, cell.y + 22.0f, 32.0f, 32.0f },
+                                 rate, 3.0f, ACCENT );
+            gui()->draw_set_anim_curve( GUI_CURVE_LINEAR, 0.0f );
+            gui()->draw_set_anim_phase( 0.0f );
+        }
+        else
+        {
+            gui()->draw_round_rect_dashed( lap, 6.0f, 1.5f, 7.0f, 5.0f, 0.0f, INK_DIM );
+        }
+
+        gui()->draw_text( cell.x + 400.0f, cell.y + 30.0f, INK_DIM,
+                          "click the chip -- all three run one cycle from that instant" );
     }
 
     gui()->text( "a pulse's command bytes never change -- its hash never changes -- the window's "

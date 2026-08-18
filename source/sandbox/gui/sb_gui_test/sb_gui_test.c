@@ -91,6 +91,7 @@ main( int argc, char* argv[] )
     test_register( "prim_layout",         test_prim_layout );
     test_register( "quad_layout",         test_quad_layout );
     test_register( "quad_instance_pack",  test_quad_instance_pack );
+    test_register( "phase_anchor",        test_phase_anchor );
     test_register( "prim_ops",            test_prim_ops );
 
     /* GUI_RECT -- the leaf kit */
