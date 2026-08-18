@@ -799,6 +799,15 @@ target sb_gui_stress					# gui load-limit bench at the shipping caps:
     dep         mod sys ref job app core
     dep         rhi gui base
 
+target sb_gui_render					# render feature matrix: draw primitives x style/fx combinations
+
+    type        exe
+    root        source/sandbox/gui/sb_gui_render
+    folder      09_SANDBOX/GUI
+    unit        sb_gui_render.c
+    dep         mod sys ref job app core
+    dep         rhi gui base
+
 # ==============================================================================
 # 09_SANDBOX -- HOST (host functionality tests, one per host shape)
 # ==============================================================================
@@ -1136,6 +1145,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
 	add 		sb_gui_utf			# utf rendering test
 	
     add         sb_gui_stress   	# gui load-limit stress bench
+    add         sb_gui_render   	# render feature matrix (primitives x style/fx)
 	
     add         sb_vulkan_stress   	# multi-context sync stress exe
     add         sb_quad_pull   		# bufferless quad-record proof (pull vs VB A/B)

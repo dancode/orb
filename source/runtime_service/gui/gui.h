@@ -2104,34 +2104,38 @@ typedef struct
     /* Row 1 -- the per-quad payload: texcoord corners, colour, and the style naming the rest.
        uv0/uv1 are the min/max corners, each two unorm16 over [0,1] (gui_uv_pack); the vertex
        stage selects per corner.  Glyphs are no exception: the text tessellator has the live
-       atlas rect in hand from font_glyph and bakes it here like any other textured quad. */
-
-    // uv0: CAPSULE: dir
-    // uv1: CAPSULE: dir
-    // uv1: SKIRT: vertex stage for untextured shapes, grows for feathered edge, not shape.
+       atlas rect in hand from font_glyph and bakes it here like any other textured quad.
+       A self-sampled quad (GUI_OP_SELF) never reads the texel, so its uv lanes are inert. */
 
     u32 uv0;            // texcoord min corner, packed unorm16 pair
     u32 uv1;            // texcoord max corner, packed unorm16 pair
     u32 abgr;           // packed colour
     u32 style;          // style-record index, slot-local (gui_prim_t as a style)
 
-    /* Row 2 -- clip and per-quad flags.  Clip is per QUAD, not per style: two identically
-       styled rows in different scroll regions must still share one style. */
+    /* Row 2 -- the remaining per-instance lanes: clip, the packed flags word, the turn and the
+       second colour.  Clip is per QUAD, not per style: two identically styled rows in different
+       scroll regions must still share one style. */
 
     u32 clip;           // clip-table entry index, absolute within the frame clip region
-    u32 flags;          // GUI_QUAD_RULE_* rule (bits 0-1) | animation phase (bits 16-31)
+    u32 flags;          // GUI_QUAD_RULE_* rule (bits 0-1) | animation phase (bits 16-31);
+                        //   bits 2-15 are unused and written zero -- see the layout note below
 
-    // xform: the shape's TURN, as a unit (cos, sin) packed like a uv pair (gui_xform_pack).
-    //   Per QUAD, not per style: a rotation is per-instance by nature, so keeping it here is what
-    //   stops every distinct angle from minting its own style record.  A CAPSULE's direction is
-    //   this same pair.  Exactly 0 means IDENTITY -- the zero-when-unused rule every record lane
-    //   here follows, and what an unrotated shape leaves behind.
+    // xform: the shape's TURN, as a unit (cos, sin) through the uv pair's encoding, remapped from
+    //   [-1,1] (gui_xform_pack).  Exactly 0 means IDENTITY, which is what an unrotated shape
+    //   leaves behind.  Per QUAD, not per style: a rotation is per-instance by nature, so keeping
+    //   it here is what stops every distinct angle from minting its own style record.  A CAPSULE's
+    //   direction is this same pair.
+    //   BOTH stages read it.  The vertex stage rotates the covering corners (every rule but BBOX,
+    //   whose covering is already axis-aligned), and the fragment builds the shape-local frame
+    //   every field works in from it -- composed with OP_SPIN's clock angle, when that op is set.
     u32 xform;
 
-    // col_b: GUI_OP_FRAME: the border band's packed colour.  A SECOND colour rides the quad,
-    //   not the style (gui_prim_t), so an animated border -- or an animated fill, which was
-    //   already here in `abgr` -- never adds a style record: the style keeps stating only the
-    //   shape (rounding, border width, feather).  0 under every op that does not read it.
+    // col_b: GUI_OP_FRAME's border band colour, and nothing else -- every other second colour
+    //   (GRAD's far end, CHECKER's alternate, ARC_GRAD's sweep target) is a property of the shape
+    //   and lives on the style.  This one rides the quad because a border colour is not: an
+    //   animated border -- or an animated fill, which was already here in `abgr` -- would
+    //   otherwise mint a style record per frame, where the style should state only the shape
+    //   (rounding, border width, feather).  0 when GUI_OP_FRAME is absent.
 
     u32 col_b;
 
@@ -2147,19 +2151,30 @@ ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
                    "gui_quad_t must stay whole 16-byte rows -- the vertex stage indexes it as vec4[]" );
 
 /* The vertex stage's EXPANSION RULE (flags bits 0-1): how the covering corners derive from the
-   stored extents.  The rule is per quad rather than per style because it is a property of the
-   SHAPE KIND, and one style (a plain fill) serves shapes whose coverings differ. */
+   stored extents.  Only SKIRT and CAPSULE take the pad; the other two cover exactly what they
+   state. */
 
-#define GUI_QUAD_RULE_EXACT    0u   /* corners at +-hw/hh, rotated by the style's rot pair       */
-#define GUI_QUAD_RULE_SKIRT    1u   /* grown by the SDF pad (style feather/2 + 1) on both axes   */
+#define GUI_QUAD_RULE_EXACT    0u   /* corners at +-hw/hh, turned by the quad's own xform        */
+#define GUI_QUAD_RULE_SKIRT    1u   /* EXACT, grown by the SDF pad (style feather/2 + 1) on both
+                                       axes, with the uv span scaled out to match               */
 #define GUI_QUAD_RULE_CAPSULE  2u   /* hw = half-length, hh = radius: along grows by hh + pad    */
-#define GUI_QUAD_RULE_BBOX     3u   /* stored extents ARE the covering, expanded axis-aligned
-                                       (the arc family -- its local frame is a reflection)       */
+#define GUI_QUAD_RULE_BBOX     3u   /* stored extents ARE the covering, expanded axis-aligned and
+                                       NOT turned (the arc family -- its local frame is a
+                                       reflection the vertex rotation cannot reproduce, so the
+                                       fragment takes the turn instead)                          */
 
-/* flags bits 16-31: the animation PHASE, a unorm16 over one cycle.  Rate stays on the style (every
-   spinner in a set turns at the same speed) and phase rides the quad, because staggering a set is
-   the only thing phase is for -- on the style it would cost one record per element.  0 = in step
-   with the clock, which is what a lone animating shape wants. */
+/* The `flags` word, low to high:
+
+     bits 0-1    GUI_QUAD_RULE_* -- the expansion rule
+     bits 2-15   unused; the tessellator writes zero and the shader masks them off
+     bits 16-31  the animation PHASE, a unorm16 over one cycle
+
+   The phase rides the quad while the RATE stays on the style: every spinner in a set turns at the
+   same speed, and staggering the set is the only thing phase is for -- on the style it would cost
+   one record per element.  0 = in step with the clock, which is what a lone animating shape wants.
+
+   The rule is per quad rather than per style because it is a property of the SHAPE KIND, and one
+   style (a plain fill) serves shapes whose coverings differ. */
 
 #define GUI_QUAD_PHASE_SHIFT   16u
 #define GUI_QUAD_PHASE_MASK    0xFFFF0000u

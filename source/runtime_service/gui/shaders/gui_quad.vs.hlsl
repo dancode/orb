@@ -65,9 +65,9 @@ vs_out_t main( uint vid : SV_VertexID )
 
     // The one style fetch the expansion needs: row 2 leads with the feather the SDF pad derives
     // from.  Cache-hot -- a window's quads share a handful of styles.
-    float4 s3 = u_buffers[ pc.prim_buf ][ ( pc.prim_base + style ) * PRIM_ROWS + 2u ];
+    float4 soft = u_buffers[ pc.prim_buf ][ ( pc.prim_base + style ) * PRIM_ROWS + 2u ];
 
-    float pad = ( rule == 1u || rule == 2u ) ? s3.x * 0.5 + 1.0 : 0.0;
+    float pad = ( rule == 1u || rule == 2u ) ? soft.x * 0.5 + 1.0 : 0.0;
 
     float2 he = q0.zw;
     if ( rule == 2u )
