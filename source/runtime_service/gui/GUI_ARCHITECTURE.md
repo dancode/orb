@@ -9,13 +9,16 @@ There are only three real things:
 
 - **RENDER SERVER** (`render/`, unit `gui_render.c`): a 2d batch renderer with a narrow
   push-primitive surface any 2d utility can emit to -- draw list, tessellation, retained
-  geometry cache, the two resource atlases, GPU flush.  The atlases split by what a texel MEANS,
+  geometry cache, the three resource atlases, GPU flush.  The atlases split by what a texel MEANS,
   since that is what the fragment shader branches on: R8 COVERAGE (glyphs, icons, assists -- the
-  vertex colour paints it, sampled NEAREST so text stays crisp) and RGBA SPRITE (authored art --
-  the vertex colour tints it, sampled LINEAR, created lazily on the first registration). Knows nothing of ids-as-identity, interact
+  quad's colour paints it, sampled NEAREST so text stays crisp), RGBA SPRITE (authored art -- the
+  quad's colour tints it, sampled LINEAR), and SDF (distance-field glyphs); the latter two are
+  created lazily, on first use.  Knows nothing of ids-as-identity, interact
   state, style, or layout. Renders from an atlas that is PUSHED to it; it does not know what
   a font is (the glyph/sprite source contract in `render/gui_render.h` is implemented by the
-  draw unit).  Rounded shapes are not tessellated: the vertex names a PRIMITIVE RECORD
+  draw unit).  There is no vertex buffer and no index buffer: one 16-byte `gui_quad_t` per SHAPE
+  sits in a storage buffer the vertex stage pulls from by `SV_VertexID`.  Rounded shapes are not
+  tessellated either -- the quad names a PRIMITIVE RECORD
   (`gui_prim_t` in gui.h, the EFFECT BAND) and the fragment resolves the boundary from its own
   pixel position, so a rounded fill / frame / shadow is ONE quad with exact edges.  The shape
   rides a record rather than a push constant precisely so an effect can never split a batch.  The

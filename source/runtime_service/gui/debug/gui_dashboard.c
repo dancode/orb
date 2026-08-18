@@ -250,11 +250,11 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
        high-water and the bar scale -- is the MAIN band alone, so the map reads as a real
        application's arena with the self-measuring dashboard filtered out.  ON: totals include the
        debug band and the band0/debug split is spelled out. */
-    u32 total = sn->tess_verts;
-    u32 main0 = sn->band0_vert_end;
+    u32 total = sn->tess_quads;
+    u32 main0 = sn->band0_quad_end;
     u32 pad   = (u32)SLOT_QUAD_PAD;
     u32 used  = s_show_second_band ? total : main0;
-    u32 hwm   = s_show_second_band ? sn->vert_hwm : sn->band0_vert_hwm;
+    u32 hwm   = s_show_second_band ? sn->quad_hwm : sn->band0_quad_hwm;
     if ( s_show_second_band )
         dash_textf( r.x + 2.0f, r.y, r.x + r.w, DASH_COL_TEXT_DIM,
                     "quads  %u / %u   band0 %u  debug %u   hwm %u   pad %u",
@@ -290,9 +290,9 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
         if ( !sl->valid ) continue;
         if ( sl->band != 0 && !s_show_second_band ) continue;   /* second band omitted by default */
 
-        u32 base  = sl->vert_base;
-        u32 count = sl->vert_count;
-        u32 alloc = sl->vert_alloc;
+        u32 base  = sl->quad_base;
+        u32 count = sl->quad_count;
+        u32 alloc = sl->quad_alloc;
 
         f32 x0 = bar.x + (f32)base * px_per;
         f32 xc = bar.x + (f32)( base + count ) * px_per;
@@ -319,8 +319,8 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
             const dash_vol_t* vo = &sn->vols[ v ];
             if ( !vo->active || vo->win != sl->win ) continue;
 
-            f32 vx0 = bar.x + (f32)( base + vo->lvert_base ) * px_per;
-            f32 vx1 = bar.x + (f32)( base + vo->lvert_base + vo->vert_alloc ) * px_per;
+            f32 vx0 = bar.x + (f32)( base + vo->lquad_base ) * px_per;
+            f32 vx1 = bar.x + (f32)( base + vo->lquad_base + vo->quad_alloc ) * px_per;
             gui_rect_t vr = { vx0, bar.y + 1.0f, vx1 - vx0, bar.h - 2.0f };
             dash_rb_push( &rb, vr.x, vr.y, vr.w, vr.h, DASH_COL_VOLATILE );
 
@@ -333,8 +333,8 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
                     gui_stack();
                     gui_textf( "volatile %s  in %s", dash_name( vo->id, nb, sizeof( nb ) ),
                                dash_name( vo->win, wb, sizeof( wb ) ) );
-                    gui_textf( "quads +%u  %u / %u reserved", vo->lvert_base, vo->vert_count,
-                               vo->vert_alloc );
+                    gui_textf( "quads +%u  %u / %u reserved", vo->lquad_base, vo->quad_count,
+                               vo->quad_alloc );
                 }
                 gui_tooltip_end();
             }
@@ -378,9 +378,9 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
                 gui_textf( "window  %s%s%s", dash_name( sl->win, nb, sizeof( nb ) ),
                            sl->win == g_dash_window_id ? "  (this dashboard)" : "",
                            sl->band != 0 ? "  [debug band]" : "" );
-                gui_textf( "quads   [%u..%u)  alloc %u  (pad %u)", sl->vert_base,
-                           sl->vert_base + sl->vert_count, sl->vert_alloc,
-                           sl->vert_alloc - sl->vert_count );
+                gui_textf( "quads   [%u..%u)  alloc %u  (pad %u)", sl->quad_base,
+                           sl->quad_base + sl->quad_count, sl->quad_alloc,
+                           sl->quad_alloc - sl->quad_count );
                 gui_textf( "cmds    [%u..%u)   z %u  vp %d  gen %u", sl->cmd_base,
                            sl->cmd_base + sl->cmd_count, sl->z, sl->vp, sl->tess_gen );
                 gui_textf( "%s this frame", sl->changed ? "re-tessellated" : "retained" );
@@ -435,13 +435,13 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
             /* Grey outline on every box by default; the green active-region call-out only when
                frozen -- live it would strobe between regions at framerate. */
             dash_outline( box, ( frozen && act ) ? DASH_COL_FIF_ACTIVE : DASH_COL_FIF_IDLE );
-            if ( act && sf->vtx_hi > sf->vtx_lo )
+            if ( act && sf->quad_hi > sf->quad_lo )
             {
                 /* The uploaded quad span as one sub-bar in the box interior. */
                 f32 inner_x = box.x + 1.0f;
                 f32 inner_w = box.w - 2.0f;
-                f32 vx0     = inner_x + inner_w * (f32)sf->vtx_lo / (f32)GUI_MAX_QUADS;
-                f32 vx1     = inner_x + inner_w * (f32)sf->vtx_hi / (f32)GUI_MAX_QUADS;
+                f32 vx0     = inner_x + inner_w * (f32)sf->quad_lo / (f32)GUI_MAX_QUADS;
+                f32 vx1     = inner_x + inner_w * (f32)sf->quad_hi / (f32)GUI_MAX_QUADS;
                 gui_draw_rect( vx0, box.y + 2.0f, vx1 - vx0, box.h - 4.0f, DASH_COL_SPAN_VERT );
             }
         }
@@ -456,8 +456,8 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
                 gui_stack();
                 gui_textf( "surface vp%d  in-flight region %u of %u", vp, sf->frame_index,
                            (u32)RHI_MAX_FRAMES_IN_FLIGHT );
-                if ( sf->vtx_hi > sf->vtx_lo )
-                    gui_textf( "uploaded quads [%u..%u)", sf->vtx_lo, sf->vtx_hi );
+                if ( sf->quad_hi > sf->quad_lo )
+                    gui_textf( "uploaded quads [%u..%u)", sf->quad_lo, sf->quad_hi );
                 else
                     gui_textf( "nothing uploaded (fully retained)" );
                 gui_textf( "%u B in %u writes   %u draw calls", sf->up_bytes, sf->up_batches,
@@ -551,7 +551,7 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
                                dc->elem_count * 2u, dc->tex_idx );
                     gui_textf( "clip %.0f,%.0f  %.0fx%.0f", dc->clip.x, dc->clip.y,
                                dc->clip.w, dc->clip.h );
-                    gui_textf( "vbase %u", dc->vbase );
+                    gui_textf( "qbase %u", dc->qbase );
                 }
                 gui_tooltip_end();
             }
@@ -564,8 +564,8 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
             {
                 gui_stack();
                 gui_textf( "window  %s", dash_name( sl->win, nb, sizeof( nb ) ) );
-                gui_textf( "%u draw cmds  %u quads  %u tris", sl->cmd_count, sl->vert_count,
-                           sl->vert_count * 2u );
+                gui_textf( "%u draw cmds  %u quads  %u tris", sl->cmd_count, sl->quad_count,
+                           sl->quad_count * 2u );
                 gui_textf( "z %u  vp %d  gen %u  %s", sl->z, sl->vp, sl->tess_gen,
                            sl->changed ? "re-tessellated" : "retained" );
             }
@@ -599,7 +599,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
         { "rects", inc ? sn->emit_rects : sn->emit_rects - sn->emit_rects_dbg, GUI_MAX_RECT_ENTRIES, 0                         },
         { "text",  inc ? sn->emit_text  : sn->emit_text  - sn->emit_text_dbg,  GUI_MAX_TEXT_POOL,  0                           },
         { "clips", inc ? sn->emit_clips : sn->emit_clips - sn->emit_clips_dbg, GUI_MAX_CLIP_RECTS, 0                           },
-        { "quads", inc ? sn->tess_verts : sn->band0_vert_end, GUI_MAX_QUADS,   inc ? sn->vert_hwm : sn->band0_vert_hwm         },
+        { "quads", inc ? sn->tess_quads : sn->band0_quad_end, GUI_MAX_QUADS,   inc ? sn->quad_hwm : sn->band0_quad_hwm         },
         { "recs",  sn->tess_prims,                            GUI_MAX_PRIMS,   sn->prim_hwm                                    },
         { "draws", inc ? sn->tess_cmds  : sn->tess_cmds - sn->tess_cmds_dbg,   GUI_MAX_CMDS,       0                           },
     };
@@ -651,12 +651,12 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
        glyphs-per-run: that is the factor one 16-byte quad record would amortise over.
 
        Measured against live_quads, not the arena write head the bar above shows: the head includes
-       every slot's vert_alloc padding (SLOT_QUAD_PAD minimum each), which on a small UI can outweigh
+       every slot's quad_alloc padding (SLOT_QUAD_PAD minimum each), which on a small UI can outweigh
        the geometry itself.  The trailing "reserved" figure spells out that gap. */
     u32 tq = inc ? sn->text_quads : sn->band0_text_quads;
     u32 tr = inc ? sn->text_runs  : sn->band0_text_runs;
     u32 vq = inc ? sn->live_quads : sn->band0_live_quads;
-    u32 rq = inc ? sn->tess_verts : sn->band0_vert_end;
+    u32 rq = inc ? sn->tess_quads : sn->band0_quad_end;
     dash_textf( r.x + 2.0f, r.y + r.h - lh * 2.0f - 1.0f, r.x + r.w, DASH_COL_TEXT_DIM,
                 "glyphs:  %u / %u drawn (%.0f%%)   %u runs (%.1f glyphs/run)   %u reserved",
                 tq, vq, vq ? 100.0f * (f32)tq / (f32)vq : 0.0f,
@@ -665,7 +665,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
     /* The observer's own share of the shared pools -- honest attribution, not hidden. */
     dash_textf( r.x + 2.0f, r.y + r.h - lh - 1.0f, r.x + r.w, DASH_COL_TEXT_DIM,
                 "debug band:  %u cmds   %u quads", sn->emit_cmds_dbg,
-                sn->tess_verts - sn->band0_vert_end );
+                sn->tess_quads - sn->band0_quad_end );
 }
 
 /* Volatile registry: one row per captured sub-slot with live-vs-reserved mini bars. */
@@ -708,7 +708,7 @@ dash_panel_volatile( gui_rect_t r, const dash_snapshot_t* sn )
         dash_text( r.x + 120.0f, y, r.x + 210.0f, DASH_COL_TEXT_DIM, dash_name( vo->win, wb, sizeof( wb ) ) );
 
         f32 bx = r.x + 216.0f, bw = 70.0f, bh = row_h - 6.0f;
-        f32 vfrac = vo->vert_alloc ? (f32)vo->vert_count / (f32)vo->vert_alloc : 0.0f;
+        f32 vfrac = vo->quad_alloc ? (f32)vo->quad_count / (f32)vo->quad_alloc : 0.0f;
         dash_rb_push( &rb, bx, y + 3.0f, bw, bh, DASH_COL_BG );
         dash_rb_push( &rb, bx, y + 3.0f, bw * vfrac, bh, DASH_COL_SPAN_VERT );
 
@@ -722,8 +722,8 @@ dash_panel_volatile( gui_rect_t r, const dash_snapshot_t* sn )
                 gui_stack();
                 gui_textf( "volatile %s  in %s", dash_name( vo->id, nb, sizeof( nb ) ),
                            dash_name( vo->win, wb, sizeof( wb ) ) );
-                gui_textf( "quads +%u  %u / %u reserved", vo->lvert_base, vo->vert_count,
-                           vo->vert_alloc );
+                gui_textf( "quads +%u  %u / %u reserved", vo->lquad_base, vo->quad_count,
+                           vo->quad_alloc );
                 gui_textf( "cmds  %u / %u   gen %u   %s%s", vo->cmd_count, vo->cmd_alloc,
                            vo->tess_gen, vo->active ? "active" : "retired",
                            vo->hidden ? " (hidden)" : "" );
@@ -749,9 +749,9 @@ dash_panel_stats( gui_rect_t r, const dash_snapshot_t* sn )
                 st->draw_calls, sn->draw_call_hwm, st->upload_bytes, st->upload_batches,
                 st->volatile_patched );
     dash_textf( r.x + 2.0f, r.y + lh, r.x + r.w, DASH_COL_TEXT,
-                "wins ret %u/%u   verts ret %u/%u   tris ret %u/%u",
-                st->win_retained, st->win_total, st->vert_retained, st->vert_count,
-                st->tri_retained, st->tri_count );
+                "wins ret %u/%u   quads ret %u/%u   styles %u",
+                st->win_retained, st->win_total, st->quad_retained, st->quad_count,
+                st->prim_count );
     dash_textf( r.x + 2.0f, r.y + 2.0f * lh, r.x + r.w,
                 fz ? DASH_COL_WARN : DASH_COL_TEXT_DIM,
                 "capture #%u%s   any_changed %u   unchanged %u   gen %u%s",

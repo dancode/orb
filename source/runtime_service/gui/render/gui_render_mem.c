@@ -1,11 +1,13 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/gui_render_mem.c -- Backend memory accounting.
+    runtime_service/gui/render/gui_render_mem.c -- Backend memory accounting + pool report.
 
     Fills the backend-owned buckets of gui_mem_stats_t (gui.h): the GPU device memory the
     backend created, and every fixed CPU static the backend unity TU defines -- the resident
     footprint the image pays whether one window is open or fifty.  The frontend (gui_mem_stats,
-    core/gui_ctx.c) adds the per-context heap blocks and the totals.
+    core/gui_ctx.c) adds the per-context heap blocks and the totals.  backend_pool_report at the
+    foot is the other half of the same question: not how much the pools COST, but how full they
+    have been, which is what a raised or lowered cap should be argued from.
 
     MUST be the LAST include in gui_render.c: every bucket below is a sizeof over another
     file's static, and unity visibility only flows downward.  Adding a static to the backend?
@@ -32,16 +34,20 @@ backend_memory( u32 live_viewports )
     /* Sprite and SDF atlases report 0 until something creates them. */
     s.gpu_texture_bytes = res_atlas_bytes() + res_sprite_bytes() + res_sdf_bytes();
 
-    /* The storage-buffer tables the pipeline resolves through: clip entries, style records, and
-       the quad-record geometry.  All allocated whole at init and NOT per-surface -- one region
-       per (frame-in-flight, viewport) is baked into each size -- so none scales with
-       live_viewports. */
+    /* The storage-buffer tables the pipeline resolves through.  The first three are REGIONED --
+       one copy per (frame-in-flight, viewport), because they are rewritten every frame and an
+       in-flight draw must not read a region another surface is filling -- so their sizes already
+       carry that multiplier and none of them scales with live_viewports.  The glyph table is the
+       exception: it changes only when a font enters the atlas or a repack moves a page, so ONE
+       buffer serves every surface and is replaced wholesale on the rare rebuild. */
     if ( rhi_handle_valid( s_render.clip_buf ) )
         s.gpu_table_bytes += (u32)( GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES );
     if ( rhi_handle_valid( s_render.prim_buf ) )
         s.gpu_table_bytes += (u32)( GUI_PRIM_REGION_COUNT * GUI_PRIM_REGION_BYTES );
     if ( rhi_handle_valid( s_render.quad_buf ) )
         s.gpu_table_bytes += (u32)( GUI_QUAD_REGION_COUNT * GUI_QUAD_REGION_BYTES );
+    if ( rhi_handle_valid( s_render.glyph_buf ) )
+        s.gpu_table_bytes += (u32)GUI_GLYPH_TABLE_BYTES;
 
 #ifdef GUI_DEBUG_OVERLAY
 
@@ -56,10 +62,11 @@ backend_memory( u32 live_viewports )
     /* EMIT: the semantic draw list and the line/path stroker built on it. */
     s.cpu_drawlist_bytes = (u32)( sizeof( s_draw ) + sizeof( s_path ) );
 
-    /* BUILD: tessellation staging.  The unit-arc tables that used to be counted here are gone --
-       rounded shapes are resolved by the fragment shader now (the effect band), so the backend
-       caches no corner geometry at all. */
-    s.cpu_tess_bytes = (u32)sizeof( s_tess );
+    /* BUILD: tessellation staging -- the quad / style / gpu-command arenas (s_tess), the cold
+       diagnostics beside them, and the per-(frame, viewport) dirty-span table the flush drains.
+       No corner geometry is cached at all: rounded shapes are resolved by the fragment. */
+    s.cpu_tess_bytes = (u32)( sizeof( s_tess ) + sizeof( s_tess_stats )
+                            + sizeof( s_patch_pending ) );
 
     /* Retained cache: ping-pong slot tables, dispatch order, the id-keyed stable command cache
        (entries + counts + keys + occupancy), diff records + stats, per-window segment chains,
@@ -77,18 +84,19 @@ backend_memory( u32 live_viewports )
        leaf and reports through the frontend bucket (gui_ui_mem.c). */
     s.cpu_draw_bytes = draw_unit_mem_bytes();
 
-    /* The three resource atlas instance records (packer nodes + tenant bookkeeping).
-       Always-resident statics; the atlases' PIXEL buffers and tenant source copies are heap,
-       reported in cpu_atlas_bytes below. */
-    s.cpu_res_bytes = (u32)( sizeof( s_res ) + sizeof( s_spr ) + sizeof( s_sdf ) );
+    /* The three resource atlas instance records (packer nodes + tenant bookkeeping), plus the
+       shared skyline scratch a repack trial runs against.  Always-resident statics; the atlases'
+       PIXEL buffers and tenant source copies are heap, reported in cpu_atlas_bytes below. */
+    s.cpu_res_bytes = (u32)( sizeof( s_res ) + sizeof( s_spr ) + sizeof( s_sdf )
+                           + sizeof( s_trial_nodes ) );
 
     /* Atlas-owned heap: each atlas's resident staging mirror plus every tenant's retained source
        copy (fonts, icons, sprites keep a second CPU copy so a repack never goes back to disk).
        A dynamic bucket -- it exists only once an atlas / tenant does. */
     s.cpu_atlas_bytes = res_atlas_cpu_bytes();
 
-    /* RENDER: pipeline / sampler / push state.  The shader bytecode used to be counted here as
-       well; it is loaded from bin/shaders now and never sits in the exe's .rdata. */
+    /* RENDER: pipeline / sampler / push state.  Small and fixed -- the shaders are loaded from
+       bin/shaders and never sit in the exe's .rdata. */
     s.cpu_render_bytes = (u32)sizeof( s_render );
 
     /* Text-selection run capture (always compiled; a product feature). */
@@ -109,6 +117,53 @@ backend_memory( u32 live_viewports )
                        + s.cpu_draw_bytes + s.cpu_res_bytes + s.cpu_render_bytes
                        + s.cpu_select_bytes + s.cpu_debug_bytes;
     return s;
+}
+
+/*==============================================================================================
+    backend_pool_report -- lifetime peak fill of every capped pool, against its cap.
+
+    The companion to the byte totals above, and the answer to the question that actually comes up:
+    a cap was hit (or is suspected), so which one, and how close are the others?  Every number here
+    is a lifetime HIGH-WATER MARK, not a live count -- a pool that peaked at 98% on one busy frame
+    is the one to raise, however empty it looks right now.
+
+    Split by stage, because the two halves fill for different reasons.  EMIT pools are bounded by
+    what the UI code asks for (one command per draw_push_*, one entry per distinct clip rect); the
+    BUILD pools are bounded by what those commands expand into, which a single text run can move a
+    thousand quads of.  A raised cap costs .bss on the EMIT side and .bss PLUS eight GPU regions on
+    the BUILD side, which is why the two are worth reading apart.
+
+    Called from gui_print_mem_stats (gui_ui_mem.c), which cannot see these statics itself.
+==============================================================================================*/
+
+void
+backend_pool_report( void )
+{
+    #define GUI_POOL_ROW( label, used, cap ) \
+        gui_log( GUI_LOG_INFO, "  %-22s %6u / %-6u  (%5.1f%%)", (label), (u32)(used), (u32)(cap), \
+                 100.0f * (f32)(u32)(used) / (f32)(u32)(cap) )
+
+    gui_log( GUI_LOG_INFO, "  -- pool peaks (lifetime high-water) --------------------" );
+    GUI_POOL_ROW( "quad records",   s_tess_stats.quad_hwm,  GUI_MAX_QUADS );
+    GUI_POOL_ROW( "style records",  s_tess_stats.prim_hwm,  GUI_MAX_PRIMS );
+    GUI_POOL_ROW( "gpu draw cmds",  s_tess_stats.cmd_hwm,   GUI_MAX_CMDS );
+    GUI_POOL_ROW( "semantic cmds",  s_draw.cmd_hwm,         GUI_MAX_CMDS );
+    GUI_POOL_ROW( "cmd segments",   s_draw.seg_hwm,         GUI_MAX_SEGS );
+    GUI_POOL_ROW( "clip rects",     s_draw.clip_hwm,        GUI_MAX_CLIP_RECTS );
+    GUI_POOL_ROW( "text pool (B)",  s_draw.text_hwm,        GUI_MAX_TEXT_POOL );
+    GUI_POOL_ROW( "path points",    s_draw.pt_hwm,          GUI_MAX_PATH_PTS );
+    GUI_POOL_ROW( "rect entries",   s_draw.rect_hwm,        GUI_MAX_RECT_ENTRIES );
+    GUI_POOL_ROW( "windows",        s_tess_stats.win_hwm,   RENDER_MAX_WIN );
+    GUI_POOL_ROW( "volatile rows",  s_volatile_count,       GUI_MAX_VOLATILE );
+
+    if ( s_tess_stats.overflow_walls )
+    {
+        char walls[ 128 ];
+        gui_log( GUI_LOG_WARN, "  %-22s %s", "OVERFLOWED",
+                 tess_overflow_walls( s_tess_stats.overflow_walls, walls, (u32)sizeof( walls ) ) );
+    }
+
+    #undef GUI_POOL_ROW
 }
 
 // clang-format on

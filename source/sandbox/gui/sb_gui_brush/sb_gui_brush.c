@@ -884,7 +884,7 @@ window_pulse_meter( void )
 
         gui_render_stats_t st = gui()->render_stats();
         gui()->textf( "windows retained  %u / %u", st.win_retained, st.win_total );
-        gui()->textf( "verts retained    %u / %u", st.vert_retained, st.vert_count );
+        gui()->textf( "quads retained    %u / %u", st.quad_retained, st.quad_count );
         gui()->separator();
 
         if ( s_pulse_cpu_on )

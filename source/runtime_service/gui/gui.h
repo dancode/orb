@@ -3408,14 +3408,19 @@ typedef struct
     GUI_FRAME -- limits
 ==============================================================================================*/
 
-/* 8K quad records covers the busiest measured frame (all sb_gui demo windows + the pipeline
-   dashboard) several times over -- a quad is one SHAPE (a fill, a glyph, a capsule segment), so
-   the cap is the old 32K-vertex arena's shape count carried forward.  Storage cost is per
-   (frame-in-flight, viewport) region: 8192 quads x 48 B x 8 regions = 3 MB.
+/* A quad record is one SHAPE -- a fill, a glyph, a capsule segment, a whole arc -- so 8K covers
+   the busiest measured frame (every sb_gui demo window plus the pipeline dashboard) several times
+   over.  The storage cost is what to weigh when moving it: the quad table holds a full set for
+   every (frame-in-flight, viewport) region, so 8192 x 16 B x 8 regions = 1 MB of device memory.
 
    ONE set of caps: the ~4x stress-bench fork these carried is retired, and sb_gui_stress
    benches the shipping numbers.  Several of its routines deliberately push a pool past its
-   capacity -- the sticky overflow flag and the dashboard are how that reads. */
+   capacity, which is how the overflow report and the dashboard's OVERFLOWED marker get exercised.
+
+   Every cap here is measured, not guessed at: gui_print_mem_stats prints each pool's lifetime
+   high-water mark against its cap, and the shutdown log repeats the BUILD three.  Read those
+   before moving a number -- and when content goes missing, the build's overflow warning names
+   which of these it was. */
 
 #define GUI_MAX_QUADS        8192            /* per-frame quad records (gui_quad_t)              */
 #define GUI_MAX_PRIMS        2048            /* per-frame style records (gui_prim_t)             */
@@ -3431,8 +3436,12 @@ typedef struct
    fills sharing a texture and a clip is one, and identically-styled shapes dedup across
    placements -- so the cap sits far below the quad cap.  The GPU cost is the multiplier to
    watch, because the storage buffer holds this many records for EVERY (frame-in-flight,
-   viewport) region: 2048 records is 2 MB across 8 regions.  Both the shutdown log and the
-   dashboard report the high-water mark -- move the cap from what those measure, not a guess. */
+   viewport) region: 2048 records is 2 MB across 8 regions.
+
+   This cap is also the one with a SECOND ceiling behind it.  A quad addresses its style and its
+   fx row through packed fields (see gui_quad_t), so a window whose records reach past what those
+   fields can name spills the same way a full arena does -- raising GUI_MAX_PRIMS alone does not
+   move that wall. */
 
 /* Command segments: one contiguous span of the command list per (win, z, vp, band) the emit path
    stamps, cut wherever a window seam, draw_set_sort_key, draw_set_viewport or draw_set_band
@@ -3469,9 +3478,10 @@ typedef struct
     /* --- GPU device memory (dynamic). --- */
 
     u32 gpu_texture_bytes;      // the three resource atlases (coverage incl. assist rows, sprite, SDF)
-    u32 gpu_table_bytes;        // the per-frame storage-buffer tables: clip entries, style records,
-                                //   quad records, glyph uvs.  Sized by the pools, not by how many
-                                //   surfaces are open
+    u32 gpu_table_bytes;        // the storage-buffer tables the shader resolves through: quad
+                                //   records, style records, clip entries (one region each per
+                                //   frame-in-flight x viewport) plus the single glyph UV table.
+                                //   Sized by the pool caps, not by how many surfaces are open
     u32 gpu_debug_bytes;        // debug-overlay quad table (Debug builds; 0 when compiled out)
     u32 gpu_total;              // sum of the section above
     u32 viewport_count;         // live GPU surfaces
@@ -3479,13 +3489,15 @@ typedef struct
     /* --- CPU static memory (.bss + .rdata; fixed backend buffers, resident the whole run). --- */
 
     u32 cpu_drawlist_bytes;     // EMIT: s_draw (cmds + hashes + point/rect/text/clip pools) + path stroker
-    u32 cpu_tess_bytes;         // BUILD: s_tess CPU quad / style / GPU-command staging
+    u32 cpu_tess_bytes;         // BUILD: the CPU quad / style / GPU-command arenas, the tessellation
+                                //   diagnostics, and the per-region dirty-span table
     u32 cpu_cache_bytes;        // retained cache: slot tables, stable cmd cache, diff records, seg chains,
                                 //   permutation scratch, volatile registry, stats
     u32 cpu_draw_bytes;         // DRAW unit statics: icon + sprite registries (the font registry
                                 //   lives under font/ and counts under cpu_frontend_bytes instead)
     u32 cpu_res_bytes;          // the three atlas instance records (packer nodes + tenant bookkeeping)
-    u32 cpu_render_bytes;       // RENDER: pipeline/sampler state + embedded SPIR-V bytecode
+                                //   plus the shared skyline scratch a repack trial runs against
+    u32 cpu_render_bytes;       // RENDER: pipeline / sampler / push state (shaders load from disk)
     u32 cpu_select_bytes;       // text-selection run capture buffer (always compiled; a product feature)
     u32 cpu_debug_bytes;        // debug overlay + name registry + dashboard snapshot + command stepper
                                 //   (each 0 when its feature is compiled out -- Release builds)
@@ -3530,20 +3542,18 @@ typedef struct
     u32 clip_count_all;     // physical clip table fill, both bands (cap: GUI_MAX_CLIP_RECTS)
     u32 seg_count;          // physical segment count, both bands (cap: GUI_MAX_SEGS)
     u32 text_pool_used;     // physical text pool bytes, both bands (cap: GUI_MAX_TEXT_POOL)
-    u32 vert_count;         // quad records tessellated (total, including retained; the name
-                            //   predates the quad cutover -- one record IS the whole shape)
-    u32 tri_count;          // rasterized triangles: always vert_count * 2
+    u32 quad_count;         // quad records tessellated -- one record IS one whole shape (a fill,
+                            //   a glyph, a capsule segment); cap GUI_MAX_QUADS
     u32 prim_count;         // style records (gui_prim_t) live this frame, after dedup --
                             //   dozens serve thousands of quads when the memo is healthy
     u32 draw_calls;         // GPU draw calls (batches), summed over surfaces
 
     u32 win_total;          // windows tracked this frame
     u32 win_retained;       // windows whose geometry was reused (no re-tessellation)
-    u32 vert_retained;      // quad records that came from prev-frame copy, not re-tessellated
-    u32 tri_retained;       // triangles retained from prev-frame copy (vert_retained * 2)
+    u32 quad_retained;      // quad records that came from prev-frame copy, not re-tessellated
 
     u32 upload_batches;     // number of buffer write calls per frame
-    u32 upload_bytes;       // total bytes uploaded to GPU vertex and index buffers
+    u32 upload_bytes;       // total bytes written into the quad / style / clip tables
 
     u32 volatile_patched;   // volatile_cb rows whose geometry was patched in place this frame
                            // (idle replay or a live real-frame reuse-patch) -- a separate signal

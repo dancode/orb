@@ -37,6 +37,13 @@ const char* gui_debug_name( gui_id_t id );
 
 static bool s_frame_built;
 
+/* Walls this build hit OUTSIDE the tessellation passes (TESS_OVF_*, gui_build_tess.c) -- today
+   just the window cap, latched during the diff.  Kept apart from s_tess.overflow because that one
+   is a property of ONE placement pass and tess_reset clears it, which the repack retry relies on;
+   this is a property of the whole build.  Cleared at the top of cache_build_frame, folded into the
+   overflow report at the bottom. */
+static u32 s_build_walls;
+
 void
 build_frame_reset( void )
 {
@@ -47,8 +54,8 @@ build_frame_reset( void )
     Per-frame render stats.
 
     accum is built by two phases that do NOT run on the same schedule: BUILD (cache_diff_windows /
-    cache_build_frame -- cmd_count, vert_count, tri_count, prim_count, win_total, win_retained,
-    vert_retained, tri_retained) runs at most once per REAL frame, guarded by s_frame_built, and is skipped
+    cache_build_frame -- cmd_count, quad_count, prim_count, win_total, win_retained,
+    quad_retained) runs at most once per REAL frame, guarded by s_frame_built, and is skipped
     entirely on an idle frame (frame_dirty()==false); SUBMIT (cache_count_draw_calls /
     cache_count_upload -- draw_calls, upload_batches, upload_bytes) runs every single frame, real
     or idle, once per surface flush, because the GPU replays cached geometry every frame regardless.
@@ -135,7 +142,7 @@ void build_set_retained_skip( bool on ) { s_retained_cache = on; }
 bool build_retained_skip    ( void )    { return s_retained_cache; }
 
 /* Debug-band windows (GUI_WIN_DEBUG_BAND: the perf overlay, the pipeline dashboard, their
-   popups/tooltips) are exempted from: (1) the vert/tri/win totals they may themselves display
+   popups/tooltips) are exempted from: (1) the quad/window totals they may themselves display
    (gui_render_stats_t), and (2) contributing their ever-changing hashes to any_changed / the
    frame_dirty signal that drives idle-skip.  Without (2), simply having a live readout visible
    would keep the whole app rebuilding every frame regardless of anything else being idle.
@@ -155,8 +162,8 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
     read last frame's geometry positions (s_slots_prev) while building this frame's (s_slots).
 
     No separate prev-geometry buffer: s_tess.quads/prims persist between frames, so each
-    window's geometry remains at its prev->vert_base until overwritten.  The reuse path advances
-    the write head by vert_alloc (not vert_count) to keep the SLOT_QUAD_PAD gap intact, which
+    window's geometry remains at its prev->quad_base until overwritten.  The reuse path advances
+    the write head by quad_alloc (not quad_count) to keep the SLOT_QUAD_PAD gap intact, which
     absorbs minor in-place growth without touching adjacent slots.
 ==============================================================================================*/
 
@@ -177,19 +184,19 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
    the arena to hit the cap before repacking means the fill only ever grows during churn.  So once
    the DEAD (unreserved) space in the used range [0, tail) reaches this percentage, cache_build_frame
    repacks proactively -- the backend self-compacts on a cheap frame instead of on a user event or a
-   hard overflow.  Padding (vert_alloc - vert_count) is NOT counted as dead, so a freshly repacked
+   hard overflow.  Padding (quad_alloc - quad_count) is NOT counted as dead, so a freshly repacked
    arena reads ~0% and the trigger cannot thrash frame-to-frame. */
 #define GUI_REPACK_FRAG_PCT   25
 #define GUI_REPACK_FRAG_FLOOR 2048   /* skip the check below this many dead quads -- noise */
 
 /* One cached GPU draw command.  Packed AOS so replaying a slot's commands touches one region.
-   z is per-slot (the window's max segment z), not per-command; lvbase is slot-local so the
-   reuse path needs no fixup when the slot's absolute vert_base is unchanged. */
+   z is per-slot (the window's max segment z), not per-command; lqbase is slot-local so the
+   reuse path needs no fixup when the slot's absolute quad_base is unchanged. */
 typedef struct
 {
     gui_gpu_cmd_t cmd;     // clip rect, texture slot, element count (quads)
     i32           vp;      // viewport this command targets (GUI_VP_INVALID = dormant volatile pad)
-    u32           lvbase;  // quad base relative to slot->vert_base (0-relative)
+    u32           lqbase;  // quad base relative to slot->quad_base (0-relative)
 
 } win_slot_cmd_t;
 
@@ -198,11 +205,11 @@ typedef struct
 {
     gui_id_t win;
     u32      z;
-    u32      vert_base, vert_count, vert_alloc;  // quads: absolute position, actual count, padded reservation
+    u32      quad_base, quad_count, quad_alloc;  // quads: absolute position, actual count, padded reservation
     u32      prim_base, prim_count, prim_alloc;  // style records: same three, in their own arena
     u32      cmd_base,  cmd_count;               // range into s_tess.gpu_cmds[] for this window
     u32      tess_gen;                           // generation of the tess pass that produced the geometry
-    u32      text_quads, text_runs;              // of vert_count, the glyph share and the runs it came
+    u32      text_quads, text_runs;              // of quad_count, the glyph share and the runs it came
                                                  //   from -- taken at tessellation and carried across
                                                  //   reuse frames, since retained geometry is never
                                                  //   re-walked (gui_build_tess.c, slot_text_*)
@@ -213,7 +220,7 @@ typedef struct
                                                  //   overflowed WIN_SLOT_CMD_MAX and must re-tessellate
                                                  //   every real frame instead of reusing (never truncate)
 
-    /* The slot's LOCAL clip table: the rects this window's vertices name through the tex word's
+    /* The slot's LOCAL clip table: the rects this window's quads name through their clip field,
        clip band (gui_render.h, gui_clip_entry_t).  Written by tess_clip_local while the window
        tessellates, carried verbatim across reuse frames, and uploaded by the flush into the
        window's FIXED SLAB of the frame clip region (cache_idx * GUI_WIN_CLIP_MAX) -- only when
@@ -302,14 +309,14 @@ static u32 s_tess_gen_next;
    on idle frames that is the last completed frame's table; during cache_build_frame's slot loop
    it already contains this frame's slots built so far -- both exactly what a caller wants. */
 static bool
-cache_slot_lookup( gui_id_t win, u32* vert_base, u32* prim_base, u32* cmd_base,
+cache_slot_lookup( gui_id_t win, u32* quad_base, u32* prim_base, u32* cmd_base,
                    u32* tess_gen )
 {
     for ( u32 i = 0; i < s_slot_count; ++i )
     {
         if ( s_slots[ i ].win != win || !s_slots[ i ].valid )
             continue;
-        *vert_base = s_slots[ i ].vert_base;
+        *quad_base = s_slots[ i ].quad_base;
         *prim_base = s_slots[ i ].prim_base;
         *cmd_base  = s_slots[ i ].cmd_base;
         *tess_gen  = s_slots[ i ].tess_gen;
@@ -371,7 +378,7 @@ cache_slot_clips_bind( gui_id_t win )
 }
 
 /* Far edge of all LIVE geometry -- the floor past which s_tess is free scratch space.  Forward-
-   declared in gui_build_volatile.c: a volatile patch tessellates into scratch at s_tess.vert_count
+   declared in gui_build_volatile.c: a volatile patch tessellates into scratch at s_tess.quad_count
    and must assert it is at/beyond this, or the scratch scribbles through a live slot's geometry
    (the tooltip-vs-pulse collision, fixed 2026-07-04).
 
@@ -384,14 +391,14 @@ cache_slot_clips_bind( gui_id_t win )
    !RELEASE only, matching the sole call site (that assert). */
 #if !RELEASE
 static void
-cache_slots_extent( u32* out_vert_end, u32* out_prim_end )
+cache_slots_extent( u32* out_quad_end, u32* out_prim_end )
 {
     u32 ve = 0, pe = 0;
     for ( u32 i = 0; i < s_slot_count; ++i )
     {
         if ( !s_slots[ i ].valid )
             continue;
-        u32 v = s_slots[ i ].vert_base + s_slots[ i ].vert_alloc;
+        u32 v = s_slots[ i ].quad_base + s_slots[ i ].quad_alloc;
         u32 p = s_slots[ i ].prim_base + s_slots[ i ].prim_alloc;
         if ( v > ve ) ve = v;
         if ( p > pe ) pe = p;
@@ -400,12 +407,12 @@ cache_slots_extent( u32* out_vert_end, u32* out_prim_end )
     {
         if ( !s_slots_prev[ i ].valid )
             continue;
-        u32 v = s_slots_prev[ i ].vert_base + s_slots_prev[ i ].vert_alloc;
+        u32 v = s_slots_prev[ i ].quad_base + s_slots_prev[ i ].quad_alloc;
         u32 p = s_slots_prev[ i ].prim_base + s_slots_prev[ i ].prim_alloc;
         if ( v > ve ) ve = v;
         if ( p > pe ) pe = p;
     }
-    *out_vert_end = ve;
+    *out_quad_end = ve;
     *out_prim_end = pe;
 }
 #endif
@@ -530,18 +537,16 @@ cache_diff_windows( void )
                 if ( s_cache.cur[ bi ].win == win ) break;
         if ( bi == s_cache.cur_n )
         {
-            /* Overflow: a window past RENDER_MAX_WIN gets no record, no slot, and never
-               tessellates -- it is DROPPED from rendering this frame, not just uncached.
-               Warn once (log + break-once assert, same treatment as the draw-list overflow
-               below) so a too-small cap is not silently invisible windows.  Non-fatal: skip
-               past the assert (or a release build) and the surviving windows still render. */
+            /* A window past RENDER_MAX_WIN gets no record, no slot, and never tessellates -- it is
+               DROPPED from rendering this frame, not just uncached.  Latched into the same wall
+               mask the arenas use so the end-of-build report names it; warned here as well because
+               this happens before any of them, while the culprit window is still in hand. */
             if ( s_cache.cur_n >= RENDER_MAX_WIN )
             {
+                s_build_walls |= TESS_OVF_WINDOWS;
                 GUI_WARN_ONCE( "more than %u windows this frame -- extra windows "
-                               "are not rendered. Raise RENDER_MAX_WIN.\n", RENDER_MAX_WIN );
-                ORB_ASSERT_MSG_ONCE( false, "gui window overflow -- more than RENDER_MAX_WIN "
-                                            "windows; extra windows dropped. Raise RENDER_MAX_WIN "
-                                            "(gui_render.h)" );
+                               "are not rendered. Raise RENDER_MAX_WIN (gui_render.h).\n",
+                               RENDER_MAX_WIN );
                 continue;
             }
             s_cache.cur[ bi ] = ( render_win_hash_t ){ .win  = win, .hash = 2166136261u,
@@ -773,25 +778,25 @@ cache_tess_window( const render_win_hash_t* wh )
 /*==============================================================================================
     Debug diagnostics -- dump the cached-geometry slot table, and a per-frame layout guard.
 
-    cache_dump_slots prints every slot's window, z/vp, and its vertex / index / command bounds.
-    Exposed to hosts via gui()->debug_dump_geometry() for on-demand inspection, and printed
-    automatically by cache_validate_geometry right before it trips an assert.
+    cache_dump_slots prints every slot's window, z/vp, and its quad / command bounds.  Exposed to
+    hosts via gui()->debug_dump_geometry() for on-demand inspection, and printed automatically by
+    cache_validate_geometry right before it trips an assert.
 
     cache_validate_geometry enforces the ONE invariant the retained cache lives or dies by: every
-    valid slot owns a DISJOINT reserved vertex and index range.  Slots are packed end-to-end in the
-    shared s_tess buffers, so any overlap means a write into one slot (a tessellation, a reuse
-    replay, or a volatile patch) silently corrupts another's live geometry -- the exact failure that
-    made the hover tooltip flicker/warp when a neighbouring volatile widget patched over it.  These
-    bugs are near-invisible after the fact (the command metadata still looks correct; only the
-    vertex bytes are wrong), so the guard runs every frame in debug builds and traps at the source.
-    Compiled to nothing in release (ORB_ASSERT is a no-op there; the whole call is gated too).
+    valid slot owns a DISJOINT reserved quad range.  Slots are packed end-to-end in the shared quad
+    arena, so any overlap means a write into one slot (a tessellation, a reuse replay, or a volatile
+    patch) silently corrupts another's live geometry -- the exact failure that made the hover
+    tooltip flicker/warp when a neighbouring volatile widget patched over it.  These bugs are
+    near-invisible after the fact (the command metadata still looks correct; only the record bytes
+    are wrong), so the guard runs every frame in debug builds and traps at the source.  Compiled to
+    nothing in release (ORB_ASSERT is a no-op there; the whole call is gated too).
 ==============================================================================================*/
 
 static void
 cache_dump_slots( const char* tag )
 {
     gui_log( GUI_LOG_INFO, "cached geometry [%s]: %u slots  tess q=%u/%u c=%u/%u",
-             tag ? tag : "dump", s_slot_count, s_tess.vert_count, GUI_MAX_QUADS,
+             tag ? tag : "dump", s_slot_count, s_tess.quad_count, GUI_MAX_QUADS,
              s_tess.cmd_count, GUI_MAX_CMDS );
     for ( u32 i = 0; i < s_slot_count; ++i )
     {
@@ -799,7 +804,7 @@ cache_dump_slots( const char* tag )
         gui_log( GUI_LOG_INFO,
                  "  [%2u] win=%-11u z=%-4u vp=%d  quad[%u..%u)/%u  cmd[%u..%u)  gen=%u%s",
                  i, s->win, s->z, s->vp,
-                 s->vert_base, s->vert_base + s->vert_count, s->vert_alloc,
+                 s->quad_base, s->quad_base + s->quad_count, s->quad_alloc,
                  s->cmd_base,  s->cmd_base  + s->cmd_count,  s->tess_gen,
                  s->valid ? "" : "  (INVALID)" );
     }
@@ -816,12 +821,12 @@ cache_validate_geometry( void )
             continue;
 
         /* Live geometry must fit inside the reservation it was measured into. */
-        if ( sa->vert_count > sa->vert_alloc )
+        if ( sa->quad_count > sa->quad_alloc )
             cache_dump_slots( "OVERFLOW" );
-        ORB_ASSERT_MSG( sa->vert_count <= sa->vert_alloc,
+        ORB_ASSERT_MSG( sa->quad_count <= sa->quad_alloc,
                         "gui cache: slot live quad count exceeds its reservation" );
 
-        u32 av0 = sa->vert_base, av1 = sa->vert_base + sa->vert_alloc;
+        u32 av0 = sa->quad_base, av1 = sa->quad_base + sa->quad_alloc;
 
         /* No two slots may share arena space (adjacency at a shared boundary is fine). */
         for ( u32 b = a + 1; b < s_slot_count; ++b )
@@ -829,7 +834,7 @@ cache_validate_geometry( void )
             const win_geo_slot_t* sb = &s_slots[ b ];
             if ( !sb->valid )
                 continue;
-            u32  bv0 = sb->vert_base, bv1 = sb->vert_base + sb->vert_alloc;
+            u32  bv0 = sb->quad_base, bv1 = sb->quad_base + sb->quad_alloc;
             bool vhit = ( av0 < bv1 && bv0 < av1 );
             if ( vhit )
                 cache_dump_slots( "OVERLAP" );
@@ -858,37 +863,37 @@ slot_prev_find( gui_id_t win )
     return NULL;
 }
 
-/* Reuse a window's geometry in place: it sits at prev->vert_base unchanged, so copy the slot
+/* Reuse a window's geometry in place: it sits at prev->quad_base unchanged, so copy the slot
    fields, fold its reservation into the arena tail (max, not assignment -- slots are id-keyed
    and may sit anywhere below the tail), and replay its cached GPU commands at this frame's
    offsets.  `cache_idx` is the window's entry in the id-keyed stable command cache. */
 static void
 cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_idx )
 {
-    slot->vert_base  = prev->vert_base;
-    slot->vert_count = prev->vert_count;
-    slot->vert_alloc = prev->vert_alloc;
+    slot->quad_base  = prev->quad_base;
+    slot->quad_count = prev->quad_count;
+    slot->quad_alloc = prev->quad_alloc;
     slot->prim_base  = prev->prim_base;
     slot->prim_count = prev->prim_count;
     slot->prim_alloc = prev->prim_alloc;
     slot->tess_gen   = prev->tess_gen;   /* geometry unchanged: same tessellation pass */
-    slot->cache_idx  = cache_idx;        /* id-keyed, so it matches what the vertices baked */
+    slot->cache_idx  = cache_idx;        /* id-keyed, so it matches what the quads baked */
     slot->text_quads = prev->text_quads; /* same quads, so the same glyph share */
     slot->text_runs  = prev->text_runs;
 
-    /* The local clip table travels with the geometry it indexes: the cached vertices bake
-       absolute clip-slab indices, and these are the rects those indices mean. */
+    /* The local clip table travels with the geometry it indexes: the cached quads bake
+       slot-local clip entries, and these are the rects those entries mean. */
     slot->clip_count = prev->clip_count;
     memcpy( slot->clips, prev->clips, prev->clip_count * sizeof( gui_clip_entry_t ) );
 
     /* Keep the write head (== the arena tail every fresh tessellation targets) past this slot. */
-    if ( prev->vert_base + prev->vert_alloc > s_tess.vert_count )
-        s_tess.vert_count = prev->vert_base + prev->vert_alloc;
+    if ( prev->quad_base + prev->quad_alloc > s_tess.quad_count )
+        s_tess.quad_count = prev->quad_base + prev->quad_alloc;
     if ( prev->prim_base + prev->prim_alloc > s_tess.prim_count )
         s_tess.prim_count = prev->prim_base + prev->prim_alloc;
 
-    /* Replay GPU commands from the stable cache.  lvbase is slot-local, so adding
-       slot->vert_base gives the absolute offset for this frame. */
+    /* Replay GPU commands from the stable cache.  lqbase is slot-local, so adding
+       slot->quad_base gives the absolute offset for this frame. */
     slot->cmd_base = s_tess.cmd_count;
     u32  nc        = s_win_cached_count[ cache_idx ];
     bool truncated = slot->cmd_base + nc > GUI_MAX_CMDS;
@@ -902,9 +907,9 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
        the window so the next frame re-tessellates through the loudly-warning overflow report. */
     if ( truncated )
     {
-        nc              = GUI_MAX_CMDS - slot->cmd_base;
-        slot->tess_gen  = ++s_tess_gen_next;
-        s_tess.overflow = true;
+        nc               = GUI_MAX_CMDS - slot->cmd_base;
+        slot->tess_gen   = ++s_tess_gen_next;
+        s_tess.overflow |= TESS_OVF_CMDS;
     }
     slot->cmd_count = nc;
     for ( u32 k = 0; k < nc; ++k )
@@ -912,13 +917,13 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
         u32 ci = slot->cmd_base + k;
         s_tess.gpu_cmds[ ci ].cmd   = s_win_cached[ cache_idx ][ k ].cmd;
         s_tess.gpu_cmds[ ci ].vp    = s_win_cached[ cache_idx ][ k ].vp;
-        s_tess.gpu_cmds[ ci ].vbase = slot->vert_base + s_win_cached[ cache_idx ][ k ].lvbase;
+        s_tess.gpu_cmds[ ci ].qbase = slot->quad_base + s_win_cached[ cache_idx ][ k ].lqbase;
     }
     s_tess.cmd_count += nc;
 
     /* This window's own content matched, but that comparison excludes volatile commands entirely
        (cache_diff_windows).  Its volatile rows are patched from this frame's live emit AFTER the
-       loop (see reused_volatile_wins) -- once every slot is placed and s_tess.vert_count is the true
+       loop (see reused_volatile_wins) -- once every slot is placed and s_tess.quad_count is the true
        tail, so the patch's scratch tessellation cannot land on a later slot's live geometry.  The
        slot fields (incl. tess_gen) set here are what volatile_patch resolves and generation-checks
        against then. */
@@ -931,7 +936,7 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
    over another window's live geometry, whatever it turns out to measure.  Then:
 
      - fits its own previous reservation -> the geometry is memcpy'd back into that hole (indices
-       are slot-relative, so only the slot bases and the absolute vbase shift) and
+       are slot-relative, so only the slot bases and the absolute qbase shift) and
        the tail rewinds -- the steady interactive case (the focused window changing every frame)
        reuses its home and the arena layout is byte-stable.
      - outgrew it (or is new)           -> it keeps the tail position with a fresh reservation
@@ -946,14 +951,14 @@ static void
 cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
                        const win_geo_slot_t* prev, u32 cache_idx )
 {
-    u32 tail_v = s_tess.vert_count;   /* invariant: the write head is past every live reservation */
+    u32 tail_v = s_tess.quad_count;   /* invariant: the write head is past every live reservation */
     u32 tail_p = s_tess.prim_count;
 
-    slot->vert_base       = tail_v;
+    slot->quad_base       = tail_v;
     slot->prim_base       = tail_p;
     slot->cmd_base        = s_tess.cmd_count;
     slot->tess_gen        = ++s_tess_gen_next;   /* fresh pass: volatile captures bind to it */
-    s_tess.slot_vert_base = tail_v;
+    s_tess.slot_quad_base = tail_v;
     s_tess.slot_prim_base = tail_p;
     s_tess.slot_cmd_base  = s_tess.cmd_count;
     s_tess.slot_tess_gen  = slot->tess_gen;
@@ -988,7 +993,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_tess.slot_clip_count   = NULL;
     s_tess.slot_clip_pending = NULL;
 
-    slot->vert_count = s_tess.vert_count - slot->vert_base;
+    slot->quad_count = s_tess.quad_count - slot->quad_base;
     slot->prim_count = s_tess.prim_count - slot->prim_base;
     slot->cmd_count  = s_tess.cmd_count  - slot->cmd_base;
 
@@ -997,20 +1002,20 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_prim_range_pending[ slot->cache_idx ] = 0xFF;
 
     bool fits = ( prev && prev->valid
-                  && slot->vert_count <= prev->vert_alloc
+                  && slot->quad_count <= prev->quad_alloc
                   && slot->prim_count <= prev->prim_alloc );
     if ( fits )
     {
         /* Relocate from the tail scratch back into the window's own reservation.  The spans are
            disjoint by the tail invariant (tail >= prev base + alloc), so memcpy is safe; only
            the absolute per-command bases shift. */
-        u32 dv = tail_v - prev->vert_base;
+        u32 dv = tail_v - prev->quad_base;
         u32 dp = tail_p - prev->prim_base;
         if ( dv )
         {
-            tess_geo_copy( prev->vert_base, tail_v, slot->vert_count );
+            tess_geo_copy( prev->quad_base, tail_v, slot->quad_count );
             for ( u32 k = 0; k < slot->cmd_count; ++k )
-                s_tess.gpu_cmds[ slot->cmd_base + k ].vbase -= dv;
+                s_tess.gpu_cmds[ slot->cmd_base + k ].qbase -= dv;
         }
         /* Records move on their own axis: the record arena is packed independently of the quad
            one, so a slot can land back in its quad hole while its records still shift.  Their
@@ -1019,32 +1024,32 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
             memcpy( &s_tess.prims[ prev->prim_base ], &s_tess.prims[ tail_p ],
                     slot->prim_count * sizeof( gui_prim_t ) );
 
-        slot->vert_base  = prev->vert_base;
-        slot->vert_alloc = prev->vert_alloc;
+        slot->quad_base  = prev->quad_base;
+        slot->quad_alloc = prev->quad_alloc;
         slot->prim_base  = prev->prim_base;
         slot->prim_alloc = prev->prim_alloc;
 
         /* Rewind the tail: the scratch bytes are abandoned, nothing references them. */
-        s_tess.vert_count = tail_v;
+        s_tess.quad_count = tail_v;
         s_tess.prim_count = tail_p;
     }
     else
     {
         /* Stays at the tail.  Geometric headroom: a quarter of the live size, floored at the
            fixed pads, so growth relocates logarithmically instead of once per grown frame. */
-        u32 pad_v = slot->vert_count / 4u;  if ( pad_v < SLOT_QUAD_PAD ) pad_v = SLOT_QUAD_PAD;
+        u32 pad_v = slot->quad_count / 4u;  if ( pad_v < SLOT_QUAD_PAD ) pad_v = SLOT_QUAD_PAD;
         u32 pad_p = slot->prim_count / 4u;  if ( pad_p < SLOT_PRIM_PAD ) pad_p = SLOT_PRIM_PAD;
-        slot->vert_alloc = slot->vert_count + pad_v;
+        slot->quad_alloc = slot->quad_count + pad_v;
         slot->prim_alloc = slot->prim_count + pad_p;
 
         /* Clamp to the arena like volatile_range_close: headroom shrinks before the write head
            can pass the cap, so fill ratios and the overflow report never read past the pools. */
-        if ( slot->vert_base + slot->vert_alloc > GUI_MAX_QUADS )
-            slot->vert_alloc = GUI_MAX_QUADS - slot->vert_base;
+        if ( slot->quad_base + slot->quad_alloc > GUI_MAX_QUADS )
+            slot->quad_alloc = GUI_MAX_QUADS - slot->quad_base;
         if ( slot->prim_base + slot->prim_alloc > GUI_MAX_PRIMS )
             slot->prim_alloc = GUI_MAX_PRIMS - slot->prim_base;
 
-        s_tess.vert_count = slot->vert_base + slot->vert_alloc;
+        s_tess.quad_count = slot->quad_base + slot->quad_alloc;
         s_tess.prim_count = slot->prim_base + slot->prim_alloc;
     }
 
@@ -1053,7 +1058,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
        than bumping s_geo_gen -- a steadily-changing window (the focused one, a stats overlay)
        costs its own span per present, not the whole arena.  The repack retry bumps the
        generation instead (cache_build_frame): there every slot moves. */
-    patch_span_union( slot->vp, slot->band, slot->vert_base, slot->vert_base + slot->vert_count );
+    patch_span_union( slot->vp, slot->band, slot->quad_base, slot->quad_base + slot->quad_count );
 
     /* Write GPU commands into the stable cache for reuse next retained frame.  A run that exceeds
        the cache must NOT be truncated: dropping trailing commands blanks the window's deferred
@@ -1067,6 +1072,8 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     {
         if ( cache_idx != ~0u )
             s_win_cached_count[ cache_idx ] = 0;
+        if ( nc > WIN_SLOT_CMD_MAX )
+            ++s_tess_stats.uncacheable_wins;
         slot->cmd_cached = false;
         slot->valid      = true;
         return;
@@ -1077,7 +1084,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
         u32 ci = slot->cmd_base + k;
         s_win_cached[ cache_idx ][ k ].cmd    = s_tess.gpu_cmds[ ci ].cmd;
         s_win_cached[ cache_idx ][ k ].vp     = s_tess.gpu_cmds[ ci ].vp;
-        s_win_cached[ cache_idx ][ k ].lvbase = s_tess.gpu_cmds[ ci ].vbase - slot->vert_base;
+        s_win_cached[ cache_idx ][ k ].lqbase = s_tess.gpu_cmds[ ci ].qbase - slot->quad_base;
     }
     slot->cmd_cached = true;
     slot->valid      = true;
@@ -1109,11 +1116,11 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
 /* Accumulators one placement pass produces for the stats/report code after it. */
 typedef struct
 {
-    u32      vert_retained, tri_retained, win_retained;   /* vert_* counts QUADS; tri = quads*2 */
-    u32      total_vert, total_tri, total_prim, overlay_win;
-    u32      reserved_vert;                 /* sum of vert_alloc over ALL placed slots */
-    gui_id_t overflow_win;
-    u32      overflow_at_vert, overflow_at_cmd;
+    u32      quad_retained, win_retained;
+    u32      total_quad, total_prim, overlay_win;
+    u32      reserved_quad;                 /* sum of quad_alloc over ALL placed slots */
+    gui_id_t overflow_win;                  /* first window a pool spilled under (NONE = outside the loop) */
+    u32      overflow_at_quad, overflow_at_cmd, overflow_at_prim;
     gui_id_t reused_volatile_wins[ RENDER_MAX_WIN ];
     u32      reused_volatile_n;
 
@@ -1133,7 +1140,7 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
     s_dispatch_count = 0;
 
     tess_reset();
-    s_tess_stats.band0_vert_end = 0;   /* re-derived below as main-band slots place; 0 when none exist */
+    s_tess_stats.band0_quad_end = 0;   /* re-derived below as main-band slots place; 0 when none exist */
 
     /* Re-derived the same way: summed over the slots this pass places, so the repack retry (which
        runs the whole pass a second time) restates them rather than doubling them. */
@@ -1152,9 +1159,9 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
         for ( u32 i = 0; i < s_slot_prev_count; ++i )
         {
             if ( !s_slots_prev[ i ].valid ) continue;
-            u32 ve = s_slots_prev[ i ].vert_base + s_slots_prev[ i ].vert_alloc;
+            u32 ve = s_slots_prev[ i ].quad_base + s_slots_prev[ i ].quad_alloc;
             u32 pe = s_slots_prev[ i ].prim_base + s_slots_prev[ i ].prim_alloc;
-            if ( ve > s_tess.vert_count ) s_tess.vert_count = ve;
+            if ( ve > s_tess.quad_count ) s_tess.quad_count = ve;
             if ( pe > s_tess.prim_count ) s_tess.prim_count = pe;
         }
     }
@@ -1195,8 +1202,7 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
 
             if ( wh->band == 0 )
             {
-                st->vert_retained += slot->vert_count;
-                st->tri_retained  += slot->vert_count * 2u;
+                st->quad_retained += slot->quad_count;
                 ++st->win_retained;
             }
         }
@@ -1205,22 +1211,23 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
             cache_slot_tessellate( slot, wh, prev, ci );
         }
 
-        /* First window to tip the arena over: remember it (and the fill it reached) for the report. */
+        /* First window to spill a pool: remember it (and the fills it reached) for the report. */
         if ( !ovf_before && s_tess.overflow && st->overflow_win == GUI_ID_NONE )
         {
             st->overflow_win     = wh->win;
-            st->overflow_at_vert = s_tess.vert_count;
+            st->overflow_at_quad = s_tess.quad_count;
             st->overflow_at_cmd  = s_tess.cmd_count;
+            st->overflow_at_prim = s_tess.prim_count;
         }
 
         /* Space this slot owns (live count + retained padding).  Summed over every slot, the tail
            minus this is the dead space the proactive-repack check reclaims. */
-        st->reserved_vert += slot->vert_alloc;
+        st->reserved_quad += slot->quad_alloc;
 
         /* Accumulate per-slot geometry stats; exclude self-measuring debug-band windows from totals. */
         s_tess_stats.text_quads += slot->text_quads;
         s_tess_stats.text_runs  += slot->text_runs;
-        s_tess_stats.live_quads += slot->vert_count;
+        s_tess_stats.live_quads += slot->quad_count;
 
         if ( wh->band != 0 )
             ++st->overlay_win;
@@ -1228,18 +1235,17 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
         {
             s_tess_stats.band0_text_quads += slot->text_quads;
             s_tess_stats.band0_text_runs  += slot->text_runs;
-            s_tess_stats.band0_live_quads += slot->vert_count;
+            s_tess_stats.band0_live_quads += slot->quad_count;
 
-            st->total_vert += slot->vert_count;
-            st->total_tri  += slot->vert_count * 2u;
+            st->total_quad += slot->quad_count;
             st->total_prim += slot->prim_count;
 
             /* Band boundary: the far edge of the main band's reservations (band-major sort placed
                them first, but id-keyed slots keep historical positions, so track the max extent
                rather than the loop's write head).  The dashboard's memory map draws "main arena
                ends here" at this mark; everything past it is the debug band's own footprint. */
-            u32 ve = slot->vert_base + slot->vert_alloc;
-            if ( ve > s_tess_stats.band0_vert_end ) s_tess_stats.band0_vert_end = ve;
+            u32 ve = slot->quad_base + slot->quad_alloc;
+            if ( ve > s_tess_stats.band0_quad_end ) s_tess_stats.band0_quad_end = ve;
         }
 
         s_dispatch[ s_dispatch_count++ ] = slot;
@@ -1252,6 +1258,7 @@ cache_build_frame( void )
     if ( s_frame_built )
         return;
     s_frame_built = true;
+    s_build_walls = 0u;
 
     /* Before anything tessellates: refresh the glyph UV table if a font's tenant changed or an
        atlas repacked, so every ID emitted this frame and every rect behind it come from one
@@ -1299,9 +1306,9 @@ cache_build_frame( void )
             compact once it crosses the threshold, so the backend self-heals on a cheap frame
             instead of waiting for a user event or a hard overflow.  Floored so a near-empty arena
             never trips on a high percentage of a tiny number. */
-    u32  dead_v = s_tess.vert_count > ps.reserved_vert ? s_tess.vert_count - ps.reserved_vert : 0;
+    u32  dead_v = s_tess.quad_count > ps.reserved_quad ? s_tess.quad_count - ps.reserved_quad : 0;
     bool frag   = ( dead_v >= GUI_REPACK_FRAG_FLOOR
-                    && dead_v * 100u >= s_tess.vert_count * GUI_REPACK_FRAG_PCT );
+                    && dead_v * 100u >= s_tess.quad_count * GUI_REPACK_FRAG_PCT );
 
     if ( s_tess.overflow || frag )
     {
@@ -1311,9 +1318,9 @@ cache_build_frame( void )
         cache_place_slots( false, &ps );
     }
 
-    /* Deferred volatile patches for reused windows: every slot is now placed and s_tess.vert_count
+    /* Deferred volatile patches for reused windows: every slot is now placed and s_tess.quad_count
        is the true tail, so volatile_patch's scratch tessellation lands past all live geometry
-       instead of over a later slot's vertices (see reused_volatile_wins above). */
+       instead of over a later slot's quads (see reused_volatile_wins above). */
     for ( u32 i = 0; i < ps.reused_volatile_n; ++i )
         cache_count_volatile_patch( volatile_patch_reused_window( ps.reused_volatile_wins[ i ] ) );
 
@@ -1337,57 +1344,64 @@ cache_build_frame( void )
 #endif
 
     /* Publish geometry and retained stats. */
-    s_stats.accum.vert_count    = ps.total_vert;
-    s_stats.accum.tri_count     = ps.total_tri;
+    s_stats.accum.quad_count    = ps.total_quad;
     s_stats.accum.prim_count    = ps.total_prim;
     s_stats.accum.win_total     = s_cache.cur_n - ps.overlay_win;
     s_stats.accum.win_retained  = ps.win_retained;
-    s_stats.accum.vert_retained = ps.vert_retained;
-    s_stats.accum.tri_retained  = ps.tri_retained;
+    s_stats.accum.quad_retained = ps.quad_retained;
 
-    /* Track geometry high-water marks and warn once on overflow.  The total (both bands) and the
-       main band alone peak independently, so each gets its own accumulator. */
-    if ( s_tess.vert_count           > s_tess_stats.vert_hwm       ) s_tess_stats.vert_hwm       = s_tess.vert_count;
+    /* Track pool high-water marks.  The total (both bands) and the main band alone peak
+       independently, so each gets its own accumulator. */
+    if ( s_tess.quad_count           > s_tess_stats.quad_hwm       ) s_tess_stats.quad_hwm       = s_tess.quad_count;
     if ( s_tess.prim_count           > s_tess_stats.prim_hwm       ) s_tess_stats.prim_hwm       = s_tess.prim_count;
-    if ( s_tess_stats.band0_vert_end > s_tess_stats.band0_vert_hwm ) s_tess_stats.band0_vert_hwm = s_tess_stats.band0_vert_end;
+    if ( s_tess.cmd_count            > s_tess_stats.cmd_hwm        ) s_tess_stats.cmd_hwm        = s_tess.cmd_count;
+    if ( s_cache.cur_n               > s_tess_stats.win_hwm        ) s_tess_stats.win_hwm        = s_cache.cur_n;
+    if ( s_tess_stats.band0_quad_end > s_tess_stats.band0_quad_hwm ) s_tess_stats.band0_quad_hwm = s_tess_stats.band0_quad_end;
 
-    /* Single overflow catch for the whole build: the reservation sites just latch s_tess.overflow
-       and drop their primitive (non-fatal -- the frame still submits everything that fit, the app
-       keeps running), so we report ONCE here, after the frame is fully tessellated and about to be
-       submitted.  We name the window that blew the caps (log line + break-once assert below) so a
-       dropped primitive -- classically a window's late-tessellated chrome vanishing -- is traced to
-       its source; the log and the dashboard's OVERFLOWED marker persist even past the assert. */
-    /* Spill outside the per-window loop (a deferred volatile patch): no culprit window was captured,
-       so report the final arena fill rather than a stale zero. */
+    /* Single overflow catch for the whole build.  The reservation sites only latch their wall into
+       s_tess.overflow and drop the primitive (non-fatal -- the frame still submits everything that
+       fit), so the report happens ONCE here, with the frame fully tessellated: which caps were hit,
+       what each pool filled to, and the window that hit the first of them.  Naming the culprit is
+       what turns "something overflowed" into a fixable bug report, since the classic symptom -- a
+       window's late-tessellated chrome silently vanishing -- points nowhere on its own.  The log
+       line and the dashboard's OVERFLOWED marker both persist past the assert below. */
+    /* A spill outside the per-window loop (a deferred volatile patch) captured no culprit window,
+       so report the final pool fills rather than a stale zero. */
     if ( s_tess.overflow && ps.overflow_win == GUI_ID_NONE )
     {
-        ps.overflow_at_vert = s_tess.vert_count;
+        ps.overflow_at_quad = s_tess.quad_count;
         ps.overflow_at_cmd  = s_tess.cmd_count;
+        ps.overflow_at_prim = s_tess.prim_count;
     }
 
-    if ( s_tess.overflow && !s_tess_stats.overflow_ever )
+    u32  hit = s_tess.overflow | s_build_walls;   /* this pass's walls, plus the diff's */
+    char walls[ 128 ];
+    tess_overflow_walls( hit, walls, (u32)sizeof( walls ) );
+
+    if ( hit & ~s_tess_stats.overflow_walls )
     {
-        /* Name the window that hit the wall (a title in debug, else its hashed id) plus the fill it
-           reached, so the report points at the culprit instead of just "something overflowed".  A
-           NONE id means the spill happened outside the per-window loop (a deferred volatile patch). */
+        /* Re-reported whenever a NEW wall appears, not only on the first spill ever: hitting the
+           quad cap and later hitting the style cap are different bugs with different fixes. */
         const char* nm = ( ps.overflow_win != GUI_ID_NONE ) ? gui_debug_name( ps.overflow_win ) : NULL;
         /* The default sink flushes, so this lands before the once-assert below can trap. */
         gui_log( GUI_LOG_WARN,
-                 "draw list overflow -- geometry dropped tessellating window '%s' "
-                 "(id 0x%08X); arena filled to %u/%u quads, %u/%u gpu cmds. "
-                 "Raise GUI_MAX_QUADS / GUI_MAX_CMDS.",
-                 nm ? nm : "<unnamed>", (unsigned)ps.overflow_win,
-                 ps.overflow_at_vert, GUI_MAX_QUADS,
-                 ps.overflow_at_cmd, GUI_MAX_CMDS );
+                 "gui build overflow (%s) -- content dropped tessellating window '%s' (id 0x%08X); "
+                 "pools at %u/%u quads, %u/%u styles, %u/%u gpu cmds, %u/%u windows",
+                 walls, nm ? nm : "<unnamed>", (unsigned)ps.overflow_win,
+                 ps.overflow_at_quad, GUI_MAX_QUADS,
+                 ps.overflow_at_prim, GUI_MAX_PRIMS,
+                 ps.overflow_at_cmd,  GUI_MAX_CMDS,
+                 s_cache.cur_n,       RENDER_MAX_WIN );
     }
-    if ( s_tess.overflow )
-        s_tess_stats.overflow_ever = true;
+    s_tess_stats.overflow_walls |= hit;
 
-    /* Break once (debug) so you can catch which frame / UI blew the caps under the debugger; the
-       macro self-latches, so a persistent overflow does not re-trap every frame.  Non-fatal: skip
-       past it (or a release build) and the app keeps running with the dropped geometry. */
-    ORB_ASSERT_MSG_ONCE( !s_tess.overflow, "gui draw list overflow -- geometry dropped; raise "
-                                           "GUI_MAX_QUADS / GUI_MAX_CMDS (gui.h)" );
+    /* Break once (debug) so the frame that blew a cap can be caught under the debugger; the macro
+       self-latches, so a persistent overflow does not re-trap every frame.  Non-fatal: skip past it
+       (or a release build) and the app keeps running with the dropped content -- the log line above
+       carries the cap names and the fills, which is what actually diagnoses it. */
+    ORB_ASSERT_MSG_ONCE( !hit,
+                         "gui build overflow -- content dropped; see the preceding gui log line "
+                         "for which cap was hit and what each pool filled to" );
 
     /* Pipeline-dashboard snapshot: everything above is final for the frame -- slots placed,
        dispatch z-sorted, stats accumulated.  A no-op unless GUI_PIPELINE_DASHBOARD. */

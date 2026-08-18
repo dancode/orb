@@ -105,6 +105,12 @@ static struct
     u32             pt_count;       /* points in the pool this frame */
     u32             rect_count;     /* rect-pool entries used this frame */
 
+    /* Lifetime peak of each pool above, folded in by draw_reset just before it clears the counts.
+       The frame counters are the only truth while a frame is open and they are gone the moment it
+       closes, so a cap can only be argued from what was retained here -- see backend_pool_report
+       (render/gui_render_mem.c), which prints all of them against their #defines. */
+    u32             cmd_hwm, pt_hwm, rect_hwm, text_hwm, clip_hwm, seg_hwm;
+
     gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */
     u32             cur_z;          /* sort key tracked per-segment (draw_seg_retag; NOT baked per command) */
     i32             cur_vp;         /* viewport stamped onto new commands (set by begin/window_end)        */
@@ -285,6 +291,16 @@ draw_reset( i32 display_w, i32 display_h )
        already zero by induction from the zeroed static.  Must run before cmd_count resets.
        (GUI_ID_NONE is 0.) */
     memset( s_draw.cmd_volatile_id, 0, s_draw.cmd_count * sizeof( s_draw.cmd_volatile_id[ 0 ] ) );
+
+    /* Retain the closing frame's fills before they are cleared -- the pool report has no other
+       chance to see them (a saturated pool that dropped content still reads at its cap here,
+       which is exactly the signal). */
+    if ( s_draw.cmd_count      > s_draw.cmd_hwm  ) s_draw.cmd_hwm  = s_draw.cmd_count;
+    if ( s_draw.pt_count       > s_draw.pt_hwm   ) s_draw.pt_hwm   = s_draw.pt_count;
+    if ( s_draw.rect_count     > s_draw.rect_hwm ) s_draw.rect_hwm = s_draw.rect_count;
+    if ( s_draw.text_pool_used > s_draw.text_hwm ) s_draw.text_hwm = s_draw.text_pool_used;
+    if ( s_draw.clip_table_n   > s_draw.clip_hwm ) s_draw.clip_hwm = s_draw.clip_table_n;
+    if ( s_draw.seg_count      > s_draw.seg_hwm  ) s_draw.seg_hwm  = s_draw.seg_count;
 
     s_draw.cmd_count       = 0;
     s_draw.pt_count        = 0;

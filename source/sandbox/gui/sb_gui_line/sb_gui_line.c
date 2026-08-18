@@ -279,12 +279,12 @@ panel_cost( void )
     gui()->separator_text( "5  the cost" );
 
     gui_render_stats_t rs = gui()->render_stats();
-    gui()->textf( "frame: %u draw calls   %u verts   %u tris", rs.draw_calls, rs.vert_count,
-                  rs.tri_count );
-    gui()->text( "Per diagonal stroke: the capsule is 8 verts / 12 indices (2 quads), the ribbon "
-                 "8 verts / 18 indices (3 bands).  An AXIS-ALIGNED line is neither -- it keeps a "
-                 "grid-snapped 4-vert quad, because a horizontal edge has nothing to antialias "
-                 "and a field would be more geometry for a blurrier result." );
+    gui()->textf( "frame: %u draw calls   %u quads   %u styles", rs.draw_calls, rs.quad_count,
+                  rs.prim_count );
+    gui()->text( "A stroke costs ONE quad record whatever its angle: the capsule field resolves "
+                 "the rounded ends and the antialiased edge in the fragment.  An AXIS-ALIGNED line "
+                 "still takes the grid-snapped path instead, because a horizontal edge has nothing "
+                 "to antialias and the field would only make it blurrier." );
 }
 
 /*==============================================================================================

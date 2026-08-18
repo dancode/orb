@@ -526,6 +526,11 @@ void                gui_render_flush        ( rhi_texture_t target, i32 vp_index
    by the frontend (gui_mem_stats), which owns the context pool. */
 gui_mem_stats_t     backend_memory          ( u32 live_viewports );
 
+/* Log every capped backend pool's LIFETIME PEAK against its cap -- the diagnostic to read before
+   moving a GUI_MAX_* number, and the one that says which cap a reported overflow actually hit.
+   Emitted as part of gui_print_mem_stats, which cannot reach the pools itself. */
+void                backend_pool_report     ( void );
+
 /* The accounting seam: the font/icon resources live one unit up (draw), so this server
    fills its font bucket by asking the draw unit for its fixed footprint.  Home declaration
    in draw/gui_draw.h; redeclared here because the server cannot see a library header. */
@@ -602,7 +607,7 @@ void                gui_render_set_time     ( f32 seconds );
         gui_id_t win;
         u32      z, band;
         i32 vp;
-        u32      vert_base, vert_count, vert_alloc;   /* quads */
+        u32      quad_base, quad_count, quad_alloc;   /* absolute position, live count, reservation */
         u32      cmd_base,  cmd_count;
         u32      tess_gen;
         bool     valid, changed;
@@ -611,7 +616,7 @@ void                gui_render_set_time     ( f32 seconds );
 
     typedef struct                       /* gui_gpu_cmd_t + its parallel arrays, flattened */
     {
-        u32        elem_count, tex_idx, vbase;        /* elem_count and vbase count quads */
+        u32        elem_count, tex_idx, qbase;        /* elem_count and qbase count quads */
         i32        vp;                   /* GUI_VP_INVALID = dormant volatile pad */
         gui_rect_t clip;
 
@@ -621,7 +626,7 @@ void                gui_render_set_time     ( f32 seconds );
     {
         gui_id_t id, win;
         u32      tess_gen;
-        u32      lvert_base, vert_count, vert_alloc;  /* quads */
+        u32      lquad_base, quad_count, quad_alloc;  /* slot-relative position, live count, reservation */
         u32      cmd_count,  cmd_alloc;
         bool     active, hidden;
 
@@ -631,7 +636,7 @@ void                gui_render_set_time     ( f32 seconds );
     {
         bool live;
         u32  frame_index;
-        u32  vtx_lo, vtx_hi;                             /* quad span; lo >= hi = nothing uploaded */
+        u32  quad_lo, quad_hi;                             /* quad span; lo >= hi = nothing uploaded */
         u32  up_bytes, up_batches, draw_calls;
 
     } dash_surf_t;
@@ -646,19 +651,19 @@ void                gui_render_set_time     ( f32 seconds );
         dash_cmd_t  cmds[ GUI_MAX_CMDS ];        u32 cmd_count;
         dash_vol_t  vols[ GUI_MAX_VOLATILE ];    u32 vol_count;
 
-        u32  tess_verts, vert_hwm;                       /* quads: live fill + lifetime peak */
+        u32  tess_quads, quad_hwm;                       /* quads: live fill + lifetime peak */
         u32  tess_prims, prim_hwm;                       /* style records: live fill + lifetime peak
                                                             (both bands -- styles carry no band split) */
         u32  tess_cmds;                                  /* LIVE GPU draw cmds, both bands (dormant/empty excluded) */
         u32  tess_cmds_dbg;                              /* of tess_cmds, the debug band's share     */
-        bool overflow_ever;
-        u32  band0_vert_end;                             /* main arena ends here; past = debug band */
-        u32  band0_vert_hwm;                             /* lifetime peak of the main band alone     */
+        bool overflow_ever;                              /* any cap spilled this run (see the gui log) */
+        u32  band0_quad_end;                             /* main arena ends here; past = debug band */
+        u32  band0_quad_hwm;                             /* lifetime peak of the main band alone     */
         u32  text_quads, text_runs;                      /* of live_quads, the glyph share and its runs */
         u32  band0_text_quads, band0_text_runs;          /* the same, main band alone                */
-        /* Quads that actually draw: the slots' vert_count summed.  tess_verts above is the arena
-           WRITE HEAD and carries every slot's vert_alloc padding, so it is a capacity figure, not a
-           count -- read shares of the geometry against these two, never against tess_verts. */
+        /* Quads that actually draw: the slots' quad_count summed.  tess_quads above is the arena
+           WRITE HEAD and carries every slot's quad_alloc padding, so it is a capacity figure, not a
+           count -- read shares of the geometry against these two, never against tess_quads. */
         u32  live_quads, band0_live_quads;
         u32  emit_cmds, emit_segs, emit_pts, emit_rects, emit_text, emit_clips;
         u32  emit_cmds_hwm;                              /* running high-water of emit_cmds across captures */
@@ -693,7 +698,7 @@ void                gui_render_set_time     ( f32 seconds );
          dash_capture_flush -- end of gui_render_flush: one surface's frame index, upload spans,
                                upload bytes/batches and draw calls. */
     void dash_capture_build( void );
-    void dash_capture_flush( i32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi,
+    void dash_capture_flush( i32 vp, u32 frame, u32 quad_lo, u32 quad_hi,
                              u32 bytes, u32 batches, u32 draws );
 
     #define DASH_CAPTURE_BUILD()        dash_capture_build()

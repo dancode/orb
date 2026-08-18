@@ -222,8 +222,8 @@ panel_ladder( void )
     /* The batch readout.  Two fonts is two atlases is two draw calls for the text, plus chrome's
        own -- and that number does NOT move when the scale, the angle or the glyph count does. */
     gui_render_stats_t rs = gui()->render_stats();
-    gui()->textf( "frame: %u draw calls   %u verts   %u tris   (scale and rotation add none)",
-                  rs.draw_calls, rs.vert_count, rs.tri_count );
+    gui()->textf( "frame: %u draw calls   %u quads   %u styles   (scale and rotation add none)",
+                  rs.draw_calls, rs.quad_count, rs.prim_count );
 }
 
 /*==============================================================================================
@@ -492,7 +492,7 @@ panel_edge( void )
     gui_render_stats_t rs = gui()->render_stats();
     gui()->textf( "%u draw calls   %u verts -- toggle the outline and watch neither move; a "
                   "second offset run would add four verts per glyph",
-                  rs.draw_calls, rs.vert_count );
+                  rs.draw_calls, rs.quad_count );
 }
 
 /*==============================================================================================
@@ -579,7 +579,7 @@ win_shapes( void )
 
     gui_render_stats_t rs = gui()->render_stats();
     gui()->textf( "frame: %u verts.  The old sampled arc cost up to 130 verts ALONE; "
-                  "six of the seven shapes above cost 4 each.", rs.vert_count );
+                  "six of the seven shapes above cost 4 each.", rs.quad_count );
 }
 
 /*==============================================================================================

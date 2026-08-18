@@ -6,8 +6,8 @@
     The compiled pipeline (+ wireframe twin), the two bindless samplers (font/coverage + image),
     and the push-constant layout they're built against.  
     
-    render_init creates them; render_shutdown tears them down and logs the run's peak
-    draw-list / draw-call / per-draw-state figures.
+    render_init creates them; render_shutdown tears them down and logs the run's peak pool fills,
+    draw-call count and per-draw state cost.
 
         EMIT    gui_emit_draw.c    widgets -> s_draw semantic command list
         BUILD   gui_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
@@ -51,10 +51,12 @@ typedef struct
 } gui_push_t;           // total 120 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
-    exactly what forced a draw call per texture.  They moved into the vertex (gui.h): the fragment
-    reads the slot from the vertex and picks between the two SAMPLERS below by model, so what
-    remains in this block is per-FRAME state only.  In normal rendering nothing in the tail changes
-    across a whole flush -- the redundancy filter below pushes it once and then goes quiet.  */
+    exactly what forced a draw call per texture.  They moved onto the STYLE RECORD each quad names
+    (gui.h, gui_prim_t.tex); the fragment reads the slot from there and picks between the two
+    SAMPLERS below by the model packed with it.  A glyph quad names no style record at all, so its
+    atlas comes from tex_cov / tex_sdf above -- also flush-constant.  What remains in this block is
+    per-FRAME state only: in normal rendering nothing in the tail changes across a whole flush, and
+    the redundancy filter below pushes it once and then goes quiet.  */
 
 /*  The block is written ONCE per flush, before the dispatch walk, and re-pushed from the tail by
     the two consumers that genuinely vary below that granularity: prim_base, which is per WINDOW
@@ -78,7 +80,7 @@ typedef struct
 
     An ENTRY is two vec4s: (x0, y0, x1, y1) snapped pixel edges, then (radius, 0, 0, 0).  A
     REGION is an array of fixed per-window SLABS -- one per stable cache slot, GUI_WIN_CLIP_MAX
-    entries each, at cache_idx * GUI_WIN_CLIP_MAX -- the same base the window's vertices bake
+    entries each, at cache_idx * GUI_WIN_CLIP_MAX -- the same base the window's quads bake
     into the clip band, so uploads land at fixed offsets and can never overflow.  One region per
     (frame-in-flight, viewport), because the buffer is shared across surfaces whose in-flight
     draws read their own frames' entries.
@@ -151,10 +153,10 @@ ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF % 4 == 0 && GUI_PUSH_TAIL_SIZE % 4 == 0,
     Immutable across frames and shared by every viewport (and the debug overlay), so never 
     a per-viewport or per-frame bottleneck.
     
-    Per-viewport surfaces own only their vb/ib (in gui_viewport_t, core/gui_ctx.h); 
-    a viewport is a render TARGET that windows are dispatched to, not an owner of
-    windows -- the one context emits every window and flush routes each window's geometry to the
-    viewport hosting it.  
+    A surface owns NO geometry buffers of its own: the quad, style and clip tables below are one
+    buffer each, carved into a region per (frame-in-flight, viewport).  A viewport is a render
+    TARGET that windows are dispatched to, not an owner of windows -- the one context emits every
+    window and the flush routes each window's geometry to the viewport hosting it.
     
     The viewport list lives in the bound context (core/gui_ctx.c), so this file only ever 
     touches a surface through the GPU pieces passed to it.
@@ -169,9 +171,9 @@ static struct
 
     /* Second sampler, bilinear, for the sampling models that filter: authored sprite art, a
        caller's own textures (a scene render target), and distance-field glyphs.  BOTH slots are
-       pushed every flush and the FRAGMENT chooses between them from the vertex's model field, so a
-       draw call binds neither in particular -- which is exactly what lets one batch mix a point-
-       sampled glyph atlas with a filtered image.  The model answers the question on its own:
+       pushed every flush and the FRAGMENT chooses between them from the sampling model the quad
+       resolved, so a draw call binds neither in particular -- which is exactly what lets one batch
+       mix a point-sampled glyph atlas with a filtered image.  The model answers on its own:
        coverage is glyphs and icons, which must stay point-sampled to render crisp, and everything
        else is a picture or a field, which must filter. */
 
@@ -502,12 +504,27 @@ render_init( void )
 static void
 render_shutdown( void )
 {
-    // Peak draw-list usage over the run, so the caps can be tuned with real numbers.
+    /* Peak fill of each BUILD pool over the run, so the caps can be moved from measurement rather
+       than from a guess.  The three are independent budgets: quads scale with how much is on
+       screen, styles with how many distinct looks it uses, and gpu commands with how the viewport
+       splits them. */
     gui_log( GUI_LOG_INFO,
-             "peak draw-list usage: quads %u/%u (%.1f%%), styles %u/%u (%.1f%%)%s",
-             s_tess_stats.vert_hwm, GUI_MAX_QUADS, 100.0f * s_tess_stats.vert_hwm / (f32)GUI_MAX_QUADS,
+             "peak build pools: quads %u/%u (%.1f%%), styles %u/%u (%.1f%%), gpu cmds %u/%u (%.1f%%)",
+             s_tess_stats.quad_hwm, GUI_MAX_QUADS, 100.0f * s_tess_stats.quad_hwm / (f32)GUI_MAX_QUADS,
              s_tess_stats.prim_hwm, GUI_MAX_PRIMS, 100.0f * s_tess_stats.prim_hwm / (f32)GUI_MAX_PRIMS,
-             s_tess_stats.overflow_ever ? "  -- OVERFLOWED (geometry was dropped)" : "" );
+             s_tess_stats.cmd_hwm,  GUI_MAX_CMDS,  100.0f * s_tess_stats.cmd_hwm  / (f32)GUI_MAX_CMDS );
+
+    if ( s_tess_stats.overflow_walls )
+    {
+        char walls[ 128 ];
+        gui_log( GUI_LOG_WARN, "  -- OVERFLOWED this run (content dropped): %s",
+                 tess_overflow_walls( s_tess_stats.overflow_walls, walls, (u32)sizeof( walls ) ) );
+    }
+    if ( s_tess_stats.uncacheable_wins )
+        gui_log( GUI_LOG_WARN, "  -- %u window placement%s exceeded WIN_SLOT_CMD_MAX (%u) and "
+                               "re-tessellated every frame",
+                 s_tess_stats.uncacheable_wins, s_tess_stats.uncacheable_wins == 1u ? "" : "s",
+                 (unsigned)WIN_SLOT_CMD_MAX );
 
     // Peak draw calls in a single frame -- a measure of batching effectiveness.
     gui_log( GUI_LOG_INFO, "peak draw calls in a frame: %u", cache_draw_call_hwm() );

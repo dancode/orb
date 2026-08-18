@@ -26,7 +26,7 @@
     from buying a real frame every frame forever.
 
     Position integrity: a row never stores an absolute buffer address.  It stores its position
-    RELATIVE to the owning window's slot (local_vert_base / local_cmd_base) plus
+    RELATIVE to the owning window's slot (local_quad_base / local_cmd_base) plus
     the slot's tessellation generation at capture time (tess_gen, bumped by cache_build_frame on
     every retess of the window).  At patch time the window's CURRENT slot is resolved by id from
     the live slot table (cache_slot_lookup) and the absolute address computed fresh; the patch
@@ -78,7 +78,7 @@
 // clang-format off
 
 /* GUI_MAX_VOLATILE lives in gui_render.h (the dashboard snapshot types are sized by it). */
-#define VOL_VERT_PAD      128u   /* quad headroom reserved past a block's live geometry          */
+#define VOL_QUAD_PAD      128u   /* quad headroom reserved past a block's live geometry          */
 #define VOL_CMD_PAD       2u     /* dormant GPU-command slots reserved past the block's live run */
 #define VOL_PRIM_PAD      4u     /* style-record headroom past the block's live record run       */
 
@@ -110,7 +110,7 @@ typedef struct
     gui_volatile_fn  fn;
     u32              tess_gen;         // owning slot's tessellation generation at capture
     u16              cmd_lo, cmd_hi;   // live s_draw command range from this frame's real emit
-    u16              local_vert_base,  vert_count, vert_alloc;   // quads, relative to slot vert_base
+    u16              local_quad_base,  quad_count, quad_alloc;   // quads, relative to slot quad_base
     u16              local_cmd_base,   cmd_count,  cmd_alloc;    // relative to slot cmd_base
     u16              local_prim_base,  prim_count, prim_alloc;   // relative to slot prim_base
     u16              z, vp, font;
@@ -164,14 +164,14 @@ static u32                 s_volatile_count;
      cache_slots_extent         -- far edge of every slot's reservation; the debug guard below
                                    asserts scratch is written past it (!RELEASE only). */
 static void cache_count_volatile_patch( u32 n );
-static bool cache_slot_lookup( gui_id_t win, u32* vert_base, u32* prim_base,
+static bool cache_slot_lookup( gui_id_t win, u32* quad_base, u32* prim_base,
                                u32* cmd_base, u32* tess_gen );
 static void volatile_prim_range_dirty( gui_id_t win );
 static u8   cache_slot_vp( gui_id_t win, u8* out_band );
 static bool cache_slot_clips_bind( gui_id_t win );
 static void cache_invalidate_window( gui_id_t win );
 #if !RELEASE
-static void cache_slots_extent( u32* out_vert_end, u32* out_prim_end );
+static void cache_slots_extent( u32* out_quad_end, u32* out_prim_end );
 #endif
 
 /* The row currently mid-callback during real emit (between volatile_cb_open and _close).
@@ -441,14 +441,14 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd_open )
     gui_volatile_slot_t* row = volatile_find( id );
     if ( !row ) return;
 
-    u32 nv = s_tess.vert_count - vb_open;
+    u32 nv = s_tess.quad_count - vb_open;
     u32 np = s_tess.prim_count - pb_open;
     u32 nc = s_tess.cmd_count  - cmd_open;
 
     /* Grow-only reservation: never smaller than the last one (or than what a failed patch
        recorded it actually needed -- see volatile_patch), so a block that once grew keeps its
        room and the overflow -> real frame -> recapture cycle cannot repeat for the same size. */
-    u32 res_v = nv + VOL_VERT_PAD; if ( res_v < row->vert_alloc ) res_v = row->vert_alloc;
+    u32 res_v = nv + VOL_QUAD_PAD; if ( res_v < row->quad_alloc ) res_v = row->quad_alloc;
     u32 res_c = nc + VOL_CMD_PAD;  if ( res_c < row->cmd_alloc  ) res_c = row->cmd_alloc;
     u32 res_p = np + VOL_PRIM_PAD; if ( res_p < row->prim_alloc ) res_p = row->prim_alloc;
 
@@ -472,8 +472,8 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd_open )
 
     /* Advance the write head over the reservation; pad the command run with dormant commands so
        the slot's [cmd_base, cmd_base + cmd_count) range stays dense.  The gap quads are never
-       referenced: draw calls read elem_count quads from each command's own vbase. */
-    s_tess.vert_count = vb_open + res_v;
+       referenced: draw calls read elem_count quads from each command's own qbase. */
+    s_tess.quad_count = vb_open + res_v;
 
     /* Records reserve the same way, and the dedup floor has to go with them: the entries in the
        gap were never written, so letting the next primitive compare against them would match
@@ -488,16 +488,16 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd_open )
         s_tess.gpu_cmds[ ci ] = ( tess_gpu_cmd_t ){
             .cmd   = { .elem_count = 0, .tex_idx = 0, .clip_rect = s_tess.cur_clip },
             .vp    = GUI_VP_INVALID,
-            .vbase = s_tess.vert_count,
+            .qbase = s_tess.quad_count,
         };
     }
     s_tess.cmd_count     = cmd_open + res_c;
     s_tess.force_new_cmd = true;   /* the next window primitive must not merge into a dormant slot */
 
-    row->local_vert_base = (u16)( vb_open  - s_tess.slot_vert_base );
+    row->local_quad_base = (u16)( vb_open  - s_tess.slot_quad_base );
     row->local_cmd_base  = (u16)( cmd_open - s_tess.slot_cmd_base  );
     row->local_prim_base = (u16)( pb_open  - s_tess.slot_prim_base );
-    row->vert_count      = (u16)nv;  row->vert_alloc = (u16)res_v;
+    row->quad_count      = (u16)nv;  row->quad_alloc = (u16)res_v;
     row->cmd_count       = (u16)nc;  row->cmd_alloc  = (u16)res_c;
     row->prim_count      = (u16)np;  row->prim_alloc = (u16)res_p;
     row->tess_gen        = s_tess.slot_tess_gen;
@@ -508,7 +508,7 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd_open )
    s_draw.cmds[lo, hi) into scratch space at the current tail of s_tess (rolled back afterward,
    success or not), and -- if the result fits the row's reservation -- copies the geometry into
    the block's region of the owning window's CURRENT slot (resolved by id, generation-checked)
-   and rewrites the block's GPU commands in place: new clip/texture/elem_count, vbase re-based
+   and rewrites the block's GPU commands in place: new clip/texture/elem_count, qbase re-based
    from scratch coordinates to the block's absolute position, unused reserved command slots left
    dormant.  On an overflow the row records the size it actually needed so the forced recapture
    reserves enough, and returns false -- the caller retires the row and invalidates the
@@ -534,51 +534,51 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
         if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
             s_patch_order[ n++ ] = (u16)i;
 
-    u32  vert_ck    = s_tess.vert_count;
+    u32  quad_ck    = s_tess.quad_count;
     u32  prim_ck    = s_tess.prim_count;
     u32  tcmd_ck    = s_tess.cmd_count;
-    u32  slot_vb_ck = s_tess.slot_vert_base;
+    u32  slot_vb_ck = s_tess.slot_quad_base;
     u32  slot_pb_ck = s_tess.slot_prim_base;
     u32  floor_ck   = s_tess.prim_dedup_floor;
     bool force_ck   = s_tess.force_new_cmd;
-    bool ovf_ck     = s_tess.overflow;
+    u32  ovf_ck     = s_tess.overflow;   /* walls already hit before the scratch pass */
 
     gui_clip_entry_t* clips_ck        = s_tess.slot_clips;
     u32*              clip_count_ck   = s_tess.slot_clip_count;
     u8*               clip_pending_ck = s_tess.slot_clip_pending;
 
-    /* Debug guard: the scratch tessellation below writes at vert_ck and its byte content
+    /* Debug guard: the scratch tessellation below writes at quad_ck and its byte content
        survives the count rollback.  If that is not past every live slot's reservation, it scribbles
        through another window's geometry (the tooltip-vs-pulse collision).  Callers must arrange the
-       true tail: update_volatile runs on idle frames where vert_count already is it;
+       true tail: update_volatile runs on idle frames where quad_count already is it;
        volatile_patch_reused_window is deferred until after the whole slot loop for the same reason. */
 #if !RELEASE
     {
         u32 vend, pend;
         cache_slots_extent( &vend, &pend );
-        ORB_ASSERT_MSG( vert_ck >= vend && prim_ck >= pend,
+        ORB_ASSERT_MSG( quad_ck >= vend && prim_ck >= pend,
                         "gui volatile: patch scratch would overlap live slot geometry" );
     }
 #endif
 
-    /* slot_vert_base is faked so the scratch positions come out relative to the ORIGINAL window
-       slot -- (scratch position - fake base) = local_vert_base + offset -- and can be memcpy'd
+    /* slot_quad_base is faked so the scratch positions come out relative to the ORIGINAL window
+       slot -- (scratch position - fake base) = local_quad_base + offset -- and can be memcpy'd
        into place unmodified.  s_volatile_patching keeps tess_dispatch's range tracking inert
        (a patch must never look like a fresh capture). */
-    s_tess.slot_vert_base = vert_ck - row->local_vert_base;
+    s_tess.slot_quad_base = quad_ck - row->local_quad_base;
     s_tess.force_new_cmd  = true;
     s_volatile_patching   = true;
 
     /* Records take the same fake base, for the same reason and to the same effect: the scratch
        tessellation bakes (scratch position - fake base) = local_prim_base + offset into its
-       vertices, so the records copy into the block's reservation with no index fixup.  The dedup
+       quads, so the records copy into the block's reservation with no index fixup.  The dedup
        floor starts at the scratch tail so the first primitive appends instead of reaching back
        into whatever record happens to precede the scratch. */
     s_tess.slot_prim_base   = prim_ck - row->local_prim_base;
     s_tess.prim_dedup_floor = prim_ck;
     tess_fx_page_reset();
 
-    /* The patched vertices bake clip-band indices exactly like the capture's did, so resolve
+    /* The patched quads bake clip entries exactly like the capture's did, so resolve
        them against the SAME local table -- the window slot's.  An unchanged footprint clip finds
        its existing entry; a genuinely new rect appends and uploads with the next flush. */
     cache_slot_clips_bind( row->win );
@@ -591,19 +591,19 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     s_tess.slot_clip_pending = clip_pending_ck;
     s_tess.clip_memo_ci      = 0xFF;
 
-    u32  nv          = s_tess.vert_count - vert_ck;
+    u32  nv          = s_tess.quad_count - quad_ck;
     u32  np          = s_tess.prim_count - prim_ck;
     u32  nc          = s_tess.cmd_count  - tcmd_ck;
-    bool scratch_ovf = s_tess.overflow && !ovf_ck;   /* scratch itself hit the buffer cap */
+    bool scratch_ovf = ( s_tess.overflow & ~ovf_ck ) != 0u;   /* a wall the scratch pass hit itself */
 
     bool ok = !scratch_ovf
-            && nv <= (u32)row->vert_alloc
+            && nv <= (u32)row->quad_alloc
             && np <= (u32)row->prim_alloc
             && nc <= (u32)row->cmd_alloc;
 
     if ( ok )
     {
-        u32 abs_vb = slot_vb + row->local_vert_base;
+        u32 abs_vb = slot_vb + row->local_quad_base;
         u32 abs_pb = slot_pb + row->local_prim_base;
         u32 abs_cb = slot_cb + row->local_cmd_base;
 
@@ -612,7 +612,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
         u8 row_band;
         u8 row_vp = cache_slot_vp( row->win, &row_band );
         patch_span_union( row_vp, row_band, abs_vb, abs_vb + nv );
-        tess_geo_copy( abs_vb, vert_ck, nv );
+        tess_geo_copy( abs_vb, quad_ck, nv );
 
         /* The records the patched quads name.  No dirty span for these: the record arena is
            uploaded from the slot table (gui_render_submit.c), so the range is marked stale on the
@@ -627,7 +627,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
             {
                 u32 src = tcmd_ck + k;
                 s_tess.gpu_cmds[ dst ]       = s_tess.gpu_cmds[ src ];   /* cmd + vp ride along */
-                s_tess.gpu_cmds[ dst ].vbase = abs_vb + ( s_tess.gpu_cmds[ src ].vbase - vert_ck );
+                s_tess.gpu_cmds[ dst ].qbase = abs_vb + ( s_tess.gpu_cmds[ src ].qbase - quad_ck );
             }
             else
             {
@@ -635,7 +635,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
                 s_tess.gpu_cmds[ dst ].vp = GUI_VP_INVALID;
             }
         }
-        row->vert_count = (u16)nv;
+        row->quad_count = (u16)nv;
         row->prim_count = (u16)np;
         row->cmd_count  = (u16)nc;
     }
@@ -643,17 +643,17 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     {
         /* Outgrew the reservation: remember the real need (plus fresh headroom) so the forced
            recapture reserves enough.  volatile_range_close clamps to the shared buffers. */
-        if ( nv > (u32)row->vert_alloc ) row->vert_alloc = (u16)( nv + VOL_VERT_PAD );
+        if ( nv > (u32)row->quad_alloc ) row->quad_alloc = (u16)( nv + VOL_QUAD_PAD );
         if ( np > (u32)row->prim_alloc ) row->prim_alloc = (u16)( np + VOL_PRIM_PAD );
         if ( nc > (u32)row->cmd_alloc  ) row->cmd_alloc  = (u16)( nc + VOL_CMD_PAD  );
     }
 
     /* Roll s_tess back -- as far as this frame's real geometry/dispatch table is concerned, the
        scratch tessellation never happened. */
-    s_tess.vert_count      = vert_ck;
+    s_tess.quad_count      = quad_ck;
     s_tess.prim_count      = prim_ck;
     s_tess.cmd_count       = tcmd_ck;
-    s_tess.slot_vert_base  = slot_vb_ck;
+    s_tess.slot_quad_base  = slot_vb_ck;
     s_tess.slot_prim_base   = slot_pb_ck;
     s_tess.prim_dedup_floor = floor_ck;
     tess_fx_page_reset();

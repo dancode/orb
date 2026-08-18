@@ -6,15 +6,15 @@
     Overview:
 
     This is the part of the GUI that actually puts pixels on the screen. It is a small,
-    general-purpose 2d renderer -- rectangles, lines, and text turned into batches of triangles
-    -- that has no idea what a "widget" is. Everything above it (layout, style, widgets)
+    general-purpose 2d renderer -- rectangles, lines, and text turned into batches of QUAD
+    RECORDS -- that has no idea what a "widget" is. Everything above it (layout, style, widgets)
     eventually boils down to a handful of simple draw commands ("fill this rect," "draw this
-    line of text"), and this unit's only job is to turn that command list into actual GPU
-    triangles and submit them each frame.
+    line of text"), and this unit's only job is to turn that command list into records the GPU
+    can expand, and submit them each frame.
 
-    It owns the whole pixel pipeline: collecting the draw commands for a frame, turning curved
-    shapes into triangles (the CPU tessellator), stroking lines and paths, flushing everything
-    to the GPU, and a debug overlay for watching all of that while it runs.
+    It owns the whole pixel pipeline: collecting the draw commands for a frame, turning each
+    shape into one 16-byte record (the CPU tessellator), stroking lines and paths, flushing
+    everything to the GPU, and a debug overlay for watching all of that while it runs.
 
     Two things this unit deliberately does not know about. First, it never sees the interact
     server -- no ids, no widget state, no hover or click -- input and interaction stay entirely
@@ -31,7 +31,7 @@
                        from, never reaching into pipeline/ itself.
 
         pipeline/  -- the per-frame path a draw command takes: EMIT (collect the command list)
-                       -> BUILD (turn it into triangles, reusing cached geometry where nothing
+                       -> BUILD (turn it into quad records, reusing cached geometry where nothing
                        changed) -> RENDER (send it to the GPU). Named for the stage each file
                        implements.
 
@@ -44,10 +44,11 @@
     Resource:
 
     resource/gui_atlas.h/.c         -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
-    resource/gui_res_atlas.h/.c     -- the TWO resource atlases over one packer: the R8 COVERAGE atlas
-                                        (one texture, one bindless slot) fonts and icons pack into so
-                                        all core UI draws batch together, and the RGBA SPRITE atlas
-                                        for authored art, created lazily on its first registration    
+    resource/gui_res_atlas.h/.c     -- the THREE resource atlases over one packer: the R8 COVERAGE
+                                        atlas (one texture, one bindless slot) fonts and icons pack
+                                        into so all core UI draws batch together, the RGBA SPRITE
+                                        atlas for authored art, and the SDF atlas for distance-field
+                                        glyphs -- the latter two created lazily, on first use
     ------------------------------------------------------------------------------------------------
     Pipeline:
 
@@ -76,33 +77,33 @@
     ------------------------------------------------------------------------------------------------
     Frame Overview:
 
-    Step 1 — Write the shopping list (EMIT).
+    Step 1 -- Write the shopping list (EMIT).
 
     * Every widget you call (button, text, ...) doesn't draw anything.
     * It just writes a line on a list: "rectangle here, this color", "text there, clipped to this".
     * This is essentially a list of shapes.
     * This only happens on a real frame, but if you didn't touch anything and nothing animated,
-      we don't even write the list, we just reuse the previous frame's triangles.
+      we don't even write the list, we just reuse the previous frame's records.
 
-    Step 2 — Compare with the previous shape list (BUILD: diff).
+    Step 2 -- Compare with the previous shape list (BUILD: diff).
 
     * For each window we hash its lines and compare with last frame. 
       "Same as before? Great, don't redo your work."
     * Only windows whose list actually changed go to step 3. 
     * On a totally idle frame, this whole step is skipped too!
 
-    Step 3 — Turn the shapes into quad records (BUILD: tessellate).
+    Step 3 -- Turn the shapes into quad records (BUILD: tessellate).
 
     * Changed windows get turned into 16-byte quad records (gui_quad_t) in one big CPU-side
-      arena — one record per shape, no vertex buffer and no index buffer anywhere.
+      arena -- one record per shape, no vertex buffer and no index buffer anywhere.
     * Unchanged windows keep the records they already had, sitting exactly where they were
-      last frame — nothing moves, nothing is repacked.
+      last frame -- nothing moves, nothing is repacked.
     * Each record carries its own clip tag: "clip me with rect #N".
     * N is a permanent address: this window's fixed shelf in the clip cupboard
       (its cache slot x 16 + which clip).
     * Because the address is permanent, cached records stay correct forever.
 
-    Step 4 — Ship it (RENDER: flush, every presented frame).
+    Step 4 -- Ship it (RENDER: flush, every presented frame).
 
     * This is the part that talks to the GPU, and here's exactly what gets uploaded now:
     * Quad records: the live span of the arena, copied into this frame's region of the global
@@ -111,14 +112,14 @@
     * Clip rects: usually nothing at all. Each window's clips live on its fixed shelf in the GPU cupboard.
       A shelf is re-sent only if a little "stale" flag says its contents changed (max 512 bytes per shelf).
       Stable frame = zero clip bytes.
-    * Push constants: one single push per surface — matrix, samplers, clock, and "the cupboard starts here".
+    * Push constants: one single push per surface -- matrix, samplers, clock, and "the cupboard starts here".
 
     * Then one bufferless draw call per window, back to front: cmd_draw of 6 * N bare vertices;
       the vertex stage pulls each record by SV_VertexID and expands the corners itself, and the
       fragment shader does the clipping by reading the shelf each quad named.
 
     * So per frame: quad records always (that's the frames-in-flight tax), clips almost never,
-      push constants once. And if the app is fully idle and nothing presents — nothing at all.
+      push constants once. And if the app is fully idle and nothing presents -- nothing at all.
 
 ==============================================================================================*/
 

@@ -57,7 +57,7 @@ dash_capture_build( void )
         dash_slot_t*          d  = &sn->slots[ i ];
         d->win        = sl->win;
         d->z          = sl->z;          d->vp        = sl->vp;         d->band = sl->band;
-        d->vert_base  = sl->vert_base;  d->vert_count = sl->vert_count;  d->vert_alloc = sl->vert_alloc;
+        d->quad_base  = sl->quad_base;  d->quad_count = sl->quad_count;  d->quad_alloc = sl->quad_alloc;
         d->cmd_base   = sl->cmd_base;   d->cmd_count  = sl->cmd_count;
         d->tess_gen   = sl->tess_gen;   d->valid      = sl->valid;
 
@@ -78,7 +78,7 @@ dash_capture_build( void )
         sn->cmds[ c ].tex_idx    = gc->cmd.tex_idx;
         sn->cmds[ c ].clip       = gc->cmd.clip_rect;
         sn->cmds[ c ].vp         = gc->vp;
-        sn->cmds[ c ].vbase      = gc->vbase;
+        sn->cmds[ c ].qbase      = gc->qbase;
     }
 
     sn->vol_count = s_volatile_count < GUI_MAX_VOLATILE ? s_volatile_count : GUI_MAX_VOLATILE;
@@ -88,18 +88,18 @@ dash_capture_build( void )
         dash_vol_t*                d  = &sn->vols[ v ];
         d->id         = vs->id;               d->win        = vs->win;
         d->tess_gen   = vs->tess_gen;
-        d->lvert_base = vs->local_vert_base;  d->vert_count = vs->vert_count;  d->vert_alloc = vs->vert_alloc;
+        d->lquad_base = vs->local_quad_base;  d->quad_count = vs->quad_count;  d->quad_alloc = vs->quad_alloc;
         d->cmd_count  = vs->cmd_count;        d->cmd_alloc  = vs->cmd_alloc;
         d->active     = vs->active;           d->hidden     = vs->hidden;
     }
 
-    sn->tess_verts     = s_tess.vert_count;   /* quads; tess_cmds below */
-    sn->vert_hwm       = s_tess_stats.vert_hwm;
+    sn->tess_quads     = s_tess.quad_count;   /* quads; tess_cmds below */
+    sn->quad_hwm       = s_tess_stats.quad_hwm;
     sn->tess_prims     = s_tess.prim_count;   /* records, both bands: styles plus fx pages */
     sn->prim_hwm       = s_tess_stats.prim_hwm;
-    sn->overflow_ever  = s_tess_stats.overflow_ever;
-    sn->band0_vert_end = s_tess_stats.band0_vert_end;
-    sn->band0_vert_hwm = s_tess_stats.band0_vert_hwm;
+    sn->overflow_ever  = ( s_tess_stats.overflow_walls != 0u );
+    sn->band0_quad_end = s_tess_stats.band0_quad_end;
+    sn->band0_quad_hwm = s_tess_stats.band0_quad_hwm;
     sn->text_quads       = s_tess_stats.text_quads;
     sn->text_runs        = s_tess_stats.text_runs;
     sn->band0_text_quads = s_tess_stats.band0_text_quads;
@@ -186,14 +186,14 @@ dash_capture_build( void )
 /* End of one surface's gui_render_flush: what physically hit the GPU for that surface.  Runs
    every frame (real or idle) since cached geometry is replayed regardless. */
 void
-dash_capture_flush( i32 vp, u32 frame, u32 vtx_lo, u32 vtx_hi,
+dash_capture_flush( i32 vp, u32 frame, u32 quad_lo, u32 quad_hi,
                     u32 bytes, u32 batches, u32 draws )
 {
     if ( !s_dash.enabled || s_dash.freeze || vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
     s_dash.snap.surf[ vp ] = ( dash_surf_t ){
         .live = true, .frame_index = frame,
-        .vtx_lo = vtx_lo, .vtx_hi = vtx_hi,
+        .quad_lo = quad_lo, .quad_hi = quad_hi,
         .up_bytes = bytes, .up_batches = batches, .draw_calls = draws,
     };
 }

@@ -147,18 +147,18 @@ gui_print_mem_stats( void )
     gui_log( GUI_LOG_INFO, "  -- GPU device (%u live surface%s) ------------------------",
              s.viewport_count, s.viewport_count == 1u ? "" : "s" );
     GUI_MEM_ROW( "atlas textures",   s.gpu_texture_bytes );
-    GUI_MEM_ROW( "clip + prim tables", s.gpu_table_bytes );
+    GUI_MEM_ROW( "quad/style/clip/glyph", s.gpu_table_bytes );
     if ( s.gpu_debug_bytes )
         GUI_MEM_ROW( "debug overlay buffers", s.gpu_debug_bytes );
     GUI_MEM_ROW( "  GPU subtotal",   s.gpu_total         );
 
     gui_log( GUI_LOG_INFO, "  -- CPU static (fixed backend buffers) ------------------" );
     GUI_MEM_ROW( "draw command list",  s.cpu_drawlist_bytes );
-    GUI_MEM_ROW( "tessellation stage", s.cpu_tess_bytes     );
+    GUI_MEM_ROW( "quad + style arenas", s.cpu_tess_bytes    );
     GUI_MEM_ROW( "retained cache",     s.cpu_cache_bytes    );
     GUI_MEM_ROW( "icon + sprite tables", s.cpu_draw_bytes   );
     GUI_MEM_ROW( "atlas records",      s.cpu_res_bytes      );
-    GUI_MEM_ROW( "render + shaders",   s.cpu_render_bytes   );
+    GUI_MEM_ROW( "render state",       s.cpu_render_bytes   );
     GUI_MEM_ROW( "text-select capture", s.cpu_select_bytes  );
     if ( s.cpu_debug_bytes )
         GUI_MEM_ROW( "debug tooling",  s.cpu_debug_bytes    );
@@ -187,6 +187,12 @@ gui_print_mem_stats( void )
             gui_log( GUI_LOG_INFO, "  %-22s %ux%u   %u tenant%s   %.0f%% full",
                      "sdf atlas", w, h, tn, tn == 1u ? "" : "s", pct );
     }
+
+    /* How full the caps behind those buckets have actually been -- the other half of the question
+       (backend_pool_report, render/gui_render_mem.c).  Printed here because the two are read
+       together: a bucket is only worth shrinking if its pool never fills, and only worth growing
+       if it does. */
+    backend_pool_report();
 
     gui_log( GUI_LOG_INFO, "  --------------------------------------------------------" );
     gui_log( GUI_LOG_INFO, "  %-22s %10u B  (%8.1f KB)  (%.1f MB)",

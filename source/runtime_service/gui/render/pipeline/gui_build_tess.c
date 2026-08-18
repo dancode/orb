@@ -22,7 +22,7 @@
    the flush loop, the volatile copy-back, the dashboard capture) reads a WHOLE command at a given
    index; none sweeps a single field across all commands, so the fields that belong to one command
    live together in one cache line rather than in parallel arrays keyed on the same index.
-   vbase is explicit (not accumulated from elem_counts at flush) so the quad arena may hold
+   qbase is explicit (not accumulated from elem_counts at flush) so the quad arena may hold
    reserved gaps -- volatile block headroom -- between commands.  Mirrors dash_cmd_t (the snapshot
    type in gui_render.h), which was AOS from the start; this is the live half catching up. */
 
@@ -30,7 +30,7 @@ typedef struct
 {
     gui_gpu_cmd_t cmd;      // elem_count (quads), tex_idx, clip_rect -- the GPU draw-call unit
     i32           vp;       // viewport for this command (GUI_VP_INVALID = dormant volatile pad)
-    u32           vbase;    // quad slot -- first quad of command (its draw's first_vertex / 6)
+    u32           qbase;    // quad slot -- first quad of command (its draw's first_vertex / 6)
 
 } tess_gpu_cmd_t;
 
@@ -51,12 +51,12 @@ static struct
 {
     gui_quad_t      quads    [ GUI_MAX_QUADS ];    // quad records -- the geometry arena (gui.h)
     gui_prim_t      prims    [ GUI_MAX_PRIMS ];    // style records -- the second arena
-    tess_gpu_cmd_t  gpu_cmds [ GUI_MAX_CMDS  ];    // gpu draw commands (AOS: cmd + vp/vbase)
+    tess_gpu_cmd_t  gpu_cmds [ GUI_MAX_CMDS  ];    // gpu draw commands (AOS: cmd + vp/qbase)
 
-    /* Write head cursors.  vert_count counts QUAD RECORDS -- the geometry element throughout
-       the backend (the cache's slot spans, the volatile reservations, the dirty spans and the
-       flush all share the vert_* vocabulary for it). */
-    u32 vert_count, prim_count, cmd_count;
+    /* Write head cursors.  A QUAD RECORD is the geometry element everywhere past this file --
+       the cache's slot spans, the volatile reservations, the dirty spans and the flush all count
+       in quads, and a draw multiplies by six only at the cmd_draw itself. */
+    u32 quad_count, prim_count, cmd_count;
 
     gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
     u32         cur_clip_local; /* the same clip as the slot's LOCAL entry index (0..GUI_WIN_CLIP_MAX)
@@ -129,10 +129,10 @@ static struct
 
     /* Quad base of the window slot currently being tessellated -- the origin volatile blocks
        measure their slot-relative positions against. */
-    u32 slot_vert_base;
+    u32 slot_quad_base;
 
     /* Command base and tessellation generation of the window slot currently being tessellated --
-       set alongside slot_vert_base by cache_build_frame's retess path.  Volatile blocks record
+       set alongside slot_quad_base by cache_build_frame's retess path.  Volatile blocks record
        their position slot-RELATIVE (never absolute) so a later patch can resolve the current
        absolute position from the live slot table, and stamp slot_tess_gen so a patch only ever
        writes into geometry produced by the exact tessellation pass that captured it
@@ -142,15 +142,15 @@ static struct
     u32 slot_tess_gen;
 
     /* Style-record base of the window slot being tessellated -- the counterpart of
-       slot_vert_base for the style arena.  Quads bake SLOT-LOCAL style indices
+       slot_quad_base for the style arena.  Quads bake SLOT-LOCAL style indices
        (prim_count - slot_prim_base) and the flush adds this base back through pc.prim_base, so
        a repack that moves the slot's records leaves every cached quad's index correct. */
     u32 slot_prim_base;
 
     /* The slot's LOCAL clip table, written while its commands tessellate: first-seen distinct
        clip rects, appended by tess_clip_local and stored on the slot record itself so cache-hit
-       frames replay the exact rects the baked vertex indices mean.  slot_clips/slot_clip_count
-       point into the win_geo_slot_t being tessellated (set alongside slot_vert_base); NULL
+       frames replay the exact rects the baked clip entries mean.  slot_clips/slot_clip_count
+       point into the win_geo_slot_t being tessellated (set alongside slot_quad_base); NULL
        between slots.  Entry indices are SLOT-LOCAL: the window's slab origin (its stable cache
        slot * GUI_WIN_CLIP_MAX) is added at the flush through pc.clip_base, so the four bits the
        quad spends on a clip are all it ever needs.  slot_clip_pending is the slot's upload mask (one bit per
@@ -169,10 +169,28 @@ static struct
        command shares the same clip/vp (same-position windows would otherwise merge
        across the slot boundary and corrupt elem_count + first_index tracking). */
 
-    bool force_new_cmd;     
-    bool overflow;          /* set per-primitive when a buffer fills; gates the geometry-drop escape path */
+    bool force_new_cmd;
+    u32  overflow;          /* TESS_OVF_* -- which walls this build hit; 0 = none.  Set per-primitive
+                               at the reservation site, which then drops its geometry */
 
 } s_tess;
+
+/* The walls a build can hit, one bit each, so a report names the cap that actually spilled instead
+   of the vertex/index pair the pre-quad backend had.  They are genuinely different problems:
+   QUADS and CMDS scale with how much is on screen, PRIMS with how many distinct STYLES are,
+   WINDOWS with how many are open, and FX_FIELD is not a pool at all -- it is the ceiling on how
+   far into a window's own style arena a quad's fx field can reach.
+
+   Every bit here means DROPPED CONTENT: something the frame asked for is not on screen.  The
+   retained cache's per-window command cap (WIN_SLOT_CMD_MAX) is deliberately NOT one of them --
+   overrunning it only makes a window uncacheable, and it still draws in full. */
+
+#define TESS_OVF_QUADS      ( 1u << 0 )   /* quad arena full              -- GUI_MAX_QUADS    */
+#define TESS_OVF_CMDS       ( 1u << 1 )   /* gpu command table full       -- GUI_MAX_CMDS     */
+#define TESS_OVF_PRIMS      ( 1u << 2 )   /* style record arena full      -- GUI_MAX_PRIMS    */
+#define TESS_OVF_FX_FIELD   ( 1u << 3 )   /* fx row past the quad's field -- GUI_QUAD_FX_MASK */
+#define TESS_OVF_WIN_CLIPS  ( 1u << 4 )   /* window's clip slab full      -- GUI_WIN_CLIP_MAX */
+#define TESS_OVF_WINDOWS    ( 1u << 5 )   /* windows this frame           -- RENDER_MAX_WIN   */
 
 /* True while volatile_patch re-tessellates a row into scratch (gui_build_volatile.c, included
    after this file in the gui_render.c unity build).  Declared here because two things above the
@@ -191,11 +209,11 @@ tess_geo_copy( u32 dst, u32 src, u32 count )
 /*==============================================================================================
     Tessellation diagnostics -- the cold companion to s_tess.
 
-    High-water marks, the sticky overflow flag, and the arena band boundary the dashboard reads.
+    High-water marks, the sticky overflow mask, and the arena band boundary the dashboard reads.
     Every field here is written at most once per slot placement / band boundary / frame end --
-    never on the per-vertex path -- so it lives apart from s_tess to keep the hot write cacheline
-    (vert_count / cmd_count) small.  Read only by the dashboard capture and the render
-    overlay; overflow itself stays in s_tess because it is written per-primitive on buffer-full.
+    never on the per-quad path -- so it lives apart from s_tess to keep the hot write cacheline
+    (quad_count / cmd_count) small.  Read only by the dashboard capture and the render
+    overlay; s_tess.overflow stays where it is because it is written per-primitive at the wall.
 ==============================================================================================*/
 
 /* Geometry generation -- bumped ONLY when the whole arena layout moves: the repack retry
@@ -251,20 +269,21 @@ patch_span_union( u8 vp, u8 band, u32 v_lo, u32 v_hi )
 
 static struct
 {
-    u32  vert_hwm, prim_hwm;   /* lifetime peak of the TOTAL write head (both bands) */
-    bool overflow_ever;        /* sticky: any frame this run overflowed a buffer     */
+    u32  quad_hwm, prim_hwm, cmd_hwm;   /* lifetime peak of the TOTAL write head (both bands) */
+    u32  win_hwm;                       /* lifetime peak of windows tracked in one frame      */
+    u32  overflow_walls;                /* sticky union of the TESS_OVF_* bits hit this run   */
 
     /* Arena band boundary: the write head right after the last MAIN-band slot placed this frame
        (band-major placement packs every debug-band slot after it).  The dashboard's memory map
-       reads this as "main arena ends here"; the span up to vert_count past it is the debug UI's
+       reads this as "main arena ends here"; the span up to quad_count past it is the debug UI's
        own attributed footprint.  Re-derived by cache_build_frame every build. */
-    u32 band0_vert_end;
+    u32 band0_quad_end;
 
     /* Lifetime peak of the MAIN-band (band 0) write head alone -- the real application's geometry
-       ceiling, tracked apart from vert_hwm so the dashboard can show actual use limits with the
-       self-measuring debug band filtered out.  Peaks on a different frame than vert_hwm, so it is a
+       ceiling, tracked apart from quad_hwm so the dashboard can show actual use limits with the
+       self-measuring debug band filtered out.  Peaks on a different frame than quad_hwm, so it is a
        separate accumulator, not a subtraction. */
-    u32 band0_vert_hwm;
+    u32 band0_quad_hwm;
 
     /* GLYPH SHARE of the live arena, re-derived each build by summing the placed slots' stored
        counts (cache_place_slots).  Summed rather than counted at the push, because geometry is
@@ -278,14 +297,47 @@ static struct
     u32 text_quads,       text_runs;         /* both bands */
     u32 band0_text_quads, band0_text_runs;   /* main band alone */
 
-    /* LIVE QUADS: the sum of the placed slots' vert_count -- what actually draws, and the only
+    /* LIVE QUADS: the sum of the placed slots' quad_count -- what actually draws, and the only
        correct denominator for the glyph share.  Distinct from the write heads above, which measure
-       ARENA OCCUPANCY: every slot reserves vert_alloc = vert_count + max(vert_count/4, SLOT_QUAD_PAD),
+       ARENA OCCUPANCY: every slot reserves quad_alloc = quad_count + max(quad_count/4, SLOT_QUAD_PAD),
        so a UI made of several small windows carries 64+ quads of padding per slot, plus whatever gap
        a repack has not yet reclaimed.  On a near-empty frame the head can be triple the live count. */
     u32 live_quads, band0_live_quads;
 
+    /* Windows that overran the retained cache's per-window command run (WIN_SLOT_CMD_MAX) and so
+       re-tessellate every real frame.  Not an overflow wall -- nothing is dropped, the window just
+       stops being cacheable -- but it is the difference between a UI that idles for free and one
+       that pays a full rebuild per frame, so it is worth a line at shutdown. */
+    u32 uncacheable_wins;
+
 } s_tess_stats;
+
+/* Spell a TESS_OVF_* mask as a comma-separated list of the caps that were hit, into `buf`.
+   Every diagnostic that mentions an overflow goes through this, so a report always names the pool
+   that actually spilled and the #define to raise for it.  "" for a zero mask. */
+static const char*
+tess_overflow_walls( u32 mask, char* buf, u32 cap )
+{
+    static const struct { u32 bit; const char* name; } walls[] = {
+        { TESS_OVF_QUADS,     "GUI_MAX_QUADS"    },
+        { TESS_OVF_CMDS,      "GUI_MAX_CMDS"     },
+        { TESS_OVF_PRIMS,     "GUI_MAX_PRIMS"    },
+        { TESS_OVF_FX_FIELD,  "fx field width"   },
+        { TESS_OVF_WIN_CLIPS, "GUI_WIN_CLIP_MAX" },
+        { TESS_OVF_WINDOWS,   "RENDER_MAX_WIN"   },
+    };
+    u32 n = 0;
+    buf[ 0 ] = '\0';
+    for ( u32 i = 0; i < sizeof( walls ) / sizeof( walls[ 0 ] ); ++i )
+    {
+        if ( !( mask & walls[ i ].bit ) )
+            continue;
+        n += (u32)fmt_snprintf( buf + n, cap - n, n ? ", %s" : "%s", walls[ i ].name );
+        if ( n >= cap - 1u )
+            break;
+    }
+    return buf;
+}
 
 /*==============================================================================================
     Quantizers -- the two grids geometry lands on.
@@ -323,10 +375,10 @@ tess_clamp_cell( f32 cell )
 static void
 tess_reset( void )
 {
-    s_tess.vert_count      = 0;
+    s_tess.quad_count      = 0;
     s_tess.prim_count      = 0;
     s_tess.cmd_count       = 0;
-    s_tess.slot_vert_base  = 0;
+    s_tess.slot_quad_base  = 0;
     s_tess.slot_cmd_base   = 0;
     s_tess.slot_prim_base  = 0;
     s_tess.slot_tess_gen   = 0;
@@ -342,7 +394,7 @@ tess_reset( void )
     s_tess.slot_text_quads   = 0;
     s_tess.slot_text_runs    = 0;
     s_tess.force_new_cmd     = false;
-    s_tess.overflow          = false;
+    s_tess.overflow          = 0u;
     s_tess.cur_col_border    = 0;
     s_tess.cur_rot_c         = 1.0f;
     s_tess.cur_rot_s         = 0.0f;
@@ -362,13 +414,14 @@ tess_set_tex( u32 tex_idx )
    fixed slab base plus its position in the slot's LOCAL clip table, appending a new entry at
    first sight.  Content-keyed -- (rect, radius) is the whole identity -- and first-seen ordered
    over the window's own commands, so a window whose commands hash identical reproduces identical
-   indices: the property that lets cached vertices bake the clip-band bits.  The slab base
+   indices: the property that lets a cached quad bake its clip entry.  The slab base
    is keyed by the window's id-keyed stable cache slot, so the absolute index survives as long as
    the window does.  An append marks the slot's upload mask -- the flush re-uploads a slab only
    when its content changed.  The memo serves the common run of consecutive same-clip commands.
    A slot past GUI_WIN_CLIP_MAX distinct clips falls back to its slab's entry 0 -- degrading INSIDE
    the window (its own first clip, usually the window rect) rather than borrowing a neighbour's
-   slab.  Asserted, because 16 distinct clips in one window is a bug, not a budget. */
+   slab.  Reported through the same overflow path as the arenas, because that many distinct clips
+   in one window is a bug, not a budget. */
 static u32
 tess_clip_local( u8 ci )
 {
@@ -391,7 +444,7 @@ tess_clip_local( u8 ci )
     }
     if ( n >= GUI_WIN_CLIP_MAX )
     {
-        ORB_ASSERT( false );
+        s_tess.overflow |= TESS_OVF_WIN_CLIPS;
         return s_tess.clip_memo_local = 0u;
     }
     s_tess.slot_clips[ n ] = ( gui_clip_entry_t ){ .rect = *r, .radius = rad };
@@ -421,19 +474,19 @@ tess_ensure_gpu_cmd( void )
     }
     if ( s_tess.cmd_count >= GUI_MAX_CMDS )
     {
-        s_tess.overflow = true;
+        s_tess.overflow |= TESS_OVF_CMDS;
         return false;
     }
     s_tess.force_new_cmd = false;
-    /* Quad span of this command starts at the current vert_count; the next command's vbase (or
-       the final vert_count for the last) bounds it.  Lets a surface upload only its own quads.
+    /* Quad span of this command starts at the current quad_count; the next command's qbase (or
+       the final quad_count for the last) bounds it.  Lets a surface upload only its own quads.
        tex_idx and clip_rect are the ambient values at the moment the command opened, i.e. the
        FIRST primitive's, and are diagnostic only (the dashboard tooltip) -- both ride the quad
        now and the command may go on to span several of each. */
     s_tess.gpu_cmds[ s_tess.cmd_count++ ] = ( tess_gpu_cmd_t ){
         .cmd   = { .elem_count = 0, .tex_idx = s_tess.cur_tex, .clip_rect = s_tess.cur_clip },
         .vp    = s_tess.cur_vp,
-        .vbase = s_tess.vert_count,
+        .qbase = s_tess.quad_count,
     };
     return true;
 }
@@ -451,8 +504,8 @@ tess_ensure_gpu_cmd( void )
    that stamped its rect into a GUI_FX_NONE record would give every fill an entry of its own.
 
    Past the arena a slot degrades to its own first record, mirroring tess_clip_local's fallback to
-   slab entry 0: a wrong shape is bad, but a wild index into a storage buffer is worse.  The sticky
-   overflow flag is what actually reports it, the same way a full vertex buffer does. */
+   slab entry 0: a wrong shape is bad, but a wild index into a storage buffer is worse.  The
+   TESS_OVF_PRIMS flag is what actually reports it. */
 
 /* How far back the dedup scan reaches.  1 collapses a homogeneous run (a glyph run, consecutive
    flat fills); the extra depth collapses the ALTERNATION chrome actually emits -- text, a rounded
@@ -500,7 +553,7 @@ tess_prim_local( void )
 
     if ( hi >= GUI_MAX_PRIMS )
     {
-        s_tess.overflow = true;
+        s_tess.overflow |= TESS_OVF_PRIMS;
         s_tess.prim_dedup_floor = hi;
         tess_fx_page_reset();
         return s_tess.cur_prim_local = 0u;
@@ -553,7 +606,7 @@ tess_fx_local( u32 uv0, u32 uv1 )
            an index into them. */
         if ( s_tess.prim_count >= GUI_MAX_PRIMS )
         {
-            s_tess.overflow = true;
+            s_tess.overflow |= TESS_OVF_PRIMS;
             return 0u;
         }
 
@@ -565,7 +618,7 @@ tess_fx_local( u32 uv0, u32 uv1 )
         {
             if ( s_tess.prim_count + 1u >= GUI_MAX_PRIMS )
             {
-                s_tess.overflow = true;
+                s_tess.overflow |= TESS_OVF_PRIMS;
                 return 0u;
             }
             memset( &s_tess.prims[ s_tess.prim_count++ ], 0, sizeof( gui_prim_t ) );
@@ -574,7 +627,7 @@ tess_fx_local( u32 uv0, u32 uv1 )
         u32 page = s_tess.prim_count - s_tess.slot_prim_base;
         if ( page * GUI_PRIM_ROWS + ( TESS_FX_PER_PAGE - 1u ) * GUI_FX_ROWS > GUI_QUAD_FX_MASK )
         {
-            s_tess.overflow = true;     /* past what the quad's fx field can name */
+            s_tess.overflow |= TESS_OVF_FX_FIELD;   /* past what the quad's fx field can name */
             return 0u;
         }
         memset( &s_tess.prims[ s_tess.prim_count ], 0, sizeof( gui_prim_t ) );
@@ -632,9 +685,9 @@ static void
 tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
                 u32 uv0, u32 uv1, u32 tex_idx, u32 abgr, u32 glyph_id )
 {
-    if ( s_tess.vert_count + 1u > GUI_MAX_QUADS )
+    if ( s_tess.quad_count + 1u > GUI_MAX_QUADS )
     {
-        s_tess.overflow = true;
+        s_tess.overflow |= TESS_OVF_QUADS;
         return;
     }
     tess_set_tex( tex_idx );
@@ -669,7 +722,7 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
         u32 fx = tess_fx_local( 0u, 0u );
         if ( fx <= GUI_QUAD_GFX_MASK )
         {
-            s_tess.quads[ s_tess.vert_count++ ] = ( gui_quad_t ){
+            s_tess.quads[ s_tess.quad_count++ ] = ( gui_quad_t ){
                 .cx   = pcx,
                 .cy   = pcy,
                 .hw   = phw,
@@ -697,7 +750,7 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
     u32 style = tess_prim_local();
     u32 fx    = tess_fx_local( uv0, uv1 );
 
-    s_tess.quads[ s_tess.vert_count++ ] = ( gui_quad_t ){
+    s_tess.quads[ s_tess.quad_count++ ] = ( gui_quad_t ){
         .cx    = pcx,
         .cy    = pcy,
         .hw    = phw,
@@ -1053,7 +1106,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     /* Clamp what is GEOMETRICALLY meaningless, and only that.  The long list that used to live
        here was the packed word's doing: every field had a fixed-point ceiling, and the geometry
        below is built from the same numbers, so a value the fragment could not see would leave the
-       vertices describing a different shape than the one it resolved.  The record has no
+       quad describing a different shape than the one it resolved.  The record has no
        ceilings, so what remains is the one bound that is about the SHAPE rather than the storage
        -- a corner radius past half the short side is a capsule -- plus the negatives, which are
        nonsense in every field. */
@@ -1316,14 +1369,14 @@ tess_fx_ngon( f32 pcx, f32 pcy, f32 r, u32 sides, f32 rot, f32 rounding,
 
     The tab, the notch, the asymmetric card: shapes that used to walk a per-corner perimeter (up to
     72 sampled points) and fan it into as many separate TRIANGLE commands, with a polygonal boundary
-    and no antialiasing at all.  Here it is the same FOUR vertices a uniform rounded rect costs, and
+    and no antialiasing at all.  Here it is the ONE quad record a uniform rounded rect costs, and
     the boundary is exact, because all four radii ride the record and the fragment picks the one
     its own quadrant wants -- the radii are data, not geometry.
 
-        perimeter fan, 4 rounded corners   ~70 verts / ~200 idx, 62 commands, aliased
-        the field                            4 verts /    6 idx,  1 command,  antialiased
+        perimeter fan, 4 rounded corners   ~70 verts, 62 draw commands, aliased
+        the field                          1 record,   1 draw command,   antialiased
 
-    The RAMP rides the same record.  A linear one could be carried by the four vertices instead --
+    The RAMP rides the same record.  A linear one could be carried by the four corners instead --
     colour is affine along the axis and so is interpolation -- but only a linear one, and only
     approximately: the corners it would be evaluated at are the FALLOFF SKIRT's, a pixel or more
     outside the shape, so the ramp arrives stretched by however wide the skirt is.  Resolved in the
@@ -1368,20 +1421,20 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
     gives a 10 px mark ten segments); a pie fanned the same points from the centre, which cost 65
     separate TRIANGLE commands -- 6% of the entire per-frame command budget for one shape.
 
-        spinner, r = 24    ~90 verts / ~260 idx, 1 cmd,  faceted, ribbon-AA
-        pie,     r = 40    ~66 verts / ~195 idx, 65 cmds, faceted, no AA
-        the field            4 verts /    6 idx,  1 cmd,  exact, antialiased
+        spinner, r = 24    ~90 verts,  1 draw cmd,  faceted, ribbon-AA
+        pie,     r = 40    ~66 verts, 65 draw cmds, faceted, no AA
+        the field          1 record,   1 draw cmd,  exact, antialiased
 
-    ONE quad, where the rounded box needs four, because a circular shape subtracts no half-extent:
-    its effect coordinate is the raw signed offset from the centre, which is affine everywhere, so
-    nothing has to fold at the vertex (gui.h).  Keeping the sign is also the only reason an arc is
-    expressible at all -- |p| would erase the angle.
+    A circular shape subtracts no half-extent: its effect coordinate is the raw signed offset from
+    the centre, which is affine everywhere, so nothing has to fold at the vertex stage (gui.h).
+    Keeping the sign is also the only reason an arc is expressible at all -- |p| would erase the
+    angle.
 
     What the CPU does here is the per-shape work the fragment must not repeat: rotate the coordinate
     frame so the sector's bisector points +y.  That turns two absolute angles into one aperture (the
-    shape is then symmetric about local x = 0, which the fragment folds itself) and it costs four
-    vertices instead of every pixel.  The matrix is a reflection and its own inverse, so the same
-    two lines map local -> world here as map world -> local conceptually.
+    shape is then symmetric about local x = 0, which the fragment folds itself) and it is paid once
+    per record instead of once per pixel.  The matrix is a reflection and its own inverse, so the
+    same two lines map local -> world here as map world -> local conceptually.
 
     The quad is the sector's bounding box IN THAT LOCAL FRAME, not the circle's: a 90-degree arc
     covers about a quarter of the disc's area, so the fragment cost tracks the shape rather than the
@@ -1465,7 +1518,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     if ( pie && ymin > -pad )
         ymin = -pad;
 
-    /* A SPINNING sector sweeps the whole disc over time while its retained vertices never move,
+    /* A SPINNING sector sweeps the whole disc over time while its retained quad never moves,
        so the quad must cover every orientation the fragment will ever resolve -- the disc's own
        bounding box, not the sector's. */
     if ( spin_rate != 0.0f )
@@ -2018,7 +2071,7 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 
 
 /* Volatile-widget seam (render/pipeline/gui_build_volatile.c, included right after this file in
    the gui_render.c unity build).  tess_dispatch calls volatile_range_close once a tagged command
-   RANGE's vertices/indices/GPU commands are fully written; it records the block's slot-relative
+   RANGE's quads / style records / GPU commands are fully written; it records the block's slot-relative
    position, reserves padded headroom past the live geometry (advancing this file's write heads),
    and stamps the slot tessellation generation.  s_volatile_patching is declared up with s_tess
    (tess_quad_push reads it to keep a patch out of the glyph counters) and set by volatile_patch around its scratch re-tessellation so the range tracking below
@@ -2039,8 +2092,8 @@ static void volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd
    apart -- and it used to be switched at the top of this loop for every command, text or not.
    Neither was needed: a fill, a line and a sprite never call font_glyph, and the font is per-command
    data now (gui.h).  Activating it changes which atlas the glyph lookups resolve from and nothing
-   else; it does NOT split the GPU batch, since it only alters the word tess_set_tex stamps into the
-   following vertices.  A bitmap label, an SDF heading and the fill behind them still go out as one
+   else; it does NOT split the GPU batch, since it only alters the texture tess_set_tex stamps onto
+   the following quads' style records.  A bitmap label, an SDF heading and the fill behind them still go out as one
    draw call.  The active font is saved and restored so the BUILD phase leaves the global font state
    (used by the next frame's layout) untouched. */
 static void
@@ -2085,7 +2138,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             if ( vid != GUI_ID_NONE )
             {
                 s_tess.force_new_cmd = true;   /* block owns its GPU commands from the first primitive */
-                vb_open  = s_tess.vert_count;
+                vb_open  = s_tess.quad_count;
                 pb_open  = s_tess.prim_count;
                 cmd_open = s_tess.cmd_count;
             }
@@ -2169,7 +2222,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             /* The parameterized surface: a shadow is the wide feather (what used to be six
                stacked rects pretending to be a gaussian is the exact same falloff the corners
                use, only spread out), a pulse the shader-clock word -- geometrically a plain
-               rounded fill whose vertices are correct for every frame it runs, so the retained
+               rounded fill whose record is correct for every frame it runs, so the retained
                slot never invalidates and the breathing costs no re-tessellation. */
             case GUI_CMD_FX_BOX:
                 /* All four of these are the one GUI_FX_BOX mode; the variant and the rate pick
