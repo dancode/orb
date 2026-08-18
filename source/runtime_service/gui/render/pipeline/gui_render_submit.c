@@ -359,6 +359,13 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
        per (frame, viewport), so an ID indexes it directly and there is no base to push. */
     push.glyph_buf = s_render.glyph_buf_idx;
 
+    /* The two TEXT atlases.  A quad tagged GLYPH names no style record, so the texture it samples
+       cannot come off one -- it comes from here, picked by the tag's SDF bit.  Resolving them at
+       flush rather than at tessellation also means a re-registered atlas cannot leave cached text
+       naming a bindless slot that has since moved. */
+    push.tex_cov = res_atlas_idx();
+    push.tex_sdf = res_sdf_idx();
+
     /* Push the whole struct once, before the walk. tex_idx/tex_mode/samp_idx live in the vertex,
        not the push constant, so everything left here -- both sampler slots, dbg_flat, the frame
        clock, the clip buffer slot and base -- is constant for the entire flush.

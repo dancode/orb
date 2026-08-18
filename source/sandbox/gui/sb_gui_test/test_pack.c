@@ -118,35 +118,54 @@ test_quad_layout( void )
     test_equal(  4u, (u32)offsetof( gui_fx_t, phase      ) );
     test_equal(  8u, (u32)offsetof( gui_fx_t, col_border ) );
 
-    /* The expansion rules share the low 2 bits of `idx` -- the layout the quad vertex stage
-       decodes with literal masks. */
     test_equal( 0u, GUI_QUAD_RULE_EXACT );
     test_equal( 1u, GUI_QUAD_RULE_SKIRT );
     test_equal( 2u, GUI_QUAD_RULE_CAPSULE );
     test_equal( 3u, GUI_QUAD_RULE_BBOX );
-    test_equal( 4u, GUI_QUAD_F_GLYPH );
-    test_equal( 0u, GUI_QUAD_F_GLYPH & 3u );
 
-    /* The index word is exactly full: the four fields tile all 32 bits with no gap and no
-       overlap.  Every one sits at a structural ceiling (16 clips per window slab, 2048 style
-       records, eight fx rows per record), so a raised cap here is a re-plan, not an edit. */
-    test_equal( 3u, GUI_QUAD_CLIP_SHIFT );
-    test_equal( 7u, GUI_QUAD_STYLE_SHIFT );
-    test_equal( 18u, GUI_QUAD_FX_SHIFT );
-    test_equal( 0xFFFFFFFFu, 7u | ( GUI_QUAD_CLIP_MASK << GUI_QUAD_CLIP_SHIFT )
-                                | ( GUI_QUAD_STYLE_MASK << GUI_QUAD_STYLE_SHIFT )
-                                | ( GUI_QUAD_FX_MASK << GUI_QUAD_FX_SHIFT ) );
+    /* BOTH arms of the tagged union are exactly full: their fields tile all 32 bits with no gap
+       and no overlap.  Every one sits at a structural ceiling (16 clips per window slab, 2048
+       style records, eight fx rows per record, 8192 glyph-table entries), so a raised cap is a
+       re-plan of the union, not an edit. */
+    test_equal( 0xFFFFFFFFu, ( GUI_QUAD_CLIP_MASK  << GUI_QUAD_CLIP_SHIFT  )
+                           | ( 3u                  << GUI_QUAD_RULE_SHIFT  )
+                           | ( GUI_QUAD_STYLE_MASK << GUI_QUAD_STYLE_SHIFT )
+                           | ( GUI_QUAD_FX_MASK    << GUI_QUAD_FX_SHIFT    )
+                           | ( GUI_QUAD_TAG_MASK   << GUI_QUAD_TAG_SHIFT   ) );
+    test_equal( 0xFFFFFFFFu, ( GUI_QUAD_CLIP_MASK  << GUI_QUAD_CLIP_SHIFT  )
+                           | GUI_QUAD_SDF_BIT
+                           | ( GUI_QUAD_GLYPH_MASK << GUI_QUAD_GLYPH_SHIFT )
+                           | ( GUI_QUAD_GFX_MASK   << GUI_QUAD_GFX_SHIFT   )
+                           | ( GUI_QUAD_TAG_MASK   << GUI_QUAD_TAG_SHIFT   ) );
     test_equal( 15u, GUI_QUAD_CLIP_MASK );   /* GUI_WIN_CLIP_MAX - 1, a backend-private cap */
-    test_equal( (u32)GUI_MAX_PRIMS   - 1u, GUI_QUAD_STYLE_MASK );
-    test_equal( (u32)GUI_MAX_PRIMS * GUI_PRIM_ROWS - 1u, GUI_QUAD_FX_MASK );
+    test_equal( (u32)GUI_MAX_PRIMS - 1u, GUI_QUAD_STYLE_MASK );
+    test_equal( GUI_GLYPH_TABLE_MAX - 1u, GUI_QUAD_GLYPH_MASK );
 
-    /* Every field round-trips through the packer, and none reaches into another. */
-    u32 idx = gui_quad_idx( GUI_QUAD_RULE_CAPSULE | GUI_QUAD_F_GLYPH, 9u, 1337u, 12345u );
-    test_equal( GUI_QUAD_RULE_CAPSULE, idx & 3u );
-    test_equal( GUI_QUAD_F_GLYPH, idx & GUI_QUAD_F_GLYPH );
+    /* The fx field names a row in the style arena, and the tag took the two bits that would have
+       let it reach every one: 8191 rows is 1024 fx pages per window slot, past which the
+       tessellator flags an overflow rather than wrapping onto another slot's records. */
+    test_equal( 8191u, GUI_QUAD_FX_MASK );
+    test_equal( 4095u, GUI_QUAD_GFX_MASK );
+
+    /* Clip decodes the same under both tags -- the one field the shader reads without first
+       asking which arm it is looking at. */
+    test_equal( 0u, GUI_QUAD_CLIP_SHIFT );
+
+    /* Every field round-trips through its packer, and none reaches into another. */
+    u32 idx = gui_quad_idx( GUI_QUAD_RULE_CAPSULE, 9u, 1337u, 4321u );
+    test_equal( GUI_QUAD_TAG_SHAPED,   gui_quad_tag  ( idx ) );
+    test_equal( GUI_QUAD_RULE_CAPSULE, gui_quad_rule ( idx ) );
     test_equal(  9u,    gui_quad_clip ( idx ) );
     test_equal( 1337u,  gui_quad_style( idx ) );
-    test_equal( 12345u, gui_quad_fx   ( idx ) );
+    test_equal( 4321u,  gui_quad_fx   ( idx ) );
+
+    u32 gidx = gui_quad_idx_glyph( 11u, 7000u, true, 3000u );
+    test_equal( GUI_QUAD_TAG_GLYPH, gui_quad_tag  ( gidx ) );
+    test_equal( 11u,                gui_quad_clip ( gidx ) );
+    test_equal( 7000u,              gui_quad_glyph( gidx ) );
+    test_equal( 3000u, ( gidx >> GUI_QUAD_GFX_SHIFT ) & GUI_QUAD_GFX_MASK );
+    test_equal( GUI_QUAD_SDF_BIT, gidx & GUI_QUAD_SDF_BIT );
+    test_equal( 0u, gui_quad_idx_glyph( 11u, 7000u, false, 3000u ) & GUI_QUAD_SDF_BIT );
 
     /* Two glyph table entries per float4 row is what the vertex stage's ID -> row split assumes,
        and the region must hold a whole number of rows. */

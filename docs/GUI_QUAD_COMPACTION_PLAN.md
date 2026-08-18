@@ -231,10 +231,28 @@ untouched.
   "none".
 - `gui_phase_pack` returns a bare unorm16 now; `GUI_QUAD_PHASE_SHIFT`/`_MASK` are gone.
 
-**Stage 3 -- tag union.** Introduce the four tags and the implicit style for `GLYPH`/`SOLID`.
-Collapses the index word to 32 bits. NOTE: stage 2 already spends all 32 bits, so this stage is
-now about buying bits BACK (an implicit style for glyphs frees 11), not about collapsing 40 into
-32.
+**Stage 3 -- tag union + implicit style for glyphs. BUILT.** Two tags, not four; the index word
+is a union, and a glyph's 11 style bits were spent on carrying its atlas ID instead.
+
+- `SHAPED` (0): clip(4) | rule(2) | style(11) | fx(13). `GLYPH` (1): clip(4) | sdf(1) |
+  glyph_id(13) | fx(12). Both exactly full. Clip sits at the bottom of BOTH, so it decodes without
+  reading the tag. Tags 2 and 3 are unspent.
+- **A `GLYPH` names no style record at all.** The fragment sets field 0, ops 0 and takes the
+  texture from `pc.tex_cov` / `pc.tex_sdf`, picked by the tag's SDF bit. This is exact rather than
+  approximate: text emitters never write `cur_prim`, so the record a glyph used to name held zeros
+  and its `tex` -- the implicit path reproduces it byte for byte.
+- Consequences: the majority of the frame's quads stop fetching a 128 B record in the fragment,
+  the vertex stage's feather fetch is now conditional on the rule (so glyphs skip it too), text
+  stops creating style records at all, and a re-registered atlas can no longer leave cached text
+  naming a stale bindless slot.
+- `prim_row()` answers zero under the implicit tag rather than reading, which is what makes the
+  ops cascade safe to walk with no record behind it.
+- The uv0/uv1 lanes are now INERT for every whole glyph -- what stage 4 spends.
+- Fallback: a glyph whose command carries an op or a field (an SDF outline), or whose fx row is
+  past 4095, bakes the table's rect and rejoins `SHAPED`. It gives up repack stability, the same
+  trade a straddling glyph already makes.
+- `tess_fx_local` now leaves slot record 0 alone explicitly. A rotated glyph resolves no style, so
+  "the style claimed record 0 first" stopped being a guarantee.
 
 **Stage 4 -- fixed-point coordinates.** pos/size to window-relative i16 at 1/4 px. 32 -> 16 B,
 one row, one load.

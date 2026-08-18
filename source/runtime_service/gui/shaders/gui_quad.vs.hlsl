@@ -26,6 +26,10 @@ static const float2 k_corner[ 6 ] = {
     float2( 0.0, 0.0 ), float2( 1.0, 1.0 ), float2( 0.0, 1.0 ),
 };
 
+// MUST be declared in the same ORDER as ps_in_t (gui_fx.hlsli), field for field.  Vulkan matches
+// stage interfaces by LOCATION, and dxc assigns locations in declaration order -- the semantic
+// numbers are not what pairs them up.  A field inserted here but appended there shifts every
+// interpolant after it by one slot and the fragment reads its neighbours' data.
 struct vs_out_t
 {
     float4                 sv_pos : SV_Position;
@@ -39,6 +43,10 @@ struct vs_out_t
     nointerpolation float4 inst   : TEXCOORD5;   // per-instance lanes off the quad:
                                                   //   xy = the turn (cos, sin), z = animation
                                                   //   phase in cycles, w unused
+    nointerpolation uint   tag    : TEXCOORD6;   // GUI_QUAD_TAG_* in bits 0-1, "the SDF atlas"
+                                                  //   in bit 2.  A GLYPH names no style record,
+                                                  //   so the fragment takes its texture from the
+                                                  //   push block instead of fetching one
 };
 
 vs_out_t main( uint vid : SV_VertexID )
@@ -50,14 +58,20 @@ vs_out_t main( uint vid : SV_VertexID )
     float4 q0  = u_buffers[ pc.quad_buf ][ row ];        // cx, cy, hw, hh
     float4 q1  = u_buffers[ pc.quad_buf ][ row + 1u ];   // uv0, uv1, abgr, idx
 
-    uint idx   = asuint( q1.w );
-    uint style = ( idx >> GUI_QUAD_STYLE_SHIFT ) & GUI_QUAD_STYLE_MASK;
-    uint rule  = idx & 3u;
+    // The index word is a tagged union (gui.h): a whole GLYPH carries an atlas ID where every
+    // other quad carries a style record, and neither has to make room for the other.
+    uint idx     = asuint( q1.w );
+    uint tag     = idx >> GUI_QUAD_TAG_SHIFT;
+    bool isglyph = ( tag == GUI_QUAD_TAG_GLYPH );
+
+    uint style = isglyph ? 0u : ( ( idx >> GUI_QUAD_STYLE_SHIFT ) & GUI_QUAD_STYLE_MASK );
+    uint rule  = isglyph ? 0u : ( ( idx >> GUI_QUAD_RULE_SHIFT ) & 3u );   // a glyph is EXACT
 
     // The instance extras: turn, animation phase, border colour.  Most quads name no record and
     // take the all-zero row, which IS the default -- an unrotated shape in step with the clock and
     // no border band (gui.h, gui_fx_t).
-    float4 fxr = fx_record( idx >> GUI_QUAD_FX_SHIFT );
+    float4 fxr = fx_record( isglyph ? ( ( idx >> GUI_QUAD_GFX_SHIFT ) & GUI_QUAD_GFX_MASK )
+                                    : ( ( idx >> GUI_QUAD_FX_SHIFT  ) & GUI_QUAD_FX_MASK  ) );
 
     // The shape's TURN, per instance -- a unit (cos, sin) packed like a uv pair, with the all-zero
     // word reserved for identity (gui.h, gui_xform_pack).  This is the frame every field works in,
@@ -68,10 +82,11 @@ vs_out_t main( uint vid : SV_VertexID )
                              : normalize( unpack_unorm16x2( xw ) * 2.0 - 1.0 );
 
     // The one style fetch the expansion needs: row 2 leads with the feather the SDF pad derives
-    // from.  Cache-hot -- a window's quads share a handful of styles.
-    float4 soft = u_buffers[ pc.prim_buf ][ ( pc.prim_base + style ) * PRIM_ROWS + 2u ];
-
-    float pad = ( rule == 1u || rule == 2u ) ? soft.x * 0.5 + 1.0 : 0.0;
+    // from.  Cache-hot -- a window's quads share a handful of styles -- and skipped entirely for
+    // the rules that take no pad, which is every glyph.
+    float pad = 0.0;
+    if ( rule == 1u || rule == 2u )
+        pad = u_buffers[ pc.prim_buf ][ ( pc.prim_base + style ) * PRIM_ROWS + 2u ].x * 0.5 + 1.0;
 
     float2 he = q0.zw;
     if ( rule == 2u )
@@ -83,12 +98,13 @@ vs_out_t main( uint vid : SV_VertexID )
               ? q0.xy + lp     // BBOX: pre-baked covering, axis-aligned
               : q0.xy + float2( lp.x * rt.x - lp.y * rt.y, lp.x * rt.y + lp.y * rt.x );
 
-    // The uv rect.  A whole glyph names a glyph-table entry in the uv0 lane and leaves uv1 inert;
-    // everything else -- fills, icons, sprites, and the narrowed rect a glyph cut to its window
-    // carries -- bakes both corners at tessellation.  The indirection is what lets cached text
-    // geometry outlive an atlas repack: the table rewrites in place and the ID does not move.
-    uint2 uvw = ( idx & GUI_QUAD_F_GLYPH ) ? glyph_uv( asuint( q1.x ) )
-                                           : uint2( asuint( q1.x ), asuint( q1.y ) );
+    // The uv rect.  A whole glyph names a glyph-table entry inside the index word and leaves both
+    // uv lanes inert; everything else -- fills, icons, sprites, and the narrowed rect a glyph cut
+    // to its window carries -- bakes both corners at tessellation.  The indirection is what lets
+    // cached text geometry outlive an atlas repack: the table rewrites in place and the ID does
+    // not move.
+    uint2 uvw = isglyph ? glyph_uv( ( idx >> GUI_QUAD_GLYPH_SHIFT ) & GUI_QUAD_GLYPH_MASK )
+                        : uint2( asuint( q1.x ), asuint( q1.y ) );
     float2 uv0 = unpack_unorm16x2( uvw.x );
     float2 uv1 = unpack_unorm16x2( uvw.y );
 
@@ -115,6 +131,7 @@ vs_out_t main( uint vid : SV_VertexID )
     o.prim     = style;
     o.rect     = q0;
     o.clip     = ( idx >> GUI_QUAD_CLIP_SHIFT ) & GUI_QUAD_CLIP_MASK;
+    o.tag      = tag | ( ( isglyph && ( idx & GUI_QUAD_SDF_BIT ) != 0u ) ? 4u : 0u );
     o.border   = unpack_col( asuint( fxr.z ) );
     o.inst     = float4( rt, asuint( fxr.y ) / 65535.0, 0.0 );
     return o;

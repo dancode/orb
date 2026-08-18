@@ -45,8 +45,10 @@ typedef struct
     u32 quad_base;      // flush's region origin            4 bytes (quads, not float4s)
     u32 glyph_buf;      // bindless slot: glyph UV table    4 bytes (0 = no table bound)
                         //   no base: the table is not regioned, so an ID indexes it directly
+    u32 tex_cov;        // bindless slot: coverage atlas    4 bytes
+    u32 tex_sdf;        // bindless slot: SDF atlas         4 bytes
 
-} gui_push_t;           // total 112 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;           // total 120 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved into the vertex (gui.h): the fragment

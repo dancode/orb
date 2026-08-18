@@ -23,6 +23,10 @@ struct gui_pc_t
                            //   companion: unlike the three tables above, the glyph table is not
                            //   regioned per (frame, viewport) -- it is written only when its
                            //   generation moves, so one copy serves every frame and surface.
+    uint     tex_cov;      // bindless texture slot of the R8 coverage atlas
+    uint     tex_sdf;      // bindless texture slot of the SDF atlas.  A GLYPH-tagged quad names no
+                           //   style record, so its texture comes from one of these two rather
+                           //   than off a record -- picked by the tag's SDF bit.
 };
 [[vk::push_constant]] gui_pc_t pc;
 
@@ -48,14 +52,24 @@ float3 srgb_to_linear( float3 c )
 #define QUAD_ROWS       2u
 #define PRIM_ROWS       8u
 
-// The quad's packed INDEX word, mirroring gui.h.  Rule and glyph bit at the bottom, then the
-// slot-local clip entry, style record and fx row; the word is exactly full.
-#define GUI_QUAD_F_GLYPH       ( 1u << 2 )
-#define GUI_QUAD_CLIP_SHIFT    3u
+// The quad's packed INDEX word, a TAGGED UNION mirroring gui.h.  The tag is the top two bits and
+// the clip entry sits at the bottom of both layouts, so clip decodes without reading the tag.
+#define GUI_QUAD_TAG_SHIFT     30u
+#define GUI_QUAD_TAG_GLYPH     1u
+
+#define GUI_QUAD_CLIP_SHIFT    0u
 #define GUI_QUAD_CLIP_MASK     0xFu
-#define GUI_QUAD_STYLE_SHIFT   7u
+#define GUI_QUAD_RULE_SHIFT    4u
+#define GUI_QUAD_STYLE_SHIFT   6u
 #define GUI_QUAD_STYLE_MASK    0x7FFu
-#define GUI_QUAD_FX_SHIFT      18u
+#define GUI_QUAD_FX_SHIFT      17u
+#define GUI_QUAD_FX_MASK       0x1FFFu
+
+#define GUI_QUAD_SDF_BIT       ( 1u << 4 )
+#define GUI_QUAD_GLYPH_SHIFT   5u
+#define GUI_QUAD_GLYPH_MASK    0x1FFFu
+#define GUI_QUAD_GFX_SHIFT     18u
+#define GUI_QUAD_GFX_MASK      0xFFFu
 
 // The INSTANCE EXTRAS record (gui_fx_t): turn, animation phase, border colour.  It lives in the
 // STYLE arena, eight rows to a record, and the quad names it by slot-local ROW index -- so the

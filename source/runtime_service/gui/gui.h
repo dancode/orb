@@ -2124,11 +2124,11 @@ typedef struct
 
     /* Row 1 -- the per-quad payload: texcoord corners, colour, and the packed index word.
        uv0/uv1 are the min/max corners, each two unorm16 over [0,1] (gui_uv_pack); the vertex
-       stage selects per corner.  A whole glyph is the exception: uv0 names a glyph-table entry
-       (GUI_QUAD_F_GLYPH) and uv1 is inert.  A self-sampled quad (GUI_OP_SELF) never reads the
-       texel, so both lanes are inert for it. */
+       stage selects per corner.  Both lanes are INERT for a whole glyph, which names a
+       glyph-table entry inside the index word instead, and for a self-sampled quad
+       (GUI_OP_SELF), which never reads the texel. */
 
-    u32 uv0;            // texcoord min corner, packed unorm16 pair (or a glyph-table ID)
+    u32 uv0;            // texcoord min corner, packed unorm16 pair
     u32 uv1;            // texcoord max corner, packed unorm16 pair
     u32 abgr;           // packed colour
     u32 idx;            // rule | glyph flag | clip | style | fx -- see gui_quad_idx below
@@ -2206,55 +2206,95 @@ ORB_STATIC_ASSERT( sizeof( gui_fx_t ) == GUI_FX_BYTES,
                                        reflection the vertex rotation cannot reproduce, so the
                                        fragment takes the turn instead)                          */
 
-/* The `idx` word, low to high.  Every field sits at its own structural ceiling, so the word is
-   exactly full and nothing here is a budget that can be raised in isolation:
+/* The `idx` word is a TAGGED UNION, not one fixed layout.  That is what makes the budget close:
+   a whole glyph needs an atlas ID and no style record, and every other shape needs a style record
+   and no atlas ID, so the two never have to fit side by side.
 
-     bits 0-1    GUI_QUAD_RULE_* -- the expansion rule
-     bit  2      GUI_QUAD_F_GLYPH -- the uv0 lane is a glyph-table ID, not a packed corner
-     bits 3-6    clip entry, SLOT-LOCAL (GUI_WIN_CLIP_MAX = 16 per window slab)
-     bits 7-17   style record, slot-local (GUI_MAX_PRIMS = 2048)
-     bits 18-31  fx record, as a slot-local ROW index into the style arena (2048 * 8 rows);
-                 0 = no record, which reads as identity turn / zero phase / no border
+   The tag is the top two bits.  Clip sits at the bottom of BOTH layouts, in the same place, so it
+   decodes without consulting the tag at all.
+
+     tag SHAPED (0)   bits 0-3    clip entry, slot-local (GUI_WIN_CLIP_MAX = 16 per window slab)
+                      bits 4-5    GUI_QUAD_RULE_* -- the expansion rule
+                      bits 6-16   style record, slot-local (GUI_MAX_PRIMS = 2048)
+                      bits 17-29  fx record, slot-local ROW index into the style arena
+
+     tag GLYPH  (1)   bits 0-3    clip entry, as above
+                      bit  4      the SDF atlas rather than the coverage one
+                      bits 5-17   glyph-table ID (GUI_GLYPH_TABLE_MAX = 8192)
+                      bits 18-29  fx record, twelve bits of the same row index
+
+   Both are exactly full.  Every field sits at an existing structural ceiling rather than at a
+   budget that can be raised in isolation -- a raised GUI_MAX_PRIMS or glyph table is a re-plan of
+   the union, not a constant bump.
 
    Clip is per QUAD, not per style: two identically styled rows in different scroll regions must
    still share one style.  The rule is per quad for the same reason -- it is a property of the
-   SHAPE KIND, and one style (a plain fill) serves shapes whose coverings differ.
+   SHAPE KIND, and one style (a plain fill) serves shapes whose coverings differ.  A GLYPH spends
+   no bits on it because a glyph is always drawn EXACT.
 
-   Row 0 of a slot's records can never be an fx record, which is what lets 0 mean "none": a quad
-   resolves its style before it would allocate an fx page, so the slot always holds at least one
-   style record by then and a page lands at local record 1 or later. */
+   fx 0 = no record, which reads as identity turn / zero phase / no border.  Row 0 of a slot's
+   records is never an fx record, which is what lets 0 mean that -- the tessellator leaves record 0
+   alone rather than opening a page there.
 
-/* uv0 holds a glyph-table ID (gui_glyph_uv_t) and uv1 is inert; the vertex stage fetches the
-   atlas rect from the table instead of unpacking the lanes.  Set by the whole-glyph text path
-   only -- a straddling glyph carries a narrowed rect of its own and stays a plain textured quad. */
-#define GUI_QUAD_F_GLYPH       ( 1u << 2 )
+   Tags 2 and 3 are unspent.  They are where a glyph that needs a STYLE (an SDF outline) and a
+   fill that needs none would land; both take the SHAPED layout today. */
 
-#define GUI_QUAD_CLIP_SHIFT    3u
+#define GUI_QUAD_TAG_SHIFT     30u
+#define GUI_QUAD_TAG_MASK      0x3u
+#define GUI_QUAD_TAG_SHAPED    0u
+#define GUI_QUAD_TAG_GLYPH     1u
+
+#define GUI_QUAD_CLIP_SHIFT    0u
 #define GUI_QUAD_CLIP_MASK     0xFu
-#define GUI_QUAD_STYLE_SHIFT   7u
+#define GUI_QUAD_RULE_SHIFT    4u
+#define GUI_QUAD_STYLE_SHIFT   6u
 #define GUI_QUAD_STYLE_MASK    0x7FFu
-#define GUI_QUAD_FX_SHIFT      18u
-#define GUI_QUAD_FX_MASK       0x3FFFu
+#define GUI_QUAD_FX_SHIFT      17u
+#define GUI_QUAD_FX_MASK       0x1FFFu
 
-/* Pack the index word.  `rule_flags` carries the rule and the glyph bit; the other three are
-   slot-local indices.  Each is masked rather than trusted: an index past its field would otherwise
-   silently corrupt the field above it, where a clamped one draws with the wrong style or clip and
-   the arena's own overflow flag reports the real cause. */
+#define GUI_QUAD_SDF_BIT       ( 1u << 4 )
+#define GUI_QUAD_GLYPH_SHIFT   5u
+#define GUI_QUAD_GLYPH_MASK    0x1FFFu
+#define GUI_QUAD_GFX_SHIFT     18u
+#define GUI_QUAD_GFX_MASK      0xFFFu
+
+/* Pack a SHAPED index word.  Each field is masked rather than trusted: an index past its own
+   width would otherwise silently corrupt the field above it, where a clamped one draws with the
+   wrong style or clip and the arena's own overflow flag reports the real cause. */
 
 static inline u32
-gui_quad_idx( u32 rule_flags, u32 clip, u32 style, u32 fx_row )
+gui_quad_idx( u32 rule, u32 clip, u32 style, u32 fx_row )
 {
     ORB_ASSERT( clip <= GUI_QUAD_CLIP_MASK && style <= GUI_QUAD_STYLE_MASK
                 && fx_row <= GUI_QUAD_FX_MASK );
-    return ( rule_flags & 0x7u )
-         | ( ( clip   & GUI_QUAD_CLIP_MASK  ) << GUI_QUAD_CLIP_SHIFT  )
+    return ( ( clip   & GUI_QUAD_CLIP_MASK  ) << GUI_QUAD_CLIP_SHIFT  )
+         | ( ( rule   & 0x3u                ) << GUI_QUAD_RULE_SHIFT  )
          | ( ( style  & GUI_QUAD_STYLE_MASK ) << GUI_QUAD_STYLE_SHIFT )
-         | ( ( fx_row & GUI_QUAD_FX_MASK    ) << GUI_QUAD_FX_SHIFT    );
+         | ( ( fx_row & GUI_QUAD_FX_MASK    ) << GUI_QUAD_FX_SHIFT    )
+         | ( GUI_QUAD_TAG_SHAPED << GUI_QUAD_TAG_SHIFT );
 }
 
-static inline u32 gui_quad_style( u32 idx ) { return ( idx >> GUI_QUAD_STYLE_SHIFT ) & GUI_QUAD_STYLE_MASK; }
+/* Pack a GLYPH index word.  `sdf` picks which of the two text atlases the fragment samples; the
+   slot itself comes from the push block, so a glyph names no style record at all. */
+
+static inline u32
+gui_quad_idx_glyph( u32 clip, u32 glyph_id, bool sdf, u32 fx_row )
+{
+    ORB_ASSERT( clip <= GUI_QUAD_CLIP_MASK && glyph_id <= GUI_QUAD_GLYPH_MASK
+                && fx_row <= GUI_QUAD_GFX_MASK );
+    return ( ( clip     & GUI_QUAD_CLIP_MASK  ) << GUI_QUAD_CLIP_SHIFT  )
+         | ( sdf ? GUI_QUAD_SDF_BIT : 0u )
+         | ( ( glyph_id & GUI_QUAD_GLYPH_MASK ) << GUI_QUAD_GLYPH_SHIFT )
+         | ( ( fx_row   & GUI_QUAD_GFX_MASK   ) << GUI_QUAD_GFX_SHIFT   )
+         | ( GUI_QUAD_TAG_GLYPH << GUI_QUAD_TAG_SHIFT );
+}
+
+static inline u32 gui_quad_tag  ( u32 idx ) { return ( idx >> GUI_QUAD_TAG_SHIFT   ) & GUI_QUAD_TAG_MASK;   }
 static inline u32 gui_quad_clip ( u32 idx ) { return ( idx >> GUI_QUAD_CLIP_SHIFT  ) & GUI_QUAD_CLIP_MASK;  }
+static inline u32 gui_quad_rule ( u32 idx ) { return ( idx >> GUI_QUAD_RULE_SHIFT  ) & 0x3u;                }
+static inline u32 gui_quad_style( u32 idx ) { return ( idx >> GUI_QUAD_STYLE_SHIFT ) & GUI_QUAD_STYLE_MASK; }
 static inline u32 gui_quad_fx   ( u32 idx ) { return ( idx >> GUI_QUAD_FX_SHIFT    ) & GUI_QUAD_FX_MASK;    }
+static inline u32 gui_quad_glyph( u32 idx ) { return ( idx >> GUI_QUAD_GLYPH_SHIFT ) & GUI_QUAD_GLYPH_MASK; }
 
 /* UV -> two unorm16 -- the packing the quad record's uv0/uv1 lanes carry.  Clamped, because that
    is the only thing the format can do with an out-of-range coordinate -- a caller that wants U

@@ -57,8 +57,14 @@
 #define TEX_MODE_SHIFT  28u
 #define TEX_INDEX_MASK  0x0FFFFFFFu
 
+// The two sampling models a GLYPH-tagged quad can want, pre-shifted (gui.h, gui_tex_mode_t).
+#define TEX_MODE_COVERAGE  ( 0u << TEX_MODE_SHIFT )
+#define TEX_MODE_SDF       ( 2u << TEX_MODE_SHIFT )
+
 #define PI              3.14159265
 
+// MUST be declared in the same ORDER as vs_out_t (gui_quad.vs.hlsl), field for field -- see the
+// note there: locations pair the stages up, and dxc assigns them in declaration order.
 struct ps_in_t
 {
     float4                 sv_pos : SV_Position;
@@ -71,6 +77,8 @@ struct ps_in_t
                                                   //   rides the quad, never the style
     nointerpolation float4 inst   : TEXCOORD5;   // per-instance lanes off the quad: xy = the turn
                                                   //   (cos, sin), z = animation phase in cycles
+    nointerpolation uint   tag    : TEXCOORD6;   // GUI_QUAD_TAG_* in bits 0-1, "the SDF atlas" in
+                                                  //   bit 2 (gui.h, the quad index word)
 };
 
 // The record this fragment's primitive named, resolved once at the top of main().  Row 0 is what
@@ -82,6 +90,12 @@ static uint g_row;      // first float4 of the record, absolute in the buffer
 static uint g_field;    // gui_fx_mode_t
 static uint g_ops;      // GUI_OP_*
 static uint g_tex;      // sampling model | bindless slot
+
+// A GLYPH-tagged quad names NO record: the whole of what a plain character needs is a texture and
+// a rect, and both arrive without one.  g_row therefore points at nothing for it, so prim_row
+// answers zero rather than reading -- which is also the only reason the ops cascade below is safe
+// to walk with no record behind it, since every op bit is clear and every field is 0.
+static bool g_implicit;
 
 // The per-instance lanes, off the quad rather than the style: the shape's turn, and the animation
 // phase in cycles.  Every animating op reads the phase the same way, which is what lets one style
@@ -109,7 +123,8 @@ static float g_frame_band = 0.0;
 
 float4 prim_row( uint r )
 {
-    return u_buffers[ pc.prim_buf ][ g_row + r ];
+    return g_implicit ? float4( 0.0, 0.0, 0.0, 0.0 )
+                      : u_buffers[ pc.prim_buf ][ g_row + r ];
 }
 
 // The SHAPING stage: a normalized phase in, a normalized amount out.  It knows nothing about what
@@ -569,13 +584,29 @@ float clip_coverage( uint clip, float2 p )
 float4 main( ps_in_t i ) : SV_Target0
 {
     // The record, and with it everything that used to be bit-packed into the vertex.  One 16-byte
-    // load: a glyph, a flat fill and a debug-view quad all resolve here and never touch the rows
-    // behind it.
-    g_row       = ( pc.prim_base + i.prim ) * PRIM_ROWS;
-    float4 head = u_buffers[ pc.prim_buf ][ g_row ];
-    g_field     = asuint( head.x );
-    g_ops       = asuint( head.y );
-    g_tex       = asuint( head.z );
+    // load: a flat fill and a debug-view quad resolve here and never touch the rows behind it.
+    //
+    // A whole GLYPH skips it: the tag already says the shape is an unshaped rect sampling a text
+    // atlas, so field and ops are 0 by construction and the texture is one of the two the push
+    // block carries.  That is the majority of the frame's quads not touching the record buffer at
+    // all -- and it is why the tag exists.
+    g_implicit = ( ( i.tag & 3u ) == GUI_QUAD_TAG_GLYPH );
+    if ( g_implicit )
+    {
+        g_row   = 0u;
+        g_field = 0u;
+        g_ops   = 0u;
+        g_tex   = ( ( i.tag & 4u ) != 0u ) ? ( TEX_MODE_SDF | pc.tex_sdf )
+                                           : ( TEX_MODE_COVERAGE | pc.tex_cov );
+    }
+    else
+    {
+        g_row       = ( pc.prim_base + i.prim ) * PRIM_ROWS;
+        float4 head = u_buffers[ pc.prim_buf ][ g_row ];
+        g_field     = asuint( head.x );
+        g_ops       = asuint( head.y );
+        g_tex       = asuint( head.z );
+    }
 
     // Placement, clip, the turn and the animation phase all come off the per-quad interpolants,
     // which is what frees the style to dedup across placements, angles and scroll regions.

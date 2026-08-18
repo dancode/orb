@@ -551,6 +551,21 @@ tess_fx_local( void )
             s_tess.overflow = true;
             return 0u;
         }
+
+        /* Record 0 of a slot may never be an fx page -- row 0 is the index the quad spends on
+           "no record".  A quad that resolves a style first has already claimed it, but a GLYPH
+           resolves no style at all, so a rotated character at the head of a window would land
+           here with the slot still empty.  Leave record 0 unwritten in that case. */
+        if ( s_tess.prim_count == s_tess.slot_prim_base )
+        {
+            if ( s_tess.prim_count + 1u >= GUI_MAX_PRIMS )
+            {
+                s_tess.overflow = true;
+                return 0u;
+            }
+            memset( &s_tess.prims[ s_tess.prim_count++ ], 0, sizeof( gui_prim_t ) );
+        }
+
         u32 page = s_tess.prim_count - s_tess.slot_prim_base;
         if ( page > ( GUI_QUAD_FX_MASK / TESS_FX_PER_PAGE ) )
         {
@@ -572,18 +587,42 @@ tess_fx_local( void )
     return s_tess.fx_memo_row;
 }
 
+/* The glyph table's rect for an ID, for the quads that cannot carry the ID itself.  Reading the
+   table CPU-side costs the same lookup the vertex stage would have done and gives up only the
+   repack stability -- which is exactly the trade a straddling glyph already makes. */
+static void
+tess_glyph_uv( u32 glyph_id, u32* uv0, u32* uv1 )
+{
+    if ( glyph_id >= glyph_table_count() )
+    {
+        *uv0 = *uv1 = 0u;
+        return;
+    }
+    const gui_glyph_uv_t* g = &glyph_table_data()[ glyph_id ];
+    *uv0 = g->uv0;
+    *uv1 = g->uv1;
+}
+
 /*==============================================================================================
     tess_quad_push -- the ONE geometry writer.  Resolves the ambient style (placement and clip
     live on the quad, never the style), appends the quad, and folds one element into the open
     GPU command.
 
-    `rule_flags` is the expansion rule (GUI_QUAD_RULE_*).  Placement is the SHAPE's, by the
-    rule's convention (gui.h); uv0/uv1 are packed texcoord corners.
+    `rule` is the expansion rule (GUI_QUAD_RULE_*).  Placement is the SHAPE's, by the rule's
+    convention (gui.h); uv0/uv1 are packed texcoord corners.
+
+    `glyph_id` past GUI_GLYPH_ID_NONE asks for the GLYPH tag: the quad names a glyph-table entry
+    instead of carrying an atlas rect, and names no style record at all -- the fragment resolves
+    the text atlas from the push block.  That only holds while the ambient style says nothing but
+    "sample the font atlas", so a glyph under an op or a field falls back to the SHAPED tag with
+    the table's rect baked in, exactly like a straddling glyph.
 ==============================================================================================*/
 
+#define GUI_GLYPH_ID_NONE   0xFFFFFFFFu
+
 static void
-tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
-                u32 uv0, u32 uv1, u32 tex_idx, u32 abgr )
+tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
+                u32 uv0, u32 uv1, u32 tex_idx, u32 abgr, u32 glyph_id )
 {
     if ( s_tess.vert_count + 1u > GUI_MAX_QUADS )
     {
@@ -594,14 +633,46 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
     if ( !tess_ensure_gpu_cmd() )
         return;
 
+    /* A glyph keeps the tag only while the style would have said nothing: no ops, no field, and an
+       fx row inside the narrower field the GLYPH layout has room for.  Anything else -- an SDF
+       outline, a pattern, a rotation past the twelfth bit -- takes the table's rect and rejoins
+       the SHAPED path, which has a style record to carry the difference. */
+    if ( glyph_id != GUI_GLYPH_ID_NONE
+      && s_tess.cur_ops == 0u && s_tess.cur_prim.field == 0u )
+    {
+        /* The tag carries one bit of texture -- which of the two text atlases -- and the fragment
+           reads the slot itself from the push block.  That only means the right thing while a font
+           samples one of those two, which is the whole of what font_slot_tex can return. */
+        ORB_ASSERT( gui_tex_index( tex_idx ) == ( gui_tex_mode( tex_idx ) == GUI_TEX_SDF
+                                                  ? res_sdf_idx() : res_atlas_idx() ) );
+
+        u32 fx = tess_fx_local();
+        if ( fx <= GUI_QUAD_GFX_MASK )
+        {
+            s_tess.quads[ s_tess.vert_count++ ] = ( gui_quad_t ){
+                .cx   = qcx,
+                .cy   = qcy,
+                .hw   = qhw,
+                .hh   = qhh,
+                .idx  = gui_quad_idx_glyph( s_tess.cur_clip_local, glyph_id,
+                                            gui_tex_mode( tex_idx ) == GUI_TEX_SDF, fx ),
+                .abgr = abgr,
+            };
+            goto counted;
+        }
+        /* The fx row is past what the GLYPH layout can name -- fall through and let the SHAPED
+           arm carry it, where the field is a bit wider.  The record itself is already written;
+           the memo hands the same row back below. */
+    }
+
+    if ( glyph_id != GUI_GLYPH_ID_NONE )
+        tess_glyph_uv( glyph_id, &uv0, &uv1 );   /* the fallback bakes what the table holds */
+
     /* Fold the ambient texture and ops into the style; the clip entry rides the quad below,
        never the style, so a style compares equal across scroll regions. */
     s_tess.cur_prim.tex = s_tess.cur_tex;
     s_tess.cur_prim.ops = s_tess.cur_ops;
 
-    /* Style first, then fx: the fx page is allocated from the style arena, and resolving the style
-       first is what guarantees a page never lands at the slot's record 0 -- the index the quad's
-       fx field spends on "no record". */
     u32 style = tess_prim_local();
     u32 fx    = tess_fx_local();
 
@@ -613,8 +684,10 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
         .uv0   = uv0,
         .uv1   = uv1,
         .abgr  = abgr,
-        .idx   = gui_quad_idx( rule_flags, s_tess.cur_clip_local, style, fx ),
+        .idx   = gui_quad_idx( rule, s_tess.cur_clip_local, style, fx ),
     };
+
+counted:
 
     /* elem_count counts QUADS under this backend; the flush multiplies by six at the draw. */
     s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 1;
@@ -641,7 +714,8 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
     x = tess_snap_px( x );
     y = tess_snap_px( y );
     tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
-                    gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr );
+                    gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr,
+                    GUI_GLYPH_ID_NONE );
 }
 
 /* Tessellate one whole glyph: same placement as tess_rect_filled, but the quad names a glyph-table
@@ -654,9 +728,8 @@ tess_rect_glyph( f32 x, f32 y, f32 w, f32 h, u32 glyph_id, u32 tex_idx, u32 abgr
 {
     x = tess_snap_px( x );
     y = tess_snap_px( y );
-    tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f,
-                    GUI_QUAD_RULE_EXACT | GUI_QUAD_F_GLYPH,
-                    glyph_id, 0u, tex_idx, abgr );
+    tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
+                    0u, 0u, tex_idx, abgr, glyph_id );
 }
 
 /* Tessellate a two-color gradient quad: a GRAD style -- a quad record carries ONE colour, and
@@ -679,7 +752,7 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
     s_tess.cur_prim.grad_y  = horizontal ? 0.0f : 1.0f;
     s_tess.cur_rot_c = 1.0f;
     tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
-                    0, 0, res_atlas_idx(), col_a );
+                    0, 0, res_atlas_idx(), col_a, GUI_GLYPH_ID_NONE );
 }
 
 /*==============================================================================================
@@ -1115,7 +1188,8 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        bound.  The uv rect is the authored span; the vertex stage scales it over the skirt and
        clamps at the corners, so a textured rounded quad shows its picture at authored size. */
     tess_quad_push( cx, cy, hx, hy, GUI_QUAD_RULE_SKIRT,
-                    gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr );
+                    gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr,
+                    GUI_GLYPH_ID_NONE );
 }
 
 /* The uniform-radius entry every rounded shape in the library goes through.  Four copies of one
@@ -1158,7 +1232,7 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     s_tess.cur_prim.feather = TESS_FX_AA;
     s_tess.cur_rot_c = 1.0f;
     tess_quad_push( qx, qy, ( hix - lox ) * 0.5f, ( hiy - loy ) * 0.5f,
-                    GUI_QUAD_RULE_SKIRT, 0, 0, res_atlas_idx(), abgr );
+                    GUI_QUAD_RULE_SKIRT, 0, 0, res_atlas_idx(), abgr, GUI_GLYPH_ID_NONE );
 }
 
 /*==============================================================================================
@@ -1214,7 +1288,8 @@ tess_fx_ngon( f32 pcx, f32 pcy, f32 r, u32 sides, f32 rot, f32 rounding,
        derives from the feather.  Rotation-safe -- a rotated square covering of a circle is
        still a covering. */
     s_tess.cur_ops |= GUI_OP_SELF;
-    tess_quad_push( pcx, pcy, r, r, GUI_QUAD_RULE_SKIRT, 0, 0, res_atlas_idx(), abgr );
+    tess_quad_push( pcx, pcy, r, r, GUI_QUAD_RULE_SKIRT, 0, 0, res_atlas_idx(), abgr,
+                    GUI_GLYPH_ID_NONE );
 }
 
 /*==============================================================================================
@@ -1468,7 +1543,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     }
     tess_quad_push( pcx, pcy, bhx, bhy, GUI_QUAD_RULE_BBOX,
                     gui_uv_pack( wu, wv ), gui_uv_pack( wu, wv ),
-                    res_atlas_idx(), abgr );
+                    res_atlas_idx(), abgr, GUI_GLYPH_ID_NONE );
 }
 
 /*==============================================================================================
@@ -1504,7 +1579,7 @@ tess_pattern_push( f32 x, f32 y, f32 w, f32 h, f32 rounding, u32 abgr )
         return;
     }
     tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
-                    0, 0, res_atlas_idx(), abgr );
+                    0, 0, res_atlas_idx(), abgr, GUI_GLYPH_ID_NONE );
 }
 
 static void
@@ -1679,7 +1754,8 @@ tess_quad_xf( f32 px, f32 py, f32 cs, f32 sn,
     s_tess.cur_rot_s = sn;
     tess_quad_push( px + ccx * cs - ccy * sn, py + ccx * sn + ccy * cs,
                     lw * 0.5f, lh * 0.5f, GUI_QUAD_RULE_EXACT,
-                    gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr );
+                    gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr,
+                    GUI_GLYPH_ID_NONE );
 }
 
 /* tess_quad_xf for a glyph: the same affine placement, the atlas rect named by table ID.  A
@@ -1693,8 +1769,8 @@ tess_glyph_xf( f32 px, f32 py, f32 cs, f32 sn,
     s_tess.cur_rot_c = cs;
     s_tess.cur_rot_s = sn;
     tess_quad_push( px + ccx * cs - ccy * sn, py + ccx * sn + ccy * cs,
-                    lw * 0.5f, lh * 0.5f, GUI_QUAD_RULE_EXACT | GUI_QUAD_F_GLYPH,
-                    glyph_id, 0u, tex_idx, abgr );
+                    lw * 0.5f, lh * 0.5f, GUI_QUAD_RULE_EXACT,
+                    0u, 0u, tex_idx, abgr, glyph_id );
 }
 
 /* Tessellate a glyph run under a uniform scale and a rotation about its origin (the text_xf
@@ -1773,7 +1849,7 @@ tess_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 period, f32
     tess_quad_push( ( x0 + x1 ) * 0.5f, ( y0 + y1 ) * 0.5f, len * 0.5f, half,
                     GUI_QUAD_RULE_EXACT,
                     gui_uv_pack( 0.0f, vv ), gui_uv_pack( 1.0f, vv ),
-                    res_atlas_idx(), abgr );
+                    res_atlas_idx(), abgr, GUI_GLYPH_ID_NONE );
 }
 
 /*==============================================================================================
@@ -1922,7 +1998,7 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 
     s_tess.cur_rot_c = ux;
     s_tess.cur_rot_s = uy;
     tess_quad_push( mx, my, hl, r, GUI_QUAD_RULE_CAPSULE, 0, 0,
-                    res_atlas_idx(), col );
+                    res_atlas_idx(), col, GUI_GLYPH_ID_NONE );
 }
 
 /* Volatile-widget seam (render/pipeline/gui_build_volatile.c, included right after this file in
