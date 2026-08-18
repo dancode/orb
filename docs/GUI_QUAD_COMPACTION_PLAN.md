@@ -206,19 +206,35 @@ Each stage is independently shippable and independently revertable.
 - `tess_rect_glyph` / `tess_glyph_xf` emit by ID; `gui_quad.vs.hlsl` resolves through
   `glyph_uv()`.
 
-Record stays 3 rows -- the uv1 lane is now inert for glyphs and is what stage 2 spends.
+Record stayed 3 rows -- the uv1 lane became inert for glyphs, which is what stage 2 spent.
 
 *Not covered:* a glyph straddling its run's window edge carries a narrowed UV span with no table
 entry, so it stays a baked-rect quad and pays a second lookup. At most the two end glyphs of a
 cut run. It is also the one text case a repack can still leave stale (noted at
 `gui_build_cache.c`).
 
-**Stage 2 -- fx table + drop row 2.** Move xform, phase, col_border and the rare flags behind an
-fx index. 48 -> 32 B, uniform 2-row stride, `vid/6` untouched. Open question below on where the
-fx records live.
+**Stage 2 -- fx record + drop row 2. BUILT.** 48 -> 32 B, uniform 2-row stride, `vid/6`
+untouched.
+
+- `gui_fx_t` (16 B: xform, phase, col_border, reserved) holds the three per-instance lanes; the
+  quad names one by slot-local ROW index, and 0 means "none" -- identity turn, zero phase, no
+  border, which is what a glyph wants.
+- Row 1's fourth lane is now the packed `idx` word: rule (0-1), `GUI_QUAD_F_GLYPH` (2), clip
+  (3-6), style (7-17), fx row (18-31). Exactly 32 bits with no slack, and every field sits at an
+  existing structural ceiling rather than a new budget -- `gui_quad_idx` packs, `gui_quad_style` /
+  `_clip` / `_fx` read.
+- **Clip became SLOT-LOCAL** (4 bits) instead of region-absolute. The window's slab origin now
+  goes out with `pc.clip_base` on the same per-slot tail push that already carried `prim_base`.
+  The fragment still computes `pc.clip_base + clip` and did not change.
+- `tess_fx_local` resolves the ambient turn/phase/border, one-deep memo. Style is resolved FIRST,
+  which is what guarantees an fx page never lands at the slot's record 0 -- the index spent on
+  "none".
+- `gui_phase_pack` returns a bare unorm16 now; `GUI_QUAD_PHASE_SHIFT`/`_MASK` are gone.
 
 **Stage 3 -- tag union.** Introduce the four tags and the implicit style for `GLYPH`/`SOLID`.
-Collapses the index word to 32 bits.
+Collapses the index word to 32 bits. NOTE: stage 2 already spends all 32 bits, so this stage is
+now about buying bits BACK (an implicit style for glyphs frees 11), not about collapsing 40 into
+32.
 
 **Stage 4 -- fixed-point coordinates.** pos/size to window-relative i16 at 1/4 px. 32 -> 16 B,
 one row, one load.
@@ -226,17 +242,24 @@ one row, one load.
 **Stage 5 -- uv/tex into the style record.** Retires the UV lanes for the non-glyph textured
 cases (icons, nine-slice, sprites).
 
-### Where fx records live (stage 2, decide before building)
+### Where fx records live -- DECIDED, and it was neither option
 
-The obvious answer is a fifth arena, which drags in per-slot base, relocation on repack,
-`cache_slot_reuse` copying, volatile patch spans and upload span union -- exactly the bookkeeping
-tax that sank the expansion design.
+Both candidates were rejected. A **fifth arena** drags in a per-slot base, relocation on repack,
+`cache_slot_reuse` copying, a volatile third axis, upload span union and a bindless slot -- the
+bookkeeping tax that sank the expansion design; the prim axis alone is 114 references across 13
+files, and a parallel one would roughly double that. The **quad arena tail** avoids the base but
+couples fx storage to growth headroom and to a "must sit past the last gpu_cmd's range" invariant
+that the volatile patch path can violate silently.
 
-The alternative: place fx records **in the quad arena past the slot's dispatched range**. A slot
-already reserves `vert_count + SLOT_QUAD_PAD`; `elem_count` would never cover the tail, so
-`vid/6` never addresses it, the fx index is slot-relative and survives repack for free, and no
-new arena or bindless slot appears. Cost is care in the `fits`/alloc math and the constraint that
-fx records sit past the last gpu_cmd's range in the slot. Verify before committing to stage 2.
+What shipped: fx records live **in the STYLE arena**, eight to a `gui_prim_t` slot (an "fx page"),
+addressed by slot-local ROW index. The record arena's per-slot base, relocation, volatile
+reservation and upload ranges already carry anything stored there, so the feature cost ZERO new
+bookkeeping. A row index is exactly as repack-stable as the style index beside it, and a volatile
+patch reproduces its own pages because it already fakes `slot_prim_base`.
+
+The one interaction: a page holds fx bytes, so the style dedup memo must never compare against it.
+Allocating a page raises `prim_dedup_floor` past itself -- the same move a volatile boundary
+makes -- and `tess_fx_page_reset()` drops the open page wherever that floor rises.
 
 ---
 

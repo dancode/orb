@@ -600,7 +600,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
         { "text",  inc ? sn->emit_text  : sn->emit_text  - sn->emit_text_dbg,  GUI_MAX_TEXT_POOL,  0                           },
         { "clips", inc ? sn->emit_clips : sn->emit_clips - sn->emit_clips_dbg, GUI_MAX_CLIP_RECTS, 0                           },
         { "quads", inc ? sn->tess_verts : sn->band0_vert_end, GUI_MAX_QUADS,   inc ? sn->vert_hwm : sn->band0_vert_hwm         },
-        { "styles", sn->tess_prims,                           GUI_MAX_PRIMS,   sn->prim_hwm                                    },
+        { "recs",  sn->tess_prims,                            GUI_MAX_PRIMS,   sn->prim_hwm                                    },
         { "draws", inc ? sn->tess_cmds  : sn->tess_cmds - sn->tess_cmds_dbg,   GUI_MAX_CMDS,       0                           },
     };
     const u32 n     = sizeof( rows ) / sizeof( rows[ 0 ] );
@@ -648,7 +648,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
 
     /* Glyph share of the DRAWN quads -- what a per-run text record would collapse.  Follows the
        "quads" bar's band filter so the two numbers are read against each other, and spells out
-       glyphs-per-run: that is the factor one 48-byte quad record would amortise over.
+       glyphs-per-run: that is the factor one 32-byte quad record would amortise over.
 
        Measured against live_quads, not the arena write head the bar above shows: the head includes
        every slot's vert_alloc padding (SLOT_QUAD_PAD minimum each), which on a small UI can outweigh

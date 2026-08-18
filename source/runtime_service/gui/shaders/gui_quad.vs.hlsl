@@ -1,7 +1,7 @@
 // gui_quad.vs.hlsl -- the QUAD-RECORD pipeline's vertex stage: no vertex buffer at all.  A draw
 // is cmd_draw of 6 * N bare vertices; this stage computes quad = SV_VertexID / 6 and corner =
 // SV_VertexID % 6 (VertexIndex includes firstVertex under Vulkan, and every draw's firstVertex
-// is a multiple of 6), fetches the 48-byte quad record (gui.h, gui_quad_t) from the bindless
+// is a multiple of 6), fetches the 32-byte quad record (gui.h, gui_quad_t) from the bindless
 // array, and expands the covering corner itself.  Cooked to bin/shaders/gui_quad.vs.oshd.
 //
 // What the expansion does per quad, keyed by the record's flags (gui.h, GUI_QUAD_RULE_*):
@@ -33,9 +33,9 @@ struct vs_out_t
     float2                 uv     : TEXCOORD0;
     nointerpolation uint   prim   : TEXCOORD1;   // style record index, slot-local
     nointerpolation float4 rect   : TEXCOORD2;   // shape placement: centre + stored half-extents
-    nointerpolation uint   clip   : TEXCOORD3;   // clip-table entry index, region-absolute
+    nointerpolation uint   clip   : TEXCOORD3;   // clip-table entry index, slot-local
     nointerpolation float4 border : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
-                                                  //   rides the quad, never the style
+                                                  //   an instance lane, never the style
     nointerpolation float4 inst   : TEXCOORD5;   // per-instance lanes off the quad:
                                                   //   xy = the turn (cos, sin), z = animation
                                                   //   phase in cycles, w unused
@@ -48,18 +48,22 @@ vs_out_t main( uint vid : SV_VertexID )
 
     uint   row = ( pc.quad_base + quad ) * QUAD_ROWS;
     float4 q0  = u_buffers[ pc.quad_buf ][ row ];        // cx, cy, hw, hh
-    float4 q1  = u_buffers[ pc.quad_buf ][ row + 1u ];   // uv0, uv1, abgr, style
-    float4 q2  = u_buffers[ pc.quad_buf ][ row + 2u ];   // clip, flags, xform, col_border
+    float4 q1  = u_buffers[ pc.quad_buf ][ row + 1u ];   // uv0, uv1, abgr, idx
 
-    uint style = asuint( q1.w );
-    uint flags = asuint( q2.y );
-    uint rule  = flags & 3u;
+    uint idx   = asuint( q1.w );
+    uint style = ( idx >> GUI_QUAD_STYLE_SHIFT ) & GUI_QUAD_STYLE_MASK;
+    uint rule  = idx & 3u;
+
+    // The instance extras: turn, animation phase, border colour.  Most quads name no record and
+    // take the all-zero row, which IS the default -- an unrotated shape in step with the clock and
+    // no border band (gui.h, gui_fx_t).
+    float4 fxr = fx_record( idx >> GUI_QUAD_FX_SHIFT );
 
     // The shape's TURN, per instance -- a unit (cos, sin) packed like a uv pair, with the all-zero
     // word reserved for identity (gui.h, gui_xform_pack).  This is the frame every field works in,
     // a CAPSULE's direction included: one style serves a whole polyline because the direction was
     // never in the style to begin with.
-    uint   xw = asuint( q2.z );
+    uint   xw = asuint( fxr.x );
     float2 rt = ( xw == 0u ) ? float2( 1.0, 0.0 )
                              : normalize( unpack_unorm16x2( xw ) * 2.0 - 1.0 );
 
@@ -83,8 +87,8 @@ vs_out_t main( uint vid : SV_VertexID )
     // everything else -- fills, icons, sprites, and the narrowed rect a glyph cut to its window
     // carries -- bakes both corners at tessellation.  The indirection is what lets cached text
     // geometry outlive an atlas repack: the table rewrites in place and the ID does not move.
-    uint2 uvw = ( flags & GUI_QUAD_F_GLYPH ) ? glyph_uv( asuint( q1.x ) )
-                                             : uint2( asuint( q1.x ), asuint( q1.y ) );
+    uint2 uvw = ( idx & GUI_QUAD_F_GLYPH ) ? glyph_uv( asuint( q1.x ) )
+                                           : uint2( asuint( q1.x ), asuint( q1.y ) );
     float2 uv0 = unpack_unorm16x2( uvw.x );
     float2 uv1 = unpack_unorm16x2( uvw.y );
 
@@ -110,8 +114,8 @@ vs_out_t main( uint vid : SV_VertexID )
     o.uv       = lerp( uv0, uv1, corner );
     o.prim     = style;
     o.rect     = q0;
-    o.clip     = asuint( q2.x );
-    o.border   = unpack_col( asuint( q2.w ) );
-    o.inst     = float4( rt, float( flags >> 16u ) / 65535.0, 0.0 );
+    o.clip     = ( idx >> GUI_QUAD_CLIP_SHIFT ) & GUI_QUAD_CLIP_MASK;
+    o.border   = unpack_col( asuint( fxr.z ) );
+    o.inst     = float4( rt, asuint( fxr.y ) / 65535.0, 0.0 );
     return o;
 }

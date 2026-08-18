@@ -334,9 +334,11 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
        the effect band's clock costs no batch split and no per-draw work (gui.h, GUI_FX_TIME_WRAP). */
     push.time = s_render.fx_time;
 
-    /* Fragment-clip plumbing (gui_fx.hlsli, "the clip band").  Both fields are flush-constant:
-       vertices bake ABSOLUTE region entry indices (each window's fixed slab), so clip_base is
-       just this region's origin. */
+    /* Fragment-clip plumbing (gui_fx.hlsli, "the clip band").  The buffer slot is flush-constant;
+       clip_base is not -- quads bake SLOT-LOCAL entry indices, so the window's fixed slab origin
+       goes out with the record base as the walk crosses a slot boundary (below).  Seeded to the
+       region origin for the same reason prim_base is: the walk pushes before any draw of a slot,
+       so an in-bounds seed keeps a never-read value from being an out-of-range read. */
     push.clip_buf  = s_render.clip_buf_idx;
     push.clip_base = clip_region * (u32)GUI_CLIP_REGION_MAX;
 
@@ -383,15 +385,17 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
         if ( slot->vp != vp_index )
             continue;
 
-        /* The one piece of per-SLOT state: where this window's records start.  Vertices bake
-           slot-local record indices so they survive a repack, exactly as index values do, and this
-           is the base that puts them back.  Filtered against the last value pushed -- a surface
-           showing one window pushes it once, and consecutive slots that happen to share a base
-           (only the empty ones) push nothing. */
+        /* The per-SLOT state: where this window's records start and where its clip slab does.
+           Quads bake slot-local indices for both so they survive a repack, and these are the bases
+           that put them back.  Filtered against the last values pushed -- a surface showing one
+           window pushes once, and consecutive slots that happen to share both bases push nothing. */
         u32 slot_prim_base = clip_region * (u32)GUI_PRIM_REGION_MAX + slot->prim_base;
-        if ( push.prim_base != slot_prim_base )
+        u32 slot_clip_base = clip_region * (u32)GUI_CLIP_REGION_MAX
+                           + slot->cache_idx * (u32)GUI_WIN_CLIP_MAX;
+        if ( push.prim_base != slot_prim_base || push.clip_base != slot_clip_base )
         {
             push.prim_base = slot_prim_base;
+            push.clip_base = slot_clip_base;
             rhi()->cmd_push_constants( cmd, tail, GUI_PUSH_TAIL_SIZE, GUI_PUSH_TAIL_OFF );
             ++s_render.state_pushes;
         }

@@ -2088,11 +2088,12 @@ typedef enum
     `centre +- (half-extent + pad)` itself.  The pad is the style's feather plus the AA guard,
     applied at expansion -- cx/cy/hw/hh here are the TRUE shape extents, never pre-inflated.
 
-    `style` names a gui_prim_t used as a pure STYLE record.  Everything that varies per INSTANCE
-    while the shape stays the same lives here instead: placement, clip, the second colour, the
-    turn (`xform`) and the animation phase.  That is the whole rule the split follows -- a value
-    on the wrong side either mints a style record per instance or costs four bytes on every glyph
-    that will never read it.
+    The record names a gui_prim_t used as a pure STYLE record.  Everything that varies per INSTANCE
+    while the shape stays the same lives off the style: placement, colour and clip here, and the
+    three rarer lanes -- turn, animation phase, border colour -- one indirection away in a gui_fx_t.
+    That is the whole rule the split follows: a value on the style side mints a record per instance,
+    a value on the quad side costs four bytes on every glyph that will never read it, and a value in
+    the fx record costs neither as long as most quads want none of it.
 ==============================================================================================*/
 
 /* One resident glyph's atlas rect, ID-indexed (draw/gui_glyph_table.c).  A glyph quad names an
@@ -2121,55 +2122,76 @@ typedef struct
 
     f32 cx, cy, hw, hh;
 
-    /* Row 1 -- the per-quad payload: texcoord corners, colour, and the style naming the rest.
+    /* Row 1 -- the per-quad payload: texcoord corners, colour, and the packed index word.
        uv0/uv1 are the min/max corners, each two unorm16 over [0,1] (gui_uv_pack); the vertex
-       stage selects per corner.  Glyphs are no exception: the text tessellator has the live
-       atlas rect in hand from font_glyph and bakes it here like any other textured quad.
-       A self-sampled quad (GUI_OP_SELF) never reads the texel, so its uv lanes are inert. */
+       stage selects per corner.  A whole glyph is the exception: uv0 names a glyph-table entry
+       (GUI_QUAD_F_GLYPH) and uv1 is inert.  A self-sampled quad (GUI_OP_SELF) never reads the
+       texel, so both lanes are inert for it. */
 
-    u32 uv0;            // texcoord min corner, packed unorm16 pair
+    u32 uv0;            // texcoord min corner, packed unorm16 pair (or a glyph-table ID)
     u32 uv1;            // texcoord max corner, packed unorm16 pair
     u32 abgr;           // packed colour
-    u32 style;          // style-record index, slot-local (gui_prim_t as a style)
+    u32 idx;            // rule | glyph flag | clip | style | fx -- see gui_quad_idx below
 
-    /* Row 2 -- the remaining per-instance lanes: clip, the packed flags word, the turn and the
-       second colour.  Clip is per QUAD, not per style: two identically styled rows in different
-       scroll regions must still share one style. */
+} gui_quad_t;
 
-    u32 clip;           // clip-table entry index, absolute within the frame clip region
-    u32 flags;          // GUI_QUAD_RULE_* rule (bits 0-1) | animation phase (bits 16-31);
-                        // bits 2-15 are unused and written zero -- see the layout note below
+/* 32 bytes = two std430 rows, indexed by the vertex stage as `quad * GUI_QUAD_ROWS + row`
+   with no padding to account for.  Pinned because the shaders spell that stride as a literal. */
 
+#define GUI_QUAD_ROWS   2u
+#define GUI_QUAD_BYTES  ( GUI_QUAD_ROWS * 16u )
+
+ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
+                   "gui_quad_t must stay whole 16-byte rows -- the vertex stage indexes it as vec4[]" );
+
+/* The INSTANCE EXTRAS record -- the lanes only a minority of quads carry, named by the quad's fx
+   index instead of costing sixteen bytes on every glyph that will never read them.
+
+   All three are per-INSTANCE, not per-shape: a rotation, a stagger and a border colour each vary
+   while the shape stays the same, so putting them on the style record would mint one style per
+   angle, per stagger, per animated frame.  They are also rare TOGETHER -- text carries none of
+   them -- which is what makes a side record cheaper than a lane.  Consecutive quads that want the
+   same three values share one record (tess_fx_local), so a run of identically framed rows or a
+   polyline of one direction costs a single entry.
+
+   Records live in the STYLE ARENA, eight to a gui_prim_t slot ("fx page"), and the quad names one
+   by its slot-local ROW index.  That is what keeps the whole feature free of new bookkeeping: the
+   record arena's per-slot base, relocation, volatile reservation and upload ranges already carry
+   anything stored there, and a row index is as repack-stable as the style index beside it. */
+
+typedef struct
+{
     // xform: the shape's TURN, as a unit (cos, sin) through the uv pair's encoding, remapped from
     //   [-1,1] (gui_xform_pack).  Exactly 0 means IDENTITY, which is what an unrotated shape
-    //   leaves behind.  Per QUAD, not per style: a rotation is per-instance by nature, so keeping
-    //   it here is what stops every distinct angle from minting its own style record.  A CAPSULE's
-    //   direction is this same pair.
+    //   leaves behind -- so a quad with no fx record reads as unrotated.  A CAPSULE's direction is
+    //   this same pair.
     //   BOTH stages read it.  The vertex stage rotates the covering corners (every rule but BBOX,
     //   whose covering is already axis-aligned), and the fragment builds the shape-local frame
     //   every field works in from it -- composed with OP_SPIN's clock angle, when that op is set.
     u32 xform;
+
+    // phase: the animation phase, a unorm16 over one cycle (gui_phase_pack).  The RATE stays on
+    //   the style -- every spinner in a set turns at the same speed, and staggering the set is the
+    //   only thing phase is for.  0 = in step with the clock.
+    u32 phase;
 
     // col_border: GUI_OP_FRAME's border band colour, and nothing else.  Named for the one thing it
     //   carries rather than "the second colour", because the STYLE has a second colour of its own
     //   (gui_prim_t.col_b) and the two are not interchangeable: every second colour belonging to
     //   the SHAPE -- GRAD's far end, CHECKER's alternate, TEXT_EDGE's outline, ARC_GRAD's sweep
     //   target -- lives on the style and deduplicates with it.  A border colour does not belong to
-    //   the shape, so it rides the quad: an animated border -- or an animated fill, which was
-    //   already here in `abgr` -- would otherwise mint a style record per frame, where the style
-    //   should state only the shape (rounding, border width, feather).  0 when the op is absent.
+    //   the shape, so it rides the instance: an animated border -- or an animated fill, which
+    //   rides the quad in `abgr` -- would otherwise mint a style record per frame.
     u32 col_border;
 
-} gui_quad_t;
+    u32 reserved;       // pads the record to a whole row; written zero so dedup compares cleanly
 
-/* 48 bytes = three std430 rows, indexed by the vertex stage as `quad * GUI_QUAD_ROWS + row`
-   with no padding to account for.  Pinned because the shaders spell that stride as a literal. */
+} gui_fx_t;
 
-#define GUI_QUAD_ROWS   3u
-#define GUI_QUAD_BYTES  ( GUI_QUAD_ROWS * 16u )
+#define GUI_FX_BYTES    16u
 
-ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
-                   "gui_quad_t must stay whole 16-byte rows -- the vertex stage indexes it as vec4[]" );
+ORB_STATIC_ASSERT( sizeof( gui_fx_t ) == GUI_FX_BYTES,
+                   "gui_fx_t must be exactly one 16-byte row -- it is addressed by row index" );
 
 /* The vertex stage's EXPANSION RULE (flags bits 0-1): how the covering corners derive from the
    stored extents.  Only SKIRT and CAPSULE take the pad; the other two cover exactly what they
@@ -2184,27 +2206,55 @@ ORB_STATIC_ASSERT( sizeof( gui_quad_t ) == GUI_QUAD_BYTES,
                                        reflection the vertex rotation cannot reproduce, so the
                                        fragment takes the turn instead)                          */
 
-/* The `flags` word, low to high:
+/* The `idx` word, low to high.  Every field sits at its own structural ceiling, so the word is
+   exactly full and nothing here is a budget that can be raised in isolation:
 
      bits 0-1    GUI_QUAD_RULE_* -- the expansion rule
      bit  2      GUI_QUAD_F_GLYPH -- the uv0 lane is a glyph-table ID, not a packed corner
-     bits 3-15   unused; the tessellator writes zero and the shader masks them off
-     bits 16-31  the animation PHASE, a unorm16 over one cycle
+     bits 3-6    clip entry, SLOT-LOCAL (GUI_WIN_CLIP_MAX = 16 per window slab)
+     bits 7-17   style record, slot-local (GUI_MAX_PRIMS = 2048)
+     bits 18-31  fx record, as a slot-local ROW index into the style arena (2048 * 8 rows);
+                 0 = no record, which reads as identity turn / zero phase / no border
 
-   The phase rides the quad while the RATE stays on the style: every spinner in a set turns at the
-   same speed, and staggering the set is the only thing phase is for -- on the style it would cost
-   one record per element.  0 = in step with the clock, which is what a lone animating shape wants.
+   Clip is per QUAD, not per style: two identically styled rows in different scroll regions must
+   still share one style.  The rule is per quad for the same reason -- it is a property of the
+   SHAPE KIND, and one style (a plain fill) serves shapes whose coverings differ.
 
-   The rule is per quad rather than per style because it is a property of the SHAPE KIND, and one
-   style (a plain fill) serves shapes whose coverings differ. */
+   Row 0 of a slot's records can never be an fx record, which is what lets 0 mean "none": a quad
+   resolves its style before it would allocate an fx page, so the slot always holds at least one
+   style record by then and a page lands at local record 1 or later. */
 
 /* uv0 holds a glyph-table ID (gui_glyph_uv_t) and uv1 is inert; the vertex stage fetches the
    atlas rect from the table instead of unpacking the lanes.  Set by the whole-glyph text path
    only -- a straddling glyph carries a narrowed rect of its own and stays a plain textured quad. */
 #define GUI_QUAD_F_GLYPH       ( 1u << 2 )
 
-#define GUI_QUAD_PHASE_SHIFT   16u
-#define GUI_QUAD_PHASE_MASK    0xFFFF0000u
+#define GUI_QUAD_CLIP_SHIFT    3u
+#define GUI_QUAD_CLIP_MASK     0xFu
+#define GUI_QUAD_STYLE_SHIFT   7u
+#define GUI_QUAD_STYLE_MASK    0x7FFu
+#define GUI_QUAD_FX_SHIFT      18u
+#define GUI_QUAD_FX_MASK       0x3FFFu
+
+/* Pack the index word.  `rule_flags` carries the rule and the glyph bit; the other three are
+   slot-local indices.  Each is masked rather than trusted: an index past its field would otherwise
+   silently corrupt the field above it, where a clamped one draws with the wrong style or clip and
+   the arena's own overflow flag reports the real cause. */
+
+static inline u32
+gui_quad_idx( u32 rule_flags, u32 clip, u32 style, u32 fx_row )
+{
+    ORB_ASSERT( clip <= GUI_QUAD_CLIP_MASK && style <= GUI_QUAD_STYLE_MASK
+                && fx_row <= GUI_QUAD_FX_MASK );
+    return ( rule_flags & 0x7u )
+         | ( ( clip   & GUI_QUAD_CLIP_MASK  ) << GUI_QUAD_CLIP_SHIFT  )
+         | ( ( style  & GUI_QUAD_STYLE_MASK ) << GUI_QUAD_STYLE_SHIFT )
+         | ( ( fx_row & GUI_QUAD_FX_MASK    ) << GUI_QUAD_FX_SHIFT    );
+}
+
+static inline u32 gui_quad_style( u32 idx ) { return ( idx >> GUI_QUAD_STYLE_SHIFT ) & GUI_QUAD_STYLE_MASK; }
+static inline u32 gui_quad_clip ( u32 idx ) { return ( idx >> GUI_QUAD_CLIP_SHIFT  ) & GUI_QUAD_CLIP_MASK;  }
+static inline u32 gui_quad_fx   ( u32 idx ) { return ( idx >> GUI_QUAD_FX_SHIFT    ) & GUI_QUAD_FX_MASK;    }
 
 /* UV -> two unorm16 -- the packing the quad record's uv0/uv1 lanes carry.  Clamped, because that
    is the only thing the format can do with an out-of-range coordinate -- a caller that wants U
@@ -2223,7 +2273,7 @@ gui_uv_pack( f32 u, f32 v )
     return (u32)( u * 65535.0f + 0.5f ) | ( (u32)( v * 65535.0f + 0.5f ) << 16 );
 }
 
-/* The turn, packed into the quad's `xform`: a unit (cos, sin) through the same unorm16 pair, so
+/* The turn, packed into the fx record's `xform`: a unit (cos, sin) through the same unorm16 pair, so
    both sides share one encoding.  The all-zero word is reserved for IDENTITY and cannot collide --
    (1, 0) packs to (0xFFFF, 0x8000). */
 
@@ -2235,14 +2285,14 @@ gui_xform_pack( f32 cs, f32 sn )
     return gui_uv_pack( cs * 0.5f + 0.5f, sn * 0.5f + 0.5f );
 }
 
-/* The animation phase into the quad's `flags` band: cycles, wrapped to [0,1), as a unorm16. */
+/* The animation phase into the fx record's `phase` lane: cycles, wrapped to [0,1), as a unorm16. */
 
 static inline u32
 gui_phase_pack( f32 cycles )
 {
     f32 f = cycles - (f32)(i32)cycles;             /* wrap; the sign is handled just below */
     if ( f < 0.0f ) f += 1.0f;
-    return ( (u32)( f * 65535.0f + 0.5f ) & 0xFFFFu ) << GUI_QUAD_PHASE_SHIFT;
+    return (u32)( f * 65535.0f + 0.5f ) & 0xFFFFu;
 }
 
 /* The phase that makes a cycle BEGIN at t0 -- the whole of what turns the periodic shader clock

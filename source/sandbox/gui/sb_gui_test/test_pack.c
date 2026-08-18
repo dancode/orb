@@ -93,16 +93,15 @@ test_prim_layout( void )
 static void
 test_quad_layout( void )
 {
-    /* Three 16-byte rows, no tail padding.  GUI_QUAD_ROWS is what the vertex stage multiplies
+    /* Two 16-byte rows, no tail padding.  GUI_QUAD_ROWS is what the vertex stage multiplies
        by when it pulls the record through the bindless float4 buffer. */
-    test_equal( 3u,  GUI_QUAD_ROWS );
-    test_equal( 48u, (u32)GUI_QUAD_BYTES );
-    test_equal( 48u, (u32)sizeof( gui_quad_t ) );
+    test_equal( 2u,  GUI_QUAD_ROWS );
+    test_equal( 32u, (u32)GUI_QUAD_BYTES );
+    test_equal( 32u, (u32)sizeof( gui_quad_t ) );
 
     /* Row starts. */
     test_equal(  0u, (u32)offsetof( gui_quad_t, cx   ) );
     test_equal( 16u, (u32)offsetof( gui_quad_t, uv0  ) );
-    test_equal( 32u, (u32)offsetof( gui_quad_t, clip ) );
 
     /* Within-row order, since a row is read as one vec4 and its components are positional. */
     test_equal(  4u, (u32)offsetof( gui_quad_t, cy    ) );
@@ -110,25 +109,44 @@ test_quad_layout( void )
     test_equal( 12u, (u32)offsetof( gui_quad_t, hh    ) );
     test_equal( 20u, (u32)offsetof( gui_quad_t, uv1   ) );
     test_equal( 24u, (u32)offsetof( gui_quad_t, abgr  ) );
-    test_equal( 28u, (u32)offsetof( gui_quad_t, style ) );
-    test_equal( 36u, (u32)offsetof( gui_quad_t, flags ) );
-    test_equal( 40u, (u32)offsetof( gui_quad_t, xform ) );
-    test_equal( 44u, (u32)offsetof( gui_quad_t, col_border ) );
+    test_equal( 28u, (u32)offsetof( gui_quad_t, idx   ) );
 
-    /* The expansion rules share the low 2 bits of `flags` and the animation phase takes the high
-       half -- the layout the quad vertex stage decodes with literal masks. */
+    /* The instance-extras record is exactly one row: the quad names it by ROW index, so any other
+       size would make that index mean nothing. */
+    test_equal( 16u, (u32)sizeof( gui_fx_t ) );
+    test_equal(  0u, (u32)offsetof( gui_fx_t, xform      ) );
+    test_equal(  4u, (u32)offsetof( gui_fx_t, phase      ) );
+    test_equal(  8u, (u32)offsetof( gui_fx_t, col_border ) );
+
+    /* The expansion rules share the low 2 bits of `idx` -- the layout the quad vertex stage
+       decodes with literal masks. */
     test_equal( 0u, GUI_QUAD_RULE_EXACT );
     test_equal( 1u, GUI_QUAD_RULE_SKIRT );
     test_equal( 2u, GUI_QUAD_RULE_CAPSULE );
     test_equal( 3u, GUI_QUAD_RULE_BBOX );
-    test_equal( 16u,         GUI_QUAD_PHASE_SHIFT );
-    test_equal( 0xFFFF0000u, GUI_QUAD_PHASE_MASK );
-
-    /* The glyph-ID flag sits above the rule lane and below the phase, so a glyph quad's rule and
-       phase decode exactly as any other quad's. */
     test_equal( 4u, GUI_QUAD_F_GLYPH );
     test_equal( 0u, GUI_QUAD_F_GLYPH & 3u );
-    test_equal( 0u, GUI_QUAD_F_GLYPH & GUI_QUAD_PHASE_MASK );
+
+    /* The index word is exactly full: the four fields tile all 32 bits with no gap and no
+       overlap.  Every one sits at a structural ceiling (16 clips per window slab, 2048 style
+       records, eight fx rows per record), so a raised cap here is a re-plan, not an edit. */
+    test_equal( 3u, GUI_QUAD_CLIP_SHIFT );
+    test_equal( 7u, GUI_QUAD_STYLE_SHIFT );
+    test_equal( 18u, GUI_QUAD_FX_SHIFT );
+    test_equal( 0xFFFFFFFFu, 7u | ( GUI_QUAD_CLIP_MASK << GUI_QUAD_CLIP_SHIFT )
+                                | ( GUI_QUAD_STYLE_MASK << GUI_QUAD_STYLE_SHIFT )
+                                | ( GUI_QUAD_FX_MASK << GUI_QUAD_FX_SHIFT ) );
+    test_equal( 15u, GUI_QUAD_CLIP_MASK );   /* GUI_WIN_CLIP_MAX - 1, a backend-private cap */
+    test_equal( (u32)GUI_MAX_PRIMS   - 1u, GUI_QUAD_STYLE_MASK );
+    test_equal( (u32)GUI_MAX_PRIMS * GUI_PRIM_ROWS - 1u, GUI_QUAD_FX_MASK );
+
+    /* Every field round-trips through the packer, and none reaches into another. */
+    u32 idx = gui_quad_idx( GUI_QUAD_RULE_CAPSULE | GUI_QUAD_F_GLYPH, 9u, 1337u, 12345u );
+    test_equal( GUI_QUAD_RULE_CAPSULE, idx & 3u );
+    test_equal( GUI_QUAD_F_GLYPH, idx & GUI_QUAD_F_GLYPH );
+    test_equal(  9u,    gui_quad_clip ( idx ) );
+    test_equal( 1337u,  gui_quad_style( idx ) );
+    test_equal( 12345u, gui_quad_fx   ( idx ) );
 
     /* Two glyph table entries per float4 row is what the vertex stage's ID -> row split assumes,
        and the region must hold a whole number of rows. */
@@ -137,12 +155,9 @@ test_quad_layout( void )
     test_equal(  4u, (u32)offsetof( gui_glyph_uv_t, uv1 ) );
     test_equal(  0u, GUI_GLYPH_TABLE_MAX & 1u );
     test_equal( 8192u, GUI_GLYPH_TABLE_MAX );
-
-    /* The rule lane and the phase lane cannot reach each other. */
-    test_equal( 0u, GUI_QUAD_RULE_BBOX & GUI_QUAD_PHASE_MASK );
 }
 
-/* The two per-instance packings the quad carries, and the one property each rests on: identity
+/* The two per-instance packings the fx record carries, and the one property each rests on: identity
    states itself as ZERO (so an unrotated shape leaves the lane alone, like every other record
    lane here), and a phase wraps rather than clamping. */
 static void
@@ -158,10 +173,9 @@ test_quad_instance_pack( void )
     test_equal( 32768u, q & 0xFFFFu );
     test_equal( 65535u, q >> 16 );
 
-    /* Phase lands in the high half and nowhere else. */
+    /* Phase is a bare unorm16 over one cycle -- it owns a whole lane, so nothing is shifted. */
     test_equal( 0u, gui_phase_pack( 0.0f ) );
-    test_equal( 0u, gui_phase_pack( 0.5f ) & 0xFFFFu );
-    test_equal( 32768u, gui_phase_pack( 0.5f ) >> GUI_QUAD_PHASE_SHIFT );
+    test_equal( 32768u, gui_phase_pack( 0.5f ) );
 
     /* Whole cycles wrap away -- 1.25 and 0.25 are the same point in the wave, and a NEGATIVE
        phase is the same point measured backwards rather than a clamp to zero. */
@@ -181,8 +195,7 @@ test_phase_anchor( void )
     const f32 dur = 0.4f;
 
     /* The phase as the fragment receives it: packed to unorm16, read back over 65535. */
-    f32 phase = (f32)( gui_phase_pack( gui_phase_anchor( t0, dur ) ) >> GUI_QUAD_PHASE_SHIFT )
-              / 65535.0f;
+    f32 phase = (f32)gui_phase_pack( gui_phase_anchor( t0, dur ) ) / 65535.0f;
 
     /* frac( time/dur + phase ) is the progress, at the start, through, and just short of the end. */
     const f32 at[] = { 0.0f, 0.25f, 0.5f, 0.75f, 0.999f };

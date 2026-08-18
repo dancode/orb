@@ -93,7 +93,7 @@
 
     Step 3 — Turn the shapes into quad records (BUILD: tessellate).
 
-    * Changed windows get turned into 48-byte quad records (gui_quad_t) in one big CPU-side
+    * Changed windows get turned into 32-byte quad records (gui_quad_t) in one big CPU-side
       arena — one record per shape, no vertex buffer and no index buffer anywhere.
     * Unchanged windows keep the records they already had, sitting exactly where they were
       last frame — nothing moves, nothing is repacked.

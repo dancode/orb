@@ -3,7 +3,7 @@
     runtime_service/gui/render/pipeline/gui_build_tess.c -- CPU-side quad-record builder.
 
     Translates the frame's semantic gui_cmd_t list (s_draw) into quad records in s_tess:
-    ONE 48-byte gui_quad_t per shape (gui.h), expanded by SV_VertexID in gui_quad.vs.hlsl --
+    ONE 32-byte gui_quad_t per shape (gui.h), expanded by SV_VertexID in gui_quad.vs.hlsl --
     there is no vertex buffer and no index buffer.  Everything here reads semantic commands
     and writes quad + style records; nothing here touches the GPU API.
 
@@ -59,9 +59,9 @@ static struct
     u32 vert_count, prim_count, cmd_count;
 
     gui_rect_t  cur_clip;   /* clip resolved from s_draw.clip_table[c->clip_idx] for each command */
-    u32         cur_clip_local; /* the same clip as an ABSOLUTE frame-region entry index (the slot's
-                                   slab base + its local first-seen index) -- what every quad's
-                                   clip lane carries                                              */
+    u32         cur_clip_local; /* the same clip as the slot's LOCAL entry index (0..GUI_WIN_CLIP_MAX)
+                                   -- what every quad's clip field carries.  The window's slab base
+                                   is added at the flush, through pc.clip_base                     */
     i32         cur_vp;     /* viewport baked from the current semantic command                    */
     u32         cur_tex;    /* GUI_TEX_MODE | bindless slot the style record carries -- set by
                                tess_set_tex, folded by tess_quad_push.  NOT a batch key           */
@@ -104,6 +104,16 @@ static struct
     u32         cur_prim_local;
     u32         prim_dedup_floor;
 
+    /* The open FX PAGE -- a style-arena record carrying eight gui_fx_t rows (gui.h).  fx_page is
+       the record's slot-local index and fx_page_used how many of its eight rows are spent; a
+       ninth record takes a new page.  fx_memo_row is the last row committed, so a run of quads
+       wanting the same turn / phase / border shares one record -- the common case, since all three
+       are ambient over a command.  Both reset wherever prim_dedup_floor rises (a new slot, a
+       volatile boundary, a patch's scratch): a page below the floor belongs to a reservation this
+       pass does not own, and writing another row into it would corrupt it.
+       0 = no page open / no memo, which cannot collide with a real row (gui.h). */
+    u32         fx_page, fx_page_used, fx_memo_row;
+
     /* The ambient PER-INSTANCE lanes -- all three ride the QUAD, never the style, so an animated
        border, a turning shape and a staggered pulse never add style records: cur_prim states only
        what is shared (shape, widths, rates).  Each is an ambient the command sets before its
@@ -141,9 +151,9 @@ static struct
        clip rects, appended by tess_clip_local and stored on the slot record itself so cache-hit
        frames replay the exact rects the baked vertex indices mean.  slot_clips/slot_clip_count
        point into the win_geo_slot_t being tessellated (set alongside slot_vert_base); NULL
-       between slots.  slot_clip_base is the window's fixed slab origin in the frame clip region
-       (stable cache slot * GUI_WIN_CLIP_MAX) -- tess_clip_local folds it in so quads bake
-       ABSOLUTE entry indices.  slot_clip_pending is the slot's upload mask (one bit per
+       between slots.  Entry indices are SLOT-LOCAL: the window's slab origin (its stable cache
+       slot * GUI_WIN_CLIP_MAX) is added at the flush through pc.clip_base, so the four bits the
+       quad spends on a clip are all it ever needs.  slot_clip_pending is the slot's upload mask (one bit per
        (frame-in-flight, viewport) region); an append marks all bits so the flush re-uploads the
        slab.  clip_memo_ci memoizes the common run of consecutive same-clip commands (0xFF =
        empty). */
@@ -151,7 +161,6 @@ static struct
     gui_clip_entry_t* slot_clips;
     u32*              slot_clip_count;
     u8*               slot_clip_pending;
-    u32               slot_clip_base;
     u8                clip_memo_ci;
     u32               clip_memo_local;
 
@@ -323,10 +332,10 @@ tess_reset( void )
     s_tess.slot_tess_gen   = 0;
     s_tess.cur_prim_local  = 0;
     s_tess.prim_dedup_floor = 0;
+    s_tess.fx_page = s_tess.fx_page_used = s_tess.fx_memo_row = 0;
     s_tess.slot_clips        = NULL;
     s_tess.slot_clip_count   = NULL;
     s_tess.slot_clip_pending = NULL;
-    s_tess.slot_clip_base    = 0;
     s_tess.clip_memo_ci      = 0xFF;
     s_tess.cur_clip_local    = 0;
     s_tess.cur_is_text       = false;
@@ -368,7 +377,7 @@ tess_clip_local( u8 ci )
     s_tess.clip_memo_ci = ci;
 
     if ( !s_tess.slot_clips )
-        return s_tess.clip_memo_local = s_tess.slot_clip_base;
+        return s_tess.clip_memo_local = 0u;
 
     const gui_rect_t* r   = &s_draw.clip_table[ ci ];
     f32               rad = s_draw.clip_radius[ ci ];
@@ -378,18 +387,18 @@ tess_clip_local( u8 ci )
         const gui_clip_entry_t* e = &s_tess.slot_clips[ g ];
         if ( e->rect.x == r->x && e->rect.y == r->y && e->rect.w == r->w && e->rect.h == r->h
           && e->radius == rad )
-            return s_tess.clip_memo_local = s_tess.slot_clip_base + g;
+            return s_tess.clip_memo_local = g;
     }
     if ( n >= GUI_WIN_CLIP_MAX )
     {
         ORB_ASSERT( false );
-        return s_tess.clip_memo_local = s_tess.slot_clip_base;
+        return s_tess.clip_memo_local = 0u;
     }
     s_tess.slot_clips[ n ] = ( gui_clip_entry_t ){ .rect = *r, .radius = rad };
     *s_tess.slot_clip_count = n + 1;
     if ( s_tess.slot_clip_pending )
         *s_tess.slot_clip_pending = 0xFF;
-    return s_tess.clip_memo_local = s_tess.slot_clip_base + n;
+    return s_tess.clip_memo_local = n;
 }
 
 /* Ensure a GPU command is open whose viewport matches the ambient one, opening a new one at a
@@ -461,6 +470,16 @@ tess_ensure_gpu_cmd( void )
 
 #define TESS_PRIM_MEMO_DEPTH  4u
 
+/* Drop the open fx page and its memo.  Called wherever prim_dedup_floor rises: past that line the
+   page belongs to another slot or to a reservation only a patch may rewrite, and appending a ninth
+   row into it would write bytes this pass does not own. */
+static inline void
+tess_fx_page_reset( void )
+{
+    s_tess.fx_page = s_tess.fx_page_used = s_tess.fx_memo_row = 0;
+}
+
+
 static u32
 tess_prim_local( void )
 {
@@ -483,6 +502,7 @@ tess_prim_local( void )
     {
         s_tess.overflow = true;
         s_tess.prim_dedup_floor = hi;
+        tess_fx_page_reset();
         return s_tess.cur_prim_local = 0u;
     }
 
@@ -490,6 +510,66 @@ tess_prim_local( void )
     s_tess.cur_prim_local = hi - s_tess.slot_prim_base;
     s_tess.prim_count++;
     return s_tess.cur_prim_local;
+}
+
+/* Resolve the ambient turn / phase / border colour to an fx record, returning its SLOT-LOCAL row
+   index in the style arena (0 = the quad needs none, which the shader reads as identity turn, zero
+   phase, no border).
+
+   Records pack eight to a style-arena slot, so a page costs one gui_prim_t and serves eight
+   instances.  The memo is one deep and that is enough: all three lanes are ambient over a semantic
+   command, so the quads that share them arrive consecutively -- a framed row, a polyline of one
+   direction, a set of glyph quads wanting nothing at all. */
+
+#define TESS_FX_PER_PAGE   GUI_PRIM_ROWS   /* a style record is eight 16-byte rows */
+
+static u32
+tess_fx_local( void )
+{
+    gui_fx_t fx = {
+        .xform      = gui_xform_pack( s_tess.cur_rot_c, s_tess.cur_rot_s ),
+        .phase      = gui_phase_pack( s_tess.cur_phase ),
+        .col_border = s_tess.cur_col_border,
+    };
+    if ( fx.xform == 0u && fx.phase == 0u && fx.col_border == 0u )
+        return 0u;      /* the whole record is the default -- the majority of quads, text included */
+
+    /* The page is a style-arena record read as eight rows; the rows are addressed as bytes rather
+       than through a second struct pointer, so the two record types never alias one another. */
+    u8* page_p = (u8*)&s_tess.prims[ s_tess.slot_prim_base + s_tess.fx_page ];
+    if ( s_tess.fx_memo_row
+      && memcmp( page_p + ( s_tess.fx_page_used - 1u ) * GUI_FX_BYTES, &fx, sizeof fx ) == 0 )
+        return s_tess.fx_memo_row;
+
+    if ( s_tess.fx_page == 0u || s_tess.fx_page_used >= TESS_FX_PER_PAGE )
+    {
+        /* A fresh page. The floor rises past it for the same reason a volatile boundary raises it:
+           the record now holds fx rows, and a style comparing equal to those bytes would be handed
+           an index into them. */
+        if ( s_tess.prim_count >= GUI_MAX_PRIMS )
+        {
+            s_tess.overflow = true;
+            return 0u;
+        }
+        u32 page = s_tess.prim_count - s_tess.slot_prim_base;
+        if ( page > ( GUI_QUAD_FX_MASK / TESS_FX_PER_PAGE ) )
+        {
+            s_tess.overflow = true;     /* past what the quad's fx field can name */
+            return 0u;
+        }
+        memset( &s_tess.prims[ s_tess.prim_count ], 0, sizeof( gui_prim_t ) );
+        s_tess.prim_count++;
+        s_tess.prim_dedup_floor = s_tess.prim_count;
+
+        s_tess.fx_page      = page;
+        s_tess.fx_page_used = 0;
+        page_p              = (u8*)&s_tess.prims[ s_tess.slot_prim_base + page ];
+    }
+
+    memcpy( page_p + s_tess.fx_page_used * GUI_FX_BYTES, &fx, sizeof fx );
+    s_tess.fx_memo_row = s_tess.fx_page * GUI_PRIM_ROWS + s_tess.fx_page_used;
+    s_tess.fx_page_used++;
+    return s_tess.fx_memo_row;
 }
 
 /*==============================================================================================
@@ -519,7 +599,11 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
     s_tess.cur_prim.tex = s_tess.cur_tex;
     s_tess.cur_prim.ops = s_tess.cur_ops;
 
+    /* Style first, then fx: the fx page is allocated from the style arena, and resolving the style
+       first is what guarantees a page never lands at the slot's record 0 -- the index the quad's
+       fx field spends on "no record". */
     u32 style = tess_prim_local();
+    u32 fx    = tess_fx_local();
 
     s_tess.quads[ s_tess.vert_count++ ] = ( gui_quad_t ){
         .cx    = qcx,
@@ -529,11 +613,7 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
         .uv0   = uv0,
         .uv1   = uv1,
         .abgr  = abgr,
-        .style = style,
-        .clip  = s_tess.cur_clip_local,
-        .flags = rule_flags | gui_phase_pack( s_tess.cur_phase ),
-        .xform = gui_xform_pack( s_tess.cur_rot_c, s_tess.cur_rot_s ),
-        .col_border = s_tess.cur_col_border,
+        .idx   = gui_quad_idx( rule_flags, s_tess.cur_clip_local, style, fx ),
     };
 
     /* elem_count counts QUADS under this backend; the flush multiplies by six at the draw. */
@@ -1909,6 +1989,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                ARE that rewritable reservation, so a later command deduping onto one would be
                corrupted by the next patch. */
             s_tess.prim_dedup_floor = s_tess.prim_count;
+            tess_fx_page_reset();
 
             if ( vid != GUI_ID_NONE )
             {

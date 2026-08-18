@@ -45,12 +45,30 @@ float3 srgb_to_linear( float3 c )
 // style buffer -- the vertex stage reads the feather to grow a skirt quad, the fragment reads
 // everything -- so the stride lives here rather than once per stage: two copies that disagree
 // read two different records and the mismatch shows up as a shape, not as an error.
-#define QUAD_ROWS       3u
+#define QUAD_ROWS       2u
 #define PRIM_ROWS       8u
+
+// The quad's packed INDEX word, mirroring gui.h.  Rule and glyph bit at the bottom, then the
+// slot-local clip entry, style record and fx row; the word is exactly full.
+#define GUI_QUAD_F_GLYPH       ( 1u << 2 )
+#define GUI_QUAD_CLIP_SHIFT    3u
+#define GUI_QUAD_CLIP_MASK     0xFu
+#define GUI_QUAD_STYLE_SHIFT   7u
+#define GUI_QUAD_STYLE_MASK    0x7FFu
+#define GUI_QUAD_FX_SHIFT      18u
+
+// The INSTANCE EXTRAS record (gui_fx_t): turn, animation phase, border colour.  It lives in the
+// STYLE arena, eight rows to a record, and the quad names it by slot-local ROW index -- so the
+// fetch is the style buffer at the slot's base, offset by rows rather than by records.  Row 0 can
+// never be one, which is what lets 0 mean "no record": identity turn, zero phase, no border.
+float4 fx_record( uint row )
+{
+    return row ? u_buffers[ pc.prim_buf ][ pc.prim_base * PRIM_ROWS + row ]
+               : float4( 0.0, 0.0, 0.0, 0.0 );
+}
 
 // A glyph table entry is TWO uints, so two entries share one float4 row: the ID's high bits pick
 // the row and its low bit picks the half.  Mirrors gui_glyph_uv_t (gui.h).
-#define GUI_QUAD_F_GLYPH  ( 1u << 2 )
 
 uint2 glyph_uv( uint id )
 {

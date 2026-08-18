@@ -480,6 +480,7 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd_open )
        uninitialized memory and hand back an index inside this block's reservation. */
     s_tess.prim_count       = pb_open + res_p;
     s_tess.prim_dedup_floor = s_tess.prim_count;
+    tess_fx_page_reset();
 
     for ( u32 k = nc; k < res_c; ++k )
     {
@@ -545,7 +546,6 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     gui_clip_entry_t* clips_ck        = s_tess.slot_clips;
     u32*              clip_count_ck   = s_tess.slot_clip_count;
     u8*               clip_pending_ck = s_tess.slot_clip_pending;
-    u32               clip_base_ck    = s_tess.slot_clip_base;
 
     /* Debug guard: the scratch tessellation below writes at vert_ck and its byte content
        survives the count rollback.  If that is not past every live slot's reservation, it scribbles
@@ -576,6 +576,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
        into whatever record happens to precede the scratch. */
     s_tess.slot_prim_base   = prim_ck - row->local_prim_base;
     s_tess.prim_dedup_floor = prim_ck;
+    tess_fx_page_reset();
 
     /* The patched vertices bake clip-band indices exactly like the capture's did, so resolve
        them against the SAME local table -- the window slot's.  An unchanged footprint clip finds
@@ -588,7 +589,6 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     s_tess.slot_clips        = clips_ck;
     s_tess.slot_clip_count   = clip_count_ck;
     s_tess.slot_clip_pending = clip_pending_ck;
-    s_tess.slot_clip_base    = clip_base_ck;
     s_tess.clip_memo_ci      = 0xFF;
 
     u32  nv          = s_tess.vert_count - vert_ck;
@@ -656,6 +656,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     s_tess.slot_vert_base  = slot_vb_ck;
     s_tess.slot_prim_base   = slot_pb_ck;
     s_tess.prim_dedup_floor = floor_ck;
+    tess_fx_page_reset();
     s_tess.force_new_cmd    = force_ck;
     s_tess.overflow        = ovf_ck;
     return ok;

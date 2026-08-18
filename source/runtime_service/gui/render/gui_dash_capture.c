@@ -95,7 +95,7 @@ dash_capture_build( void )
 
     sn->tess_verts     = s_tess.vert_count;   /* quads; tess_cmds below */
     sn->vert_hwm       = s_tess_stats.vert_hwm;
-    sn->tess_prims     = s_tess.prim_count;   /* style records, both bands */
+    sn->tess_prims     = s_tess.prim_count;   /* records, both bands: styles plus fx pages */
     sn->prim_hwm       = s_tess_stats.prim_hwm;
     sn->overflow_ever  = s_tess_stats.overflow_ever;
     sn->band0_vert_end = s_tess_stats.band0_vert_end;

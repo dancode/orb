@@ -363,7 +363,6 @@ cache_slot_clips_bind( gui_id_t win )
         s_tess.slot_clips        = s_slots[ i ].clips;
         s_tess.slot_clip_count   = &s_slots[ i ].clip_count;
         s_tess.slot_clip_pending = &s_clip_slab_pending[ s_slots[ i ].cache_idx ];
-        s_tess.slot_clip_base    = s_slots[ i ].cache_idx * GUI_WIN_CLIP_MAX;
         s_tess.clip_memo_ci      = 0xFF;
         return true;
     }
@@ -963,6 +962,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
        relative to that slot's base, so reusing one here would name a record this slot does not
        own.  (This also resets a floor a previous slot's volatile boundary left high.) */
     s_tess.prim_dedup_floor = s_tess.prim_count;
+    tess_fx_page_reset();
 
     /* Fresh tessellation rebuilds the slot's local clip table from scratch (tess_clip_local).
        cache_idx keys the window's fixed clip slab; a window past the cache cap (~0u, dropped
@@ -972,7 +972,6 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_tess.slot_clips        = slot->clips;
     s_tess.slot_clip_count   = &slot->clip_count;
     s_tess.slot_clip_pending = &s_clip_slab_pending[ slot->cache_idx ];
-    s_tess.slot_clip_base    = slot->cache_idx * GUI_WIN_CLIP_MAX;
     s_tess.clip_memo_ci      = 0xFF;
 
     /* Glyph attribution accumulates over exactly this window's pass, then rides the slot. */
@@ -987,7 +986,6 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_tess.slot_clips        = NULL;
     s_tess.slot_clip_count   = NULL;
     s_tess.slot_clip_pending = NULL;
-    s_tess.slot_clip_base    = 0;
 
     slot->vert_count = s_tess.vert_count - slot->vert_base;
     slot->prim_count = s_tess.prim_count - slot->prim_base;

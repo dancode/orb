@@ -324,8 +324,9 @@ dbg_reset( void )
 ==============================================================================================*/
 
 /* Emit one filled rect as a quad record.  Caller guarantees capacity.  Every lane the overlay
-   does not use stays zero: style 0 (the one record dbg_flush writes at the overlay entry),
-   clip 0 (clip_buf 0 means no clipping), rule EXACT, uv unused under the record's OP_SELF. */
+   does not use stays zero, and the whole index word with them: style 0 (the one record dbg_flush
+   writes at the overlay entry), clip 0 (clip_buf 0 means no clipping), rule EXACT, no fx record,
+   uv unused under the record's OP_SELF. */
 static void
 dbg_expand_quad( f32 x, f32 y, f32 w, f32 h, u32 abgr, u32* qc )
 {

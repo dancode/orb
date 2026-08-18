@@ -6,7 +6,7 @@
     Two pipelines draw the same N quads and are measured against each other:
 
         PULL  no vertex buffer at all.  cmd_draw of 6 * N bare vertices; the vertex stage
-              computes quad / corner from SV_VertexID, fetches the 48-byte gui_quad_t record
+              computes quad / corner from SV_VertexID, fetches the 32-byte gui_quad_t record
               from a bindless storage buffer, fetches its style's feather for the expansion
               pad, and expands centre +- (half-extent + pad) itself.
         VB    the control arm: the CPU expands every quad into six 20-byte vertices
@@ -156,7 +156,7 @@ gen_quads( u32 count, bool large )
             .uv0   = gui_uv_pack( 0.0f, 0.0f ),
             .uv1   = gui_uv_pack( 1.0f, 1.0f ),
             .abgr  = abgr,
-            .style = i % QP_STYLES,
+            .idx   = gui_quad_idx( GUI_QUAD_RULE_EXACT, 0u, i % QP_STYLES, 0u ),
         };
     }
 }
@@ -184,8 +184,9 @@ expand_vb( u32 count )
 
     for ( u32 i = 0; i < count; ++i )
     {
-        const gui_quad_t* q   = &s_quads[ i ];
-        f32               pad = k_style_feather[ q->style ] + 1.0f;
+        const gui_quad_t* q     = &s_quads[ i ];
+        u32               style = gui_quad_style( q->idx );
+        f32               pad   = k_style_feather[ style ] + 1.0f;
         f32               x0  = q->cx - ( q->hw + pad );
         f32               y0  = q->cy - ( q->hh + pad );
         f32               x1  = q->cx + ( q->hw + pad );
@@ -199,7 +200,7 @@ expand_vb( u32 count )
                 .y    = y0 + ( y1 - y0 ) * k_cy[ c ],
                 .uv   = gui_uv_pack( k_cx[ c ], k_cy[ c ] ),
                 .abgr = q->abgr,
-                .prim = q->style,
+                .prim = style,
             };
         }
     }
