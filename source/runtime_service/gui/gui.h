@@ -1901,10 +1901,12 @@ typedef struct
 
     /* Row 4 -- the two things that are a SECOND of something the rows above state once, both in
        the shape's local frame (prim_local's frame, so both turn with the shape).
-         GUI_OP_GRAD  grad = the ramp's axis, ALREADY DIVIDED by the shape's extent along it, so
-                             the fragment spans the shape with one dot product.  Under GRAD_CONIC
-                             it is the unit direction the ramp PEAKS toward; GRAD_RADIAL ignores
-                             it and measures against the half-extent directly.
+         GUI_OP_GRAD  grad = the ramp's axis, a UNIT direction -- under GRAD_CONIC the direction
+                             the ramp PEAKS toward, and under a linear ramp the axis it runs
+                             along, which the fragment divides by the extent the shape spans
+                             there.  Deliberately NOT pre-divided: the divisor is a property of
+                             the SIZE, and baking it in here gave the same ramp a record per size.
+                             GRAD_RADIAL has no axis and leaves it zero.
          GUI_OP_CUT   cut  = the centre of the boundary the cut is taken against, as an offset
                              from this shape's own centre.  (0,0) -- every caller before the
                              directional shadow -- cuts against the shape itself. */

@@ -718,9 +718,14 @@ float4 main( ps_in_t i ) : SV_Target0
             // continuous across the far side, so there is no seam anywhere on the shape.
             t = 1.0 - abs( atan2( g.x * lp.y - g.y * lp.x, dot( lp, g ) ) ) / PI;
         else
-            // g arrives already divided by the shape's extent along it (gui.h), so the whole ramp
-            // is one dot product no matter what angle it runs at.
-            t = saturate( dot( lp, g ) + 0.5 );
+        {
+            // g is a UNIT direction; the span it has to cover is the support width of the shape's
+            // own rectangle projected onto it -- recovered HERE from the placement interpolant
+            // rather than baked into the record, which is what lets one ramp style serve a chip
+            // and a panel instead of one record per size.
+            float ext = 2.0 * ( grect.z * abs( g.x ) + grect.w * abs( g.y ) );
+            t = saturate( dot( lp, g ) / max( ext, 1e-4 ) + 0.5 );
+        }
 
         // The midpoint bend: grad_mid is the EXPONENT the emit site mapped the authored 0..1
         // midpoint to (ln 0.5 / ln mid), so t = 0.5 lands where the author put it.  0 means the

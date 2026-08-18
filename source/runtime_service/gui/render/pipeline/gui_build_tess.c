@@ -527,8 +527,8 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
 
     s_tess.cur_ops |= GUI_OP_SELF | GUI_OP_GRAD | GUI_OP_DITHER;
     s_tess.cur_prim.col_b   = col_b;
-    s_tess.cur_prim.grad_x  = horizontal ? 1.0f / w : 0.0f;
-    s_tess.cur_prim.grad_y  = horizontal ? 0.0f : 1.0f / h;
+    s_tess.cur_prim.grad_x  = horizontal ? 1.0f : 0.0f;
+    s_tess.cur_prim.grad_y  = horizontal ? 0.0f : 1.0f;
     s_tess.cur_rot_c = 1.0f;
     tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
                     0, 0, res_atlas_idx(), col_a );
@@ -927,11 +927,12 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        set by the dispatcher before this call), so an animated border never adds a style record.
        See gui_quad_t.col_b (gui.h) and the dispatch of GUI_CMD_FRAME below. */
 
-    /* GUI_OP_GRAD -- the ramp's far colour and its axis.  The axis is stored ALREADY DIVIDED by
-       the box's extent along it (the support width of a projected rectangle), so the ramp spans
-       the shape at any angle and the fragment recovers t with one dot product instead of
-       repeating this per pixel.  A conic ramp has no extent to divide by -- it measures an ANGLE
-       from the axis -- so it stores the unit direction it peaks toward. */
+    /* GUI_OP_GRAD -- the ramp's far colour and its axis, stored as a UNIT direction.  The
+       fragment divides by the extent the shape spans along it, recovered from the placement it
+       already holds.  Storing the direction rather than direction-over-extent is what lets ONE
+       record serve every size: the same ramp on a 40 px chip and a 400 px panel used to be two
+       records, because the divisor was baked in here.  Linear and conic now store the same
+       thing, which is also one branch fewer. */
     if ( aux && ( s_tess.cur_ops & GUI_OP_GRAD ) )
     {
         s_tess.cur_prim.col_b    = aux->grad_col;
@@ -942,16 +943,8 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
            two records for no reason (tess_prim_local memos on the record's bytes). */
         if ( !( s_tess.cur_ops & GUI_OP_GRAD_RADIAL ) )
         {
-            f32 cs = cosf( aux->grad_ang ), sn = sinf( aux->grad_ang );
-            if ( !( s_tess.cur_ops & GUI_OP_GRAD_CONIC ) )
-            {
-                f32 len = fabsf( w * cs ) + fabsf( h * sn );
-                f32 inv = ( len > 1e-6f ) ? 1.0f / len : 0.0f;
-                cs *= inv;
-                sn *= inv;
-            }
-            s_tess.cur_prim.grad_x = cs;
-            s_tess.cur_prim.grad_y = sn;
+            s_tess.cur_prim.grad_x = cosf( aux->grad_ang );
+            s_tess.cur_prim.grad_y = sinf( aux->grad_ang );
         }
     }
 
