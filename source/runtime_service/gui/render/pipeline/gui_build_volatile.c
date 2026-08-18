@@ -542,6 +542,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     u32  floor_ck   = s_tess.prim_dedup_floor;
     bool force_ck   = s_tess.force_new_cmd;
     u32  ovf_ck     = s_tess.overflow;   /* walls already hit before the scratch pass */
+    u32  fxpg_ck    = s_tess.fx_page_count;   /* the scratch's pages are rolled back with its records */
 
     gui_clip_entry_t* clips_ck        = s_tess.slot_clips;
     u32*              clip_count_ck   = s_tess.slot_clip_count;
@@ -659,6 +660,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
     tess_fx_page_reset();
     s_tess.force_new_cmd    = force_ck;
     s_tess.overflow        = ovf_ck;
+    s_tess.fx_page_count   = fxpg_ck;
     return ok;
 }
 

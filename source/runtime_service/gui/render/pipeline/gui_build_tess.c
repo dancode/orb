@@ -114,6 +114,13 @@ static struct
        0 = no page open / no memo, which cannot collide with a real row (gui.h). */
     u32         fx_page, fx_page_used, fx_memo_row;
 
+    /* Pages allocated this build, counted apart from prim_count so the arena's fill can be read as
+       the two things it actually holds: STYLES (one per distinct look, deduped hard) and FX PAGES
+       (four instance records each, driven by turns / phases / uv rects, which dedup far less).
+       They compete for the same GUI_MAX_PRIMS entries, and they fill for opposite reasons, so a
+       single "records" number cannot say which one to go after. */
+    u32         fx_page_count;
+
     /* The ambient PER-INSTANCE lanes -- all three ride the QUAD, never the style, so an animated
        border, a turning shape and a staggered pulse never add style records: cur_prim states only
        what is shared (shape, widths, rates).  Each is an ambient the command sets before its
@@ -385,6 +392,7 @@ tess_reset( void )
     s_tess.cur_prim_local  = 0;
     s_tess.prim_dedup_floor = 0;
     s_tess.fx_page = s_tess.fx_page_used = s_tess.fx_memo_row = 0;
+    s_tess.fx_page_count     = 0;
     s_tess.slot_clips        = NULL;
     s_tess.slot_clip_count   = NULL;
     s_tess.slot_clip_pending = NULL;
@@ -632,6 +640,7 @@ tess_fx_local( u32 uv0, u32 uv1 )
         }
         memset( &s_tess.prims[ s_tess.prim_count ], 0, sizeof( gui_prim_t ) );
         s_tess.prim_count++;
+        s_tess.fx_page_count++;
         s_tess.prim_dedup_floor = s_tess.prim_count;
 
         s_tess.fx_page      = page;

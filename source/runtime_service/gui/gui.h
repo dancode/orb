@@ -2100,6 +2100,7 @@ typedef enum
    entry instead of carrying the rect: the table rewrites in place when the atlas repacks, so
    cached text geometry survives a move that would leave a baked UV pointing at another tenant's
    pixels.  Both corners use the gui_uv_pack encoding, x in the low half. */
+
 typedef struct
 {
     u32 uv0;            // texcoord min corner, packed unorm16 pair
@@ -2113,6 +2114,7 @@ typedef struct
    window geometry -- so an ID depends on nothing that moves.  The table's 8192 entries are exactly
    the 13 bits the compacted quad record reserves for one.  Sized against GUI_FONT_REGISTRY_MAX by
    a static assert in draw/gui_glyph_table.c, which owns the build. */
+
 #define GUI_GLYPH_SLOT_STRIDE  512u
 #define GUI_GLYPH_TABLE_MAX    ( 16u * GUI_GLYPH_SLOT_STRIDE )
 
@@ -3478,10 +3480,18 @@ typedef struct
     /* --- GPU device memory (dynamic). --- */
 
     u32 gpu_texture_bytes;      // the three resource atlases (coverage incl. assist rows, sprite, SDF)
-    u32 gpu_table_bytes;        // the storage-buffer tables the shader resolves through: quad
-                                //   records, style records, clip entries (one region each per
-                                //   frame-in-flight x viewport) plus the single glyph UV table.
-                                //   Sized by the pool caps, not by how many surfaces are open
+    u32 gpu_table_bytes;        // the storage-buffer tables the shader resolves through, summed --
+                                //   sized by the pool caps, not by how many surfaces are open
+
+    /* The table total, split by which table.  The first three are REGIONED: each holds a full set
+       of entries per (frame-in-flight, viewport), so its size is cap x stride x gpu_regions and a
+       raised cap costs that multiplier.  The glyph table is one shared copy, replaced rather than
+       rewritten, so it pays the multiplier once. */
+    u32 gpu_quad_bytes;         // quad records   -- GUI_MAX_QUADS x 16 B x gpu_regions
+    u32 gpu_style_bytes;        // style records  -- (GUI_MAX_PRIMS + 1) x 128 B x gpu_regions
+    u32 gpu_clip_bytes;         // clip entries   -- window slabs x 32 B x gpu_regions
+    u32 gpu_glyph_bytes;        // glyph UV table -- GUI_GLYPH_TABLE_MAX x 8 B, ONE copy
+    u32 gpu_regions;            // frames-in-flight x viewport slots the regioned tables carry
     u32 gpu_debug_bytes;        // debug-overlay quad table (Debug builds; 0 when compiled out)
     u32 gpu_total;              // sum of the section above
     u32 viewport_count;         // live GPU surfaces
@@ -3542,10 +3552,13 @@ typedef struct
     u32 clip_count_all;     // physical clip table fill, both bands (cap: GUI_MAX_CLIP_RECTS)
     u32 seg_count;          // physical segment count, both bands (cap: GUI_MAX_SEGS)
     u32 text_pool_used;     // physical text pool bytes, both bands (cap: GUI_MAX_TEXT_POOL)
-    u32 quad_count;         // quad records tessellated -- one record IS one whole shape (a fill,
-                            //   a glyph, a capsule segment); cap GUI_MAX_QUADS
-    u32 prim_count;         // style records (gui_prim_t) live this frame, after dedup --
-                            //   dozens serve thousands of quads when the memo is healthy
+    u32 quad_count;         // quad records that DRAW -- one record IS one whole shape (a fill, a
+                            //   glyph, a capsule segment); debug band excluded
+    u32 prim_count;         // style-arena records the drawing windows own: distinct styles after
+                            //   dedup, plus one page per four fx instance records
+    u32 quad_count_all;     // physical quad arena fill, both bands, slot padding included
+                            //   (cap: GUI_MAX_QUADS) -- the number the cap is hit against
+    u32 prim_count_all;     // physical style arena fill, both bands (cap: GUI_MAX_PRIMS)
     u32 draw_calls;         // GPU draw calls (batches), summed over surfaces
 
     u32 win_total;          // windows tracked this frame

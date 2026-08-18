@@ -1346,6 +1346,10 @@ cache_build_frame( void )
     /* Publish geometry and retained stats. */
     s_stats.accum.quad_count    = ps.total_quad;
     s_stats.accum.prim_count    = ps.total_prim;
+    /* Physical arena fills: what the caps are actually hit against.  The write head, not the sum of
+       the slots -- it carries every slot's reservation padding and both bands. */
+    s_stats.accum.quad_count_all = s_tess.quad_count;
+    s_stats.accum.prim_count_all = s_tess.prim_count;
     s_stats.accum.win_total     = s_cache.cur_n - ps.overlay_win;
     s_stats.accum.win_retained  = ps.win_retained;
     s_stats.accum.quad_retained = ps.quad_retained;

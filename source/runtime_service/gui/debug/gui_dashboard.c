@@ -2,10 +2,14 @@
 
     runtime_service/gui/debug/gui_dashboard.c -- Pipeline dashboard: window shell + panel painters.
 
-    A visual diagnostic of the gui render backend: memory maps of the shared vertex/index
-    arena (per-window slots, pads, volatile sub-slots, the debug-band boundary), frames in
-    flight with upload spans, the dispatch-order batch inspector with batch-cut causes, EMIT
-    pool usage bars, the volatile registry, and a frame-stats strip.
+    A visual diagnostic of the gui render backend: a memory map of the shared QUAD ARENA
+    (per-window slots, pads, volatile sub-slots, the debug-band boundary), frames in flight with
+    upload spans, the dispatch-order batch inspector with batch-cut causes, pool usage bars for
+    every capped EMIT and BUILD buffer, the volatile registry, and a frame-stats strip.
+
+    UNITS: the maps and bars count ENTRIES (quads, records, commands), never bytes -- a quad index
+    is a position in the arena, not a size.  Anything measured in bytes says so, and derived byte
+    figures go through dash_bytes so the unit is always on screen next to the number.
 
     An ORDINARY window drawn through the normal pipeline with the standard draw API -- it
     docks, tears off into its own viewport, and z-orders under overlap like any other window.
@@ -137,6 +141,18 @@ dash_num( f32 x, f32 y, u32 abgr, const char* fmt, ... )
     gui_draw_text( x, y, abgr, buf );
 }
 
+/* Bytes as a compact figure -- "912 B", "14.2 KB", "3.14 MB".  Every size on this dashboard is
+   DERIVED (a count times a record stride), never stored, so the unit is spelled out wherever one
+   appears: a bare number next to a quad index reads as an address, not a size.  buf holds >= 16. */
+static const char*
+dash_bytes( u32 b, char* buf, u32 bufsz )
+{
+    if ( b < 1024u )              fmt_snprintf( buf, bufsz, "%u B",     b );
+    else if ( b < 1024u * 1024u ) fmt_snprintf( buf, bufsz, "%.1f KB",  (f32)b / 1024.0f );
+    else                          fmt_snprintf( buf, bufsz, "%.2f MB",  (f32)b / ( 1024.0f * 1024.0f ) );
+    return buf;
+}
+
 static void
 dash_outline( gui_rect_t r, u32 abgr )
 {
@@ -255,13 +271,22 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
     u32 pad   = (u32)SLOT_QUAD_PAD;
     u32 used  = s_show_second_band ? total : main0;
     u32 hwm   = s_show_second_band ? sn->quad_hwm : sn->band0_quad_hwm;
+
+    /* Every figure on this bar is a QUAD INDEX into the arena, so the header carries the byte
+       equivalent once: the map's numbering is positions, not sizes, and the two are easy to
+       confuse when both are four digits. */
+    char ub[ 16 ], cb[ 16 ];
+    dash_bytes( used * (u32)GUI_QUAD_BYTES, ub, sizeof( ub ) );
+    dash_bytes( cap  * (u32)GUI_QUAD_BYTES, cb, sizeof( cb ) );
+
     if ( s_show_second_band )
         dash_textf( r.x + 2.0f, r.y, r.x + r.w, DASH_COL_TEXT_DIM,
-                    "quads  %u / %u   band0 %u  debug %u   hwm %u   pad %u",
-                    used, cap, main0, total - main0, hwm, pad );
+                    "%u / %u quads  (%s / %s)   band0 %u  debug %u   hwm %u   slot pad %u",
+                    used, cap, ub, cb, main0, total - main0, hwm, pad );
     else
         dash_textf( r.x + 2.0f, r.y, r.x + r.w, DASH_COL_TEXT_DIM,
-                    "quads  %u / %u   hwm %u   pad %u   (band 0)", used, cap, hwm, pad );
+                    "%u / %u quads  (%s / %s)   hwm %u   slot pad %u   (band 0)",
+                    used, cap, ub, cb, hwm, pad );
 
     gui_rect_t bar = { r.x, r.y + lh + 2.0f, r.w, r.h - lh - 4.0f };
     if ( bar.h < 12.0f ) return;
@@ -333,8 +358,8 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
                     gui_stack();
                     gui_textf( "volatile %s  in %s", dash_name( vo->id, nb, sizeof( nb ) ),
                                dash_name( vo->win, wb, sizeof( wb ) ) );
-                    gui_textf( "quads +%u  %u / %u reserved", vo->lquad_base, vo->quad_count,
-                               vo->quad_alloc );
+                    gui_textf( "at +%u in the slot: %u / %u quads reserved",
+                               vo->lquad_base, vo->quad_count, vo->quad_alloc );
                 }
                 gui_tooltip_end();
             }
@@ -378,10 +403,15 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
                 gui_textf( "window  %s%s%s", dash_name( sl->win, nb, sizeof( nb ) ),
                            sl->win == g_dash_window_id ? "  (this dashboard)" : "",
                            sl->band != 0 ? "  [debug band]" : "" );
-                gui_textf( "quads   [%u..%u)  alloc %u  (pad %u)", sl->quad_base,
-                           sl->quad_base + sl->quad_count, sl->quad_alloc,
+                char lb[ 16 ], rb2[ 16 ];
+                gui_textf( "arena   [%u .. %u)   %u quads reserved, %u live",
+                           sl->quad_base, sl->quad_base + sl->quad_alloc,
+                           sl->quad_alloc, sl->quad_count );
+                gui_textf( "        %s live / %s reserved  (%u quads pad)",
+                           dash_bytes( sl->quad_count * (u32)GUI_QUAD_BYTES, lb, sizeof( lb ) ),
+                           dash_bytes( sl->quad_alloc * (u32)GUI_QUAD_BYTES, rb2, sizeof( rb2 ) ),
                            sl->quad_alloc - sl->quad_count );
-                gui_textf( "cmds    [%u..%u)   z %u  vp %d  gen %u", sl->cmd_base,
+                gui_textf( "cmds    [%u .. %u)   z %u  vp %d  gen %u", sl->cmd_base,
                            sl->cmd_base + sl->cmd_count, sl->z, sl->vp, sl->tess_gen );
                 gui_textf( "%s this frame", sl->changed ? "re-tessellated" : "retained" );
             }
@@ -446,8 +476,11 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
             }
         }
 
+        char upb[ 16 ];
         dash_textf( r.x + r.w * 0.55f + 8.0f, y + 3.0f, r.x + r.w, DASH_COL_TEXT_DIM,
-                    "up %u B  %u wr  %u draw", sf->up_bytes, sf->up_batches, sf->draw_calls );
+                    "up %s  %u wr  %u draw",
+                    dash_bytes( sf->up_bytes, upb, sizeof( upb ) ),
+                    sf->up_batches, sf->draw_calls );
 
         if ( dash_tip_at( ( gui_rect_t ){ r.x, y, r.w, row_h } ) )
         {
@@ -456,12 +489,15 @@ dash_panel_fif( gui_rect_t r, const dash_snapshot_t* sn )
                 gui_stack();
                 gui_textf( "surface vp%d  in-flight region %u of %u", vp, sf->frame_index,
                            (u32)RHI_MAX_FRAMES_IN_FLIGHT );
+                char tub[ 16 ];
                 if ( sf->quad_hi > sf->quad_lo )
-                    gui_textf( "uploaded quads [%u..%u)", sf->quad_lo, sf->quad_hi );
+                    gui_textf( "uploaded quads [%u .. %u)  =  %u quads", sf->quad_lo, sf->quad_hi,
+                               sf->quad_hi - sf->quad_lo );
                 else
                     gui_textf( "nothing uploaded (fully retained)" );
-                gui_textf( "%u B in %u writes   %u draw calls", sf->up_bytes, sf->up_batches,
-                           sf->draw_calls );
+                gui_textf( "%s in %u writes   %u draw calls",
+                           dash_bytes( sf->up_bytes, tub, sizeof( tub ) ),
+                           sf->up_batches, sf->draw_calls );
             }
             gui_tooltip_end();
         }
@@ -546,12 +582,16 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
                 if ( gui_tooltip_begin() )
                 {
                     gui_stack();
+                    char qb[ 16 ];
                     gui_textf( "draw %u of %s", k, dash_name( sl->win, nb, sizeof( nb ) ) );
-                    gui_textf( "%u quads (%u tris)  first tex %u", dc->elem_count,
-                               dc->elem_count * 2u, dc->tex_idx );
-                    gui_textf( "clip %.0f,%.0f  %.0fx%.0f", dc->clip.x, dc->clip.y,
-                               dc->clip.w, dc->clip.h );
-                    gui_textf( "qbase %u", dc->qbase );
+                    /* One record expands to 6 vertices / 2 triangles in the vertex stage, and that
+                       is literally the draw: cmd_draw asks for elem_count * 6 bare vertices. */
+                    gui_textf( "%u quads  ->  %u verts, %u tris   (%s)",
+                               dc->elem_count, dc->elem_count * 6u, dc->elem_count * 2u,
+                               dash_bytes( dc->elem_count * (u32)GUI_QUAD_BYTES, qb, sizeof( qb ) ) );
+                    gui_textf( "clip %.0f,%.0f  %.0fx%.0f   first tex %u", dc->clip.x, dc->clip.y,
+                               dc->clip.w, dc->clip.h, dc->tex_idx );
+                    gui_textf( "arena base %u quads", dc->qbase );
                 }
                 gui_tooltip_end();
             }
@@ -563,9 +603,12 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
             if ( gui_tooltip_begin() )
             {
                 gui_stack();
+                char qb[ 16 ];
                 gui_textf( "window  %s", dash_name( sl->win, nb, sizeof( nb ) ) );
-                gui_textf( "%u draw cmds  %u quads  %u tris", sl->cmd_count, sl->quad_count,
-                           sl->quad_count * 2u );
+                gui_textf( "%u draw cmds  %u quads  ->  %u verts, %u tris   (%s)",
+                           sl->cmd_count, sl->quad_count, sl->quad_count * 6u,
+                           sl->quad_count * 2u,
+                           dash_bytes( sl->quad_count * (u32)GUI_QUAD_BYTES, qb, sizeof( qb ) ) );
                 gui_textf( "z %u  vp %d  gen %u  %s", sl->z, sl->vp, sl->tess_gen,
                            sl->changed ? "re-tessellated" : "retained" );
             }
@@ -582,30 +625,48 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
 static void
 dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
 {
-    static const char* tip[] = { "semantic draw commands", "command segments",
-                                 "polyline points", "draw_rects batch entries",
-                                 "text pool bytes", "clip rects",
-                                 "quad records",
-                                 "style records (both bands -- deduped, a handful per window)",
-                                 "GPU draw commands" };
+    /* Up to three short lines per row rather than one long one: the dashboard docks narrow, and a
+       tooltip is laid out against ITS OWN width, so a single sentence wraps to a strip several
+       hundred pixels wide.  NULL ends the row's lines. */
+    static const char* const tip[][ 3 ] = {
+        { "EMIT: semantic draw commands",
+          "one per draw_push_*  (GUI_MAX_CMDS)", NULL },
+        { "EMIT: command segments",
+          "one span per (window, z, viewport, band)", "(GUI_MAX_SEGS)" },
+        { "EMIT: polyline / path points", "(GUI_MAX_PATH_PTS)", NULL },
+        { "EMIT: draw_rects batch entries", "(GUI_MAX_RECT_ENTRIES)", NULL },
+        { "EMIT: text pool, in BYTES",
+          "one copy of every string drawn  (GUI_MAX_TEXT_POOL)", NULL },
+        { "EMIT: distinct clip rects this frame", "(GUI_MAX_CLIP_RECTS)", NULL },
+        { "BUILD: quad records, 16 B each -- one per SHAPE,",
+          "plus each slot's reservation padding  (GUI_MAX_QUADS)", NULL },
+        { "BUILD: the style arena, 128 B a record  (GUI_MAX_PRIMS).",
+          "STYLES: one per distinct look, deduped hard.",
+          "FX PAGES (inner bar): four per-instance records each --"
+          " turn, phase, border colour, uv rect." },
+        { "RENDER: GPU draw calls the batcher produced",
+          "these consume the command table too  (GUI_MAX_CMDS)", NULL },
+    };
     /* With "Second band" OFF (default) each bar is the main band alone (total minus the debug-band
        share the capture attributed), so the bars measure a real application against the caps.  The
        debug band's own footprint is always spelled out on the summary line below. */
     const bool inc = s_show_second_band;
-    struct { const char* name; u32 used, cap, hwm; } rows[] = {
-        { "cmds",  inc ? sn->emit_cmds  : sn->emit_cmds  - sn->emit_cmds_dbg,  GUI_MAX_CMDS,       inc ? sn->emit_cmds_hwm : 0 },
-        { "segs",  inc ? sn->emit_segs  : sn->emit_segs  - sn->emit_segs_dbg,  GUI_MAX_SEGS,       0                           },
-        { "pts",   inc ? sn->emit_pts   : sn->emit_pts   - sn->emit_pts_dbg,   GUI_MAX_PATH_PTS,   0                           },
-        { "rects", inc ? sn->emit_rects : sn->emit_rects - sn->emit_rects_dbg, GUI_MAX_RECT_ENTRIES, 0                         },
-        { "text",  inc ? sn->emit_text  : sn->emit_text  - sn->emit_text_dbg,  GUI_MAX_TEXT_POOL,  0                           },
-        { "clips", inc ? sn->emit_clips : sn->emit_clips - sn->emit_clips_dbg, GUI_MAX_CLIP_RECTS, 0                           },
-        { "quads", inc ? sn->tess_quads : sn->band0_quad_end, GUI_MAX_QUADS,   inc ? sn->quad_hwm : sn->band0_quad_hwm         },
-        { "recs",  sn->tess_prims,                            GUI_MAX_PRIMS,   sn->prim_hwm                                    },
-        { "draws", inc ? sn->tess_cmds  : sn->tess_cmds - sn->tess_cmds_dbg,   GUI_MAX_CMDS,       0                           },
+    /* `sub` is an inner segment drawn over the fill: the share of this pool that is a DIFFERENT
+       kind of occupant than its label suggests.  Only the style arena has one today. */
+    struct { const char* name; u32 used, cap, hwm, sub; } rows[] = {
+        { "emit cmd", inc ? sn->emit_cmds  : sn->emit_cmds  - sn->emit_cmds_dbg,  GUI_MAX_CMDS,       inc ? sn->emit_cmds_hwm : 0, 0 },
+        { "segs",     inc ? sn->emit_segs  : sn->emit_segs  - sn->emit_segs_dbg,  GUI_MAX_SEGS,       0, 0 },
+        { "pts",      inc ? sn->emit_pts   : sn->emit_pts   - sn->emit_pts_dbg,   GUI_MAX_PATH_PTS,   0, 0 },
+        { "rects",    inc ? sn->emit_rects : sn->emit_rects - sn->emit_rects_dbg, GUI_MAX_RECT_ENTRIES, 0, 0 },
+        { "text",     inc ? sn->emit_text  : sn->emit_text  - sn->emit_text_dbg,  GUI_MAX_TEXT_POOL,  0, 0 },
+        { "clips",    inc ? sn->emit_clips : sn->emit_clips - sn->emit_clips_dbg, GUI_MAX_CLIP_RECTS, 0, 0 },
+        { "quads",    inc ? sn->tess_quads : sn->band0_quad_end, GUI_MAX_QUADS,   inc ? sn->quad_hwm : sn->band0_quad_hwm, 0 },
+        { "styles",   sn->tess_prims,                            GUI_MAX_PRIMS,   sn->prim_hwm, sn->tess_fx_pages },
+        { "gpu cmd",  inc ? sn->tess_cmds  : sn->tess_cmds - sn->tess_cmds_dbg,   GUI_MAX_CMDS,       0, 0 },
     };
     const u32 n     = sizeof( rows ) / sizeof( rows[ 0 ] );
     const f32 lh    = font_line_h();
-    const f32 row_h = ( r.h - lh * 2.0f - 4.0f ) / (f32)n;   /* two summary lines below the bars */
+    const f32 row_h = ( r.h - lh * 4.0f - 4.0f ) / (f32)n;   /* four summary lines below the bars */
     const f32 bar_x = r.x + 84.0f;    /* label column + a clear gap before the bars */
     const f32 val_w = 132.0f;         /* value column: fits a full "NNNNN / NNNNN" with no ellipsis */
     const f32 bar_w = r.w - 84.0f - val_w;
@@ -621,6 +682,15 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
 
         dash_rb_push( &rb, bar_x, y + 2.0f, bar_w, row_h - 4.0f, DASH_COL_BG );
         dash_rb_push( &rb, bar_x, y + 2.0f, bar_w * frac, row_h - 4.0f, col );
+
+        /* The pool's other occupant, drawn as a lighter band inside the fill at its tail end, so
+           the eye reads one bar (the pool) split into what is filling it. */
+        if ( rows[ i ].sub && rows[ i ].cap )
+        {
+            f32 sw = bar_w * (f32)rows[ i ].sub / (f32)rows[ i ].cap;
+            dash_rb_push( &rb, bar_x + bar_w * frac - sw, y + 2.0f, sw, row_h - 4.0f,
+                          ( col & 0x00FFFFFFu ) | 0x60000000u );
+        }
     }
     dash_rb_flush( &rb );
 
@@ -632,15 +702,23 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
         if ( rows[ i ].hwm )
             dash_vline( bar_x + bar_w * (f32)rows[ i ].hwm / (f32)rows[ i ].cap,
                         y + 1.0f, y + row_h - 1.0f, DASH_COL_HWM );
-        dash_num( bar_x + bar_w + 6.0f, y, DASH_COL_TEXT_DIM, "%u / %u",
-                  rows[ i ].used, rows[ i ].cap );
+
+        /* A split pool prints its two occupants where the single count would go -- the number has
+           to answer the same question the bar does, or the inner band has nothing to read against. */
+        if ( rows[ i ].sub )
+            dash_num( bar_x + bar_w + 6.0f, y, DASH_COL_TEXT_DIM, "%u+%u / %u",
+                      rows[ i ].used - rows[ i ].sub, rows[ i ].sub, rows[ i ].cap );
+        else
+            dash_num( bar_x + bar_w + 6.0f, y, DASH_COL_TEXT_DIM, "%u / %u",
+                      rows[ i ].used, rows[ i ].cap );
 
         if ( dash_tip_at( ( gui_rect_t ){ r.x, y, r.w, row_h } ) )
         {
             if ( gui_tooltip_begin() )
             {
                 gui_stack();
-                gui_textf( "%s", tip[ i ] );
+                for ( u32 t = 0; t < 3 && tip[ i ][ t ]; ++t )
+                    gui_text( tip[ i ][ t ] );
             }
             gui_tooltip_end();
         }
@@ -657,15 +735,27 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
     u32 tr = inc ? sn->text_runs  : sn->band0_text_runs;
     u32 vq = inc ? sn->live_quads : sn->band0_live_quads;
     u32 rq = inc ? sn->tess_quads : sn->band0_quad_end;
-    dash_textf( r.x + 2.0f, r.y + r.h - lh * 2.0f - 1.0f, r.x + r.w, DASH_COL_TEXT_DIM,
-                "glyphs:  %u / %u drawn (%.0f%%)   %u runs (%.1f glyphs/run)   %u reserved",
-                tq, vq, vq ? 100.0f * (f32)tq / (f32)vq : 0.0f,
-                tr, tr ? (f32)tq / (f32)tr : 0.0f, rq );
 
+    /* Four short lines rather than two long ones -- the dashboard docks narrow, and a single wide
+       line is the first thing to run off the panel and ellipsize.  Each pairs a label with the one
+       thing it measures. */
+    char gb[ 16 ];
+    dash_bytes( sn->tess_quads * (u32)GUI_QUAD_BYTES + sn->tess_prims * (u32)GUI_PRIM_BYTES,
+                gb, sizeof( gb ) );
+
+    f32 sy = r.y + r.h - lh * 4.0f - 1.0f;
+    dash_textf( r.x + 2.0f, sy, r.x + r.w, DASH_COL_TEXT_DIM,
+                "glyphs:  %u / %u quads drawn (%.0f%%)",
+                tq, vq, vq ? 100.0f * (f32)tq / (f32)vq : 0.0f );
+    dash_textf( r.x + 2.0f, sy + lh, r.x + r.w, DASH_COL_TEXT_DIM,
+                "runs:  %u  (%.1f glyphs/run)   %u quads reserved",
+                tr, tr ? (f32)tq / (f32)tr : 0.0f, rq );
     /* The observer's own share of the shared pools -- honest attribution, not hidden. */
-    dash_textf( r.x + 2.0f, r.y + r.h - lh - 1.0f, r.x + r.w, DASH_COL_TEXT_DIM,
-                "debug band:  %u cmds   %u quads", sn->emit_cmds_dbg,
-                sn->tess_quads - sn->band0_quad_end );
+    dash_textf( r.x + 2.0f, sy + lh * 2.0f, r.x + r.w, DASH_COL_TEXT_DIM,
+                "debug band:  %u cmds  %u quads",
+                sn->emit_cmds_dbg, sn->tess_quads - sn->band0_quad_end );
+    dash_textf( r.x + 2.0f, sy + lh * 3.0f, r.x + r.w, DASH_COL_TEXT_DIM,
+                "build total:  %s per region", gb );
 }
 
 /* Volatile registry: one row per captured sub-slot with live-vs-reserved mini bars. */
@@ -744,14 +834,18 @@ dash_panel_stats( gui_rect_t r, const dash_snapshot_t* sn )
     const f32                 lh = font_line_h();
     bool                      fz = dash_frozen();
 
+    char upb[ 16 ];
     dash_textf( r.x + 2.0f, r.y, r.x + r.w, DASH_COL_TEXT,
-                "draws %u (hwm %u)   upload %u B / %u wr   vol patched %u",
-                st->draw_calls, sn->draw_call_hwm, st->upload_bytes, st->upload_batches,
+                "draws %u (hwm %u)   upload %s / %u wr   vol patched %u",
+                st->draw_calls, sn->draw_call_hwm,
+                dash_bytes( st->upload_bytes, upb, sizeof( upb ) ), st->upload_batches,
                 st->volatile_patched );
+    /* Application cost, debug band excluded (gui_render_stats_t) -- so these are the numbers a
+       real UI is answerable for, not the ones this window inflates. */
     dash_textf( r.x + 2.0f, r.y + lh, r.x + r.w, DASH_COL_TEXT,
-                "wins ret %u/%u   quads ret %u/%u   styles %u",
+                "app: %u/%u wins ret   %u/%u quads ret   %u quads -> %u tris   %u style recs",
                 st->win_retained, st->win_total, st->quad_retained, st->quad_count,
-                st->prim_count );
+                st->quad_count, st->quad_count * 2u, st->prim_count );
     dash_textf( r.x + 2.0f, r.y + 2.0f * lh, r.x + r.w,
                 fz ? DASH_COL_WARN : DASH_COL_TEXT_DIM,
                 "capture #%u%s   any_changed %u   unchanged %u   gen %u%s",
@@ -811,10 +905,13 @@ dash_window( bool* open )
         /* Panel heights derive from the live line height so text rows never clip mid-glyph. */
         f32 lh = font_line_h();
 
-        dash_shell_panel( "Quad arena (slot memory map)",   lh + 58.0f,                  dash_panel_memmap   );
+        dash_shell_panel( "Quad arena -- slot memory map",  lh + 58.0f,                  dash_panel_memmap   );
         dash_shell_panel( "Frames in flight / uploads",     96.0f,                       dash_panel_fif      );
         dash_shell_panel( "Draw batches (dispatch order)",  8.0f * ( lh + 3.0f ) + 6.0f, dash_panel_batch    );
-        dash_shell_panel( "Emit + build buffers",           8.0f * ( lh + 2.0f ) + lh + 8.0f, dash_panel_emit );
+        /* Nine bars plus four summary lines -- sized from the row count so adding a pool does not
+           silently squeeze every bar. */
+        dash_shell_panel( "Pool fill vs cap",               9.0f * ( lh + 2.0f ) + lh * 4.0f + 8.0f,
+                                                                                         dash_panel_emit    );
         dash_shell_panel( "Volatile sub-slots",             4.0f * ( lh + 2.0f ) + lh,   dash_panel_volatile );
         dash_shell_panel( "Frame stats",                    3.0f * lh + 10.0f,           dash_panel_stats    );
     }

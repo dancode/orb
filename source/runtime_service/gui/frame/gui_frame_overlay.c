@@ -199,6 +199,26 @@ overlay_backdrop( void )
     gui_draw_rect( box.x, box.y, box.w, box.h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ));
 }
 
+/* Bytes as a compact figure -- "912 B", "14.2 KB", "3.14 MB".  Round-robins a few static buffers
+   so several sizes can go into one gui_textf without clobbering each other, the same shape as
+   overlay_id_str below.  Every byte figure in the HUD carries its unit: the rows around it count
+   entries, and a bare five-digit number in either column would be unreadable. */
+static const char*
+overlay_bytes( u32 b )
+{
+    static char bufs[ 4 ][ 16 ];
+    static u32  next = 0;
+
+    char* s = bufs[ next ];
+    next    = ( next + 1u ) & 3u;
+
+    if ( b < 1024u )              fmt_snprintf( s, sizeof( bufs[ 0 ] ), "%u B",    b );
+    else if ( b < 1024u * 1024u ) fmt_snprintf( s, sizeof( bufs[ 0 ] ), "%.1f KB", (f32)b / 1024.0f );
+    else                          fmt_snprintf( s, sizeof( bufs[ 0 ] ), "%.2f MB",
+                                                (f32)b / ( 1024.0f * 1024.0f ) );
+    return s;
+}
+
 static void
 overlay_perf( int mode )
 {
@@ -264,16 +284,20 @@ overlay_perf( int mode )
         }
         
         bool show_geometry_rows = ( mode >= 3 );
+        gui_render_stats_t rs = gui_render_stats();
         if ( show_geometry_rows )
         {
-            gui_render_stats_t rs = gui_render_stats();
+            /* APPLICATION cost -- the debug band (this overlay included) is netted out, so these
+               are the numbers a real UI is answerable for.  A quad record IS one shape; the
+               rasterizer sees quads * 2 triangles, and the draw asks for quads * 6 vertices. */
             gui_new_line( 2.0f );
             gui_textf( "quads   %6u", rs.quad_count );
+            gui_textf( "tris    %6u", rs.quad_count * 2u );
             gui_textf( "styles  %6u", rs.prim_count );
             gui_textf( "batches %6u", rs.draw_calls );
             gui_textf( "cmds    %6u", rs.cmd_count  );
             gui_textf( "clips   %6u", rs.clip_count );
-            
+
             bool show_retained_rows = ( mode >= 4 );
             if ( show_retained_rows )
             {
@@ -310,11 +334,13 @@ overlay_perf( int mode )
                    nav items fall off the list. nav is this frame's live count (the overlay emits
                    last, after every window has registered). */
                 gui_new_line( 2.0f );
-                gui_textf( "cmds  %u/%u", rs.cmd_count_all,  (u32)GUI_MAX_CMDS       );
-                gui_textf( "segs  %u/%u", rs.seg_count,      (u32)GUI_MAX_SEGS       );
-                gui_textf( "clips %u/%u", rs.clip_count_all, (u32)GUI_MAX_CLIP_RECTS );
-                gui_textf( "text  %u/%u", rs.text_pool_used, (u32)GUI_MAX_TEXT_POOL  );
-                gui_textf( "nav   %u/%u", g_ctx->nav.item_count, (u32)GUI_NAV_ITEMS_MAX );
+                gui_textf( "quads  %u/%u", rs.quad_count_all, (u32)GUI_MAX_QUADS      );
+                gui_textf( "styles %u/%u", rs.prim_count_all, (u32)GUI_MAX_PRIMS      );
+                gui_textf( "cmds   %u/%u", rs.cmd_count_all,  (u32)GUI_MAX_CMDS       );
+                gui_textf( "segs   %u/%u", rs.seg_count,      (u32)GUI_MAX_SEGS       );
+                gui_textf( "clips  %u/%u", rs.clip_count_all, (u32)GUI_MAX_CLIP_RECTS );
+                gui_textf( "text   %u/%u", rs.text_pool_used, (u32)GUI_MAX_TEXT_POOL  );
+                gui_textf( "nav    %u/%u", g_ctx->nav.item_count, (u32)GUI_NAV_ITEMS_MAX );
             }
         }
         
@@ -329,6 +355,122 @@ overlay_perf( int mode )
             gui_textf( "emit  %s", gui_force_redraw()        ? "forced  " : "on-dirty" );
             gui_textf( "tess  %s", build_retained_skip() ? "cached  " : "always  " );
             gui_textf( "pace  %s", gui_idle_skip()           ? "idleskip" : "spin    " );
+        }
+
+        gui_scale_pop();
+    }
+    gui_region_end();
+}
+
+/*==============================================================================================
+    Memory overlay -- the perf HUD's top tier, in a column of its own.
+
+    Deliberately NOT appended to overlay_perf: by the time the perf list reaches its counts and
+    pool rows it is already the tallest thing on screen, and bytes are a different question from
+    throughput.  Its own region also buys the room to answer the question a byte figure always
+    raises next -- WHAT is that size made of -- so every row carries the count and stride behind
+    it rather than a bare total.
+
+    Three sections, narrowest scope first:
+
+      frame     what THIS frame built and pushed.  Moves as the UI changes; the only rows here
+                that a widget edit can shift.
+      gpu       device memory, and the only place a raised GUI_MAX_* cap gets expensive: the quad,
+                style and clip tables each hold a full set of entries per (frame-in-flight,
+                viewport), so their cost is cap x stride x regions.
+      cpu       the resident floor -- fixed .bss the image always pays, plus the heap that grows
+                with live contexts and atlas tenants.
+
+    gui_mem_stats walks the atlases' tenant lists, so this is a tier the reader opts into rather
+    than a row riding on the FPS line.
+==============================================================================================*/
+
+static void
+overlay_memory( int mode )
+{
+    if ( mode < 5 )
+        return;
+
+    /* Own column, and the last one: the HUDs tile left to right at fixed x so any combination can
+       be up at once -- perf 8, state 260 (its widest tier reaches past 460), fonts 560, memory
+       here.  Shares the work top with the others so all four line up along one edge. */
+    f32 top_y = gui_viewport_content_y( 0 ) + 32.0f;
+
+    gui_region_begin( "mem_overlay", 780.0f, top_y, 0.0f, 0.0f, GUI_REGION_FG, GUI_VP_MAIN,
+                      GUI_WIN_DEBUG_BAND | GUI_WIN_NOSCROLL | GUI_WIN_NO_INPUT
+                      | GUI_WIN_ALWAYS_AUTOSIZE );
+    {
+        overlay_backdrop();
+
+        gui_stack();
+        gui_scale_push( GUI_SCALE_DENSE );
+
+        const u32 head = GUI_COLOR( 0xA0, 0xC8, 0xE0, 0xFF );
+
+        gui_render_stats_t rs = gui_render_stats();
+        gui_mem_stats_t    ms = gui_mem_stats();
+
+        /* FRAME -- the arena fills are physical (both bands, padding included), because that is
+           what the bytes below actually are; the app-only counts live on the perf HUD. */
+        gui_text_colored( head, "FRAME" );
+        gui_textf( "quads  %5u x %2u B  %s", rs.quad_count_all, (u32)GUI_QUAD_BYTES,
+                   overlay_bytes( rs.quad_count_all * (u32)GUI_QUAD_BYTES ) );
+        gui_textf( "styles %5u x %3u B %s", rs.prim_count_all, (u32)GUI_PRIM_BYTES,
+                   overlay_bytes( rs.prim_count_all * (u32)GUI_PRIM_BYTES ) );
+        gui_textf( "text   %5u bytes", rs.text_pool_used );
+        gui_textf( "upload %5u wr      %s", rs.upload_batches, overlay_bytes( rs.upload_bytes ) );
+
+        /* GPU -- cap x stride x regions for the three regioned tables; the glyph table is one
+           shared copy, so it shows no region multiplier. */
+        gui_new_line( 2.0f );
+        gui_textf( "GPU  %s", overlay_bytes( ms.gpu_total ) );
+        gui_textf( "quad tbl  %5u x%2u  %s", (u32)GUI_MAX_QUADS, ms.gpu_regions,
+                   overlay_bytes( ms.gpu_quad_bytes ) );
+        gui_textf( "style tbl %5u x%2u  %s", (u32)GUI_MAX_PRIMS, ms.gpu_regions,
+                   overlay_bytes( ms.gpu_style_bytes ) );
+        gui_textf( "clip tbl  %5u x%2u  %s",
+                   (u32)( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX ), ms.gpu_regions,
+                   overlay_bytes( ms.gpu_clip_bytes ) );
+        gui_textf( "glyph tbl %5u ids   %s", (u32)GUI_GLYPH_TABLE_MAX,
+                   overlay_bytes( ms.gpu_glyph_bytes ) );
+
+        /* Atlas rows carry their live dimensions and tenant count -- the atlases GROW under
+           pressure, so the size is a measurement, not a constant.  A never-created atlas reports
+           zero dims and is skipped. */
+        {
+            f32 pct; u32 tn, w, h;
+            res_atlas_occupancy( &pct, &tn, &w, &h );
+            if ( w ) gui_textf( "cov atlas %4ux%-4u %2u t %3.0f%%", w, h, tn, pct );
+            res_sprite_occupancy( &pct, &tn, &w, &h );
+            if ( w ) gui_textf( "spr atlas %4ux%-4u %2u t %3.0f%%", w, h, tn, pct );
+            res_sdf_occupancy( &pct, &tn, &w, &h );
+            if ( w ) gui_textf( "sdf atlas %4ux%-4u %2u t %3.0f%%", w, h, tn, pct );
+        }
+        if ( ms.gpu_debug_bytes )
+            gui_textf( "dbg bufs          %s", overlay_bytes( ms.gpu_debug_bytes ) );
+
+        /* CPU -- the fixed image cost, then the heap.  Broken out by the same buckets
+           gui_print_mem_stats logs, so the HUD and the dump read the same way. */
+        gui_new_line( 2.0f );
+        gui_textf( "CPU static %s", overlay_bytes( ms.cpu_static_total ) );
+        gui_textf( "draw list      %s", overlay_bytes( ms.cpu_drawlist_bytes ) );
+        gui_textf( "quad+style     %s", overlay_bytes( ms.cpu_tess_bytes     ) );
+        gui_textf( "retained cache %s", overlay_bytes( ms.cpu_cache_bytes    ) );
+        gui_textf( "frontend       %s", overlay_bytes( ms.cpu_frontend_bytes ) );
+        if ( ms.cpu_debug_bytes )
+            gui_textf( "debug tooling  %s", overlay_bytes( ms.cpu_debug_bytes ) );
+
+        gui_new_line( 2.0f );
+        gui_textf( "CPU heap   %s", overlay_bytes( ms.cpu_dynamic_total ) );
+        gui_textf( "%u context%s     %s", ms.context_count, ms.context_count == 1u ? " " : "s",
+                   overlay_bytes( ms.cpu_context_bytes ) );
+        gui_textf( "atlas mirrors  %s", overlay_bytes( ms.cpu_atlas_bytes ) );
+
+        gui_new_line( 2.0f );
+        {
+            char tl[ 40 ];
+            fmt_snprintf( tl, sizeof( tl ), "TOTAL      %s", overlay_bytes( ms.total_bytes ) );
+            gui_text_colored( head, tl );
         }
 
         gui_scale_pop();
@@ -545,7 +687,7 @@ gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
         F8      command stepper: show/hide the control window (Capture there freezes the frame)
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
-        NP+     perf overlay tier  (off / fps / +timings / +counts / +retained)
+        NP+     perf overlay tier  (off / fps / +timings / +counts / +retained / +memory)
         NP-     state overlay tier (off / ids / +focus,nav / +popups)
         , .     command stepper (while frozen): step the replay cursor back/forward
                 (repeat-aware -- holding scrubs; shift steps by 16)
@@ -583,7 +725,7 @@ void gui_debug_enable( bool enable )
 
 bool gui_debug_is_enabled( void ) { return s_debug_enabled; }
 
-static int  s_dbg_perf_mode;     /* perf overlay tier, NP_ADD cycles 0..4                   */
+static int  s_dbg_perf_mode;     /* perf overlay tier, NP_ADD cycles 0..DBG_PERF_TIERS-1     */
 static int  s_dbg_state_mode;    /* state overlay tier, NP_SUB cycles 0..3                  */
 static bool s_dbg_font_open;     /* font registry overlay, selector menu checkbox toggles  */
 static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */
@@ -644,7 +786,8 @@ static const struct
 };
 
 /* NP+ / NP- tiers and the F9 render mode, spelled out -- what the sliders' bare numbers mean. */
-static const char* const k_perf_tier   [] = { "off", "fps", "+timings", "+counts", "+retained" };
+static const char* const k_perf_tier   [] = { "off", "fps", "+timings", "+counts", "+retained",
+                                              "+memory" };
 static const char* const k_state_tier  [] = { "off", "ids", "+focus", "+popups" };
 static const char* const k_render_mode [] = { "normal", "wireframe", "batch" };
 
@@ -1024,8 +1167,9 @@ debug_overlays_emit( void )
     /* Tier state is no longer zeroed on disarm (debug_reset) so the selector menu can remember
        it -- gate visibility on the arm here instead, the same net effect (hidden while off). */
 
-    overlay_perf ( s_dbg_hotkeys_armed ? s_dbg_perf_mode  : 0 );
-    overlay_state( s_dbg_hotkeys_armed ? s_dbg_state_mode : 0 );
+    overlay_perf  ( s_dbg_hotkeys_armed ? s_dbg_perf_mode  : 0 );
+    overlay_memory( s_dbg_hotkeys_armed ? s_dbg_perf_mode  : 0 );   /* perf tier 5, own column */
+    overlay_state ( s_dbg_hotkeys_armed ? s_dbg_state_mode : 0 );
     if ( s_dbg_hotkeys_armed && s_dbg_font_open )
         overlay_fonts();
 }

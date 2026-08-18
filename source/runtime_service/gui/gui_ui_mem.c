@@ -144,10 +144,15 @@ gui_print_mem_stats( void )
 
     gui_log( GUI_LOG_INFO, "memory usage -- full breakdown:" );
 
-    gui_log( GUI_LOG_INFO, "  -- GPU device (%u live surface%s) ------------------------",
-             s.viewport_count, s.viewport_count == 1u ? "" : "s" );
+    gui_log( GUI_LOG_INFO, "  -- GPU device (%u live surface%s, %u table regions) --------",
+             s.viewport_count, s.viewport_count == 1u ? "" : "s", s.gpu_regions );
     GUI_MEM_ROW( "atlas textures",   s.gpu_texture_bytes );
-    GUI_MEM_ROW( "quad/style/clip/glyph", s.gpu_table_bytes );
+    /* The regioned tables broken out: each carries a full set of entries per (frame-in-flight,
+       viewport), so these are the rows where a raised GUI_MAX_* cap actually lands. */
+    GUI_MEM_ROW( "  quad records",   s.gpu_quad_bytes  );
+    GUI_MEM_ROW( "  style records",  s.gpu_style_bytes );
+    GUI_MEM_ROW( "  clip entries",   s.gpu_clip_bytes  );
+    GUI_MEM_ROW( "  glyph uv table", s.gpu_glyph_bytes );
     if ( s.gpu_debug_bytes )
         GUI_MEM_ROW( "debug overlay buffers", s.gpu_debug_bytes );
     GUI_MEM_ROW( "  GPU subtotal",   s.gpu_total         );

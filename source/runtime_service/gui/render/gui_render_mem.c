@@ -40,14 +40,18 @@ backend_memory( u32 live_viewports )
        carry that multiplier and none of them scales with live_viewports.  The glyph table is the
        exception: it changes only when a font enters the atlas or a repack moves a page, so ONE
        buffer serves every surface and is replaced wholesale on the rare rebuild. */
+    s.gpu_regions = (u32)GUI_QUAD_REGION_COUNT;
     if ( rhi_handle_valid( s_render.clip_buf ) )
-        s.gpu_table_bytes += (u32)( GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES );
+        s.gpu_clip_bytes  = (u32)( GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES );
     if ( rhi_handle_valid( s_render.prim_buf ) )
-        s.gpu_table_bytes += (u32)( GUI_PRIM_REGION_COUNT * GUI_PRIM_REGION_BYTES );
+        s.gpu_style_bytes = (u32)( GUI_PRIM_REGION_COUNT * GUI_PRIM_REGION_BYTES );
     if ( rhi_handle_valid( s_render.quad_buf ) )
-        s.gpu_table_bytes += (u32)( GUI_QUAD_REGION_COUNT * GUI_QUAD_REGION_BYTES );
+        s.gpu_quad_bytes  = (u32)( GUI_QUAD_REGION_COUNT * GUI_QUAD_REGION_BYTES );
     if ( rhi_handle_valid( s_render.glyph_buf ) )
-        s.gpu_table_bytes += (u32)GUI_GLYPH_TABLE_BYTES;
+        s.gpu_glyph_bytes = (u32)GUI_GLYPH_TABLE_BYTES;
+
+    s.gpu_table_bytes = s.gpu_clip_bytes + s.gpu_style_bytes + s.gpu_quad_bytes
+                      + s.gpu_glyph_bytes;
 
 #ifdef GUI_DEBUG_OVERLAY
 

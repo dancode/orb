@@ -652,8 +652,12 @@ void                gui_render_set_time     ( f32 seconds );
         dash_vol_t  vols[ GUI_MAX_VOLATILE ];    u32 vol_count;
 
         u32  tess_quads, quad_hwm;                       /* quads: live fill + lifetime peak */
-        u32  tess_prims, prim_hwm;                       /* style records: live fill + lifetime peak
-                                                            (both bands -- styles carry no band split) */
+        /* Style-arena fill + lifetime peak (both bands -- the arena carries no band split), and how
+           much of that fill is FX PAGES rather than styles.  The two share GUI_MAX_PRIMS but fill
+           for opposite reasons: a style is one distinct look and dedups hard, an fx page holds four
+           per-instance records (turn / phase / border colour / uv rect) and dedups only across a
+           consecutive run.  tess_prims - tess_fx_pages is the style count. */
+        u32  tess_prims, prim_hwm, tess_fx_pages;
         u32  tess_cmds;                                  /* LIVE GPU draw cmds, both bands (dormant/empty excluded) */
         u32  tess_cmds_dbg;                              /* of tess_cmds, the debug band's share     */
         bool overflow_ever;                              /* any cap spilled this run (see the gui log) */
