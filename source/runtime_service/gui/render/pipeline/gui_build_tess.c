@@ -74,6 +74,17 @@ static struct
                                of a shape without threading a parameter through every fill in the
                                library, and cannot leak onto the next command.  0 = circular arcs */
 
+    /* GLYPH ATTRIBUTION -- ambient over one glyph run, read by tess_quad_push.  Only the two text
+       tessellators (tess_text_n, tess_text_xf) raise the flag, and every quad they push while it
+       is up is a character.  slot_text_* accumulate over ONE slot's tessellation:
+       cache_slot_tessellate zeroes them before cache_tess_window and stores the result on the
+       slot, so the per-frame total survives geometry caching (a retained window never re-enters
+       this path).  Volatile patches are excluded -- they rewrite bytes inside a slot whose count
+       was already taken, so counting them again would double-bill the row. */
+    bool        cur_is_text;
+    u32         slot_text_quads;   /* glyph quads pushed into the slot under tessellation */
+    u32         slot_text_runs;    /* glyph runs that produced them (glyphs/run amortisation) */
+
     /* The ambient STYLE RECORD -- filled by whichever tess_* emitter is running and appended
        (deduplicated) by tess_quad_push via tess_prim_local.  Only the fields the ambient FIELD
        actually reads are written; the rest stay zero, which is what lets consecutive flat fills
@@ -153,6 +164,12 @@ static struct
     bool overflow;          /* set per-primitive when a buffer fills; gates the geometry-drop escape path */
 
 } s_tess;
+
+/* True while volatile_patch re-tessellates a row into scratch (gui_build_volatile.c, included
+   after this file in the gui_render.c unity build).  Declared here because two things above the
+   volatile seam read it: the range tracking, which must not mistake a patch for a fresh capture,
+   and tess_quad_push's glyph counter, whose slot totals were already taken. */
+static bool s_volatile_patching;
 
 /* The geometry element copy: the cache's in-place relocation and the volatile patch both move
    quad spans by element index. */
@@ -240,6 +257,25 @@ static struct
        separate accumulator, not a subtraction. */
     u32 band0_vert_hwm;
 
+    /* GLYPH SHARE of the live arena, re-derived each build by summing the placed slots' stored
+       counts (cache_place_slots).  Summed rather than counted at the push, because geometry is
+       cached per window: a per-push counter would only ever see the windows that retessellated
+       this frame, which on a steady UI is none of them.
+
+       text_quads is how much of the quad arena is characters; text_runs the number of glyph runs
+       they came from, so text_quads / text_runs is the glyphs-per-run a per-run record would
+       amortise over.  Split by band for the same reason the vert counts are: the dashboard that
+       displays this is itself almost entirely text, and would otherwise measure mostly itself. */
+    u32 text_quads,       text_runs;         /* both bands */
+    u32 band0_text_quads, band0_text_runs;   /* main band alone */
+
+    /* LIVE QUADS: the sum of the placed slots' vert_count -- what actually draws, and the only
+       correct denominator for the glyph share.  Distinct from the write heads above, which measure
+       ARENA OCCUPANCY: every slot reserves vert_alloc = vert_count + max(vert_count/4, SLOT_QUAD_PAD),
+       so a UI made of several small windows carries 64+ quads of padding per slot, plus whatever gap
+       a repack has not yet reclaimed.  On a near-empty frame the head can be triple the live count. */
+    u32 live_quads, band0_live_quads;
+
 } s_tess_stats;
 
 /*==============================================================================================
@@ -293,6 +329,9 @@ tess_reset( void )
     s_tess.slot_clip_base    = 0;
     s_tess.clip_memo_ci      = 0xFF;
     s_tess.cur_clip_local    = 0;
+    s_tess.cur_is_text       = false;
+    s_tess.slot_text_quads   = 0;
+    s_tess.slot_text_runs    = 0;
     s_tess.force_new_cmd     = false;
     s_tess.overflow          = false;
     s_tess.cur_col_border    = 0;
@@ -405,10 +444,21 @@ tess_ensure_gpu_cmd( void )
    Past the arena a slot degrades to its own first record, mirroring tess_clip_local's fallback to
    slab entry 0: a wrong shape is bad, but a wild index into a storage buffer is worse.  The sticky
    overflow flag is what actually reports it, the same way a full vertex buffer does. */
+
 /* How far back the dedup scan reaches.  1 collapses a homogeneous run (a glyph run, consecutive
    flat fills); the extra depth collapses the ALTERNATION chrome actually emits -- text, a rounded
    widget's own record, text again -- which a 1-deep memo re-appended on every return.  Four
-   112-byte compares against L1-hot records is noise next to the tessellation around it. */
+   128-byte compares against L1-hot records is noise next to the tessellation around it, and a HIT
+   costs one compare at any depth -- only a miss pays the full scan.
+
+   4 sits one step past a sharp knee, and everything above it is flat.  Measured on sb_gui's main
+   window with the debug overlay up: depth 3 -> 35 records, 4 -> 25, 6 -> 23, 8 -> 21.  Past 4 a
+   step buys about two records, so there is nothing to chase by going deeper.
+
+   The residual will not yield to depth at all: dedup is slot-scoped, so each retained-cache window
+   slot holds its own copy of an identical style and no walk can reach across that boundary.  A
+   frame-global intern region is the lever for those, not this number. */
+
 #define TESS_PRIM_MEMO_DEPTH  4u
 
 static u32
@@ -488,6 +538,9 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule_flags,
 
     /* elem_count counts QUADS under this backend; the flush multiplies by six at the draw. */
     s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 1;
+
+    if ( s_tess.cur_is_text && !s_volatile_patching )
+        s_tess.slot_text_quads++;
 }
 
 /* Tessellate a filled quad into s_tess.  abgr has alpha pre-baked by the emit side. */
@@ -1452,6 +1505,9 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
     if ( tex == 0 )
         return;                       /* the font's atlas is not up yet -- nothing to sample */
 
+    s_tess.cur_is_text = true;        /* every quad below is a character (glyph attribution) */
+    s_tess.slot_text_runs++;
+
     u32 i = 0;
     while ( i < n && str[ i ] )
     {
@@ -1497,6 +1553,8 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
         if ( clipped && cx >= clip_x1 )   /* cursor past the window: nothing further is visible */
             break;
     }
+
+    s_tess.cur_is_text = false;
 }
 
 /* One textured quad placed by an affine map: the local rect (lx, ly, lw, lh) is rotated by the
@@ -1540,6 +1598,9 @@ tess_text_xf( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 scale, f32 rot
     if ( tex == 0 || scale <= 0.0f )
         return;
 
+    s_tess.cur_is_text = true;        /* every quad below is a character (glyph attribution) */
+    s_tess.slot_text_runs++;
+
     f32 cs = cosf( rot ), sn = sinf( rot );
     f32 pen = 0.0f;                      /* run-local, UNSCALED: scale is applied at the map */
 
@@ -1560,6 +1621,8 @@ tess_text_xf( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 scale, f32 rot
 
         pen += advance;
     }
+
+    s_tess.cur_is_text = false;
 }
 
 /* Tessellate a dashed / dotted line as one oriented textured quad sampling the atlas dash row.
@@ -1748,10 +1811,9 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 
    the gui_render.c unity build).  tess_dispatch calls volatile_range_close once a tagged command
    RANGE's vertices/indices/GPU commands are fully written; it records the block's slot-relative
    position, reserves padded headroom past the live geometry (advancing this file's write heads),
-   and stamps the slot tessellation generation.  s_volatile_patching is defined HERE (first in the
-   TU) and set by volatile_patch around its scratch re-tessellation so the range tracking below
+   and stamps the slot tessellation generation.  s_volatile_patching is declared up with s_tess
+   (tess_quad_push reads it to keep a patch out of the glyph counters) and set by volatile_patch around its scratch re-tessellation so the range tracking below
    stays inert during a patch -- a patch must never look like a fresh capture. */
-static bool s_volatile_patching;
 static void volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd_open );
 
 /* Tessellate one frame's semantic command list into s_tess geometry.

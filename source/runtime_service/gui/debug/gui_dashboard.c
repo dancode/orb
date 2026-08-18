@@ -252,7 +252,7 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
        debug band and the band0/debug split is spelled out. */
     u32 total = sn->tess_verts;
     u32 main0 = sn->band0_vert_end;
-    u32 pad   = (u32)SLOT_VERT_PAD;
+    u32 pad   = (u32)SLOT_QUAD_PAD;
     u32 used  = s_show_second_band ? total : main0;
     u32 hwm   = s_show_second_band ? sn->vert_hwm : sn->band0_vert_hwm;
     if ( s_show_second_band )
@@ -605,7 +605,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
     };
     const u32 n     = sizeof( rows ) / sizeof( rows[ 0 ] );
     const f32 lh    = font_line_h();
-    const f32 row_h = ( r.h - lh - 4.0f ) / (f32)n;
+    const f32 row_h = ( r.h - lh * 2.0f - 4.0f ) / (f32)n;   /* two summary lines below the bars */
     const f32 bar_x = r.x + 84.0f;    /* label column + a clear gap before the bars */
     const f32 val_w = 132.0f;         /* value column: fits a full "NNNNN / NNNNN" with no ellipsis */
     const f32 bar_w = r.w - 84.0f - val_w;
@@ -645,6 +645,22 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
             gui_tooltip_end();
         }
     }
+
+    /* Glyph share of the DRAWN quads -- what a per-run text record would collapse.  Follows the
+       "quads" bar's band filter so the two numbers are read against each other, and spells out
+       glyphs-per-run: that is the factor one 48-byte quad record would amortise over.
+
+       Measured against live_quads, not the arena write head the bar above shows: the head includes
+       every slot's vert_alloc padding (SLOT_QUAD_PAD minimum each), which on a small UI can outweigh
+       the geometry itself.  The trailing "reserved" figure spells out that gap. */
+    u32 tq = inc ? sn->text_quads : sn->band0_text_quads;
+    u32 tr = inc ? sn->text_runs  : sn->band0_text_runs;
+    u32 vq = inc ? sn->live_quads : sn->band0_live_quads;
+    u32 rq = inc ? sn->tess_verts : sn->band0_vert_end;
+    dash_textf( r.x + 2.0f, r.y + r.h - lh * 2.0f - 1.0f, r.x + r.w, DASH_COL_TEXT_DIM,
+                "glyphs:  %u / %u drawn (%.0f%%)   %u runs (%.1f glyphs/run)   %u reserved",
+                tq, vq, vq ? 100.0f * (f32)tq / (f32)vq : 0.0f,
+                tr, tr ? (f32)tq / (f32)tr : 0.0f, rq );
 
     /* The observer's own share of the shared pools -- honest attribution, not hidden. */
     dash_textf( r.x + 2.0f, r.y + r.h - lh - 1.0f, r.x + r.w, DASH_COL_TEXT_DIM,

@@ -100,6 +100,12 @@ dash_capture_build( void )
     sn->overflow_ever  = s_tess_stats.overflow_ever;
     sn->band0_vert_end = s_tess_stats.band0_vert_end;
     sn->band0_vert_hwm = s_tess_stats.band0_vert_hwm;
+    sn->text_quads       = s_tess_stats.text_quads;
+    sn->text_runs        = s_tess_stats.text_runs;
+    sn->band0_text_quads = s_tess_stats.band0_text_quads;
+    sn->band0_text_runs  = s_tess_stats.band0_text_runs;
+    sn->live_quads       = s_tess_stats.live_quads;
+    sn->band0_live_quads = s_tess_stats.band0_live_quads;
 
     /* GPU DRAW commands per band -- what actually dispatches, matching the renderer's draw-call
        count and the perf tracker.  A slot's cmd_count includes dormant volatile-pad commands

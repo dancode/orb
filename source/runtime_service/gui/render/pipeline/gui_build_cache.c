@@ -155,11 +155,11 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
 
     No separate prev-geometry buffer: s_tess.quads/prims persist between frames, so each
     window's geometry remains at its prev->vert_base until overwritten.  The reuse path advances
-    the write head by vert_alloc (not vert_count) to keep the SLOT_VERT_PAD gap intact, which
+    the write head by vert_alloc (not vert_count) to keep the SLOT_QUAD_PAD gap intact, which
     absorbs minor in-place growth without touching adjacent slots.
 ==============================================================================================*/
 
-/* RENDER_MAX_WIN / SLOT_VERT_PAD live in gui_render.h (the dashboard snapshot types are sized
+/* RENDER_MAX_WIN / SLOT_QUAD_PAD live in gui_render.h (the dashboard snapshot types are sized
    by them). */
 /* Max GPU draw commands cached per slot; most windows have 2-4, but every volatile block adds
    its own commands + reserved dormant pads (unmergeable across the reservation seams), so a
@@ -201,6 +201,10 @@ typedef struct
     u32      prim_base, prim_count, prim_alloc;  // style records: same three, in their own arena
     u32      cmd_base,  cmd_count;               // range into s_tess.gpu_cmds[] for this window
     u32      tess_gen;                           // generation of the tess pass that produced the geometry
+    u32      text_quads, text_runs;              // of vert_count, the glyph share and the runs it came
+                                                 //   from -- taken at tessellation and carried across
+                                                 //   reuse frames, since retained geometry is never
+                                                 //   re-walked (gui_build_tess.c, slot_text_*)
     u8       vp;                                 // viewport (GUI_MAX_VIEWPORTS = 4)
     u8       band;                               // arena band (0 = main UI, 1 = debug/diagnostic)
     bool     valid;                              // true once geometry has been tessellated at least once
@@ -862,6 +866,8 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
     slot->prim_alloc = prev->prim_alloc;
     slot->tess_gen   = prev->tess_gen;   /* geometry unchanged: same tessellation pass */
     slot->cache_idx  = cache_idx;        /* id-keyed, so it matches what the vertices baked */
+    slot->text_quads = prev->text_quads; /* same quads, so the same glyph share */
+    slot->text_runs  = prev->text_runs;
 
     /* The local clip table travels with the geometry it indexes: the cached vertices bake
        absolute clip-slab indices, and these are the rects those indices mean. */
@@ -962,7 +968,14 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_tess.slot_clip_base    = slot->cache_idx * GUI_WIN_CLIP_MAX;
     s_tess.clip_memo_ci      = 0xFF;
 
+    /* Glyph attribution accumulates over exactly this window's pass, then rides the slot. */
+    s_tess.slot_text_quads = 0;
+    s_tess.slot_text_runs  = 0;
+
     cache_tess_window( wh );
+
+    slot->text_quads = s_tess.slot_text_quads;
+    slot->text_runs  = s_tess.slot_text_runs;
 
     s_tess.slot_clips        = NULL;
     s_tess.slot_clip_count   = NULL;
@@ -1013,7 +1026,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     {
         /* Stays at the tail.  Geometric headroom: a quarter of the live size, floored at the
            fixed pads, so growth relocates logarithmically instead of once per grown frame. */
-        u32 pad_v = slot->vert_count / 4u;  if ( pad_v < SLOT_VERT_PAD ) pad_v = SLOT_VERT_PAD;
+        u32 pad_v = slot->vert_count / 4u;  if ( pad_v < SLOT_QUAD_PAD ) pad_v = SLOT_QUAD_PAD;
         u32 pad_p = slot->prim_count / 4u;  if ( pad_p < SLOT_PRIM_PAD ) pad_p = SLOT_PRIM_PAD;
         slot->vert_alloc = slot->vert_count + pad_v;
         slot->prim_alloc = slot->prim_count + pad_p;
@@ -1116,6 +1129,15 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
     tess_reset();
     s_tess_stats.band0_vert_end = 0;   /* re-derived below as main-band slots place; 0 when none exist */
 
+    /* Re-derived the same way: summed over the slots this pass places, so the repack retry (which
+       runs the whole pass a second time) restates them rather than doubling them. */
+    s_tess_stats.text_quads       = 0;
+    s_tess_stats.text_runs        = 0;
+    s_tess_stats.band0_text_quads = 0;
+    s_tess_stats.band0_text_runs  = 0;
+    s_tess_stats.live_quads       = 0;
+    s_tess_stats.band0_live_quads = 0;
+
     /* Seed the write head at the arena tail: past every live prev reservation, so a fresh
        tessellation can never land inside geometry a later window still wants to reuse.  In
        repack mode nothing is reused, so packing starts at 0. */
@@ -1190,10 +1212,18 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
         st->reserved_vert += slot->vert_alloc;
 
         /* Accumulate per-slot geometry stats; exclude self-measuring debug-band windows from totals. */
+        s_tess_stats.text_quads += slot->text_quads;
+        s_tess_stats.text_runs  += slot->text_runs;
+        s_tess_stats.live_quads += slot->vert_count;
+
         if ( wh->band != 0 )
             ++st->overlay_win;
         else
         {
+            s_tess_stats.band0_text_quads += slot->text_quads;
+            s_tess_stats.band0_text_runs  += slot->text_runs;
+            s_tess_stats.band0_live_quads += slot->vert_count;
+
             st->total_vert += slot->vert_count;
             st->total_tri  += slot->vert_count * 2u;
             st->total_prim += slot->prim_count;

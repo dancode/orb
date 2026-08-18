@@ -375,7 +375,7 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
    below size their arrays with them; both unity units see one definition. */
 #define RENDER_MAX_WIN    32    // distinct windows tracked per frame (32)
 #define GUI_MAX_VOLATILE  16    // registered volatile sub-slot rows
-#define SLOT_VERT_PAD     64u   // per-slot quad headroom: absorbs minor growth in-place
+#define SLOT_QUAD_PAD     16u   // per-slot quad headroom: absorbs minor growth in-place
 #define SLOT_PRIM_PAD     8u    // per-slot record headroom; records are per state change, not
                                 //   per primitive, so a window holds few and grows by few
 
@@ -634,6 +634,12 @@ void                gui_render_set_time     ( f32 seconds );
         bool overflow_ever;
         u32  band0_vert_end;                             /* main arena ends here; past = debug band */
         u32  band0_vert_hwm;                             /* lifetime peak of the main band alone     */
+        u32  text_quads, text_runs;                      /* of live_quads, the glyph share and its runs */
+        u32  band0_text_quads, band0_text_runs;          /* the same, main band alone                */
+        /* Quads that actually draw: the slots' vert_count summed.  tess_verts above is the arena
+           WRITE HEAD and carries every slot's vert_alloc padding, so it is a capacity figure, not a
+           count -- read shares of the geometry against these two, never against tess_verts. */
+        u32  live_quads, band0_live_quads;
         u32  emit_cmds, emit_segs, emit_pts, emit_rects, emit_text, emit_clips;
         u32  emit_cmds_hwm;                              /* running high-water of emit_cmds across captures */
         /* Debug-band share of each shared emit pool, derived from the segment table at capture (the

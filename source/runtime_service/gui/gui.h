@@ -2118,7 +2118,7 @@ typedef struct
 
     u32 clip;           // clip-table entry index, absolute within the frame clip region
     u32 flags;          // GUI_QUAD_RULE_* rule (bits 0-1) | animation phase (bits 16-31);
-                        //   bits 2-15 are unused and written zero -- see the layout note below
+                        // bits 2-15 are unused and written zero -- see the layout note below
 
     // xform: the shape's TURN, as a unit (cos, sin) through the uv pair's encoding, remapped from
     //   [-1,1] (gui_xform_pack).  Exactly 0 means IDENTITY, which is what an unrotated shape
