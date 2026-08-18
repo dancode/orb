@@ -737,25 +737,38 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
     u32 rq = inc ? sn->tess_quads : sn->band0_quad_end;
 
     /* Four short lines rather than two long ones -- the dashboard docks narrow, and a single wide
-       line is the first thing to run off the panel and ellipsize.  Each pairs a label with the one
-       thing it measures. */
+       line is the first thing to run off the panel and ellipsize.  They ride the BARS' two columns:
+       label at r.x, value at bar_x, so the whole panel reads as one aligned table instead of a
+       chart with a paragraph under it. */
     char gb[ 16 ];
     dash_bytes( sn->tess_quads * (u32)GUI_QUAD_BYTES + sn->tess_prims * (u32)GUI_PRIM_BYTES,
                 gb, sizeof( gb ) );
 
     f32 sy = r.y + r.h - lh * 4.0f - 1.0f;
-    dash_textf( r.x + 2.0f, sy, r.x + r.w, DASH_COL_TEXT_DIM,
-                "glyphs:  %u / %u quads drawn (%.0f%%)",
-                tq, vq, vq ? 100.0f * (f32)tq / (f32)vq : 0.0f );
-    dash_textf( r.x + 2.0f, sy + lh, r.x + r.w, DASH_COL_TEXT_DIM,
-                "runs:  %u  (%.1f glyphs/run)   %u quads reserved",
-                tr, tr ? (f32)tq / (f32)tr : 0.0f, rq );
+    struct { const char* label; char val[ 72 ]; } sum[ 4 ];
+
+    fmt_snprintf( sum[ 0 ].val, sizeof( sum[ 0 ].val ), "%u / %u quads drawn  (%.0f%%)",
+                  tq, vq, vq ? 100.0f * (f32)tq / (f32)vq : 0.0f );
+    fmt_snprintf( sum[ 1 ].val, sizeof( sum[ 1 ].val ), "%u  (%.1f glyphs/run)   %u quads reserved",
+                  tr, tr ? (f32)tq / (f32)tr : 0.0f, rq );
     /* The observer's own share of the shared pools -- honest attribution, not hidden. */
-    dash_textf( r.x + 2.0f, sy + lh * 2.0f, r.x + r.w, DASH_COL_TEXT_DIM,
-                "debug band:  %u cmds  %u quads",
-                sn->emit_cmds_dbg, sn->tess_quads - sn->band0_quad_end );
-    dash_textf( r.x + 2.0f, sy + lh * 3.0f, r.x + r.w, DASH_COL_TEXT_DIM,
-                "build total:  %s per region", gb );
+    fmt_snprintf( sum[ 2 ].val, sizeof( sum[ 2 ].val ), "%u cmds  %u quads",
+                  sn->emit_cmds_dbg, sn->tess_quads - sn->band0_quad_end );
+    /* What this frame's tessellation occupies in ONE of the GPU tables' (frame-in-flight,
+       viewport) regions -- quads plus styles.  It is the frame's own footprint, not a cap. */
+    fmt_snprintf( sum[ 3 ].val, sizeof( sum[ 3 ].val ), "%s of quads + styles", gb );
+
+    sum[ 0 ].label = "glyphs";
+    sum[ 1 ].label = "runs";
+    sum[ 2 ].label = "dbg band";
+    sum[ 3 ].label = "gpu bytes";
+
+    for ( u32 i = 0; i < 4; ++i )
+    {
+        f32 ly = sy + (f32)i * lh;
+        dash_text( r.x + 2.0f, ly, bar_x - 10.0f, DASH_COL_TEXT_DIM, sum[ i ].label );
+        dash_text( bar_x,      ly, r.x + r.w,     DASH_COL_TEXT_DIM, sum[ i ].val   );
+    }
 }
 
 /* Volatile registry: one row per captured sub-slot with live-vs-reserved mini bars. */

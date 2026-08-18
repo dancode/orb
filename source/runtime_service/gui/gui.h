@@ -2274,7 +2274,7 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
 
      tag SHAPED (0)   bits 0-3    clip entry, slot-local (GUI_WIN_CLIP_MAX = 16 per window slab)
                       bits 4-5    GUI_QUAD_RULE_* -- the expansion rule
-                      bits 6-16   style record, slot-local (GUI_MAX_PRIMS = 2048)
+                      bits 6-16   style record, slot-local
                       bits 17-29  fx record, slot-local ROW index into the style arena
 
      tag GLYPH  (1)   bits 0-3    clip entry, as above
@@ -2282,9 +2282,10 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
                       bits 5-17   glyph-table ID (GUI_GLYPH_TABLE_MAX = 8192)
                       bits 18-29  fx record, twelve bits of the same row index
 
-   Both are exactly full.  Every field sits at an existing structural ceiling rather than at a
-   budget that can be raised in isolation -- a raised GUI_MAX_PRIMS or glyph table is a re-plan of
-   the union, not a constant bump.
+   Both words are exactly full: there is no spare bit to widen a field with, so raising a pool past
+   what its field can name is a re-plan of this union, not a constant bump.  The glyph-table ID and
+   the clip entry sit AT their fields' ceilings; the style and fx fields have slack at the caps
+   currently shipping, and the static asserts beside GUI_MAX_PRIMS are what keep that true.
 
    Clip is per QUAD, not per style: two identically styled rows in different scroll regions must
    still share one style.  The rule is per quad for the same reason -- it is a property of the
@@ -3425,7 +3426,7 @@ typedef struct
    which of these it was. */
 
 #define GUI_MAX_QUADS        8192            /* per-frame quad records (gui_quad_t)              */
-#define GUI_MAX_PRIMS        2048            /* per-frame style records (gui_prim_t)             */
+#define GUI_MAX_PRIMS        512             /* per-frame style records (gui_prim_t)             */
 #define GUI_MAX_CMDS         1024            /* per-frame semantic draw commands                 */
 #define GUI_MAX_PATH_PTS     2048            /* per-frame total polyline / path point pool       */
 #define GUI_MAX_RECT_ENTRIES 4096            /* per-frame total draw_rects batch pool            */
@@ -3436,14 +3437,31 @@ typedef struct
 
 /* Style records are counted per STATE CHANGE, not per quad -- a glyph run is one, a run of flat
    fills sharing a texture and a clip is one, and identically-styled shapes dedup across
-   placements -- so the cap sits far below the quad cap.  The GPU cost is the multiplier to
-   watch, because the storage buffer holds this many records for EVERY (frame-in-flight,
-   viewport) region: 2048 records is 2 MB across 8 regions.
+   placements -- so the cap sits far below the quad cap.  Measured UIs land in the dozens; 512 is
+   the next power of two above anything sb_gui's full demo set reaches with the dashboard open.
 
-   This cap is also the one with a SECOND ceiling behind it.  A quad addresses its style and its
-   fx row through packed fields (see gui_quad_t), so a window whose records reach past what those
-   fields can name spills the same way a full arena does -- raising GUI_MAX_PRIMS alone does not
-   move that wall. */
+   The GPU multiplier is what makes this cap worth being honest about: the storage buffer holds a
+   full set of records for EVERY (frame-in-flight, viewport) region, so 512 records is 513 KB
+   across 8 regions where 2048 was 2 MB.
+
+   512 also happens to be the largest cap at which the quad's PACKED FIELDS can name every record
+   the arena can hold -- see the static assert below, which is what pins that.  Past it the fx row
+   index outgrows the field first (the GLYPH layout at 512, the SHAPED one at 1024), and a spill
+   there is a wall no amount of arena is a fix for.  Going back up is a step at a time: 1024 costs
+   the glyph tag its guarantee (a rotated character in a record-heavy window falls back to the
+   SHAPED path, which is correct but spends a style record), and 2048 needs the union re-planned. */
+
+/* The arena's LAST addressable fx row -- the final row of a page opened at the last record a slot
+   could reach -- against the two quad layouts that carry one (gui_quad_t).  Trips at compile time
+   if GUI_MAX_PRIMS is raised past what the fields can name, rather than at runtime through
+   TESS_OVF_FX_FIELD on whichever frame first gets record-heavy enough to reach it. */
+#define GUI_PRIM_FX_ROW_MAX  ( ( GUI_MAX_PRIMS - 1u ) * GUI_PRIM_ROWS \
+                             + ( GUI_PRIM_ROWS - GUI_FX_ROWS ) )
+
+ORB_STATIC_ASSERT( GUI_PRIM_FX_ROW_MAX <= GUI_QUAD_FX_MASK,
+                   "GUI_MAX_PRIMS outgrew the quad's fx field -- re-plan the idx union (gui_quad_t)" );
+ORB_STATIC_ASSERT( GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK,
+                   "GUI_MAX_PRIMS outgrew the quad's style field -- re-plan the idx union" );
 
 /* Command segments: one contiguous span of the command list per (win, z, vp, band) the emit path
    stamps, cut wherever a window seam, draw_set_sort_key, draw_set_viewport or draw_set_band

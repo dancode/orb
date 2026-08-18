@@ -1387,11 +1387,11 @@ cache_build_frame( void )
         /* Re-reported whenever a NEW wall appears, not only on the first spill ever: hitting the
            quad cap and later hitting the style cap are different bugs with different fixes. */
         const char* nm = ( ps.overflow_win != GUI_ID_NONE ) ? gui_debug_name( ps.overflow_win ) : NULL;
+        
         /* The default sink flushes, so this lands before the once-assert below can trap. */
-        gui_log( GUI_LOG_WARN,
-                 "gui build overflow (%s) -- content dropped tessellating window '%s' (id 0x%08X); "
-                 "pools at %u/%u quads, %u/%u styles, %u/%u gpu cmds, %u/%u windows",
-                 walls, nm ? nm : "<unnamed>", (unsigned)ps.overflow_win,
+        gui_log( GUI_LOG_WARN, "gui BUILD overflow: (%s) -- content dropped tessellating window '%s' (id 0x%08X);",                 
+                 walls, nm ? nm : "<unnamed>", (unsigned)ps.overflow_win );
+        gui_log( GUI_LOG_WARN,"gui BUILD stats: pools at %u/%u quads, %u/%u styles, %u/%u gpu cmds, %u/%u windows",
                  ps.overflow_at_quad, GUI_MAX_QUADS,
                  ps.overflow_at_prim, GUI_MAX_PRIMS,
                  ps.overflow_at_cmd,  GUI_MAX_CMDS,
