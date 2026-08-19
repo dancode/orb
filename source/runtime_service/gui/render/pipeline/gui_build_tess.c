@@ -690,11 +690,78 @@ tess_glyph_uv( u32 glyph_id, u32* uv0, u32* uv1 )
 
 #define GUI_GLYPH_ID_NONE   0xFFFFFFFFu
 
+/* Is a BAND covering worth four quads instead of one?  (gui.h, THE BAND COVERING.)
+
+   The hole this mirrors is the vertex stage's (gui_quad.vs.hlsl, band_local) and must not be a
+   second opinion about geometry: band_local clamps its own numbers and tiles its own outer rect
+   exactly, so a disagreement here can only mean a shape kept one quad it could have split, never a
+   gap or a double-blended seam.  What this decides is the TRADE -- four records and four
+   rasterizer setups against the interior they save.
+
+   Restricted to the rounded box under the SKIRT rule, which is the only field whose hole is a
+   rectangle band_local can derive.  FRAME is excluded outright: its fill paints the interior it
+   would be carving away. */
+
+#define TESS_BAND_MIN_FRAC  0.45f    /* of the covering -- below this the middle is not the cost   */
+#define TESS_BAND_MIN_AREA  4096.0f  /* px -- a 64x64 hole, under which four setups beat the fill */
+
+static bool
+tess_band_worth_it( f32 qhw, f32 qhh, u32 rule )
+{
+    const gui_prim_t* p   = &s_tess.cur_prim;
+    u32               ops = s_tess.cur_ops;
+
+    if ( rule != GUI_QUAD_RULE_SKIRT || p->field != (u32)GUI_FX_BOX || ( ops & GUI_OP_FRAME ) )
+        return false;
+
+    /* EXACTLY one hole-cutting op.  Each of the three states where its own coverage reaches zero,
+       and they measure from different boundaries -- BAND replaces the field INSET would then read,
+       so a shape carrying two has a hole neither formula describes.  Rather than reason about which
+       is the safe one, such a shape keeps its single quad: overstating a hole is the one failure
+       that would clip real ink, and there is no shape in the library that asks for two. */
+    u32 hole = ops & ( GUI_OP_CUT | GUI_OP_BAND | GUI_OP_INSET );
+    if ( hole == 0u || ( hole & ( hole - 1u ) ) != 0u )
+        return false;
+
+    /* Where each op's coverage reaches zero, as a depth inward from the boundary.  CUT's is the
+       caster's own outline -- depth 0, moved by the cut vector below. */
+    f32 depth = ( hole == GUI_OP_CUT )  ? 0.0f
+              : ( hole == GUI_OP_BAND ) ? p->border + p->feather * 0.5f
+                                        : p->feather;
+
+    f32 rmax = fmaxf( fmaxf( p->r_tl, p->r_tr ), fmaxf( p->r_br, p->r_bl ) );
+    f32 pad  = p->feather * 0.5f + 1.0f;
+    f32 in   = depth + 0.29289322f * rmax;
+
+    f32 hix = fmaxf( qhw - in, 0.0f ), hiy = fmaxf( qhh - in, 0.0f );
+    f32 hox = qhw + pad,               hoy = qhh + pad;
+
+    /* The cut's offset shifts the hole; what it costs is the part that slides past the outer rect,
+       which band_local clamps away.  Charging for it here keeps a shape whose hole barely fits from
+       paying four quads for almost nothing. */
+    if ( hole == GUI_OP_CUT )
+    {
+        hix = fmaxf( hix - fabsf( p->cut_dx ), 0.0f );
+        hiy = fmaxf( hiy - fabsf( p->cut_dy ), 0.0f );
+    }
+
+    /* Both tests, and they are not the same question.  The FRACTION says the middle is where this
+       shape's fill actually goes; the AREA says the fill saved is worth four quad records and four
+       rasterizer setups instead of one.  A button's outline passes the first and fails the second
+       -- its interior is a few hundred px -- and every widget outline on the screen quadrupling its
+       quads for that would spend GUI_MAX_QUADS on nothing. */
+    f32 hole_area = hix * hiy;
+    return hole_area >= TESS_BAND_MIN_AREA
+        && hole_area >= TESS_BAND_MIN_FRAC * ( hox * hoy );
+}
+
 static void
 tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
                 u32 uv0, u32 uv1, u32 tex_idx, u32 abgr, u32 glyph_id )
 {
-    if ( s_tess.quad_count + 1u > GUI_MAX_QUADS )
+    bool band = tess_band_worth_it( qhw, qhh, rule );
+
+    if ( s_tess.quad_count + ( band ? GUI_QUAD_BAND_COUNT : 1u ) > GUI_MAX_QUADS )
     {
         s_tess.overflow |= TESS_OVF_QUADS;
         return;
@@ -759,19 +826,24 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
     u32 style = tess_prim_local();
     u32 fx    = tess_fx_local( uv0, uv1 );
 
-    s_tess.quads[ s_tess.quad_count++ ] = ( gui_quad_t ){
-        .cx    = pcx,
-        .cy    = pcy,
-        .hw    = phw,
-        .hh    = phh,
-        .abgr  = abgr,
-        .idx   = gui_quad_idx( rule, s_tess.cur_clip_local, style, fx ),
-    };
+    /* The BAND covering emits the same quad four times over, differing in nothing but which strip
+       of the frame each expands to.  One placement, one style, one clip, one fx record -- so the
+       fragment resolves every one of them exactly as it resolved the single quad they replace. */
+    for ( u32 b = 0; b < ( band ? GUI_QUAD_BAND_COUNT : 1u ); ++b )
+        s_tess.quads[ s_tess.quad_count++ ] = ( gui_quad_t ){
+            .cx    = pcx,
+            .cy    = pcy,
+            .hw    = phw,
+            .hh    = phh,
+            .abgr  = abgr,
+            .idx   = band ? gui_quad_idx_band( b, s_tess.cur_clip_local, style, fx )
+                          : gui_quad_idx( rule, s_tess.cur_clip_local, style, fx ),
+        };
 
 counted:
 
     /* elem_count counts QUADS under this backend; the flush multiplies by six at the draw. */
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += 1;
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += band ? GUI_QUAD_BAND_COUNT : 1;
 
     if ( s_tess.cur_is_text && !s_volatile_patching )
         s_tess.slot_text_quads++;

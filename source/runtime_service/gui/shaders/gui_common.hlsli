@@ -54,17 +54,43 @@ float3 srgb_to_linear( float3 c )
 #define FX_ROWS         2u
 
 // The quad's packed INDEX word, a TAGGED UNION mirroring gui.h.  The tag is the top two bits and
-// the clip entry sits at the bottom of both layouts, so clip decodes without reading the tag.
+// the clip entry sits at the bottom of every layout, so clip decodes without reading the tag.
 #define GUI_QUAD_TAG_SHIFT     30u
 #define GUI_QUAD_TAG_GLYPH     1u
+#define GUI_QUAD_TAG_BAND      2u
 
 #define GUI_QUAD_CLIP_SHIFT    0u
 #define GUI_QUAD_CLIP_MASK     0xFu
 #define GUI_QUAD_RULE_SHIFT    4u
+#define GUI_QUAD_BAND_SHIFT    4u   // the rule field, re-read under the BAND tag
 #define GUI_QUAD_STYLE_SHIFT   6u
 #define GUI_QUAD_STYLE_MASK    0x7FFu
 #define GUI_QUAD_FX_SHIFT      17u
 #define GUI_QUAD_FX_MASK       0x1FFFu
+
+// The style record's OP bits, mirroring gui.h's GUI_OP_*.  Both stages read them -- the fragment
+// to run the cascade, the vertex stage to size a band covering -- so this is the one shader-side
+// copy.  Keep it in step with gui.h and rebuild.
+#define OP_BAND         0x01u
+#define OP_CUT          0x02u
+#define OP_INSET        0x04u
+#define OP_PULSE        0x08u
+#define OP_STRIPES      0x10u
+#define OP_SELF         0x20u
+#define OP_GRAD         0x40u
+#define OP_GRAD_RADIAL  0x80u
+#define OP_GRAD_CONIC   0x100u
+#define OP_SPIN         0x200u
+#define OP_DASH         0x400u
+#define OP_DITHER       0x800u
+#define OP_FRAME        0x1000u
+
+// The PATTERN ops: what a shape is filled or cut WITH, rather than what shape it is.  All read
+// row 7 and at most one is live per record.
+#define OP_TILE_U       0x2000u
+#define OP_TEXT_EDGE    0x4000u
+#define OP_CHECKER      0x8000u
+#define OP_GRID         0x10000u
 
 #define GUI_QUAD_SDF_BIT       ( 1u << 4 )
 #define GUI_QUAD_GLYPH_SHIFT   5u

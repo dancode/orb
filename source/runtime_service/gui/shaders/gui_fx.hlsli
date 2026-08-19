@@ -16,29 +16,8 @@
 [[vk::binding( 0, 0 )]] Texture2D    u_textures[] : register( t0, space0 );
 [[vk::binding( 1, 0 )]] SamplerState u_samplers[] : register( s0, space0 );
 
-// Mirrors gui.h: the record's op bits and the sampling model in its `tex` field.  These two
-// declarations of the same constants are the only duplication the record model still carries;
-// keep them in step and rebuild.
-#define OP_BAND         0x01u
-#define OP_CUT          0x02u
-#define OP_INSET        0x04u
-#define OP_PULSE        0x08u
-#define OP_STRIPES      0x10u
-#define OP_SELF         0x20u
-#define OP_GRAD         0x40u
-#define OP_GRAD_RADIAL  0x80u
-#define OP_GRAD_CONIC   0x100u
-#define OP_SPIN         0x200u
-#define OP_DASH         0x400u
-#define OP_DITHER       0x800u
-#define OP_FRAME        0x1000u
-
-// The PATTERN ops: what a shape is filled or cut WITH, rather than what shape it is.  All read
-// row 7 and at most one is live per record.
-#define OP_TILE_U       0x2000u
-#define OP_TEXT_EDGE    0x4000u
-#define OP_CHECKER      0x8000u
-#define OP_GRID         0x10000u
+// The record's op bits are in gui_common.hlsli -- the vertex stage reads them too, to size the
+// band covering.
 
 // The ops that read the animation clock.  One test decides whether row 5 is fetched at all, so a
 // static shape never pays for the timebase it does not use.

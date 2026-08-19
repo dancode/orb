@@ -135,7 +135,7 @@ test_quad_layout( void )
     test_equal( 2u, GUI_QUAD_RULE_CAPSULE );
     test_equal( 3u, GUI_QUAD_RULE_BBOX );
 
-    /* BOTH arms of the tagged union are exactly full: their fields tile all 32 bits with no gap
+    /* EVERY arm of the tagged union is exactly full: its fields tile all 32 bits with no gap
        and no overlap, so widening any one of them is a re-plan of the union rather than an edit.
 
        A field's WIDTH and the pool it names are two different numbers.  Clip and the glyph table
@@ -153,6 +153,16 @@ test_quad_layout( void )
                            | ( GUI_QUAD_GLYPH_MASK << GUI_QUAD_GLYPH_SHIFT )
                            | ( GUI_QUAD_GFX_MASK   << GUI_QUAD_GFX_SHIFT   )
                            | ( GUI_QUAD_TAG_MASK   << GUI_QUAD_TAG_SHIFT   ) );
+    /* BAND is SHAPED's layout with the rule field re-read, so it tiles by the same arithmetic and
+       the band index must fit exactly the two bits the rule vacated. */
+    test_equal( 0xFFFFFFFFu, ( GUI_QUAD_CLIP_MASK  << GUI_QUAD_CLIP_SHIFT  )
+                           | ( 3u                  << GUI_QUAD_BAND_SHIFT  )
+                           | ( GUI_QUAD_STYLE_MASK << GUI_QUAD_STYLE_SHIFT )
+                           | ( GUI_QUAD_FX_MASK    << GUI_QUAD_FX_SHIFT    )
+                           | ( GUI_QUAD_TAG_MASK   << GUI_QUAD_TAG_SHIFT   ) );
+    test_equal( GUI_QUAD_RULE_SHIFT, GUI_QUAD_BAND_SHIFT );
+    test_equal( 4u, GUI_QUAD_BAND_COUNT );
+
     test_equal( 15u, GUI_QUAD_CLIP_MASK );   /* GUI_WIN_CLIP_MAX - 1, a backend-private cap */
     test_equal( GUI_GLYPH_TABLE_MAX - 1u, GUI_QUAD_GLYPH_MASK );
     test_true ( (u32)GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK );
@@ -174,6 +184,21 @@ test_quad_layout( void )
     test_equal(  9u,    gui_quad_clip ( idx ) );
     test_equal( 1337u,  gui_quad_style( idx ) );
     test_equal( 4321u,  gui_quad_fx   ( idx ) );
+
+    /* The four band quads of one shape differ in the band field and in NOTHING else -- that is what
+       lets them resolve the same style, clip and fx record, and so the same field the single quad
+       they replace resolved. */
+    for ( u32 b = 0; b < GUI_QUAD_BAND_COUNT; ++b )
+    {
+        u32 bidx = gui_quad_idx_band( b, 9u, 1337u, 4321u );
+        test_equal( GUI_QUAD_TAG_BAND, gui_quad_tag  ( bidx ) );
+        test_equal( b,                 gui_quad_band ( bidx ) );
+        test_equal(  9u,               gui_quad_clip ( bidx ) );
+        test_equal( 1337u,             gui_quad_style( bidx ) );
+        test_equal( 4321u,             gui_quad_fx   ( bidx ) );
+        test_equal( idx & ~( 3u << GUI_QUAD_BAND_SHIFT | GUI_QUAD_TAG_MASK << GUI_QUAD_TAG_SHIFT ),
+                    bidx & ~( 3u << GUI_QUAD_BAND_SHIFT | GUI_QUAD_TAG_MASK << GUI_QUAD_TAG_SHIFT ) );
+    }
 
     u32 gidx = gui_quad_idx_glyph( 11u, 7000u, true, 3000u );
     test_equal( GUI_QUAD_TAG_GLYPH, gui_quad_tag  ( gidx ) );

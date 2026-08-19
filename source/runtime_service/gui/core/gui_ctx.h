@@ -442,6 +442,13 @@ f32 vp_caption( i32 vp );
 
 f32 vp_work_top( i32 vp );
 
+/* Is a dockspace laid over viewport vp, emit-gated on the same one-frame tolerance as the bands
+   above (core/gui_ctx.c)?  Describes the SURFACE -- what content below pinned chrome looks like.
+   The stricter "may this tree place windows and take drops right now" is dock_vp_emitted, in
+   chrome/dock/. */
+
+bool vp_docked( i32 vp );
+
 /* Resolve a caller-supplied viewport index to a live slot: GUI_VP_INVALID, out-of-range, and
    torn-down slots all map to the primary (GUI_VP_MAIN).  Run by record-less root callers
    (pane, region) on every open (core/gui_ctx.c). */

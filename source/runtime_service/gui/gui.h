@@ -2283,7 +2283,7 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
    a whole glyph needs an atlas ID and no style record, and every other shape needs a style record
    and no atlas ID, so the two never have to fit side by side.
 
-   The tag is the top two bits.  Clip sits at the bottom of BOTH layouts, in the same place, so it
+   The tag is the top two bits.  Clip sits at the bottom of ALL layouts, in the same place, so it
    decodes without consulting the tag at all.
 
      tag SHAPED (0)   bits 0-3    clip entry, slot-local (GUI_WIN_CLIP_MAX = 16 per window slab)
@@ -2296,9 +2296,16 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
                       bits 5-17   glyph-table ID (GUI_GLYPH_TABLE_MAX = 8192)
                       bits 18-29  fx record, twelve bits of the same row index
 
-   Both words are exactly full: there is no spare bit to widen a field with, so raising a pool past
-   what its field can name is a re-plan of this union, not a constant bump.  The glyph-table ID and
-   the clip entry sit AT their fields' ceilings; the style and fx fields have slack at the caps
+     tag BAND   (2)   bits 0-3    clip entry, as above
+                      bits 4-5    WHICH BAND of the four (top, bottom, left, right)
+                      bits 6-16   style record, as SHAPED
+                      bits 17-29  fx record, as SHAPED
+                    SHAPED's layout with the rule field re-read: a band is always drawn SKIRT, so
+                    those two bits are free to name the band instead.  See gui_quad_band below.
+
+   All three words are exactly full: there is no spare bit to widen a field with, so raising a pool
+   past what its field can name is a re-plan of this union, not a constant bump.  The glyph-table ID
+   and the clip entry sit AT their fields' ceilings; the style and fx fields have slack at the caps
    currently shipping, and the static asserts beside GUI_MAX_PRIMS are what keep that true.
 
    Clip is per QUAD, not per style: two identically styled rows in different scroll regions must
@@ -2310,21 +2317,54 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
    records is never an fx record, which is what lets 0 mean that -- the tessellator leaves record 0
    alone rather than opening a page there.
 
-   Tags 2 and 3 are unspent.  They are where a glyph that needs a STYLE (an SDF outline) and a
-   fill that needs none would land; both take the SHAPED layout today. */
+   Tag 3 is unspent.  It is where a glyph that needs a STYLE (an SDF outline) would land; it takes
+   the SHAPED layout today. */
 
 #define GUI_QUAD_TAG_SHIFT     30u
 #define GUI_QUAD_TAG_MASK      0x3u
 #define GUI_QUAD_TAG_SHAPED    0u
 #define GUI_QUAD_TAG_GLYPH     1u
+#define GUI_QUAD_TAG_BAND      2u
 
 #define GUI_QUAD_CLIP_SHIFT    0u
 #define GUI_QUAD_CLIP_MASK     0xFu
 #define GUI_QUAD_RULE_SHIFT    4u
+#define GUI_QUAD_BAND_SHIFT    4u   // the rule field, re-read under the BAND tag
 #define GUI_QUAD_STYLE_SHIFT   6u
 #define GUI_QUAD_STYLE_MASK    0x7FFu
 #define GUI_QUAD_FX_SHIFT      17u
 #define GUI_QUAD_FX_MASK       0x1FFFu
+
+/*==============================================================================================
+
+    THE BAND COVERING -- four quads where one would do, to stop rasterizing what cannot paint.
+
+    A quad's covering is a rectangle, so a shape that only paints near its boundary rasterizes its
+    whole middle at zero coverage: a drop-shadow skirt (GUI_OP_CUT) whose hole is the caster, an
+    outline (GUI_OP_BAND) a few px thick on a panel-sized rect, an inner shadow (GUI_OP_INSET)
+    that reaches a fixed depth in.  On a 600x400 window the paying region is under a tenth of the
+    covering.
+
+    A BAND-tagged quad carries the SAME placement, style, clip, colour and fx row as the single
+    quad it replaces -- only the expansion differs.  Four of them tile the frame between the shape's
+    padded outer rect and the rect its field provably leaves at zero, so:
+
+      - the FRAGMENT is untouched.  Placement still arrives from the quad, so the field is
+        evaluated in exactly the frame it was before and the omitted region is one the shader
+        would have resolved to zero anyway.  This cannot change a pixel.
+      - nothing about batching changes.  These are ordinary quads in the same buffer and the same
+        draw, so sort keys, clip entries and z-order against other windows are untouched.
+
+    The vertex stage derives the hole from the style it is already reading (gui_quad.vs.hlsl,
+    band_local) and CLAMPS it, so the four bands tile without gap or overlap whatever the record
+    holds.  The tessellator decides only WHETHER the trade is worth four quads instead of one.
+==============================================================================================*/
+
+#define GUI_QUAD_BAND_TOP      0u
+#define GUI_QUAD_BAND_BOTTOM   1u
+#define GUI_QUAD_BAND_LEFT     2u
+#define GUI_QUAD_BAND_RIGHT    3u
+#define GUI_QUAD_BAND_COUNT    4u
 
 #define GUI_QUAD_SDF_BIT       ( 1u << 4 )
 #define GUI_QUAD_GLYPH_SHIFT   5u
@@ -2350,6 +2390,25 @@ gui_quad_idx( u32 rule, u32 clip, u32 style, u32 fx_row )
          | ( GUI_QUAD_TAG_SHAPED << GUI_QUAD_TAG_SHIFT );
 }
 
+/* Pack a BAND index word -- SHAPED's, with the rule field naming which of the four bands this quad
+   expands to.  Everything else is identical by construction: the four quads of one shape differ in
+   this field and nothing else, so they resolve the same style, clip and fx record. */
+
+static inline u32
+gui_quad_idx_band( u32 band, u32 clip, u32 style, u32 fx_row )
+{
+    ORB_ASSERT( band   <  GUI_QUAD_BAND_COUNT &&
+                clip   <= GUI_QUAD_CLIP_MASK  &&
+                style  <= GUI_QUAD_STYLE_MASK &&
+                fx_row <= GUI_QUAD_FX_MASK );
+
+    return ( ( clip   & GUI_QUAD_CLIP_MASK  ) << GUI_QUAD_CLIP_SHIFT  )
+         | ( ( band   & 0x3u                ) << GUI_QUAD_BAND_SHIFT  )
+         | ( ( style  & GUI_QUAD_STYLE_MASK ) << GUI_QUAD_STYLE_SHIFT )
+         | ( ( fx_row & GUI_QUAD_FX_MASK    ) << GUI_QUAD_FX_SHIFT    )
+         | ( GUI_QUAD_TAG_BAND << GUI_QUAD_TAG_SHIFT );
+}
+
 /* Pack a GLYPH index word.  `sdf` picks which of the two text atlases the fragment samples; the
    slot itself comes from the push block, so a glyph names no style record at all. */
 
@@ -2370,6 +2429,7 @@ gui_quad_idx_glyph( u32 clip, u32 glyph_id, bool sdf, u32 fx_row )
 static inline u32 gui_quad_tag  ( u32 idx ) { return ( idx >> GUI_QUAD_TAG_SHIFT   ) & GUI_QUAD_TAG_MASK;   }
 static inline u32 gui_quad_clip ( u32 idx ) { return ( idx >> GUI_QUAD_CLIP_SHIFT  ) & GUI_QUAD_CLIP_MASK;  }
 static inline u32 gui_quad_rule ( u32 idx ) { return ( idx >> GUI_QUAD_RULE_SHIFT  ) & 0x3u;                }
+static inline u32 gui_quad_band ( u32 idx ) { return ( idx >> GUI_QUAD_BAND_SHIFT  ) & 0x3u;                }
 static inline u32 gui_quad_style( u32 idx ) { return ( idx >> GUI_QUAD_STYLE_SHIFT ) & GUI_QUAD_STYLE_MASK; }
 static inline u32 gui_quad_fx   ( u32 idx ) { return ( idx >> GUI_QUAD_FX_SHIFT    ) & GUI_QUAD_FX_MASK;    }
 static inline u32 gui_quad_glyph( u32 idx ) { return ( idx >> GUI_QUAD_GLYPH_SHIFT ) & GUI_QUAD_GLYPH_MASK; }

@@ -683,7 +683,8 @@ window_apply_resize_gesture( gui_window_t* win, gui_id_t id, bool native, f32 ti
    ROOT clip (the falloff skirt lives outside the window rect, which the window clip would cut):
    the render's stable z-sort keeps it behind the window's own body but above every window below.
    Strength is banded by elevation -- overlays strongest, free floaters lighter -- and the flush
-   chrome the caller filters out (docked, maximized, native, frame-only shells) casts none.
+   chrome the caller filters out (docked, maximized, native, frame-only shells, chrome bands)
+   casts none.
    A theme opts out entirely with GUI_VAR_SHADOW 0 or an alpha-0 GUI_EXT_SHADOW.
 
    A SKIRT, not a filled box: it paints nothing inside the WINDOW's outline, so a translucent panel
@@ -1105,8 +1106,29 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     /* Elevation shadow, under everything this window draws.  Only chrome that actually FLOATS
        casts one: a maximized window is flush with its surface, and a native window (frame-only
        shell or detached floater) fills its own OS surface edge-to-edge, so the skirt would be
-       clipped at the surface bounds and read as a dark rim. */
-    if ( !native && !frame_only && !win->maximized )
+       clipped at the surface bounds and read as a dark rim.
+
+       A DOCKED window is not tested here because it never arrives: window_begin hands it to
+       window_begin_docked at the route seam above and returns.  Tiles in a dock tree read as one
+       plane separated by their borders, so a shadow between them would say they are at different
+       depths.
+
+       A CHROME BAND casts only over content that actually floats.  A window whose z is a FIXED
+       band value rather than one the dispenser handed out (core/gui_surface.c, the z band map) is
+       pinned frame furniture -- the main menu bar strip across the top of the display is the one in
+       the library.  Over free windows it is genuinely above them and its shadow says so; over a
+       DOCKSPACE the content below is a plane of tiles flush with the bar, and a shadow falling
+       across them claims a depth the layout does not have.  So the surface decides, per viewport
+       and per frame -- vp_docked carries the one-frame emit tolerance the bar needs, since a host
+       lays its dockspace down AFTER the menu bar has already begun within the same build.
+
+       An anchored overlay sits in a fixed band too and always floats, which is what win->overlay
+       separates: every record in the overlay band carries it, and no other fixed-band window
+       does. */
+    bool chrome_band = ( win->z >= GUI_REGION_Z ) && !win->overlay;
+
+    if ( !native && !frame_only && !win->maximized
+      && !( chrome_band && vp_docked( win->viewport ) ) )
         window_draw_elevation( win, disp_h );
 
     /* Commit window chrome state for the widgets and window_end (id + interaction scope were

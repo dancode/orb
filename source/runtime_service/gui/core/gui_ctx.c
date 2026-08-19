@@ -313,6 +313,24 @@ f32 vp_work_top( i32 vp )
     return top;
 }
 
+/* Is a DOCKSPACE laid over this surface?  Emit-gated with the same one-frame tolerance as the
+   bands above, and for the same reason: a host emits its dockspace at the top of the build, but
+   pinned chrome (the menu bar) begins before that, so a reader inside the same build would see
+   only the previous frame's stamp.
+
+   Deliberately NOT dock_vp_emitted (chrome/dock/gui_dock_core.c), which asks a stricter question
+   with an exact stamp match: whether the tree may PLACE windows and accept drops right now, where
+   one frame of tolerance would let a dormant tree keep claiming windows.  This one only describes
+   the surface -- what is laid over it -- which is plain viewport state core owns. */
+
+bool vp_docked( i32 vp )
+{
+    const gui_viewport_t* v = &s_vp_pool[ vp ];
+    return v->dock_root != GUI_DOCK_REF_NONE
+        && v->dock_seen_frame != 0u
+        && v->dock_seen_frame + 1u >= gui_frame_index();
+}
+
 /* Resolve a caller-supplied viewport to a live slot: GUI_VP_INVALID / out-of-range map to the
    primary, and so does a slot whose surface has been torn down -- the same fallback a window
    record gets in window_begin_ex.  Record-less callers (pane_begin, region_begin) have nowhere
