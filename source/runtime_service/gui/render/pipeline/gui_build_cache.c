@@ -169,13 +169,15 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
 
 /* RENDER_MAX_WIN / SLOT_QUAD_PAD live in gui_render.h (the dashboard snapshot types are sized
    by them). */
+
 /* Max GPU draw commands cached per slot; most windows have 2-4, but every volatile block adds
    its own commands + reserved dormant pads (unmergeable across the reservation seams), so a
    window dense with volatile widgets multiplies fast.  A window that exceeds the cap is NOT
    truncated -- it goes uncacheable (see cache_slot_tessellate) and re-tessellates every real
    frame; the cap trades stable-cache memory against how large a window can be and still be
    retained. */
-#define WIN_SLOT_CMD_MAX  64
+
+#define WIN_SLOT_CMD_MAX  16
 
 /* Proactive compaction threshold.  The reuse allocator is bump-only: new windows always tessellate
    at the tail (past every live reservation), so a closed/relocated window's space becomes a hole
@@ -194,9 +196,9 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
    reuse path needs no fixup when the slot's absolute quad_base is unchanged. */
 typedef struct
 {
-    gui_gpu_cmd_t cmd;     // clip rect, texture slot, element count (quads)
-    i32           vp;      // viewport this command targets (GUI_VP_INVALID = dormant volatile pad)
-    u32           lqbase;  // quad base relative to slot->quad_base (0-relative)
+    gui_gpu_cmd_t cmd;     // texture slot, element count (quads)
+    i16           vp;      // viewport this command targets (GUI_VP_INVALID = dormant volatile pad)
+    u16           lqbase;  // quad base relative to slot->quad_base (0-relative)
 
 } win_slot_cmd_t;
 
@@ -917,7 +919,7 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
         u32 ci = slot->cmd_base + k;
         s_tess.gpu_cmds[ ci ].cmd   = s_win_cached[ cache_idx ][ k ].cmd;
         s_tess.gpu_cmds[ ci ].vp    = s_win_cached[ cache_idx ][ k ].vp;
-        s_tess.gpu_cmds[ ci ].qbase = slot->quad_base + s_win_cached[ cache_idx ][ k ].lqbase;
+        s_tess.gpu_cmds[ ci ].qbase = (u16)( slot->quad_base + s_win_cached[ cache_idx ][ k ].lqbase );
     }
     s_tess.cmd_count += nc;
 
@@ -1015,7 +1017,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
         {
             tess_geo_copy( prev->quad_base, tail_v, slot->quad_count );
             for ( u32 k = 0; k < slot->cmd_count; ++k )
-                s_tess.gpu_cmds[ slot->cmd_base + k ].qbase -= dv;
+                s_tess.gpu_cmds[ slot->cmd_base + k ].qbase = (u16)( s_tess.gpu_cmds[ slot->cmd_base + k ].qbase - dv );
         }
         /* Records move on their own axis: the record arena is packed independently of the quad
            one, so a slot can land back in its quad hole while its records still shift.  Their
@@ -1073,7 +1075,16 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
         if ( cache_idx != ~0u )
             s_win_cached_count[ cache_idx ] = 0;
         if ( nc > WIN_SLOT_CMD_MAX )
+        {
             ++s_tess_stats.uncacheable_wins;
+
+            /* Non-fatal and self-latching, same as the pool-overflow trap below: this window still
+               draws correctly (just uncacheable), so the assert exists to flag the cap during dev
+               testing, not to treat a normal degrade path as fatal. */
+            ORB_ASSERT_MSG_ONCE( false, "gui window exceeded WIN_SLOT_CMD_MAX -- window goes "
+                                 "uncacheable and re-tessellates every frame; see the shutdown log "
+                                 "for the running count" );
+        }
         slot->cmd_cached = false;
         slot->valid      = true;
         return;
@@ -1084,7 +1095,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
         u32 ci = slot->cmd_base + k;
         s_win_cached[ cache_idx ][ k ].cmd    = s_tess.gpu_cmds[ ci ].cmd;
         s_win_cached[ cache_idx ][ k ].vp     = s_tess.gpu_cmds[ ci ].vp;
-        s_win_cached[ cache_idx ][ k ].lqbase = s_tess.gpu_cmds[ ci ].qbase - slot->quad_base;
+        s_win_cached[ cache_idx ][ k ].lqbase = (u16)( s_tess.gpu_cmds[ ci ].qbase - slot->quad_base );
     }
     slot->cmd_cached = true;
     slot->valid      = true;

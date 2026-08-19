@@ -1054,13 +1054,12 @@ draw_hash_cmd( const gui_cmd_t* c )
 
     Open runs the four gates every push goes through, in the one order that is correct.
 
-    1. Blocked first so the command stepper's debug tool owner stamp lands.
-
-    A fully transparent shape contributes nothing under alpha blending, 
-      src*0 + dst = dst; the cull is exact against the active scissor), 
+    1. Exceeds command limit (just stops drawing commands)
+    2. Frozen by the command stepper debug tool (skips non-debug band)
+    3. A fully transparent shape contributes nothing under alpha blending.
+    4. Then a cull test, which is the only gate that can be expensive comes lat.
     
-    then allocates
-    the slot and stamps the header.  `vis_col` is the shape's colour with the ambient alpha
+    The slot and stamps the header. `vis_col` is the shape's colour with the ambient alpha
     ALREADY folded (a multi-colour shape passes the OR of its folded colours -- visible if any
     end is).  `pad` grows the cull box on every side for shapes whose geometry reaches past the
     authored rect (the SDF AA skirt, a shadow's feather).  Returns NULL when the shape must not

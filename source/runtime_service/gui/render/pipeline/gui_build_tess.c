@@ -29,10 +29,12 @@
 typedef struct
 {
     gui_gpu_cmd_t cmd;      // elem_count (quads), tex_idx -- the GPU draw-call unit
-    i32           vp;       // viewport for this command (GUI_VP_INVALID = dormant volatile pad)
-    u32           qbase;    // quad slot -- first quad of command (its draw's first_vertex / 6)
+    i16           vp;       // viewport for this command (GUI_VP_INVALID = dormant volatile pad)
+    u16           qbase;    // quad slot -- first quad of command (its draw's first_vertex / 6)
 
 } tess_gpu_cmd_t;
+
+ORB_STATIC_ASSERT( GUI_MAX_QUADS <= 0xFFFF, "tess_gpu_cmd_t.qbase is u16" );
 
 /*==============================================================================================
     Tessellation state -- the quad and style arenas populated from the semantic command list.
@@ -495,8 +497,8 @@ tess_ensure_gpu_cmd( void )
        may go on to span several. */
     s_tess.gpu_cmds[ s_tess.cmd_count++ ] = ( tess_gpu_cmd_t ){
         .cmd   = { .elem_count = 0, .tex_idx = s_tess.cur_tex },
-        .vp    = s_tess.cur_vp,
-        .qbase = s_tess.quad_count,
+        .vp    = (i16)s_tess.cur_vp,
+        .qbase = (u16)s_tess.quad_count,
     };
     return true;
 }

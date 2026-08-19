@@ -325,8 +325,8 @@ main( int argc, char** argv )
         // style->col[GUI_ROLE_MARK][GUI_PHASE_IDLE] = GUI_COLOR( 0xFF, 0x40, 0x40, 0xFF );
         // Modify any skin (STYLE) knob -- metrics are authored for a baseline em=12
 
-        // style->var[GUI_VAR_PANEL_ROUND] = 0;    // Square windows
-        // style->var[GUI_VAR_ROUND]       = 0;    // No bevel on buttons
+        style->var[GUI_VAR_PANEL_ROUND] = 4;    // Square windows
+        style->var[GUI_VAR_ROUND]       = 4;    // No bevel on buttons
         // style->var[GUI_VAR_GAP]         = 12;   // More breathing room
 
         // Re-scale and apply the changes across the UI

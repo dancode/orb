@@ -487,8 +487,8 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd_open )
         u32 ci = cmd_open + k;
         s_tess.gpu_cmds[ ci ] = ( tess_gpu_cmd_t ){
             .cmd   = { .elem_count = 0, .tex_idx = 0 },
-            .vp    = GUI_VP_INVALID,
-            .qbase = s_tess.quad_count,
+            .vp    = (i16)GUI_VP_INVALID,
+            .qbase = (u16)s_tess.quad_count,
         };
     }
     s_tess.cmd_count     = cmd_open + res_c;
@@ -628,12 +628,12 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
             {
                 u32 src = tcmd_ck + k;
                 s_tess.gpu_cmds[ dst ]       = s_tess.gpu_cmds[ src ];   /* cmd + vp ride along */
-                s_tess.gpu_cmds[ dst ].qbase = abs_vb + ( s_tess.gpu_cmds[ src ].qbase - quad_ck );
+                s_tess.gpu_cmds[ dst ].qbase = (u16)( abs_vb + ( s_tess.gpu_cmds[ src ].qbase - quad_ck ) );
             }
             else
             {
                 s_tess.gpu_cmds[ dst ].cmd.elem_count = 0;
-                s_tess.gpu_cmds[ dst ].vp = GUI_VP_INVALID;
+                s_tess.gpu_cmds[ dst ].vp = (i16)GUI_VP_INVALID;
             }
         }
         row->quad_count = (u16)nv;
