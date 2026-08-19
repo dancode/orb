@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/pipeline/gui_emit_draw.c -- Draw list accumulation.
+    gui/render/pipeline/gui_emit_draw.c -- Draw list accumulation.
 
     All geometry goes through the draw_push_* entry points, which append semantic gui_cmd_t
     records (no vertices yet).  GPU batching happens later, at tessellation time, in
@@ -11,33 +11,34 @@
     exactly like every other draw_push_*, so EMIT stays the one place a command is born and the
     resource never reaches up into it.
 
-    First of the pipeline includes in gui_render.c.  The resolvers it calls -- font_glyph,
-    icon_get, icon_atlas_idx -- are NOT in this unit: fonts and icons are the draw unit's, and
-    the server reaches them through the glyph/sprite source contract declared in
-    render/gui_render.h, which the draw unit implements.  Nothing here depends on include order
-    for them.
+    First of the pipeline includes in gui_render.c.  
+    
+    The resolvers it calls -- font_glyph, icon_get, icon_atlas_idx -- are NOT in this unit: 
+    fonts and icons are the draw object unit's, but the server reaches them through the 
+    glyph/sprite resource contract declared in render/gui_render.h, which the draw unit 
+    implements.  Nothing here depends on include order for them.
 
 ==============================================================================================*/
 // clang-format off
 
 /*==============================================================================================
-    gui_gpu_cmd_t -- backend-private GPU draw command.
+    gui_gpu_cmd_t -- backend-private GPU draw command after tessellation.
 
-    One bounded range of quads -- the unit the GPU sees.  Not exposed in gui.h.  The public
-    gui_cmd_t carries semantic shapes; the BUILD phase (gui_build_tess.c) tessellates those
-    into these.
+    One bounded range of quads -- the unit the GPU sees (not exposed in gui.h) 
+    The public gui_cmd_t carries semantic shapes; the BUILD phase (gui_build_tess.c)
+    tessellates those into these.
 ==============================================================================================*/
 
 typedef struct
 {
-    u32          elem_count; // number of quads to draw (6 vertices each)
+    u32          elem_count;    // number of quads to draw (6 vertices each)
 
     /* The texture of the command's FIRST primitive, kept for diagnostics only (the dashboard
        tooltip).  It is no longer a batch key and no longer describes the whole command: the
-       texture rides the style record (gui.h, gui_prim_t), so one command can span several. */
+       texture rides the style record (gui_prim_t), so one command can span several. */
 
-    u32          tex_idx;    // first primitive's model|slot -- diagnostic, not a batch key
-    gui_rect_t   clip_rect;  // scissor rect (pixels)
+    u32          tex_idx;       // first primitive's model|slot -- diagnostic, not a batch key
+    gui_rect_t   clip_rect;     // scissor rect (pixels)
 
 } gui_gpu_cmd_t;
 

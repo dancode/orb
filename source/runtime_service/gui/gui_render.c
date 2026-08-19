@@ -2,7 +2,7 @@
 
     runtime_service/gui/gui_render.c -- GUI_RENDER translation unit: the RENDER SERVER.
 
-    ------------------------------------------------------------------------------------------------
+    --------------------------------------------------------------------------------------------
     Overview:
 
     This is the part of the GUI that actually puts pixels on the screen. It is a small,
@@ -40,7 +40,7 @@
     dashboard, text selection, the frame stepper -- that is not allowed to reach into the
     pipeline directly.
     
-    ------------------------------------------------------------------------------------------------
+    --------------------------------------------------------------------------------------------
     Resource:
 
     resource/gui_atlas.h/.c         -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
@@ -49,7 +49,7 @@
                                         into so all core UI draws batch together, the RGBA SPRITE
                                         atlas for authored art, and the SDF atlas for distance-field
                                         glyphs -- the latter two created lazily, on first use
-    ------------------------------------------------------------------------------------------------
+    --------------------------------------------------------------------------------------------
     Pipeline:
 
     pipeline/gui_emit_draw.c        -- EMIT: CPU draw list: draw_reset, draw_push_* (incl. draw_push_icon), s_draw
@@ -61,7 +61,7 @@
                                         the push-constant layout (render_init/shutdown, TU-local)
     pipeline/gui_render_submit.c    -- RENDER: per-surface GPU submit: gui_render_flush, the
                                         debug-mode/time setters
-    ------------------------------------------------------------------------------------------------
+    --------------------------------------------------------------------------------------------
     Utility:
 
     gui_debug_overlay.c             -- DEBUG OVERLAY: bolt-on second draw list, flushed on top (Debug only).  Stays
@@ -74,7 +74,7 @@
 
     gui_render_mem.c                -- MEMORY ACCOUNTING: backend_memory sizeof-sums every backend static;
                                         must be included last so it sees them all.
-    ------------------------------------------------------------------------------------------------
+    --------------------------------------------------------------------------------------------
     Frame Overview:
 
     Step 1 -- Write the shopping list (EMIT).

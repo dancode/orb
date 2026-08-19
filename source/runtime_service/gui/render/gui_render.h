@@ -31,6 +31,19 @@
     4. RENDER -- GPU flush
     5. DEBUG OVERLAY / DASHBOARD / STEPPER captures
 
+    More: The three phases
+
+    EMIT    gui_emit_draw.c     widgets      -> s_draw   (semantic gui_cmd_t, no geometry)
+    BUILD   gui_build_cache.c   diff+place   -> s_tess   (gui_quad_t + gui_prim_t arenas)
+            gui_build_tess.c    tessellate
+    SUBMIT  gui_render_submit.c upload+draw  -> GPU      (bufferless cmd_draw)
+    GPU     gui_quad.vs.hlsl    expand
+            gui_fx.hlsli        shade
+    
+    EMIT runs per widget call. BUILD runs once per frame, lazily, from first gui_render_flush.
+    SUBMIT runs once per surface.
+
+
 ==============================================================================================*/
 
 #include "engine/app/app_api.h"                 // APP_WIN_MAX -- the per-surface fan-out bound
