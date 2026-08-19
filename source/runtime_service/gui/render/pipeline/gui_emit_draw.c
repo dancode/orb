@@ -1059,32 +1059,36 @@ draw_hash_cmd( const gui_cmd_t* c )
     3. A fully transparent shape contributes nothing under alpha blending.
     4. Then a cull test, which is the only gate that can be expensive comes lat.
     
-    The slot and stamps the header. `vis_col` is the shape's colour with the ambient alpha
+    The slot and stamps the header. 
+    
     ALREADY folded (a multi-colour shape passes the OR of its folded colours -- visible if any
-    end is).  `pad` grows the cull box on every side for shapes whose geometry reaches past the
-    authored rect (the SDF AA skirt, a shadow's feather).  Returns NULL when the shape must not
-    spend a slot; otherwise the caller fills the payload and calls seal, which bakes the
-    retained-cache hash while the bytes are L1-hot.
+    end is). `pad` grows the cull box on every side for shapes whose geometry reaches past the
+    authored rect (the SDF AA skirt, a shadow's feather).  
+    
+    Returns NULL when the shape must not spend a slot; otherwise the caller fills the 
+    payload and calls seal, which bakes the retained-cache hash while the bytes are L1-hot.
 
     The four pool-backed pushes (text, text_xf, polyline via gui_emit_path.c, rect_list) keep
     their own preambles: each has a pool copy that must succeed BEFORE a slot may be spent, and
-    a cull that is not an axis-aligned box test.  They still owe the same transparent drop this
-    preamble runs -- alpha 0 is the free visibility toggle everywhere, with one text nuance: a
-    visible TEXT_EDGE keeps a transparent-fill run alive (the outline paints outside the glyph).
+    a cull that is not an axis-aligned box test.  
+    
+    They still owe the same transparent drop this preamble runs -- alpha 0 is the free 
+    visibility toggle everywhere, with one text nuance: a visible TEXT_EDGE keeps a 
+    transparent-fill run alive (the outline paints outside the glyph).
 
 ==============================================================================================*/
-
-/* Claim the next command slot and stamp the ambient (clip_idx, vp) pair onto it.  vp is the
-   batch key; clip_idx names the rect the tessellator resolves into the slot's local clip table
-   (the vertex clip band -- a clip change cannot cut a draw call either).  Stamping both is the
-   one thing every command must do and no command may get wrong.  Split out of draw_cmd_open
-   below because the pool-backed pushes cannot use that function's preamble (their pool copy has
-   to succeed before a slot is spent, and their cull is not an axis-aligned box test) but they owe
-   the identical stamp.  Seven sites open-coded these four lines before it had a name. */
 
 static gui_cmd_t*
 draw_cmd_claim( u8 type )
 {
+    /* Claim the next command slot and stamp the ambient (clip_idx, vp) pair onto it.  vp is the
+       batch key; clip_idx names the rect the tessellator resolves into the slot's local clip table
+       (the vertex clip band -- a clip change cannot cut a draw call either).  Stamping both is the
+       one thing every command must do and no command may get wrong.  Split out of draw_cmd_open
+       below because the pool-backed pushes cannot use that function's preamble (their pool copy has
+       to succeed before a slot is spent, and their cull is not an axis-aligned box test) but they owe
+       the identical stamp.  Seven sites open-coded these four lines before it had a name. */
+
     gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type      = type;
     c->clip_idx  = s_draw.cur_clip_idx;
