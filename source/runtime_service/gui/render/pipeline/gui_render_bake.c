@@ -460,6 +460,7 @@ pal_rows( const f32* var )
     const f32 k_shadow_drop     = -0.30f;
 
     if ( shadow > 0.0f )
+    {
         for ( u32 b = 0; b < 2u; ++b )
         {
             f32 f = shadow * k_shadow_spread[ b ];
@@ -473,6 +474,7 @@ pal_rows( const f32* var )
                 pal_row_keep();
             }
         }
+    }
 
 }
 
