@@ -136,9 +136,13 @@ test_quad_layout( void )
     test_equal( 3u, GUI_QUAD_RULE_BBOX );
 
     /* BOTH arms of the tagged union are exactly full: their fields tile all 32 bits with no gap
-       and no overlap.  Every one sits at a structural ceiling (16 clips per window slab, 2048
-       style records, four fx records per style record, 8192 glyph-table entries), so a raised cap is a
-       re-plan of the union, not an edit. */
+       and no overlap, so widening any one of them is a re-plan of the union rather than an edit.
+
+       A field's WIDTH and the pool it names are two different numbers.  Clip and the glyph table
+       sit AT their ceilings (16 clips per window slab, 8192 glyph-table entries) and are checked
+       for equality below; the style and fx fields carry slack over the caps currently shipping, so
+       those are checked as the bound they are.  gui.h states the same pair of invariants as static
+       asserts beside GUI_MAX_PRIMS. */
     test_equal( 0xFFFFFFFFu, ( GUI_QUAD_CLIP_MASK  << GUI_QUAD_CLIP_SHIFT  )
                            | ( 3u                  << GUI_QUAD_RULE_SHIFT  )
                            | ( GUI_QUAD_STYLE_MASK << GUI_QUAD_STYLE_SHIFT )
@@ -150,8 +154,8 @@ test_quad_layout( void )
                            | ( GUI_QUAD_GFX_MASK   << GUI_QUAD_GFX_SHIFT   )
                            | ( GUI_QUAD_TAG_MASK   << GUI_QUAD_TAG_SHIFT   ) );
     test_equal( 15u, GUI_QUAD_CLIP_MASK );   /* GUI_WIN_CLIP_MAX - 1, a backend-private cap */
-    test_equal( (u32)GUI_MAX_PRIMS - 1u, GUI_QUAD_STYLE_MASK );
     test_equal( GUI_GLYPH_TABLE_MAX - 1u, GUI_QUAD_GLYPH_MASK );
+    test_true ( (u32)GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK );
 
     /* The fx field names a row in the style arena, and the tag took the two bits that would have
        let it reach every one: 8191 rows is 1024 fx pages per window slot, past which the
