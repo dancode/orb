@@ -2252,18 +2252,25 @@ ORB_STATIC_ASSERT( sizeof( gui_fx_t ) == GUI_FX_BYTES,
 ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
                    "fx records tile a style record exactly -- a page holds GUI_PRIM_ROWS/GUI_FX_ROWS" );
 
-/* The vertex stage's EXPANSION RULE (flags bits 0-1): how the covering corners derive from the
-   stored extents.  Only SKIRT and CAPSULE take the pad; the other two cover exactly what they
-   state. */
+/*==============================================================================================
 
-#define GUI_QUAD_RULE_EXACT    0u   /* corners at +-hw/hh, turned by the quad's own xform        */
-#define GUI_QUAD_RULE_SKIRT    1u   /* EXACT, grown by the SDF pad (style feather/2 + 1) on both
-                                       axes, with the uv span scaled out to match               */
-#define GUI_QUAD_RULE_CAPSULE  2u   /* hw = half-length, hh = radius: along grows by hh + pad    */
-#define GUI_QUAD_RULE_BBOX     3u   /* stored extents ARE the covering, expanded axis-aligned and
-                                       NOT turned (the arc family -- its local frame is a
-                                       reflection the vertex rotation cannot reproduce, so the
-                                       fragment takes the turn instead)                          */
+    VERTEX EXPANSION RULES:
+
+    The vertex stage's EXPANSION RULE (flags bits 0-1): how the covering corners derive from
+    the stored extents. 
+   
+    Only SKIRT and CAPSULE take the pad; the other two cover exactly what they  state.
+==============================================================================================*/
+
+#define GUI_QUAD_RULE_EXACT    0u   // corners at +-hw/hh, turned by the quad's own xform 
+#define GUI_QUAD_RULE_SKIRT    1u   // EXACT, grown by the SDF pad (style feather/2 + 1) on both
+                                    // axes, with the uv span scaled out to match.
+
+#define GUI_QUAD_RULE_CAPSULE  2u   // hw = half-length, hh = radius: along grows by hh + pad
+#define GUI_QUAD_RULE_BBOX     3u   // stored extents ARE the covering, expanded axis-aligned and
+                                    // NOT turned (the arc family -- its local frame is a
+                                    // reflection the vertex rotation cannot reproduce, so the
+                                    // fragment takes the turn instead).
 
 /* The `idx` word is a TAGGED UNION, not one fixed layout.  That is what makes the budget close:
    a whole glyph needs an atlas ID and no style record, and every other shape needs a style record
@@ -2325,8 +2332,10 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
 static inline u32
 gui_quad_idx( u32 rule, u32 clip, u32 style, u32 fx_row )
 {
-    ORB_ASSERT( clip <= GUI_QUAD_CLIP_MASK && style <= GUI_QUAD_STYLE_MASK
-                && fx_row <= GUI_QUAD_FX_MASK );
+    ORB_ASSERT( clip   <= GUI_QUAD_CLIP_MASK &&
+                style  <= GUI_QUAD_STYLE_MASK && 
+                fx_row <= GUI_QUAD_FX_MASK );
+
     return ( ( clip   & GUI_QUAD_CLIP_MASK  ) << GUI_QUAD_CLIP_SHIFT  )
          | ( ( rule   & 0x3u                ) << GUI_QUAD_RULE_SHIFT  )
          | ( ( style  & GUI_QUAD_STYLE_MASK ) << GUI_QUAD_STYLE_SHIFT )
@@ -2340,8 +2349,10 @@ gui_quad_idx( u32 rule, u32 clip, u32 style, u32 fx_row )
 static inline u32
 gui_quad_idx_glyph( u32 clip, u32 glyph_id, bool sdf, u32 fx_row )
 {
-    ORB_ASSERT( clip <= GUI_QUAD_CLIP_MASK && glyph_id <= GUI_QUAD_GLYPH_MASK
-                && fx_row <= GUI_QUAD_GFX_MASK );
+    ORB_ASSERT( clip     <= GUI_QUAD_CLIP_MASK && 
+                glyph_id <= GUI_QUAD_GLYPH_MASK && 
+                fx_row   <= GUI_QUAD_GFX_MASK );
+
     return ( ( clip     & GUI_QUAD_CLIP_MASK  ) << GUI_QUAD_CLIP_SHIFT  )
          | ( sdf ? GUI_QUAD_SDF_BIT : 0u )
          | ( ( glyph_id & GUI_QUAD_GLYPH_MASK ) << GUI_QUAD_GLYPH_SHIFT )

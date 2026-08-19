@@ -194,7 +194,7 @@ perf_span_end( f32* dst, f64 t0 )
        fonts   the loaded-font registry, one row per slot (rarely open) */
 
 #define OVL_COL_PERF    8.0f
-#define OVL_COL_MEMORY  152.0f
+#define OVL_COL_MEMORY  224.0f
 #define OVL_COL_STATE   404.0f
 #define OVL_COL_FONTS   660.0f
 
