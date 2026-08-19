@@ -967,6 +967,9 @@ static const u8 k_cmd_hash_len[] = {
        command hashes stable frame-to-frame while the pattern moves. */
     [GUI_CMD_BOX_DASH]      = sizeof( ( (gui_cmd_t*)0 )->box_dash ),
     [GUI_CMD_REPEAT]        = sizeof( ( (gui_cmd_t*)0 )->repeat ),
+    /* Folds rate/phase whole like FX_BOX: the ring spins in the fragment off pc.time, so the
+       command hashes stable frame-to-frame while it turns. */
+    [GUI_CMD_REPEAT_POLAR]  = sizeof( ( (gui_cmd_t*)0 )->repeat_polar ),
 };
 
 static u32
@@ -1958,6 +1961,50 @@ draw_push_repeat( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
     c->repeat.nx       = nx;
     c->repeat.ny       = ny;
     c->repeat.abgr     = col;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_repeat_polar -- a RING of one rounded cell, from ONE quad.
+
+    `n` copies on a circle of radius `orbit` about (cx, cy).  The angular twin of the lattice
+    above, and at a non-zero `rate` (revolutions/sec) the ring turns on the shader clock in the
+    FRAGMENT -- so these bytes are identical every frame and a spinner re-tessellates nothing,
+    exactly like draw_push_pulse.  The caller still owes one request_redraw per frame while it
+    shows: the clock advancing is not what schedules a frame (GUI_FX_TIME_WRAP).
+==============================================================================================*/
+
+void
+draw_push_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h,
+                        f32 rounding, f32 rate, f32 phase, u32 abgr )
+{
+    if ( n == 0u || orbit <= 0.0f || cell_w <= 0.0f || cell_h <= 0.0f )
+        return;
+
+    /* The same bound the tessellator derives, so the box culled against is the box drawn. */
+    f32 hx = orbit + cell_w * 0.5f;
+    f32 hy = orbit + cell_h * 0.5f;
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_REPEAT_POLAR, col,
+                                  cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->repeat_polar.cx       = cx;
+    c->repeat_polar.cy       = cy;
+    c->repeat_polar.orbit    = orbit;
+    c->repeat_polar.cell_w   = cell_w;
+    c->repeat_polar.cell_h   = cell_h;
+    c->repeat_polar.rounding = rounding;
+    c->repeat_polar.rate     = rate;
+    c->repeat_polar.phase    = phase + s_draw.anim_phase;
+    c->repeat_polar.n        = n;
+    c->repeat_polar.abgr     = col;
+    /* A static ring takes no curve however the ambient is set: the command hash must not move for
+       a shape whose motion nothing reads.  The same rule draw_fx_box_cmd applies to a shadow. */
+    c->repeat_polar.curve       = ( rate > 0.0f ) ? s_draw.anim_curve : 0u;
+    c->repeat_polar.curve_param = ( rate > 0.0f ) ? s_draw.anim_curve_param : 0.0f;
     draw_cmd_seal();
 }
 

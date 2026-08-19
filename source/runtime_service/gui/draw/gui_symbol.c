@@ -651,6 +651,44 @@ draw_ticks( gui_rect_t bar, u32 n, f32 thickness, f32 len, bool vertical, u32 co
         draw_push_repeat( c.x, c.y, n, 1u, pitch, t, t, len, 0.0f, col );
 }
 
+/* A ring of `n` dots fitted to `box`, turning at `rate` revolutions/sec on the SHADER CLOCK.  One
+   quad and one style record for the whole ring, and the command's bytes are identical every frame
+   while it turns -- so unlike a hand-rotated ring of circles it re-tessellates nothing.  rate 0 is
+   a static ring; the caller presents frames with gui()->request_redraw() while it spins, the
+   draw_pulse contract.
+
+   The ring turns as a rigid body: every dot shares one record and one colour, so this is the
+   mechanical spinner rather than the one with a bright head chasing a faded tail.  Pair it with a
+   STAIR curve of `n` steps and it advances exactly one dot per tick. */
+static void
+draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col )
+{
+    gui_vec2_t c = gui_rect_center( box );
+    f32        d = ( dot > 1.0f ) ? dot : 1.0f;
+    f32        r = sym_min_side( box ) * 0.5f - d * 0.5f;
+    if ( r < 1.0f ) r = 1.0f;
+
+    /* Round cells: the radius reaches the cell's half-extent, which is what makes a dot a dot. */
+    draw_push_repeat_polar( c.x, c.y, n, r, d, d, d * 0.5f, rate, 0.0f, col );
+}
+
+/* A dial face: `n` tick marks on a circle fitted to `box`, each `len` px long and pointing
+   OUTWARD.  The same ring as above with a rectangular cell -- the polar fold turns each copy's
+   frame with its position, so radial orientation is not something this has to state.  `rate` spins
+   it (0 = a static gauge face). */
+static void
+draw_dial_ticks( gui_rect_t box, u32 n, f32 thickness, f32 len, f32 rate, u32 col )
+{
+    gui_vec2_t c = gui_rect_center( box );
+    f32        t = sym_thick( thickness );
+    f32        l = ( len > 1.0f ) ? len : 1.0f;
+    f32        r = sym_min_side( box ) * 0.5f - l * 0.5f;
+    if ( r < 1.0f ) r = 1.0f;
+
+    /* The cell is long on the fold's +x axis, which the fold points away from the centre. */
+    draw_push_repeat_polar( c.x, c.y, n, r, l, t, 0.0f, rate, 0.0f, col );
+}
+
 /* Resize grip dots: a triangular 1-2-3 cluster of small square dots in the lower-right of `box`,
    the familiar sizer texture (a window corner grip, a panel resize handle).  Each ROW of the
    cluster is one lattice, so the cluster is three quads rather than six -- the rows have different
@@ -805,6 +843,10 @@ void gui_draw_dot_grid( gui_rect_t at, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
                                                                                { draw_dot_grid( at, nx, ny, pitch_x, pitch_y, size, col ); }
 void gui_draw_ticks( gui_rect_t bar, u32 n, f32 thickness, f32 len, bool vertical, u32 col )
                                                                                { draw_ticks( bar, n, thickness, len, vertical, col ); }
+void gui_draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col )
+                                                                               { draw_dot_spinner( box, n, dot, rate, col ); }
+void gui_draw_dial_ticks( gui_rect_t box, u32 n, f32 thickness, f32 len, f32 rate, u32 col )
+                                                                               { draw_dial_ticks( box, n, thickness, len, rate, col ); }
 void gui_draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col ) { draw_spinner( box, rate, thickness, col ); }
 void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, col ); }
 

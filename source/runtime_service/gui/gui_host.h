@@ -246,6 +246,8 @@ void gui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_
 void gui_draw_grip( gui_rect_t box, u32 col );
 void gui_draw_dot_grid( gui_rect_t at, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y, f32 size, u32 col );
 void gui_draw_ticks( gui_rect_t bar, u32 n, f32 thickness, f32 len, bool vertical, u32 col );
+void gui_draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col );
+void gui_draw_dial_ticks( gui_rect_t box, u32 n, f32 thickness, f32 len, f32 rate, u32 col );
 void gui_draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col );
 void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
 

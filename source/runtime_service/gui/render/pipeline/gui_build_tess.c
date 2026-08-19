@@ -731,11 +731,13 @@ tess_band_worth_it( f32 qhw, f32 qhh, u32 rule )
     const gui_prim_t* p   = &s_tess.cur_prim;
     u32               ops = s_tess.cur_ops;
 
-    /* REPEAT is excluded for a reason of kind rather than of trade: the region a repeated shape
-       leaves at zero coverage is the space BETWEEN its copies, which is not the single rectangle
-       band_local knows how to tile.  A band covering there would carve away real ink. */
+    /* The repetition ops are excluded for a reason of kind rather than of trade: the region a
+       repeated shape leaves at zero coverage is the space BETWEEN its copies, which is not the
+       single rectangle band_local knows how to tile.  A band covering there would carve away real
+       ink -- and under the polar fold the empty region is the hole in the middle of a ring, which
+       is a shape band_local has no way to state at all. */
     if ( rule != GUI_QUAD_RULE_SKIRT || p->field != (u32)GUI_FX_BOX
-      || ( ops & ( GUI_OP_FRAME | GUI_OP_REPEAT ) ) )
+      || ( ops & ( GUI_OP_FRAME | GUI_OP_REPEAT | GUI_OP_REPEAT_POLAR ) ) )
         return false;
 
     /* EXACTLY one hole-cutting op.  Each of the three states where its own coverage reaches zero,
@@ -1198,7 +1200,9 @@ typedef struct
 
     /* GUI_OP_REPEAT: the lattice, sharing row 6 with the dash above (gui.h).  The pitch is
        centre-to-centre and the cell is HALF the copy's size, which is the form the fragment folds
-       in.  The count is not here because it is not stored -- see tess_repeat_box. */
+       in.  The count is not here because it is not stored -- see tess_repeat_box.
+       GUI_OP_REPEAT_POLAR reads the first two lanes as the copy COUNT and the orbit radius
+       instead; its count IS stored, since a circle has no extent to recover one from. */
     f32 rep_pitch_x, rep_pitch_y;
     f32 rep_cell_hx, rep_cell_hy;
 
@@ -1327,10 +1331,10 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         s_tess.cur_prim.dash_scroll = aux->dash_scroll;
     }
 
-    /* GUI_OP_REPEAT reads the SAME row under different names (gui.h, row 6).  Writing it here,
-       beside the dash it shares with, is what keeps "at most one of them" visible at the one place
-       either can be written. */
-    if ( aux && ( s_tess.cur_ops & GUI_OP_REPEAT ) )
+    /* The repetition ops read the SAME row under different names (gui.h, row 6).  Writing them
+       here, beside the dash they share with, is what keeps "at most one of them" visible at the one
+       place any of them can be written. */
+    if ( aux && ( s_tess.cur_ops & ( GUI_OP_REPEAT | GUI_OP_REPEAT_POLAR ) ) )
     {
         s_tess.cur_prim.dash_period = aux->rep_pitch_x;
         s_tess.cur_prim.dash_duty   = aux->rep_pitch_y;
@@ -1452,6 +1456,66 @@ tess_repeat_box( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
     /* Through the ordinary box path so the cell gets the same clamps, the same solid-fill
        convention and the same corner profile every other rounded shape does.  It states the SET's
        rect; the record's cell extent is what the field actually measures against. */
+    const f32 r4[ 4 ] = { rounding, rounding, rounding, rounding };
+    tess_fx_box_core( cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, r4, TESS_FX_AA, 0.0f,
+                      0.0f, 0.0f, 0.0f, 0, 0, 1, 1, 0, abgr, &aux );
+}
+
+/*----------------------------------------------------------------------------------------------
+    tess_repeat_polar -- n copies of one cell on a circle, from ONE quad.
+
+    The angular twin of tess_repeat_box, and the reason the pair is worth having: at `rate` > 0 the
+    ring turns on the SHADER CLOCK (GUI_OP_SPIN, composed upstream of the fold), so a rotating dot
+    spinner is one quad whose command bytes never change -- it re-tessellates nothing while it runs.
+    The caller still presents frames with request_redraw, the draw_pulse contract.
+
+    Unlike the linear fold the count is STORED: a circle has no extent to recover one from, and the
+    orbit takes the lane the second pitch would have used.
+
+    The cell's frame turns with its angular position, so a WIDE cell reads as a dial tick pointing
+    outward and a square one as a dot.  That is the only difference between the two things this
+    draws.
+----------------------------------------------------------------------------------------------*/
+
+static void
+tess_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h,
+                   f32 rounding, f32 rate, f32 phase, u32 curve, f32 curve_param, u32 abgr )
+{
+    if ( n == 0u || cell_w <= 0.0f || cell_h <= 0.0f || orbit <= 0.0f )
+        return;
+
+    f32 chx = cell_w * 0.5f, chy = cell_h * 0.5f;
+
+    /* The set's half-extent.  A cell sits at distance `orbit` in some direction, so the furthest
+       it reaches on either axis is orbit + that axis' half-extent -- tight at the four cardinal
+       angles and conservative everywhere between. */
+    f32 hx = orbit + chx;
+    f32 hy = orbit + chy;
+
+    f32 lim = ( chx < chy ) ? chx : chy;
+    if ( rounding > lim )  rounding = lim;
+    if ( rounding < 0.0f ) rounding = 0.0f;
+
+    tess_fx_aux_t aux = { 0 };
+    aux.rep_pitch_x = (f32)n;      /* the count, where the linear fold states a pitch */
+    aux.rep_pitch_y = orbit;
+    aux.rep_cell_hx = chx;
+    aux.rep_cell_hy = chy;
+
+    s_tess.cur_ops |= GUI_OP_REPEAT_POLAR;
+
+    /* SPIN turns prim_frame, which is upstream of the angular fold, so the whole ring rotates as
+       one rigid body.  With CURVE_STAIR at `n` steps it advances exactly one copy per step -- the
+       mechanical clock-hand spinner, from the same record as the smooth one. */
+    if ( rate > 0.0f )
+    {
+        s_tess.cur_ops  |= GUI_OP_SPIN;
+        aux.anim_rate    = rate;
+        aux.anim_phase   = phase;
+        aux.anim_curve   = curve;
+        aux.anim_param   = curve_param;
+    }
+
     const f32 r4[ 4 ] = { rounding, rounding, rounding, rounding };
     tess_fx_box_core( cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, r4, TESS_FX_AA, 0.0f,
                       0.0f, 0.0f, 0.0f, 0, 0, 1, 1, 0, abgr, &aux );
@@ -2577,6 +2641,17 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                                  c->repeat.pitch_x, c->repeat.pitch_y,
                                  c->repeat.cell_w, c->repeat.cell_h,
                                  c->repeat.rounding, c->repeat.abgr );
+                break;
+
+            /* The ring: same one-quad trade taken angularly, and at a non-zero rate it spins in
+               the fragment -- so the command's bytes stay put while it turns. */
+            case GUI_CMD_REPEAT_POLAR:
+                tess_repeat_polar( c->repeat_polar.cx, c->repeat_polar.cy,
+                                   c->repeat_polar.n, c->repeat_polar.orbit,
+                                   c->repeat_polar.cell_w, c->repeat_polar.cell_h,
+                                   c->repeat_polar.rounding, c->repeat_polar.rate,
+                                   c->repeat_polar.phase, c->repeat_polar.curve,
+                                   c->repeat_polar.curve_param, c->repeat_polar.abgr );
                 break;
 
             case GUI_CMD_IMAGE_XF:

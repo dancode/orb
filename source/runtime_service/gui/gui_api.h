@@ -937,6 +937,20 @@ typedef struct gui_api_s
                                       f32 size, u32 col );
     void ( *draw_ticks             )( gui_rect_t bar, u32 n, f32 thickness, f32 len,
                                       bool vertical, u32 col );
+
+    /* The ANGULAR form of the same fold: `n` copies on a circle fitted to `box`.  ONE quad, and at
+       a non-zero `rate` (revolutions/sec) it turns on the SHADER CLOCK -- so a dot spinner's
+       command bytes never change while it spins and it re-tessellates nothing, where a
+       hand-rotated ring of circles re-emits every frame.  Present frames with request_redraw
+       while it shows, the draw_pulse contract; rate 0 is a static ring.
+       The ring turns as a rigid body -- every copy shares one record and one colour -- so this is
+       the mechanical spinner, not the one with a bright head and a faded tail.  push_anim_curve
+       with STAIR at `n` steps makes it advance exactly one dot per tick.
+       draw_dial_ticks is the same ring with a LONG cell: the fold turns each copy's frame with its
+       position, so the marks point outward and a gauge face costs one quad. */
+    void ( *draw_dot_spinner       )( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col );
+    void ( *draw_dial_ticks        )( gui_rect_t box, u32 n, f32 thickness, f32 len,
+                                      f32 rate, u32 col );
     /* Spinner: a 270-degree arc turning at `rate` revolutions/sec ON THE SHADER CLOCK
        (GUI_OP_SPIN) -- byte-identical command every frame, so it re-tessellates nothing.
        Present frames with request_redraw while it shows, the draw_pulse contract. */

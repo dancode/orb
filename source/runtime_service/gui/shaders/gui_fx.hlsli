@@ -181,6 +181,19 @@ float2 prim_local( float2 px, float4 rect )
         float2 i     = clamp( round( ( p + span ) / pitch ), float2( 0.0, 0.0 ), last );
         p += span - i * pitch;
     }
+    // The ANGULAR fold: n copies on a circle of radius `orbit`.  The plane is turned back by
+    // whichever sector the fragment is in, which puts every copy on the +x axis at `orbit` -- so
+    // one cell evaluation serves all n.  Unlike the linear fold this rotates the cell's frame with
+    // its position, and that is a feature: a rectangular cell points outward, which is what a dial
+    // tick is.  No clamp, because a full circle of sectors has no ends to run off.
+    else if ( ( g_ops & OP_REPEAT_POLAR ) != 0u )
+    {
+        float4 rep = prim_row( 6u );
+        float  sec = 6.28318531 / max( rep.x, 1.0 );
+        float  a   = atan2( p.y, p.x );
+        a -= sec * floor( a / sec + 0.5 );                           // fold to one sector
+        p  = float2( cos( a ), sin( a ) ) * length( p ) - float2( rep.y, 0.0 );
+    }
     return p;
 }
 
@@ -422,10 +435,11 @@ fx_field_t fx_field( float2 px )
     float2 local = prim_local( px, rect );
 
     // The extent the FIELD is measured against.  Normally the quad's, which is the shape -- but
-    // under OP_REPEAT the quad spans the whole set and the shape is one cell of it, so the record
-    // states that extent and every field below reads it instead.
+    // under either repetition op the quad spans the whole set and the shape is one cell of it, so
+    // the record states that extent and every field below reads it instead.  Both folds put the
+    // cell in the same two lanes, so this does not care which one ran.
     float2 he = rect.zw;
-    if ( ( g_ops & OP_REPEAT ) != 0u )
+    if ( ( g_ops & ( OP_REPEAT | OP_REPEAT_POLAR ) ) != 0u )
         he = prim_row( 6u ).zw;
 
     // field 6 SEG -- a CAPSULE: the distance to a line segment, minus its half-thickness.  The

@@ -1959,8 +1959,12 @@ typedef struct
        composes with the other (a repeated shape has no single perimeter for a dash to walk), so
        they share the row rather than each taking one:
 
-         GUI_OP_DASH     dash_period, dash_duty, dash_scroll   -- unused fourth lane
-         GUI_OP_REPEAT   pitch x, pitch y, CELL half-extent x, y
+         GUI_OP_DASH           dash_period, dash_duty, dash_scroll  -- unused fourth lane
+         GUI_OP_REPEAT         pitch x, pitch y, CELL half-extent x, y
+         GUI_OP_REPEAT_POLAR   copy count, orbit radius, CELL half-extent x, y
+
+       Both repetition ops put the cell in the SAME two lanes, so the field reads its extent from
+       one place whichever fold ran.
 
        GUI_OP_DASH's pattern is in ARC-LENGTH px along the shape's perimeter (the draw_arc_dashed
        vocabulary, walked around a box instead of a circle).  The emit site snaps the period so
@@ -2064,6 +2068,16 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
    (n-1)/2 * pitch + cell on each axis, and keeps the cell under half the pitch so copies do not
    touch -- both true of every lattice a UI draws.  See tess_repeat_box. */
 #define GUI_OP_REPEAT   ( 1u << 18 )
+
+/* The same fold taken ANGULARLY: n copies on a circle of radius `orbit` about the shape centre.
+   The cell's frame turns with its position, so a rectangular cell points outward and a ring of
+   them is a dial face; a square or round one is a dot ring.
+
+   It composes with GUI_OP_SPIN for free, and that is the reason it is worth having: SPIN turns the
+   frame upstream of this fold, so a whole rotating dot ring is one quad whose record is
+   byte-identical every frame.  What it cannot do is vary the copies -- they share one record and
+   one quad colour, so the ring turns as a rigid body rather than chasing a bright head. */
+#define GUI_OP_REPEAT_POLAR  ( 1u << 19 )
 
 #define GUI_OP_TILE_U     ( 1u << 13 )  /* multiply u by pat_size before sampling -- the tiled
                                            atlas strip a dashed line's stipple row wants        */
@@ -2638,6 +2652,8 @@ typedef enum
                              //   (GUI_OP_FRAME): the widget bezel as ONE quad
     GUI_CMD_REPEAT,          // nx by ny copies of one rounded cell (GUI_OP_REPEAT): dot grids,
                              //   tick strips, segmented bars -- one quad whatever the count
+    GUI_CMD_REPEAT_POLAR,    // n copies on a circle (GUI_OP_REPEAT_POLAR): dot rings, dial faces,
+                             //   and with SPIN a rotating spinner that re-tessellates nothing
 
 } gui_cmd_type_t;
 
@@ -2913,6 +2929,13 @@ typedef struct
            back out of it (gui_build_tess.c, tess_repeat_box).  ONE quad however many copies. */
         struct { f32 cx, cy; f32 pitch_x, pitch_y; f32 cell_w, cell_h; f32 rounding;
                  u32 nx, ny; u32 abgr; } repeat;
+        /* A RING of one rounded cell (GUI_OP_REPEAT_POLAR): `n` copies on a circle of radius
+           `orbit` about (cx, cy).  `rate` turns the ring on the shader clock in revolutions/sec
+           (GUI_OP_SPIN) -- and because that animates in the FRAGMENT, these bytes are identical
+           every frame and a spinner re-tessellates nothing.  `curve`/`curve_param` shape the turn
+           (gui_curve_t): STAIR at `n` steps is the clock-hand tick. */
+        struct { f32 cx, cy; f32 orbit; f32 cell_w, cell_h; f32 rounding;
+                 f32 rate, phase, curve_param; u32 n, curve, abgr; } repeat_polar;
     };
 } gui_cmd_t;
 

@@ -368,6 +368,12 @@ void draw_push_box_trace        ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
 void draw_push_repeat           ( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
                                   f32 cell_w, f32 cell_h, f32 rounding, u32 abgr );
 
+/* The angular twin: `n` copies on a circle of radius `orbit` (GUI_OP_REPEAT_POLAR).  A non-zero
+   `rate` (revolutions/sec) turns the ring on the shader clock, so a spinner is one quad whose
+   command bytes never change while it runs. */
+void draw_push_repeat_polar     ( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h,
+                                  f32 rounding, f32 rate, f32 phase, u32 abgr );
+
 /* A filled disc IS a rounded rect whose radius reached the half-extent -- this pushes
    GUI_CMD_RECT_FILLED with rounding = r, not a command of its own. */
 void draw_push_circle_filled    ( f32 cx, f32 cy, f32 r, u32 abgr );

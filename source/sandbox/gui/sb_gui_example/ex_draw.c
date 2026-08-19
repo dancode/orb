@@ -353,6 +353,18 @@ ex_draw_shapes( void )
                                   H / (f32)( p_dots + 1 ), H / (f32)( p_dots + 1 ), 2.0f, acc );
             gui()->slider_int( "Dot field N x N", &p_dots, 2, 9 );
 
+            /* The angular fold, spinning on the shader clock: the count moves, the cost does not.
+               Compare with the arc spinner two rows down -- both re-tessellate nothing. */
+            static i32 p_sdots = 8;      /* dots around the ring */
+            r = gui()->canvas( H );
+            gui()->draw_dot_spinner( ex_sym_box( r, H ), (u32)p_sdots, 3.0f, 0.6f, acc );
+            gui()->slider_int( "Spinner dots", &p_sdots, 3, 16 );
+
+            static i32 p_dial = 12;      /* marks around the dial face */
+            r = gui()->canvas( H );
+            gui()->draw_dial_ticks( ex_sym_box( r, H ), (u32)p_dial, 1.0f, 5.0f, 0.0f, col );
+            gui()->slider_int( "Dial marks", &p_dial, 4, 36 );
+
             static i32 p_grip = 20;      /* grip box, px */
             r = gui()->canvas( H ); gui()->draw_grip( ex_sym_box( r, (f32)p_grip ), col );
             gui()->slider_int( "Grip size (px)", &p_grip, 10, 26 );

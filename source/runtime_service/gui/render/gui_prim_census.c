@@ -209,6 +209,7 @@ static const struct
     { GUI_OP_GRID,        "GRID"      },
     { GUI_OP_GLOW,        "GLOW"      },
     { GUI_OP_REPEAT,      "REPEAT"    },
+    { GUI_OP_REPEAT_POLAR,"POLAR"     },
 };
 
 #define CENSUS_OP_COUNT  ( sizeof( k_census_op ) / sizeof( k_census_op[ 0 ] ) )
