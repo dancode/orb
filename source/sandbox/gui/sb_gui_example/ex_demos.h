@@ -50,4 +50,18 @@ typedef struct
    per frame inside an open context. */
 void ex_frame( void );
 
+/* Scripted STYLE-RECORD CENSUS sweep (-census): walk every demo under every built-in theme, one
+   demo at a time on a fixed frame budget, and dump the census once per theme.  The palette bake
+   table is written from those dumps, and comparing them by the per-record hash is what separates
+   a record a style var reaches from one built out of literals.  See ex_census.c.
+
+       if ( census && !ex_census_start() ) return 1;    // before the loop
+       ...
+       if ( census && !ex_census_frame() ) break;       // once per frame, after ex_frame()
+
+   ex_census_start returns false if the sweep cannot run; ex_census_frame returns false when the
+   last theme's dump is out, which is the host's cue to quit. */
+bool ex_census_start( void );
+bool ex_census_frame( void );
+
 #endif /* EX_DEMOS_H */

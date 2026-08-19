@@ -730,6 +730,7 @@ gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
                 layers cleared). Main-row '.' arms too (laptop keyboards), except while a stepper
                 freeze owns it for scrub.
         NP1-NP7 debug layers (window / interact / resize / layout / clip / content / region rects)
+        F7      style-record census: dump the histogram to the log (shift-F7 clears it)
         F8      command stepper: show/hide the control window (Capture there freezes the frame)
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
@@ -925,6 +926,23 @@ debug_hotkeys( void )
         return;
 
     /* Function keys are never text input -- no keyboard fence needed. */
+#ifdef GUI_PRIM_CENSUS
+    /* F7 dumps the style-record census to the log; shift-F7 clears it, so a run can be scoped to
+       one window or one demo instead of everything since boot.  Read-only either way -- nothing
+       about the frame changes, so no redraw_request(). */
+    if ( gui_is_key_pressed( APP_KEY_F7 ) )
+    {
+        if ( gui_is_key_down( APP_KEY_LSHIFT ) || gui_is_key_down( APP_KEY_RSHIFT ) )
+        {
+            prim_census_reset();
+            gui_log( GUI_LOG_INFO, "style census: cleared" );
+        }
+        else
+        {
+            prim_census_dump( "F7" );
+        }
+    }
+#endif
     if ( gui_is_key_pressed( APP_KEY_F9 ) )
     {
         gui_render_mode_t m = ( gui_render_get_mode() + 1 ) % GUI_RENDER_MODE_COUNT;

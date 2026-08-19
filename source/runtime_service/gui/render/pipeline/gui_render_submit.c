@@ -350,6 +350,13 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     push.prim_buf  = s_render.prim_buf_idx;
     push.prim_base = clip_region * (u32)GUI_PRIM_REGION_MAX;
 
+    /* The palette's block for this frame-in-flight, in the same buffer past every region (gui.h,
+       GUI_PAL_FIRST).  Flush-constant where prim_base is not: a palette index means the same
+       record to every window slot, which is the whole reason it exists.  Brought up to date first
+       -- the upload is a no-op unless the bake published since this frame last ran. */
+    render_pal_upload( frame );
+    push.pal_base = render_pal_base( frame );
+
     /* Quad plumbing, both flush-constant: the quad table's slot and this region's origin (a
        draw's first_vertex carries the arena-absolute quad offset on top). */
     push.quad_buf  = s_render.quad_buf_idx;

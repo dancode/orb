@@ -12,6 +12,7 @@
 ==============================================================================================*/
 
 #include <stdio.h>
+#include <string.h>   /* strcmp -- argv scan for -census */
 
 #include "orb.h"
 #include "engine/mod/mod_host.h"
@@ -45,8 +46,13 @@ ex_gui_font_bake( const char* family, u32 size_px, char* out, int n, void* user 
 int
 main( int argc, char** argv )
 {
-    UNUSED( argc );
-    UNUSED( argv );
+    /* -census runs the scripted style-record sweep instead of the interactive explorer: every
+       demo, one at a time, under every built-in theme, dumping the census per theme and exiting
+       when the last one is out (ex_census.c). */
+    bool census = false;
+    for ( int i = 1; i < argc; ++i )
+        if ( strcmp( argv[ i ], "-census" ) == 0 )
+            census = true;
 
     /* Load modules -- gui's full dependency set is just rhi + app (+ the engine core stack). */
     mod_system_init();
@@ -100,6 +106,9 @@ main( int argc, char** argv )
 
    gui()->debug_enable( true );
 
+    if ( census && !ex_census_start() )
+        goto shutdown;
+
     /* Main loop -- boot_poll pumps the OS and routes events (rhi swapchain resize, gui input
        + floater lifecycle); false on quit or main-window close. */
 
@@ -124,6 +133,11 @@ main( int argc, char** argv )
            guard, clear to the boot color -- all inside). */
         gui()->boot_present_begin( NULL );
         gui()->boot_present_end();
+
+        /* The sweep advances AFTER the present, so the frame it just scored is fully tessellated
+           and counted before the next demo opens.  It returns false on the last theme's dump. */
+        if ( census && !ex_census_frame() )
+            break;
 
         /* Frame pacing: spin at 4 ms (~250 Hz); with idle skip on block on OS input while
            the UI is static, 16 ms (~60 Hz) while a widget animation settles. */

@@ -167,6 +167,16 @@ test_quad_layout( void )
     test_equal( GUI_GLYPH_TABLE_MAX - 1u, GUI_QUAD_GLYPH_MASK );
     test_true ( (u32)GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK );
 
+    /* The style field's two halves must not meet: below GUI_PAL_FIRST an index is slot-local
+       against the arena, at or above it a shared palette entry, and the shader picks the base off
+       the index alone (gui_common.hlsli, style_row).  An overlap would silently resolve a window's
+       record against the palette block. */
+    test_true ( (u32)GUI_MAX_PRIMS <= GUI_PAL_FIRST );
+    test_true ( GUI_PAL_FIRST + GUI_PAL_MAX - 1u <= GUI_QUAD_STYLE_MASK );
+    test_true ( gui_style_is_pal( gui_style_pal( 0u ) ) );
+    test_true ( gui_style_is_pal( gui_style_pal( GUI_PAL_MAX - 1u ) ) );
+    test_true ( !gui_style_is_pal( (u32)GUI_MAX_PRIMS - 1u ) );
+
     /* The fx field names a row in the style arena, and the tag took the two bits that would have
        let it reach every one: 8191 rows is 1024 fx pages per window slot, past which the
        tessellator flags an overflow rather than wrapping onto another slot's records. */

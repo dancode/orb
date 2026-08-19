@@ -544,6 +544,10 @@ tess_fx_page_reset( void )
 static u32
 tess_prim_local( void )
 {
+    /* Census before the memo, so the count is of quads that WANT this record rather than of the
+       ones the memo happened to miss; the append site below counts the arena entries. */
+    PRIM_CENSUS_QUAD( &s_tess.cur_prim );
+
     u32 hi = s_tess.prim_count;
     u32 lo = ( s_tess.prim_dedup_floor > s_tess.slot_prim_base )
              ? s_tess.prim_dedup_floor : s_tess.slot_prim_base;
@@ -566,6 +570,8 @@ tess_prim_local( void )
         tess_fx_page_reset();
         return s_tess.cur_prim_local = 0u;
     }
+
+    PRIM_CENSUS_APPEND( &s_tess.cur_prim );
 
     s_tess.prims[ hi ] = s_tess.cur_prim;
     s_tess.cur_prim_local = hi - s_tess.slot_prim_base;
@@ -2193,6 +2199,11 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
     gui_id_t open_vid = GUI_ID_NONE;
     u32      vb_open = 0, pb_open = 0, cmd_open = 0;
     (void)win;
+
+    /* Attribute the records this pass commits to their window, and to this tessellation pass --
+       the census counts a record's PASSES to show the cross-slot spread that slot-scoped dedup
+       can never collapse. */
+    PRIM_CENSUS_WINDOW( win, s_tess.slot_tess_gen );
 
     for ( u32 oi = 0; oi < count; ++oi )
     {

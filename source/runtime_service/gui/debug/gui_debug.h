@@ -108,6 +108,42 @@ u32  debug_unit_mem_bytes ( void );         /* debug unit: its fixed statics, fo
     #define STEP_SET_OWNER( id )      ( (void)0 )
 #endif
 
+/*==============================================================================================
+    STYLE RECORD CENSUS seam (render/gui_prim_census.c) -- what the tessellator emits, counted
+    across a session.
+
+    Style records dedup only within a window cache slot, so every window mints its own copy of a
+    style every other window also draws.  The census counts the distinct records and, per record,
+    how many arena entries it consumed -- the figure a frame-global palette entry would reclaim.
+    The tessellator stamps the hooks; the frame unit's F7 hotkey dumps the histogram to the log.
+
+    Same build-switch rule as the two features above, so every unit agrees before the macros are
+    used.  Define GUI_NO_PRIM_CENSUS to force it off.
+==============================================================================================*/
+
+#if defined( _DEBUG ) && !defined( GUI_PRIM_CENSUS ) && !defined( GUI_NO_PRIM_CENSUS )
+    #define GUI_PRIM_CENSUS
+#endif
+#if defined( GUI_NO_PRIM_CENSUS ) && defined( GUI_PRIM_CENSUS )
+    #undef GUI_PRIM_CENSUS
+#endif
+
+#ifdef GUI_PRIM_CENSUS
+    void prim_census_window( gui_id_t win, u32 tess_gen );  /* which slot pass follows  */
+    void prim_census_quad  ( const gui_prim_t* rec );       /* a quad resolved this rec */
+    void prim_census_append( const gui_prim_t* rec );       /* it cost an arena entry   */
+    void prim_census_reset ( void );
+    void prim_census_dump  ( const char* tag );            /* tag labels the run in the log */
+
+    #define PRIM_CENSUS_WINDOW( win, gen )  prim_census_window( ( win ), ( gen ) )
+    #define PRIM_CENSUS_QUAD( rec )         prim_census_quad( ( rec ) )
+    #define PRIM_CENSUS_APPEND( rec )       prim_census_append( ( rec ) )
+#else
+    #define PRIM_CENSUS_WINDOW( win, gen )  ( (void)0 )
+    #define PRIM_CENSUS_QUAD( rec )         ( (void)0 )
+    #define PRIM_CENSUS_APPEND( rec )       ( (void)0 )
+#endif
+
 // clang-format on
 /*============================================================================================*/
 #endif    // GUI_DEBUG_H

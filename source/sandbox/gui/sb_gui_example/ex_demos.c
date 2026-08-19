@@ -195,6 +195,10 @@ ex_menu_bar( void )
     gui()->main_menu_bar_end();
 }
 
+/* Scripted census sweep over the registry above -- needs s_demos / EX_DEMO_COUNT / ex_set_open,
+   so it is included here rather than beside the demo bodies. */
+#include "ex_census.c"
+
 /*==============================================================================================
     Frame driver -- menu bar + every open demo, syncing the X button back into the registry.
 ==============================================================================================*/
@@ -217,6 +221,13 @@ ex_frame( void )
             d->open = false;
     }
 }
+
+/*==============================================================================================
+    Census sweep -- the public half of ex_census.c (see that file for what the sweep is for).
+==============================================================================================*/
+
+bool ex_census_start( void ) { return ex_census_begin(); }
+bool ex_census_frame( void ) { return ex_census_step();  }
 
 /*============================================================================================*/
 // clang-format on

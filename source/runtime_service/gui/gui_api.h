@@ -2934,6 +2934,20 @@ typedef struct gui_api_s
        corruption bug traps at its source instead of showing as flicker/warping downstream. */
     void                ( *debug_dump_geometry )( void );
 
+    /* Style-record census -- the session-wide histogram of what the tessellator emits, and of the
+       arena entries each distinct record costs across window slots (the figure a shared palette
+       entry reclaims).  F7 dumps it interactively; this is the scripted entry, so a driver can
+       run a fixed workload under several themes or DPI scales and label each run.
+
+       `tag` labels the dump in the log; NULL dumps nothing, so ( NULL, true ) is a bare clear.
+       Each record prints with a content HASH, which is what makes two runs comparable: a hash
+       present in both runs is a record no style var moved.
+
+       Debug builds only (GUI_PRIM_CENSUS).  The slot exists in every build; Release warns once
+       and does nothing. */
+
+    void                ( *debug_style_census )( const char* tag, bool clear );
+
     /* Retained-skip: when on (default), an unchanged frame skips tessellation.  Toggle to benchmark
        or confirm that the hash-upfront path produces identical output to the reference. */
     void ( *set_retained_skip )( bool on );

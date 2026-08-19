@@ -453,6 +453,12 @@ bool                build_any_changed       ( void );
 
 void                build_dump_geometry     ( void );
 
+/* Debug: the style-record census (render/gui_prim_census.c).  `tag` labels the dump in the log and
+   is what makes two runs comparable; NULL dumps nothing, so passing (NULL, true) is a bare clear.
+   Always callable -- a build without GUI_PRIM_CENSUS says so and does nothing. */
+
+void                build_style_census      ( const char* tag, bool clear );
+
 /*==============================================================================================
     Volatile widgets -- an inline-emit callback replayed in place on frames the UI build is
     skipped, so a purely cosmetic animation never forces the whole UI to re-run every frame.

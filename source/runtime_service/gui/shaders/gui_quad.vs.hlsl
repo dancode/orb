@@ -55,7 +55,7 @@ static const float2 k_corner[ 6 ] = {
 // record holds.  The tessellator decides only whether four quads beat one.
 float2 band_local( float2 corner, uint band, float2 he0, float pad, uint style )
 {
-    uint   base = ( pc.prim_base + style ) * PRIM_ROWS;
+    uint   base = style_row( style );
     uint   ops  = asuint( u_buffers[ pc.prim_buf ][ base ].y );
     float4 rad  = u_buffers[ pc.prim_buf ][ base + 1u ];
     float4 edge = u_buffers[ pc.prim_buf ][ base + 2u ];
@@ -157,7 +157,7 @@ vs_out_t main( uint vid : SV_VertexID )
     // the rules that take no pad, which is every glyph.
     float pad = 0.0;
     if ( rule == 1u || rule == 2u )
-        pad = u_buffers[ pc.prim_buf ][ ( pc.prim_base + style ) * PRIM_ROWS + 2u ].x * 0.5 + 1.0;
+        pad = u_buffers[ pc.prim_buf ][ style_row( style ) + 2u ].x * 0.5 + 1.0;
 
     float2 he = q0.zw;
     if ( rule == 2u )

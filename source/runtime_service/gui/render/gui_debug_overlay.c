@@ -438,6 +438,10 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     push.prim_buf  = s_render.prim_buf_idx;
     push.prim_base = prim_region * (u32)GUI_PRIM_REGION_MAX + GUI_PRIM_OVERLAY_ENTRY;
 
+    /* The overlay builds its own quads and never names a palette entry, but the block must be
+       fully initialized -- Vulkan leaves an unwritten push constant undefined. */
+    push.pal_base  = render_pal_base( frame );
+
     rhi()->cmd_push_constants( cmd, &push, sizeof( push ), 0 );
 
     rhi()->cmd_draw( cmd, &( rhi_draw_args_t ){

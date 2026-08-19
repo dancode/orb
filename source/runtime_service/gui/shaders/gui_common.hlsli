@@ -17,6 +17,9 @@ struct gui_pc_t
     uint     clip_base;    // the flush's clip-region origin in the table (entries, not float4s)
     uint     prim_buf;     // bindless buffer slot of the style records
     uint     prim_base;    // this window SLOT's first record (records, not float4s)
+    uint     pal_base;     // this FRAME's palette block, in the same buffer past every region.
+                           //   Flush-constant where prim_base is not: a palette index resolves
+                           //   the same for every window slot (see style_row below)
     uint     quad_buf;     // bindless buffer slot of the quad records (gui_quad_t)
     uint     quad_base;    // the flush's quad-region origin (quads, not float4s)
     uint     glyph_buf;    // bindless buffer slot of the glyph UV table (gui_glyph_uv_t).  No base
@@ -67,6 +70,23 @@ float3 srgb_to_linear( float3 c )
 #define GUI_QUAD_STYLE_MASK    0x7FFu
 #define GUI_QUAD_FX_SHIFT      17u
 #define GUI_QUAD_FX_MASK       0x1FFFu
+
+// The style field's PALETTE half (gui.h, GUI_PAL_FIRST).  An index below this names a record in
+// the emitting window slot's own arena run; at or above it, a shared record in the frame's palette
+// block, which is why one entry can serve every window on every surface.  The index itself is what
+// picks the base -- there is no flag to carry and no second field to keep in step.
+//
+// Every style fetch in either stage goes through this: the vertex stage's band hole and skirt pad,
+// and the fragment's record head.  fx rows deliberately do NOT -- they stay slot-local against
+// prim_base, so a palette style still composes with a per-instance turn, phase and uv rect.
+#define GUI_PAL_FIRST          1024u
+
+uint style_row( uint style )
+{
+    uint rec = ( style >= GUI_PAL_FIRST ) ? ( pc.pal_base  + ( style - GUI_PAL_FIRST ) )
+                                          : ( pc.prim_base + style );
+    return rec * PRIM_ROWS;
+}
 
 // The style record's OP bits, mirroring gui.h's GUI_OP_*.  Both stages read them -- the fragment
 // to run the cascade, the vertex stage to size a band covering -- so this is the one shader-side

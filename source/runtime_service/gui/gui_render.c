@@ -126,6 +126,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>   // offsetof -- the style census names gui_prim_t's lanes by offset
+#include <stdarg.h>   // va_list  -- the census's bounded string append
 #include <math.h>
 
 #include "orb.h"
@@ -167,6 +169,12 @@
 #include "runtime_service/gui/render/pipeline/gui_emit_draw.c"
 #include "runtime_service/gui/render/pipeline/gui_emit_path.c"
 
+// STYLE RECORD CENSUS: session-wide histogram of the records the tessellator emits, and of the
+// arena entries each one costs across window slots.  Before gui_build_tess.c because that file
+// calls its hooks; depends on nothing but the public gui types.  Compiled out unless
+// GUI_PRIM_CENSUS.
+#include "runtime_service/gui/render/gui_prim_census.c"
+
 // pipeline/ BUILD, part A: tessellation primitives (gui_cmd_t -> s_tess geometry).
 // No public surface -- driven entirely from part B (cache_tess_window / cache_build_frame).
 #include "runtime_service/gui/render/pipeline/gui_build_tess.c"
@@ -183,7 +191,11 @@
 // pipeline/ RENDER, part A: shared GPU resources (pipeline, samplers), created once.
 #include "runtime_service/gui/render/pipeline/gui_render_init.c"
 
-// pipeline/ RENDER, part B: per-surface submit (gui_render_flush).
+// pipeline/ RENDER, part B: the style palette -- shared records past every arena region.  After
+// gui_render_init.c because it writes into that unit's prim_buf and region layout.
+#include "runtime_service/gui/render/pipeline/gui_render_pal.c"
+
+// pipeline/ RENDER, part C: per-surface submit (gui_render_flush).
 #include "runtime_service/gui/render/pipeline/gui_render_submit.c"
 
 // DEBUG OVERLAY: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY.  Stays at the

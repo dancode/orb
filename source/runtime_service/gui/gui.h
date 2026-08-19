@@ -3541,6 +3541,41 @@ ORB_STATIC_ASSERT( GUI_PRIM_FX_ROW_MAX <= GUI_QUAD_FX_MASK,
 ORB_STATIC_ASSERT( GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK,
                    "GUI_MAX_PRIMS outgrew the quad's style field -- re-plan the idx union" );
 
+/*==============================================================================================
+
+    THE STYLE PALETTE -- shared records the whole frame addresses, in the style field's dead half.
+
+    A slot-local style index names a record inside the emitting window's own arena run, so two
+    windows drawing the same button hold two copies of one record and no dedup walk can reach
+    across the boundary between them.  A PALETTE entry is that record placed once, outside every
+    region, named by an index the arena can never produce: the style field is 11 bits and the arena
+    caps at GUI_MAX_PRIMS, so GUI_PAL_FIRST .. GUI_PAL_FIRST + GUI_PAL_MAX - 1 is index space
+    nothing else can occupy.
+
+    Which base an index resolves against is therefore the index itself -- at or above GUI_PAL_FIRST
+    it resolves absolutely against pc.pal_base, below it slot-locally against pc.prim_base exactly
+    as before (shaders: style_row, gui_common.hlsli).  Reserving LOW indices instead would have
+    rebased every slot-local index, every win_geo_slot_t.prim_base and the asserts above.
+
+    fx rows are NOT palettized: they stay slot-local against prim_base, so a palette style still
+    composes with a per-instance turn, animation phase and uv rect.
+
+    Palette CONTENT is baked, not constant: radii, feather and border widths scale with em and DPI
+    (gui_style_apply), so the table is rebuilt when the style bake changes.  Static in SLOT, baked
+    in CONTENT.
+==============================================================================================*/
+
+#define GUI_PAL_FIRST  1024u   /* first style index that resolves against the palette */
+#define GUI_PAL_MAX      64u   /* palette entries; measured vocabulary is under 32     */
+
+ORB_STATIC_ASSERT( GUI_MAX_PRIMS <= GUI_PAL_FIRST,
+                   "the style arena grew into the palette's index range -- raise GUI_PAL_FIRST" );
+ORB_STATIC_ASSERT( GUI_PAL_FIRST + GUI_PAL_MAX - 1u <= GUI_QUAD_STYLE_MASK,
+                   "the palette outgrew the quad's style field -- re-plan the idx union" );
+
+static inline bool gui_style_is_pal( u32 style ) { return style >= GUI_PAL_FIRST; }
+static inline u32  gui_style_pal   ( u32 entry ) { return GUI_PAL_FIRST + entry;  }
+
 /* Command segments: one contiguous span of the command list per (win, z, vp, band) the emit path
    stamps, cut wherever a window seam, draw_set_sort_key, draw_set_viewport or draw_set_band
    changes the tag (draw_seg_retag).  The render backend orders these spans instead of re-scanning
@@ -3584,7 +3619,8 @@ typedef struct
        raised cap costs that multiplier.  The glyph table is one shared copy, replaced rather than
        rewritten, so it pays the multiplier once. */
     u32 gpu_quad_bytes;         // quad records   -- GUI_MAX_QUADS x 16 B x gpu_regions
-    u32 gpu_style_bytes;        // style records  -- (GUI_MAX_PRIMS + 1) x 128 B x gpu_regions
+    u32 gpu_style_bytes;        // style records  -- (GUI_MAX_PRIMS + 1) x 128 B x gpu_regions,
+                                //   plus GUI_PAL_MAX x 128 B per frame-in-flight (the palette)
     u32 gpu_clip_bytes;         // clip entries   -- window slabs x 32 B x gpu_regions
     u32 gpu_glyph_bytes;        // glyph UV table -- GUI_GLYPH_TABLE_MAX x 8 B, ONE copy
     u32 gpu_regions;            // frames-in-flight x viewport slots the regioned tables carry

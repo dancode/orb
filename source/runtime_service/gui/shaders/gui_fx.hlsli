@@ -580,7 +580,7 @@ float4 main( ps_in_t i ) : SV_Target0
     }
     else
     {
-        g_row       = ( pc.prim_base + i.prim ) * PRIM_ROWS;
+        g_row       = style_row( i.prim );
         float4 head = u_buffers[ pc.prim_buf ][ g_row ];
         g_field     = asuint( head.x );
         g_ops       = asuint( head.y );

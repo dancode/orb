@@ -41,6 +41,7 @@ typedef struct
     u32 clip_base;      // draw's first clip-table entry    4 bytes
     u32 prim_buf;       // bindless slot: style records     4 bytes (0 = no records bound)
     u32 prim_base;      // the SLOT's first record          4 bytes
+    u32 pal_base;       // this frame's palette block       4 bytes
     u32 quad_buf;       // bindless slot: quad-record table 4 bytes
     u32 quad_base;      // flush's region origin            4 bytes (quads, not float4s)
     u32 glyph_buf;      // bindless slot: glyph UV table    4 bytes (0 = no table bound)
@@ -48,7 +49,7 @@ typedef struct
     u32 tex_cov;        // bindless slot: coverage atlas    4 bytes
     u32 tex_sdf;        // bindless slot: SDF atlas         4 bytes
 
-} gui_push_t;           // total 120 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;           // total 124 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved onto the STYLE RECORD each quad names
@@ -111,6 +112,27 @@ typedef struct
 #define GUI_PRIM_REGION_MAX    ( GUI_MAX_PRIMS + 1u )                    /* records per region */
 #define GUI_PRIM_REGION_BYTES  ( GUI_PRIM_REGION_MAX * GUI_PRIM_BYTES )
 #define GUI_PRIM_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
+
+/*  The STYLE PALETTE (gui.h, GUI_PAL_FIRST) sits past every region, in the same buffer.  It is
+    not regioned per viewport, because that is what it is FOR: one copy of a record every window
+    on every surface can name, where a region's records are reachable only from the window slot
+    that wrote them.
+
+    It is regioned per FRAME-IN-FLIGHT and nothing else.  Content is identical across surfaces, so
+    a viewport multiplier would buy nothing -- but a style re-bake rewrites the table while earlier
+    frames may still be reading it, and one copy per in-flight frame is what makes that write land
+    somewhere no draw is looking.  The glyph table answers the same question by replacing its
+    buffer wholesale; the palette is small enough that copies are cheaper than a rebuild.
+
+    So the buffer is [ region 0 .. region N-1 | palette 0 .. palette F-1 ], and pc.pal_base names
+    this frame's block.  Both bases index in RECORDS, not float4s. */
+
+#define GUI_PAL_REGION_COUNT   RHI_MAX_FRAMES_IN_FLIGHT
+#define GUI_PAL_REGION_BYTES   ( GUI_PAL_MAX * GUI_PRIM_BYTES )
+#define GUI_PAL_ORIGIN         ( GUI_PRIM_REGION_COUNT * GUI_PRIM_REGION_MAX )  /* in records */
+
+#define GUI_PRIM_BUF_RECORDS   ( GUI_PAL_ORIGIN + GUI_PAL_REGION_COUNT * GUI_PAL_MAX )
+#define GUI_PRIM_BUF_BYTES     ( GUI_PRIM_BUF_RECORDS * GUI_PRIM_BYTES )
 
 /*==============================================================================================
     Quad record region sizing -- the geometry table (gui.h, gui_quad_t).
@@ -453,9 +475,10 @@ render_init( void )
     }
 
     /* The primitive record table.  REQUIRED for the same reason the clip table is: once the
-       fragment resolves its shape from a record, a frame without one has nothing to draw. */
+       fragment resolves its shape from a record, a frame without one has nothing to draw.  Holds
+       the per-(frame, viewport) arena regions AND the palette blocks behind them. */
     s_render.prim_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = GUI_PRIM_REGION_COUNT * GUI_PRIM_REGION_BYTES,
+        .size       = GUI_PRIM_BUF_BYTES,
         .usage      = RHI_BUFFER_USAGE_STORAGE,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "gui_prim_table",
