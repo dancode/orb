@@ -731,7 +731,11 @@ tess_band_worth_it( f32 qhw, f32 qhh, u32 rule )
     const gui_prim_t* p   = &s_tess.cur_prim;
     u32               ops = s_tess.cur_ops;
 
-    if ( rule != GUI_QUAD_RULE_SKIRT || p->field != (u32)GUI_FX_BOX || ( ops & GUI_OP_FRAME ) )
+    /* REPEAT is excluded for a reason of kind rather than of trade: the region a repeated shape
+       leaves at zero coverage is the space BETWEEN its copies, which is not the single rectangle
+       band_local knows how to tile.  A band covering there would carve away real ink. */
+    if ( rule != GUI_QUAD_RULE_SKIRT || p->field != (u32)GUI_FX_BOX
+      || ( ops & ( GUI_OP_FRAME | GUI_OP_REPEAT ) ) )
         return false;
 
     /* EXACTLY one hole-cutting op.  Each of the three states where its own coverage reaches zero,
@@ -1192,6 +1196,12 @@ typedef struct
     f32 dash_duty;        // GUI_OP_DASH: on-fraction of the period
     f32 dash_scroll;      // GUI_OP_DASH: periods slid per cycle -- 1 marches, 0 pins to the shape
 
+    /* GUI_OP_REPEAT: the lattice, sharing row 6 with the dash above (gui.h).  The pitch is
+       centre-to-centre and the cell is HALF the copy's size, which is the form the fragment folds
+       in.  The count is not here because it is not stored -- see tess_repeat_box. */
+    f32 rep_pitch_x, rep_pitch_y;
+    f32 rep_cell_hx, rep_cell_hy;
+
 } tess_fx_aux_t;
 
 /* `aux` NULL is a plain fill with neither extra -- almost every caller. */
@@ -1294,6 +1304,14 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        what keeps square fills deduping onto one record. */
     s_tess.cur_prim.corner_pow = ( rmax > 0.0f ) ? s_tess.cur_corner_pow : 0.0f;
 
+    /* GUI_OP_GLOW's dropoff, derived from the reach the caller already stated as the feather --
+       there is no second parameter, because the distance the glow travels and the distance the
+       covering has to grow by are the same distance.  ln(255) puts the falloff under one 8-bit
+       step at half the feather, which is where the vertex stage's SKIRT pad ends: the halo fades
+       out exactly at the edge of the quad carrying it, rather than being cut off inside it. */
+    if ( s_tess.cur_ops & GUI_OP_GLOW )
+        s_tess.cur_prim.glow_k = 5.5413f / fmaxf( feather * 0.5f, 0.5f );
+
     /* DITHER, derived rather than asked for: a wide falloff and a colour ramp are the two shapes
        that band on an 8-bit target, and half a step of screen noise is invisible everywhere else
        it could apply.  The 1 px AA feather stays clean -- there is no ramp to band. */
@@ -1307,6 +1325,17 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         s_tess.cur_prim.dash_period = aux->dash_period;
         s_tess.cur_prim.dash_duty   = aux->dash_duty;
         s_tess.cur_prim.dash_scroll = aux->dash_scroll;
+    }
+
+    /* GUI_OP_REPEAT reads the SAME row under different names (gui.h, row 6).  Writing it here,
+       beside the dash it shares with, is what keeps "at most one of them" visible at the one place
+       either can be written. */
+    if ( aux && ( s_tess.cur_ops & GUI_OP_REPEAT ) )
+    {
+        s_tess.cur_prim.dash_period = aux->rep_pitch_x;
+        s_tess.cur_prim.dash_duty   = aux->rep_pitch_y;
+        s_tess.cur_prim.dash_scroll = aux->rep_cell_hx;
+        s_tess.cur_prim.reserved_c  = aux->rep_cell_hy;
     }
     if ( aux && ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_SPIN ) ) )
         s_tess.cur_prim.anim_rate = aux->anim_rate;
@@ -1367,6 +1396,65 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     tess_quad_push( cx, cy, hx, hy, GUI_QUAD_RULE_SKIRT,
                     gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr,
                     GUI_GLYPH_ID_NONE );
+}
+
+/*----------------------------------------------------------------------------------------------
+    tess_repeat_box -- nx by ny copies of one rounded cell, from ONE quad.
+
+    The quad spans the whole set and the fragment folds its coordinate into a cell (GUI_OP_REPEAT),
+    so the copy count costs nothing: a 3x3 grip and a 40-tick ruler are the same one record and the
+    same one quad.
+
+    THIS FUNCTION OWNS THE SIZING CONTRACT the fragment decodes against.  The set's half-extent must
+    be exactly (n-1)/2 pitches plus one cell on each axis, because that is what the count is
+    recovered from -- state the quad any other way and the lattice repeats the wrong number of
+    times.  Deriving the extent here rather than taking a rect from the caller is what makes that
+    unbreakable: there is no rect to get wrong.
+
+    (cx, cy) is the SET's centre.  The pitch is floored just above the cell so copies can never
+    touch, which the recovery also depends on.
+----------------------------------------------------------------------------------------------*/
+
+static void
+tess_repeat_box( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
+                 f32 cell_w, f32 cell_h, f32 rounding, u32 abgr )
+{
+    if ( nx == 0u || ny == 0u || cell_w <= 0.0f || cell_h <= 0.0f )
+        return;
+
+    f32 chx = cell_w * 0.5f, chy = cell_h * 0.5f;
+
+    /* Copies that touch would blur two cells into one shape AND break the count recovery, which
+       divides the span by the pitch.  A hair over twice the half-extent keeps both honest. */
+    f32 px = ( pitch_x > cell_w ) ? pitch_x : cell_w + 1.0f;
+    f32 py = ( pitch_y > cell_h ) ? pitch_y : cell_h + 1.0f;
+
+    /* The half-span of copy CENTRES, then the set's own half-extent. */
+    f32 spanx = (f32)( nx - 1u ) * 0.5f * px;
+    f32 spany = (f32)( ny - 1u ) * 0.5f * py;
+    f32 hx    = spanx + chx;
+    f32 hy    = spany + chy;
+
+    /* A radius past half the cell's short side is a pill end; past that it is nothing the cell can
+       be.  Clamped against the CELL, not the set, since the cell is the shape. */
+    f32 lim = ( chx < chy ) ? chx : chy;
+    if ( rounding > lim )  rounding = lim;
+    if ( rounding < 0.0f ) rounding = 0.0f;
+
+    tess_fx_aux_t aux = { 0 };
+    aux.rep_pitch_x = px;
+    aux.rep_pitch_y = py;
+    aux.rep_cell_hx = chx;
+    aux.rep_cell_hy = chy;
+
+    s_tess.cur_ops |= GUI_OP_REPEAT;
+
+    /* Through the ordinary box path so the cell gets the same clamps, the same solid-fill
+       convention and the same corner profile every other rounded shape does.  It states the SET's
+       rect; the record's cell extent is what the field actually measures against. */
+    const f32 r4[ 4 ] = { rounding, rounding, rounding, rounding };
+    tess_fx_box_core( cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, r4, TESS_FX_AA, 0.0f,
+                      0.0f, 0.0f, 0.0f, 0, 0, 1, 1, 0, abgr, &aux );
 }
 
 /* The uniform-radius entry every rounded shape in the library goes through.  Four copies of one
@@ -2342,6 +2430,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                    tessellator runs because the interior hole is sized from them (see `reach`). */
                 if ( c->fx_box.variant == 1u )   s_tess.cur_ops |= GUI_OP_CUT;
                 if ( c->fx_box.variant == 2u )   s_tess.cur_ops |= GUI_OP_INSET;
+                if ( c->fx_box.variant == 3u )   s_tess.cur_ops |= GUI_OP_GLOW;
                 if ( c->fx_box.rate    > 0.0f )  s_tess.cur_ops |= GUI_OP_PULSE;
                 {
                     /* The cut boundary, for the DIRECTIONAL cast: the command states where the
@@ -2480,6 +2569,16 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             /* One textured quad about its centre -- the glyph-run transform (tess_quad_xf)
                with the pivot every icon caller wants.  No snap, by the transformed-quad rule. */
+            /* The lattice: one quad, one style record, however many copies -- the count reaches
+               the fragment as the set's extent against the pitch, so it costs no lane and no
+               per-copy work. */
+            case GUI_CMD_REPEAT:
+                tess_repeat_box( c->repeat.cx, c->repeat.cy, c->repeat.nx, c->repeat.ny,
+                                 c->repeat.pitch_x, c->repeat.pitch_y,
+                                 c->repeat.cell_w, c->repeat.cell_h,
+                                 c->repeat.rounding, c->repeat.abgr );
+                break;
+
             case GUI_CMD_IMAGE_XF:
             {
                 f32 hx = c->image_xf.w * 0.5f, hy = c->image_xf.h * 0.5f;

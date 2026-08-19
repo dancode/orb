@@ -22,7 +22,7 @@
 // clang-format off
 
 /*==============================================================================================
-    gui_gpu_cmd_t -- backend-private GPU draw command after tessellation.
+    GPU Command -- backend-private GPU draw command after tessellation.
 
     One bounded range of quads -- the unit the GPU sees (not exposed in gui.h) 
     The public gui_cmd_t carries semantic shapes; the BUILD phase (gui_build_tess.c)
@@ -43,7 +43,7 @@ typedef struct
 } gui_gpu_cmd_t;
 
 /*==============================================================================================
-    Draw list -- the per-frame command buffer and segment table.
+    CPU Draw list -- the per-frame command buffer and segment table.
 
     Commands are pushed into cmds[] by the widget layer.  Whenever (win, z, vp, band) changes,
     the current open span is closed and a new one is opened, so the buffer is partitioned into
@@ -966,6 +966,7 @@ static const u8 k_cmd_hash_len[] = {
     /* Folds rate/phase whole like FX_BOX: the ants scroll in the fragment off pc.time, so the
        command hashes stable frame-to-frame while the pattern moves. */
     [GUI_CMD_BOX_DASH]      = sizeof( ( (gui_cmd_t*)0 )->box_dash ),
+    [GUI_CMD_REPEAT]        = sizeof( ( (gui_cmd_t*)0 )->repeat ),
 };
 
 static u32
@@ -1442,6 +1443,18 @@ draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
                      0.0f, 0.0f, 0.0f, 0.0f, -ox, -oy, abgr );
 }
 
+/* The glow: the same surface with its outward falloff resolved EXPONENTIALLY (GUI_OP_GLOW) rather
+   than through the feather's linear ramp.  Same geometry, same one quad, same batch -- the only
+   difference is the curve, and it is the difference between a blurred edge and a lit one.
+   `spread` is how far the light reaches, the draw_push_shadow vocabulary, so the feather carries
+   twice it exactly as a shadow's does: the covering has to grow by the reach or the halo is cut
+   off at the quad edge, and the tessellator derives the dropoff from the same number. */
+void
+draw_push_glow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 3u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
+}
+
 /* The inner shadow: the same surface with its falloff turned inward (GUI_OP_INSET), painting
    from the boundary `depth` px in and nothing outside it.  A pressed well, a recessed field, the
    inner edge of a scroll area -- the shapes a drop shadow cannot make because they belong to the
@@ -1827,6 +1840,124 @@ draw_push_box_dashed( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
     c->box_dash.abgr     = col;
     c->box_dash.curve       = s_draw.anim_curve;
     c->box_dash.curve_param = s_draw.anim_curve_param;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_box_trace -- ONE arc travelling the rounded-box border.
+
+    The dashed border above with its period set to the WHOLE perimeter, so the tessellator's
+    snap can only fit a single cycle and `frac` of the border is lit.
+
+    The perimeter is measured HERE rather than by the caller because it can only be known after
+    the border alignment below has moved the boundary it is measured along -- a caller stating a
+    period against the un-aligned box would hand the snap a ratio off by the alignment, and two
+    arcs where one was asked for is a visibly different shape.
+
+    `laps` scrolls the arc on the shader clock in revolutions/sec: the command's bytes do not
+    change while it runs, so an indeterminate tracer re-tessellates nothing (present frames with
+    request_redraw -- the draw_pulse contract).  `at` places it statically instead, 0..1 around
+    the border from the top-left; that value IS in the command's bytes, so a determinate trace
+    re-tessellates its window when it moves, exactly as a progress bar's fill width does.
+==============================================================================================*/
+
+void
+draw_push_box_trace( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
+                     f32 frac, f32 laps, f32 at, u32 abgr )
+{
+    if ( t <= 0.0f || w <= 0.0f || h <= 0.0f || frac <= 0.0f )
+        return;
+    if ( frac > 1.0f )
+        frac = 1.0f;
+
+    /* Border alignment: the same push-time inflation the plain outline runs, and it has to happen
+       before the measurement below. */
+    f32 ba = s_draw.border_align * t;
+    if ( ba > 0.0f )
+    {
+        x -= ba;  y -= ba;  w += ba * 2.0f;  h += ba * 2.0f;
+        if ( rounding > 0.0f ) rounding += ba;
+    }
+
+    /* The perimeter, against the SAME clamped radius the tessellator will state: four edges
+       shortened by the corners they meet, plus the four quarter-arcs (gui_build_tess.c,
+       GUI_CMD_BOX_DASH). */
+    f32 hw  = w * 0.5f, hh = h * 0.5f;
+    f32 lim = ( hw < hh ) ? hw : hh;
+    f32 r   = rounding;
+    if ( r > lim )  r = lim;
+    if ( r < 0.0f ) r = 0.0f;
+
+    f32 len = 4.0f * ( hw + hh ) - 8.0f * r + DRAW_TAU * r;
+    if ( len <= 0.0f )
+        return;
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
+    if ( !c )
+        return;
+    c->box_dash.x        = x;
+    c->box_dash.y        = y;
+    c->box_dash.w        = w;
+    c->box_dash.h        = h;
+    c->box_dash.rounding = rounding;
+    c->box_dash.t        = t;
+    /* One cycle spans the whole border, so the snap resolves to exactly one arc and the duty --
+       dash / (dash + gap) -- is `frac` however the measurement rounded. */
+    c->box_dash.dash     = frac * len;
+    c->box_dash.gap      = ( 1.0f - frac ) * len;
+    c->box_dash.rate     = laps * len;   /* px/sec, which over a one-period border is laps/sec */
+    c->box_dash.phase    = at   * len;
+    c->box_dash.anim_phase  = s_draw.anim_phase;
+    c->box_dash.abgr        = col;
+    c->box_dash.curve       = s_draw.anim_curve;
+    c->box_dash.curve_param = s_draw.anim_curve_param;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_repeat -- a lattice of one rounded cell, from ONE quad.
+
+    nx by ny copies, `pitch` apart centre-to-centre, centred on (cx, cy).  The fragment folds its
+    coordinate into a cell (GUI_OP_REPEAT), so a 3x3 grip and a 40-tick ruler cost the same one
+    quad and the same one style record -- which is the point: a lattice was affordable before only
+    while the count stayed small, and the counts a ruler or a segmented bar actually wants did not.
+
+    The SET's box is derived rather than taken, here and in the tessellator, because the fragment
+    recovers the copy count from it (tess_repeat_box owns that contract).  So this culls against a
+    box it computes for itself.
+==============================================================================================*/
+
+void
+draw_push_repeat( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
+                  f32 cell_w, f32 cell_h, f32 rounding, u32 abgr )
+{
+    if ( nx == 0u || ny == 0u || cell_w <= 0.0f || cell_h <= 0.0f )
+        return;
+
+    /* The same flooring the tessellator applies, so the box culled against is the box drawn. */
+    f32 px = ( pitch_x > cell_w ) ? pitch_x : cell_w + 1.0f;
+    f32 py = ( pitch_y > cell_h ) ? pitch_y : cell_h + 1.0f;
+    f32 hx = (f32)( nx - 1u ) * 0.5f * px + cell_w * 0.5f;
+    f32 hy = (f32)( ny - 1u ) * 0.5f * py + cell_h * 0.5f;
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_REPEAT, col,
+                                  cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->repeat.cx       = cx;
+    c->repeat.cy       = cy;
+    c->repeat.pitch_x  = pitch_x;
+    c->repeat.pitch_y  = pitch_y;
+    c->repeat.cell_w   = cell_w;
+    c->repeat.cell_h   = cell_h;
+    c->repeat.rounding = rounding;
+    c->repeat.nx       = nx;
+    c->repeat.ny       = ny;
+    c->repeat.abgr     = col;
     draw_cmd_seal();
 }
 

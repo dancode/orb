@@ -100,6 +100,10 @@ static float g_spin_s = 0.0;
 // -- the band and the fill resolve from the same field evaluation, so they cannot disagree.
 static float g_frame_band = 0.0;
 
+// OP_GLOW's dropoff, off row 0 -- which main() already holds, so a glow costs no second fetch.
+// 0 when the op is absent, and the resolve below never reads it then.
+static float g_glow = 0.0;
+
 float4 prim_row( uint r )
 {
     return g_implicit ? float4( 0.0, 0.0, 0.0, 0.0 )
@@ -143,7 +147,7 @@ float4 prim_rect( void ) { return g_rect; }
 //
 // SV_Position is the pixel CENTRE (i + 0.5) and the quad's centre is in the same pixel space, the
 // same convention clip_coverage already relies on.
-float2 prim_local( float2 px, float4 rect )
+float2 prim_frame( float2 px, float4 rect )
 {
     // OP_SPIN adds its clock-driven angle to the quad's turn by composing the two (cos, sin) pairs
     // -- the angle-sum identity, not a second rotate.  g_spin is identity when the op is absent.
@@ -153,6 +157,31 @@ float2 prim_local( float2 px, float4 rect )
     float sw = g_rot.y * g_spin_c + g_rot.x * g_spin_s;
     float2 d = px - rect.xy;
     return float2( d.x * cz + d.y * sw, -d.x * sw + d.y * cz );
+}
+
+// The FIELD's coordinate: prim_frame, folded into one cell when OP_REPEAT makes the shape a SET
+// rather than a single copy.  The two are the same function without that op, and the split is what
+// keeps a gradient ramping across the whole set instead of restarting inside every cell -- a ramp
+// belongs to the shape, and under a repetition the shape is the strip.
+//
+// The lattice is stated as a pitch and a CELL half-extent (row 6); the copy COUNT comes from the
+// quad's own extent, since the set spans (n-1)/2 pitches plus one cell on each axis.  Recovering it
+// with round() rather than storing it is exact for every lattice the emit site can produce, and it
+// is what fits the whole op in four lanes.
+float2 prim_local( float2 px, float4 rect )
+{
+    float2 p = prim_frame( px, rect );
+
+    if ( ( g_ops & OP_REPEAT ) != 0u )
+    {
+        float4 rep   = prim_row( 6u );
+        float2 pitch = max( rep.xy, float2( 1e-4, 1e-4 ) );
+        float2 span  = max( rect.zw - rep.zw, float2( 0.0, 0.0 ) );  // half-span of copy CENTRES
+        float2 last  = round( 2.0 * span / pitch );                  // n - 1, per axis
+        float2 i     = clamp( round( ( p + span ) / pitch ), float2( 0.0, 0.0 ), last );
+        p += span - i * pitch;
+    }
+    return p;
 }
 
 // The rounded-box field at `p`, in the shape's own local frame (prim_local's frame).  The corner
@@ -392,6 +421,13 @@ fx_field_t fx_field( float2 px )
 
     float2 local = prim_local( px, rect );
 
+    // The extent the FIELD is measured against.  Normally the quad's, which is the shape -- but
+    // under OP_REPEAT the quad spans the whole set and the shape is one cell of it, so the record
+    // states that extent and every field below reads it instead.
+    float2 he = rect.zw;
+    if ( ( g_ops & OP_REPEAT ) != 0u )
+        he = prim_row( 6u ).zw;
+
     // field 6 SEG -- a CAPSULE: the distance to a line segment, minus its half-thickness.  The
     // quad's turn IS the segment's axis, so prim_local already hands back (along, across) about the
     // midpoint -- fold the along axis against the half-length and leave the across axis signed,
@@ -399,9 +435,9 @@ fx_field_t fx_field( float2 px )
     // distance in the core, where the rounded box's length-only form saturates.
     if ( g_field == 6u )
     {
-        float2 q = float2( abs( local.x ) - rect.z, local.y );
+        float2 q = float2( abs( local.x ) - he.x, local.y );
         f.d = length( float2( max( q.x, 0.0 ), q.y ) ) - rad.x;   // a capsule has one radius
-        f.s = local.x + rect.z;                                   // distance from the start cap
+        f.s = local.x + he.x;                                     // distance from the start cap
     }
     // field 2 NGON -- the regular polygon: rad.y flat sides inscribed in circumradius hw, corners
     // rounded by rad.x px.  The fold reduces the plane to one edge's sector; the distance is then
@@ -410,7 +446,7 @@ fx_field_t fx_field( float2 px )
     else if ( g_field == 2u )
     {
         float  rr  = rad.x;
-        float  R   = max( rect.z - rr, 1.0 );
+        float  R   = max( he.x - rr, 1.0 );
         float  an  = PI / max( rad.y, 3.0 );
         float2 acs = float2( cos( an ), sin( an ) );
         float  a0  = atan2( local.x, -local.y );          // 0 at the TOP vertex, y-down screen
@@ -420,7 +456,7 @@ fx_field_t fx_field( float2 px )
         q -= R * acs;
         q.y += clamp( -q.y, 0.0, R * acs.y );
         f.d = length( q ) * sign( q.x ) - rr;
-        f.s = a0 * rect.z;    // circumcircle arc-length: the polygon's own perimeter to within the
+        f.s = a0 * he.x;      // circumcircle arc-length: the polygon's own perimeter to within the
                               // apothem ratio, which a dash pattern cannot see
     }
     // field 3 TRI -- a solid triangle: three points about the shape centre, in the style's
@@ -448,8 +484,8 @@ fx_field_t fx_field( float2 px )
     }
     else
     {
-        f.d = box_field( local, rect.zw, rad, soft.z );
-        f.s = box_perimeter_s( local, rect.zw, rad );
+        f.d = box_field( local, he, rad, soft.z );
+        f.s = box_perimeter_s( local, he, rad );
     }
 
     f.aa     = soft.x;
@@ -479,7 +515,17 @@ float fx_coverage( float2 px )
         f.d = fx_to_band( f.d, border );
 
     // STAGE 3 -- field to coverage.  A field with no boundary contributes only its multiplier.
-    float cov = f.shaped ? fx_resolve( f.d, f.aa ) : 1.0;
+    //
+    // GLOW resolves the OUTSIDE through an exponential instead of the feather's linear ramp, which
+    // is the whole difference between a blurred edge and a lit one: light falls off by a constant
+    // fraction per pixel, and the eye reads the two apart immediately.  The interior stays solid --
+    // the filled core a halo behind a translucent subject needs -- and under OP_BAND `d` is already
+    // the band's field, so a ring glows outward AND inward with nothing added here.
+    float cov;
+    if ( f.shaped && ( g_ops & OP_GLOW ) != 0u )
+        cov = ( f.d <= 0.0 ) ? 1.0 : exp( -g_glow * f.d );
+    else
+        cov = f.shaped ? fx_resolve( f.d, f.aa ) : 1.0;
     cov *= f.mul;
 
     // STAGE 4 -- the ops that cut COVERAGE.
@@ -585,6 +631,7 @@ float4 main( ps_in_t i ) : SV_Target0
         g_field     = asuint( head.x );
         g_ops       = asuint( head.y );
         g_tex       = asuint( head.z );
+        g_glow      = head.w;      // free: the row is already in registers
     }
 
     // Placement, clip, the turn and the animation phase all come off the per-quad interpolants,
@@ -707,7 +754,7 @@ float4 main( ps_in_t i ) : SV_Target0
             float4 parm = prim_row( 3u );
             float4 c2   = unpack_col( asuint( parm.w ) );
             float  ap   = parm.z;
-            float2 sl   = prim_local( i.sv_pos.xy, prim_rect() ).yx;
+            float2 sl   = prim_frame( i.sv_pos.xy, prim_rect() ).yx;
             float  t    = saturate( ( atan2( sl.x, sl.y ) + ap )
                                     / max( 2.0 * ap, 1e-4 ) );
             vcol = lerp( vcol, c2, t );
@@ -737,8 +784,10 @@ float4 main( ps_in_t i ) : SV_Target0
     // where corner colours would be sampled out on the falloff skirt and arrive stretched by it.
     if ( ( g_ops & OP_GRAD ) != 0u )
     {
+        // prim_FRAME, not prim_local: a ramp belongs to the shape, and under OP_REPEAT the shape is
+        // the whole set -- a ramp folded into the cell would restart inside every copy.
         float4 grect = prim_rect();
-        float2 lp    = prim_local( i.sv_pos.xy, grect );
+        float2 lp    = prim_frame( i.sv_pos.xy, grect );
         float2 g     = prim_row( 4u ).xy;
         float  t;
 

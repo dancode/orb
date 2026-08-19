@@ -874,14 +874,37 @@ typedef struct gui_api_s
        the border-align ambient. */
     void ( *draw_round_rect_dashed )( gui_rect_t box, f32 rounding, f32 thickness,
                                       f32 dash, f32 gap, f32 speed, u32 col );
+
+    /* The BORDER TRACER: one arc of `frac` of the outline (0..1) travelling around it at `rate`
+       laps/sec -- indeterminate progress that traces the shape it belongs to rather than sitting
+       beside it as a bar.  Mechanically the dashed border with a single cycle spanning the whole
+       perimeter, so it is the same ONE quad, and the arc moves in the fragment on the shader
+       clock: the command's bytes never change while it runs and it re-tessellates nothing.
+       Present frames with request_redraw while it shows, the draw_pulse contract.
+       draw_border_progress is the determinate twin -- `t` places the arc 0..1 around the border
+       from the top-left instead of the clock doing it.  That value IS in the command, so it
+       re-tessellates its window as it moves, exactly as a progress bar's fill width does. */
+    void ( *draw_border_tracer   )( gui_rect_t box, f32 rounding, f32 thickness,
+                                    f32 frac, f32 rate, u32 col );
+    void ( *draw_border_progress )( gui_rect_t box, f32 rounding, f32 thickness,
+                                    f32 frac, f32 t, u32 col );
     void ( *draw_inset_shadow      )( gui_rect_t box, f32 depth, u32 col );
     void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );
+    /* A GLOW: draw_shadow's surface with its falloff resolved EXPONENTIALLY rather than linearly.
+       Light falls off by a constant fraction per pixel, so an exponential halo reads as emission
+       where the linear one reads as blur -- and it is the same single quad in the same batch, only
+       the curve differs.  `spread` is how far the light reaches, the draw_shadow vocabulary; the
+       core is filled, so it shows through a translucent subject.  Draw it before the body.
+       Under the ambient rounding like draw_shadow.  Focus rings, validation states, drag targets,
+       recording indicators -- and composed with draw_pulse's clock it breathes for free, since
+       neither op re-tessellates anything. */
+    void ( *draw_glow              )( gui_rect_t box, f32 spread, u32 col );
     /* The drop shadow proper: draw_shadow's falloff with the CASTER'S silhouette cut out of it,
        laid (off_x, off_y) px away from the box that casts it.  Nothing paints inside `box`, so a
        translucent panel shows what is behind it rather than its own shadow's core -- and because
        the cut is taken against the caster while the falloff is measured from the shadow, the cast
-       has a DIRECTION.  (0, 0) is the even cast on all four sides.  Use draw_shadow for a glow
-       MEANT to be seen through its subject. */
+       has a DIRECTION.  (0, 0) is the even cast on all four sides.  Use draw_shadow for a filled
+       cast MEANT to be seen through its subject, or draw_glow for one that reads as light. */
     void ( *draw_drop_shadow       )( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col );
 
     /* draw_pulse -- a rect whose fill alpha breathes in and out on a clock, for a "this is
@@ -900,6 +923,20 @@ typedef struct gui_api_s
     void ( *draw_text_outline      )( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
     void ( *draw_text_shadow       )( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
     void ( *draw_grip              )( gui_rect_t box, u32 col );
+
+    /* A LATTICE of one rounded cell: nx by ny copies `pitch` apart centre-to-centre, centred in
+       `at`.  ONE quad and ONE style record however many copies -- the fragment folds its own
+       coordinate into a cell, so a 3x3 dot field and a 40-tick ruler cost the same.  That is the
+       point of it: a lattice was affordable before only while the count stayed small.
+       `size` is the cell's side, and the pitch is floored just above it so copies never touch.
+       Honors the ambient rounding, so the cells can be dots, squares or pills.
+       draw_ticks is the one-axis form with the pitch solved from the count and the span, so the
+       first and last marks land on the ends -- ruler gradations, slider detents, timeline marks.
+       `len` is how far each tick reaches across the bar (0 = all the way). */
+    void ( *draw_dot_grid          )( gui_rect_t at, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
+                                      f32 size, u32 col );
+    void ( *draw_ticks             )( gui_rect_t bar, u32 n, f32 thickness, f32 len,
+                                      bool vertical, u32 col );
     /* Spinner: a 270-degree arc turning at `rate` revolutions/sec ON THE SHADER CLOCK
        (GUI_OP_SPIN) -- byte-identical command every frame, so it re-tessellates nothing.
        Present frames with request_redraw while it shows, the draw_pulse contract. */

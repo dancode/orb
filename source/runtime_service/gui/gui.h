@@ -1870,7 +1870,11 @@ typedef struct
     u32 field;          // gui_fx_mode_t -- which field the fragment evaluates (0 = none)
     u32 ops;            // GUI_OP_* -- modifiers on whatever field arrived, orthogonal to it
     u32 tex;            // sampling model | bindless slot (GUI_TEX_MODE | index)
-    u32 reserved_head;  // zero
+
+    /* GUI_OP_GLOW's dropoff, 1/px, and zero under every other record.  It rides this row rather
+       than one of its own because the row is the one EVERY fragment already holds -- so a glow
+       costs no second fetch, and a shape that does not glow pays nothing for the lane. */
+    f32 glow_k;
 
     /* Row 1 -- per-field payload; see the alias table above. */
 
@@ -1951,16 +1955,26 @@ typedef struct
     u32 anim_curve;
     f32 anim_param, grad_mid;
 
-    /* Row 6 -- GUI_OP_DASH's pattern, in ARC-LENGTH px along the shape's perimeter (the
-       draw_arc_dashed vocabulary, walked around a box instead of a circle).  The emit site snaps
-       the period so whole cycles fit the perimeter -- a closed dashed border meets itself.  Its
-       own row for the reason row 4 exists: PULSE owns param_a, and a dash that fought it for the
-       lane would rebuild the "ops that cannot compose" trap the record deleted.
+    /* Row 6 -- PER-OP, and at most one of the two claims it.  Each needs four lanes and neither
+       composes with the other (a repeated shape has no single perimeter for a dash to walk), so
+       they share the row rather than each taking one:
+
+         GUI_OP_DASH     dash_period, dash_duty, dash_scroll   -- unused fourth lane
+         GUI_OP_REPEAT   pitch x, pitch y, CELL half-extent x, y
+
+       GUI_OP_DASH's pattern is in ARC-LENGTH px along the shape's perimeter (the draw_arc_dashed
+       vocabulary, walked around a box instead of a circle).  The emit site snaps the period so
+       whole cycles fit the perimeter -- a closed dashed border meets itself.  This is its own row
+       for the reason row 4 exists: PULSE owns param_a, and a dash that fought it for the lane would
+       rebuild the "ops that cannot compose" trap the record deleted.
 
        dash_scroll is how far the clock slides the pattern: periods per animation cycle, so 1 is
        the marching ants and 0 pins the dashes to the shape.  0 is what a SPINNING dashed ring
        wants -- its boundary coordinate is measured in the rotating frame, so the dashes already
-       travel with it and any scroll on top of that is a second, unwanted crawl. */
+       travel with it and any scroll on top of that is a second, unwanted crawl.
+
+       GUI_OP_REPEAT states the lattice the fragment folds into: how far apart the copies sit, and
+       how big ONE of them is.  The count is recovered from the quad's extent (see the op). */
 
     f32 dash_period, dash_duty, dash_scroll, reserved_c;
 
@@ -2032,6 +2046,25 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
 /* The PATTERN ops -- what a shape is FILLED or CUT with, as opposed to what shape it is.  Each
    was a field until it became clear that occupying the field slot is what stopped a checkerboard
    from being round.  All four read row 7; at most one per record. */
+/* GLOW resolves the OUTSIDE of the field through an exponential instead of the feather's linear
+   ramp -- light rather than blur.  The interior stays solid, which is the filled core a halo
+   behind a translucent subject wants, and under GUI_OP_BAND the field is already the band's, so
+   the falloff runs both ways off a ring for free.  `glow_k` (row 0) is the dropoff; the emit site
+   derives it from the reach the caller asked for.  Reads only the field's distance, so every
+   shape in the catalogue glows without a line of per-field work. */
+#define GUI_OP_GLOW     ( 1u << 17 )
+
+/* REPEAT folds the shape-local frame into one cell of a bounded lattice, so ONE quad draws nx by
+   ny copies of whatever field the record names: a dot grid, a tick strip, a segmented bar.  The
+   quad spans the whole set and the fragment states the cell, which is why the cell's half-extent
+   rides row 6 -- the quad's own extents are already spoken for by the covering.
+
+   The copy COUNT is not stored: it falls out of the quad's extent against the pitch, which is what
+   makes four lanes enough.  That works only while the emit site sizes the quad as
+   (n-1)/2 * pitch + cell on each axis, and keeps the cell under half the pitch so copies do not
+   touch -- both true of every lattice a UI draws.  See tess_repeat_box. */
+#define GUI_OP_REPEAT   ( 1u << 18 )
+
 #define GUI_OP_TILE_U     ( 1u << 13 )  /* multiply u by pat_size before sampling -- the tiled
                                            atlas strip a dashed line's stipple row wants        */
 #define GUI_OP_TEXT_EDGE  ( 1u << 14 )  /* SDF text with pat_col OUTSIDE the glyph boundary      */
@@ -2603,6 +2636,8 @@ typedef enum
                              //   dashed border, and at a non-zero scroll rate the marching ants
     GUI_CMD_FRAME,           // filled body + border band composited in the FRAGMENT
                              //   (GUI_OP_FRAME): the widget bezel as ONE quad
+    GUI_CMD_REPEAT,          // nx by ny copies of one rounded cell (GUI_OP_REPEAT): dot grids,
+                             //   tick strips, segmented bars -- one quad whatever the count
 
 } gui_cmd_type_t;
 
@@ -2872,6 +2907,12 @@ typedef struct
            one period (gui_curve_t): STAIR is the ants that jump a dash at a time. */
         struct { f32 x, y, w, h; f32 rounding, t; f32 dash, gap; f32 rate, phase;
                  u32 abgr; u32 curve; f32 curve_param; f32 anim_phase; } box_dash;
+        /* A LATTICE of one rounded cell (GUI_OP_REPEAT): nx by ny copies, `pitch` apart
+           centre-to-centre, centred on (cx, cy).  The cell's size is stated rather than the set's
+           box, because the set's box is derived from the two and the fragment recovers the count
+           back out of it (gui_build_tess.c, tess_repeat_box).  ONE quad however many copies. */
+        struct { f32 cx, cy; f32 pitch_x, pitch_y; f32 cell_w, cell_h; f32 rounding;
+                 u32 nx, ny; u32 abgr; } repeat;
     };
 } gui_cmd_t;
 

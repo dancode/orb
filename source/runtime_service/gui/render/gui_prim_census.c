@@ -207,6 +207,8 @@ static const struct
     { GUI_OP_TEXT_EDGE,   "TEXT_EDGE" },
     { GUI_OP_CHECKER,     "CHECKER"   },
     { GUI_OP_GRID,        "GRID"      },
+    { GUI_OP_GLOW,        "GLOW"      },
+    { GUI_OP_REPEAT,      "REPEAT"    },
 };
 
 #define CENSUS_OP_COUNT  ( sizeof( k_census_op ) / sizeof( k_census_op[ 0 ] ) )
@@ -232,7 +234,7 @@ static const struct
     { "field",       CEN_U32, (u32)offsetof( gui_prim_t, field       ) },
     { "ops",         CEN_U32, (u32)offsetof( gui_prim_t, ops         ) },
     { "tex",         CEN_U32, (u32)offsetof( gui_prim_t, tex         ) },
-    { "res_head",    CEN_U32, (u32)offsetof( gui_prim_t, reserved_head ) },
+    { "glow_k",      CEN_F32, (u32)offsetof( gui_prim_t, glow_k      ) },
     { "r_tl",        CEN_F32, (u32)offsetof( gui_prim_t, r_tl        ) },
     { "r_tr",        CEN_F32, (u32)offsetof( gui_prim_t, r_tr        ) },
     { "r_br",        CEN_F32, (u32)offsetof( gui_prim_t, r_br        ) },

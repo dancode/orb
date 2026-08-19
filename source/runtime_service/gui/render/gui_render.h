@@ -267,7 +267,8 @@ void draw_push_shadow           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
 /* The same surface with its interior cut away: same outward falloff, nothing painted inside the
    boundary.  What a DROP shadow is -- a filled one's core is only visible through the thing casting
    it, so a translucent panel ends up dimming itself.  Emits a band of quads around the frame rather
-   than the whole box.  Use draw_push_shadow for a glow meant to be seen THROUGH its subject.
+   than the whole box.  Use draw_push_shadow (or draw_push_glow) for a cast meant to be seen
+   THROUGH its subject -- both keep the filled core this one removes.
    x,y,w,h is the CASTER and (ox, oy) is how far the shadow falls from it: the falloff is measured
    from the shadow's outline while the cut is taken against the caster's, which is what makes the
    cast DIRECTIONAL.  (0, 0) is the even cast on all four sides. */
@@ -277,6 +278,11 @@ void draw_push_skirt            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
 /* The inner shadow -- the falloff turned INWARD, painting from the boundary `depth` px in and
    nothing outside it.  The pressed well / recessed field a drop shadow cannot express. */
 void draw_push_inset            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 depth, u32 abgr );
+
+/* The same surface with its outward falloff resolved EXPONENTIALLY (GUI_OP_GLOW) -- light rather
+   than blur.  `feather` is twice the reach, the draw_push_shadow convention, and the dropoff is
+   derived from it at tessellation. */
+void draw_push_glow             ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr );
 void draw_push_pulse            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth,
                                   f32 phase, u32 abgr );
 
@@ -347,6 +353,20 @@ void draw_push_ngon             ( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32
    offset.  The period is snapped at tessellation so the pattern meets itself. */
 void draw_push_box_dashed       ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
                                   f32 dash, f32 gap, f32 rate, f32 phase, u32 abgr );
+
+/* ONE arc of that border rather than a pattern of them: the same command with its period set to
+   the whole perimeter, which this measures (it is only knowable after border alignment).  `frac`
+   is the lit fraction, `laps` scrolls it on the shader clock in revolutions/sec, and `at` places
+   it statically 0..1 around the border from the top-left. */
+void draw_push_box_trace        ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
+                                  f32 frac, f32 laps, f32 at, u32 abgr );
+
+/* A LATTICE of one rounded cell (GUI_OP_REPEAT): nx by ny copies `pitch` apart, centred on
+   (cx, cy).  ONE quad and one style record however many copies -- the fragment folds its
+   coordinate into a cell.  The set's box is derived from the count, pitch and cell, here and at
+   tessellation, because the fragment recovers the count back out of it. */
+void draw_push_repeat           ( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
+                                  f32 cell_w, f32 cell_h, f32 rounding, u32 abgr );
 
 /* A filled disc IS a rounded rect whose radius reached the half-extent -- this pushes
    GUI_CMD_RECT_FILLED with rounding = r, not a command of its own. */

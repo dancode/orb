@@ -57,6 +57,10 @@ void draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_
                                gui_grad_t kind, f32 angle, f32 mid );
 void draw_round_rect_dashed( gui_rect_t box, f32 rounding, f32 thickness,
                              f32 dash, f32 gap, f32 speed, u32 col );
+void draw_border_tracer( gui_rect_t box, f32 rounding, f32 thickness,
+                         f32 frac, f32 rate, u32 col );
+void draw_border_progress( gui_rect_t box, f32 rounding, f32 thickness,
+                           f32 frac, f32 t, u32 col );
 void draw_inset_shadow( gui_rect_t box, f32 depth, u32 col );
 void draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col );
 void draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, bool filled,

@@ -476,6 +476,16 @@ pal_rows( const f32* var )
         }
     }
 
+    /*--------------------------------------------------------------------------------------
+        7. Glows -- the same surfaces lit rather than shadowed, at the one reach every
+        attention state is sized against.  Their dropoff is derived from that reach, so the
+        vocabulary is as narrow as the shadow's and lands in the same handful of entries.
+    --------------------------------------------------------------------------------------*/
+
+    if ( shadow > 0.0f )
+        for ( u32 s = 0; s < n_src; ++s )
+            pal_box( GUI_OP_GLOW | GUI_OP_SELF, PAL_WIDE, PAL_TALL,
+                     pal_round( r_src[ s ], PAL_TALL ), shadow * 2.0f, 0.0f );
 }
 
 /*==============================================================================================

@@ -478,6 +478,32 @@ draw_round_rect_dashed( gui_rect_t box, f32 rounding, f32 thickness,
                           dash, gap, speed, 0.0f, col );
 }
 
+/* The border tracer: one arc of `frac` of the outline travelling around it at `rate` laps/sec --
+   indeterminate progress that traces the shape it belongs to instead of sitting beside it as a
+   bar.  The dashed border with a single cycle spanning the whole perimeter, so it costs the same
+   one quad, and its command's bytes never change while it runs: the arc moves in the fragment on
+   the shader clock and re-tessellates nothing.  The caller keeps frames presenting with
+   gui()->request_redraw() while it shows, the draw_pulse contract. */
+void
+draw_border_tracer( gui_rect_t box, f32 rounding, f32 thickness, f32 frac, f32 rate, u32 col )
+{
+    if ( frac <= 0.0f ) frac = 0.08f;
+    draw_push_box_trace( box.x, box.y, box.w, box.h, rounding, sym_thick( thickness ),
+                         frac, rate, 0.0f, col );
+}
+
+/* The determinate twin: the same arc positioned by a VALUE rather than by the clock.  `t` is
+   0..1 around the border from the top-left corner, so a load that reports its progress traces the
+   outline of the thing being loaded.  Unlike the tracer this re-tessellates its window when `t`
+   moves -- the value is in the command's bytes, exactly as a progress bar's fill width is. */
+void
+draw_border_progress( gui_rect_t box, f32 rounding, f32 thickness, f32 frac, f32 t, u32 col )
+{
+    if ( frac <= 0.0f ) frac = 0.08f;
+    draw_push_box_trace( box.x, box.y, box.w, box.h, rounding, sym_thick( thickness ),
+                         frac, 0.0f, t, col );
+}
+
 /* Inner shadow inside `box`, strongest against the edge and gone `depth` px in, with nothing
    painted outside.  The mirror of draw_shadow: that one lays a shape on the ground under its
    subject, this one lays it against the inside of the subject's own edge (pressed wells, recessed
@@ -507,6 +533,20 @@ static void
 draw_shadow( gui_rect_t box, f32 spread, u32 col )
 {
     draw_push_shadow( box.x, box.y, box.w, box.h, draw_rounding(), spread * 2.0f, col );
+}
+
+/* A glow behind `box`: the same surface draw_shadow lays down, with its falloff resolved
+   EXPONENTIALLY instead of linearly.  That one substitution is the whole difference -- light falls
+   off by a constant fraction per pixel, and the eye reads an exponential halo as emission where it
+   reads a linear one as blur.  Same single quad, same batch, same cost.
+
+   `spread` is how far the light reaches, the draw_shadow vocabulary.  The core is filled, so a
+   glow behind a translucent subject shows through it; put it before the body like a shadow.
+   Compose it with draw_pulse's clock for a breathing glow that re-tessellates nothing. */
+static void
+draw_glow( gui_rect_t box, f32 spread, u32 col )
+{
+    draw_push_glow( box.x, box.y, box.w, box.h, draw_rounding(), spread * 2.0f, col );
 }
 
 /* The drop shadow proper: the same falloff with the CASTER'S silhouette cut out of it, laid
@@ -565,8 +605,56 @@ draw_text_shadow( f32 x, f32 y, const char* s, u32 col_text, u32 col_shadow, f32
     draw_push_text( x, y, col_text, s );
 }
 
+/* A lattice of one cell: nx by ny copies `pitch` apart, centred in `at`.  ONE quad and one style
+   record whatever the count, so the tick strips and dot fields that used to be priced per copy are
+   priced per STRIP.  `size` is the cell's side; the pitch is floored just above it so copies never
+   touch. */
+static void
+draw_dot_grid( gui_rect_t at, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y, f32 size, u32 col )
+{
+    gui_vec2_t c = gui_rect_center( at );
+    draw_push_repeat( c.x, c.y, nx, ny, pitch_x, pitch_y, size, size, draw_rounding(), col );
+}
+
+/* N tick marks across `bar` -- ruler gradations, slider detents, timeline marks.  The pitch is
+   solved from the count and the span so the first and last ticks land on the ends, and the whole
+   strip is one quad: a 40-tick ruler costs exactly what a 4-tick one does. */
+static void
+draw_ticks( gui_rect_t bar, u32 n, f32 thickness, f32 len, bool vertical, u32 col )
+{
+    if ( n == 0u )
+        return;
+
+    f32 t = sym_thick( thickness );
+    if ( len <= 0.0f ) len = vertical ? bar.w : bar.h;
+
+    /* One tick has no span to divide, so it sits in the middle rather than at an end. */
+    f32 span = ( vertical ? bar.h : bar.w ) - t;
+
+    /* Ticks that would touch get their pitch floored apart, which would push the strip past the
+       bar it was fitted to.  Cap the count at what actually fits: a ruler's bounds are the
+       contract, and a caller asking for more gradations than there are pixels wants the densest
+       ruler that still fits, not one that overflows its lane. */
+    if ( n > 2u && span > 0.0f )
+    {
+        u32 nmax = (u32)( span / t );
+        if ( nmax < 2u ) nmax = 2u;
+        if ( n > nmax )  n = nmax;
+    }
+
+    f32 pitch = ( n > 1u ) ? span / (f32)( n - 1u ) : 0.0f;
+
+    gui_vec2_t c = gui_rect_center( bar );
+    if ( vertical )
+        draw_push_repeat( c.x, c.y, 1u, n, t, pitch, len, t, 0.0f, col );
+    else
+        draw_push_repeat( c.x, c.y, n, 1u, pitch, t, t, len, 0.0f, col );
+}
+
 /* Resize grip dots: a triangular 1-2-3 cluster of small square dots in the lower-right of `box`,
-   the familiar sizer texture (a window corner grip, a panel resize handle). */
+   the familiar sizer texture (a window corner grip, a panel resize handle).  Each ROW of the
+   cluster is one lattice, so the cluster is three quads rather than six -- the rows have different
+   lengths, which is the one thing a single lattice cannot say. */
 static void
 draw_grip_dots( gui_rect_t box, u32 col )
 {
@@ -574,12 +662,9 @@ draw_grip_dots( gui_rect_t box, u32 col )
     f32 g = d * 2.0f;                                             /* dot pitch */
     f32 x1 = box.x + box.w - d, y1 = box.y + box.h - d;
 
-    f32 save = draw_rounding();
-    draw_set_rounding( 0.0f );
-    for ( u32 row = 0; row < 3; ++row )
-        for ( u32 c = 0; c <= row; ++c )                          /* row r has r+1 dots */
-            draw_push_rect_filled( x1 - c * g, y1 - row * g, d, d, 0, 0, 1, 1, 0, col );
-    draw_set_rounding( save );
+    for ( u32 row = 0; row < 3; ++row )                           /* row r has r+1 dots */
+        draw_push_repeat( x1 + d * 0.5f - (f32)row * g * 0.5f, y1 + d * 0.5f - (f32)row * g,
+                          row + 1u, 1u, g, g, d, d, 0.0f, col );
 }
 
 /* Loading spinner: a 270-degree arc turning at `rate` revolutions/sec, fitted to `box`.  The
@@ -698,9 +783,14 @@ void gui_draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal ) 
 void gui_draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, gui_grad_t kind, f32 angle, f32 mid ) { draw_round_rect_gradient( box, rounding, col_a, col_b, kind, angle, mid ); }
 void gui_draw_round_rect_dashed( gui_rect_t box, f32 rounding, f32 thickness, f32 dash, f32 gap, f32 speed, u32 col )
                                                                                { draw_round_rect_dashed( box, rounding, thickness, dash, gap, speed, col ); }
+void gui_draw_border_tracer( gui_rect_t box, f32 rounding, f32 thickness, f32 frac, f32 rate, u32 col )
+                                                                               { draw_border_tracer( box, rounding, thickness, frac, rate, col ); }
+void gui_draw_border_progress( gui_rect_t box, f32 rounding, f32 thickness, f32 frac, f32 t, u32 col )
+                                                                               { draw_border_progress( box, rounding, thickness, frac, t, col ); }
 void gui_draw_inset_shadow( gui_rect_t box, f32 depth, u32 col ) { draw_inset_shadow( box, depth, col ); }
 void gui_draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col ) { draw_stripes( box, spacing, thickness, angle, col ); }
 void gui_draw_shadow  ( gui_rect_t box, f32 spread, u32 col )             { draw_shadow( box, spread, col ); }
+void gui_draw_glow    ( gui_rect_t box, f32 spread, u32 col )             { draw_glow( box, spread, col ); }
 void gui_draw_drop_shadow( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col )
                                                                                { draw_drop_shadow( box, spread, off_x, off_y, col ); }
 void gui_draw_pulse   ( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col ) { draw_pulse( box, rate, depth, phase, col ); }
@@ -711,6 +801,10 @@ void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col
 void gui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy )
                                                                                { draw_text_shadow( x, y, str, col_text, col_shadow, dx, dy ); }
 void gui_draw_grip( gui_rect_t box, u32 col )                            { draw_grip_dots( box, col ); }
+void gui_draw_dot_grid( gui_rect_t at, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y, f32 size, u32 col )
+                                                                               { draw_dot_grid( at, nx, ny, pitch_x, pitch_y, size, col ); }
+void gui_draw_ticks( gui_rect_t bar, u32 n, f32 thickness, f32 len, bool vertical, u32 col )
+                                                                               { draw_ticks( bar, n, thickness, len, vertical, col ); }
 void gui_draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col ) { draw_spinner( box, rate, thickness, col ); }
 void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, col ); }
 

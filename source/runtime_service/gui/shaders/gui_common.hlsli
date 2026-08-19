@@ -104,6 +104,8 @@ uint style_row( uint style )
 #define OP_DASH         0x400u
 #define OP_DITHER       0x800u
 #define OP_FRAME        0x1000u
+#define OP_GLOW         0x20000u
+#define OP_REPEAT       0x40000u
 
 // The PATTERN ops: what a shape is filled or cut WITH, rather than what shape it is.  All read
 // row 7 and at most one is live per record.

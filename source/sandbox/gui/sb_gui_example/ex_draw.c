@@ -327,6 +327,32 @@ ex_draw_shapes( void )
             }
             gui()->slider_int( "Shadow spread", &p_spread, 1, 12 );
 
+            /* The same surface one row up, resolved exponentially instead of linearly.  Sitting
+               beside the shadow on purpose: the two differ in the falloff CURVE and nothing else,
+               and that is the whole thing worth looking at. */
+            static i32 p_glow = 8;       /* glow reach, px */
+            r = gui()->canvas( H );
+            {
+                gui_rect_t box = ex_sym_box( r, H - 10.0f );
+                gui()->draw_glow( box, (f32)p_glow, 0xFF40C8FFu );
+                gui()->draw_rect( box.x, box.y, box.w, box.h, 0xFF102028u );
+            }
+            gui()->slider_int( "Glow reach (px)", &p_glow, 2, 16 );
+
+            /* The lattice: every count below is the SAME one quad and one style record, which is
+               the whole reason a 40-tick ruler is now a thing you can draw. */
+            static i32 p_ticks = 24;     /* tick count across the bar */
+            r = gui()->canvas( H );
+            gui()->draw_ticks( ( gui_rect_t ){ r.x + 4.0f, r.y + 6.0f, r.w - 8.0f, H - 12.0f },
+                               (u32)p_ticks, 1.0f, 0.0f, false, col );
+            gui()->slider_int( "Ruler ticks", &p_ticks, 2, 64 );
+
+            static i32 p_dots = 5;       /* dots per side of the field */
+            r = gui()->canvas( H );
+            gui()->draw_dot_grid( ex_sym_box( r, H ), (u32)p_dots, (u32)p_dots,
+                                  H / (f32)( p_dots + 1 ), H / (f32)( p_dots + 1 ), 2.0f, acc );
+            gui()->slider_int( "Dot field N x N", &p_dots, 2, 9 );
+
             static i32 p_grip = 20;      /* grip box, px */
             r = gui()->canvas( H ); gui()->draw_grip( ex_sym_box( r, (f32)p_grip ), col );
             gui()->slider_int( "Grip size (px)", &p_grip, 10, 26 );
@@ -338,6 +364,22 @@ ex_draw_shapes( void )
             static f32 p_prog = 0.66f;   /* continuous 0..1 fraction */
             r = gui()->canvas( H ); gui()->draw_progress_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, p_prog, 3.0f, acc );
             gui()->slider_float( "Progress frac", &p_prog, 0.0f, 1.0f );
+
+            /* The border tracer: the indeterminate arc, travelling the outline on the shader
+               clock.  Widened out of the square the marks above use -- the whole point is the
+               run down the long edges and around the corners. */
+            static i32 p_trace = 12;     /* lit fraction of the border, percent */
+            r = gui()->canvas( H );
+            gui()->draw_border_tracer( ( gui_rect_t ){ r.x + 4.0f, r.y + 3.0f, r.w - 8.0f, H - 6.0f },
+                                       6.0f, 2.0f, (f32)p_trace * 0.01f, 0.4f, acc );
+            gui()->slider_int( "Tracer arc (%)", &p_trace, 2, 100 );
+
+            /* The determinate twin: same arc, placed by a value instead of the clock. */
+            static f32 p_bprog = 0.30f;  /* position around the border, 0..1 from top-left */
+            r = gui()->canvas( H );
+            gui()->draw_border_progress( ( gui_rect_t ){ r.x + 4.0f, r.y + 3.0f, r.w - 8.0f, H - 6.0f },
+                                         6.0f, 2.0f, 0.25f, p_bprog, grn );
+            gui()->slider_float( "Border progress at", &p_bprog, 0.0f, 1.0f );
 
             static i32 p_half = 6;       /* pointer half-extent, px */
             r = gui()->canvas( H ); gui()->draw_arrow_pointing_at( r.x + r.w*0.5f, r.y + H*0.5f, (f32)p_half, GUI_DIR_DOWN, col );
