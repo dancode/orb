@@ -2061,6 +2061,79 @@ tess_text_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 cl
     s_tess.cur_is_text = false;
 }
 
+/* Same walk as tess_text_n, but each glyph decode + atlas lookup feeds TWO quads: the shadow
+   copy (offset dx, dy; shadow_abgr) then the main glyph, in that order so the main glyph's
+   antialiased edge composites over the shadow rather than under it.  Whichever of the pair a
+   glyph resolves to (whole-glyph table id vs. cut-and-remapped rect) is decided once and used for
+   both copies -- the shadow is never independently clip-tested, so the pair always lives or dies
+   together instead of a shadow surviving a main glyph the clip window dropped (or the reverse). */
+static void
+tess_text_shadow_n( f32 x, f32 y, u32 abgr, u32 shadow_abgr, f32 dx, f32 dy,
+                     const char* str, u32 n, f32 clip_x0, f32 clip_x1 )
+{
+    bool clipped = ( clip_x1 < GUI_TEXT_NO_CLIP );
+    f32  cx      = x;
+
+    u32 tex = font_tex();
+    if ( tex == 0 )
+        return;
+
+    s_tess.cur_is_text = true;
+    s_tess.slot_text_runs++;
+
+    u32 i = 0;
+    while ( i < n && str[ i ] )
+    {
+        u32 adv_b;
+        u32 cp = utf8_decode( &str[ i ], &adv_b );
+        i += adv_b;
+
+        u32 gid;
+        f32 ox, oy, gw, gh, advance;
+        font_glyph_placed( cp, &gid, &ox, &oy, &gw, &gh, &advance );
+
+        if ( gw > 0.0f && gh > 0.0f )
+        {
+            f32 gx0 = cx + ox;
+            f32 gx1 = gx0 + gw;
+
+            if ( !clipped || ( gx0 >= clip_x0 && gx1 <= clip_x1 ) )
+            {
+                tess_rect_glyph( gx0 + dx, y + oy + dy, gw, gh, gid, tex, shadow_abgr );
+                tess_rect_glyph( gx0,      y + oy,      gw, gh, gid, tex, abgr );
+            }
+            else if ( gx1 > clip_x0 && gx0 < clip_x1 )
+            {
+                f32 u0, v0, u1, v1, sox, soy, sgw, sgh, sadv;
+                font_glyph( cp, &u0, &v0, &u1, &v1, &sox, &soy, &sgw, &sgh, &sadv );
+
+                f32 du   = u1 - u0;
+                f32 nx0  = gx0, nx1 = gx1, nu0 = u0, nu1 = u1;
+                if ( nx0 < clip_x0 )
+                {
+                    nu0 = u0 + du * ( ( clip_x0 - gx0 ) / gw );
+                    nx0 = clip_x0;
+                }
+                if ( nx1 > clip_x1 )
+                {
+                    nu1 = u0 + du * ( ( clip_x1 - gx0 ) / gw );
+                    nx1 = clip_x1;
+                }
+                tess_rect_filled( nx0 + dx, y + oy + dy, nx1 - nx0, gh, nu0, v0, nu1, v1, tex,
+                                   shadow_abgr );
+                tess_rect_filled( nx0,      y + oy,      nx1 - nx0, gh, nu0, v0, nu1, v1, tex,
+                                   abgr );
+            }
+        }
+
+        cx += advance;
+        if ( clipped && cx >= clip_x1 )
+            break;
+    }
+
+    s_tess.cur_is_text = false;
+}
+
 /* One textured quad placed by an affine map: the local rect (lx, ly, lw, lh) is rotated by the
    prebuilt (cs, sn) and translated to the run origin (px, py) -- centre mapped through the
    transform, half-extents stored true, the style's rot pair doing the turn in the vertex stage.
@@ -2684,6 +2757,18 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 tess_text_edge_prim( c->text.edge_w, c->text.edge_col );
                 tess_text_n( c->text.x, c->text.y, c->text.abgr, s_draw.text_pool + c->text.off,
                              c->text.len, c->text.clip_x0, c->text.clip_x1 );
+                break;
+
+            /* Shadow + main copy in one string walk -- see tess_text_shadow_n. No TEXT_EDGE field
+               to prime: cur_ops was just zeroed above, which is the no-edge state every plain
+               run wants, and a drop shadow is never combined with a distance-field halo. */
+            case GUI_CMD_TEXT_SHADOW:
+                if ( c->text_shadow.font != cur_font )
+                    font_use( cur_font = c->text_shadow.font );
+                tess_text_shadow_n( c->text_shadow.x, c->text_shadow.y, c->text_shadow.abgr,
+                                     c->text_shadow.shadow_abgr, c->text_shadow.dx, c->text_shadow.dy,
+                                     s_draw.text_pool + c->text_shadow.off, c->text_shadow.len,
+                                     c->text_shadow.clip_x0, c->text_shadow.clip_x1 );
                 break;
 
             case GUI_CMD_TEXT_XF:

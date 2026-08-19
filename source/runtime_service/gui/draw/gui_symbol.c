@@ -601,8 +601,7 @@ draw_text_outline( f32 x, f32 y, const char* s, u32 col_text, u32 col_outline )
 static void
 draw_text_shadow( f32 x, f32 y, const char* s, u32 col_text, u32 col_shadow, f32 dx, f32 dy )
 {
-    draw_push_text( x + dx, y + dy, col_shadow, s );
-    draw_push_text( x, y, col_text, s );
+    draw_push_text_shadow( x, y, col_text, col_shadow, dx, dy, s );
 }
 
 /* A lattice of one cell: nx by ny copies `pitch` apart, centred in `at`.  ONE quad and one style

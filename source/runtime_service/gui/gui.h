@@ -2620,6 +2620,7 @@ typedef enum
     GUI_CMD_TRIANGLE,        // solid triangle
     GUI_CMD_TEXT,            // glyph run from the font atlas
     GUI_CMD_TEXT_XF,         // glyph run under a uniform scale + a rotation about its origin
+    GUI_CMD_TEXT_SHADOW,     // glyph run plus an offset copy, both emitted from one string walk
     GUI_CMD_LINE,            // single stroke segment
     GUI_CMD_POLYLINE,        // multi-segment antialiased polyline
     GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U
@@ -2762,6 +2763,14 @@ typedef struct
            see draw_set_font. */
         struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr;
                  f32 edge_w; u32 edge_col; u16 font; } text;
+        /* A drop shadow rides its own command rather than a dx/dy/shadow_abgr feather on `text`,
+           for the same reason `text_xf` does: those fields would sit unused on every plain label,
+           the hot path every chrome widget goes through.  Unlike text_xf, the run stays 1:1 and
+           axis-aligned -- only the glyph loop changes, emitting the shadow copy (dx, dy offset,
+           shadow_abgr) and the main copy per glyph from one decode + one atlas lookup, instead of
+           draw_text_shadow's two full commands walking the string twice. */
+        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr, shadow_abgr;
+                 f32 dx, dy;  u16 font; } text_shadow;
         /* The same glyph run under a uniform SCALE and a ROTATION about (x, y) -- (x, y) is both
            the run's top-left in its own space and the pivot, so a caller places any other pivot by
            moving the origin.  rot is radians in screen space (the angle algebra above: 0 points

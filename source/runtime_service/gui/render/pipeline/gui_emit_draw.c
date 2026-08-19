@@ -1027,6 +1027,19 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &c->text_xf.font,  sizeof c->text_xf.font );
             h = fnv1a( h, s_draw.text_pool + c->text_xf.off, c->text_xf.len );
             break;
+        case GUI_CMD_TEXT_SHADOW:
+            h = fnv1a( h, &c->text_shadow.x,           sizeof c->text_shadow.x );
+            h = fnv1a( h, &c->text_shadow.y,           sizeof c->text_shadow.y );
+            h = fnv1a( h, &c->text_shadow.len,         sizeof c->text_shadow.len );
+            h = fnv1a( h, &c->text_shadow.clip_x0,     sizeof c->text_shadow.clip_x0 );
+            h = fnv1a( h, &c->text_shadow.clip_x1,     sizeof c->text_shadow.clip_x1 );
+            h = fnv1a( h, &c->text_shadow.abgr,        sizeof c->text_shadow.abgr );
+            h = fnv1a( h, &c->text_shadow.shadow_abgr, sizeof c->text_shadow.shadow_abgr );
+            h = fnv1a( h, &c->text_shadow.dx,          sizeof c->text_shadow.dx );
+            h = fnv1a( h, &c->text_shadow.dy,          sizeof c->text_shadow.dy );
+            h = fnv1a( h, &c->text_shadow.font,        sizeof c->text_shadow.font );
+            h = fnv1a( h, s_draw.text_pool + c->text_shadow.off, c->text_shadow.len );
+            break;
         case GUI_CMD_POLYLINE:
             h = fnv1a( h, &c->polyline.pt_count,  sizeof c->polyline.pt_count );
             h = fnv1a( h, &c->polyline.thickness, sizeof c->polyline.thickness );
@@ -2262,6 +2275,49 @@ void
 draw_push_text( f32 x, f32 y, u32 abgr, const char* str )
 {
     draw_push_text_n( x, y, abgr, str, 0xFFFFFFFFu );
+}
+
+/* draw_push_text_shadow -- one command carrying both the shadow and the main glyph run; see
+   text_shadow (gui.h) for why this is not two more fields on draw_push_text. */
+void
+draw_push_text_shadow( f32 x, f32 y, u32 abgr, u32 shadow_abgr, f32 dx, f32 dy, const char* str )
+{
+    if ( !str || draw_emit_blocked() )
+        return;
+
+    u32 col        = draw_apply_alpha( abgr );
+    u32 shadow_col = draw_apply_alpha( shadow_abgr );
+    if ( ( col >> 24 ) == 0u && ( shadow_col >> 24 ) == 0u )
+        return;
+
+    /* Same vertical cull as draw_push_text_clip_n, padded to cover the shadow's own offset. */
+    {
+        gui_rect_t cc = clip_current();
+        f32        lh = font_line_h();
+        f32        sy = ( dy < 0.0f ) ? y + dy : y;
+        f32        sh = lh + ( dy < 0.0f ? -dy : dy );
+        if ( rect_empty( cc ) || sy + lh + sh <= cc.y || sy - sh >= cc.y + cc.h )
+            return;
+    }
+
+    u32 len = (u32)strlen( str );
+    u32 off;
+    if ( !draw_text_pool_copy( str, len, &off ) )
+        return;
+
+    gui_cmd_t* c               = draw_cmd_claim( GUI_CMD_TEXT_SHADOW );
+    c->text_shadow.x           = x;
+    c->text_shadow.y           = y;
+    c->text_shadow.off         = off;
+    c->text_shadow.len         = len;
+    c->text_shadow.clip_x0     = s_draw.text_clip_x0;
+    c->text_shadow.clip_x1     = s_draw.text_clip_x1;
+    c->text_shadow.abgr        = col;
+    c->text_shadow.shadow_abgr = shadow_col;
+    c->text_shadow.dx          = dx;
+    c->text_shadow.dy          = dy;
+    c->text_shadow.font        = (u16)s_draw.cur_font;
+    draw_cmd_seal();
 }
 
 /*==============================================================================================

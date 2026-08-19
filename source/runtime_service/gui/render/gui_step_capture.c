@@ -479,6 +479,31 @@ step_cmd_bounds( const gui_cmd_t* c )
             if ( c->text.clip_x1 < x1 ) x1 = c->text.clip_x1;
             return ( gui_rect_t ){ x0, c->text.y, x1 > x0 ? x1 - x0 : 0.0f, font_line_h() };
         }
+        /* Same walk, over the run text_shadow points at; the shadow's own dx/dy offset just
+           pads the box so the highlight still frames the shadow copy. */
+        case GUI_CMD_TEXT_SHADOW:
+        {
+            const char* s = s_step.text_pool + c->text_shadow.off;
+            f32         w = 0.0f;
+            u32         i = 0;
+            while ( i < c->text_shadow.len && s[ i ] )
+            {
+                u32 adv_b;
+                f32 u0, v0, u1, v1, ox, oy, gw, gh, adv;
+                font_glyph( utf8_decode( &s[ i ], &adv_b ),
+                            &u0, &v0, &u1, &v1, &ox, &oy, &gw, &gh, &adv );
+                w += adv;
+                i += adv_b;
+            }
+            f32 dx = c->text_shadow.dx, dy = c->text_shadow.dy;
+            f32 x0 = c->text_shadow.x + ( dx < 0.0f ? dx : 0.0f );
+            f32 x1 = c->text_shadow.x + w + ( dx > 0.0f ? dx : 0.0f );
+            f32 y0 = c->text_shadow.y + ( dy < 0.0f ? dy : 0.0f );
+            f32 y1 = c->text_shadow.y + font_line_h() + ( dy > 0.0f ? dy : 0.0f );
+            if ( c->text_shadow.clip_x0 > x0 ) x0 = c->text_shadow.clip_x0;
+            if ( c->text_shadow.clip_x1 < x1 ) x1 = c->text_shadow.clip_x1;
+            return ( gui_rect_t ){ x0, y0, x1 > x0 ? x1 - x0 : 0.0f, y1 - y0 };
+        }
         /* Transformed run: the same advance walk gives the run's own box, which is then rotated
            about the origin and re-bounded -- the highlight is an AABB over a shape that is not
            one, exactly as it is for a triangle. */
@@ -562,15 +587,17 @@ step_cmd_info( u32 index, step_cmd_info_t* out )
     out->cmd    = *c;
     out->bounds = step_cmd_bounds( c );
     out->clip   = s_step.clip_table[ c->clip_idx ];
-    out->text   = ( c->type == GUI_CMD_TEXT )    ? s_step.text_pool + c->text.off
-                : ( c->type == GUI_CMD_TEXT_XF ) ? s_step.text_pool + c->text_xf.off
-                                                 : NULL;
+    out->text   = ( c->type == GUI_CMD_TEXT )        ? s_step.text_pool + c->text.off
+                : ( c->type == GUI_CMD_TEXT_XF )     ? s_step.text_pool + c->text_xf.off
+                : ( c->type == GUI_CMD_TEXT_SHADOW ) ? s_step.text_pool + c->text_shadow.off
+                                                     : NULL;
     out->owner  = s_step.cmd_owner[ fi ];
 
     /* The font is the COMMAND's own now (gui.h), and only a glyph run has one. */
-    out->font = ( c->type == GUI_CMD_TEXT )    ? c->text.font
-              : ( c->type == GUI_CMD_TEXT_XF ) ? c->text_xf.font
-                                               : 0u;
+    out->font = ( c->type == GUI_CMD_TEXT )        ? c->text.font
+              : ( c->type == GUI_CMD_TEXT_XF )     ? c->text_xf.font
+              : ( c->type == GUI_CMD_TEXT_SHADOW ) ? c->text_shadow.font
+                                                   : 0u;
 
     /* Owning segment tag (display domain). */
     out->win = 0;  out->z = 0;  out->vp = 0;

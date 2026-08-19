@@ -382,6 +382,11 @@ void draw_push_text_n           ( f32 x, f32 y, u32 abgr, const char* str, u32 n
 void draw_push_text_clip_n      ( f32 x, f32 y, u32 abgr, const char* str, u32 n,
                                   f32 clip_x0, f32 clip_x1 );
 
+/* Drop-shadow run: the shadow (dx, dy offset, shadow_abgr) and the main glyph emit from one
+   string walk at tessellation, instead of two draw_push_text commands re-decoding the run. */
+void draw_push_text_shadow      ( f32 x, f32 y, u32 abgr, u32 shadow_abgr, f32 dx, f32 dy,
+                                  const char* str );
+
 /* A run scaled about, and rotated about, (x, y).  Separate from the three above because a
    transformed run is a different SHAPE, not a parameterized one -- see the text_xf command. */
 void draw_push_text_xf          ( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot );

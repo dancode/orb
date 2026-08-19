@@ -55,7 +55,7 @@ static i32  s_step_rate = 20;   /* capped at 60: the whole drag range stays in t
 static f32  s_step_accum;
 
 static const char* k_step_type_name[] = {
-    "rect_filled", "rect_outline", "triangle", "text", "text_xf",
+    "rect_filled", "rect_outline", "triangle", "text", "text_xf", "text_shadow",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
     "sprite", "fx_box", "round_rect_ex", "arc", "pie",
     "arc_dash", "arc_grad", "image_xf", "checker", "grid",
@@ -162,6 +162,13 @@ step_cmd_detail( const step_cmd_info_t* ci )
             gui_textf( "pos %.0f,%.0f   len %u   scale %.2f   rot %.0f deg",
                        c->text_xf.x, c->text_xf.y, c->text_xf.len, c->text_xf.scale,
                        gui_degrees( c->text_xf.rot ) );
+            fmt_snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
+            row2 = b2;
+            break;
+        case GUI_CMD_TEXT_SHADOW:
+            gui_textf( "pos %.0f,%.0f   len %u   shadow %.0f,%.0f",
+                       c->text_shadow.x, c->text_shadow.y, c->text_shadow.len,
+                       c->text_shadow.dx, c->text_shadow.dy );
             fmt_snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
             row2 = b2;
             break;
@@ -320,6 +327,12 @@ step_cmd_detail( const step_cmd_info_t* ci )
                 case GUI_CMD_TRIANGLE:      step_swatch( r, r.x, "color", c->tri.abgr );          break;
                 case GUI_CMD_TEXT:          step_swatch( r, r.x, "color", c->text.abgr );         break;
                 case GUI_CMD_TEXT_XF:       step_swatch( r, r.x, "color", c->text_xf.abgr );      break;
+                case GUI_CMD_TEXT_SHADOW:
+                {
+                    f32 sx = step_swatch( r, r.x, "color", c->text_shadow.abgr );
+                    step_swatch( r, sx, "shadow", c->text_shadow.shadow_abgr );
+                    break;
+                }
                 case GUI_CMD_LINE:          step_swatch( r, r.x, "color", c->line.abgr );         break;
                 case GUI_CMD_POLYLINE:      step_swatch( r, r.x, "color", c->polyline.abgr );     break;
                 case GUI_CMD_DASHED_LINE:   step_swatch( r, r.x, "color", c->dash.abgr );         break;
