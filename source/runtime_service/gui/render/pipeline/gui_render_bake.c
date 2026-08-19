@@ -72,15 +72,32 @@ static const f32 k_pal_stroke[] = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.
 #define PAL_SLOTS      256u                    /* >> GUI_PAL_MAX; power of two for the mask */
 #define PAL_SLOT_MASK  ( PAL_SLOTS - 1u )
 
+/*  How many distinct style SCALES the table can cover at once.  Mixed-DPI puts more than one in a
+    single frame -- each window lands its own surface's scale as it comes up (gui_frame_dpi.c) -- and
+    a scale reaches the record as scaled lane values, so each one needs its own rows.  Two covers a
+    laptop beside an external monitor, which is the case that exists; a third scale drops the
+    least-recently-seen one and its shapes fall back to per-slot records. */
+
+#define PAL_MAX_SCALES  2u
+
 static struct
 {
     gui_prim_t rec[ GUI_PAL_MAX ];   // rows harvested this bake, before publish
     u32        count;
     u32        digest;               // style inputs the last bake ran against (0 = never baked)
-    f32        var[ GUI_VAR_COUNT ]; // the landed style metrics, handed down by pal_style_set
+
+    /* One landed style per live scale, newest first.  Keyed by CONTENT: re-noting a scale already
+       held refreshes it in place, so the repeated landings a mixed-DPI build performs cost one hash
+       each and the set converges on exactly the scales in play. */
+    struct
+    {
+        f32 var[ GUI_VAR_COUNT ];
+        u32 key;                     // hash of var[]; 0 = slot empty
+    } scale[ PAL_MAX_SCALES ];
+    u32        scale_count;
 
     u16        slot[ PAL_SLOTS ];    // entry + 1 per slot; 0 = empty
-    u32        hits, misses;         // this frame's probe outcome, for the dump
+    u32        hits, misses;         // probe outcome since the last bake, for the dump
 
 } s_bake;
 
@@ -102,10 +119,34 @@ pal_hash( const gui_prim_t* rec )
     full compare on the candidate.  The compare is not optional -- a hash collision that returned the
     wrong entry would draw the wrong shape. */
 
+/*  The A/B switch.  Off, pal_find answers nothing and every style falls back to the per-slot memo
+    and the arena -- the exact behaviour that existed before the palette, style bloat and all.  It
+    is a lookup switch, NOT a teardown: the table stays baked and uploaded, so flipping it costs one
+    re-tessellation in each direction and nothing else.  That is what makes it usable for A/B'ing a
+    suspected palette artefact against the same frame without it. */
+
+static bool s_pal_on = true;
+
+bool pal_enabled( void ) { return s_pal_on; }
+
+void
+pal_set_enabled( bool on )
+{
+    if ( s_pal_on == on )
+        return;
+    s_pal_on = on;
+
+    /* Cached geometry carries the answers the old setting gave, so the switch has to reach the
+       geometry, not just the next quad.  Clearing the digest makes the next pal_bake republish,
+       and the placement pass already reads a republish as "re-place everything" -- the same route
+       a theme change takes (gui_build_cache.c). */
+    s_bake.digest = 0u;
+}
+
 u32
 pal_find( const gui_prim_t* rec )
 {
-    if ( s_bake.count == 0u )
+    if ( s_bake.count == 0u || !s_pal_on )
         return GUI_PAL_NONE;
 
     u32 i = pal_hash( rec ) & PAL_SLOT_MASK;
@@ -141,23 +182,69 @@ pal_index( void )
     }
 }
 
+/*  Forget every scale.  The build re-notes each one as its windows land, so this runs at the top of
+    a frame that will emit and NOT on an idle-skipped one -- a clean frame lands nothing, and a set
+    that emptied itself there would re-bake against the primary alone and discard the geometry the
+    skip exists to keep. */
+
+void
+pal_style_reset( void )
+{
+    s_bake.scale_count = 0;
+}
+
+/*  Note a landed style as one of the scales the table must cover.  Called once at the top of a
+    building frame for the primary surface and again from each mixed-DPI landing; the content key
+    makes the repeats free. */
+
 void
 pal_style_set( const f32* vars, u32 count )
 {
     if ( count > (u32)GUI_VAR_COUNT ) count = (u32)GUI_VAR_COUNT;
-    memcpy( s_bake.var, vars, count * sizeof( f32 ) );
+
+    u32 key = 2166136261u;
+    for ( u32 v = 0; v < count; ++v )
+    {
+        u32 b; memcpy( &b, &vars[ v ], sizeof( b ) );
+        key = ( key ^ b ) * 16777619u;
+    }
+    if ( !key ) key = 1u;            /* 0 is the empty-slot sentinel */
+
+    for ( u32 s = 0; s < s_bake.scale_count; ++s )
+        if ( s_bake.scale[ s ].key == key )
+            return;                  /* already covered -- the common case, every landing after the first */
+
+    /* A third scale evicts the oldest.  Losing one costs coverage, never correctness: its shapes
+       miss the palette and take per-slot records exactly as they did before any of this existed. */
+    u32 at = s_bake.scale_count;
+    if ( at >= PAL_MAX_SCALES )
+    {
+        memmove( &s_bake.scale[ 0 ], &s_bake.scale[ 1 ],
+                 ( PAL_MAX_SCALES - 1u ) * sizeof( s_bake.scale[ 0 ] ) );
+        at = PAL_MAX_SCALES - 1u;
+    }
+    else
+    {
+        s_bake.scale_count++;
+    }
+
+    memset( s_bake.scale[ at ].var, 0, sizeof( s_bake.scale[ at ].var ) );
+    memcpy( s_bake.scale[ at ].var, vars, count * sizeof( f32 ) );
+    s_bake.scale[ at ].key = key;
 }
+
+/*  What the last bake ran against: every noted scale, in order, plus the atlas slot.  Folding the
+    WHOLE var block rather than the vars the rows happen to read is what keeps a new row from
+    inheriting a stale table -- there is no list to forget to update. */
 
 static u32
 pal_digest( void )
 {
-    u32 h = 2166136261u;             /* FNV-1a over the landed style, as raw f32 bits */
-    for ( u32 v = 0; v < (u32)GUI_VAR_COUNT; ++v )
-    {
-        u32 b; memcpy( &b, &s_bake.var[ v ], sizeof( b ) );
-        h = ( h ^ b ) * 16777619u;
-    }
-    h = ( h ^ res_atlas_idx() ) * 16777619u;
+    u32 h = 2166136261u;
+    for ( u32 s = 0; s < s_bake.scale_count; ++s )
+        h = ( h ^ s_bake.scale[ s ].key ) * 16777619u;
+    h = ( h ^ s_bake.scale_count ) * 16777619u;
+    h = ( h ^ res_atlas_idx()     ) * 16777619u;
     return h ? h : 1u;               /* 0 is the never-baked sentinel */
 }
 
@@ -208,6 +295,7 @@ pal_row_keep( void )
 /* One surface row: the ambient ops, the rect, and the two lanes an op reads.  Every rounded shape
    in the vocabulary is this call -- a fill, a frame, a band and a shadow differ in the op word and
    in nothing else. */
+
 static void
 pal_box( u32 ops, f32 w, f32 h, f32 r, f32 feather, f32 border )
 {
@@ -226,46 +314,37 @@ pal_round( f32 src, f32 h )
 }
 
 /*==============================================================================================
-    pal_bake -- run the table.
+    pal_rows -- the TABLE, run once against one landed style.
 
-    Called from the placement pass with the tessellation arena idle (gui_build_cache.c, just past
-    tess_reset).  Rows write into the head of that arena and the counters are rewound afterwards, so
-    the pass that follows sees the arena exactly as tess_reset left it.
+    Every row states a path and lets the emitter produce the value.  Under mixed DPI this runs once
+    per live scale and the two vocabularies coexist in the table: the same row at 1x and at 2x is
+    two different records by its lane bytes, and the content-addressed lookup separates them with no
+    idea that DPI exists.
 ==============================================================================================*/
 
-bool
-pal_bake( void )
+static void
+pal_rows( const f32* var )
 {
-    u32 digest = pal_digest();
-    if ( digest == s_bake.digest )
-        return false;
-    s_bake.digest = digest;
-    s_bake.count  = 0;
-
-    /* Drop the lookup BEFORE the rows run.  The rows tessellate through tess_prim_local like any
-       other shape, so they probe the palette themselves -- and a stale slot still pointing into the
-       table being overwritten would answer a row, leaving it with nothing to harvest.  The row
-       would then be missing from the very table it belongs in. */
-    memset( s_bake.slot, 0, sizeof( s_bake.slot ) );
-    s_bake.hits = s_bake.misses = 0;
-
     /* The style metrics, read once.  Each is already through the em scale -- a var is landed at
        ( boot_font_px / 12 ) * dpi_scale when the theme is applied -- so a row states the var and
        the scale is carried for it. */
-    const f32 round_widget = s_bake.var[ GUI_VAR_ROUND       ];  /* control frames, knobs, grabs */
-    const f32 round_win    = s_bake.var[ GUI_VAR_PANEL_ROUND ];  /* windows, children, popups    */
-    const f32 border       = s_bake.var[ GUI_VAR_BORDER      ];
-    const f32 ring         = s_bake.var[ GUI_VAR_FOCUS_RING  ];
-    const f32 shadow       = s_bake.var[ GUI_VAR_SHADOW      ];
+
+    const f32 round_widget = var[ GUI_VAR_ROUND       ];  /* control frames, knobs, grabs */
+    const f32 round_win    = var[ GUI_VAR_PANEL_ROUND ];  /* windows, children, popups    */
+    const f32 border       = var[ GUI_VAR_BORDER     ];
+    const f32 ring         = var[ GUI_VAR_FOCUS_RING ];
+    const f32 shadow       = var[ GUI_VAR_SHADOW     ];
 
     /* The heights a radius gets fitted against.  These are the rects chrome actually rounds: a
        row-tall control, an indicator box, a gutter-wide grab, a titlebar, and everything taller
        than twice the radius, where the clamp does not bite at all. */
+
     const f32 h_fit[] = { PAL_TALL,
-                          s_bake.var[ GUI_VAR_ROW       ],
-                          s_bake.var[ GUI_VAR_INDICATOR ],
-                          s_bake.var[ GUI_VAR_GUTTER    ],
-                          s_bake.var[ GUI_VAR_TITLE_H   ] };
+                          var[ GUI_VAR_ROW       ],
+                          var[ GUI_VAR_INDICATOR ],
+                          var[ GUI_VAR_GUTTER    ],
+                          var[ GUI_VAR_TITLE_H   ] };
+
     const u32 n_fit   = (u32)( sizeof( h_fit ) / sizeof( h_fit[ 0 ] ) );
 
     const f32 r_src[] = { 0.0f, round_widget, round_win };
@@ -317,7 +396,9 @@ pal_bake( void )
         corners takes them, and the fragment picks per quadrant so all four ride the record.
     --------------------------------------------------------------------------------------*/
 
-    for ( u32 s = 1; s < n_src; ++s )        /* from 1: the all-square case is already baked */
+    /* from 1: the all-square case is already baked */
+    for ( u32 s = 1; s < n_src; ++s )
+    {
         for ( u32 f = 0; f < 2u; ++f )
         {
             f32 r = pal_round( r_src[ s ], h_fit[ f ] );
@@ -338,6 +419,7 @@ pal_bake( void )
                                 TESS_FX_AA, 0xFFFFFFFFu, 0xFFFFFFFFu, 0.0f, 0u, 0.0f );
             pal_row_keep();
         }
+    }
 
     /*--------------------------------------------------------------------------------------
         4. Frames -- the same surface with a border band.  The border COLOUR rides the quad,
@@ -373,6 +455,7 @@ pal_bake( void )
        emit site (WIN_SHADOW_DROP / WIN_SHADOW_OVERLAY_SPREAD, chrome/window/gui_window_free.c) and
        restated here, the one place this file states a number a widget owns.  Bounded: a value that
        drifts out of step costs a palette miss and a per-slot record, never a wrong shape. */
+
     const f32 k_shadow_spread[] = { 1.0f, 1.5f };
     const f32 k_shadow_drop     = -0.30f;
 
@@ -391,10 +474,42 @@ pal_bake( void )
             }
         }
 
-    /*--------------------------------------------------------------------------------------
-        Hand the table over and leave the arena as we found it.
-    --------------------------------------------------------------------------------------*/
+}
 
+/*==============================================================================================
+    pal_bake -- run the table against every live style scale and publish the result.
+
+    Called from the placement pass with the tessellation arena idle (gui_build_cache.c, just past
+    tess_reset).  Rows write into the head of that arena and the counters are rewound afterwards, so
+    the pass that follows sees the arena exactly as tess_reset left it.
+
+    Returns true only when it PUBLISHED, which the caller reads as "every baked palette index in
+    cached geometry is now stale" and answers with a full re-place.
+==============================================================================================*/
+
+bool
+pal_bake( void )
+{
+    u32 digest = pal_digest();
+    if ( digest == s_bake.digest || s_bake.scale_count == 0u )
+        return false;
+    s_bake.digest = digest;
+    s_bake.count  = 0;
+
+    /* Drop the lookup BEFORE the rows run.  The rows tessellate through tess_prim_local like any
+       other shape, so they probe the palette themselves -- and a stale slot still pointing into the
+       table being overwritten would answer a row, leaving it with nothing to harvest.  The row
+       would then be missing from the very table it belongs in. */
+
+    memset( s_bake.slot, 0, sizeof( s_bake.slot ) );
+    s_bake.hits = s_bake.misses = 0;
+
+    /* Newest scale first, so if the table ever fills it is the least recently seen surface that
+       loses its tail rather than the one the user is looking at. */
+    for ( u32 s = s_bake.scale_count; s-- > 0; )
+        pal_rows( s_bake.scale[ s ].var );
+
+    /* Leave the arena as we found it. */
     s_tess.prim_count = 0;
     s_tess.quad_count = 0;
     s_tess.cur_ops    = 0u;
@@ -422,16 +537,20 @@ pal_dump( void )
     u32 probes = s_bake.hits + s_bake.misses;
 
     gui_log( GUI_LOG_INFO, "" );
-    gui_log( GUI_LOG_INFO, "---- PALETTE BAKE (%u of %u entries; %u/%u probes hit since the bake, "
-                           "%.1f%%) ----", s_bake.count, (u32)GUI_PAL_MAX, s_bake.hits, probes,
+    gui_log( GUI_LOG_INFO, "---- PALETTE BAKE (%u of %u entries over %u style scale(s); %u/%u "
+                           "probes hit since the bake, %.1f%%) ----",
+             s_bake.count, (u32)GUI_PAL_MAX, s_bake.scale_count, s_bake.hits, probes,
              probes ? 100.0f * (f32)s_bake.hits / (f32)probes : 0.0f );
-    gui_log( GUI_LOG_INFO, "     metrics: round %.4g panel_round %.4g border %.4g ring %.4g "
-                           "shadow %.4g | row %.4g ind %.4g gutter %.4g title %.4g",
-             s_bake.var[ GUI_VAR_ROUND ], s_bake.var[ GUI_VAR_PANEL_ROUND ],
-             s_bake.var[ GUI_VAR_BORDER ], s_bake.var[ GUI_VAR_FOCUS_RING ],
-             s_bake.var[ GUI_VAR_SHADOW ], s_bake.var[ GUI_VAR_ROW ],
-             s_bake.var[ GUI_VAR_INDICATOR ], s_bake.var[ GUI_VAR_GUTTER ],
-             s_bake.var[ GUI_VAR_TITLE_H ] );
+
+    for ( u32 s = 0; s < s_bake.scale_count; ++s )
+    {
+        const f32* v = s_bake.scale[ s ].var;
+        gui_log( GUI_LOG_INFO, "     scale %u: round %.4g panel_round %.4g border %.4g ring %.4g "
+                               "shadow %.4g | row %.4g ind %.4g gutter %.4g title %.4g", s,
+                 v[ GUI_VAR_ROUND ], v[ GUI_VAR_PANEL_ROUND ], v[ GUI_VAR_BORDER ],
+                 v[ GUI_VAR_FOCUS_RING ], v[ GUI_VAR_SHADOW ], v[ GUI_VAR_ROW ],
+                 v[ GUI_VAR_INDICATOR ], v[ GUI_VAR_GUTTER ], v[ GUI_VAR_TITLE_H ] );
+    }
 
     for ( u32 i = 0; i < s_bake.count; ++i )
     {

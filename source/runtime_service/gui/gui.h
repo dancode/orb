@@ -3563,10 +3563,17 @@ ORB_STATIC_ASSERT( GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK,
     Palette CONTENT is baked, not constant: radii, feather and border widths scale with em and DPI
     (gui_style_apply), so the table is rebuilt when the style bake changes.  Static in SLOT, baked
     in CONTENT.
+
+    MIXED DPI needs no second addressing scheme.  Two monitors at different scales put two style
+    scales in one frame (gui_frame_dpi.c: windows build sequentially and each lands its own), and a
+    scale reaches the record as SCALED LANE VALUES -- a 10.67 radius at 1x is a 21.33 radius at 2x,
+    which is a different record by its bytes.  So both scales' vocabularies simply coexist in the one
+    table, and the content-addressed lookup separates them for free.  The cap is sized for that: the
+    measured worst case is 36 entries for one theme at one scale.
 ==============================================================================================*/
 
 #define GUI_PAL_FIRST  1024u   /* first style index that resolves against the palette */
-#define GUI_PAL_MAX      64u   /* palette entries; measured vocabulary is under 32     */
+#define GUI_PAL_MAX     128u   /* palette entries, ACROSS every live style scale       */
 
 ORB_STATIC_ASSERT( GUI_MAX_PRIMS <= GUI_PAL_FIRST,
                    "the style arena grew into the palette's index range -- raise GUI_PAL_FIRST" );

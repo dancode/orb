@@ -471,11 +471,29 @@ bool                pal_bake                ( void );
 
 u32                 pal_find                ( const gui_prim_t* rec );
 
-/* Hand the render server the landed style metrics the bake works from -- GUI_VAR_COUNT floats in
-   gui_style_var_t order, already through the em scale.  The one-way seam gui_render_set_time
-   crosses: this unit does not read the style grid, it is told what the grid says. */
+/* A/B switch for the palette lookup.  Off, every style takes a per-slot arena record exactly as it
+   did before the palette existed -- more style bloat, identical pixels.  Flipping it re-places all
+   geometry (cached quads hold the answers the old setting gave), so it is a debug lever, not a
+   per-frame one.  Debug selector menu: "Style palette". */
+
+bool                pal_enabled             ( void );
+void                pal_set_enabled         ( bool on );
+
+/* Note a landed style as one the palette must cover -- GUI_VAR_COUNT floats in gui_style_var_t
+   order, already through the em scale.  The one-way seam gui_render_set_time crosses: this unit
+   does not read the style grid, it is told what the grid says.
+
+   Called once per building frame for the primary surface, and again from every mixed-DPI landing
+   (gui_dpi_land): two monitors at different scales put two live style scales in one frame, and each
+   needs its own rows because a scale reaches the record as scaled lane values.  Repeats are free --
+   a scale already noted is recognised by content.
+
+   pal_style_reset drops the set; run it only at the top of a frame that will EMIT, since a clean
+   frame lands nothing and an emptied set would re-bake and discard the very geometry the idle skip
+   exists to keep. */
 
 void                pal_style_set           ( const f32* vars, u32 count );
+void                pal_style_reset         ( void );
 
 /* Log the table the last bake produced, in the census's own record spelling -- so a baked entry and
    the census row it is meant to cover read as the same line.  Printed with every census dump. */

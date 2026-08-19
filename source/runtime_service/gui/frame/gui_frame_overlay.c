@@ -1060,6 +1060,7 @@ debug_hotkeys( void )
 #define SEL_FORCE   "Force redraw"
 #define SEL_TESS    "Tess cache"
 #define SEL_IDLE    "Idle skip"
+#define SEL_PAL     "Style palette"
 #define SEL_FONTS   "Font registry"
 #define SEL_MEM     "Memory"
 #define SEL_PERF    "NP+ perf"
@@ -1106,7 +1107,8 @@ selector_content_w( f32 label_w )
     f32  w = font_text_w( SEL_HINT );
 
     /* Checkbox rows: indicator box + gap + label. */
-    static const char* const k_lever[] = { SEL_FORCE, SEL_TESS, SEL_IDLE, SEL_FONTS, SEL_MEM };
+    static const char* const k_lever[] = { SEL_FORCE, SEL_TESS, SEL_IDLE, SEL_PAL,
+                                           SEL_FONTS, SEL_MEM };
     for ( u32 i = 0; i < sizeof( k_lever ) / sizeof( k_lever[ 0 ] ); ++i )
     {
         f32 row = CHECKBOX_SZ + WIDGET_PAD + font_text_w( k_lever[ i ] );
@@ -1186,6 +1188,16 @@ debug_selector_menu( void )
             build_set_retained_skip( cached );
 
         gui_checkbox( SEL_IDLE,  &s_idle_skip );
+
+        /* Off, every style takes a per-slot arena record the way it did before the palette --
+           more records, the same pixels.  Any difference on screen between the two settings is a
+           palette bug, which is the whole point of the lever.  Deliberately NOT restored by
+           debug_reset: comparing the two states usually means closing this panel so it stops
+           covering what is being compared. */
+        bool pal = pal_enabled();
+        if ( gui_checkbox( SEL_PAL, &pal ) )
+            pal_set_enabled( pal );
+
         gui_checkbox( SEL_FONTS, &s_dbg_font_open );
         gui_checkbox( SEL_MEM,   &s_dbg_mem_open  );
 

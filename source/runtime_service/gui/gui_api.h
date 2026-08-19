@@ -2948,6 +2948,19 @@ typedef struct gui_api_s
 
     void                ( *debug_style_census )( const char* tag, bool clear );
 
+    /* Style palette on/off -- the A/B lever behind the debug selector menu's "Style palette" box.
+       On (default), a style the frame-global palette already holds costs the emitting window no
+       arena record at all.  Off, every window mints its own copy exactly as it did before the
+       palette existed: more style records, the same pixels.  ANY visible difference between the two
+       is a palette bug, which is what the switch is for.
+
+       Not free to flip -- cached geometry carries the answers the old setting gave, so a change
+       re-places every window's geometry once.  A debug lever, not a per-frame one.  Scripted so a
+       driver can census the same workload both ways and diff the two dumps. */
+
+    void                ( *debug_set_style_palette )( bool on );
+    bool                ( *debug_style_palette     )( void );
+
     /* Retained-skip: when on (default), an unchanged frame skips tessellation.  Toggle to benchmark
        or confirm that the hash-upfront path produces identical output to the reference. */
     void ( *set_retained_skip )( bool on );

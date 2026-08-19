@@ -223,6 +223,25 @@ static bool s_frame_dirty = true;   /* start true: forces a full first-frame bui
    skip so the UI rebuilds and re-renders unconditionally.  Toggled via gui()->set_force_redraw. */
 static bool s_force_redraw = false;
 
+/*  Hand the style the render server cannot read down to the palette bake (pal_style_set,
+    render/gui_render.h).  The whole var block, not the vars the bake happens to use, so a new bake
+    row can never inherit a stale table.
+
+    Two callers, and both are needed.  frame_begin notes the PRIMARY surface's style, which is the
+    only one most frames have.  gui_dpi_land notes each additional one as its window comes up, since
+    mixed-DPI monitors put more than one live style scale in a single frame -- and the bake has to
+    hold rows for every scale that will emit, not just viewport 0's.  Repeats are free: the bake
+    recognises a scale it already holds by content. */
+
+static void
+pal_style_note( void )
+{
+    f32 vars[ GUI_VAR_COUNT ];
+    for ( u32 v = 0; v < (u32)GUI_VAR_COUNT; ++v )
+        vars[ v ] = style_var( (gui_style_var_t)v );
+    pal_style_set( vars, (u32)GUI_VAR_COUNT );
+}
+
 /* Once-per-frame latch for the internal debug-overlay emit at the default context's ctx_end. */
 static bool s_overlays_emitted = false;
 
@@ -315,16 +334,6 @@ gui_frame_begin( f32 dt )
        moment nothing else in the UI moved. */
     gui_render_set_time( gui_anim_time() );
 
-    /* And this frame's landed style metrics, which the palette bake derives its table from.  Read
-       here rather than there because the render server does not reach into the style grid; it is
-       told, exactly as it is told the clock.  Before any push has run, so these are the theme's own
-       values and not a widget's scoped override. */
-    {
-        f32 vars[ GUI_VAR_COUNT ];
-        for ( u32 v = 0; v < (u32)GUI_VAR_COUNT; ++v )
-            vars[ v ] = style_var( (gui_style_var_t)v );
-        pal_style_set( vars, (u32)GUI_VAR_COUNT );
-    }
 
     /* Frontend dirty: true when the frame must emit widgets.
          - io_dirty          : any input change this frame (mouse move/button/key/wheel/text)
@@ -386,6 +395,13 @@ gui_frame_begin( f32 dt )
         /* Full rebuild: clear the draw list and tessellation so the emit phase writes fresh
            commands, and reset global interaction state for this frame's hit tests. */
         draw_reset( disp_w, disp_h );
+
+        /* Re-open the palette bake's view of which style scales are live, and note the primary's.
+           Only on a frame that will emit: a clean frame lands nothing, so an emptied set would
+           re-bake against one scale and throw away the geometry the skip exists to keep.  Mixed-DPI
+           surfaces add themselves as their windows land (gui_dpi_land, below in this unit). */
+        pal_style_reset();
+        pal_style_note();
 
         /* The corner PROFILE is theme-wide where the radius is per-category, so it is installed
            once here rather than resolved at every seam that sets a radius.  A site that wants a

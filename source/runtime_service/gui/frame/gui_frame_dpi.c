@@ -226,6 +226,12 @@ gui_dpi_land( i32 viewport )
     /* Re-aim the type ramp at this surface's em -- prewarmed, so a memo hit, and QUIET like
        the landing itself. */
     gui_type_resolve();
+
+    /* This surface's scale is now one the frame will emit at, so the palette bake needs rows for
+       it: a radius or a border reaches the style record already scaled, and a 2x record shares no
+       bytes with its 1x twin.  Without this the shapes on every non-primary monitor would miss the
+       palette and take per-slot records -- correct, but none of the saving. */
+    pal_style_note();
 }
 
 /* Frame-begin poll (gui_frame_loop.c): resolve every live surface's wanted scale, retarget on

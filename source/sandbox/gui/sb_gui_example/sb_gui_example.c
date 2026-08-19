@@ -48,11 +48,18 @@ main( int argc, char** argv )
 {
     /* -census runs the scripted style-record sweep instead of the interactive explorer: every
        demo, one at a time, under every built-in theme, dumping the census per theme and exiting
-       when the last one is out (ex_census.c). */
-    bool census = false;
+       when the last one is out (ex_census.c).
+
+       -nopal turns the style palette off for the whole run, interactive or scripted.  Pairing it
+       with -census is the A/B: the same workload with and without the shared table, so the two
+       dumps show what the palette reclaims -- and, more usefully, that the RECORD SET is the same
+       either way.  A record present in one run and not the other is a palette bug. */
+    bool census = false, nopal = false;
     for ( int i = 1; i < argc; ++i )
-        if ( strcmp( argv[ i ], "-census" ) == 0 )
-            census = true;
+    {
+        if ( strcmp( argv[ i ], "-census" ) == 0 ) census = true;
+        if ( strcmp( argv[ i ], "-nopal"  ) == 0 ) nopal  = true;
+    }
 
     /* Load modules -- gui's full dependency set is just rhi + app (+ the engine core stack). */
     mod_system_init();
@@ -105,6 +112,12 @@ main( int argc, char** argv )
     }
 
    gui()->debug_enable( true );
+
+    if ( nopal )
+    {
+        gui()->debug_set_style_palette( false );
+        printf( "[sb_gui_example] style palette OFF -- every window mints its own style records\n" );
+    }
 
     if ( census && !ex_census_start() )
         goto shutdown;
