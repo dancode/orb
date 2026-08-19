@@ -93,9 +93,10 @@ static struct
     {
         f32 var[ GUI_VAR_COUNT ];
         u32 key;                     // hash of var[]; 0 = slot empty
-    } scale[ PAL_MAX_SCALES ];
-    u32        scale_count;
 
+    } scale[ PAL_MAX_SCALES ];
+
+    u32        scale_count;
     u16        slot[ PAL_SLOTS ];    // entry + 1 per slot; 0 = empty
     u32        hits, misses;         // probe outcome since the last bake, for the dump
 

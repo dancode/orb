@@ -486,7 +486,7 @@ volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd_open )
     {
         u32 ci = cmd_open + k;
         s_tess.gpu_cmds[ ci ] = ( tess_gpu_cmd_t ){
-            .cmd   = { .elem_count = 0, .tex_idx = 0, .clip_rect = s_tess.cur_clip },
+            .cmd   = { .elem_count = 0, .tex_idx = 0 },
             .vp    = GUI_VP_INVALID,
             .qbase = s_tess.quad_count,
         };

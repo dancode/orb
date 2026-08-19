@@ -38,7 +38,6 @@ typedef struct
        texture rides the style record (gui_prim_t), so one command can span several. */
 
     u32          tex_idx;       // first primitive's model|slot -- diagnostic, not a batch key
-    gui_rect_t   clip_rect;     // scissor rect (pixels)
 
 } gui_gpu_cmd_t;
 
@@ -225,9 +224,10 @@ fnv1a_u32( u32 h, u32 v )
     COMMAND STEPPING
 
     draw_emit_blocked -- the one gate every draw_push_* entry point checks before spending a
-    command slot (and, by early-outing first, any pool space): the command list is full, or the
-    command stepper is replaying a frozen frame and live main-band emission is suppressed at the
-    source (STEP_EMIT_SUPPRESSED, gui_render.h; capture/replay in render/gui_step_capture.c).
+    command slot (and, by early-outing first, any pool space): the command list is full.
+    
+    It also integrates with the command stepper, replaying a frozen frame and live main-band 
+    emission is suppressed at the source (render/gui_step_capture.c).
 ==============================================================================================*/
 
 static inline bool
@@ -235,7 +235,7 @@ draw_emit_blocked( void )
 {
     if ( s_draw.cmd_count >= GUI_MAX_CMDS )
     {
-        /* Say so.  Every other fixed pool in the gui follows the loud-overflow rule (GUI_WARN_ONCE,
+        /* Say so. Every other fixed pool in the gui follows the loud-overflow rule (GUI_WARN_ONCE,
            rect/gui_rect.h): degrade gracefully, but report once so the symptom traces to its cap.
            This one -- the pool most likely to saturate, since a single dense drawer can exhaust it
            in one call -- was the exception, and a silent drop here is the worst possible failure
@@ -248,27 +248,30 @@ draw_emit_blocked( void )
         return true;
     }
 
+    /* The command stepper is a debug tool that freezes the main-band draw list and replays a
+       frozen frame, so the user can step through the commands one at a time. It is compiled 
+       out in release builds */
+
     if ( STEP_EMIT_SUPPRESSED() )
         return true;
 
-#ifdef GUI_CMD_STEPPER
-    /* Attribution: stamp the emitting widget onto the slot this push will occupy.  Speculative
+    #ifdef GUI_CMD_STEPPER
+    /* Stepper only array: Stamp the emitting widget onto the slot this push will occupy.
        (the push may still drop for alpha/cull), but exact: every push checks this gate first,
        so whichever push finally lands at this index was also the last stamper. */
-
     s_draw.cmd_owner[ s_draw.cmd_count ] = s_draw.cur_owner;
+    #endif
 
-#endif
-
-    return false;
+    return false; 
 }
 
 #ifdef GUI_CMD_STEPPER
 
-/* Called by item_state (STEP_SET_OWNER, gui_render.h) as each widget registers -- the
-   commands it paints right after carry its id.  Reset to 0 (chrome) at window transitions in
-   draw_seg_retag; chrome painted after a window's last widget still attributes to that widget
-   (a known display-only imprecision). */
+/* Called by item_state (STEP_SET_OWNER, gui_render.h) as each widget registers 
+   -- the commands it paints right after carry its id.  Reset to 0 (chrome) at window 
+   transitions in draw_seg_retag; chrome painted after a window's last widget still 
+   attributes to that widget (a known display-only imprecision). */
+
 void
 draw_set_cmd_owner( gui_id_t id )
 {
@@ -351,7 +354,9 @@ draw_reset( i32 display_w, i32 display_h )
 }
 
 /*==============================================================================================
-    Clip stack
+
+    Clip Stack
+
 ==============================================================================================*/
 
 /* Append r to the clip table and return its index -- or the index of an existing identical rect.
@@ -422,15 +427,17 @@ rect_empty( gui_rect_t r )
     return r.w <= 0.0f || r.h <= 0.0f;
 }
 
-/* Reject a shape whose axis-aligned bounds cannot touch the current clip -- it would emit a command
-   + geometry the GPU then scissors to nothing.  The cull is exact, not heuristic: cur_clip_idx
-   records the active scissor at every emit, so clip_current() IS the scissor the shape renders
-   under; a box fully outside it lights no pixel.  This rejects at the source -- a scrolled-out widget
-   (or a whole region clipped to zero) costs no command slot, no string-pool / point-pool space, and
-   no tessellation, not merely no draw call.  Conservative: only a box fully past an edge is dropped
-   (touching counts as visible), and an empty clip rejects everything in it. */
-bool
-draw_cull_box( f32 x, f32 y, f32 w, f32 h )
+/*==============================================================================================
+  
+   - Reject a shape whose axis-aligned bounds cannot touch the current clip. 
+   - It would emit a command + geometry the GPU then scissors to nothing.  
+   - clip_current() Is the scissor the shape renders under; 
+   - Conservative: only a box fully past an edge is dropped (touching counts as visible), 
+     but an empty clip rejects everything in it.
+
+==============================================================================================*/
+
+bool draw_cull_box( f32 x, f32 y, f32 w, f32 h )
 {
     gui_rect_t c = clip_current();
     if ( rect_empty( c ) )                  return true;   /* nothing in an empty clip is visible */
@@ -439,11 +446,19 @@ draw_cull_box( f32 x, f32 y, f32 w, f32 h )
     return false;
 }
 
-/* The shared push body.  `radius` rounds the clip's own corners -- the per-fragment cut the
-   scissor could never express (gui_fx.hlsli, clip_coverage).  It applies to THIS entry only: a
-   clip nested inside a rounded one intersects against the parent's RECT (the corner arcs do not
-   compose through rect_intersect), which errs by letting a child paint into its parent's corner
-   arc -- the parent's own chrome overpaints there in practice. */
+/*==============================================================================================
+  
+    draw_push_clip_body - The shared push body.  
+    
+    `radius` rounds the clip's own corners -- the per-fragment cut the scissor could 
+    never express (gui_fx.hlsli, clip_coverage).  
+    
+    It applies to THIS entry only: a clip nested inside a rounded one intersects against the
+    parent's RECT (the corner arcs do not compose through rect_intersect), which errs by letting a child paint into its parent's corner
+    arc -- the parent's own chrome overpaints there in practice.
+
+==============================================================================================*/
+
 static void
 draw_push_clip_body( f32 x, f32 y, f32 w, f32 h, f32 radius )
 {
@@ -1034,11 +1049,17 @@ draw_hash_cmd( const gui_cmd_t* c )
 }
 
 /*==============================================================================================
+
     draw_cmd_open / draw_cmd_seal -- the shared preamble and postamble of every shape push.
 
-    open runs the four gates every push owes, in the one order that is correct (blocked first so
-    the stepper's owner stamp lands; a fully transparent shape contributes nothing under alpha
-    blending, src*0 + dst = dst; the cull is exact against the active scissor), then allocates
+    Open runs the four gates every push goes through, in the one order that is correct.
+
+    1. Blocked first so the command stepper's debug tool owner stamp lands.
+
+    A fully transparent shape contributes nothing under alpha blending, 
+      src*0 + dst = dst; the cull is exact against the active scissor), 
+    
+    then allocates
     the slot and stamps the header.  `vis_col` is the shape's colour with the ambient alpha
     ALREADY folded (a multi-colour shape passes the OR of its folded colours -- visible if any
     end is).  `pad` grows the cull box on every side for shapes whose geometry reaches past the
@@ -1051,6 +1072,7 @@ draw_hash_cmd( const gui_cmd_t* c )
     a cull that is not an axis-aligned box test.  They still owe the same transparent drop this
     preamble runs -- alpha 0 is the free visibility toggle everywhere, with one text nuance: a
     visible TEXT_EDGE keeps a transparent-fill run alive (the outline paints outside the glyph).
+
 ==============================================================================================*/
 
 /* Claim the next command slot and stamp the ambient (clip_idx, vp) pair onto it.  vp is the
@@ -1076,8 +1098,10 @@ draw_cmd_open( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
 {
     if ( draw_emit_blocked() )
         return NULL;
+
     if ( ( vis_col >> 24 ) == 0u )
         return NULL;
+
     if ( draw_cull_box( x - pad, y - pad, w + 2.0f * pad, h + 2.0f * pad ) )
         return NULL;
 
@@ -1091,10 +1115,16 @@ draw_cmd_seal( void )
         draw_hash_cmd( &s_draw.cmds[ s_draw.cmd_count - 1 ] );
 }
 
-/* The shared body.  `rounding` arrives explicit and already resolved -- the wrappers below fold
-   the ambient radius in (or not: see the roundable rule on each), and the disc passes its own.
-   `corner_pow` travels the same way and for the same reason: a disc's corner IS the shape, so
-   the one caller that names its own radius names its own profile too, and gets the circle. */
+/*==============================================================================================
+    draw_rect_cmd -- shared base function for rect commands
+
+    `rounding` arrives explicit and already resolved -- the wrappers below fold the ambient
+    radius in (or not: see the roundable rule on each), and the disc passes its own.
+
+    `corner_pow` travels the same way and for the same reason: a disc's corner IS the shape, so
+    the one caller that names its own radius names its own profile too, and gets the circle.
+==============================================================================================*/
+
 static void
 draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
                f32 u0, f32 v0, f32 u1, f32 v1,
@@ -1103,24 +1133,27 @@ draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
     /* A rounded quad becomes an SDF surface whose AA skirt reaches past the authored rect
        (tess_fx_box), so cull it with one pixel of slack -- a shape flush against the clip edge
        keeps its feathered edge.  Square quads cull tight. */
+
     f32 pad = ( rounding > 0.0f ) ? 1.0f : 0.0f;
     u32 col = draw_apply_alpha( abgr );
 
     gui_cmd_t* c = draw_cmd_open( GUI_CMD_RECT_FILLED, col, x, y, w, h, pad );
     if ( !c )
         return;
-    c->rect.x        = x;
-    c->rect.y        = y;
-    c->rect.w        = w;
-    c->rect.h        = h;
-    c->rect.u0       = u0;
-    c->rect.v0       = v0;
-    c->rect.u1       = u1;
-    c->rect.v1       = v1;
-    c->rect.tex_idx  = tex_idx;
-    c->rect.abgr       = col;
-    c->rect.rounding   = rounding;
-    c->rect.corner_pow = ( rounding > 0.0f ) ? corner_pow : 0.0f;
+
+    c->rect.x           = x;
+    c->rect.y           = y;
+    c->rect.w           = w;
+    c->rect.h           = h;
+    c->rect.u0          = u0;
+    c->rect.v0          = v0;
+    c->rect.u1          = u1;
+    c->rect.v1          = v1;
+    c->rect.tex_idx     = tex_idx;
+    c->rect.abgr        = col;
+    c->rect.rounding    = rounding;
+    c->rect.corner_pow  = ( rounding > 0.0f ) ? corner_pow : 0.0f;
+
     draw_cmd_seal();
 }
 
@@ -1132,6 +1165,7 @@ draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
     corners off the symbol rather than off a frame, and it would happen silently to any icon that
     happened to be drawn inside a draw_set_rounding scope.
     A caller that really is drawing a picture says so by calling draw_push_image below. */
+
 void
 draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      /* rect */
                        f32 u0, f32 v0, f32 u1, f32 v1,  /* uv */

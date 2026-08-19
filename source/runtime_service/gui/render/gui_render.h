@@ -707,8 +707,7 @@ void                gui_render_set_time     ( f32 seconds );
     typedef struct                       /* gui_gpu_cmd_t + its parallel arrays, flattened */
     {
         u32        elem_count, tex_idx, qbase;        /* elem_count and qbase count quads */
-        i32        vp;                   /* GUI_VP_INVALID = dormant volatile pad */
-        gui_rect_t clip;
+        i32        vp;                   /* GUI_VP_INVALID = dormant volatile pad; also the batch-cut key */
 
     } dash_cmd_t;
 

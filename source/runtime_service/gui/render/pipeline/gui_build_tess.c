@@ -28,7 +28,7 @@
 
 typedef struct
 {
-    gui_gpu_cmd_t cmd;      // elem_count (quads), tex_idx, clip_rect -- the GPU draw-call unit
+    gui_gpu_cmd_t cmd;      // elem_count (quads), tex_idx -- the GPU draw-call unit
     i32           vp;       // viewport for this command (GUI_VP_INVALID = dormant volatile pad)
     u32           qbase;    // quad slot -- first quad of command (its draw's first_vertex / 6)
 
@@ -490,11 +490,11 @@ tess_ensure_gpu_cmd( void )
     s_tess.force_new_cmd = false;
     /* Quad span of this command starts at the current quad_count; the next command's qbase (or
        the final quad_count for the last) bounds it.  Lets a surface upload only its own quads.
-       tex_idx and clip_rect are the ambient values at the moment the command opened, i.e. the
-       FIRST primitive's, and are diagnostic only (the dashboard tooltip) -- both ride the quad
-       now and the command may go on to span several of each. */
+       tex_idx is the ambient value at the moment the command opened, i.e. the FIRST primitive's,
+       and is diagnostic only (the dashboard tooltip) -- it rides the quad now and the command
+       may go on to span several. */
     s_tess.gpu_cmds[ s_tess.cmd_count++ ] = ( tess_gpu_cmd_t ){
-        .cmd   = { .elem_count = 0, .tex_idx = s_tess.cur_tex, .clip_rect = s_tess.cur_clip },
+        .cmd   = { .elem_count = 0, .tex_idx = s_tess.cur_tex },
         .vp    = s_tess.cur_vp,
         .qbase = s_tess.quad_count,
     };

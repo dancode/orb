@@ -78,7 +78,7 @@ static gui_id_t g_dash_window_id = 0;
 #define DASH_COL_FIF_IDLE   GUI_COLOR( 0x40, 0x40, 0x48, 0xFF )
 #define DASH_COL_SPAN_VERT  GUI_COLOR( 0x66, 0xBB, 0xEE, 0xFF )
 /* No CUT_TEX: a texture change stopped cutting batches when the texture moved into the vertex. */
-#define DASH_COL_CUT_CLIP   GUI_COLOR( 0xE0, 0x50, 0xE0, 0xFF )
+#define DASH_COL_CUT_VP     GUI_COLOR( 0xE0, 0x50, 0xE0, 0xFF )
 #define DASH_COL_CUT_FORCE  GUI_COLOR( 0xFF, 0xFF, 0xFF, 0xC0 )
 
 /* Region palette. */
@@ -560,14 +560,13 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
 
             if ( k > 0 )
             {
-                /* Why this command split from the previous one -- the batch-cut cause.  Only two
-                   remain: the texture stopped cutting batches when it moved into the vertex
-                   (gui.h), so a split is a clip-rect change or a forced boundary. */
+                /* Why this command split from the previous one -- the batch-cut cause.  Within one
+                   window's row, tess_ensure_gpu_cmd (gui_build_tess.c) only ever cuts on a viewport
+                   change or a forced boundary (a volatile block/pad opening); clip and texture ride
+                   the quad now and cut nothing.  vp is therefore the whole test: anything else that
+                   split the row was forced. */
                 const dash_cmd_t* pc  = &sn->cmds[ sl->cmd_base + k - 1 ];
-                u32               cut = ( dc->clip.x != pc->clip.x || dc->clip.y != pc->clip.y
-                                       || dc->clip.w != pc->clip.w || dc->clip.h != pc->clip.h )
-                                                                       ? DASH_COL_CUT_CLIP
-                                                                       : DASH_COL_CUT_FORCE;
+                u32               cut = ( dc->vp != pc->vp ) ? DASH_COL_CUT_VP : DASH_COL_CUT_FORCE;
                 dash_rb_push( &rb, bx - 2.0f, y + 1.0f, 1.0f, row_h - 3.0f, cut );
             }
 
@@ -589,8 +588,7 @@ dash_panel_batch( gui_rect_t r, const dash_snapshot_t* sn )
                     gui_textf( "%u quads  ->  %u verts, %u tris   (%s)",
                                dc->elem_count, dc->elem_count * 6u, dc->elem_count * 2u,
                                dash_bytes( dc->elem_count * (u32)GUI_QUAD_BYTES, qb, sizeof( qb ) ) );
-                    gui_textf( "clip %.0f,%.0f  %.0fx%.0f   first tex %u", dc->clip.x, dc->clip.y,
-                               dc->clip.w, dc->clip.h, dc->tex_idx );
+                    gui_textf( "vp %d   first tex %u", dc->vp, dc->tex_idx );
                     gui_textf( "arena base %u quads", dc->qbase );
                 }
                 gui_tooltip_end();

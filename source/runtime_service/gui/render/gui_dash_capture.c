@@ -76,7 +76,6 @@ dash_capture_build( void )
         const tess_gpu_cmd_t* gc = &s_tess.gpu_cmds[ c ];
         sn->cmds[ c ].elem_count = gc->cmd.elem_count;
         sn->cmds[ c ].tex_idx    = gc->cmd.tex_idx;
-        sn->cmds[ c ].clip       = gc->cmd.clip_rect;
         sn->cmds[ c ].vp         = gc->vp;
         sn->cmds[ c ].qbase      = gc->qbase;
     }
