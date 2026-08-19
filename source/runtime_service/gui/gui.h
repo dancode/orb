@@ -3576,6 +3576,10 @@ ORB_STATIC_ASSERT( GUI_PAL_FIRST + GUI_PAL_MAX - 1u <= GUI_QUAD_STYLE_MASK,
 static inline bool gui_style_is_pal( u32 style ) { return style >= GUI_PAL_FIRST; }
 static inline u32  gui_style_pal   ( u32 entry ) { return GUI_PAL_FIRST + entry;  }
 
+/* "No entry" from a palette lookup.  Past GUI_PAL_MAX rather than a signed -1, so the one test a
+   caller writes is `< GUI_PAL_MAX` and a miss can never index the table. */
+#define GUI_PAL_NONE  0xFFFFFFFFu
+
 /* Command segments: one contiguous span of the command list per (win, z, vp, band) the emit path
    stamps, cut wherever a window seam, draw_set_sort_key, draw_set_viewport or draw_set_band
    changes the tag (draw_seg_retag).  The render backend orders these spans instead of re-scanning

@@ -459,6 +459,33 @@ void                build_dump_geometry     ( void );
 
 void                build_style_census      ( const char* tag, bool clear );
 
+/* Re-derive the style palette when the landed style, DPI or atlas slot has moved, and publish it
+   (render/pipeline/gui_render_bake.c).  Cheap and self-gating: a frame whose inputs are unchanged
+   costs one fold over the style vars.  Must run with the tessellation arena idle -- its rows emit
+   through the real tessellators and rewind the counters afterwards. */
+
+bool                pal_bake                ( void );
+
+/* Which palette entry holds this record, or GUI_PAL_NONE.  Content-addressed and confirmed by a
+   full compare, so a hit is a byte-for-byte equal record and can never be the wrong shape. */
+
+u32                 pal_find                ( const gui_prim_t* rec );
+
+/* Hand the render server the landed style metrics the bake works from -- GUI_VAR_COUNT floats in
+   gui_style_var_t order, already through the em scale.  The one-way seam gui_render_set_time
+   crosses: this unit does not read the style grid, it is told what the grid says. */
+
+void                pal_style_set           ( const f32* vars, u32 count );
+
+/* Log the table the last bake produced, in the census's own record spelling -- so a baked entry and
+   the census row it is meant to cover read as the same line.  Printed with every census dump. */
+
+void                pal_dump                ( void );
+
+/* Fit a corner radius to a rect, the way every rounded emit does (pipeline/gui_emit_draw.c). */
+
+f32                 draw_clamp_round_of     ( f32 r, f32 w, f32 h );
+
 /*==============================================================================================
     Volatile widgets -- an inline-emit callback replayed in place on frames the UI build is
     skipped, so a purely cosmetic animation never forces the whole UI to re-run every frame.

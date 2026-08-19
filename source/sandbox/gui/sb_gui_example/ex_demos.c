@@ -32,10 +32,23 @@
    (caption band + main menu bar) -- an authored absolute position here would land back under
    the bar.  Demo windows keep the default edge-resize behavior on both axes -- only the Window
    Playground opts out, by passing its own interactive flag set through `extra`. */
+/* Authored window sizes are pixels chosen against the BOOT font size.  Everything inside a window
+   is em-driven, so on a scaled display the content grows and an unscaled seed does not -- and the
+   overflow is not clipped, it is never emitted at all (a region skips rows outside its view).  The
+   window looks arbitrarily truncated, and a census run over it silently samples less of the UI
+   than it did at 1x.  dpi_scale is landed-over-boot, which is exactly the factor the content
+   moved by, so it is what keeps an authored size meaning what it meant. */
+static f32
+ex_px( f32 v )
+{
+    f32 s = gui()->dpi_scale();
+    return v * ( s > 0.0f ? s : 1.0f );
+}
+
 static bool
 ex_begin( const char* title, f32 w, f32 h, gui_win_flags_t extra )
 {
-    gui()->window_set_next_size( w, h, GUI_COND_ONCE );
+    gui()->window_set_next_size( ex_px( w ), ex_px( h ), GUI_COND_ONCE );
     return gui()->window_begin( title, GUI_WIN_CLOSEABLE | extra );
 }
 

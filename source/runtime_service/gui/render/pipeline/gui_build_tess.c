@@ -90,7 +90,9 @@ static struct
        actually reads are written; the rest stay zero, which is what lets consecutive flat fills
        collapse onto one record (tess_prim_local).  Cleared per semantic command.
 
-       cur_prim_local is the slot-local index of the record the last commit resolved to.
+       cur_prim_local is the style index the last commit resolved to: slot-local into the arena, or
+       -- when the record was one of the theme's own and the palette already holds it -- an absolute
+       palette index past GUI_PAL_FIRST that no slot base applies to (gui.h).
        prim_dedup_floor is the lowest record index the memo may reach BACK to: every record in
        [max(floor, slot_prim_base), prim_count) was written by this pass and is a live dedup
        candidate.  The scan looks at the last few of those (TESS_PRIM_MEMO_DEPTH), which is what
@@ -551,15 +553,27 @@ tess_prim_local( void )
     u32 hi = s_tess.prim_count;
     u32 lo = ( s_tess.prim_dedup_floor > s_tess.slot_prim_base )
              ? s_tess.prim_dedup_floor : s_tess.slot_prim_base;
+    u32 n  = ( hi > lo ) ? hi - lo : 0u;
+    if ( n > TESS_PRIM_MEMO_DEPTH ) n = TESS_PRIM_MEMO_DEPTH;
 
-    if ( hi > lo )
-    {
-        u32 n = hi - lo;
-        if ( n > TESS_PRIM_MEMO_DEPTH ) n = TESS_PRIM_MEMO_DEPTH;
-        for ( u32 k = 1; k <= n; ++k ) {
-            if ( memcmp( &s_tess.prims[ hi - k ], &s_tess.cur_prim, sizeof( gui_prim_t )) == 0 ) {
-                return s_tess.cur_prim_local = ( hi - k ) - s_tess.slot_prim_base;
-            }
+    /* Depth 1 first, alone: a homogeneous run -- a glyph run, consecutive flat fills -- hits here
+       and never pays for the lookup below.  That is most quads. */
+    if ( n >= 1u && memcmp( &s_tess.prims[ hi - 1u ], &s_tess.cur_prim,
+                            sizeof( gui_prim_t ) ) == 0 )
+        return s_tess.cur_prim_local = ( hi - 1u ) - s_tess.slot_prim_base;
+
+    /* Then the PALETTE, ahead of the deeper memo walk.  A hit costs this slot nothing at all --
+       no arena entry, and the same entry serves every other window drawing the same shape, which
+       is the duplication no memo depth can reach (see TESS_PRIM_MEMO_DEPTH above).  A hit returns
+       an ABSOLUTE index the flush resolves against pc.pal_base rather than a slot-local one; both
+       ride the same field and the shader tells them apart by range (gui.h, GUI_PAL_FIRST). */
+    u32 entry = pal_find( &s_tess.cur_prim );
+    if ( entry < (u32)GUI_PAL_MAX )
+        return s_tess.cur_prim_local = gui_style_pal( entry );
+
+    for ( u32 k = 2; k <= n; ++k ) {
+        if ( memcmp( &s_tess.prims[ hi - k ], &s_tess.cur_prim, sizeof( gui_prim_t )) == 0 ) {
+            return s_tess.cur_prim_local = ( hi - k ) - s_tess.slot_prim_base;
         }
     }
 
@@ -625,9 +639,9 @@ tess_fx_local( u32 uv0, u32 uv1 )
         }
 
         /* Record 0 of a slot may never be an fx page -- row 0 is the index the quad spends on
-           "no record".  A quad that resolves a style first has already claimed it, but a GLYPH
-           resolves no style at all, so a rotated character at the head of a window would land
-           here with the slot still empty.  Leave record 0 unwritten in that case. */
+           "no record".  Two kinds of quad reach here with the slot still empty: a GLYPH, which
+           resolves no style at all, and any shape whose style the PALETTE answered, which claims
+           no arena record either.  Leave record 0 unwritten in both cases. */
         if ( s_tess.prim_count == s_tess.slot_prim_base )
         {
             if ( s_tess.prim_count + 1u >= GUI_MAX_PRIMS )
@@ -1336,8 +1350,12 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        taken against the caster's. */
     if ( aux && ( s_tess.cur_ops & GUI_OP_CUT ) )
     {
-        s_tess.cur_prim.cut_dx = aux->cut_dx;
-        s_tess.cur_prim.cut_dy = aux->cut_dy;
+        /* `+ 0.0f` folds NEGATIVE ZERO onto positive.  A caller that negates an offset it was
+           handed hands one down for free (draw_push_skirt passes -ox), and -0.0f compares equal to
+           0.0f while hashing and memcmp-ing as a different record -- so the un-offset cut would
+           quietly take a second style entry that draws exactly the same shape. */
+        s_tess.cur_prim.cut_dx = aux->cut_dx + 0.0f;
+        s_tess.cur_prim.cut_dy = aux->cut_dy + 0.0f;
     }
 
     /* The COVERING: one quad, the shape's true extents under the SKIRT rule (the vertex stage

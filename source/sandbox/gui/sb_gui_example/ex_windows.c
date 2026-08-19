@@ -98,7 +98,7 @@ ex_windows_playground( void )
     gui()->window_end();
 
     /* --- the test subject ------------------------------------------------------------------ */
-    gui()->window_set_next_size( 320, 300, GUI_COND_ONCE );
+    gui()->window_set_next_size( ex_px( 320 ), ex_px( 300 ), GUI_COND_ONCE );
     if ( gui()->window_begin( "Flag Test Subject", (gui_win_flags_t)flags ) )
     {
         /* The reserved menu-bar strip only fills when the flag reserved it. */
@@ -139,7 +139,7 @@ ex_windows_multi( void )
         gui()->text( "Click another window to raise it." );
     }
     gui()->window_end();
-    gui()->window_set_next_size( 280, 180, GUI_COND_ONCE );
+    gui()->window_set_next_size( ex_px( 280 ), ex_px( 180 ), GUI_COND_ONCE );
     if ( gui()->window_begin( "No Title Bar", GUI_WIN_NOTITLEBAR ) )
     {
         gui()->stack();
@@ -148,7 +148,7 @@ ex_windows_multi( void )
         gui()->checkbox( "a toggle", &t );
     }
     gui()->window_end();
-    gui()->window_set_next_size( 260, 160, GUI_COND_ONCE );
+    gui()->window_set_next_size( ex_px( 260 ), ex_px( 160 ), GUI_COND_ONCE );
     if ( gui()->window_begin( "Fixed", GUI_WIN_NORESIZE | GUI_WIN_NOMOVE ) )
     {
         gui()->stack();
@@ -158,7 +158,7 @@ ex_windows_multi( void )
     gui()->window_end();
 
     /* A closeable window + a control window that re-opens it on demand. */
-    gui()->window_set_next_size( 260, 150, GUI_COND_ONCE );
+    gui()->window_set_next_size( ex_px( 260 ), ex_px( 150 ), GUI_COND_ONCE );
     if ( gui()->window_begin( "Closeable", GUI_WIN_CLOSEABLE ) )
     {
         gui()->stack();
@@ -168,7 +168,7 @@ ex_windows_multi( void )
         gui()->text( "window below." );
     }
     gui()->window_end();
-    gui()->window_set_next_size( 260, 110, GUI_COND_ONCE );
+    gui()->window_set_next_size( ex_px( 260 ), ex_px( 110 ), GUI_COND_ONCE );
     if ( gui()->window_begin( "Window Control", GUI_WIN_NONE ) )
     {
         bool open = gui()->window_is_open( "Closeable" );
@@ -208,7 +208,7 @@ ex_windows_autosize( void )
     gui()->window_end();
 
     /* (b) A normal window with a corner grip; double-click it to fit. */
-    gui()->window_set_next_size( 300, 320, GUI_COND_ONCE );
+    gui()->window_set_next_size( ex_px( 300 ), ex_px( 320 ), GUI_COND_ONCE );
     if ( gui()->window_begin( "Double-click grip", GUI_WIN_CAN_AUTOSIZE ) )
     {
         gui()->stack();
@@ -220,7 +220,7 @@ ex_windows_autosize( void )
     gui()->window_end();
 
     /* (c) Auto-height child (h <= 0) + content_avail(). */
-    gui()->window_set_next_size( 320, 260, GUI_COND_ONCE );
+    gui()->window_set_next_size( ex_px( 320 ), ex_px( 260 ), GUI_COND_ONCE );
     if ( gui()->window_begin( "Auto child", GUI_WIN_NONE ) )
     {
         gui()->stack();
@@ -728,7 +728,7 @@ static void
 ex_tab_member( const char* title, const char* body, f32 seed_x )
 {
     gui()->window_set_next_pos ( seed_x, 340.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 260.0f, 170.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( ex_px( 260.0f ), ex_px( 170.0f ), GUI_COND_ONCE );
     if ( gui()->window_begin( title, GUI_WIN_NONE ) )
     {
         gui()->stack();

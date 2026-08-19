@@ -232,6 +232,7 @@ static const struct
     { "field",       CEN_U32, (u32)offsetof( gui_prim_t, field       ) },
     { "ops",         CEN_U32, (u32)offsetof( gui_prim_t, ops         ) },
     { "tex",         CEN_U32, (u32)offsetof( gui_prim_t, tex         ) },
+    { "res_head",    CEN_U32, (u32)offsetof( gui_prim_t, reserved_head ) },
     { "r_tl",        CEN_F32, (u32)offsetof( gui_prim_t, r_tl        ) },
     { "r_tr",        CEN_F32, (u32)offsetof( gui_prim_t, r_tr        ) },
     { "r_br",        CEN_F32, (u32)offsetof( gui_prim_t, r_br        ) },
@@ -255,6 +256,7 @@ static const struct
     { "dash_period", CEN_F32, (u32)offsetof( gui_prim_t, dash_period ) },
     { "dash_duty",   CEN_F32, (u32)offsetof( gui_prim_t, dash_duty   ) },
     { "dash_scroll", CEN_F32, (u32)offsetof( gui_prim_t, dash_scroll ) },
+    { "res_c",       CEN_F32, (u32)offsetof( gui_prim_t, reserved_c  ) },
     { "pat_cell",    CEN_F32, (u32)offsetof( gui_prim_t, pat_cell    ) },
     { "pat_size",    CEN_F32, (u32)offsetof( gui_prim_t, pat_size    ) },
     { "pat_phase",   CEN_U32, (u32)offsetof( gui_prim_t, pat_phase   ) },
@@ -282,6 +284,42 @@ census_cat( char* buf, u32 cap, u32 w, const char* fmt, ... )
 
     w += ( n > 0 ) ? (u32)n : 0u;
     return w < cap ? w : cap - 1u;
+}
+
+/*  One record as "<n> <hash> lane=value ..." -- every non-zero lane, named, and nothing else.  The
+    shared spelling of a style record: the census prints its candidates through it and the palette
+    bake prints its table through it (pal_dump, pipeline/gui_render_bake.c), so a baked entry and
+    the census row it is meant to cover are the same line of text when they match. */
+
+void
+census_rec_line( char* buf, u32 cap, u32 n, const gui_prim_t* rec )
+{
+    const u8* p = (const u8*)rec;
+    u32       w = census_cat( buf, cap, 0, "%3u %08X ", n, census_hash( rec ) );
+
+    for ( u32 l = 0; l < CENSUS_LANE_COUNT; ++l )
+    {
+        if ( k_census_lane[ l ].kind == CEN_F32 )
+        {
+            f32 v;
+            u32 bits;
+            memcpy( &v,    p + k_census_lane[ l ].off, sizeof( v ) );
+            memcpy( &bits, p + k_census_lane[ l ].off, sizeof( bits ) );
+
+            /* Tested on the BITS, not against 0.0f: negative zero compares equal to zero and hashes
+               as a different record, so a lane holding it has to show up here or two records that
+               print identically will carry different hashes with nothing to explain it. */
+            if ( bits != 0u )
+                w = census_cat( buf, cap, w, "%s=%.9g ", k_census_lane[ l ].name, v );
+        }
+        else
+        {
+            u32 v;
+            memcpy( &v, p + k_census_lane[ l ].off, sizeof( v ) );
+            if ( v != 0u )
+                w = census_cat( buf, cap, w, "%s=0x%X ", k_census_lane[ l ].name, v );
+        }
+    }
 }
 
 /* Ops as "FRAME|GRAD", or "-" for a record that carries none. */
@@ -463,31 +501,8 @@ prim_census_dump( const char* tag )
     u32 cand = s_census.count < CENSUS_CANDIDATES ? s_census.count : CENSUS_CANDIDATES;
     for ( u32 i = 0; i < cand; ++i )
     {
-        const census_rec_t* r = &s_census.recs[ order[ i ] ];
-        const u8*           p = (const u8*)&r->rec;
-
         char line[ 256 ];
-        u32  w = census_cat( line, sizeof( line ), 0, "%3u %08X ", i + 1u, census_hash( &r->rec ) );
-
-        for ( u32 l = 0; l < CENSUS_LANE_COUNT; ++l )
-        {
-            if ( k_census_lane[ l ].kind == CEN_F32 )
-            {
-                f32 v;
-                memcpy( &v, p + k_census_lane[ l ].off, sizeof( v ) );
-                if ( v != 0.0f )
-                    w = census_cat( line, sizeof( line ), w, "%s=%.4g ",
-                                    k_census_lane[ l ].name, v );
-            }
-            else
-            {
-                u32 v;
-                memcpy( &v, p + k_census_lane[ l ].off, sizeof( v ) );
-                if ( v != 0u )
-                    w = census_cat( line, sizeof( line ), w, "%s=0x%X ",
-                                    k_census_lane[ l ].name, v );
-            }
-        }
+        census_rec_line( line, sizeof( line ), i + 1u, &s_census.recs[ order[ i ] ].rec );
         gui_log( GUI_LOG_INFO, "%s", line );
     }
     gui_log( GUI_LOG_INFO, "=======================================================================" );
@@ -512,7 +527,10 @@ build_style_census( const char* tag, bool clear )
 {
 #ifdef GUI_PRIM_CENSUS
     if ( tag )
+    {
         prim_census_dump( tag );
+        pal_dump();          /* beside the run it is meant to cover -- the two are read together */
+    }
     if ( clear )
         prim_census_reset();
 #else

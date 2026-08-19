@@ -315,6 +315,17 @@ gui_frame_begin( f32 dt )
        moment nothing else in the UI moved. */
     gui_render_set_time( gui_anim_time() );
 
+    /* And this frame's landed style metrics, which the palette bake derives its table from.  Read
+       here rather than there because the render server does not reach into the style grid; it is
+       told, exactly as it is told the clock.  Before any push has run, so these are the theme's own
+       values and not a widget's scoped override. */
+    {
+        f32 vars[ GUI_VAR_COUNT ];
+        for ( u32 v = 0; v < (u32)GUI_VAR_COUNT; ++v )
+            vars[ v ] = style_var( (gui_style_var_t)v );
+        pal_style_set( vars, (u32)GUI_VAR_COUNT );
+    }
+
     /* Frontend dirty: true when the frame must emit widgets.
          - io_dirty          : any input change this frame (mouse move/button/key/wheel/text)
          - wants_redraw      : an animation was in flight last frame and must advance this frame
