@@ -1635,49 +1635,54 @@ typedef enum
 /*==============================================================================================
     GUI_DRAW -- the effect band: a shape the FRAGMENT resolves
 
-    Everything above this line is geometry the CPU tessellates outright.  Without a way for the
-    fragment to resolve a shape itself, rounding a corner means walking an arc table and fanning
-    triangles -- a rounded rect at ~37 vertices, with hard stair-stepped edges and no room for a
-    texture -- and a soft shadow means six stacked rects pretending to be a gaussian.  Both are
-    the same shortfall: an effect the rasterizer could evaluate exactly, approximated in vertices
-    because the vertex has nowhere to say what shape it belongs to.
+    Previous UI iterations would use the CPU to tessellates geometry outright. Without a way 
+    for the fragment to resolve a shape itself, rounding a corner means walking an arc table 
+    and fanning triangles -- a rounded rect at ~37 vertices, with hard stair-stepped edges
+    and no room for a texture -- and a soft shadow means six stacked rects pretending to be
+    a gaussian.  Both are the same shortfall: an effect the rasterizer could evaluate exactly,
+    approximated in vertices because the vertex has nowhere to say what shape it belongs to.
 
-    The effect band is that missing sentence.  A primitive names a RECORD (gui_prim_t, above) that
-    states its shape outright -- rect, radii, softness, rotation -- and the fragment evaluates the
-    field from its own pixel position: analytic antialiasing, arbitrary softness, and the texture
-    still sampling underneath it.  A rounded box is FOUR VERTICES.
+    So the vertex names a shape, and the fragment evaluates it.
+
+    The effect band is that missing sentence.  A primitive names a RECORD (gui_prim_t) that
+    states its shape outright -- rect, radii, softness, rotation -- and the fragment evaluates
+    the field from its own pixel position: analytic antialiasing, arbitrary softness, and 
+    the texture still sampling underneath it.  A rounded box is FOUR VERTICES.
 
     Field 0 (GUI_FX_NONE) is what every other primitive writes, and the fragment tests it first:
     text, lines, sprites and square fills pay one compare and are byte-for-byte unchanged.
 
-    THE FOLD IS GONE, and it is worth saying what it was, because it shaped everything above.  The
-    coordinate used to be `|p| - c` computed at each VERTEX -- and an absolute value is not affine
-    across the line where it folds, so the hardware could only interpolate it correctly inside one
-    quadrant.  That is why a rounded box cost four quadrant quads and a capsule two, why the vertex
-    carried a HALF2 coordinate at all, and why a shadow could never have a DIRECTION: |p| threw the
-    sign away, and the sign is which side you are on.  Handing the fragment the rect instead makes
-    the fold its own business -- `abs(p) - c` on a value it computes exactly -- so the quadrants
-    collapse to one quad, the coordinate leaves the vertex, and the sign survives.
+    This value acts as a header as the first value in the primitive's record, so the fragment
+    can switch on it and branch to the right shape evaluation.
 
-    Vertex attribute layout (matches the gui pipeline), 20 bytes, single interleaved binding:
-        location 0 : FLOAT2     (x, y)      offset  0   -- pixel-space position
-        location 1 : UNORM16X2  (uv u32)    offset  8   -- texture UV, [0,1] at 1/65535
-        location 2 : UNORM8X4   (abgr u32)  offset 12   -- packed color, R8G8B8A8_UNORM
-        location 3 : UINT       (prim u32)  offset 16   -- primitive record index (flat)
+    THE FOLD IS GONE, and it is worth saying what it was, because it shaped everything above.  
+    The coordinate used to be `|p| - c` computed at each VERTEX -- and an absolute value is 
+    not affine across the line where it folds, so the hardware could only interpolate it 
+    correctly inside one quadrant. 
+    
+    That is why a rounded box cost four quadrant quads and a capsule two, why the vertex
+    carried a HALF2 coordinate at all, and why a shadow could never have a DIRECTION: |p| 
+    threw the sign away, and the sign is which side you are on.  
+    
+    Handing the fragment the rect instead makes the fold its own business -- `abs(p) - c`
+    on a value it computes exactly -- so the quadrants collapse to one quad, the 
+    coordinate leaves the vertex, and the sign survives.
 
-    What is left is the three quantities that genuinely VARY across a primitive, plus the one
-    number naming everything that does not.  Colour stays per-vertex because it earns it: the
-    square gradient, the plot and the per-vertex-coloured polyline all interpolate it.  A ramp on a
-    SHAPE does not -- it rides the record (GUI_OP_GRAD), where it spans the shape exactly and can
-    be radial or conic rather than only linear.
+    There is no vertex buffer.  The pipeline is BUFFERLESS: the vertex stage pulls one 16-byte
+    QUAD RECORD per shape (gui_quad_t, below) from a bindless storage buffer by SV_VertexID and
+    expands the covering corners itself.  The quad carries only what varies per INSTANCE --
+    placement, colour, clip -- plus the index naming everything that does not.
 
-    TWO of the four are packed, and the shader is unaware of it: the fetch unit widens every
-    normalized format to float, so the vertex stage still declares vec2 / vec4 and reads the same
-    values it would if every field were 32-bit.  The one decision worth recording is why the uv
-    packing is safe, because its failure mode is invisible until it is not:
+    Colour is one value for the whole shape.  A ramp across it rides the STYLE record
+    (GUI_OP_GRAD), where it spans the shape exactly and can be radial or conic rather than only
+    linear; a gradient rect is that op, not two colours interpolated across corners.
 
-      uv as UNORM16X2 -- 1/65535, against a largest atlas of 1024 px, is 64 steps per texel, so a
-        glyph's sample lands where it did.  What it cannot represent is U OUTSIDE [0,1], and one
+    The record's lanes are PACKED and the shader unpacks them by hand (gui_common.hlsli).  The one
+    decision worth recording is why the uv packing is safe, because its failure mode is invisible
+    until it is not:
+
+        uv as a unorm16 pair -- 1/65535, against a largest atlas of 1024 px, is 64 steps per texel,
+        so a glyph's sample lands where it did.  What it cannot represent is U OUTSIDE [0,1], and one
         primitive needs that: a dashed line spans U 0..len/period and lets the sampler's REPEAT
         tile the atlas stipple row.  That is what GUI_OP_TILE_U exists for -- the repeat count
         lives in the record and the FRAGMENT multiplies, so the stored UV stays inside [0,1] and
@@ -1698,6 +1703,7 @@ typedef enum
 
 /* What the fragment does at this primitive.  A full 32-bit member of the record, so the list grows
    by naming a value -- there is no nibble to run out of. */
+
 typedef enum
 {
     GUI_FX_NONE      = 0,  /* no effect -- (ex, ey) and the parameters are ignored (the default) */
@@ -1711,8 +1717,8 @@ typedef enum
     GUI_FX_TRI       = 3,  /* solid triangle: three points about the shape centre, in the record's
                               radius + param lanes (a = r_tl,r_tr  b = r_br,r_bl  c = param_a,_b).
                               Exact signed distance, so BAND strokes it and the feather antialiases
-                              it like any field.  Quad-record path only -- the vertex pipeline
-                              rasterizes a real triangle instead.  (3 was PULSE, an op now.) */
+                              it like any field -- one quad over the bbox, no real triangle
+                              rasterized.  (3 was PULSE, an op now.) */
 
     /* 4 and 5 are unnamed.  They were TILE_U and TEXT_EDGE -- a texcoord scale, and a second
        colour outside the glyph boundary.  Neither was ever a shape, and holding the field slot
@@ -1818,6 +1824,7 @@ typedef enum
    The wrap is a power of two so f32 still resolves ~0.1 ms at the far end, and so any effect whose
    period divides 1024 s -- every power-of-two fraction of a second -- runs continuously across it.
    Any other period sees one discontinuity every ~17 minutes. */
+
 #define GUI_FX_TIME_WRAP     1024.0
 
 /*==============================================================================================
@@ -2509,17 +2516,17 @@ typedef enum
     GUI_CMD_LINE,            // single stroke segment
     GUI_CMD_POLYLINE,        // multi-segment antialiased polyline
     GUI_CMD_DASHED_LINE,     // patterned line: one textured quad, atlas dash row, tiled by U
-    GUI_CMD_RECT_GRADIENT,   // filled rect, col_a->col_b blended by per-vertex color (one quad)
+    GUI_CMD_RECT_GRADIENT,   // filled rect, col_a->col_b ramped in the fragment (GUI_OP_GRAD)
     GUI_CMD_RECT_LIST,       // batch of solid rects from the per-frame rect pool (one cmd, N quads)
     GUI_CMD_SPRITE,          // RGBA sprite quad; nine-slice expanded at tessellation when the
                              //   sprite carries slice insets (1, 3 or 9 quads from one command)
     GUI_CMD_FX_BOX,          // the parameterized GUI_FX_BOX surface: a soft shadow (wide feather)
                              //   or a shader-clock pulse (rate/depth) -- one member, mode derived
-    GUI_CMD_ROUND_RECT_EX,   // filled box with a PER-CORNER radius: four GUI_FX_BOX quadrants,
-                             // each carrying its own packed word
+    GUI_CMD_ROUND_RECT_EX,   // filled box with a PER-CORNER radius: one GUI_FX_BOX quad carrying
+                             //   all four radii, the fragment picking one by the sign of its position
     GUI_CMD_ARC,             // stroked circular arc, round caps: one GUI_FX_ARC quad
     GUI_CMD_PIE,             // filled wedge, sharp radial edges: one GUI_FX_PIE quad
-    GUI_CMD_ARC_DASH,        // arc cut by an angular dash pattern (GUI_FX_ARC_DASH): dotted rings,
+    GUI_CMD_ARC_DASH,        // arc cut by an angular dash pattern (GUI_FX_ARC + GUI_OP_DASH): dotted rings,
                              //   marching ants, tick dials -- still one quad
     GUI_CMD_ARC_GRAD,        // arc whose colour sweeps col_a -> col_b along the sector
                              //   (GUI_FX_ARC_GRAD): the hot/cold value arc -- still one quad
@@ -2669,8 +2676,8 @@ typedef struct
         /* Dashed line tessellates to one oriented textured quad: U spans 0..len/period so the
            atlas dash row tiles along the line; duty (on-fraction) picks the nearest baked row. */
         struct { f32 x0, y0, x1, y1, thickness, period, duty;     u32 abgr; } dash;
-        /* Gradient rect: one quad with col_a/col_b on opposite edges; the GPU interpolates the
-           per-vertex color across it.  horizontal != 0 = left->right, else top->bottom.  Always
+        /* Gradient rect: one quad, col_a -> col_b ramped in the fragment off the style record
+           (GUI_OP_GRAD).  horizontal != 0 = left->right, else top->bottom.  Always
            square.  u32, not bool, for the same no-tail-padding rule as sprite below -- the
            retained-cache hash folds these bytes raw. */
         struct { f32 x, y, w, h; u32 col_a, col_b; u32 horizontal; } gradient;

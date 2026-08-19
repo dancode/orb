@@ -802,7 +802,7 @@ typedef struct gui_api_s
        draws -- tick vs disc, triangle vs chevron -- is style, not a draw call: a theme authors
        the GUI_VAR_*_SHAPE pick and push_style_var scopes it.)
 
-       Pipeline note: draw_gradient is an exact one-quad blend via per-vertex color
+       Pipeline note: draw_gradient is an exact one-quad blend ramped in the fragment
        (GUI_CMD_RECT_GRADIENT), and draw_shadow / draw_round_rect are exact SDF surfaces -- ONE
        quad whose fragment shader resolves the boundary analytically, so their edges are
        antialiased at any radius and softness and they merge into the batch already open.  Only a

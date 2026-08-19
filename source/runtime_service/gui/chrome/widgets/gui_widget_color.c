@@ -425,7 +425,7 @@ color_picker_body( gui_id_t id, f32* v, u32 n, gui_color_edit_flags_t flags )
                                  color_chan_u8( v[ 2 ] ), 255u );
 
         /* SV square: white -> pure hue across, transparent -> black down.  Two exact one-quad
-           per-vertex blends compose the full saturation/value plane. */
+           gradients compose the full saturation/value plane. */
         f32 hr, hg, hb;
         color_hsv_to_rgb( h, 1.0f, 1.0f, &hr, &hg, &hb );
         draw_gradient( sv_r, GUI_COLOR( 255, 255, 255, 255 ),

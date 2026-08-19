@@ -674,6 +674,31 @@ float4 main( ps_in_t i ) : SV_Target0
     uint tex_slot = g_tex & TEX_INDEX_MASK;
     uint samp     = ( tex_mode == 0u ) ? pc.samp_point : pc.samp_image;
 
+    /* COVERAGE, resolved before the texel so a fragment the field does not reach can leave without
+       paying for the rest of this function.  Every shape that covers more area than it paints has
+       an interior or an exterior at EXACTLY zero -- a BAND's or a FRAME's inside, a CUT skirt's
+       hole, an INSET's middle, the gaps of a DASH or a GRID, a TRI's bbox corners, anything past a
+       clip edge -- and on a large surface that is the great majority of the quad.  Killing it here
+       skips the sample, the colour cascade and the blend write alike.
+
+       The test is EXACT zero, not a threshold: saturate() produces a true 0 past the falloff, so
+       nothing that would have tinted a pixel is at risk, and there is no epsilon to defend.
+       g_frame_band is the second output of fx_coverage and composites independently of `cov`, so a
+       FRAME whose fill is empty but whose border band is not must stay.  Its clip factor is applied
+       here because main() applies it later.
+
+       SDF text is excluded: its coverage comes from fwidth() of a texel this branch has not
+       sampled yet, and a killed lane leaves its 2x2 neighbours deriving that slope from a value
+       that was never written.  It keeps the full path and loses nothing -- a glyph quad fits its
+       glyph, so there is no waste to reclaim.
+
+       One visible difference, and it is a correction: OP_DITHER adds half an 8-bit step of noise to
+       the OUTPUT, alpha included, so zero-coverage pixels used to emit a faint per-pixel flicker
+       around nothing.  They now emit nothing. */
+    float cov = fx_coverage( i.sv_pos.xy ) * ccov;
+    if ( cov <= 0.0 && g_frame_band * ccov <= 0.0 && tex_mode != 2u )
+        discard;
+
     /* GUI_OP_TILE_U: the stored U is normalized 0..1 (all UNORM16X2 can hold) and the repeat count
        rides the record.  Scaling HERE rather than in the vertex stage is exactly equivalent -- the
        multiply is affine and commutes with interpolation -- and it keeps the vertex shader a pure
@@ -683,9 +708,8 @@ float4 main( ps_in_t i ) : SV_Target0
     if ( ( g_ops & OP_TILE_U ) != 0u )
         uv.x *= prim_row( 7u ).y;
 
-    float4 s   = u_textures[ NonUniformResourceIndex( tex_slot ) ]
-                     .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], uv );
-    float  cov = fx_coverage( i.sv_pos.xy ) * ccov;
+    float4 s = u_textures[ NonUniformResourceIndex( tex_slot ) ]
+                   .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], uv );
 
     // SELF-SAMPLED primitives (GUI_OP_SELF): the shape is solid colour, so the texel is not
     // consulted (the sample above read a garbage location of a VALID texture, which is harmless and

@@ -1314,9 +1314,9 @@ draw_push_sprite( f32 x, f32 y, f32 w, f32 h, gui_sprite_id_t id,
 /*==============================================================================================
     draw_push_rect_gradient -- emit a two-color gradient rectangle as one semantic command.
 
-    col_a / col_b sit on opposite edges (horizontal = left->right, else top->bottom); the GPU
-    interpolates the per-vertex color between them, so one quad replaces the old banded fill.
-    Always square (no rounding) -- the per-vertex blend has no rounded-fan variant.
+    col_a / col_b sit on opposite edges (horizontal = left->right, else top->bottom); the fragment
+    ramps between them off the style record (GUI_OP_GRAD), so the fill is one quad at any size.
+    Always square (no rounding) -- draw_push_round_rect_gradient is the general form.
 ==============================================================================================*/
 
 void

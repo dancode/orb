@@ -10,13 +10,13 @@
 
     These compose the *backend* primitives (draw_push_triangle / _circle_filled / _rect_filled /
     _rect_outline / _text, gui_draw_line / gui_draw_polyline) into named marks -- they draw
-    through the normal vertex pipeline, NOT the runtime icon atlas (gui_icon.c).  Two routes do
+    through the normal quad path, NOT the runtime icon atlas (gui_icon.c).  Two routes do
     the heavy lifting: a triangle fan (sym_fill_convex) fills any convex outline, and a closed / open
     polyline strokes it; arcs are sampled from cos / sin once per call.
 
-    Most commands carry one abgr, but GUI_CMD_RECT_GRADIENT carries two and lets the GPU's
-    per-vertex color interpolation blend them, so draw_gradient is an exact one-quad blend (not
-    banded).  draw_shadow and draw_round_rect hand their shape to the FRAGMENT (GUI_CMD_FX_BOX / a
+    Most commands carry one abgr, but GUI_CMD_RECT_GRADIENT carries two and hands the ramp to the
+    FRAGMENT through the style record (GUI_OP_GRAD), so draw_gradient is an exact one-quad blend
+    (not banded).  draw_shadow and draw_round_rect hand their shape to the FRAGMENT (GUI_CMD_FX_BOX / a
     rounded rect command, both SDF surfaces -- see the effect band in gui.h): exact edges at any
     radius and softness, ONE quad, no batch split.  Only a STROKED per-corner outline still walks a
     tessellated perimeter here.  Everything here is pixel-exact.
@@ -437,8 +437,8 @@ draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col )
 }
 
 /* Gradient fill of `box`, col_a -> col_b, vertical (default) or horizontal.  One quad whose
-   opposite edges carry the two colors; the GPU's per-vertex color interpolation produces the
-   smooth blend (draw_push_rect_gradient).  Square and axis-aligned -- draw_round_rect_gradient
+   style record carries the ramp (GUI_OP_GRAD), resolved per pixel in the fragment
+   (draw_push_rect_gradient).  Square and axis-aligned -- draw_round_rect_gradient
    below is the general form. */
 void
 draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal )
