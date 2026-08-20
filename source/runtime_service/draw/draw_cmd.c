@@ -4,9 +4,10 @@
 
     draw_begin caches the command list and view-projection matrix for the frame and
     resets the batch.  Each draw_xxx call generates geometry, writes it into the batch
-    buffers, and records a lightweight draw_call_t.  draw_end sorts by material (to
-    minimise pipeline switches), binds shared vertex/index buffers once, then emits the
-    draw-indexed calls.
+    buffers, and records a lightweight draw_call_t -- or, when the geometry lands right after
+    a call it shares state with, just widens that call's index range.  draw_end binds the
+    shared vertex/index buffers once and emits the accumulated draw-indexed calls in
+    submission order, re-binding the pipeline and re-pushing constants only where they change.
 
 ==============================================================================================*/
 // clang-format off
@@ -15,8 +16,6 @@ typedef struct
 {
     u32           first_index;    /* first index in the shared index buffer */
     u32           index_count;
-    i32           vertex_offset;  /* base vertex added to each index (= base vertex in VB) */
-    draw_push_t   push;
     draw_mat_id_t material;
     u32           tex_idx;        /* DRAW_MAT_TEXTURED only: bindless texture slot */
     u32           samp_idx;       /* DRAW_MAT_TEXTURED only: bindless sampler slot */
@@ -153,17 +152,21 @@ draw_end( void )
         return;
 
     /* Bind this frame's buffer region once; all draws index into it with the
-       region-relative first_index/vertex_offset recorded at submit time. */
+       region-relative first_index recorded at submit time. */
     rhi()->cmd_bind_vertex_buffer( s.cmd, s.batch.vb, s.batch.vb_base * sizeof( draw_vertex_t ) );
     rhi()->cmd_bind_index_buffer ( s.cmd, s.batch.ib, s.batch.ib_base * sizeof( u16 ),
                                    RHI_INDEX_TYPE_UINT16 );
 
-    draw_mat_id_t cur = DRAW_MAT_COUNT; /* invalid sentinel to force first bind */
+    draw_mat_id_t cur      = DRAW_MAT_COUNT;    /* invalid sentinel to force the first bind */
+    u32           cur_tex  = 0xFFFFFFFFu;       /* bindless pair currently in the push block */
+    u32           cur_samp = 0xFFFFFFFFu;
+
     for ( u32 i = 0; i < s.call_count; ++i )
     {
         const draw_call_t* c = &s.calls[ i ];
+        bool rebound = ( c->material != cur );
 
-        if ( c->material != cur )
+        if ( rebound )
         {
             cur = c->material;
             rhi()->cmd_bind_pipeline( s.cmd, s.mats[ cur ].pipeline );
@@ -174,29 +177,65 @@ draw_end( void )
         }
 
         /* Push constants sized to the bound pipeline's layout: textured carries the bindless
-           indices after the mvp, solid pushes the mvp alone. */
+           indices after the mvp, solid pushes the mvp alone.  The mvp is fixed for the whole
+           begin/end pair, so the block only needs re-pushing when the pipeline switched (which
+           discards it) or when a textured call brings a different bindless pair. */
         if ( c->material == DRAW_MAT_TEXTURED )
         {
-            draw_push_tex_t p;
-            for ( u32 k = 0; k < 16; ++k )
-                p.mvp[ k ] = c->push.mvp[ k ];
-            p.tex_idx  = c->tex_idx;
-            p.samp_idx = c->samp_idx;
-            rhi()->cmd_push_constants( s.cmd, &p, sizeof( p ), 0 );
+            if ( rebound || c->tex_idx != cur_tex || c->samp_idx != cur_samp )
+            {
+                cur_tex  = c->tex_idx;
+                cur_samp = c->samp_idx;
+
+                draw_push_tex_t p;
+                for ( u32 k = 0; k < 16; ++k )
+                    p.mvp[ k ] = s.frame_push.mvp[ k ];
+                p.tex_idx  = cur_tex;
+                p.samp_idx = cur_samp;
+                rhi()->cmd_push_constants( s.cmd, &p, sizeof( p ), 0 );
+            }
         }
-        else
+        else if ( rebound )
         {
-            rhi()->cmd_push_constants( s.cmd, &c->push, sizeof( c->push ), 0 );
+            rhi()->cmd_push_constants( s.cmd, &s.frame_push, sizeof( s.frame_push ), 0 );
         }
 
+        /* Indices are region-absolute (draw_batch_push), so no vertex offset applies. */
         rhi()->cmd_draw_indexed( s.cmd, &( rhi_draw_indexed_args_t ){
             .index_count    = c->index_count,
             .instance_count = 1,
             .first_index    = c->first_index,
-            .vertex_offset  = c->vertex_offset,
+            .vertex_offset  = 0,
             .first_instance = 0,
         } );
     }
+}
+
+/*==============================================================================================
+    Internal helper: the call this submit can extend, or NULL if it needs a fresh one.
+
+    A call absorbs new geometry when it shares every piece of GPU state with it and its index
+    range ends exactly where the incoming geometry will start.  Consecutive submits are always
+    adjacent in the index buffer, so in practice a run of same-material primitives collapses to
+    a single draw call -- and, because merged geometry claims no slot, a run of any length fits
+    inside DRAW_MAX_CALLS.
+==============================================================================================*/
+
+static draw_call_t*
+draw_mergeable( draw_mat_id_t material, u32 tex_idx, u32 samp_idx )
+{
+    if ( s.call_count == 0 )
+        return NULL;
+
+    draw_call_t* p = &s.calls[ s.call_count - 1 ];
+    if ( p->material != material )
+        return NULL;
+    if ( material == DRAW_MAT_TEXTURED && ( p->tex_idx != tex_idx || p->samp_idx != samp_idx ) )
+        return NULL;
+    if ( p->first_index + p->index_count != draw_batch_next_index( &s.batch ) )
+        return NULL;
+
+    return p;
 }
 
 /*==============================================================================================
@@ -206,19 +245,24 @@ draw_end( void )
 static void
 draw_submit( const draw_vertex_t* verts, u32 nv, const u16* idxs, u32 ni )
 {
-    if ( s.call_count >= DRAW_MAX_CALLS )
+    draw_call_t* prev = draw_mergeable( s.cur_mat, 0, 0 );
+    if ( !prev && s.call_count >= DRAW_MAX_CALLS )
         return;
 
-    u32 base_vertex, first_index;
-    if ( !draw_batch_push( &s.batch, verts, nv, idxs, ni, &base_vertex, &first_index ) )
+    u32 first_index;
+    if ( !draw_batch_push( &s.batch, verts, nv, idxs, ni, &first_index ) )
         return;
+
+    if ( prev )
+    {
+        prev->index_count += ni;
+        return;
+    }
 
     s.calls[ s.call_count++ ] = ( draw_call_t ){
-        .first_index   = first_index,
-        .index_count   = ni,
-        .vertex_offset = (i32)base_vertex,
-        .push          = s.frame_push,
-        .material      = s.cur_mat,
+        .first_index = first_index,
+        .index_count = ni,
+        .material    = s.cur_mat,
     };
 }
 
@@ -234,21 +278,26 @@ static void
 draw_submit_tex( const draw_vertex_t* verts, u32 nv, const u16* idxs, u32 ni,
                  u32 tex_idx, u32 samp_idx )
 {
-    if ( s.call_count >= DRAW_MAX_CALLS )
+    draw_call_t* prev = draw_mergeable( DRAW_MAT_TEXTURED, tex_idx, samp_idx );
+    if ( !prev && s.call_count >= DRAW_MAX_CALLS )
         return;
 
-    u32 base_vertex, first_index;
-    if ( !draw_batch_push( &s.batch, verts, nv, idxs, ni, &base_vertex, &first_index ) )
+    u32 first_index;
+    if ( !draw_batch_push( &s.batch, verts, nv, idxs, ni, &first_index ) )
         return;
+
+    if ( prev )
+    {
+        prev->index_count += ni;
+        return;
+    }
 
     s.calls[ s.call_count++ ] = ( draw_call_t ){
-        .first_index   = first_index,
-        .index_count   = ni,
-        .vertex_offset = (i32)base_vertex,
-        .push          = s.frame_push,
-        .material      = DRAW_MAT_TEXTURED,
-        .tex_idx       = tex_idx,
-        .samp_idx      = samp_idx,
+        .first_index = first_index,
+        .index_count = ni,
+        .material    = DRAW_MAT_TEXTURED,
+        .tex_idx     = tex_idx,
+        .samp_idx    = samp_idx,
     };
 }
 

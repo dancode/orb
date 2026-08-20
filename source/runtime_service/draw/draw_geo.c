@@ -5,8 +5,8 @@
     Pure CPU, stateless; no RHI dependency.  Each function writes into caller-supplied
     arrays and returns the counts via nv (vertex count) and ni (index count).
 
-    Indices are always 0-relative to the first vertex of the current call; the batch
-    layer adds the base-vertex offset at draw time via vertex_offset in the draw call.
+    Indices are always 0-relative to the first vertex of the current call; draw_batch_push
+    rebases them onto the vertex the geometry lands on as it copies them to the GPU.
 
 ==============================================================================================*/
 

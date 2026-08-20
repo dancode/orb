@@ -8,10 +8,21 @@
     data the GPU is still reading for the previous frame (visible as torn/twisted geometry
     whenever the data changes frame to frame -- e.g. a moving camera).  draw_batch_reset
     selects the frame's region; draw_batch_push writes geometry into it via
-    rhi()->buffer_write and returns the region-relative base offsets needed to record the
+    rhi()->buffer_write and returns the region-relative first index needed to record the
     draw call (the flush binds the buffers at the region's byte offset).
 
+    Indices are stored region-absolute: push rebases each submit's 0-relative geometry indices
+    onto the vertex it landed on, so every draw call records vertex_offset 0.  That is what lets
+    draw_end fold consecutive same-material submits into one draw call -- their index ranges are
+    adjacent and share a vertex offset, so a longer range is all a merge needs.
+
 ==============================================================================================*/
+
+/* Region-absolute indices must fit the u16 index type. */
+_Static_assert( DRAW_BATCH_MAX_VERTS <= 0x10000, "DRAW_BATCH_MAX_VERTS exceeds the u16 index range" );
+
+/* Indices are rebased through a small stack buffer, refilled until the submit is drained. */
+#define DRAW_BATCH_BIAS_CHUNK   512
 
 typedef struct
 {
@@ -85,29 +96,53 @@ draw_batch_begin_frame( draw_batch_t* b, u32 frame )
 }
 
 /*==============================================================================================
+    draw_batch_next_index  --  index the next push will land on
+
+    draw_cmd tests this against the previous draw call's end to decide whether new geometry
+    extends that call or starts a new one.
+==============================================================================================*/
+
+static u32
+draw_batch_next_index( const draw_batch_t* b )
+{
+    return b->ib_count;
+}
+
+/*==============================================================================================
     draw_batch_push  --  copy geometry into the GPU buffers; returns false if full
 
-    On success, *out_base_vertex and *out_first_index are the offsets to pass into
-    the draw call record (the geo indices are 0-relative; vertex_offset in the draw
-    call adjusts them to the correct position in the buffer).
+    On success, *out_first_index is the region-relative index to record in the draw call.  The
+    submit's 0-relative indices are rebased onto its own vertices on the way in, so the draw
+    call needs no vertex offset.
 ==============================================================================================*/
 
 static bool
 draw_batch_push( draw_batch_t* b,
                  const draw_vertex_t* verts, u32 nv,
                  const u16*           idxs,  u32 ni,
-                 u32* out_base_vertex, u32* out_first_index )
+                 u32* out_first_index )
 {
     if ( b->vb_count + nv > DRAW_BATCH_MAX_VERTS ) return false;
     if ( b->ib_count + ni > DRAW_BATCH_MAX_IDX   ) return false;
 
-    *out_base_vertex  = b->vb_count;
-    *out_first_index  = b->ib_count;
+    *out_first_index = b->ib_count;
 
     rhi()->buffer_write( b->vb, verts, nv * sizeof( draw_vertex_t ),
                          ( b->vb_base + b->vb_count ) * sizeof( draw_vertex_t ) );
-    rhi()->buffer_write( b->ib, idxs, ni * sizeof( u16 ),
-                         ( b->ib_base + b->ib_count ) * sizeof( u16 ) );
+
+    u16 stage[ DRAW_BATCH_BIAS_CHUNK ];
+    u16 base = ( u16 )b->vb_count;
+    for ( u32 done = 0; done < ni; done += DRAW_BATCH_BIAS_CHUNK )
+    {
+        u32 n = ni - done;
+        if ( n > DRAW_BATCH_BIAS_CHUNK ) n = DRAW_BATCH_BIAS_CHUNK;
+
+        for ( u32 i = 0; i < n; ++i )
+            stage[ i ] = ( u16 )( idxs[ done + i ] + base );
+
+        rhi()->buffer_write( b->ib, stage, n * sizeof( u16 ),
+                             ( b->ib_base + b->ib_count + done ) * sizeof( u16 ) );
+    }
 
     b->vb_count += nv;
     b->ib_count += ni;
