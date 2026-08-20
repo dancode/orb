@@ -498,11 +498,13 @@ fx_field_t fx_field( float2 px )
     }
     // field 5 BEZIER -- a stroked quadratic bezier: p0, control c, p1 about the shape centre, in
     // TRI's own lanes (a = r_tl,r_tr  b = r_br,r_bl  c = param_a,param_b), thickened by the half
-    // riding `border` (soft.y).  Distance is a cheap approximation, not an exact curve solve:
-    // sample a fixed handful of points along the curve, keep the nearest, then refine against
-    // its two neighbour chords with the same segment-projection SEG's capsule uses above -- that
-    // hides the facets at any line weight a UI draws without a per-pixel root solve.  States no
-    // boundary coordinate, same as TRI: a dashed curve is not a shape anything asks for yet.
+    // riding `border` (soft.y).  Exact distance (Quilez): the nearest-point parameter reduces to
+    // a depressed cubic in the curve's own basis, solved closed-form -- one real root or three,
+    // by the sign of the discriminant -- so there is no sample count to tune and no facet at any
+    // curvature or zoom, the property a sampled approximation of this shape could only ever
+    // approach.  Unsigned, like SEG's capsule: a stroke has no interior of its own to be inside
+    // of.  States no boundary coordinate, same as TRI: a dashed curve is not a shape anything
+    // asks for yet.
     else if ( g_field == 5u )
     {
         float4 parm = prim_row( 3u );
@@ -510,38 +512,57 @@ fx_field_t fx_field( float2 px )
         float2 p1   = rad.zw;
         float2 pc   = parm.xy;
 
-        static const int BEZIER_SAMPLES = 8;
-        float2 pts[ BEZIER_SAMPLES + 1 ];
-        [unroll]
-        for ( int i = 0; i <= BEZIER_SAMPLES; ++i )
+        float2 a = pc - p0;
+        float2 b = p0 - 2.0 * pc + p1;
+        float2 c = a * 2.0;
+        float2 d = p0 - local;
+
+        float bb = dot( b, b );
+        float dist2;
+        if ( bb < 1e-9 )
         {
-            float t = (float)i / (float)BEZIER_SAMPLES, u = 1.0 - t;
-            pts[ i ] = u * u * p0 + 2.0 * u * t * pc + t * t * p1;
+            // p0, pc, p1 are collinear with pc at the midpoint -- the curve degenerates to the
+            // straight segment p0-p1, where the cubic's leading coefficient vanishes and the
+            // closed form would divide by zero.  Fall back to SEG's own capsule projection.
+            float2 e  = p1 - p0, q = local - p0;
+            float2 pq = q - e * clamp( dot( q, e ) / dot( e, e ), 0.0, 1.0 );
+            dist2 = dot( pq, pq );
+        }
+        else
+        {
+            float kk = 1.0 / bb;
+            float kx = kk * dot( a, b );
+            float ky = kk * ( 2.0 * dot( a, a ) + dot( d, b ) ) / 3.0;
+            float kz = kk * dot( d, a );
+
+            float p  = ky - kx * kx;
+            float p3 = p * p * p;
+            float q  = kx * ( 2.0 * kx * kx - 3.0 * ky ) + kz;
+            float h  = q * q + 4.0 * p3;
+
+            if ( h >= 0.0 )
+            {
+                h = sqrt( h );
+                float2 x  = ( float2( h, -h ) - q ) * 0.5;
+                float2 uv = sign( x ) * pow( abs( x ), float2( 1.0 / 3.0, 1.0 / 3.0 ) );
+                float  t  = clamp( uv.x + uv.y - kx, 0.0, 1.0 );
+                float2 qq = d + ( c + b * t ) * t;
+                dist2 = dot( qq, qq );
+            }
+            else
+            {
+                float z = sqrt( -p );
+                float v = acos( q / ( p * z * 2.0 ) ) / 3.0;
+                float m = cos( v );
+                float n = sin( v ) * 1.7320508075688772;   // sqrt(3)
+                float3 t  = clamp( float3( m + m, -n - m, n - m ) * z - kx, 0.0, 1.0 );
+                float2 qx = d + ( c + b * t.x ) * t.x;
+                float2 qy = d + ( c + b * t.y ) * t.y;
+                dist2 = min( dot( qx, qx ), dot( qy, qy ) );
+            }
         }
 
-        float bestSq = 1e30;
-        int   bestI  = 0;
-        [unroll]
-        for ( int j = 0; j <= BEZIER_SAMPLES; ++j )
-        {
-            float2 v  = local - pts[ j ];
-            float  sq = dot( v, v );
-            if ( sq < bestSq ) { bestSq = sq; bestI = j; }
-        }
-
-        float d = sqrt( bestSq );
-        if ( bestI > 0 )
-        {
-            float2 a = pts[ bestI - 1 ], e = pts[ bestI ] - a, q = local - a;
-            d = min( d, length( q - e * clamp( dot( q, e ) / dot( e, e ), 0.0, 1.0 ) ) );
-        }
-        if ( bestI < BEZIER_SAMPLES )
-        {
-            float2 a = pts[ bestI ], e = pts[ bestI + 1 ] - a, q = local - a;
-            d = min( d, length( q - e * clamp( dot( q, e ) / dot( e, e ), 0.0, 1.0 ) ) );
-        }
-
-        f.d = d - soft.y;
+        f.d = sqrt( dist2 ) - soft.y;
     }
     else
     {
