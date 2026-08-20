@@ -469,27 +469,54 @@ rounded_corner( gui_vec2_t prev, gui_vec2_t cur, gui_vec2_t next, f32 radius,
     *out_center = best;
 }
 
-/* One circular fillet: the short way around from `entry` to `exit` about `center` -- GUI_FX_ARC,
-   exact at any radius, which is what makes it coincide with draw_round_rect's own corner. */
+/* One fillet, the short way around from `entry` to `exit` about `center`, radius r -- as TWO
+   quadratic GUI_FX_BEZIER spans rather than one GUI_FX_ARC quad.  A single quadratic span's
+   control point is forced (tangency at both ends leaves no freedom to place it), and that forced
+   point undershoots a true circle by about 6% of the radius at a full right angle -- visible, and
+   what draw_rounded_path used to draw.  Splitting the sweep in two quarters that error to a
+   fraction of a pixel at any radius this path uses (error falls with the sweep angle to the
+   fourth power), close enough that the eye reads it as the same circle draw_round_rect's own
+   corner is a quarter of.  Each span's control point sits at the intersection of its own two
+   tangent lines, exactly like the single-span case, just measured from the arc's true centre and
+   angles instead of the polyline's corner point.
+
+   Doing this with GUI_FX_BEZIER rather than GUI_FX_ARC also means every fillet is the SAME field
+   family as the straight runs beside it: a straight run's control point sits ON the line, which
+   is the exact case GUI_FX_BEZIER's own shader falls back to the plain capsule-projection formula
+   for -- so a corner and the run either side of it are never two different field types meeting at
+   a seam, they are the same field with a control point that has (or hasn't) bent away from the
+   line. */
 static void
-corner_arc( gui_vec2_t entry, gui_vec2_t exit, gui_vec2_t center, f32 r, f32 thickness, u32 col )
+corner_bezier( gui_vec2_t entry, gui_vec2_t exit, gui_vec2_t center, f32 r, f32 thickness, u32 col )
 {
     f32 a0 = atan2f( entry.y - center.y, entry.x - center.x );
     f32 a1 = atan2f( exit.y  - center.y, exit.x  - center.x );
     f32 delta = a1 - a0;
     while ( delta >  SYM_PI ) delta -= SYM_TAU;
     while ( delta < -SYM_PI ) delta += SYM_TAU;
-    draw_arc( center.x, center.y, r, a0, a0 + delta, thickness, col );
+
+    f32        am  = a0 + delta * 0.5f;
+    gui_vec2_t mid = { center.x + r * cosf( am ), center.y + r * sinf( am ) };
+
+    f32 cd  = r / cosf( delta * 0.25f );   /* control point distance from centre, both spans */
+    f32 c0a = a0 + delta * 0.25f;
+    f32 c1a = am + delta * 0.25f;
+    gui_vec2_t c0 = { center.x + cd * cosf( c0a ), center.y + cd * sinf( c0a ) };
+    gui_vec2_t c1 = { center.x + cd * cosf( c1a ), center.y + cd * sinf( c1a ) };
+
+    draw_push_bezier( entry.x, entry.y, c0.x, c0.y, mid.x, mid.y, thickness, col );
+    draw_push_bezier( mid.x, mid.y, c1.x, c1.y, exit.x, exit.y, thickness, col );
 }
 
 /* A polyline whose corners are automatically filleted to `radius`, clamped per-corner so a
    fillet never eats past its own straight run (rounded_corner above) -- the "rounded rect bezel"
    guarantee applied to an arbitrary point-to-point path, instead of a hand-picked bezier control
-   point that can come out lopsided.  A straight run between fillets is GUI_FX_SEG (gui_draw_capsule,
-   unsnapped so it lines up with the fillet beside it); each fillet is one GUI_FX_ARC quad, exact
-   at the same radius a round-rect corner would use.  Streams the path in one pass with no working
-   array: each corner's clamp depends only on its own two neighbours, so nothing needs the whole
-   point set at once. */
+   point that can come out lopsided.  The whole path is ONE field family, GUI_FX_BEZIER: a straight
+   run is a degenerate span (control point on the line, gui_draw_capsule -- see corner_bezier for
+   why that is the same formula) and each fillet is two curved spans, so there is never a field
+   boundary at a joint for the antialiasing on either side to disagree across.  Streams the path in
+   one pass with no working array: each corner's clamp depends only on its own two neighbours, so
+   nothing needs the whole point set at once. */
 static void
 draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, bool closed,
                    u32 col )
@@ -519,7 +546,7 @@ draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, 
                 continue;
             }
             path_line_if( cur, entry, thickness, col );
-            corner_arc( entry, exit, center, r, thickness, col );
+            corner_bezier( entry, exit, center, r, thickness, col );
             cur = exit;
         }
         path_line_if( cur, pts[ count - 1 ], thickness, col );
@@ -547,7 +574,7 @@ draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, 
             continue;
         }
         path_line_if( cur, entry, thickness, col );
-        corner_arc( entry, exit, center, r, thickness, col );
+        corner_bezier( entry, exit, center, r, thickness, col );
         cur = exit;
     }
     path_line_if( cur, start, thickness, col );
