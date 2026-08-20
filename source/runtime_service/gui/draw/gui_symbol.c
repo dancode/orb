@@ -409,7 +409,33 @@ path_line_if( gui_vec2_t a, gui_vec2_t b, f32 thickness, u32 col )
     f32 len = sqrtf( len2 );
     f32 mx  = ( a.x + b.x ) * 0.5f, my = ( a.y + b.y ) * 0.5f;
     f32 rot = atan2f( dy, dx );
+
+    /* tess_fx_box_core grid-snaps its origin whenever rot == 0.0 exactly -- the right call for a
+       caller who wants a crisp axis-aligned panel, but wrong here: this box's flat end has to land
+       exactly on the fillet's own unsnapped tangent point, and atan2 hands back a literal 0.0 for
+       any run pointing due +x.  A due +x run would snap to the pixel grid while every other
+       direction (including due -x, whose atan2 is PI, not 0) would not, so the same straight wire
+       would drift a pixel out of step with its fillet only when it happened to run rightward --
+       and only after a scroll or pan landed its unsnapped neighbour on the wrong side of that
+       pixel boundary, which is why it read as intermittent.  Nudging rot off exactly zero costs
+       nothing visible and always takes the unsnapped path, matching the fillet on every heading. */
+    if ( rot == 0.0f )
+        rot = 1e-4f;
+
     draw_push_box_xf( mx - len * 0.5f, my - thickness * 0.5f, len, thickness, 0.0f, 0.0f, rot, col );
+}
+
+/* The round tip a capsule would have put at a path's own end -- used only where nothing else
+   supplies rounding: a true open-path endpoint, or a sharp (radius-0) interior corner passed
+   straight through with no fillet.  A plain filled disc, not a capsule: draw_push_circle_filled
+   never grid-snaps (same reasoning as the fillet), and it is the exact shape path_line_if's flat
+   cut is missing at that one end, layered on top rather than replacing anything, so it only ever
+   ADDS coverage beyond the box's own flush edge -- never doubles the box's fringe the way two
+   independently-drawn round caps at the same joint would (see path_line_if). */
+static void
+path_end_cap( gui_vec2_t p, f32 thickness, u32 col )
+{
+    draw_push_circle_filled( p.x, p.y, thickness * 0.5f, col );
 }
 
 /* One corner of a rounded path: pull back distance `r` along each of the corner's two adjacent
@@ -545,6 +571,11 @@ draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, 
 
     if ( !closed )
     {
+        /* The path's own two ends: nothing else along the walk below will round them -- they are
+           never a fillet's entry/exit, only ever the flush end of a straight run. */
+        path_end_cap( pts[ 0 ], thickness, col );
+        path_end_cap( pts[ count - 1 ], thickness, col );
+
         gui_vec2_t cur = pts[ 0 ];
         for ( u32 i = 1; i + 1 < count; ++i )
         {
@@ -554,6 +585,7 @@ draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, 
             if ( r <= 0.0f )
             {
                 path_line_if( cur, pts[ i ], thickness, col );
+                path_end_cap( pts[ i ], thickness, col );
                 cur = pts[ i ];
                 continue;
             }
@@ -582,6 +614,7 @@ draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, 
         if ( r <= 0.0f )
         {
             path_line_if( cur, pts[ i ], thickness, col );
+            path_end_cap( pts[ i ], thickness, col );
             cur = pts[ i ];
             continue;
         }
