@@ -7,6 +7,7 @@
 
     Between gui_emit_state.c (owns s_draw and the fnv1a helpers this folds through) and the shape
     files that call it.
+
 ==============================================================================================*/
 // clang-format off
 
@@ -33,36 +34,43 @@
    as the generic payload pointer. */
 
 static const u8 k_cmd_hash_len[] = {
-    [GUI_CMD_RECT_FILLED]   = sizeof( ( (gui_cmd_t*)0 )->rect ),
-    [GUI_CMD_RECT_OUTLINE]  = sizeof( ( (gui_cmd_t*)0 )->rect_outline ),
-    [GUI_CMD_FRAME]         = sizeof( ( (gui_cmd_t*)0 )->frame ),
-    [GUI_CMD_TRIANGLE]      = sizeof( ( (gui_cmd_t*)0 )->tri ),
-    [GUI_CMD_LINE]          = sizeof( ( (gui_cmd_t*)0 )->line ),
-    [GUI_CMD_DASHED_LINE]   = sizeof( ( (gui_cmd_t*)0 )->dash ),
-    [GUI_CMD_RECT_GRADIENT] = sizeof( ( (gui_cmd_t*)0 )->gradient ),
-    [GUI_CMD_SPRITE]        = sizeof( ( (gui_cmd_t*)0 )->sprite ),
+    [GUI_CMD_RECT_FILLED]   = sizeof(( (gui_cmd_t*)0 )->rect ),
+    [GUI_CMD_RECT_OUTLINE]  = sizeof(( (gui_cmd_t*)0 )->rect_outline ),
+    [GUI_CMD_FRAME]         = sizeof(( (gui_cmd_t*)0 )->frame ),
+    [GUI_CMD_TRIANGLE]      = sizeof(( (gui_cmd_t*)0 )->tri ),
+    [GUI_CMD_LINE]          = sizeof(( (gui_cmd_t*)0 )->line ),
+    [GUI_CMD_DASHED_LINE]   = sizeof(( (gui_cmd_t*)0 )->dash ),
+    [GUI_CMD_RECT_GRADIENT] = sizeof(( (gui_cmd_t*)0 )->gradient ),
+    [GUI_CMD_SPRITE]        = sizeof(( (gui_cmd_t*)0 )->sprite ),
+
     /* Folds rate whole, so a pulse hashes stable frame-to-frame (it animates in the FRAGMENT off
        pc.time -- the geometry never changes, which is the entire point of the mode). */
-    [GUI_CMD_FX_BOX]        = sizeof( ( (gui_cmd_t*)0 )->fx_box ),
-    [GUI_CMD_ROUND_RECT_EX] = sizeof( ( (gui_cmd_t*)0 )->round_rect ),
+    [GUI_CMD_FX_BOX]        = sizeof(( (gui_cmd_t*)0 )->fx_box ),
+    [GUI_CMD_ROUND_RECT_EX] = sizeof(( (gui_cmd_t*)0 )->round_rect ),
+
     /* Both sectors fold the same member.  A spinner's start angle moves every frame, so this
        dirties every frame -- honestly, since the geometry really does rotate.  (A spinner that
        wanted free animation would be a shader-clock mode like PULSE, not a re-emit.) */
-    [GUI_CMD_ARC]           = sizeof( ( (gui_cmd_t*)0 )->arc ),
-    [GUI_CMD_PIE]           = sizeof( ( (gui_cmd_t*)0 )->arc ),
-    [GUI_CMD_ARC_DASH]      = sizeof( ( (gui_cmd_t*)0 )->arc_dash ),
-    [GUI_CMD_ARC_GRAD]      = sizeof( ( (gui_cmd_t*)0 )->arc_grad ),
-    [GUI_CMD_IMAGE_XF]      = sizeof( ( (gui_cmd_t*)0 )->image_xf ),
-    [GUI_CMD_CHECKER]       = sizeof( ( (gui_cmd_t*)0 )->checker ),
-    [GUI_CMD_GRID]          = sizeof( ( (gui_cmd_t*)0 )->grid ),
-    [GUI_CMD_NGON]          = sizeof( ( (gui_cmd_t*)0 )->ngon ),
+
+    [GUI_CMD_ARC]           = sizeof(( (gui_cmd_t*)0 )->arc ),
+    [GUI_CMD_PIE]           = sizeof(( (gui_cmd_t*)0 )->arc ),
+    [GUI_CMD_ARC_DASH]      = sizeof(( (gui_cmd_t*)0 )->arc_dash ),
+    [GUI_CMD_ARC_GRAD]      = sizeof(( (gui_cmd_t*)0 )->arc_grad ),
+    [GUI_CMD_IMAGE_XF]      = sizeof(( (gui_cmd_t*)0 )->image_xf ),
+    [GUI_CMD_CHECKER]       = sizeof(( (gui_cmd_t*)0 )->checker ),
+    [GUI_CMD_GRID]          = sizeof(( (gui_cmd_t*)0 )->grid ),
+    [GUI_CMD_NGON]          = sizeof(( (gui_cmd_t*)0 )->ngon ),
+
     /* Folds rate/phase whole like FX_BOX: the ants scroll in the fragment off pc.time, so the
        command hashes stable frame-to-frame while the pattern moves. */
-    [GUI_CMD_BOX_DASH]      = sizeof( ( (gui_cmd_t*)0 )->box_dash ),
-    [GUI_CMD_REPEAT]        = sizeof( ( (gui_cmd_t*)0 )->repeat ),
+
+    [GUI_CMD_BOX_DASH]      = sizeof(( (gui_cmd_t*)0 )->box_dash ),
+    [GUI_CMD_REPEAT]        = sizeof(( (gui_cmd_t*)0 )->repeat ),
+
     /* Folds rate/phase whole like FX_BOX: the ring spins in the fragment off pc.time, so the
        command hashes stable frame-to-frame while it turns. */
-    [GUI_CMD_REPEAT_POLAR]  = sizeof( ( (gui_cmd_t*)0 )->repeat_polar ),
+
+    [GUI_CMD_REPEAT_POLAR]  = sizeof(( (gui_cmd_t*)0 )->repeat_polar ),
 };
 
 static u32
@@ -162,16 +170,16 @@ draw_hash_cmd( const gui_cmd_t* c )
     
     The slot and stamps the header. 
     
-    ALREADY folded (a multi-color shape pass the OR of its folded colours -- visible if any end is).
-    `pad` grows the cull box on every side for shapes whose geometry reaches past the
-    authored rect (the SDF AA skirt, a shadow's feather).  
+    ALREADY folded (a multi-color shape pass the OR of its folded colours -- visible
+    if any end is). `pad` grows the cull box on every side for shapes whose geometry 
+    reaches past the authored rect (the SDF AA skirt, a shadow's feather).  
     
     Returns NULL when the shape must not spend a slot; otherwise the caller fills the 
     payload and calls seal, which bakes the retained-cache hash while the bytes are L1-hot.
 
-    The four pool-backed pushes (text, text_xf, polyline via gui_emit_path.c, rect_list) keep
-    their own preambles: each has a pool copy that must succeed BEFORE a slot may be spent, and
-    a cull that is not an axis-aligned box test.  
+    The four pool-backed pushes (text, text_xf, polyline via gui_emit_path.c, rect_list) 
+    keep their own preambles: each has a pool copy that must succeed BEFORE a slot may be 
+    spent, and a cull that is not an axis-aligned box test.  
     
     They still owe the same transparent drop this preamble runs -- alpha 0 is the free 
     visibility toggle everywhere, with one text nuance: a visible TEXT_EDGE keeps a 
@@ -182,19 +190,20 @@ draw_hash_cmd( const gui_cmd_t* c )
 static gui_cmd_t*
 draw_cmd_claim( u8 type )
 {
-    /* Claim the next command slot and stamp the ambient (clip_idx, vp) pair onto it. 
-       vp is the batch key; clip_idx names the rect the tessellator resolves into the 
-       slot's local clip table (the vertex clip band). Stamping both is the one thing 
-       every command must do and no command may get wrong. 
+/*  Claim the next command slot and stamp the ambient (clip_idx, vp) pair onto it. 
+    vp is the batch key; clip_idx names the rect the tessellator resolves into the 
+    slot's local clip table (the vertex clip band). Stamping both is the one thing 
+    every command must do and no command may get wrong. 
 
-       Split out of draw_cmd_open below because the pool-backed pushes cannot use that 
-       function's preamble (their pool copy has to succeed before a slot is spent, and their 
-       cull is not an axis-aligned box test) but they owe the identical stamp. */
-
+    Split out of draw_cmd_open below because the pool-backed pushes cannot use that 
+    function's preamble (their pool copy has to succeed before a slot is spent, and
+    their cull is not an axis-aligned box test) but they owe the identical stamp. 
+*/
     gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type      = type;
     c->clip_idx  = s_draw.cur_clip_idx;
     c->vp        = (u8)s_draw.cur_vp;
+
     return c;
 }
 
@@ -220,5 +229,5 @@ draw_cmd_seal( void )
         draw_hash_cmd( &s_draw.cmds[ s_draw.cmd_count - 1 ] );
 }
 
-// clang-format on
 /*============================================================================================*/
+// clang-format on

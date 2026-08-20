@@ -17,18 +17,19 @@
     `rounding` arrives explicit and already resolved -- the wrappers below fold the ambient
     radius in (or not: see the roundable rule on each), and the disc passes its own.
 
-    `corner_pow` travels the same way and for the same reason: a disc's corner IS the shape, so
-    the one caller that names its own radius names its own profile too, and gets the circle.
+    `corner_pow` travels the same way and for the same reason: a disc's corner IS the shape,
+    so the one caller that names its own radius names its own profile too, and gets 
+    the circle.
 ==============================================================================================*/
 
 static void
-draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
+draw_rect_cmd( f32 x,  f32 y,  f32 w,  f32 h,
                f32 u0, f32 v0, f32 u1, f32 v1,
                u32 tex_idx, u32 abgr, f32 rounding, f32 corner_pow )
 {
     /* A rounded quad becomes an SDF surface whose AA skirt reaches past the authored rect
-       (tess_fx_box), so cull it with one pixel of slack -- a shape flush against the clip edge
-       keeps its feathered edge.  Square quads cull tight. */
+       (tess_fx_box), so cull it with one pixel of slack -- a shape flush against the clip 
+       edge keeps its feathered edge. Square quads cull tight. */
 
     f32 pad = ( rounding > 0.0f ) ? 1.0f : 0.0f;
     u32 col = draw_apply_alpha( abgr );
@@ -54,41 +55,46 @@ draw_rect_cmd( f32 x, f32 y, f32 w, f32 h,
 }
 
 /*==============================================================================================
-    draw_push_rect_filled / draw_push_image -- emit a filled / textured quad semantic command.
 
-    tex_idx == 0 is the solid-color convention (resolved to the atlas white texel at tessellation
-    time).  Pixel-grid snapping and GPU batching happen at flush time in the tessellation pass.
+    draw_push_rect_filled / draw_push_image -- emit a filled / textured quad command.
 
-    Two entry points over one body, differing only in whether the ambient rounding radius applies.
-    See the comments on each below -- the split is about what the quad MEANS (picture vs glyph),
-    which only the caller knows, not about what it carries.
+    Same quad under the hood. The only difference is whether the ambient rounding radius
+    (draw_set_rounding) gets applied: draw_push_rect_filled ignores it for icons, draw_push_image
+    applies it for pictures. Which one to call depends on what the quad IS, not what it carries --
+    see the comment on each below.
+
+    tex_idx == 0 means "solid color", resolved to the atlas white texel at tessellation time.
+    Pixel-grid snapping and GPU batching happen later, at flush time in the tessellation pass.
+
 ==============================================================================================*/
+/*  The general quad: solid fills, and icons (draw_push_icon routes here too). Ambient rounding
+    is skipped, because an icon is a symbol, not a frame -- rounding it would silently cut the
+    corners off the glyph if it happened to be drawn inside a draw_set_rounding scope.
 
-/*  The general quad.  Rounds SOLID fills only, and the reason is not that the tessellator cannot
-    round a texture -- it can, and tess_fx_box interpolates UVs across the authored box and clamps
-    them over the falloff skirt precisely so a rounded textured quad cannot bleed into its atlas
-    neighbour.  The reason is what else comes through here: draw_push_icon routes every icon quad
-    to this function, and an icon is a COVERAGE glyph, not a picture.  Rounding it would cut the
-    corners off the symbol rather than off a frame, and it would happen silently to any icon that
-    happened to be drawn inside a draw_set_rounding scope.
-    A caller that really is drawing a picture says so by calling draw_push_image below. */
+    A caller that is actually drawing a picture (not a symbol) should call draw_push_image below
+    instead, so it gets rounded corners.
+
+    (Note: the tessellator itself has no trouble rounding a textured quad -- tess_fx_box clamps
+    UVs across the falloff skirt so a rounded corner never bleeds into a neighbouring atlas
+    texel. The split here is purely about caller intent, not a rendering limitation.) */
 
 void
-draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      /* rect */
-                       f32 u0, f32 v0, f32 u1, f32 v1,  /* uv */
-                       u32 tex_idx, u32 abgr )          /* texture slot + color */
+draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      // rect
+                       f32 u0, f32 v0, f32 u1, f32 v1,  // uv
+                       u32 tex_idx, u32 abgr )          // texture slot + color
 {
     draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr,
                    ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f, s_draw.corner_pow );
 }
 
-/*  An IMAGE: an arbitrary bindless texture the caller is showing as a picture (a scene render
-    target, a loaded photo).  Identical to the above in every respect except that the ambient
-    radius reaches it, which is the whole point of the split -- "a picture can have rounded
-    corners, a glyph cannot" is the rule, and the call site is the only place that knows which of
-    the two it is holding.  The rounded corner is exact, not a mask: the fragment resolves the
-    boundary from the same signed-distance field a rounded fill uses, with the texture sampling
-    underneath it (gui.h, the effect band). */
+/*  An IMAGE: an arbitrary texture the caller is showing as a picture (a scene render target, a
+    loaded photo). Identical to draw_push_rect_filled above except the ambient rounding radius
+    is applied, so pictures get rounded corners.
+
+    (Note: the corner isn't a mask cut over the texture -- the fragment shader resolves the
+    rounded boundary from the same signed-distance field a rounded solid fill uses, and samples
+    the texture underneath it; see the effect band in gui.h.) */
+
 void
 draw_push_image( f32 x, f32 y, f32 w, f32 h,
                  f32 u0, f32 v0, f32 u1, f32 v1,
@@ -99,12 +105,14 @@ draw_push_image( f32 x, f32 y, f32 w, f32 h,
 }
 
 /*==============================================================================================
+
     draw_push_circle_filled -- a filled disc, which IS a rounded rect whose radius reached the
     half-extent.  Not a command type of its own: the tessellator already derives everything a
     disc needs from that shape (the SDF boundary, and the no-snap rule -- a square box whose
     radius reached its half-extent has no straight edge to keep crisp, and quantizing a moving
     dot's centre is exactly what must not happen).  The radius is passed EXPLICIT, bypassing the
     ambient rounding -- a disc is fully round by definition, not by scope.
+
 ==============================================================================================*/
 
 void

@@ -2663,18 +2663,20 @@ typedef enum
 
 #define GUI_TEXT_NO_CLIP 1e30f
 
-/* THE SAMPLING MODEL -- the top 4 bits of a tex_idx.  What a texel MEANS to the fragment: the one
-   axis the shader branches on, and the axis the two atlases are already split along
+/* THE SAMPLING MODEL -- the top 4 bits of a tex_idx.  What a texel MEANS to the fragment: 
+   the one axis the shader branches on, and the axis the two atlases are already split along
    (render/resource/gui_res_atlas.h).
 
    It rides the tex_idx rather than taking a field of its own because it is a property of the
-   TEXTURE, not of the shape drawn with it -- so wherever the slot goes, the model goes with it for
-   free.  The SAMPLER is DERIVED from the mode in the fragment and never carried: coverage must
-   stay point-sampled or glyphs stop being crisp, colour must filter or it blocks up the moment it
+   TEXTURE, not of the shape drawn with it -- so wherever the slot goes, the model goes with it
+   for free.  
+   
+   The SAMPLER is DERIVED from the mode in the fragment and never carried: coverage must stay
+   point-sampled or glyphs stop being crisp, colour must filter or it blocks up the moment it
    is stretched.
 
-   That derivation is the whole reason this is a MODE rather than a bool: a third sampling model
-   (SDF) is one more value, not a format change.  Three of the sixteen are spent; the rest stay
+   That derivation is the whole reason this is a MODE rather than a bool: a third sampling 
+   model (SDF) is one more value, not a format change.  Three of the sixteen are spent; the rest stay
    unnamed until something emits them.
 
    The word travels from the emit site into the primitive record's `tex` member (gui_prim_t), and
@@ -2698,7 +2700,6 @@ typedef enum
                                That is what lets distance-field text scale and rotate cleanly --
                                and why it must filter, which is why it could not be a COVERAGE
                                font wearing a different flag (orb_font.h, sdf_range)             */
-
 } gui_tex_mode_t;
 
 /* Split a tex_idx into its parts: the model, and the bindless slot to sample. */
@@ -2715,6 +2716,7 @@ gui_tex_index( u32 tex_idx )
     return tex_idx & ~GUI_TEX_MODE_MASK;
 }
 
+/*============================================================================================*/
 /* One semantic draw command.  The 4-byte header carries the command type, the index of the active
    clip rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), and
    the target viewport.  z lives in gui_cmd_seg_t (per-segment, constant within a window) and is not
@@ -2738,12 +2740,14 @@ typedef struct
     {
         struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding, corner_pow; u32 tex_idx; u32 abgr; } rect;
         struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;              u32 abgr; } rect_outline;
+
         /* Widget bezel: the filled body and its border band in one command, resolved by the
            fragment as a single quad (GUI_OP_FRAME).  `t` is the band's width, lying inside the
            boundary -- the emit site falls back to the fill + outline pair when the ambient
            border alignment pushes the band outward, so this member never carries an align. */
         struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;  u32 abgr, col_border; } frame;
         struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
+
         /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
            last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
            sentinel (clip_x0 = -GUI_TEXT_NO_CLIP, clip_x1 = +GUI_TEXT_NO_CLIP) means unclipped

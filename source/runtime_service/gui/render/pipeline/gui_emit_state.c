@@ -81,6 +81,8 @@ typedef struct
 
 ORB_STATIC_ASSERT( GUI_MAX_CMDS <= 0xFFFF, "gui_cmd_seg_t.lo/hi are u16" );
 
+/*============================================================================================*/
+
 static struct
 {
     gui_cmd_t       cmds            [ GUI_MAX_CMDS ];           // semantic command list; one entry per shape
