@@ -33,7 +33,7 @@
 
     More: The three phases
 
-    EMIT    gui_emit_draw.c     widgets      -> s_draw   (semantic gui_cmd_t, no geometry)
+    EMIT    gui_emit_*.c        widgets      -> s_draw   (semantic gui_cmd_t, no geometry)
     BUILD   gui_build_cache.c   diff+place   -> s_tess   (gui_quad_t + gui_prim_t arenas)
             gui_build_tess.c    tessellate
     SUBMIT  gui_render_submit.c upload+draw  -> GPU      (bufferless cmd_draw)
@@ -158,7 +158,7 @@ void            res_sprite_occupancy    ( f32* pct, u32* tenants, u32* w, u32* h
 void            res_sdf_occupancy       ( f32* pct, u32* tenants, u32* w, u32* h );
 
 /*==============================================================================================
-    EMIT: CPU draw list (pipeline/gui_emit_draw.c)
+    EMIT: CPU draw list (pipeline/gui_emit_state.c)
 ==============================================================================================*/
 
 void draw_reset( i32 display_w, i32 display_h );    // clear the list at the top of frame_begin
@@ -187,7 +187,7 @@ void draw_set_window            ( gui_id_t win );   // stable window id stamped 
 void draw_set_font              ( u32 font );       // active font id, stamped onto each TEXT command (push/pop/use_font)
 u32  draw_get_font              ( void );           // current stamp font (save/restore around a scoped swap)
 
-/* The paint cursor as one record (state in gui_emit_draw.c; here -- the definer's
+/* The paint cursor as one record (state in gui_emit_state.c; here -- the definer's
    side of the seam): the command segment tag (owning window, sort key, viewport, arena band --
    the ambient font stays global by design) plus the ambient glyph-clip window (a table cell
    sets it for its span).  draw_scope / draw_scope_set read and write it wholesale for the
@@ -550,7 +550,7 @@ void                pal_style_reset         ( void );
 
 void                pal_dump                ( void );
 
-/* Fit a corner radius to a rect, the way every rounded emit does (pipeline/gui_emit_draw.c). */
+/* Fit a corner radius to a rect, the way every rounded emit does (pipeline/gui_emit_state.c). */
 
 f32                 draw_clamp_round_of     ( f32 r, f32 w, f32 h );
 
@@ -899,7 +899,7 @@ void                gui_render_set_time     ( f32 seconds );
 
     /* The attribution stamp (draw_set_cmd_owner / STEP_SET_OWNER) is declared in
        debug/gui_debug.h -- the interact server calls it; the definition stays in
-       gui_emit_draw.c. */
+       gui_emit_state.c. */
 
     /* Pipeline hooks, called via the STEP_* macros below (defined in gui_step_capture.c, which
        the unity chain includes LAST):

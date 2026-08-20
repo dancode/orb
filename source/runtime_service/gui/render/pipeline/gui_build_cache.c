@@ -4,7 +4,7 @@
 
     The render pipeline has three phases.  This file is the middle one:
 
-        EMIT   (gui_emit_draw.c)  widgets push semantic shapes -> s_draw command list,
+        EMIT   (gui_emit_*.c)     widgets push semantic shapes -> s_draw command list,
                                    cut into per-(win,z,vp,band) segments, one hash baked per command.
         BUILD  (this file)        once per frame: diff each window's commands against last frame,
                                    reuse unchanged geometry in place, tessellate changed windows,

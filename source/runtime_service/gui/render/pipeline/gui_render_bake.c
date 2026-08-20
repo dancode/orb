@@ -106,7 +106,7 @@ static struct
 
 /*  FNV-1a over the whole record -- the same fold the census hashes with, over the same bytes, so a
     baked entry and the census row it covers agree by construction.  A record is 128 bytes of
-    4-byte lanes, so the shared helper folds it as 32 words (gui_emit_draw.c); this is the hottest
+    4-byte lanes, so the shared helper folds it as 32 words (gui_emit_state.c); this is the hottest
     hash in the backend, running once per style-record memo miss in tess_prim_local. */
 
 static u32
@@ -330,7 +330,7 @@ pal_box( u32 ops, f32 w, f32 h, f32 r, f32 feather, f32 border )
 }
 
 /* The radius a source would land at over a rect this tall -- the widget's own clamp, called rather
-   than restated (draw_clamp_round_of, gui_emit_draw.c). */
+   than restated (draw_clamp_round_of, gui_emit_state.c). */
 static f32
 pal_round( f32 src, f32 h )
 {

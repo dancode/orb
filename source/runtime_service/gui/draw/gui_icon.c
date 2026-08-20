@@ -6,7 +6,7 @@
     atlas (gui_res_atlas.c) as tenants, so icons draw from the same texture -- and batch in the same
     draw call -- as text and solid fills.  This file is resource bookkeeping only: the name table and
     the mapping from gui_icon_id_t to a shared-atlas tenant.  The draw entry point, draw_push_icon,
-    lives in pipeline/gui_emit_draw.c and reads icon_get (UVs) + icon_atlas_idx (bindless slot) below.
+    lives in pipeline/gui_emit_shape.c and reads icon_get (UVs) + icon_atlas_idx (bindless slot) below.
 
     Pixel SOURCING is intentionally out of scope: callers supply raw R8 coverage bytes (row-major,
     w*h, 0..255).  Whoever has the bytes -- procedural code today, the asset/image pipeline later --
@@ -260,7 +260,7 @@ icon_get( gui_icon_id_t id, f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h )
     icon_tex -- the tex_idx an icon quad must carry: its backing atlas's bindless slot with the
     sampling model already in the mode field (gui.h, gui_tex_mode_t).
 
-    Consumed by pipeline/gui_emit_draw.c (draw_push_icon), and deliberately the exact shape of
+    Consumed by pipeline/gui_emit_shape.c (draw_push_icon), and deliberately the exact shape of
     font_slot_tex (draw/gui_glyph_internal.c) -- the fork an icon just grew is the fork a font
     already had, so it is worth them reading the same.
 

@@ -2606,7 +2606,7 @@ typedef void ( *gui_volatile_fn )( gui_id_t id, bool is_replay );
     (gui_render.c) tessellates each command into quad records at flush time.  This separates
     the UI logic from any graphics API knowledge.
 
-    GPU draw commands (gui_gpu_cmd_t) are a backend-private type defined in gui_emit_draw.c;
+    GPU draw commands (gui_gpu_cmd_t) are a backend-private type defined in gui_emit_state.c;
     they carry a quad range and diagnostic state for one GPU draw call.
 ==============================================================================================*/
 

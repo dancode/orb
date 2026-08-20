@@ -52,8 +52,13 @@
     --------------------------------------------------------------------------------------------
     Pipeline:
 
-    pipeline/gui_emit_draw.c        -- EMIT: CPU draw list: draw_reset, draw_push_* (incl. draw_push_icon), s_draw
-    pipeline/gui_emit_path.c        -- EMIT: line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)    
+    pipeline/gui_emit_state.c       -- EMIT: the draw list itself: s_draw, draw_reset, the clip stack, the ambient
+    pipeline/gui_emit_cmd.c         -- EMIT: the command record: draw_cmd_claim / _open / _seal, draw_hash_cmd
+    pipeline/gui_emit_shape.c       -- EMIT: fills, pictures, gradients (incl. draw_push_icon)
+    pipeline/gui_emit_fx.c          -- EMIT: the SDF surfaces: shadows, sectors, patterns, lattices
+    pipeline/gui_emit_edge.c        -- EMIT: outlines, bezels, the bare triangle
+    pipeline/gui_emit_text.c        -- EMIT: glyph runs: draw_push_text, _shadow, _xf (text pool)
+    pipeline/gui_emit_path.c        -- EMIT: line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
     pipeline/gui_build_tess.c       -- BUILD: CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
     pipeline/gui_build_volatile.c   -- BUILD: volatile-widget inline-emit replay (see gui_render.h)
     pipeline/gui_build_cache.c      -- BUILD: retained frame-geometry cache: cache_build_frame, s_cache, s_dispatch, the build_* seam.    
@@ -158,15 +163,31 @@
 #include "runtime_service/gui/render/resource/gui_res_atlas.h"
 #include "runtime_service/gui/render/resource/gui_res_atlas.c"
 
-/* Fonts, icons and sprites live in the draw unit (gui_draw.c) -- the server
-   renders from the atlases they push into; glyph/icon/sprite UV lookups at tess/emit time go
-   through the glyph/sprite source contract in gui_render.h. */
+/*  Fonts, icons and sprites live in the draw unit (gui_draw.c) -- the server
+    renders from the atlases they push into; glyph/icon/sprite UV lookups at tess/emit time go
+    through the glyph/sprite source contract in gui_render.h. */
 
-// pipeline/ EMIT: the semantic draw list (s_draw) and the line/path stroker built on it.
-// draw_push_icon lives here rather than with the icon resource (the draw unit's now): it queues
-// a semantic command like every other draw_push_*, resolving UVs through the sprite source
-// contract instead of the resource reaching up into EMIT itself.
-#include "runtime_service/gui/render/pipeline/gui_emit_draw.c"
+/*==============================================================================================
+    Pipeline Emit
+==============================================================================================*/
+/*
+    the semantic draw list (s_draw) and the pushes built on it, split by what each
+    file emits.  The order is a dependency chain and not a preference: _state owns s_draw and
+    the ambient every later file reads, _cmd owns the claim/hash/seal every push calls, and
+    _shape defines draw_push_rect_filled / _outline, which the bezel, the disc, the icon and
+    the trace all reach back for.  Unity visibility flows downward only.
+
+    draw_push_icon lives here rather than with the icon resource (the draw unit's now): 
+    it queues a semantic command like every other draw_push_*, resolving UVs through the 
+    sprite source contract instead of the resource reaching up into EMIT itself. 
+*/
+
+#include "runtime_service/gui/render/pipeline/gui_emit_state.c"
+#include "runtime_service/gui/render/pipeline/gui_emit_cmd.c"
+#include "runtime_service/gui/render/pipeline/gui_emit_shape.c"
+#include "runtime_service/gui/render/pipeline/gui_emit_fx.c"
+#include "runtime_service/gui/render/pipeline/gui_emit_edge.c"
+#include "runtime_service/gui/render/pipeline/gui_emit_text.c"
 #include "runtime_service/gui/render/pipeline/gui_emit_path.c"
 
 // STYLE RECORD CENSUS: session-wide histogram of the records the tessellator emits, and of the
@@ -174,6 +195,10 @@
 // calls its hooks; depends on nothing but the public gui types.  Compiled out unless
 // GUI_PRIM_CENSUS.
 #include "runtime_service/gui/render/gui_prim_census.c"
+
+/*==============================================================================================
+    Pipeline Build
+==============================================================================================*/
 
 // pipeline/ BUILD, part A: tessellation primitives (gui_cmd_t -> s_tess geometry).
 // No public surface -- driven entirely from part B (cache_tess_window / cache_build_frame).
@@ -187,6 +212,10 @@
 
 // pipeline/ BUILD, part B: retained cache & orchestration (diff, reuse-or-tessellate, z-sort).
 #include "runtime_service/gui/render/pipeline/gui_build_cache.c"
+
+/*==============================================================================================
+    Pipeline Render
+==============================================================================================*/
 
 // pipeline/ RENDER, part A: shared GPU resources (pipeline, samplers), created once.
 #include "runtime_service/gui/render/pipeline/gui_render_init.c"
@@ -202,6 +231,10 @@
 
 // pipeline/ RENDER, part C: per-surface submit (gui_render_flush).
 #include "runtime_service/gui/render/pipeline/gui_render_submit.c"
+
+/*==============================================================================================
+    Debug / Capture / Memory Accounting
+==============================================================================================*/
 
 // DEBUG OVERLAY: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY.  Stays at the
 // render/ root -- see the file banner above for why.

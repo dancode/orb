@@ -378,7 +378,7 @@ tess_clamp_cell( f32 cell )
 }
 
 /*==============================================================================================
-    Tessellation helpers -- mirrors of the draw_push_* functions in gui_emit_draw.c, but writing
+    Tessellation helpers -- mirrors of the draw_push_* functions in the gui_emit_* files, but writing
     into s_tess instead of s_draw.  These are the backend half of the command-list split.
     Called from tess_dispatch; not called from anywhere else.
 ==============================================================================================*/

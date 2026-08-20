@@ -28,8 +28,9 @@
     contributes nothing -- the feather is pure geometry, no shader or vertex-format change.  The
     capsule's is free for a different reason: the field IS the edge.
 
-    Included by gui_render.c immediately after gui_emit_draw.c (uses s_draw, draw_cull_box,
-    draw_push_rect_filled, draw_apply_alpha, draw_hash_cmd).
+    Last of the EMIT includes in gui_render.c (uses s_draw and draw_cull_box from
+    gui_emit_state.c, draw_cmd_claim / draw_hash_cmd from gui_emit_cmd.c, and
+    draw_push_rect_filled from gui_emit_shape.c).
 
 ==============================================================================================*/
 // clang-format off

@@ -23,7 +23,7 @@
 // clang-format off
 
 /* gui_draw_scope_t (the paint cursor as one record) lives in render/gui_render.h:
-   the render unit defines the state (pipeline/gui_emit_draw.c) and its accessors, so the
+   the render unit defines the state (pipeline/gui_emit_state.c) and its accessors, so the
    type lives on the definer's side of the seam. */
 
 /*==============================================================================================

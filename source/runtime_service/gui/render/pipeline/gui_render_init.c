@@ -9,7 +9,7 @@
     render_init creates them; render_shutdown tears them down and logs the run's peak pool fills,
     draw-call count and per-draw state cost.
 
-        EMIT    gui_emit_draw.c    widgets -> s_draw semantic command list
+        EMIT    gui_emit_*.c       widgets -> s_draw semantic command list
         BUILD   gui_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
         RENDER  this file          shared GPU resources (once) -> submits per surface
 

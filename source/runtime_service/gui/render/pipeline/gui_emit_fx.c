@@ -1,0 +1,670 @@
+/*==============================================================================================
+    gui/render/pipeline/gui_emit_fx.c -- The SDF surface family.
+
+    The pushes whose shape is resolved by the FRAGMENT off a style record rather than by geometry:
+    the fx_box faces (shadow, skirt, glow, inset, pulse, rotated box), the per-corner rounded rect,
+    the circular sectors and their dashed / gradient forms, the cell and lattice patterns, the
+    regular polygon, the dashed and traced box outlines, and the two repeat lattices.
+
+    What they have in common is that one quad covers any size and any count, and that the ones
+    carrying a rate animate on the shader clock -- their bytes are identical every frame, so a
+    pulse or a spinner re-tessellates nothing.  See gui_common.hlsli for the ops they stamp.
+==============================================================================================*/
+// clang-format off
+
+/*==============================================================================================
+    draw_push_shadow / draw_push_pulse -- the two faces of GUI_CMD_FX_BOX, one body.
+
+    A shadow is the surface with a WIDE feather: the falloff band straddles the shape's boundary
+    (solid feather/2 inside the box, gone feather/2 outside), and because the effect travels per
+    vertex it merges into whatever GPU batch is already open -- a shadow behind every floating
+    panel costs no draw calls.
+
+    draw_push_skirt is the same surface with its interior cut away (GUI_OP_CUT) -- identical
+    outward falloff, nothing painted inside the boundary.  That is what a DROP shadow is: the core
+    of a filled one can only ever be seen through the thing casting it, so on a translucent panel
+    it reads as the panel dimming itself.  Cutting it also makes the tessellator's interior hole
+    unconditional, taking a window-sized plate down to a band of quads around the frame.  Keep
+    draw_push_shadow for a glow or halo that is MEANT to be seen through its subject.
+
+    A pulse is the surface whose alpha breathes on pc.time in the FRAGMENT.  Geometrically it is
+    a plain rounded fill, and that identity is the feature: the command's bytes never change, so
+    its hash never changes, so the window's cached geometry stays valid and the pulse costs zero
+    re-tessellation while it runs.  `rate` is in Hz,
+    `depth` the 0..1 fraction of alpha removed at the trough.  The caller still owes one
+    request_redraw per frame: the clock advancing is not what schedules a frame (GUI_FX_TIME_WRAP).
+==============================================================================================*/
+
+static void
+draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 variant,
+                 f32 rate, f32 depth, f32 phase, f32 rot, f32 cut_dx, f32 cut_dy, u32 abgr )
+{
+    /* Cull against the GROWN box: the falloff skirt is real geometry (feather/2 past the rect,
+       plus the tessellator's pixel of slack), and a shadow whose box is just off screen still
+       paints a band on it.  A rotated box culls against its rotated AABB -- computed here rather
+       than approximated with the diagonal, because the exact box is four multiplies and the
+       diagonal wrongly keeps every long thin rotated bar on screen. */
+    f32 pad = feather * 0.5f + 1.0f;
+    f32 bx = x, by = y, bw = w, bh = h;
+    if ( rot != 0.0f )
+    {
+        f32 cs = cosf( rot ), sn = sinf( rot );
+        f32 hx = w * 0.5f, hy = h * 0.5f;
+        f32 ex = fabsf( hx * cs ) + fabsf( hy * sn );
+        f32 ey = fabsf( hx * sn ) + fabsf( hy * cs );
+        bx = x + hx - ex;  by = y + hy - ey;
+        bw = ex * 2.0f;    bh = ey * 2.0f;
+    }
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_FX_BOX, col, bx, by, bw, bh, pad );
+    if ( !c )
+        return;
+    c->fx_box.x        = x;
+    c->fx_box.y        = y;
+    c->fx_box.w        = w;
+    c->fx_box.h        = h;
+    c->fx_box.rounding = rounding;
+    c->fx_box.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    c->fx_box.feather  = feather;
+    c->fx_box.rate     = rate;
+    c->fx_box.depth    = depth;
+    c->fx_box.phase    = phase + s_draw.anim_phase;
+    c->fx_box.rot      = rot;
+    c->fx_box.abgr     = col;
+    c->fx_box.variant  = variant;
+    c->fx_box.cut_dx   = cut_dx;
+    c->fx_box.cut_dy   = cut_dy;
+    /* A pulse that names no curve breathes on the raised cosine it always has: a sawtooth would
+       snap back to full every cycle, which is not what breathing is.  Resolved here, at the one
+       site that knows the shape is pulsing at all.  A shadow is not animated, so it takes no
+       curve however the ambient is set -- the command hash must not move for a shape whose
+       motion nothing reads. */
+    c->fx_box.curve       = ( rate <= 0.0f ) ? 0u
+                          : ( ( s_draw.anim_curve == GUI_CURVE_LINEAR )
+                              ? (u32)GUI_CURVE_SINE : s_draw.anim_curve );
+    c->fx_box.curve_param = ( rate > 0.0f ) ? s_draw.anim_curve_param : 0.0f;
+    draw_cmd_seal();
+}
+
+void
+draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
+}
+
+/* x,y,w,h is the CASTER; (ox, oy) is how far the shadow falls from it.  The command carries the
+   shadow's own rect, so the cut offset is the trip back to the caster -- the shape states where it
+   is drawn and the offset states what it is drawn under. */
+void
+draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
+                 f32 ox, f32 oy, u32 abgr )
+{
+    draw_fx_box_cmd( x + ox, y + oy, w, h, rounding, feather, 1u,
+                     0.0f, 0.0f, 0.0f, 0.0f, -ox, -oy, abgr );
+}
+
+/* The glow: the same surface with its outward falloff resolved EXPONENTIALLY (GUI_OP_GLOW) rather
+   than through the feather's linear ramp.  Same geometry, same one quad, same batch -- the only
+   difference is the curve, and it is the difference between a blurred edge and a lit one.
+   `spread` is how far the light reaches, the draw_push_shadow vocabulary, so the feather carries
+   twice it exactly as a shadow's does: the covering has to grow by the reach or the halo is cut
+   off at the quad edge, and the tessellator derives the dropoff from the same number. */
+void
+draw_push_glow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 3u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
+}
+
+/* The inner shadow: the same surface with its falloff turned inward (GUI_OP_INSET), painting
+   from the boundary `depth` px in and nothing outside it.  A pressed well, a recessed field, the
+   inner edge of a scroll area -- the shapes a drop shadow cannot make because they belong to the
+   inside of their subject rather than to the ground under it. */
+void
+draw_push_inset( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 depth, u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding, depth, 2u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
+}
+
+void
+draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, f32 phase,
+                 u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0u, rate, depth, phase, 0.0f,
+                     0.0f, 0.0f, abgr );
+}
+
+/* The rotated box: same surface, four corner positions turned about the box centre.  The default
+   1 px AA is folded in here (a caller passing feather 0 wants a crisp edge, not a hard one) --
+   the same bake draw_push_pulse does. */
+void
+draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot, u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding,
+                     ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
+                     0u, 0.0f, 0.0f, 0.0f, rot, 0.0f, 0.0f, abgr );
+}
+
+/*==============================================================================================
+    draw_push_round_rect_ex -- emit a filled box with four independent corner radii.
+
+    The ambient rounding does NOT apply here and is not consulted: a caller reaching for this is
+    naming every corner, and silently folding in a scope-level radius is how a tab ends up rounded
+    on the two corners it wanted square.  The radii are clamped to the box at tessellation time
+    (tess_fx_box_core), so an over-large one degenerates to a capsule rather than inverting.
+
+    `feather` widens the falloff band exactly as draw_push_shadow's does: 0 gets the standard 1 px
+    AA, wider makes the per-corner SOFT SHADOW -- the drop shadow under a tab or an asymmetric
+    card, which draw_push_shadow (one radius) could not shape.  The quadrants agree at any feather
+    (tess_fx_box_core's centre-line proof), so softness places no per-corner restriction.
+==============================================================================================*/
+
+void
+draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
+                         f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
+                         u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind, f32 grad_mid )
+{
+    /* The ramp midpoint, authored 0..1 (where the 50/50 blend lands along the ramp), mapped to
+       the exponent the record carries: t^e crosses 0.5 at mid when e = ln 0.5 / ln mid.  0.5 and
+       0 are the linear default and store 0, which is also what keeps two identical linear ramps
+       authored either way deduping onto one record. */
+    f32 mid_e = 0.0f;
+    if ( grad_mid > 0.001f && grad_mid < 0.999f && grad_mid != 0.5f )
+        mid_e = -0.69314718f / logf( grad_mid );
+    /* Cull against the grown box: the falloff skirt is real geometry (feather/2 past the rect,
+       plus the tessellator's pixel of slack) -- the draw_push_shadow rule. */
+    f32 pad = ( feather > 0.0f ? feather * 0.5f : 0.0f ) + 1.0f;
+    u32 col = draw_apply_alpha( abgr );
+    u32 cb  = draw_apply_alpha( col_b );
+
+    /* The transparent drop must see the WHOLE ramp: a gradient fading in from nothing has a
+       transparent first endpoint and is still a real shape, the same nuance an outline-only
+       text run relies on.  Visibility is therefore the stronger of the two alphas. */
+    u32 vis = ( ( cb >> 24 ) > ( col >> 24 ) ) ? cb : col;
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ROUND_RECT_EX, vis, x, y, w, h, pad );
+    if ( !c )
+        return;
+    c->round_rect.x        = x;
+    c->round_rect.y        = y;
+    c->round_rect.w        = w;
+    c->round_rect.h        = h;
+    c->round_rect.rtl      = rtl;
+    c->round_rect.rtr      = rtr;
+    c->round_rect.rbr      = rbr;
+    c->round_rect.rbl      = rbl;
+    c->round_rect.feather  = feather;
+    c->round_rect.corner_pow = s_draw.corner_pow;
+    c->round_rect.abgr     = col;
+    c->round_rect.col_b    = cb;
+    c->round_rect.grad_ang  = grad_ang;
+    c->round_rect.grad_kind = grad_kind;
+    c->round_rect.grad_mid  = mid_e;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_arc / draw_push_pie -- emit a circular sector as one semantic command.
+
+    Angles are radians in screen space (0 points +x, positive turns clockwise).  A reversed range
+    and a sweep past a full turn are both normalized at tessellation, so a caller animating an
+    angle never has to wrap it.
+
+    The cull box is the whole circle rather than the sector's own bounds.  It is a conservative
+    test against the scissor and nothing more -- computing the tight rotated extent to reject a few
+    more off-screen arcs would cost every on-screen one two transcendentals it does not otherwise
+    need at emit time.  The TESSELLATOR does compute the tight box, where it pays for itself in
+    fragments rather than in a rejection that usually fails anyway.
+==============================================================================================*/
+
+static void
+draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                 f32 spin_rate, f32 spin_phase, u32 abgr )
+{
+    u32 col = draw_apply_alpha( abgr );
+    f32 g   = r + thickness * 0.5f;   /* the tessellator's own AA pad rides draw_cmd_open's `pad` */
+
+    gui_cmd_t* c = draw_cmd_open( type, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->arc.cx         = cx;
+    c->arc.cy         = cy;
+    c->arc.r          = r;
+    c->arc.thickness  = thickness;
+    c->arc.a0         = a0;
+    c->arc.a1         = a1;
+    c->arc.spin_rate  = spin_rate;
+    c->arc.spin_phase = spin_phase + s_draw.anim_phase;
+    c->arc.abgr       = col;
+    c->arc.curve       = s_draw.anim_curve;
+    c->arc.curve_param = s_draw.anim_curve_param;
+    draw_cmd_seal();
+}
+
+void
+draw_push_arc( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr )
+{
+    draw_sector_cmd( GUI_CMD_ARC, cx, cy, r, thickness, a0, a1, 0.0f, 0.0f, abgr );
+}
+
+/* The arc under GUI_OP_SPIN: its whole frame rotates at `rate` turns/sec on the shader clock, so
+   the command's bytes are identical every frame it runs -- the spinner that re-tessellates
+   nothing.  `phase` is the starting angle in turns.  The caller still presents frames
+   (gui()->request_redraw(), the pulse contract). */
+void
+draw_push_arc_spin( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                    f32 rate, f32 phase, u32 abgr )
+{
+    draw_sector_cmd( GUI_CMD_ARC, cx, cy, r, thickness, a0, a1, rate, phase, abgr );
+}
+
+void
+draw_push_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr )
+{
+    draw_sector_cmd( GUI_CMD_PIE, cx, cy, r, 0.0f, a0, a1, 0.0f, 0.0f, abgr );
+}
+
+/*==============================================================================================
+    draw_push_arc_dashed / draw_push_arc_gradient -- the self-sampled sector variants.
+
+    Both are the plain arc's geometry with one extra word of parameters riding the quad's flat uv
+    to the fragment (GUI_FX_ARC_DASH / GUI_FX_ARC_GRAD, gui.h).  Emit's share of the work:
+
+    DASH quantizes the caller's pixel vocabulary (dash/gap arc-length px at radius r, the
+    draw_dashed_line terms) into an angular period that divides the sweep a WHOLE number of times.
+    Snapping here rather than in the fragment is what keeps a closed dashed ring from showing a
+    seam where the pattern meets itself -- and it costs one round() per push, not per pixel.
+
+    GRADIENT folds the ambient alpha into BOTH ends; visibility is the OR of the folded colours,
+    the draw_push_rect_gradient rule.
+==============================================================================================*/
+
+#define DRAW_TAU  6.28318530717959f
+
+void
+draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                      f32 dash, f32 gap, u32 abgr )
+{
+    if ( r <= 0.0f || dash <= 0.0f )
+        return;
+
+    /* Angular period from the pixel vocabulary, then snapped so N whole cycles fit the sweep. */
+    f32 sweep = a1 - a0;
+    if ( sweep < 0.0f ) sweep = -sweep;
+    if ( sweep > DRAW_TAU ) sweep = DRAW_TAU;
+    f32 period = ( dash + ( gap > 0.0f ? gap : dash ) ) / r;
+    f32 n      = floorf( sweep / period + 0.5f );
+    if ( n < 1.0f ) n = 1.0f;
+    period = sweep / n;
+
+    u32 col = draw_apply_alpha( abgr );
+    f32 g   = r + thickness * 0.5f;
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ARC_DASH, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->arc_dash.cx        = cx;
+    c->arc_dash.cy        = cy;
+    c->arc_dash.r         = r;
+    c->arc_dash.thickness = thickness;
+    c->arc_dash.a0        = a0;
+    c->arc_dash.a1        = a1;
+    c->arc_dash.period    = period;
+    c->arc_dash.duty      = dash / ( dash + ( gap > 0.0f ? gap : dash ) );
+    c->arc_dash.abgr      = col;
+    draw_cmd_seal();
+}
+
+void
+draw_push_arc_gradient( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                        u32 col_a, u32 col_b )
+{
+    if ( r <= 0.0f )
+        return;
+
+    /* Normalize a reversed range HERE, not at tessellation: the tessellator's swap is invisible
+       for a symmetric arc but this one is not -- swapping the endpoints without swapping the
+       colours would silently flip the gradient. */
+    if ( a1 < a0 )
+    {
+        f32 t = a0; a0 = a1; a1 = t;
+        u32 u = col_a; col_a = col_b; col_b = u;
+    }
+
+    /* Visible if EITHER end is -- the OR'd alpha is the visibility word draw_cmd_open tests. */
+    u32 ca = draw_apply_alpha( col_a );
+    u32 cb = draw_apply_alpha( col_b );
+    f32 g  = r + thickness * 0.5f;
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ARC_GRAD, ca | cb,
+                                  cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->arc_grad.cx        = cx;
+    c->arc_grad.cy        = cy;
+    c->arc_grad.r         = r;
+    c->arc_grad.thickness = thickness;
+    c->arc_grad.a0        = a0;
+    c->arc_grad.a1        = a1;
+    c->arc_grad.col_a     = ca;
+    c->arc_grad.col_b     = cb;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_checker / draw_push_grid -- the framebuffer-tiling pattern quads.
+
+    Each is ONE quad whose fragment tiles the pattern in framebuffer pixels (GUI_OP_CHECKER /
+    GUI_OP_GRID, gui.h); the CPU's share -- quantizing the cell pitch and deriving the anchor
+    phase against it -- runs at tessellation, where the box has been snapped.  Emit just gates
+    and stores the semantic fields.
+==============================================================================================*/
+
+void
+draw_push_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
+{
+    if ( cell < 1.0f )
+        cell = 1.0f;
+
+    /* Visible if EITHER colour is -- the OR'd alpha, the two-colour rule (draw_push_rect_gradient). */
+    u32 ca = draw_apply_alpha( col_a );
+    u32 cb = draw_apply_alpha( col_b );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_CHECKER, ca | cb, x, y, w, h, 0.0f );
+    if ( !c )
+        return;
+    c->checker.x     = x;
+    c->checker.y     = y;
+    c->checker.w     = w;
+    c->checker.h     = h;
+    c->checker.cell  = cell;
+    c->checker.col_a = ca;
+    c->checker.col_b = cb;
+    c->checker.rounding   = s_draw.rounding;
+    c->checker.corner_pow = ( s_draw.rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    draw_cmd_seal();
+}
+
+void
+draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 angle, bool stripes,
+                f32 cell, f32 thickness, u32 abgr )
+{
+    /* A lattice denser than its own line width is a fill; keep the parameters meaning what they
+       say rather than letting the fragment resolve a moire. */
+    if ( thickness < 1.0f ) thickness = 1.0f;
+    if ( cell < 2.0f ) cell = 2.0f;
+    if ( cell < thickness ) cell = thickness;
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_GRID, col, x, y, w, h, 0.0f );
+    if ( !c )
+        return;
+    c->grid.x         = x;
+    c->grid.y         = y;
+    c->grid.w         = w;
+    c->grid.h         = h;
+    c->grid.cell      = cell;
+    c->grid.thickness = thickness;
+    c->grid.ox        = ox;
+    c->grid.oy        = oy;
+    c->grid.angle     = angle;
+    c->grid.stripes   = stripes ? 1u : 0u;
+    c->grid.abgr      = col;
+    c->grid.rounding   = s_draw.rounding;
+    c->grid.corner_pow = ( s_draw.rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_ngon -- a regular polygon as one GUI_FX_NGON quad, filled or stroked.
+
+    The polyline fan this replaces sampled up to 64 perimeter points; the field is exact at any
+    size and the corner can round.  `rounding` shrinks the polygon and inflates the field back
+    out, so the stated circumradius is the size drawn.  The border-align ambient applies to the
+    stroked form exactly as it does to the rect outline -- same inflation, same reasoning.
+==============================================================================================*/
+
+void
+draw_push_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 rounding,
+                f32 thickness, u32 abgr )
+{
+    if ( r <= 0.0f )
+        return;
+    if ( sides < 3u )  sides = 3u;
+    if ( sides > 64u ) sides = 64u;
+
+    if ( thickness > 0.0f )
+    {
+        f32 ba = s_draw.border_align * thickness;
+        r += ba;
+        if ( rounding > 0.0f ) rounding += ba;
+    }
+    if ( rounding > r * 0.5f ) rounding = r * 0.5f;   /* the field needs a real core to inflate from */
+
+    u32 col = draw_apply_alpha( abgr );
+    f32 g   = r + 1.0f;
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_NGON, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->ngon.cx        = cx;
+    c->ngon.cy        = cy;
+    c->ngon.r         = r;
+    c->ngon.rounding  = rounding;
+    c->ngon.rot       = rot;
+    c->ngon.thickness = thickness;
+    c->ngon.sides     = sides;
+    c->ngon.abgr      = col;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_box_dashed -- a rounded-box outline cut by a perimeter dash (the marching ants).
+
+    dash/gap are arc-length px, the draw_dashed_line vocabulary; the tessellator snaps the period
+    so whole cycles fit the perimeter and the pattern meets itself.  `rate` scrolls it in px/sec
+    on the shader clock (0 = static), so the ants' command bytes never change while they march.
+==============================================================================================*/
+
+void
+draw_push_box_dashed( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
+                      f32 dash, f32 gap, f32 rate, f32 phase, u32 abgr )
+{
+    if ( dash <= 0.0f || t <= 0.0f )
+        return;
+
+    /* Border alignment: the same push-time inflation the plain outline runs. */
+    f32 ba = s_draw.border_align * t;
+    if ( ba > 0.0f )
+    {
+        x -= ba;  y -= ba;  w += ba * 2.0f;  h += ba * 2.0f;
+        if ( rounding > 0.0f ) rounding += ba;
+    }
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
+    if ( !c )
+        return;
+    c->box_dash.x        = x;
+    c->box_dash.y        = y;
+    c->box_dash.w        = w;
+    c->box_dash.h        = h;
+    c->box_dash.rounding = rounding;
+    c->box_dash.t        = t;
+    c->box_dash.dash     = dash;
+    c->box_dash.gap      = gap;
+    c->box_dash.rate     = rate;
+    c->box_dash.phase    = phase;
+    c->box_dash.anim_phase = s_draw.anim_phase;
+    c->box_dash.abgr     = col;
+    c->box_dash.curve       = s_draw.anim_curve;
+    c->box_dash.curve_param = s_draw.anim_curve_param;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_box_trace -- ONE arc travelling the rounded-box border.
+
+    The dashed border above with its period set to the WHOLE perimeter, so the tessellator's
+    snap can only fit a single cycle and `frac` of the border is lit.
+
+    The perimeter is measured HERE rather than by the caller because it can only be known after
+    the border alignment below has moved the boundary it is measured along -- a caller stating a
+    period against the un-aligned box would hand the snap a ratio off by the alignment, and two
+    arcs where one was asked for is a visibly different shape.
+
+    `laps` scrolls the arc on the shader clock in revolutions/sec: the command's bytes do not
+    change while it runs, so an indeterminate tracer re-tessellates nothing (present frames with
+    request_redraw -- the draw_pulse contract).  `at` places it statically instead, 0..1 around
+    the border from the top-left; that value IS in the command's bytes, so a determinate trace
+    re-tessellates its window when it moves, exactly as a progress bar's fill width does.
+==============================================================================================*/
+
+void
+draw_push_box_trace( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
+                     f32 frac, f32 laps, f32 at, u32 abgr )
+{
+    if ( t <= 0.0f || w <= 0.0f || h <= 0.0f || frac <= 0.0f )
+        return;
+    if ( frac > 1.0f )
+        frac = 1.0f;
+
+    /* Border alignment: the same push-time inflation the plain outline runs, and it has to happen
+       before the measurement below. */
+    f32 ba = s_draw.border_align * t;
+    if ( ba > 0.0f )
+    {
+        x -= ba;  y -= ba;  w += ba * 2.0f;  h += ba * 2.0f;
+        if ( rounding > 0.0f ) rounding += ba;
+    }
+
+    /* The perimeter, against the SAME clamped radius the tessellator will state: four edges
+       shortened by the corners they meet, plus the four quarter-arcs (gui_build_tess.c,
+       GUI_CMD_BOX_DASH). */
+    f32 hw  = w * 0.5f, hh = h * 0.5f;
+    f32 lim = ( hw < hh ) ? hw : hh;
+    f32 r   = rounding;
+    if ( r > lim )  r = lim;
+    if ( r < 0.0f ) r = 0.0f;
+
+    f32 len = 4.0f * ( hw + hh ) - 8.0f * r + DRAW_TAU * r;
+    if ( len <= 0.0f )
+        return;
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
+    if ( !c )
+        return;
+    c->box_dash.x        = x;
+    c->box_dash.y        = y;
+    c->box_dash.w        = w;
+    c->box_dash.h        = h;
+    c->box_dash.rounding = rounding;
+    c->box_dash.t        = t;
+    /* One cycle spans the whole border, so the snap resolves to exactly one arc and the duty --
+       dash / (dash + gap) -- is `frac` however the measurement rounded. */
+    c->box_dash.dash     = frac * len;
+    c->box_dash.gap      = ( 1.0f - frac ) * len;
+    c->box_dash.rate     = laps * len;   /* px/sec, which over a one-period border is laps/sec */
+    c->box_dash.phase    = at   * len;
+    c->box_dash.anim_phase  = s_draw.anim_phase;
+    c->box_dash.abgr        = col;
+    c->box_dash.curve       = s_draw.anim_curve;
+    c->box_dash.curve_param = s_draw.anim_curve_param;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_repeat -- a lattice of one rounded cell, from ONE quad.
+
+    nx by ny copies, `pitch` apart centre-to-centre, centred on (cx, cy).  The fragment folds its
+    coordinate into a cell (GUI_OP_REPEAT), so a 3x3 grip and a 40-tick ruler cost the same one
+    quad and the same one style record -- which is the point: a lattice was affordable before only
+    while the count stayed small, and the counts a ruler or a segmented bar actually wants did not.
+
+    The SET's box is derived rather than taken, here and in the tessellator, because the fragment
+    recovers the copy count from it (tess_repeat_box owns that contract).  So this culls against a
+    box it computes for itself.
+==============================================================================================*/
+
+void
+draw_push_repeat( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
+                  f32 cell_w, f32 cell_h, f32 rounding, u32 abgr )
+{
+    if ( nx == 0u || ny == 0u || cell_w <= 0.0f || cell_h <= 0.0f )
+        return;
+
+    /* The same flooring the tessellator applies, so the box culled against is the box drawn. */
+    f32 px = ( pitch_x > cell_w ) ? pitch_x : cell_w + 1.0f;
+    f32 py = ( pitch_y > cell_h ) ? pitch_y : cell_h + 1.0f;
+    f32 hx = (f32)( nx - 1u ) * 0.5f * px + cell_w * 0.5f;
+    f32 hy = (f32)( ny - 1u ) * 0.5f * py + cell_h * 0.5f;
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_REPEAT, col,
+                                  cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->repeat.cx       = cx;
+    c->repeat.cy       = cy;
+    c->repeat.pitch_x  = pitch_x;
+    c->repeat.pitch_y  = pitch_y;
+    c->repeat.cell_w   = cell_w;
+    c->repeat.cell_h   = cell_h;
+    c->repeat.rounding = rounding;
+    c->repeat.nx       = nx;
+    c->repeat.ny       = ny;
+    c->repeat.abgr     = col;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
+    draw_push_repeat_polar -- a RING of one rounded cell, from ONE quad.
+
+    `n` copies on a circle of radius `orbit` about (cx, cy).  The angular twin of the lattice
+    above, and at a non-zero `rate` (revolutions/sec) the ring turns on the shader clock in the
+    FRAGMENT -- so these bytes are identical every frame and a spinner re-tessellates nothing,
+    exactly like draw_push_pulse.  The caller still owes one request_redraw per frame while it
+    shows: the clock advancing is not what schedules a frame (GUI_FX_TIME_WRAP).
+==============================================================================================*/
+
+void
+draw_push_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h,
+                        f32 rounding, f32 rate, f32 phase, u32 abgr )
+{
+    if ( n == 0u || orbit <= 0.0f || cell_w <= 0.0f || cell_h <= 0.0f )
+        return;
+
+    /* The same bound the tessellator derives, so the box culled against is the box drawn. */
+    f32 hx = orbit + cell_w * 0.5f;
+    f32 hy = orbit + cell_h * 0.5f;
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_REPEAT_POLAR, col,
+                                  cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
+    if ( !c )
+        return;
+    c->repeat_polar.cx       = cx;
+    c->repeat_polar.cy       = cy;
+    c->repeat_polar.orbit    = orbit;
+    c->repeat_polar.cell_w   = cell_w;
+    c->repeat_polar.cell_h   = cell_h;
+    c->repeat_polar.rounding = rounding;
+    c->repeat_polar.rate     = rate;
+    c->repeat_polar.phase    = phase + s_draw.anim_phase;
+    c->repeat_polar.n        = n;
+    c->repeat_polar.abgr     = col;
+    /* A static ring takes no curve however the ambient is set: the command hash must not move for
+       a shape whose motion nothing reads.  The same rule draw_fx_box_cmd applies to a shadow. */
+    c->repeat_polar.curve       = ( rate > 0.0f ) ? s_draw.anim_curve : 0u;
+    c->repeat_polar.curve_param = ( rate > 0.0f ) ? s_draw.anim_curve_param : 0.0f;
+    draw_cmd_seal();
+}
+
+// clang-format on
+/*============================================================================================*/

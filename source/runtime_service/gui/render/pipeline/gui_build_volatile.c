@@ -806,7 +806,7 @@ volatile_update( void )
         s_draw.text_edge_w   = row->text_edge_w;
         s_draw.text_edge_col = row->text_edge_col;
 
-        /* draw_cull_box (gui_emit_draw.c) tests against clip_stack[clip_depth-1], NOT
+        /* draw_cull_box (gui_emit_state.c) tests against clip_stack[clip_depth-1], NOT
            cur_clip_idx -- cur_clip_idx alone is not enough to reproduce the real-emit clip. Force
            a one-deep stack whose top is the captured clip's resolved rect, or a callback whose
            rect happens to sit outside whatever clip was left on the stack by the last real emit

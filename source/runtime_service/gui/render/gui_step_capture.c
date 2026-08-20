@@ -39,7 +39,7 @@
         verbatim.
 
       - While frozen, live band-0 pushes are suppressed at the source (STEP_EMIT_SUPPRESSED in
-        gui_emit_draw.c), so the app keeps running underneath without disturbing the replay or
+        gui_emit_state.c), so the app keeps running underneath without disturbing the replay or
         the shared pools; only debug-band emission (this feature's own window, the dashboard,
         the overlays) lands on top.
 

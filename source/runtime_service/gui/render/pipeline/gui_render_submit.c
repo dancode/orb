@@ -4,7 +4,7 @@
 
     Last of the three render phases:
 
-        EMIT    gui_emit_draw.c    widgets -> s_draw semantic command list
+        EMIT    gui_emit_*.c       widgets -> s_draw semantic command list
         BUILD   gui_build_cache.c  diff + tessellate -> s_tess quad records + s_dispatch slots
         RENDER  this file          upload each surface's slots + emit draw calls
 

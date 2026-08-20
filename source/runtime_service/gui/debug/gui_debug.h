@@ -102,7 +102,7 @@ u32  debug_unit_mem_bytes ( void );         /* debug unit: its fixed statics, fo
 #endif
 
 #ifdef GUI_CMD_STEPPER
-    void draw_set_cmd_owner( gui_id_t id );   /* defined in gui_emit_draw.c (render unit) */
+    void draw_set_cmd_owner( gui_id_t id );   /* defined in gui_emit_state.c (render unit) */
     #define STEP_SET_OWNER( id )      draw_set_cmd_owner( id )
 #else
     #define STEP_SET_OWNER( id )      ( (void)0 )
