@@ -6,8 +6,9 @@
     resets the batch.  Each draw_xxx call generates geometry, writes it into the batch
     buffers, and records a lightweight draw_call_t -- or, when the geometry lands right after
     a call it shares state with, just widens that call's index range.  draw_end binds the
-    shared vertex/index buffers once and emits the accumulated draw-indexed calls in
-    submission order, re-binding the pipeline and re-pushing constants only where they change.
+    shared vertex/index buffers once, pushes the frame's mvp once, and emits the accumulated
+    draw-indexed calls in submission order, re-binding the pipeline and rewriting the bindless
+    push tail only where they change.
 
 ==============================================================================================*/
 // clang-format off
@@ -156,6 +157,13 @@ draw_end( void )
     rhi()->cmd_bind_index_buffer ( s.cmd, s.batch.ib, s.batch.ib_base * sizeof( u16 ),
                                    RHI_INDEX_TYPE_UINT16 );
 
+    /* Every pipeline shares one VkPipelineLayout with a single push range covering all stages,
+       so pushed bytes survive pipeline binds and each half of the block can be written on its
+       own cadence: the mvp is frame-constant and goes down once here, and the textured tail at
+       offset 64 is rewritten only when the bindless pair changes.  Solid pipelines never read
+       past the mvp, so a stale tail is harmless to them. */
+    rhi()->cmd_push_constants( s.cmd, &s.frame_push, sizeof( s.frame_push ), 0 );
+
     draw_mat_id_t cur      = DRAW_MAT_COUNT;    /* invalid sentinel to force the first bind */
     u32           cur_tex  = 0xFFFFFFFFu;       /* bindless pair currently in the push block */
     u32           cur_samp = 0xFFFFFFFFu;
@@ -163,9 +171,8 @@ draw_end( void )
     for ( u32 i = 0; i < s.call_count; ++i )
     {
         const draw_call_t* c = &s.calls[ i ];
-        bool rebound = ( c->material != cur );
 
-        if ( rebound )
+        if ( c->material != cur )
         {
             cur = c->material;
             rhi()->cmd_bind_pipeline( s.cmd, s.mats[ cur ].pipeline );
@@ -175,27 +182,15 @@ draw_end( void )
             rhi()->cmd_bind_bindless( s.cmd );
         }
 
-        /* Push constants sized to the bound pipeline's layout: textured carries the bindless
-           indices after the mvp, solid pushes the mvp alone.  The mvp is fixed for the whole
-           begin/end pair, so the block only needs re-pushing when the pipeline switched (which
-           discards it) or when a textured call brings a different bindless pair. */
-        if ( c->material == DRAW_MAT_TEXTURED )
+        if ( c->material == DRAW_MAT_TEXTURED &&
+             ( c->tex_idx != cur_tex || c->samp_idx != cur_samp ) )
         {
-            if ( rebound || c->tex_idx != cur_tex || c->samp_idx != cur_samp )
-            {
-                cur_tex  = c->tex_idx;
-                cur_samp = c->samp_idx;
+            cur_tex  = c->tex_idx;
+            cur_samp = c->samp_idx;
 
-                draw_push_tex_t p;
-                memcpy( p.mvp, s.frame_push.mvp, sizeof( p.mvp ) );
-                p.tex_idx  = cur_tex;
-                p.samp_idx = cur_samp;
-                rhi()->cmd_push_constants( s.cmd, &p, sizeof( p ), 0 );
-            }
-        }
-        else if ( rebound )
-        {
-            rhi()->cmd_push_constants( s.cmd, &s.frame_push, sizeof( s.frame_push ), 0 );
+            const u32 tail[ 2 ] = { cur_tex, cur_samp };
+            rhi()->cmd_push_constants( s.cmd, tail, sizeof( tail ),
+                                       offsetof( draw_push_tex_t, tex_idx ) );
         }
 
         /* Indices are region-absolute (draw_batch_push), so no vertex offset applies. */

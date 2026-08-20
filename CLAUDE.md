@@ -190,6 +190,7 @@ Include `ref.h` in DLL modules; `ref_host.h` in hosts, unity entries, sandboxes.
 - Comments show intent concisely at each block.
 - Struct fields ALWAYS use `//` trailing comments, never `/* */`. Larger blocks (file headers,
   function/section comments) use C style `/* */`.
+- Wrap comments at 94 characters in a line, comment blocks brackets can extend further.
 
 ### Comment voice
 
