@@ -519,8 +519,8 @@ render_init( void )
     }
 
     /* Fonts boot in the DRAW unit now (gui_draw_boot, after the whole server stands up) --
-       the shared atlas carries the opaque white texel solid-color draws sample, so solids
-       and text still share one texture and merge into one draw. */
+       solids stay bound to this same shared atlas index even though they never sample it
+       (GUI_OP_SELF skips the texel read), so solids and text still merge into one draw. */
     return true;
 }
 

@@ -1706,9 +1706,10 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
 #define TESS_HALF_PI  1.57079632679490f
 #define TESS_TAU      6.28318530717959f
 
-/* `mode` is GUI_FX_ARC, GUI_FX_PIE, or the SELF-SAMPLED GUI_FX_ARC_GRAD, which additionally
-   carries its second colour in (uvx, uvy) -- the pair the fragment recovers from the quad's flat
-   uv word (gui.h).  ARC/PIE ignore the pair and stamp the white texel as every solid shape does.
+/* `mode` is GUI_FX_ARC, GUI_FX_PIE, or GUI_FX_ARC_GRAD, which additionally carries its second
+   colour in (uvx, uvy) -- the pair the fragment recovers from the quad's flat uv word (gui.h).
+   Every sector is self-sampled (GUI_OP_SELF): the fragment never reads a texel, ARC/PIE included,
+   so the atlas index the quad carries is only there to keep the bound slot valid.
    A non-zero `dash_turns` dashes the sector through GUI_OP_DASH, in period-turns and on-duty. */
 static void
 tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
@@ -2812,7 +2813,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_RECT_LIST:
             {
                 /* One quad per pooled entry; all share this command's clip/vp so they collapse
-                   into the same GPU batch.  Solid color (tex 0 = white texel), never rounded. */
+                   into the same GPU batch.  Solid color (tex 0, self-sampled), never rounded. */
                 const gui_rect_col_t* rl = &s_draw.rect_pool[ c->rect_list.offset ];
                 for ( u32 k = 0; k < c->rect_list.count; ++k )
                     tess_rect_filled( rl[ k ].x, rl[ k ].y, rl[ k ].w, rl[ k ].h,

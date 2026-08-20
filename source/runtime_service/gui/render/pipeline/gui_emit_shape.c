@@ -63,11 +63,13 @@ draw_rect_cmd( f32 x,  f32 y,  f32 w,  f32 h,
     applies it for pictures. Which one to call depends on what the quad IS, not what it carries --
     see the comment on each below.
 
-    tex_idx == 0 means "solid color", resolved to the atlas white texel at tessellation time.
-    Pixel-grid snapping and GPU batching happen later, at flush time in the tessellation pass.
+    tex_idx == 0 means "solid color": tessellation rewrites it to the atlas's real texture index
+    (a valid slot is always required) and sets GUI_OP_SELF, which tells the fragment shader to
+    skip sampling entirely and use the color directly -- it never reads a texel at all.
+    Pixel-grid snapping happens later, at flush time in the tessellation pass.
 
-==============================================================================================*/
-/*  The general quad: solid fills, and icons (draw_push_icon routes here too). Ambient rounding
+    draw_push_rect_filled:
+    The general quad: solid fills, and icons (draw_push_icon routes here too). Ambient rounding
     is skipped, because an icon is a symbol, not a frame -- rounding it would silently cut the
     corners off the glyph if it happened to be drawn inside a draw_set_rounding scope.
 
@@ -76,7 +78,9 @@ draw_rect_cmd( f32 x,  f32 y,  f32 w,  f32 h,
 
     (Note: the tessellator itself has no trouble rounding a textured quad -- tess_fx_box clamps
     UVs across the falloff skirt so a rounded corner never bleeds into a neighbouring atlas
-    texel. The split here is purely about caller intent, not a rendering limitation.) */
+    texel. The split here is purely about caller intent, not a rendering limitation.)
+
+==============================================================================================*/
 
 void
 draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      // rect
@@ -129,7 +133,7 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 abgr )
     GUI_MAX_CMDS long before the vertex budget.  Entries are copied into the per-frame rect pool
     (the CMD_POLYLINE point-pool pattern) and tessellated into one quad each at flush time.
     Per-entry alpha fold + clip cull happens here so the pool holds only visible work.  Entries
-    share the current clip; always square (no rounding), solid color (white texel).
+    share the current clip; always square (no rounding), solid color (tex 0, self-sampled).
 ==============================================================================================*/
 
 void

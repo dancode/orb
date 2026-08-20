@@ -16,17 +16,15 @@
     else splits by whether it has JOINTS:
 
         one segment  -- a CAPSULE distance field, resolved in the fragment (tess_fx_segment).
-                        Exact at any angle, round caps, two quads.
-        a polyline   -- the ribbon stroker's expanded quad strip with a 1px alpha-fading edge
-                        (tess_stroke_poly_aa).  N capsules would overlap at every joint and two
-                        overlapping translucent strokes composite darker than one, so a
-                        semi-transparent path would bead at each vertex; the miter solve exists
-                        precisely to emit each pixel once.
+                        Exact at any angle, round caps, one quad.
+        a polyline   -- the same capsule field, one quad per segment (tess_stroke_poly_aa is the
+                        chain that calls tess_fx_segment per point pair). Round caps overlap at
+                        every joint, which composites darker than one on a translucent stroke --
+                        an accepted cost, not something the join geometry solves for.
 
-    The ribbon's antialiasing is free in the fragment shader: output alpha is vertex-alpha * texel,
-    and the solid path samples the white texel (alpha 1), so a vertex authored with alpha 0
-    contributes nothing -- the feather is pure geometry, no shader or vertex-format change.  The
-    capsule's is free for a different reason: the field IS the edge.
+    Both cases are free to antialias for the same reason: the field IS the edge, resolved per
+    pixel in the fragment (GUI_OP_SELF -- no texture is sampled, so there is no vertex-alpha or
+    texel-fade trick involved).
 
     Last of the EMIT includes in gui_render.c (uses s_draw and draw_cull_box from
     gui_emit_state.c, draw_cmd_claim / draw_hash_cmd from gui_emit_cmd.c, and
