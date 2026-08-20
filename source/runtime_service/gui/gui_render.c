@@ -210,8 +210,18 @@
 // cache_count_volatile_patch helpers this file forward-declares).
 #include "runtime_service/gui/render/pipeline/gui_build_volatile.c"
 
-// pipeline/ BUILD, part B: retained cache & orchestration (diff, reuse-or-tessellate, z-sort).
+// pipeline/ BUILD, part B: shared slot/stats state + the cache_build_frame driver that sequences
+// parts B.1/B.2 below.  Forward-declares cache_diff_windows / cache_place_slots, so it must come
+// first; their definitions can follow anywhere later in the unity build.
 #include "runtime_service/gui/render/pipeline/gui_build_cache.c"
+
+// pipeline/ BUILD, part B.1: change detection -- diffs this frame's command hashes against last
+// frame's, fills s_cache (gui_build_cache.c's cache_place_slots reads it).
+#include "runtime_service/gui/render/pipeline/gui_build_diff.c"
+
+// pipeline/ BUILD, part B.2: per-window placement -- reuse or tessellate each window from
+// gui_build_diff.c's s_cache, driven by cache_build_frame (gui_build_cache.c).
+#include "runtime_service/gui/render/pipeline/gui_build_place.c"
 
 /*==============================================================================================
     Pipeline Render

@@ -3671,8 +3671,9 @@ static inline u32  gui_style_pal   ( u32 entry ) { return GUI_PAL_FIRST + entry;
    caller writes is `< GUI_PAL_MAX` and a miss can never index the table. */
 #define GUI_PAL_NONE  0xFFFFFFFFu
 
-/* Command segments: one contiguous span of the command list per (win, z, vp, band) the emit path
-   stamps, cut wherever a window seam, draw_set_sort_key, draw_set_viewport or draw_set_band
+/*============================================================================================*/
+/* Command segments: one contiguous span of the command list per (win, z, vp, band) the emit
+   path stamps, cut wherever a window seam, draw_set_sort_key, draw_set_viewport or draw_set_band
    changes the tag (draw_seg_retag).  The render backend orders these spans instead of re-scanning
    the whole command buffer.  Worst case each command sits in its own segment, plus the open one,
    so the cap is the command cap + 1. */
