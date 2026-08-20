@@ -852,6 +852,12 @@ typedef struct gui_api_s
        every vertex a corner. */
     void ( *draw_rounded_path      )( const gui_vec2_t* pts, u32 count, f32 radius,
                                       f32 thickness, bool closed, u32 col );
+    /* Point-to-point spline through every point in `pts` -- no radius, no control point to
+       pick.  Each point's curve tangent is derived from its own neighbours (Catmull-Rom), so
+       moving a point re-settles the curve on both sides of it automatically (the Blueprint
+       node-graph wire model).  Collinear points degenerate to a straight run with no bulge. */
+    void ( *draw_smooth_path       )( const gui_vec2_t* pts, u32 count, f32 thickness,
+                                      bool closed, u32 col );
     void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
     void ( *draw_checker           )( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
     /* Line lattice over `box`: a `thickness` px line every `cell` px, over NOTHING -- layer it on

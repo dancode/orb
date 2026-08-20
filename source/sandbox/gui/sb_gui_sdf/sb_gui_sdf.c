@@ -1601,6 +1601,7 @@ static f32  s_cv_thick = 3.0f;
 static bool s_cv_ref   = true;
 static f32  s_cv_round = 22.0f;
 static f32  s_cv_run   = 90.0f;   /* leg length either side of the corner, endpoint-spacing demo */
+static f32  s_cv_smooth_y = 0.0f; /* vertical offset of the dragged point, smooth-path demo */
 
 /* Sandbox-only exact reference: the same de Casteljau sum draw_bezier_cubic used to flatten
    before this campaign, kept here purely so the new field's approximation has something exact
@@ -1753,60 +1754,33 @@ win_curves( void )
         gui()->draw_text( r.x + 260.0f, r.y + 80.0f, INK_DIM, "same box, same radius" );
     }
 
-    gui()->separator_text( "endpoint spacing -- drag the leg length, watch the fillet's own clamp" );
-    gui()->slider_float( "leg length", &s_cv_run, 8.0f, 150.0f );
+    gui()->separator_text( "auto-smooth path -- move a point, the curve rebalances itself, no radius" );
+    gui()->slider_float( "point height", &s_cv_smooth_y, -70.0f, 70.0f );
     {
         gui_rect_t r = gui()->canvas( 200.0f );
         gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
         gui()->push_clip( r.x, r.y, r.w, r.h );
 
-        /* rounded_corner clamps r to half the SHORTER adjacent leg (draw_clamp_rounding's own
-           rule) -- both legs move together here, so the fillet is exactly s_cv_round out until
-           the legs get short enough that half of one falls below it, and shrinks with them from
-           there.  That crossover is the point of this panel: everything above it is a settled
-           corner shape, everything below it is the clamp visibly taking over. */
-        gui_vec2_t corner = { r.x + 60.0f, r.y + r.h - 40.0f };
-        gui_vec2_t wire[ 3 ] = {
-            { corner.x + s_cv_run, corner.y },
-            corner,
-            { corner.x, corner.y - s_cv_run },
+        /* draw_smooth_path has no radius: every point's tangent comes from its own neighbours
+           (Catmull-Rom), so dragging the middle point re-settles the curve on both sides of it
+           by itself.  The two flanking points stay collinear with their own outer neighbours,
+           so those spans stay visually straight no matter where the middle point sits. */
+        f32        mid_y = r.y + r.h * 0.5f;
+        gui_vec2_t path[ 5 ] = {
+            { r.x + 40.0f,  mid_y },
+            { r.x + 110.0f, mid_y },
+            { r.x + r.w * 0.5f, mid_y + s_cv_smooth_y },
+            { r.x + r.w - 110.0f, mid_y },
+            { r.x + r.w - 40.0f,  mid_y },
         };
-        gui()->draw_rounded_path( wire, 3, s_cv_round, s_cv_thick, false, TEAL );
+        gui()->draw_smooth_path( path, 5, s_cv_thick, false, TEAL );
 
-        gui()->draw_circle( wire[ 0 ].x, wire[ 0 ].y, 3.0f, true,  0.0f, INK );
-        gui()->draw_circle( wire[ 2 ].x, wire[ 2 ].y, 3.0f, true,  0.0f, INK );
-        gui()->draw_circle( corner.x,    corner.y,    2.5f, false, 1.0f, AMBER );
-
-        /* A second wire, on the right: diagonal rather than axis-aligned (a bend at neither 90
-           nor 180 degrees, the general case the first wire's right angle does not exercise), and
-           ASYMMETRIC -- one leg is a fixed 80 px, the other is the same s_cv_run the slider
-           drives, so only ONE of its two adjacent legs shortens as the slider comes down.
-           rounded_corner clamps to half the SHORTER of the two regardless of which one that is,
-           so this corner's clamp starts biting exactly when s_cv_run drops under 80 px -- a
-           different crossover than the left wire's own, side by side. */
-        gui_vec2_t corner2 = { r.x + r.w - 220.0f, r.y + 70.0f };
-        gui_vec2_t wire2[ 3 ] = {
-            { corner2.x - 0.8f * 80.0f,       corner2.y - 0.8f * 80.0f },
-              corner2,
-            { corner2.x + 0.8f * s_cv_run,    corner2.y + 0.8f },
-        };
-        gui()->draw_rounded_path( wire2, 3, s_cv_round, s_cv_thick, false, TEAL );
-
-        gui()->draw_circle( wire2[ 0 ].x, wire2[ 0 ].y, 3.0f, true,  0.0f, INK );
-        gui()->draw_circle( wire2[ 2 ].x, wire2[ 2 ].y, 3.0f, true,  0.0f, INK );
-        gui()->draw_circle( corner2.x,    corner2.y,    2.5f, false, 1.0f, AMBER );
+        for ( u32 i = 0; i < 5; ++i )
+            gui()->draw_circle( path[ i ].x, path[ i ].y, 3.0f, true, 0.0f, INK );
 
         gui()->pop_clip();
 
-        f32 clamped = s_cv_run * 0.5f;
-        if ( clamped > s_cv_round ) clamped = s_cv_round;
-        gui()->textf( "left (symmetric, right-angle): leg %.0f px each side -> radius drawn %.0f px%s",
-                      s_cv_run, clamped, ( clamped < s_cv_round ) ? "  (clamped)" : "" );
-
-        f32 clamped2 = ( s_cv_run < 80.0f ) ? s_cv_run * 0.5f : 40.0f;
-        if ( clamped2 > s_cv_round ) clamped2 = s_cv_round;
-        gui()->textf( "right (asymmetric, diagonal): legs 80 / %.0f px -> radius drawn %.0f px%s",
-                      s_cv_run, clamped2, ( clamped2 < s_cv_round ) ? "  (clamped)" : "" );
+        gui()->textf( "5 points, one draggable -- no bulge at the flanking collinear points at any offset" );
     }
 }
 

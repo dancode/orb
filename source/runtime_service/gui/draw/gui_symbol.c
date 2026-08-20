@@ -625,6 +625,67 @@ draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, 
     path_line_if( cur, start, thickness, col );
 }
 
+/* Catmull-Rom tangent at a point from its two neighbours -- half the chord between them.  This
+   is the whole trick behind a self-balancing spline: no per-point control handle is ever
+   chosen by hand, the curve direction falls straight out of where the neighbouring points are.
+   Three collinear points give a tangent that already points down the line, so the cubic built
+   from it degenerates to a straight run with no bulge. */
+static gui_vec2_t
+smooth_tangent( gui_vec2_t prev, gui_vec2_t next )
+{
+    return ( gui_vec2_t ){ ( next.x - prev.x ) * 0.5f, ( next.y - prev.y ) * 0.5f };
+}
+
+/* Point-to-point spline through every point in `pts`, curve shape entirely a function of point
+   position -- no radius, no hand-picked control point (the Blueprint node-graph wire model:
+   move a point and both curves touching it re-settle on their own).  Each segment is one
+   draw_bezier_cubic using the outgoing/incoming Catmull-Rom tangent of its two endpoints as
+   control-point offsets (the standard tangent-to-bezier /3 scale).  Open-path endpoints use a
+   one-sided full chord (no far neighbour to average against) rather than the halved interior
+   tangent, matching the usual open Catmull-Rom boundary rule so the end segments don't
+   undershoot.  A closed loop has no endpoints -- every tangent wraps. */
+static void
+draw_smooth_path( const gui_vec2_t* pts, u32 count, f32 thickness, bool closed, u32 col )
+{
+    if ( !pts || count < 2 )
+        return;
+
+    thickness = sym_thick( thickness );
+
+    if ( !closed )
+    {
+        for ( u32 i = 0; i + 1 < count; ++i )
+        {
+            gui_vec2_t p0 = pts[ i ], p1 = pts[ i + 1 ];
+
+            gui_vec2_t t0 = ( i == 0 )
+                                ? ( gui_vec2_t ){ p1.x - p0.x, p1.y - p0.y }
+                                : smooth_tangent( pts[ i - 1 ], p1 );
+            gui_vec2_t t1 = ( i + 2 == count )
+                                ? ( gui_vec2_t ){ p1.x - p0.x, p1.y - p0.y }
+                                : smooth_tangent( p0, pts[ i + 2 ] );
+
+            draw_bezier_cubic( p0.x, p0.y, p0.x + t0.x / 3.0f, p0.y + t0.y / 3.0f,
+                               p1.x - t1.x / 3.0f, p1.y - t1.y / 3.0f, p1.x, p1.y,
+                               thickness, col );
+        }
+        return;
+    }
+
+    for ( u32 i = 0; i < count; ++i )
+    {
+        u32 ni = ( i + 1 == count ) ? 0 : i + 1;
+        gui_vec2_t p0 = pts[ i ], p1 = pts[ ni ];
+
+        gui_vec2_t t0 = smooth_tangent( pts[ ( i + count - 1 ) % count ], p1 );
+        gui_vec2_t t1 = smooth_tangent( p0, pts[ ( ni + 1 ) % count ] );
+
+        draw_bezier_cubic( p0.x, p0.y, p0.x + t0.x / 3.0f, p0.y + t0.y / 3.0f,
+                           p1.x - t1.x / 3.0f, p1.y - t1.y / 3.0f, p1.x, p1.y,
+                           thickness, col );
+    }
+}
+
 /*==============================================================================================
     Patterned lines + fills
 ==============================================================================================*/
@@ -1050,6 +1111,8 @@ void gui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 t
                                                                                { draw_bezier_quad( x0, y0, cx, cy, x1, y1, thickness, col ); }
 void gui_draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, bool closed, u32 col )
                                                                                { draw_rounded_path( pts, count, radius, thickness, closed, col ); }
+void gui_draw_smooth_path( const gui_vec2_t* pts, u32 count, f32 thickness, bool closed, u32 col )
+                                                                               { draw_smooth_path( pts, count, thickness, closed, col ); }
 void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col )
                                                                                { draw_bezier_cubic( x0, y0, c0x, c0y, c1x, c1y, x1, y1, thickness, col ); }
 
