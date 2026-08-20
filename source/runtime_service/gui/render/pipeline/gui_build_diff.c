@@ -35,8 +35,9 @@ typedef struct
                              // regardless of the hash (which excludes volatile commands entirely)
 } render_win_hash_t;
 
-/* Per-window segment chain links, parallel to s_draw.segs (GUI_MAX_SEGS fits u16).  Rebuilt each
-   frame by cache_diff_windows; only meaningful through the records' seg_head/seg_tail. */
+/* Per-window segment chain links, parallel to s_draw.segs (GUI_MAX_SEGS fits u16).  
+   Rebuilt each frame by cache_diff_windows; only meaningful through the records' 
+   seg_head/seg_tail. */
 
 #define SEG_CHAIN_END 0xFFFFu
 static u16 s_seg_next[ GUI_MAX_SEGS ];
@@ -47,6 +48,7 @@ static u16 s_seg_next[ GUI_MAX_SEGS ];
    historical positions across frames, so this is a per-pass allocation-order property, not a
    byte-layout guarantee; the repack pass restores strict band-major packing.)  Both cur[] and
    prev[] sort with this same rule every frame so the diff below stays one linear scan. */
+
 static inline bool
 cache_rec_before( const render_win_hash_t* a, const render_win_hash_t* b )
 {
@@ -54,6 +56,8 @@ cache_rec_before( const render_win_hash_t* a, const render_win_hash_t* b )
         return a->band < b->band;
     return a->win < b->win;
 }
+
+/*============================================================================================*/
 
 static struct
 {
@@ -77,6 +81,7 @@ build_any_changed( void )
 
 /* This frame's window count (forward-declared in gui_build_cache.c): cache_build_frame folds it
    into win_total / win_hwm / the overflow report, all after cache_diff_windows has run. */
+
 static u32
 cache_cur_win_count( void )
 {
@@ -87,6 +92,7 @@ cache_cur_win_count( void )
    stored hash so the diff mismatches, and raise any_changed so the host sees a dirty frame.  The
    recovery path for a failed volatile patch -- the retess recaptures the row at its recorded
    larger reservation. */
+
 static void
 cache_invalidate_window( gui_id_t win )
 {
@@ -113,9 +119,10 @@ cache_diff_windows( void )
        cmd_count is summed here to avoid a separate pass over segs later. */
 
     s_cache.cur_n = 0;
+
     u32 total_cmd = 0;
     u32 memo_bi   = ~0u;                            /* last record hit -- consecutive segments usually share a window */
-    u8  clip_used[ GUI_MAX_CLIP_RECTS ] = { 0 };   /* clip table entries a band-0 command references */
+    u8  clip_used[ GUI_MAX_CLIP_RECTS ] = { 0 };    /* clip table entries a band-0 command references */
 
     for ( u32 si = 0; si < nseg; ++si )
     {
@@ -181,16 +188,17 @@ cache_diff_windows( void )
            for another reason.  Folding the generation for every TEXT command would cost the prize
            above to fix a glyph-wide artefact on a boot-time event. */
 
-        u32 h   = s_cache.cur[ bi ].hash;
+        u32 h = s_cache.cur[ bi ].hash;
         h = fnv1a_u32( h, segs[ si ].z    );
         h = fnv1a_u32( h, segs[ si ].vp   );
         h = fnv1a_u32( h, segs[ si ].band );   /* band flip must re-tessellate (slot changes ends) */
+
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
         {
             /* Clip usage is marked before the volatile skip below -- a volatile command still
                draws under its clip, it only stays out of the window hash. */
             if ( segs[ si ].band == 0 )
-                clip_used[ s_draw.cmds[ i ].clip_idx ] = 1;
+                 clip_used[ s_draw.cmds[ i ].clip_idx ] = 1;
 
             /* A volatile-tagged command NEVER participates in its window's hash -- the block is
                presentation-only by contract and patched out of band (volatile_update on idle
@@ -216,16 +224,18 @@ cache_diff_windows( void )
                coverage atlas grows.  Folding only on the commands that carry the dependency
                keeps every other window repack-immune. */
 
-            if ( s_draw.cmds[ i ].type == GUI_CMD_SPRITE )
-                h = fnv1a_u32( h, res_sprite_generation() );
-            else if ( s_draw.cmds[ i ].type == GUI_CMD_DASHED_LINE )
-                h = fnv1a_u32( h, res_atlas_generation() );
+                 if ( s_draw.cmds[ i ].type == GUI_CMD_SPRITE )      h = fnv1a_u32( h, res_sprite_generation() );
+            else if ( s_draw.cmds[ i ].type == GUI_CMD_DASHED_LINE ) h = fnv1a_u32( h, res_atlas_generation() );
         }
         s_cache.cur[ bi ].hash = h;
 
-        if ( segs[ si ].z > s_cache.cur[ bi ].z ) s_cache.cur[ bi ].z = segs[ si ].z;
+        if ( segs[ si ].z > s_cache.cur[ bi ].z ) 
+             s_cache.cur[ bi ].z = segs[ si ].z;
+
         s_cache.cur[ bi ].vp = segs[ si ].vp;
-        if ( segs[ si ].band != 0 ) s_cache.cur[ bi ].band = 1;   /* sticky: any debug seg tags the window */
+
+        if ( segs[ si ].band != 0 ) 
+             s_cache.cur[ bi ].band = 1;   /* sticky: any debug seg tags the window */
     }
 
     /* Sort cur[] band-major, win-minor (cache_rec_before) -- debug-band windows pack after every
@@ -235,8 +245,7 @@ cache_diff_windows( void )
 
     for ( u32 a = 1; a < s_cache.cur_n; ++a )
     {
-        render_win_hash_t key = s_cache.cur[ a ];
-        u32 b = a;
+        render_win_hash_t key = s_cache.cur[ a ]; u32 b = a;
         while ( b > 0 && cache_rec_before( &key, &s_cache.cur[ b - 1 ] ) )
         {
             s_cache.cur[ b ] = s_cache.cur[ b - 1 ];
@@ -282,6 +291,7 @@ cache_diff_windows( void )
 
     /* Sweep the id-keyed GPU command cache: an entry whose window left the frame is freed so its
        slot is available to the next appearing window.  Live entries <= cur_n <= RENDER_MAX_WIN. */
+
     for ( u32 c = 0; c < RENDER_MAX_WIN; ++c )
     {
         if ( !s_win_cached_live[ c ] ) continue;
@@ -304,9 +314,11 @@ cache_diff_windows( void )
        raw table size (s_draw.clip_table_n): the raw table also holds debug-band pushes and pushes
        no surviving command references, so it overstates what the application itself costs.  The
        physical table fill is published alongside (clip_count_all) for the capacity view. */
+
     u32 total_clip = 0;
     for ( u32 ci = 0; ci < GUI_MAX_CLIP_RECTS; ++ci )
         total_clip += clip_used[ ci ];
+
     s_stats.accum.clip_count     = total_clip;
     s_stats.accum.clip_count_all = s_draw.clip_table_n;
 }

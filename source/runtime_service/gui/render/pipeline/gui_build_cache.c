@@ -282,6 +282,7 @@ typedef struct
    zero id cannot double as the free sentinel).  Entries are swept when their window leaves the
    frame (win_cache_sweep); live windows <= RENDER_MAX_WIN, so a live window always finds a slot.
    Written when a window tessellates; read every retained frame until the window changes again. */
+
 static win_slot_cmd_t   s_win_cached      [ RENDER_MAX_WIN ][ WIN_SLOT_CMD_MAX ];
 static u32              s_win_cached_count[ RENDER_MAX_WIN ];
 static gui_id_t         s_win_cached_win  [ RENDER_MAX_WIN ];
@@ -290,6 +291,7 @@ static u8               s_win_cached_live [ RENDER_MAX_WIN ];
 /* Clip-slab upload masks, keyed like the cache above: bit r set = region r's GPU copy of this
    window's clip slab is stale.  tess_clip_local sets all bits when it appends an entry; the
    flush clears one bit per slab it uploads.  One bit per (frame-in-flight, viewport) region. */
+
 ORB_STATIC_ASSERT( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS <= 8,
                    "clip slab pending mask is a u8 -- one bit per (frame, viewport) region" );
 
@@ -300,10 +302,12 @@ static u8               s_clip_slab_pending[ RENDER_MAX_WIN ];
    cap), so only its content can go stale, while a record range is packed and therefore moves.  So
    this is set by every fresh tessellation -- which is the only thing that can change either the
    content or the base -- and cleared one bit per range the flush uploads. */
+
 static u8               s_prim_range_pending[ RENDER_MAX_WIN ];
 
 /* Resolve a window's cache entry: existing, else a freshly claimed free slot, else ~0u (only
    possible past RENDER_MAX_WIN live windows -- those are dropped from rendering anyway). */
+
 static u32
 win_cache_take( gui_id_t win )
 {

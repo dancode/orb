@@ -386,36 +386,37 @@ tess_clamp_cell( f32 cell )
 static void
 tess_reset( void )
 {
-    s_tess.quad_count      = 0;
-    s_tess.prim_count      = 0;
-    s_tess.cmd_count       = 0;
-    s_tess.slot_quad_base  = 0;
-    s_tess.slot_cmd_base   = 0;
-    s_tess.slot_prim_base  = 0;
-    s_tess.slot_tess_gen   = 0;
-    s_tess.cur_prim_local  = 0;
-    s_tess.prim_dedup_floor = 0;
-    s_tess.fx_page = s_tess.fx_page_used = s_tess.fx_memo_row = 0;
-    s_tess.fx_page_count     = 0;
-    s_tess.slot_clips        = NULL;
-    s_tess.slot_clip_count   = NULL;
-    s_tess.slot_clip_pending = NULL;
-    s_tess.clip_memo_ci      = 0xFF;
-    s_tess.cur_clip_local    = 0;
-    s_tess.cur_is_text       = false;
-    s_tess.slot_text_quads   = 0;
-    s_tess.slot_text_runs    = 0;
-    s_tess.force_new_cmd     = false;
-    s_tess.overflow          = 0u;
-    s_tess.cur_col_border    = 0;
-    s_tess.cur_rot_c         = 1.0f;
-    s_tess.cur_rot_s         = 0.0f;
-    s_tess.cur_phase         = 0.0f;
+    s_tess.quad_count           = 0;
+    s_tess.prim_count           = 0;
+    s_tess.cmd_count            = 0;
+    s_tess.slot_quad_base       = 0;
+    s_tess.slot_cmd_base        = 0;
+    s_tess.slot_prim_base       = 0;
+    s_tess.slot_tess_gen        = 0;
+    s_tess.cur_prim_local       = 0;
+    s_tess.prim_dedup_floor     = 0;
+    s_tess.fx_page              = s_tess.fx_page_used = s_tess.fx_memo_row = 0;
+    s_tess.fx_page_count        = 0;
+    s_tess.slot_clips           = NULL;
+    s_tess.slot_clip_count      = NULL;
+    s_tess.slot_clip_pending    = NULL;
+    s_tess.clip_memo_ci         = 0xFF;
+    s_tess.cur_clip_local       = 0;
+    s_tess.cur_is_text          = false;
+    s_tess.slot_text_quads      = 0;
+    s_tess.slot_text_runs       = 0;
+    s_tess.force_new_cmd        = false;
+    s_tess.overflow             = 0u;
+    s_tess.cur_col_border       = 0;
+    s_tess.cur_rot_c            = 1.0f;
+    s_tess.cur_rot_s            = 0.0f;
+    s_tess.cur_phase            = 0.0f;
 }
 
 /* Name the texture the next quad's style will CARRY (tess_quad_push folds it into the record).
    Deliberately NOT part of opening a batch, and separated from it so that reads: the texture
    rides the style record, so a texture change costs nothing and must not open a command. */
+
 static void
 tess_set_tex( u32 tex_idx )
 {
@@ -434,6 +435,7 @@ tess_set_tex( u32 tex_idx )
    the window (its own first clip, usually the window rect) rather than borrowing a neighbour's
    slab.  Reported through the same overflow path as the arenas, because that many distinct clips
    in one window is a bug, not a budget. */
+
 static u32
 tess_clip_local( u8 ci )
 {
@@ -490,11 +492,13 @@ tess_ensure_gpu_cmd( void )
         return false;
     }
     s_tess.force_new_cmd = false;
+
     /* Quad span of this command starts at the current quad_count; the next command's qbase (or
        the final quad_count for the last) bounds it.  Lets a surface upload only its own quads.
        tex_idx is the ambient value at the moment the command opened, i.e. the FIRST primitive's,
        and is diagnostic only (the dashboard tooltip) -- it rides the quad now and the command
        may go on to span several. */
+
     s_tess.gpu_cmds[ s_tess.cmd_count++ ] = ( tess_gpu_cmd_t ){
         .cmd   = { .elem_count = 0, .tex_idx = s_tess.cur_tex },
         .vp    = (i16)s_tess.cur_vp,
@@ -538,6 +542,7 @@ tess_ensure_gpu_cmd( void )
 /* Drop the open fx page and its memo.  Called wherever prim_dedup_floor rises: past that line the
    page belongs to another slot or to a reservation only a patch may rewrite, and appending a ninth
    row into it would write bytes this pass does not own. */
+
 static inline void
 tess_fx_page_reset( void )
 {
@@ -549,6 +554,7 @@ tess_prim_local( void )
 {
     /* Census before the memo, so the count is of quads that WANT this record rather than of the
        ones the memo happened to miss; the append site below counts the arena entries. */
+
     PRIM_CENSUS_QUAD( &s_tess.cur_prim );
 
     u32 hi = s_tess.prim_count;
@@ -559,6 +565,7 @@ tess_prim_local( void )
 
     /* Depth 1 first, alone: a homogeneous run -- a glyph run, consecutive flat fills -- hits here
        and never pays for the lookup below.  That is most quads. */
+
     if ( n >= 1u && memcmp( &s_tess.prims[ hi - 1u ], &s_tess.cur_prim,
                             sizeof( gui_prim_t ) ) == 0 )
         return s_tess.cur_prim_local = ( hi - 1u ) - s_tess.slot_prim_base;
@@ -570,6 +577,7 @@ tess_prim_local( void )
        ride the same field and the shader tells them apart by range (gui.h, GUI_PAL_FIRST).
        pal_find carries its own one-deep memo, which is what covers the repeat this arena memo
        structurally cannot: a palette hit appends nothing, so depth 1 above never sees it. */
+
     u32 entry = pal_find( &s_tess.cur_prim );
     if ( entry < (u32)GUI_PAL_MAX )
         return s_tess.cur_prim_local = gui_style_pal( entry );

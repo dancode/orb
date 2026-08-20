@@ -436,6 +436,7 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
        shape.  Costs one heavy frame on a theme or DPI change, which already re-tessellates
        everything for its own reasons -- the geometry generation bumps with it so every in-flight
        upload region goes stale. */
+
     if ( pal_bake() )
     {
         ++s_geo_gen;
