@@ -671,11 +671,17 @@ edge_deriv( gui_vec2_t a, gui_vec2_t b )
 
 /* Point-to-point spline through every point in `pts`, curve shape entirely a function of point
    position -- no radius, no hand-picked control point (the Blueprint node-graph wire model:
-   move a point and both curves touching it re-settle on their own).  Each segment is one
-   draw_bezier_cubic; its two control points are its endpoints' tangent derivatives
-   (smooth_deriv/edge_deriv) scaled by the segment's OWN parameter length `h_seg` and the usual
-   /3 tangent-to-bezier factor -- the segment-local scale is what keeps a short segment's curve
-   confined to its own length instead of overshooting to match a long neighbour's tangent. */
+   move a point and both curves touching it re-settle on their own).  Every tangent is a LOCAL
+   estimate (smooth_deriv/edge_deriv, this point and its immediate neighbours only) -- a
+   globally solved C2-continuous spline (every knot's curvature coupled into one linear system)
+   was tried here and reverted: coupling the whole path together means one point's move can
+   overshoot the curvature demanded of a distant, unrelated segment, and for uneven point
+   spacing that overshoot can be large enough to fold a cubic segment back on itself into a
+   self-intersecting loop, which shows up on screen as a stray blob wherever two overlapping
+   AA fringes double their coverage (the same double-blend darkening documented on
+   path_line_if).  A local estimate has no such action-at-a-distance: each segment's curvature
+   is bounded by its own two endpoint tangents only, so a wild point can misshape the segments
+   touching it but never a segment three points away. */
 static void
 draw_smooth_path( const gui_vec2_t* pts, u32 count, f32 thickness, bool closed, u32 col )
 {
