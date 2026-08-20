@@ -361,42 +361,40 @@ render_begin_frame( i32 ctx_id )
 static void
 render_submit_rect( i32 ctx_id, f32 cx, f32 cy, f32 w, f32 h, const f32 rgba[ 4 ] )
 {
+    render_rect_t* list  = NULL;
+    i32*           count = NULL;
+
     /* Offscreen target ids route to the target's own bucket -- drained by draw_scene's
        target pre-pass instead of the swapchain pass. */
     if ( ctx_id >= RENDER_TARGET_ID_BASE )
     {
         render_target_t* t = target_slot( ctx_id );
-        if ( !t || t->rect_count >= RENDER_MAX_RECTS )
+        if ( !t )
             return;
 
-        render_rect_t* r = &t->rects[ t->rect_count++ ];
-        r->cx        = cx;
-        r->cy        = cy;
-        r->w         = w;
-        r->h         = h;
-        r->rgba[ 0 ] = rgba[ 0 ];
-        r->rgba[ 1 ] = rgba[ 1 ];
-        r->rgba[ 2 ] = rgba[ 2 ];
-        r->rgba[ 3 ] = rgba[ 3 ];
-        return;
+        list  = t->rects;
+        count = &t->rect_count;
+    }
+    else
+    {
+        if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
+            return;
+
+        render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
+        list                 = s->rects;
+        count                = &s->rect_count;
     }
 
-    if ( !g_state || ctx_id < 0 || ctx_id >= RHI_CTX_MAX )
+    if ( *count >= RENDER_MAX_RECTS )
         return;
 
-    render_ctx_slot_t* s = &g_state->ctx[ ctx_id ];
-    if ( s->rect_count >= RENDER_MAX_RECTS )
-        return;
-
-    render_rect_t* r = &s->rects[ s->rect_count++ ];
-    r->cx        = cx;
-    r->cy        = cy;
-    r->w         = w;
-    r->h         = h;
-    r->rgba[ 0 ] = rgba[ 0 ];
-    r->rgba[ 1 ] = rgba[ 1 ];
-    r->rgba[ 2 ] = rgba[ 2 ];
-    r->rgba[ 3 ] = rgba[ 3 ];
+    list[ ( *count )++ ] = ( render_rect_t ){
+        .cx   = cx,
+        .cy   = cy,
+        .w    = w,
+        .h    = h,
+        .rgba = { rgba[ 0 ], rgba[ 1 ], rgba[ 2 ], rgba[ 3 ] },
+    };
 }
 
 static void

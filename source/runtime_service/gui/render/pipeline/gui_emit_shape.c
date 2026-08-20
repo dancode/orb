@@ -2,9 +2,9 @@
     gui/render/pipeline/gui_emit_shape.c -- The quad family: fills, pictures and gradients.
 
     Every push whose shape is a plain rectangle carrying colour or a texture -- the fill, the
-    image, the disc, the batched rect list, the icon, the rotated quad, the sprite, the 
-    two-colour ramp.  
-    
+    image, the disc, the batched rect list, the icon, the rotated quad, the sprite, the
+    two-colour ramp.
+
     draw_rect_cmd is the shared body under the first several and lives here because the
     rounded / outlined / bezel variants all resolve back onto it.
 

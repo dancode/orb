@@ -119,8 +119,7 @@ static void
 draw_begin_mat( rhi_cmd_t cmd, const f32 view_proj[ 16 ], draw_mat_id_t mat )
 {
     s.cmd = cmd;
-    for ( u32 i = 0; i < 16; ++i )
-        s.frame_push.mvp[ i ] = view_proj[ i ];
+    memcpy( s.frame_push.mvp, view_proj, sizeof( s.frame_push.mvp ) );
     /* Select this frame-in-flight's buffer region so writes never touch data the GPU is
        still reading for a previous in-flight frame.  Within one frame this APPENDS: a second
        begin (e.g. an overlay pass after render()->draw_scene) keeps the first pass's geometry
@@ -188,8 +187,7 @@ draw_end( void )
                 cur_samp = c->samp_idx;
 
                 draw_push_tex_t p;
-                for ( u32 k = 0; k < 16; ++k )
-                    p.mvp[ k ] = s.frame_push.mvp[ k ];
+                memcpy( p.mvp, s.frame_push.mvp, sizeof( p.mvp ) );
                 p.tex_idx  = cur_tex;
                 p.samp_idx = cur_samp;
                 rhi()->cmd_push_constants( s.cmd, &p, sizeof( p ), 0 );

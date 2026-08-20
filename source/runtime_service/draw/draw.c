@@ -8,6 +8,8 @@
 
 ==============================================================================================*/
 
+#include <string.h>
+
 #include "draw_api.h"
 #include "runtime_service/rhi/rhi_api.h"
 
