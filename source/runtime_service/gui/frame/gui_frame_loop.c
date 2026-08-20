@@ -325,6 +325,10 @@ gui_frame_begin( f32 dt )
 
     build_stats_publish();
 
+    /* Its phase-timing fields into the smoothed overlay readouts -- after the publish above, so the
+       rows describe the same frame as the render total they sit under. */
+    perf_zones_publish();
+
     /* Refresh the IO snapshot, computing s_io_dirty as a side-effect. */
     io_frame_begin( disp_w, disp_h, dt );
 

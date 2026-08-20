@@ -85,6 +85,42 @@ gui_render_stats( void )
     return s_stats.published;
 }
 
+/*==============================================================================================
+    Phase timing.
+
+    The render server links no clock, so the host's arrives through the same one-way seam
+    gui_render_set_time uses.  Without one every zone reads zero and the arithmetic below is two
+    predictable branches -- the reason this is not compiled out: the phase split is the only way to
+    tell a frame that tessellated too much from one that uploaded too much, and a number that
+    exists only in a debug build is a number nobody has when it matters.
+==============================================================================================*/
+
+static gui_clock_fn s_zone_clock;
+
+void
+gui_render_set_clock( gui_clock_fn fn )
+{
+    s_zone_clock = fn;
+}
+
+/* Open a zone: the clock now, or 0 when there is none to read. */
+static f64
+zone_begin( void )
+{
+    return s_zone_clock ? s_zone_clock() : 0.0;
+}
+
+/* Close a zone into `dst` (ms).  Adds rather than assigns so a phase that runs more than once in a
+   frame -- cache_place_slots under the repack retry, gui_render_flush per surface -- reports what
+   the frame actually spent, not what its last pass did.  Callers zero `dst` where the phase's
+   publish rule says to. */
+static void
+zone_end( f32* dst, f64 t0 )
+{
+    if ( s_zone_clock )
+        *dst += (f32)( ( s_zone_clock() - t0 ) * 1000.0 );
+}
+
 void
 build_stats_publish( void )
 {
@@ -93,6 +129,7 @@ build_stats_publish( void )
     s_stats.accum.upload_batches   = 0;
     s_stats.accum.upload_bytes     = 0;
     s_stats.accum.volatile_patched = 0;   // per-frame event count, same reset rule as draw_calls
+    s_stats.accum.submit_ms        = 0.0f; // summed per surface flush, so same reset as draw_calls
 }
 
 /* Defined here (forward-declared in gui_build_volatile.c, included just above this file) because
@@ -1307,8 +1344,16 @@ cache_build_frame( void )
        live.  See render/gui_select_capture.c. */
     select_capture_build();
 
+    /* Both BUILD zones are assignments per real frame, so they zero here rather than in
+       build_stats_publish: an idle frame never reaches this function and must keep reporting what
+       the geometry on screen actually cost. */
+    s_stats.accum.diff_ms = 0.0f;
+    s_stats.accum.tess_ms = 0.0f;
+
     /* Step 1: hash-diff all windows, fill s_cache, accumulate cmd_count stats. */
+    f64 t_diff = zone_begin();
     cache_diff_windows();
+    zone_end( &s_stats.accum.diff_ms, t_diff );
 
     /* Rotate slot tables: last frame's slots become prev; build fresh into current. */
     win_geo_slot_t* tmp = s_slots_prev;
@@ -1323,7 +1368,9 @@ cache_build_frame( void )
        reuse off, sequential packing from 0 compacts the arena in a single heavier frame.  Only
        an overflow that survives the repack means the content genuinely exceeds the arena. */
     cache_place_stats_t ps;
+    f64                 t_tess = zone_begin();
     cache_place_slots( true, &ps );
+    zone_end( &s_stats.accum.tess_ms, t_tess );
 
     /* Repack triggers, both handled by a single from-scratch re-place (reuse off, pack from 0):
          1. Overflow -- the reuse path spilled the arena.  Often pure fragmentation (holes from
@@ -1343,7 +1390,9 @@ cache_build_frame( void )
         /* Every slot relocates: fine dirty spans cannot describe this, so the geometry
            generation bumps and every in-flight upload region goes stale (full re-upload). */
         ++s_geo_gen;
+        t_tess = zone_begin();
         cache_place_slots( false, &ps );
+        zone_end( &s_stats.accum.tess_ms, t_tess );   /* the retry is real cost this frame paid */
     }
 
     /* Deferred volatile patches for reused windows: every slot is now placed and s_tess.quad_count

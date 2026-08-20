@@ -51,6 +51,12 @@ static struct
     f32             s_pres_ms;          // smooth time present_begin  -> boot_present_end minus render
     f32             s_wait_ms;          // smooth time present_end    -> boot_poll
 
+    /* The render server's own phase split, smoothed on the same curve as s_rend_ms so the rows
+       can be read against it.  Sourced from gui_render_stats(), NOT measured here. */
+    f32             s_diff_ms;          // smooth BUILD step 1 -- hash + diff
+    f32             s_tess_ms;          // smooth BUILD step 2 -- reuse or tessellate
+    f32             s_submit_ms;        // smooth SUBMIT -- uploads + draw calls
+
     bool            emit_captured;      // emit_ms latched at frame_end this frame
 
 } s_perf;
@@ -84,6 +90,28 @@ perf_frame_begin( f32 dt )
     s_perf.emit_captured   = false;
     s_perf.t_present_start = 0.0;
     s_perf.t_emit_start    = s_perf.clock ? s_perf.clock() : 0.0;
+}
+
+/*==============================================================================================
+
+    * Fold the render server's phase split into the smoothed readouts.
+    * Called from frame_begin AFTER build_stats_publish, which is what makes these the SAME frame
+      the s_rend_ms published just above describes -- read before it and every row would trail the
+      total it sits under by one more frame.
+
+==============================================================================================*/
+
+static void
+perf_zones_publish( void )
+{
+    gui_render_stats_t rs = gui_render_stats();
+
+    s_perf.s_diff_ms   = s_perf.s_diff_ms   <= 0.0f ? rs.diff_ms
+                                                    : s_perf.s_diff_ms   * 0.9f + rs.diff_ms   * 0.1f;
+    s_perf.s_tess_ms   = s_perf.s_tess_ms   <= 0.0f ? rs.tess_ms
+                                                    : s_perf.s_tess_ms   * 0.9f + rs.tess_ms   * 0.1f;
+    s_perf.s_submit_ms = s_perf.s_submit_ms <= 0.0f ? rs.submit_ms
+                                                    : s_perf.s_submit_ms * 0.9f + rs.submit_ms * 0.1f;
 }
 
 /*==============================================================================================
@@ -280,7 +308,19 @@ overlay_perf( int mode )
             gui_new_line( 2.0f );
             gui_textf( "emit    %5.2f ms", s_perf.s_emit_ms );
             gui_textf( "render  %5.2f ms", s_perf.s_rend_ms );
-            
+
+            /* Where the render time went, indented as its children.  They do NOT sum to it: the
+               debug overlay's own flush and the per-surface setup around the zones sit outside all
+               three, and diff/tess hold the last REAL frame's cost while an idle frame still pays
+               submit.  A gap between the sum and the parent IS the reading -- it is the part of
+               render that is neither building geometry nor handing it to the GPU.
+                 - diff:   hash every emitted command, diff every window (what retention costs)
+                 - tess:   reuse or tessellate every changed window (what retention saves)
+                 - submit: uploads + draw-call recording, every surface, every frame */
+            gui_textf( "  diff  %5.2f ms", s_perf.s_diff_ms );
+            gui_textf( "  tess  %5.2f ms", s_perf.s_tess_ms );
+            gui_textf( "  submit %4.2f ms", s_perf.s_submit_ms );
+
             /* Full loop breakdown -- tier 2 only. Tiers 3+ swap this for geometry/pool stats,
                where these fence/sleep numbers are just noise.
                - present: non-render overhead (fence wait + acquire + submit + present)
@@ -708,6 +748,7 @@ void
 gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events )
 {
     s_perf.clock = clock;        /* adopted by perf_frame_begin / render brackets next frame */
+    gui_render_set_clock( clock );   /* the render server times its own phases with the same one */
     s_hook_sleep = sleep_ms;
     s_hook_wait  = wait_events;
 }

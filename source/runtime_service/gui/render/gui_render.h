@@ -477,6 +477,12 @@ void                build_frame_reset       ( void );
    resets it -- called once per frame by gui_frame_begin (frame/gui_frame_loop.c), before draw_reset. */
 
 gui_render_stats_t  gui_render_stats        ( void );
+
+/* Hand the render server the host's monotonic clock, so the BUILD/SUBMIT phases can time themselves
+   into gui_render_stats_t's *_ms fields.  A one-way seam like gui_render_set_time: this unit links
+   no clock of its own.  NULL (the default) leaves every zone reading zero. */
+
+void                gui_render_set_clock     ( gui_clock_fn fn );
 void                build_stats_publish     ( void );
 
 /* Retained-skip optimization: when on (default), an unchanged frame (all per-window hashes match

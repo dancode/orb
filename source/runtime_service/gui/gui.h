@@ -3788,6 +3788,20 @@ typedef struct
                            // (idle replay or a live real-frame reuse-patch) -- a separate signal
                            // from win_retained: a window with an animating volatile widget still
                            // counts as fully retained; this is what actually moved.
+
+    /* Where the render time went, in ms, split at the three phase seams (BUILD's two halves and
+       SUBMIT).  Inert without a clock hook (gui()->frame_set_hooks) -- all three read zero.
+
+       diff/tess follow the BUILD publish rule and hold the last REAL frame's cost across an idle
+       one, since that is still what the geometry on screen cost; submit_ms is summed over this
+       frame's surface flushes and resets every frame, because the GPU replays even an idle frame.
+
+       They do NOT sum to the host's measured render time: the debug overlay's own flush and the
+       per-surface setup around these zones sit outside all three. */
+    f32 diff_ms;            // BUILD step 1: hash + diff every window (cache_diff_windows)
+    f32 tess_ms;            // BUILD step 2: reuse or tessellate every window, incl. a repack retry
+    f32 submit_ms;          // SUBMIT: uploads + draw-call recording, summed over surfaces
+
 } gui_render_stats_t;
 
 /*==============================================================================================

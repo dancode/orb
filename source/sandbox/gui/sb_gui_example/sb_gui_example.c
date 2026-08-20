@@ -96,8 +96,8 @@ main( int argc, char** argv )
        in -- this is the explorer, it needs them all. */
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB -- gui example",
-        .x = 128, .y = 128,
-        .w     = 1920, .h = 1080,
+        .x = 64, .y = 64,
+        .w     = 1920 + 320, .h = 1080 + 180,
         .font  = GUI_FONT_JETBRAINS,
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,

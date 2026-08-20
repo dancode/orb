@@ -568,7 +568,9 @@ tess_prim_local( void )
        no arena entry, and the same entry serves every other window drawing the same shape, which
        is the duplication no memo depth can reach (see TESS_PRIM_MEMO_DEPTH above).  A hit returns
        an ABSOLUTE index the flush resolves against pc.pal_base rather than a slot-local one; both
-       ride the same field and the shader tells them apart by range (gui.h, GUI_PAL_FIRST). */
+       ride the same field and the shader tells them apart by range (gui.h, GUI_PAL_FIRST).
+       pal_find carries its own one-deep memo, which is what covers the repeat this arena memo
+       structurally cannot: a palette hit appends nothing, so depth 1 above never sees it. */
     u32 entry = pal_find( &s_tess.cur_prim );
     if ( entry < (u32)GUI_PAL_MAX )
         return s_tess.cur_prim_local = gui_style_pal( entry );

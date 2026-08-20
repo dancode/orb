@@ -125,6 +125,10 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     // Tessellate + sort the shared list once per frame; this surface reuses the cached result.
     cache_build_frame();
 
+    /* SUBMIT starts past the BUILD kick above, so the two zones never overlap however many
+       surfaces run: only the first flush of a frame pays for BUILD, and none of it lands here. */
+    f64 t_submit = zone_begin();
+
     // Select this frame's quad region so the upload cannot clobber data the GPU is still reading
     // for another in-flight frame.
     u32 frame = rhi()->cmd_frame_index( cmd );
@@ -453,6 +457,8 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     }
 
     rhi()->cmd_end_rendering( cmd );
+
+    zone_end( &s_stats.accum.submit_ms, t_submit );
 
     // Fold this surface's draw-call count into the frame accumulator + lifetime peak (cache stats).
     cache_count_draw_calls( draw_calls );

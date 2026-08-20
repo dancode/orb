@@ -98,7 +98,9 @@ static struct
 
     u32        scale_count;
     u16        slot[ PAL_SLOTS ];    // entry + 1 per slot; 0 = empty
+    u32        memo;                 // last entry pal_find answered with (~0u = none)
     u32        hits, misses;         // probe outcome since the last bake, for the dump
+    u32        memo_hits;            // of hits, the share the memo served without hashing
 
 } s_bake;
 
@@ -114,9 +116,12 @@ pal_hash( const gui_prim_t* rec )
 }
 
 /*  Which palette entry holds this record, or GUI_PAL_NONE.  The hot path of the whole campaign:
-    called once per style-record miss in tess_prim_local, so it walks a couple of slots and does one
-    full compare on the candidate.  The compare is not optional -- a hash collision that returned the
-    wrong entry would draw the wrong shape. */
+    called once per style-record miss in tess_prim_local, so it tries a one-deep memo, then walks a
+    couple of slots and does one full compare on the candidate.  The compare is not optional -- a
+    hash collision that returned the wrong entry would draw the wrong shape.
+
+    Every path but the memo folds the whole 128-byte record, which is a serial chain and by some way
+    the most expensive thing per quad in the tessellator; the memo exists to keep a repeat off it. */
 
 /*  The A/B switch.  Off, pal_find answers nothing and every style falls back to the per-slot memo
     and the arena -- the exact behaviour that existed before the palette, style bloat and all.  It
@@ -148,6 +153,26 @@ pal_find( const gui_prim_t* rec )
     if ( s_bake.count == 0u || !s_pal_on )
         return GUI_PAL_NONE;
 
+    /* One-deep memo over the last ANSWERED entry, and the reason it lives here rather than in the
+       caller's probe chain: tess_prim_local's arena memo compares against the record at
+       prim_count-1, and a palette hit appends nothing, so prim_count never moves and a run of one
+       style misses that memo on every quad and re-hashes all 128 bytes.  A table of same-background
+       rows or a toolbar of one button is exactly that run.
+       The compare is against the ENTRY's own bytes -- no copy to keep in step, because the hit
+       below is confirmed by this same full compare, so the entry IS what the caller asked for.
+       Counted as a hit: the question the rate answers is what share of styles the palette served,
+       and this served one.  Held by index rather than by pointer so pal_index / the harvest cannot
+       leave it dangling; cleared by pal_bake alongside the lookup, and for the same reason -- a
+       bake's own rows probe the palette as they tessellate, and one answered from the old table
+       appends nothing, so it would be missing from the table it is being harvested into. */
+    if ( s_bake.memo < s_bake.count
+      && memcmp( &s_bake.rec[ s_bake.memo ], rec, sizeof( gui_prim_t ) ) == 0 )
+    {
+        ++s_bake.hits;
+        ++s_bake.memo_hits;
+        return s_bake.memo;
+    }
+
     u32 i = pal_hash( rec ) & PAL_SLOT_MASK;
     for ( u32 probe = 0; probe < PAL_SLOTS; ++probe, i = ( i + 1u ) & PAL_SLOT_MASK )
     {
@@ -157,7 +182,7 @@ pal_find( const gui_prim_t* rec )
         if ( memcmp( &s_bake.rec[ e - 1u ], rec, sizeof( gui_prim_t ) ) == 0 )
         {
             ++s_bake.hits;
-            return (u32)( e - 1u );
+            return s_bake.memo = (u32)( e - 1u );
         }
     }
 
@@ -513,7 +538,8 @@ pal_bake( void )
        would then be missing from the very table it belongs in. */
 
     memset( s_bake.slot, 0, sizeof( s_bake.slot ) );
-    s_bake.hits = s_bake.misses = 0;
+    s_bake.memo = ~0u;   /* same reason, and count rising as rows harvest would revive it */
+    s_bake.hits = s_bake.misses = s_bake.memo_hits = 0;
 
     /* Newest scale first, so if the table ever fills it is the least recently seen surface that
        loses its tail rather than the one the user is looking at. */
@@ -548,10 +574,14 @@ pal_dump( void )
     u32 probes = s_bake.hits + s_bake.misses;
 
     gui_log( GUI_LOG_INFO, "" );
+    /* memo share is of the HITS, not of all probes: it says how much of what the palette answered
+       came back without folding the record, which is the only part of a hit that costs anything. */
     gui_log( GUI_LOG_INFO, "---- PALETTE BAKE (%u of %u entries over %u style scale(s); %u/%u "
-                           "probes hit since the bake, %.1f%%) ----",
+                           "probes hit since the bake, %.1f%%; %u of those hits memoed, %.1f%%) ----",
              s_bake.count, (u32)GUI_PAL_MAX, s_bake.scale_count, s_bake.hits, probes,
-             probes ? 100.0f * (f32)s_bake.hits / (f32)probes : 0.0f );
+             probes ? 100.0f * (f32)s_bake.hits / (f32)probes : 0.0f,
+             s_bake.memo_hits,
+             s_bake.hits ? 100.0f * (f32)s_bake.memo_hits / (f32)s_bake.hits : 0.0f );
 
     for ( u32 s = 0; s < s_bake.scale_count; ++s )
     {
