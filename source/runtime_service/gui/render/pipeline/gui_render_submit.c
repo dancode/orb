@@ -156,7 +156,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     u32 up_bytes = 0;     // total bytes those writes moved
 
     /* Geometry-generation skip: if this (frame, viewport) region already holds the current
-       arena generation (s_geo_gen, gui_build_tess.c), its bytes are identical to what these
+       arena generation (s_geo_gen, gui_build_tess_state.c), its bytes are identical to what these
        spans would upload -- a presented-but-unchanged frame (fx animation, reused real frame)
        moves nothing.  Any live-byte change bumped the generation, so the first flush after it
        re-uploads and re-stamps. */
@@ -185,7 +185,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
         up_bytes += bytes;
     }
 
-    /* Fine dirty spans (gui_build_tess.c, s_patch_pending), one per arena band so a changed app
+    /* Fine dirty spans (gui_build_tess_state.c, s_patch_pending), one per arena band so a changed app
        window and a changed overlay never union across the gap between them: a full upload above
        covered every accumulated byte of this surface, so it just clears the entries; a
        generation-matching flush uploads only the accumulated ranges -- a changed window or a

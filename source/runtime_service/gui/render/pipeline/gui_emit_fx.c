@@ -555,7 +555,7 @@ draw_push_box_trace( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
     }
 
     /* The perimeter, against the SAME clamped radius the tessellator will state: four edges
-       shortened by the corners they meet, plus the four quarter-arcs (gui_build_tess.c,
+       shortened by the corners they meet, plus the four quarter-arcs (gui_build_tess_dispatch.c,
        GUI_CMD_BOX_DASH). */
     f32 hw  = w * 0.5f, hh = h * 0.5f;
     f32 lim = ( hw < hh ) ? hw : hh;

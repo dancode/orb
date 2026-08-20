@@ -33,7 +33,7 @@
     GPU Command -- backend-private GPU draw command after tessellation.
 
     One bounded range of quads -- the unit the GPU sees (not exposed in gui.h) 
-    The public gui_cmd_t carries semantic shapes; the BUILD phase (gui_build_tess.c)
+    The public gui_cmd_t carries semantic shapes; the BUILD phase (gui_build_tess_*.c)
     tessellates those into these.
 
 ==============================================================================================*/

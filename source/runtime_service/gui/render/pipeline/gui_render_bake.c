@@ -276,7 +276,7 @@ pal_digest( void )
     Row plumbing.
 
     A row emits one shape into the tessellator's scratch arena and keeps whatever record that shape
-    minted.  pal_row_open mirrors the per-command reset tess_dispatch does (gui_build_tess.c): the
+    minted.  pal_row_open mirrors the per-command reset tess_dispatch does (gui_build_tess_dispatch.c): the
     op word and the record are ambient over ONE shape, and a row that inherited the previous row's
     ops would bake a record no widget will ever ask for.
 ==============================================================================================*/

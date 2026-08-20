@@ -200,12 +200,20 @@
     Pipeline Build
 ==============================================================================================*/
 
-// pipeline/ BUILD, part A: tessellation primitives (gui_cmd_t -> s_tess geometry).
-// No public surface -- driven entirely from part B (cache_tess_window / cache_build_frame).
-#include "runtime_service/gui/render/pipeline/gui_build_tess.c"
+// pipeline/ BUILD, part A: tessellation primitives (gui_cmd_t -> s_tess geometry), split by
+// aspect -- state/diagnostics, the quad-record core, sprites, the SDF box family, arcs/circles,
+// patterns/text, and the dispatcher, in dependency order.  No public surface -- driven entirely
+// from part B (cache_tess_window / cache_build_frame).
+#include "runtime_service/gui/render/pipeline/gui_build_tess_state.c"
+#include "runtime_service/gui/render/pipeline/gui_build_tess_quad.c"
+#include "runtime_service/gui/render/pipeline/gui_build_tess_sprite.c"
+#include "runtime_service/gui/render/pipeline/gui_build_tess_sdf.c"
+#include "runtime_service/gui/render/pipeline/gui_build_tess_arc.c"
+#include "runtime_service/gui/render/pipeline/gui_build_tess_text.c"
+#include "runtime_service/gui/render/pipeline/gui_build_tess_dispatch.c"
 
 // pipeline/ BUILD, part A.5: volatile widgets (inline-emit callback replay) -- see that file's header.
-// After gui_build_tess.c (needs s_tess + tess_dispatch + s_volatile_patching); before
+// After the gui_build_tess_*.c family (needs s_tess + tess_dispatch + s_volatile_patching); before
 // gui_build_cache.c (defines the cache_slot_lookup / cache_invalidate_window /
 // cache_count_volatile_patch helpers this file forward-declares).
 #include "runtime_service/gui/render/pipeline/gui_build_volatile.c"

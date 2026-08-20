@@ -40,7 +40,7 @@ const char* gui_debug_name( gui_id_t id );
 
 static bool s_frame_built;
 
-/* Walls this build hit OUTSIDE the tessellation passes (TESS_OVF_*, gui_build_tess.c) -- today
+/* Walls this build hit OUTSIDE the tessellation passes (TESS_OVF_*, gui_build_tess_state.c) -- today
    just the window cap, latched during the diff.  Kept apart from s_tess.overflow because that one
    is a property of ONE placement pass and tess_reset clears it, which the repack retry relies on;
    this is a property of the whole build.  Cleared at the top of cache_build_frame, folded into the
@@ -254,7 +254,7 @@ typedef struct
     u32      text_quads, text_runs;              // of quad_count, the glyph share and the runs it came
                                                  //   from -- taken at tessellation and carried across
                                                  //   reuse frames, since retained geometry is never
-                                                 //   re-walked (gui_build_tess.c, slot_text_*)
+                                                 //   re-walked (gui_build_tess_state.c, slot_text_*)
     u8       vp;                                 // viewport (GUI_MAX_VIEWPORTS = 4)
     u8       band;                               // arena band (0 = main UI, 1 = debug/diagnostic)
     bool     valid;                              // true once geometry has been tessellated at least once

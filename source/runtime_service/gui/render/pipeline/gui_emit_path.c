@@ -4,7 +4,7 @@
 
     Pushes stroke SEMANTIC commands (CMD_LINE / CMD_POLYLINE / CMD_DASHED_LINE) into s_draw;
     the actual geometry is produced at flush time by tess_fx_segment / tess_stroke_poly_aa /
-    tess_dashed_line (gui_build_tess.c).  Two layers:
+    tess_dashed_line (gui_build_tess_text.c).  Two layers:
 
         draw_line / draw_polyline    -- immediate: stroke a single segment or a point array now.
         path_line_to / path_stroke   -- retained: accumulate points, then stroke the whole run.

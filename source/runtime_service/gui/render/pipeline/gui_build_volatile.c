@@ -41,7 +41,7 @@
     gui_volatile_begin) records the window/z/vp/font/clip context, the ambient
     alpha/rounding/text-clip scalars a raw draw_ call reads directly, the layout cursor
     position, and the owning region's view/pad (reinstalled on the replay layout frame).  
-    When the window tessellates, tess_dispatch (gui_build_tess.c) calls
+    When the window tessellates, tess_dispatch (gui_build_tess_dispatch.c) calls
     volatile_range_close (this file), which reserves the padded region, pads the slot's GPU
     command run with dormant commands, and stamps the slot generation.
 
@@ -68,8 +68,9 @@
     gui_render_stats_t.volatile_patched -- reported separately from win_retained precisely so a
     window with an animating volatile widget still correctly counts as retained.
 
-    Included by gui_render.c after gui_build_tess.c (needs s_tess, tess_dispatch, and
-    s_volatile_patching, defined there) and before gui_build_cache.c (which defines the
+    Included by gui_render.c after the gui_build_tess_*.c family (needs s_tess and
+    s_volatile_patching from gui_build_tess_state.c, and tess_dispatch from
+    gui_build_tess_dispatch.c) and before gui_build_cache.c (which defines the
     cache_* helpers forward-declared below and calls volatile_row_needs_capture /
     volatile_row_confined / volatile_patch_reused_window; gui_render_flush uploads the patched spans for free since a
     slot's upload range covers its reservations).
@@ -147,8 +148,8 @@ static gui_volatile_slot_t s_volatile[ GUI_MAX_VOLATILE ];
 static u32                 s_volatile_count;
 
 /* Defined later in gui_build_cache.c (same TU, included right after this file) where s_stats,
-   s_slots and s_cache live -- forward-declared here the same way gui_build_tess.c forward-declares
-   volatile_range_close.
+   s_slots and s_cache live -- forward-declared here the same way gui_build_tess_dispatch.c
+   forward-declares volatile_range_close.
      cache_count_volatile_patch -- stats: rows patched in place this frame.
      cache_slot_lookup          -- resolve a window's CURRENT slot position + tessellation
                                    generation by id; false if the window has no live slot.
@@ -428,7 +429,7 @@ volatile_row_needs_capture( gui_id_t id )
     return gen != row->tess_gen;
 }
 
-/* Called from tess_dispatch (gui_build_tess.c) once a tagged command RANGE's quads, records and
+/* Called from tess_dispatch (gui_build_tess_dispatch.c) once a tagged command RANGE's quads, records and
    GPU commands are fully written into the window slot currently being tessellated.  Records the
    block's slot-relative position, then reserves headroom: the write heads advance past the
    live geometry by the (grow-only) allocation, and the slot's GPU command run is padded with
@@ -609,7 +610,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
         u32 abs_cb = slot_cb + row->local_cmd_base;
 
         /* Fine dirty spans, not a generation bump: only this range changed, so a
-           generation-matching flush re-uploads just it (gui_build_tess.c, s_patch_pending). */
+           generation-matching flush re-uploads just it (gui_build_tess_state.c, s_patch_pending). */
         u8 row_band;
         u8 row_vp = cache_slot_vp( row->win, &row_band );
         patch_span_union( row_vp, row_band, abs_vb, abs_vb + nv );

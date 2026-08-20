@@ -183,7 +183,7 @@ cache_diff_windows( void )
 
            One text case is NOT repack-proof: a glyph straddling its run's window edge carries a
            narrowed uv span, which is per-instance and has no table entry, so it bakes a rect like
-           any other textured quad (gui_build_tess.c, tess_text_n).  At most the two end glyphs of
+           any other textured quad (gui_build_tess_text.c, tess_text_n).  At most the two end glyphs of
            a cut run, and a repack leaves them sampling the wrong pixels until that window changes
            for another reason.  Folding the generation for every TEXT command would cost the prize
            above to fix a glyph-wide artefact on a boot-time event. */
