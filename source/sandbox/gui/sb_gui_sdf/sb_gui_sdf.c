@@ -1599,6 +1599,7 @@ win_backdrops( void )
 
 static f32  s_cv_thick = 3.0f;
 static bool s_cv_ref   = true;
+static f32  s_cv_round = 22.0f;
 
 /* Sandbox-only exact reference: the same de Casteljau sum draw_bezier_cubic used to flatten
    before this campaign, kept here purely so the new field's approximation has something exact
@@ -1704,6 +1705,51 @@ win_curves( void )
         gui()->draw_round_rect( na, 6.0f, 6.0f, 6.0f, 6.0f, true, 0.0f, EDGE );
         gui()->draw_round_rect( nb, 6.0f, 6.0f, 6.0f, 6.0f, true, 0.0f, EDGE );
         gui()->pop_clip();
+    }
+
+    gui()->separator_text( "auto-filleted corners -- draw_rounded_path, radius clamps per corner" );
+    gui()->slider_float( "corner radius", &s_cv_round, 0.0f, 60.0f );
+    {
+        gui_rect_t r = gui()->canvas( 200.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+        gui()->push_clip( r.x, r.y, r.w, r.h );
+
+        /* A grid-routed wire: straight runs at right angles, corners filleted from the point
+           list alone -- no bezier control point was ever hand-picked. */
+        gui_vec2_t stair[ 7 ] = {
+            { r.x + 40.0f,  r.y + 150.0f }, { r.x + 40.0f,  r.y + 90.0f },
+            { r.x + 150.0f, r.y + 90.0f },  { r.x + 150.0f, r.y + 40.0f },
+            { r.x + 280.0f, r.y + 40.0f },  { r.x + 280.0f, r.y + 110.0f },
+            { r.x + 360.0f, r.y + 110.0f },
+        };
+        gui()->draw_rounded_path( stair, 7, s_cv_round, s_cv_thick, false, TEAL );
+        for ( u32 i = 0; i < 7; ++i )
+            gui()->draw_circle( stair[ i ].x, stair[ i ].y, 2.5f, false, 1.0f, AMBER );
+
+        gui()->pop_clip();
+        gui()->draw_text( r.x + 8.0f, r.y + r.h - 20.0f, INK_DIM,
+                          "waypoints only -- corner = the fillet's own bezier control point" );
+    }
+
+    gui()->separator_text( "closed loop, same rule -- next to a reference draw_round_rect" );
+    {
+        gui_rect_t r = gui()->canvas( 180.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        gui_rect_t box = { r.x + 40.0f, r.y + 20.0f, 200.0f, 120.0f };
+        if ( s_cv_ref )
+            gui()->draw_round_rect( box, s_cv_round, s_cv_round, s_cv_round, s_cv_round,
+                                    false, 2.0f, INK_DIM );
+
+        gui_vec2_t loop[ 4 ] = {
+            { box.x, box.y }, { box.x + box.w, box.y },
+            { box.x + box.w, box.y + box.h }, { box.x, box.y + box.h },
+        };
+        gui()->draw_rounded_path( loop, 4, s_cv_round, s_cv_thick, true, TEAL );
+
+        gui()->draw_text( r.x + 260.0f, r.y + 40.0f, INK_DIM, "teal = draw_rounded_path (closed)" );
+        gui()->draw_text( r.x + 260.0f, r.y + 60.0f, INK_DIM, "dim outline = draw_round_rect" );
+        gui()->draw_text( r.x + 260.0f, r.y + 80.0f, INK_DIM, "same box, same radius" );
     }
 }
 

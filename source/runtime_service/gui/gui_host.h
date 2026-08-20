@@ -223,6 +223,7 @@ void gui_draw_box_xf( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 co
 void gui_draw_round_rect_shadow( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 feather, u32 col );
 void gui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
 void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
+void gui_draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, bool closed, u32 col );
 void gui_draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
 void gui_draw_grid( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f32 origin_y, u32 col );
 void gui_draw_hatch( gui_rect_t box, f32 spacing, f32 thickness, u32 col );

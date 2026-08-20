@@ -845,6 +845,13 @@ typedef struct gui_api_s
                                       f32 feather, u32 col );
     void ( *draw_bezier_quad       )( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
     void ( *draw_bezier_cubic      )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
+    /* A polyline whose corners are auto-filleted to `radius`, clamped per-corner to half its
+       shorter adjacent run (same rule draw_clamp_rounding applies to a rect) -- the corner
+       itself is the exact bezier control point for its fillet, so there is no control point to
+       pick and no way for it to come out lopsided.  `closed` joins the last point to the first,
+       every vertex a corner. */
+    void ( *draw_rounded_path      )( const gui_vec2_t* pts, u32 count, f32 radius,
+                                      f32 thickness, bool closed, u32 col );
     void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
     void ( *draw_checker           )( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
     /* Line lattice over `box`: a `thickness` px line every `cell` px, over NOTHING -- layer it on

@@ -169,7 +169,7 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
         if ( draw_cull_box( rects[ i ].x, rects[ i ].y, rects[ i ].w, rects[ i ].h ) )
             continue;
 
-        s_draw.rect_pool[ s_draw.rect_count ]      = rects[ i ];
+        s_draw.rect_pool[ s_draw.rect_count ] = rects[ i ];
         s_draw.rect_pool[ s_draw.rect_count ].abgr = col;
         s_draw.rect_count++;
     }
@@ -179,6 +179,7 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
     gui_cmd_t* c        = draw_cmd_claim( GUI_CMD_RECT_LIST );
     c->rect_list.offset = offset;
     c->rect_list.count  = s_draw.rect_count - offset;
+
     draw_cmd_seal();   /* entries are L1-hot here */
 }
 
@@ -189,9 +190,10 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
     this reuses draw_push_rect_filled wholesale; icon_get (the sprite source contract, supplied
     by the draw unit) hands back the cached UVs.  No-op for an invalid id.
 
-    The texture comes from icon_tex( id ) rather than res_atlas_idx(), which is the entire draw-side
-    cost of icons being able to be distance fields: an icon names its own atlas AND its own sampling
-    model, and one draw call still holds a coverage icon, an SDF icon, a glyph run and a fill.
+    The texture comes from icon_tex( id ) rather than res_atlas_idx(), which is the entire
+    draw-side cost of icons being able to be distance fields: an icon names its own atlas AND
+    its own sampling model, and one draw call still holds a coverage icon, an SDF icon, 
+    a glyph run and a fill.
 ==============================================================================================*/
 
 void
@@ -200,9 +202,12 @@ draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
     f32 u0, v0, u1, v1;
     if ( !icon_get( id, &u0, &v0, &u1, &v1, NULL, NULL ) )
         return;
+
     u32 tex = icon_tex( id );
+
     if ( tex == 0u )
-        return;   /* SDF atlas not stood up yet -- skip the quad, as a glyph run does */
+         return;   /* SDF atlas not stood up yet -- skip the quad, as a glyph run does */
+
     draw_push_rect_filled( x, y, w, h, u0, v0, u1, v1, tex, abgr );
 }
 
@@ -210,10 +215,10 @@ draw_push_icon( f32 x, f32 y, f32 w, f32 h, gui_icon_id_t id, u32 abgr )
     draw_push_image_xf / draw_push_icon_xf -- one textured quad turned about its centre.
 
     The text_xf treatment applied to a single quad: four positions rotate, the UVs interpolate
-    exactly as they would upright, and what makes the result legible at any angle is the sampling
-    model riding the tex word -- an SDF icon resolves its edge from the screen-space derivative
-    and turns cleanly, a coverage icon shows its texels (the same rule the two font bakes follow).
-    Compass needles, minimap markers, spinner glyphs.
+    exactly as they would upright, and what makes the result legible at any angle is the
+    sampling model riding the tex word -- an SDF icon resolves its edge from the screen-space
+    derivative and turns cleanly, a coverage icon shows its texels (the same rule the two 
+    font bakes follow). Compass needles, minimap markers, spinner glyphs.
 ==============================================================================================*/
 
 void

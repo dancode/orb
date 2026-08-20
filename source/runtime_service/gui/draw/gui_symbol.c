@@ -384,6 +384,175 @@ draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
     draw_push_bezier( mx, my, q1rx, q1ry, x1, y1, thickness, col );
 }
 
+/* Skip a straight run shorter than a quarter pixel -- a degenerate/duplicate input point, or a
+   closed rounded_path's seeded start coinciding with its own first fillet entry, should never
+   cost a wasted zero-length capsule draw.
+
+   Uses gui_draw_capsule, not gui_draw_line: an axis-aligned gui_draw_line snaps to a pixel-grid
+   rect with square caps, while the fillet beside it (GUI_FX_BEZIER) is an unsnapped, round-capped
+   field.  Mixing the two puts the straight run's edge up to a pixel away from the fillet's at
+   every joint.  draw_capsule takes no snapping shortcut, so both pieces of the path resolve from
+   the same exact coordinates with matching round caps. */
+static void
+path_line_if( gui_vec2_t a, gui_vec2_t b, f32 thickness, u32 col )
+{
+    f32 dx = b.x - a.x, dy = b.y - a.y;
+    if ( dx * dx + dy * dy > 0.0625f )
+        gui_draw_capsule( a.x, a.y, b.x, b.y, thickness, col );
+}
+
+/* One corner of a rounded path: pull back distance `r` along each of the corner's two adjacent
+   edges to get an entry and exit point, then find the circle that is tangent to both edges at
+   exactly those points -- the same circle draw_round_rect's corner is a quarter of, so a fillet
+   built from it sits exactly on top of a round-rect corner at the same radius rather than
+   approximating it.  `entry`/`exit` each admit two candidate centres (the tangent line's two
+   perpendicular offsets); trying all four combinations and keeping the closest pair is cheaper
+   and less error-prone than deriving the turn's winding sign from a cross product, and exactly
+   one combination coincides regardless of which way the path turns.
+
+   `r` clamps to half the shorter adjacent edge, the same rule draw_clamp_rounding applies to a
+   rect's corner radius, so two fillets sharing one straight run can each claim up to half of it
+   without ever overlapping.  A near-zero-length adjacent edge (duplicate points) degenerates to
+   r = 0, entry = exit = cur -- the caller reads that as "no fillet here, pass straight through"
+   rather than a collapsed curve. */
+static void
+rounded_corner( gui_vec2_t prev, gui_vec2_t cur, gui_vec2_t next, f32 radius,
+                gui_vec2_t* out_entry, gui_vec2_t* out_exit, gui_vec2_t* out_center, f32* out_r )
+{
+    f32 inx = cur.x - prev.x, iny = cur.y - prev.y;
+    f32 outx = next.x - cur.x, outy = next.y - cur.y;
+    f32 len_in  = sqrtf( inx * inx + iny * iny );
+    f32 len_out = sqrtf( outx * outx + outy * outy );
+
+    f32 r = radius;
+    if ( len_in  * 0.5f < r ) r = len_in  * 0.5f;
+    if ( len_out * 0.5f < r ) r = len_out * 0.5f;
+    if ( r < 0.0f ) r = 0.0f;
+    *out_r = r;
+
+    if ( r <= 0.0f || len_in <= 0.0f || len_out <= 0.0f )
+    {
+        *out_entry  = cur;
+        *out_exit   = cur;
+        *out_center = cur;
+        return;
+    }
+
+    f32 dix = inx / len_in,   diy = iny / len_in;
+    f32 dox = outx / len_out, doy = outy / len_out;
+    gui_vec2_t entry = { cur.x - dix * r, cur.y - diy * r };
+    gui_vec2_t exit  = { cur.x + dox * r, cur.y + doy * r };
+    *out_entry = entry;
+    *out_exit  = exit;
+
+    gui_vec2_t ca[ 2 ] = { { entry.x - diy * r, entry.y + dix * r },
+                          { entry.x + diy * r, entry.y - dix * r } };
+    gui_vec2_t cb[ 2 ] = { { exit.x - doy * r, exit.y + dox * r },
+                          { exit.x + doy * r, exit.y - dox * r } };
+
+    gui_vec2_t best    = ca[ 0 ];
+    f32        best_d2 = 1e30f;
+    for ( u32 i = 0; i < 2; ++i )
+    {
+        for ( u32 j = 0; j < 2; ++j )
+        {
+            f32 dx = ca[ i ].x - cb[ j ].x, dy = ca[ i ].y - cb[ j ].y;
+            f32 d2 = dx * dx + dy * dy;
+            if ( d2 < best_d2 )
+            {
+                best_d2 = d2;
+                best    = ( gui_vec2_t ){ ( ca[ i ].x + cb[ j ].x ) * 0.5f,
+                                          ( ca[ i ].y + cb[ j ].y ) * 0.5f };
+            }
+        }
+    }
+    *out_center = best;
+}
+
+/* One circular fillet: the short way around from `entry` to `exit` about `center` -- GUI_FX_ARC,
+   exact at any radius, which is what makes it coincide with draw_round_rect's own corner. */
+static void
+corner_arc( gui_vec2_t entry, gui_vec2_t exit, gui_vec2_t center, f32 r, f32 thickness, u32 col )
+{
+    f32 a0 = atan2f( entry.y - center.y, entry.x - center.x );
+    f32 a1 = atan2f( exit.y  - center.y, exit.x  - center.x );
+    f32 delta = a1 - a0;
+    while ( delta >  SYM_PI ) delta -= SYM_TAU;
+    while ( delta < -SYM_PI ) delta += SYM_TAU;
+    draw_arc( center.x, center.y, r, a0, a0 + delta, thickness, col );
+}
+
+/* A polyline whose corners are automatically filleted to `radius`, clamped per-corner so a
+   fillet never eats past its own straight run (rounded_corner above) -- the "rounded rect bezel"
+   guarantee applied to an arbitrary point-to-point path, instead of a hand-picked bezier control
+   point that can come out lopsided.  A straight run between fillets is GUI_FX_SEG (gui_draw_capsule,
+   unsnapped so it lines up with the fillet beside it); each fillet is one GUI_FX_ARC quad, exact
+   at the same radius a round-rect corner would use.  Streams the path in one pass with no working
+   array: each corner's clamp depends only on its own two neighbours, so nothing needs the whole
+   point set at once. */
+static void
+draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, bool closed,
+                   u32 col )
+{
+    if ( !pts || count < 2 )
+        return;
+    if ( count == 2 || radius <= 0.0f )
+    {
+        gui_draw_polyline( pts, count, sym_thick( thickness ), GUI_STROKE_CENTER, closed, col );
+        return;
+    }
+
+    thickness = sym_thick( thickness );
+
+    if ( !closed )
+    {
+        gui_vec2_t cur = pts[ 0 ];
+        for ( u32 i = 1; i + 1 < count; ++i )
+        {
+            gui_vec2_t entry, exit, center; f32 r;
+            rounded_corner( pts[ i - 1 ], pts[ i ], pts[ i + 1 ], radius,
+                            &entry, &exit, &center, &r );
+            if ( r <= 0.0f )
+            {
+                path_line_if( cur, pts[ i ], thickness, col );
+                cur = pts[ i ];
+                continue;
+            }
+            path_line_if( cur, entry, thickness, col );
+            corner_arc( entry, exit, center, r, thickness, col );
+            cur = exit;
+        }
+        path_line_if( cur, pts[ count - 1 ], thickness, col );
+        return;
+    }
+
+    /* Closed loop: every vertex is a corner, including index 0, with wraparound neighbours.
+       Seed the cursor at corner 0's own entry (its fillet is drawn on the first loop iteration
+       below) so the walk can close back onto that same point at the end. */
+    gui_vec2_t entry0, exit0, center0; f32 r0;
+    rounded_corner( pts[ count - 1 ], pts[ 0 ], pts[ 1 ], radius, &entry0, &exit0, &center0, &r0 );
+    gui_vec2_t start = ( r0 > 0.0f ) ? entry0 : pts[ 0 ];
+    gui_vec2_t cur   = start;
+
+    for ( u32 i = 0; i < count; ++i )
+    {
+        gui_vec2_t prev = pts[ ( i + count - 1 ) % count ];
+        gui_vec2_t next = pts[ ( i + 1 ) % count ];
+        gui_vec2_t entry, exit, center; f32 r;
+        rounded_corner( prev, pts[ i ], next, radius, &entry, &exit, &center, &r );
+        if ( r <= 0.0f )
+        {
+            path_line_if( cur, pts[ i ], thickness, col );
+            cur = pts[ i ];
+            continue;
+        }
+        path_line_if( cur, entry, thickness, col );
+        corner_arc( entry, exit, center, r, thickness, col );
+        cur = exit;
+    }
+    path_line_if( cur, start, thickness, col );
+}
+
 /*==============================================================================================
     Patterned lines + fills
 ==============================================================================================*/
@@ -807,6 +976,8 @@ void gui_draw_round_rect_shadow( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f
 /* curves */
 void gui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col )
                                                                                { draw_bezier_quad( x0, y0, cx, cy, x1, y1, thickness, col ); }
+void gui_draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, bool closed, u32 col )
+                                                                               { draw_rounded_path( pts, count, radius, thickness, closed, col ); }
 void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col )
                                                                                { draw_bezier_cubic( x0, y0, c0x, c0y, c1x, c1y, x1, y1, thickness, col ); }
 
