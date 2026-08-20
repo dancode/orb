@@ -29,13 +29,15 @@
 
 static struct
 {
-    gui_id_t marks[ GUI_SELECT_MARK_MAX ];   /* windows to capture at this frame's build */
-    u32      mark_count;
+    /* windows to capture at this frame's build */
 
-    gui_select_run_t runs[ GUI_SELECT_MAX_RUNS ];
-    u32              run_count;
-    char             text [ GUI_SELECT_TEXT_POOL ];
-    u32              text_used;
+    gui_id_t            marks[ GUI_SELECT_MARK_MAX ];   
+    u32                 mark_count;
+
+    gui_select_run_t    runs[ GUI_SELECT_MAX_RUNS ];
+    u32                 run_count;
+    char                text [ GUI_SELECT_TEXT_POOL ];
+    u32                 text_used;
 
     u32 serial;    /* bumped per capture; the controller revalidates its endpoints on change */
 
@@ -59,17 +61,20 @@ select_capture_mark( gui_id_t win )
 
 /*============================================================================================*/
 /* Rebuild the run buffer from this frame's command list.  Called once per real build from
-   cache_build_frame, right after the final segment is closed.  Walks the segment table (not
-   the raw command list) so only marked windows' spans are touched; the debug band is skipped
-   -- diagnostic text is not selectable.  Buffer overflow (runs or text bytes) drops the
-   remainder rather than failing: selection simply does not extend past the cap. */
+   cache_build_frame, right after the final segment is closed.  
+   
+   Walks the segment table (not the raw command list), only marked windows' spans are touched;
+   the debug band is skipped-- diagnostic text is not selectable.  
+   
+   Buffer overflow (runs or text bytes) drops the remainder rather than failing: selection
+   simply does not extend past the cap. */
 
 void
 select_capture_build( void )
 {
     /* Feature idle: nothing marked and nothing lingering from a previous capture. */
     if ( s_select_cap.mark_count == 0 && s_select_cap.run_count == 0 )
-        return;
+         return;
 
     s_select_cap.run_count = 0;
     s_select_cap.text_used = 0;

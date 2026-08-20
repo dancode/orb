@@ -1607,6 +1607,11 @@ static f32  s_cv_smooth_y2  = 0.0f;  /* vertical offset of the dragged point, sm
 static f32  s_cv_smooth_y3  = 0.0f;  /* vertical offset of the dragged point, smooth-path demo */
 static f32  s_cv_smooth_gap = 70.0f; /* flanking points' distance from the moved centre point */
 
+static f32  s_cv_wire_x   = 0.0f;    /* destination node offset, node-graph wire demo */
+static f32  s_cv_wire_y   = 0.0f;
+static f32  s_cv_wire_min = 30.0f;   /* draw_wire tangent clamps, the UE Blueprint defaults */
+static f32  s_cv_wire_max = 200.0f;
+
 /* Sandbox-only exact reference: the same de Casteljau sum draw_bezier_cubic used to flatten
    before this campaign, kept here purely so the new field's approximation has something exact
    to be compared against on screen. */
@@ -1693,24 +1698,78 @@ win_curves( void )
         gui()->pop_clip();
     }
 
-    gui()->separator_text( "the node-graph wire at scale -- same shape Backdrops previews" );
+    gui()->separator_text( "the node-graph wire -- draw_wire, tangents from pin distance" );
+    gui()->slider_float_step( "destination x", &s_cv_wire_x, -300.0f, 300.0f, 5.0f );
+    gui()->slider_float_step( "destination y", &s_cv_wire_y, -70.0f,  70.0f,  5.0f );
+    gui()->slider_float( "min tangent", &s_cv_wire_min, 0.0f, 120.0f );
+    gui()->slider_float( "max tangent", &s_cv_wire_max, 20.0f, 400.0f );
     {
         gui_rect_t r = gui()->canvas( 200.0f );
         gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
         gui()->draw_grid( r, 12.0f, 1.0f, r.x, r.y, GUI_COLOR( 0x2C, 0x2C, 0x36, 0xFF ) );
         gui()->push_clip( r.x, r.y, r.w, r.h );
-        gui_rect_t na = { r.x + 40.0f,  r.y + 40.0f,  120.0f, 56.0f };
-        gui_rect_t nb = { r.x + 320.0f, r.y + 110.0f, 120.0f, 56.0f };
-        if ( s_cv_ref )
-            ref_cubic( na.x + na.w, na.y + na.h * 0.5f, na.x + na.w + 60.0f, na.y + na.h * 0.5f,
-                      nb.x - 60.0f, nb.y + nb.h * 0.5f, nb.x, nb.y + nb.h * 0.5f, INK_DIM );
-        gui()->draw_bezier_cubic( na.x + na.w, na.y + na.h * 0.5f,
-                                  na.x + na.w + 60.0f, na.y + na.h * 0.5f,
-                                  nb.x - 60.0f, nb.y + nb.h * 0.5f,
-                                  nb.x, nb.y + nb.h * 0.5f, s_cv_thick, TEAL );
+
+        /* Drag "destination x" left of the source node to reach the backward case: the wire has
+           to doubleback, and the extra tangent draw_wire adds past max_tan there is what keeps
+           the fold from lying on top of itself.  Sweeping the same slider right shows the point
+           of the heuristic -- the curve keeps its proportions as the gap grows instead of
+           flattening toward a straight line, until max_tan takes over and holds the bulge
+           steady across the rest of the graph. */
+        gui_rect_t na = { r.x + 60.0f,               r.y + 40.0f,  120.0f, 56.0f };
+        gui_rect_t nb = { r.x + 300.0f + s_cv_wire_x, r.y + 110.0f + s_cv_wire_y, 120.0f, 56.0f };
+        f32        ax = na.x + na.w, ay = na.y + na.h * 0.5f;
+        f32        bx = nb.x,        by = nb.y + nb.h * 0.5f;
+
+        gui()->draw_wire( ax, ay, bx, by, s_cv_wire_min, s_cv_wire_max, s_cv_thick, TEAL );
         gui()->draw_round_rect( na, 6.0f, 6.0f, 6.0f, 6.0f, true, 0.0f, EDGE );
         gui()->draw_round_rect( nb, 6.0f, 6.0f, 6.0f, 6.0f, true, 0.0f, EDGE );
+        gui()->draw_circle( ax, ay, 3.0f, true, 0.0f, INK );
+        gui()->draw_circle( bx, by, 3.0f, true, 0.0f, INK );
         gui()->pop_clip();
+
+        gui()->textf( "two GUI_FX_BEZIER quads per wire -- no subdivision count to tune" );
+    }
+
+    gui()->separator_text( "one output, many inputs -- the same call at every distance" );
+    {
+        gui_rect_t r = gui()->canvas( 260.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+        gui()->draw_grid( r, 12.0f, 1.0f, r.x, r.y, GUI_COLOR( 0x2C, 0x2C, 0x36, 0xFF ) );
+        gui()->push_clip( r.x, r.y, r.w, r.h );
+
+        /* A fan from one output pin is where the tangent heuristic earns itself: every wire here
+           is the same draw_wire call with the same clamps, and no destination needed a control
+           point picked for it.  The near targets curve as hard as the far ones instead of the
+           near ones looking kinked and the far ones going slack, which is what a fixed tangent
+           length (the 60 px this demo used to hardcode) does across a spread like this.
+           The last entry sits BACKWARD and above -- the doubleback case. */
+        static const struct { f32 dx, dy; u32 col; } dest[] = {
+            {  110.0f, -80.0f, TEAL   },
+            {  150.0f, -20.0f, TEAL   },
+            {  300.0f,  25.0f, ACCENT },
+            {  180.0f,  85.0f, TEAL   },
+            {  360.0f, 105.0f, ACCENT },
+            { -150.0f, -95.0f, VIOLET },
+        };
+        const u32  n  = (u32)( sizeof( dest ) / sizeof( dest[ 0 ] ) );
+        gui_rect_t na = { r.x + 150.0f, r.y + 110.0f, 96.0f, 44.0f };
+        f32        ax = na.x + na.w, ay = na.y + na.h * 0.5f;
+
+        for ( u32 i = 0; i < n; ++i )
+        {
+            gui_rect_t nb = { ax + dest[ i ].dx, ay + dest[ i ].dy - 18.0f, 84.0f, 36.0f };
+            f32        bx = nb.x, by = nb.y + nb.h * 0.5f;
+
+            gui()->draw_wire( ax, ay, bx, by, 30.0f, 200.0f, s_cv_thick, dest[ i ].col );
+            gui()->draw_round_rect( nb, 5.0f, 5.0f, 5.0f, 5.0f, true, 0.0f, EDGE );
+            gui()->draw_circle( bx, by, 2.5f, true, 0.0f, INK );
+        }
+
+        gui()->draw_round_rect( na, 6.0f, 6.0f, 6.0f, 6.0f, true, 0.0f, EDGE );
+        gui()->draw_circle( ax, ay, 3.5f, true, 0.0f, AMBER );
+        gui()->pop_clip();
+
+        gui()->textf( "%u wires = %u quads -- violet is the backward doubleback", n, n * 2u );
     }
 
     gui()->separator_text( "auto-filleted corners -- draw_rounded_path, radius clamps per corner" );

@@ -384,6 +384,41 @@ draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
     draw_push_bezier( mx, my, q1rx, q1ry, x1, y1, thickness, col );
 }
 
+/* Node-graph wire between two pins: a cubic whose endpoint tangents are horizontal by
+   construction, so it always leaves the source pin heading right and arrives at the destination
+   pin heading right, whatever the two pins' relative positions.  That imposed direction is the
+   whole difference from draw_smooth_path, which derives every tangent from neighbouring points
+   and therefore draws a bare two-point path as a straight line -- a pin's exit direction is a
+   property of the port, not of where the other end happens to sit.
+
+   Tangent length is 0.5 * the larger of the two axis distances, so the curve keeps the same
+   proportions near and far instead of flattening out as the pins separate.  Vertical distance
+   feeds that same max deliberately: two pins stacked with little horizontal gap still get a
+   horizontal bulge, which is what keeps the wire off the nodes' own edges.  min_tan floors it so
+   near-touching pins still read as a curve; max_tan caps the distance-derived part so a wire
+   across a whole graph does not balloon.
+
+   A wire running BACKWARD (destination left of source) has to doubleback, and with the pins
+   near the same height that fold is tight enough to overlap itself.  Widening the tangent by
+   half the vertical distance opens the loop out; it is added after the clamp on purpose, since
+   clamping it away is exactly the case it exists to fix.
+
+   Costs two GUI_FX_BEZIER quads -- draw_bezier_cubic's split -- not a flattened polyline. */
+static void
+draw_wire( f32 x0, f32 y0, f32 x1, f32 y1, f32 min_tan, f32 max_tan, f32 thickness, u32 col )
+{
+    f32 adx = fabsf( x1 - x0 );
+    f32 ady = fabsf( y1 - y0 );
+
+    f32 t = 0.5f * ( adx > ady ? adx : ady );
+    if ( t < min_tan ) t = min_tan;
+    if ( t > max_tan ) t = max_tan;
+    if ( x1 < x0 )
+        t += ady * 0.5f;
+
+    draw_bezier_cubic( x0, y0, x0 + t, y0, x1 - t, y1, x1, y1, thickness, col );
+}
+
 /* Skip a straight run shorter than a quarter pixel -- a degenerate/duplicate input point, or a
    closed rounded_path's seeded start coinciding with its own first fillet entry, should never
    cost a wasted zero-length draw.
@@ -1161,6 +1196,8 @@ void gui_draw_smooth_path( const gui_vec2_t* pts, u32 count, f32 thickness, bool
                                                                                { draw_smooth_path( pts, count, thickness, closed, col ); }
 void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col )
                                                                                { draw_bezier_cubic( x0, y0, c0x, c0y, c1x, c1y, x1, y1, thickness, col ); }
+void gui_draw_wire( f32 x0, f32 y0, f32 x1, f32 y1, f32 min_tan, f32 max_tan, f32 thickness, u32 col )
+                                                                               { draw_wire( x0, y0, x1, y1, min_tan, max_tan, thickness, col ); }
 
 /* patterned lines + fills.  (gui_draw_dashed_line is the backend primitive in gui_emit_path.c;
    the vtable binds straight to it.) */

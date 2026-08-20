@@ -1,4 +1,5 @@
 /*==============================================================================================
+
     gui/render/pipeline/gui_emit_text.c -- Glyph runs.
 
     The pool-backed pushes: every run is copied into the frame text pool before a command slot is
@@ -8,6 +9,7 @@
 
     Three commands, not one with feathers: the plain run is the hot path every chrome label goes
     through, and the shadow and transformed forms would otherwise put unused fields on all of them.
+
 ==============================================================================================*/
 // clang-format off
 
@@ -24,6 +26,7 @@
    false (loudly, once) when the pool is exhausted; *out_off is the stored offset.  The pool copy
    is what lets callers pass stack-local buffers (textf, snprintf labels): nothing about the
    caller's string needs to outlive the call. */
+
 static bool
 draw_text_pool_copy( const char* str, u32 len, u32* out_off )
 {

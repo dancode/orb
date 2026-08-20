@@ -858,6 +858,16 @@ typedef struct gui_api_s
        node-graph wire model).  Collinear points degenerate to a straight run with no bulge. */
     void ( *draw_smooth_path       )( const gui_vec2_t* pts, u32 count, f32 thickness,
                                       bool closed, u32 col );
+    /* Node-graph wire between two pins.  Endpoint tangents are horizontal by construction --
+       out of the source pin heading right, into the destination pin heading right -- because a
+       pin's exit direction belongs to the port, not to wherever the other end sits (which is
+       why draw_smooth_path, deriving tangents from neighbours, draws a two-point path flat).
+       Tangent length is 0.5 * the larger axis distance, floored at `min_tan` so touching pins
+       still read as a curve and capped at `max_tan` so a graph-spanning wire does not balloon;
+       a backward wire (x1 < x0) widens past the cap to keep its doubleback from overlapping
+       itself.  Both clamps are in the same already-DPI-scaled space as the pin coordinates. */
+    void ( *draw_wire              )( f32 x0, f32 y0, f32 x1, f32 y1, f32 min_tan, f32 max_tan,
+                                      f32 thickness, u32 col );
     void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
     void ( *draw_checker           )( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
     /* Line lattice over `box`: a `thickness` px line every `cell` px, over NOTHING -- layer it on

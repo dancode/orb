@@ -42,22 +42,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>           // va_list / va_start -- printf-style textf() widget
-#include <math.h>             // floorf / ceilf -- pixel-grid snapping in draw + scissor
+#include <stdarg.h>    // va_list / va_start -- printf-style textf() widget
+#include <math.h>      // floorf / ceilf -- pixel-grid snapping in draw + scissor
 
 #include "orb.h"
-#include "base/fmt.h"         // fmt_snprintf / fmt_vsnprintf -- CRT-free formatting on the per-frame text paths
-#include "base/math.h"        // f32_lerp -- from/to interpolation for the animation service
-#include "base/math_ease.h"   // f32_ease_* shapers -- the easing curves the animation service applies
+#include "base/fmt.h"     // fmt_snprintf / fmt_vsnprintf -- CRT-free formatting on the per-frame text paths
+#include "base/math.h"    // f32_lerp -- from/to interpolation for the animation service
+#include "base/math_ease.h"    // f32_ease_* shapers -- the easing curves the animation service applies
 
-#include "engine/sys/sys_host.h"   // sys_root_dir -- disk assets (load_icon, asset_path) resolve root-relative
+#include "engine/sys/sys_host.h"    // sys_root_dir -- disk assets (load_icon, asset_path) resolve root-relative
 
 /* The orchestrator's world -- everything, in stack order (each carved unit includes only
    the headers at or below its layer; this unit sits on top and includes them all). */
-#include "runtime_service/gui/render/gui_render.h"   /* THE RENDER SERVER's surface
+#include "runtime_service/gui/render/gui_render.h" /* THE RENDER SERVER's surface
                                                         (pulls gui_host.h + rhi/app APIs)   */
-#include "runtime_service/gui/core/gui_core.h"       /* THE INTERACT SERVER's services      */
-#include "runtime_service/gui/core/gui_ctx.h"        /* ... and its retained-mode storage   */
+#include "runtime_service/gui/core/gui_core.h"     /* THE INTERACT SERVER's services      */
+#include "runtime_service/gui/core/gui_ctx.h"      /* ... and its retained-mode storage   */
 #include "runtime_service/gui/style/gui_style.h"
 #include "runtime_service/gui/draw/gui_draw.h"
 #include "runtime_service/gui/interact/gui_interact.h"

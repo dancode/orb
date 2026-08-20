@@ -7,6 +7,9 @@
 
         gui_emit_state.c   this file -- s_draw, the frame reset, the clip stack, the ambient
         gui_emit_cmd.c     the command record: claim, stamp, hash, seal
+
+        types of emitted shapes, each in its own file:
+
         gui_emit_shape.c   fills, pictures, gradients
         gui_emit_fx.c      the SDF surface family (shadows, sectors, patterns, lattices)
         gui_emit_edge.c    outlines, bezels, the bare triangle
@@ -16,20 +19,23 @@
     This file owns s_draw -- every pool the frame fills and every ambient the pushes read -- and
     nothing in it emits a command.  Unity visibility flows downward only, so it must come first.
 
-    The resolvers the shape files call -- font_glyph, icon_get, icon_atlas_idx -- are NOT in this
-    unit: fonts and icons are the draw object unit's, but the server reaches them through the
-    glyph/sprite resource contract declared in render/gui_render.h, which the draw unit
+    The resolvers the shape files call -- font_glyph, icon_get, icon_atlas_idx -- are NOT in
+    this unit: fonts and icons are the draw object unit's, but the server reaches them through
+    the glyph/sprite resource contract declared in render/gui_render.h, which the draw unit
     implements.  Nothing here depends on include order for them.
 
 ==============================================================================================*/
+
 // clang-format off
 
 /*==============================================================================================
+
     GPU Command -- backend-private GPU draw command after tessellation.
 
     One bounded range of quads -- the unit the GPU sees (not exposed in gui.h) 
     The public gui_cmd_t carries semantic shapes; the BUILD phase (gui_build_tess.c)
     tessellates those into these.
+
 ==============================================================================================*/
 
 typedef struct
@@ -114,6 +120,7 @@ static struct
        The frame counters are the only truth while a frame is open and they are gone the moment it
        closes, so a cap can only be argued from what was retained here -- see backend_pool_report
        (render/gui_render_mem.c), which prints all of them against their #defines. */
+
     u32             cmd_hwm, pt_hwm, rect_hwm, text_hwm, clip_hwm, seg_hwm;
 
     gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */
@@ -138,6 +145,8 @@ static struct
     u32             clip_table_n;                               /* entries used this frame                  */
     u8              clip_idx_stack  [ GUI_CLIP_DEPTH ];         /* parallel to clip_stack: index per level  */
     u8              cur_clip_idx;                               /* top-of-stack index, stamped on each emit */
+
+    /* Emit tracking */
 
     gui_rect_t      clip_stack[ GUI_CLIP_DEPTH ];               /* intersected rects, mirrors clip_table   */
     u32             clip_depth;
@@ -337,11 +346,13 @@ draw_reset( i32 display_w, i32 display_h )
        (volatile_cb_close brackets live commands), so everything above the high-water mark is
        already zero by induction from the zeroed static.  Must run before cmd_count resets.
        (GUI_ID_NONE is 0.) */
+
     memset( s_draw.cmd_volatile_id, 0, s_draw.cmd_count * sizeof( s_draw.cmd_volatile_id[ 0 ] ) );
 
     /* Retain the closing frame's fills before they are cleared -- the pool report has no other
        chance to see them (a saturated pool that dropped content still reads at its cap here,
        which is exactly the signal). */
+
     if ( s_draw.cmd_count      > s_draw.cmd_hwm  ) s_draw.cmd_hwm  = s_draw.cmd_count;
     if ( s_draw.pt_count       > s_draw.pt_hwm   ) s_draw.pt_hwm   = s_draw.pt_count;
     if ( s_draw.rect_count     > s_draw.rect_hwm ) s_draw.rect_hwm = s_draw.rect_count;
@@ -353,13 +364,14 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.pt_count        = 0;
     s_draw.rect_count      = 0;
     s_draw.text_pool_used  = 0;
-    s_draw.cur_win         = 0;   /* background; windows tag it via draw_set_window */
-    s_draw.cur_z           = 0;   /* background; windows raise it via draw_set_sort_key */
-    s_draw.cur_vp          = 0;   /* main viewport; windows route via draw_set_viewport */
-    s_draw.cur_font        = font_active_id();   /* background segment inherits whatever font is active now */
-    s_draw.cur_band        = 0;   /* main band; diagnostic windows switch via draw_set_band */
-
+    s_draw.cur_win         = 0;                 /* background; windows tag it via draw_set_window */
+    s_draw.cur_z           = 0;                 /* background; windows raise it via draw_set_sort_key */
+    s_draw.cur_vp          = 0;                 /* main viewport; windows route via draw_set_viewport */
+    s_draw.cur_font        = font_active_id();  /* background segment inherits whatever font is active now */
+    s_draw.cur_band        = 0;                 /* main band; diagnostic windows switch via draw_set_band */
+    
     /* Open the first command segment: background (win 0, z 0, main viewport, active font, main band). */
+
     s_draw.seg_count       = 1;
     s_draw.segs[ 0 ]       = ( gui_cmd_seg_t ){ 0 };
 
@@ -423,6 +435,7 @@ clip_append( gui_rect_t r, f32 radius )
 
     /* A radius past the half-extent inverts the rounded-box field; clamp so the tightest legal
        capsule is the worst case.  Runs before hashing so equal requests dedup to one entry. */
+
     f32 max_r = ( ( r.w < r.h ) ? r.w : r.h ) * 0.5f;
     if ( radius > max_r ) radius = max_r;
     if ( radius < 0.0f )  radius = 0.0f;
@@ -449,11 +462,14 @@ clip_append( gui_rect_t r, f32 radius )
     /* Saturation is a VISUAL corruption, not a drop: every clip past the cap shares slot cap-2's
        rect, so content scissors against some other region's box.  Without a report this reads as
        an inexplicable clipping glitch. */
+
     GUI_WARN_ONCE( "clip table full (%u distinct scissor rects this frame) -- "
                    "further clips share a wrong rect. Raise GUI_MAX_CLIP_RECTS (gui.h).\n",
                    (unsigned)GUI_MAX_CLIP_RECTS );
+
     ORB_ASSERT_MSG_ONCE( false, "gui clip table saturated -- clips share a wrong scissor rect; "
                                 "raise GUI_MAX_CLIP_RECTS (gui.h)" );
+
     return (u8)( GUI_MAX_CLIP_RECTS - 2u );
 }
 
@@ -551,6 +567,7 @@ draw_pop_clip_rect( void )
    emitted reference that index -- and dedup there makes the common set/restore ping-pong (main-
    display windows swap display -> display) reuse one slot instead of minting entries per window.
    clip_idx_stack[0] is updated so subsequent pushes inherit the new root. */
+
 void
 draw_set_root_clip( f32 w, f32 h )
 {
@@ -568,6 +585,7 @@ draw_set_root_clip( f32 w, f32 h )
    in place, so back-to-back set_window / set_sort_key / set_viewport calls before any draw never spawn
    empty spans.  On overflow the open segment is just extended (its tag may then be stale, but only in
    the pathological >1024-segment case, which cache_tess_window already falls back to natural order). */
+
 static void
 draw_seg_retag( gui_id_t win, u32 z, i32 vp, u32 band )
 {

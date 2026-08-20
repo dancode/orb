@@ -143,6 +143,7 @@ const gui_api_t g_gui_api_struct =
     .draw_bezier_cubic                  = gui_draw_bezier_cubic,
     .draw_rounded_path                  = gui_draw_rounded_path,
     .draw_smooth_path                   = gui_draw_smooth_path,
+    .draw_wire                          = gui_draw_wire,
     .draw_dashed_line                   = gui_draw_dashed_line,
     .draw_checker                       = gui_draw_checker,
     .draw_grid                          = gui_draw_grid,

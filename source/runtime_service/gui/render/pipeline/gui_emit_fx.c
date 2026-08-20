@@ -1,14 +1,16 @@
 /*==============================================================================================
+
     gui/render/pipeline/gui_emit_fx.c -- The SDF surface family.
 
-    The pushes whose shape is resolved by the FRAGMENT off a style record rather than by geometry:
-    the fx_box faces (shadow, skirt, glow, inset, pulse, rotated box), the per-corner rounded rect,
-    the circular sectors and their dashed / gradient forms, the cell and lattice patterns, the
-    regular polygon, the dashed and traced box outlines, and the two repeat lattices.
+    The pushes whose shape is resolved by the FRAGMENT off a style record rather than geometry:
+    the fx_box faces (shadow, skirt, glow, inset, pulse, rotated box), the per-corner rounded
+    rect, the circular sectors and their dashed / gradient forms, the cell and lattice patterns,
+    the regular polygon, the dashed and traced box outlines, and the two repeat lattices.
 
     What they have in common is that one quad covers any size and any count, and that the ones
     carrying a rate animate on the shader clock -- their bytes are identical every frame, so a
     pulse or a spinner re-tessellates nothing.  See gui_common.hlsli for the ops they stamp.
+
 ==============================================================================================*/
 // clang-format off
 
@@ -44,6 +46,7 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
        paints a band on it.  A rotated box culls against its rotated AABB -- computed here rather
        than approximated with the diagonal, because the exact box is four multiplies and the
        diagonal wrongly keeps every long thin rotated bar on screen. */
+
     f32 pad = feather * 0.5f + 1.0f;
     f32 bx = x, by = y, bw = w, bh = h;
     if ( rot != 0.0f )
@@ -60,26 +63,29 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
     gui_cmd_t* c = draw_cmd_open( GUI_CMD_FX_BOX, col, bx, by, bw, bh, pad );
     if ( !c )
         return;
-    c->fx_box.x        = x;
-    c->fx_box.y        = y;
-    c->fx_box.w        = w;
-    c->fx_box.h        = h;
-    c->fx_box.rounding = rounding;
-    c->fx_box.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
-    c->fx_box.feather  = feather;
-    c->fx_box.rate     = rate;
-    c->fx_box.depth    = depth;
-    c->fx_box.phase    = phase + s_draw.anim_phase;
-    c->fx_box.rot      = rot;
-    c->fx_box.abgr     = col;
-    c->fx_box.variant  = variant;
-    c->fx_box.cut_dx   = cut_dx;
-    c->fx_box.cut_dy   = cut_dy;
+
+    c->fx_box.x             = x;
+    c->fx_box.y             = y;
+    c->fx_box.w             = w;
+    c->fx_box.h             = h;
+    c->fx_box.rounding      = rounding;
+    c->fx_box.corner_pow    = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    c->fx_box.feather       = feather;
+    c->fx_box.rate          = rate;
+    c->fx_box.depth         = depth;
+    c->fx_box.phase         = phase + s_draw.anim_phase;
+    c->fx_box.rot           = rot;
+    c->fx_box.abgr          = col;
+    c->fx_box.variant       = variant;
+    c->fx_box.cut_dx        = cut_dx;
+    c->fx_box.cut_dy        = cut_dy;
+
     /* A pulse that names no curve breathes on the raised cosine it always has: a sawtooth would
        snap back to full every cycle, which is not what breathing is.  Resolved here, at the one
        site that knows the shape is pulsing at all.  A shadow is not animated, so it takes no
        curve however the ambient is set -- the command hash must not move for a shape whose
        motion nothing reads. */
+
     c->fx_box.curve       = ( rate <= 0.0f ) ? 0u
                           : ( ( s_draw.anim_curve == GUI_CURVE_LINEAR )
                               ? (u32)GUI_CURVE_SINE : s_draw.anim_curve );
@@ -168,11 +174,14 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
        the exponent the record carries: t^e crosses 0.5 at mid when e = ln 0.5 / ln mid.  0.5 and
        0 are the linear default and store 0, which is also what keeps two identical linear ramps
        authored either way deduping onto one record. */
+
     f32 mid_e = 0.0f;
     if ( grad_mid > 0.001f && grad_mid < 0.999f && grad_mid != 0.5f )
         mid_e = -0.69314718f / logf( grad_mid );
+
     /* Cull against the grown box: the falloff skirt is real geometry (feather/2 past the rect,
        plus the tessellator's pixel of slack) -- the draw_push_shadow rule. */
+
     f32 pad = ( feather > 0.0f ? feather * 0.5f : 0.0f ) + 1.0f;
     u32 col = draw_apply_alpha( abgr );
     u32 cb  = draw_apply_alpha( col_b );
@@ -180,26 +189,29 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
     /* The transparent drop must see the WHOLE ramp: a gradient fading in from nothing has a
        transparent first endpoint and is still a real shape, the same nuance an outline-only
        text run relies on.  Visibility is therefore the stronger of the two alphas. */
+
     u32 vis = ( ( cb >> 24 ) > ( col >> 24 ) ) ? cb : col;
 
     gui_cmd_t* c = draw_cmd_open( GUI_CMD_ROUND_RECT_EX, vis, x, y, w, h, pad );
     if ( !c )
         return;
-    c->round_rect.x        = x;
-    c->round_rect.y        = y;
-    c->round_rect.w        = w;
-    c->round_rect.h        = h;
-    c->round_rect.rtl      = rtl;
-    c->round_rect.rtr      = rtr;
-    c->round_rect.rbr      = rbr;
-    c->round_rect.rbl      = rbl;
-    c->round_rect.feather  = feather;
-    c->round_rect.corner_pow = s_draw.corner_pow;
-    c->round_rect.abgr     = col;
-    c->round_rect.col_b    = cb;
-    c->round_rect.grad_ang  = grad_ang;
-    c->round_rect.grad_kind = grad_kind;
-    c->round_rect.grad_mid  = mid_e;
+
+    c->round_rect.x             = x;
+    c->round_rect.y             = y;
+    c->round_rect.w             = w;
+    c->round_rect.h             = h;
+    c->round_rect.rtl           = rtl;
+    c->round_rect.rtr           = rtr;
+    c->round_rect.rbr           = rbr;
+    c->round_rect.rbl           = rbl;
+    c->round_rect.feather       = feather;
+    c->round_rect.corner_pow    = s_draw.corner_pow;
+    c->round_rect.abgr          = col;
+    c->round_rect.col_b         = cb;
+    c->round_rect.grad_ang      = grad_ang;
+    c->round_rect.grad_kind     = grad_kind;
+    c->round_rect.grad_mid      = mid_e;
+
     draw_cmd_seal();
 }
 
@@ -227,17 +239,19 @@ draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     gui_cmd_t* c = draw_cmd_open( type, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
     if ( !c )
         return;
-    c->arc.cx         = cx;
-    c->arc.cy         = cy;
-    c->arc.r          = r;
-    c->arc.thickness  = thickness;
-    c->arc.a0         = a0;
-    c->arc.a1         = a1;
-    c->arc.spin_rate  = spin_rate;
-    c->arc.spin_phase = spin_phase + s_draw.anim_phase;
-    c->arc.abgr       = col;
-    c->arc.curve       = s_draw.anim_curve;
-    c->arc.curve_param = s_draw.anim_curve_param;
+
+    c->arc.cx           = cx;
+    c->arc.cy           = cy;
+    c->arc.r            = r;
+    c->arc.thickness    = thickness;
+    c->arc.a0           = a0;
+    c->arc.a1           = a1;
+    c->arc.spin_rate    = spin_rate;
+    c->arc.spin_phase   = spin_phase + s_draw.anim_phase;
+    c->arc.abgr         = col;
+    c->arc.curve        = s_draw.anim_curve;
+    c->arc.curve_param  = s_draw.anim_curve_param;
+
     draw_cmd_seal();
 }
 

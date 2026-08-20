@@ -544,6 +544,7 @@ cache_invalidate_window( gui_id_t win )
 
 /* cache_diff_windows -- accumulate per-window hashes from the command list, sort, and diff.
    Runs before tessellation so a fully-unchanged frame can skip tess entirely. */
+
 static void
 cache_diff_windows( void )
 {
@@ -553,10 +554,12 @@ cache_diff_windows( void )
     /* Pass 1: fold each segment's command hashes into its window's accumulated hash.
        Also track max-z and last-vp per window so the slot builder needs no second scan.
        cmd_count is summed here to avoid a separate pass over segs later. */
+
     s_cache.cur_n = 0;
     u32 total_cmd = 0;
-    u32 memo_bi   = ~0u;   /* last record hit -- consecutive segments usually share a window */
+    u32 memo_bi   = ~0u;                            /* last record hit -- consecutive segments usually share a window */
     u8  clip_used[ GUI_MAX_CLIP_RECTS ] = { 0 };   /* clip table entries a band-0 command references */
+
     for ( u32 si = 0; si < nseg; ++si )
     {
         if ( segs[ si ].lo == segs[ si ].hi ) continue;   // empty span
@@ -574,6 +577,7 @@ cache_diff_windows( void )
         else
             for ( bi = 0; bi < s_cache.cur_n; ++bi )
                 if ( s_cache.cur[ bi ].win == win ) break;
+
         if ( bi == s_cache.cur_n )
         {
             /* A window past RENDER_MAX_WIN gets no record, no slot, and never tessellates -- it is
@@ -619,6 +623,7 @@ cache_diff_windows( void )
            a cut run, and a repack leaves them sampling the wrong pixels until that window changes
            for another reason.  Folding the generation for every TEXT command would cost the prize
            above to fix a glyph-wide artefact on a boot-time event. */
+
         u32 h   = s_cache.cur[ bi ].hash;
         h = fnv1a_u32( h, segs[ si ].z    );
         h = fnv1a_u32( h, segs[ si ].vp   );
@@ -638,6 +643,7 @@ cache_diff_windows( void )
                whether the row still has a live capture for this window's current slot; if not
                (first appearance, retired by a failed patch, or the slot rebuilt without it), the
                window is forced CHANGED so tessellation runs and (re)captures it. */
+
             gui_id_t vid = s_draw.cmd_volatile_id[ i ];
             if ( vid != GUI_ID_NONE )
             {
@@ -652,6 +658,7 @@ cache_diff_windows( void )
                each tessellation; a dashed line bakes the assist row's V, which moves when the
                coverage atlas grows.  Folding only on the commands that carry the dependency
                keeps every other window repack-immune. */
+
             if ( s_draw.cmds[ i ].type == GUI_CMD_SPRITE )
                 h = fnv1a_u32( h, res_sprite_generation() );
             else if ( s_draw.cmds[ i ].type == GUI_CMD_DASHED_LINE )
@@ -668,6 +675,7 @@ cache_diff_windows( void )
        main-band window.  Insertion sort over RENDER_MAX_WIN = 32 elements: O(n) when the window
        set is stable (the common case, already sorted from last frame), O(n^2) at worst.
        prev[] is kept in the same order via the memcpy below, so the diff is a single linear scan. */
+
     for ( u32 a = 1; a < s_cache.cur_n; ++a )
     {
         render_win_hash_t key = s_cache.cur[ a ];
@@ -682,6 +690,7 @@ cache_diff_windows( void )
 
     /* Pass 2: diff against last frame.  Both arrays share the (band, win) sort order, so one
        linear scan suffices -- O(cur_n + prev_n) instead of the O(n^2) nested scan. */
+
     s_cache.unchanged   = 0;
     s_cache.any_changed = ( s_cache.cur_n != s_cache.prev_n );
     u32 pj = 0;
@@ -693,6 +702,7 @@ cache_diff_windows( void )
                        && s_cache.prev[ pj ].win  == s_cache.cur[ i ].win
                        && s_cache.prev[ pj ].band == s_cache.cur[ i ].band
                        && s_cache.prev[ pj ].hash == s_cache.cur[ i ].hash );
+
         bool changed = !match || s_cache.cur[ i ].force_changed;
         s_cache.cur[ i ].changed = changed;
         if ( !changed ) ++s_cache.unchanged;
@@ -1139,6 +1149,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
 }
 
 /*==============================================================================================
+
     cache_build_frame (BUILD step 2) -- diff, reuse or re-tessellate per window, z-sort.
 
     Runs once per frame (guarded by s_frame_built).  Produces the geometry (s_tess.quads/prims),
@@ -1159,6 +1170,7 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
       disabled: every window tessellates sequentially from 0, compacting all fragmentation in a
       single (heavier) frame.  Only if THAT still overflows is geometry genuinely dropped and the
       overflow reported.
+
 ==============================================================================================*/
 
 /* Accumulators one placement pass produces for the stats/report code after it. */
@@ -1317,40 +1329,54 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
     }
 }
 
+/*==============================================================================================
+
+
+==============================================================================================*/
+
 static void
 cache_build_frame( void )
 {
     if ( s_frame_built )
-        return;
+         return;
+
     s_frame_built = true;
     s_build_walls = 0u;
 
-    /* Before anything tessellates: refresh the glyph UV table if a font's tenant changed or an
-       atlas repacked, so every ID emitted this frame and every rect behind it come from one
-       build. */
+    /* Before anything tessellates: refresh the glyph UV table if a font's tenant changed
+       or an atlas repacked, so every ID emitted this frame and every rect behind it come
+       from one build. */
+
     glyph_table_sync();
 
     /* Close the still-open final segment so diff and tess see its full [lo, hi) range. */
-    if ( s_draw.seg_count > 0 )
-        s_draw.segs[ s_draw.seg_count - 1 ].hi = (u16)s_draw.cmd_count;
 
-    /* Command-stepper capture: the frame's segments are closed and every emit pool is complete,
-       nothing is diffed or tessellated yet -- the exact seam to freeze the live command list.
+    if ( s_draw.seg_count > 0 )
+         s_draw.segs[ s_draw.seg_count - 1 ].hi = (u16)s_draw.cmd_count;
+
+    /* Command-stepper capture: the frame's segments are closed and every emit pool is
+       complete, nothing is diffed or tessellated yet -- the exact seam to freeze the live
+       command list. 
+       
        A no-op unless GUI_CMD_STEPPER and a capture was requested (step_capture). */
+
     STEP_CAPTURE_BUILD();
 
-    /* Text-selection run capture: same seam.  Rebuilds the selection run buffer for any window
+    /* Text-drag-selection run capture: same seam.  Rebuilds the selection run buffer for any window
        marked GUI_WIN_TEXT_SELECT this frame; a two-branch no-op while no flagged window is
-       live.  See render/gui_select_capture.c. */
+       live. See render/gui_select_capture.c. */
+
     select_capture_build();
 
     /* Both BUILD zones are assignments per real frame, so they zero here rather than in
        build_stats_publish: an idle frame never reaches this function and must keep reporting what
        the geometry on screen actually cost. */
+
     s_stats.accum.diff_ms = 0.0f;
     s_stats.accum.tess_ms = 0.0f;
 
     /* Step 1: hash-diff all windows, fill s_cache, accumulate cmd_count stats. */
+
     f64 t_diff = zone_begin();
     cache_diff_windows();
     zone_end( &s_stats.accum.diff_ms, t_diff );
