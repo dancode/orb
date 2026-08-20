@@ -193,12 +193,12 @@ draw_cmd_claim( u8 type )
 /*  Claim the next command slot and stamp the ambient (clip_idx, vp) pair onto it. 
     vp is the batch key; clip_idx names the rect the tessellator resolves into the 
     slot's local clip table (the vertex clip band). Stamping both is the one thing 
-    every command must do and no command may get wrong. 
+    every command must do and no command may get wrong.
 
     Split out of draw_cmd_open below because the pool-backed pushes cannot use that 
     function's preamble (their pool copy has to succeed before a slot is spent, and
-    their cull is not an axis-aligned box test) but they owe the identical stamp. 
-*/
+    their cull is not an axis-aligned box test) but they owe the identical stamp. */
+
     gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type      = type;
     c->clip_idx  = s_draw.cur_clip_idx;

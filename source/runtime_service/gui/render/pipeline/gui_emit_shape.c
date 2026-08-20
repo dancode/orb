@@ -87,17 +87,18 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      // rect
                        f32 u0, f32 v0, f32 u1, f32 v1,  // uv
                        u32 tex_idx, u32 abgr )          // texture slot + color
 {
+    /* no rounding if a texture */
     draw_rect_cmd( x, y, w, h, u0, v0, u1, v1, tex_idx, abgr,
                    ( tex_idx == 0 ) ? draw_clamp_rounding( w, h ) : 0.0f, s_draw.corner_pow );
 }
 
-/*  An IMAGE: an arbitrary texture the caller is showing as a picture (a scene render target, a
-    loaded photo). Identical to draw_push_rect_filled above except the ambient rounding radius
-    is applied, so pictures get rounded corners.
+/*  An IMAGE: an arbitrary texture the caller is showing as a picture (a scene render 
+    target, a loaded photo). Identical to draw_push_rect_filled above except the ambient 
+    rounding radius is applied, so pictures get rounded corners.
 
     (Note: the corner isn't a mask cut over the texture -- the fragment shader resolves the
-    rounded boundary from the same signed-distance field a rounded solid fill uses, and samples
-    the texture underneath it; see the effect band in gui.h.) */
+    rounded boundary from the same signed-distance field a rounded solid fill uses, and 
+    samples the texture underneath it; see the effect band in gui.h.) */
 
 void
 draw_push_image( f32 x, f32 y, f32 w, f32 h,
