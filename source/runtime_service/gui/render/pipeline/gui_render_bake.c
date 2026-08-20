@@ -103,16 +103,14 @@ static struct
 } s_bake;
 
 /*  FNV-1a over the whole record -- the same fold the census hashes with, over the same bytes, so a
-    baked entry and the census row it covers agree by construction. */
+    baked entry and the census row it covers agree by construction.  A record is 128 bytes of
+    4-byte lanes, so the shared helper folds it as 32 words (gui_emit_draw.c); this is the hottest
+    hash in the backend, running once per style-record memo miss in tess_prim_local. */
 
 static u32
 pal_hash( const gui_prim_t* rec )
 {
-    const u8* p = (const u8*)rec;
-    u32       h = 2166136261u;
-    for ( u32 i = 0; i < sizeof( gui_prim_t ); ++i )
-        h = ( h ^ p[ i ] ) * 16777619u;
-    return h;
+    return fnv1a( 2166136261u, rec, (u32)sizeof( gui_prim_t ) );
 }
 
 /*  Which palette entry holds this record, or GUI_PAL_NONE.  The hot path of the whole campaign:

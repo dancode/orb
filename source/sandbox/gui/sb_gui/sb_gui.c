@@ -255,7 +255,7 @@ main( int argc, char** argv )
         .font_size = 16,
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
-        .wait      = sys_wait_for_os_events_ms,
+        // .wait      = sys_wait_for_os_events_ms,
         .clear     = { 0.4f, 0.4f, 0.4f, 1.00f },
         .debug     = true,
     } );

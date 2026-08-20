@@ -73,17 +73,12 @@ census_normalize( gui_prim_t* dst, const gui_prim_t* src )
     dst->tex = src->tex & GUI_TEX_MODE_MASK;
 }
 
+/* The same fold pal_hash uses, over the same bytes, so a census row and the palette entry that
+   covers it agree by construction (gui_render_bake.c). */
 static u32
 census_hash( const gui_prim_t* rec )
 {
-    const u8* p = (const u8*)rec;
-    u32       h = 2166136261u;                       /* FNV-1a */
-    for ( u32 i = 0; i < sizeof( gui_prim_t ); ++i )
-    {
-        h ^= p[ i ];
-        h *= 16777619u;
-    }
-    return h;
+    return fnv1a( 2166136261u, rec, (u32)sizeof( gui_prim_t ) );
 }
 
 /* Resolve a record to its census entry, creating it on first sight.  NULL once the table is full

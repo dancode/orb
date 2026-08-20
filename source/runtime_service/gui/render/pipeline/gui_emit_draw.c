@@ -195,28 +195,65 @@ static struct
 
 /*==============================================================================================
     FNV-1a hash helpers -- defined here (before draw_reset) so clip pre-hashing can use them.
-    draw_hash_cmd below also uses them; fnv1a_u32 is visible in gui_build_cache.c (included
-    after this file by gui_render.c).
+    draw_hash_cmd below also uses them; fnv1a_u32 is visible in gui_build_cache.c, and pal_hash /
+    census_hash fold whole gui_prim_t records through fnv1a (all included after this file by
+    gui_render.c).
+
+    These run on the two hottest loops in the whole backend -- once per emitted command
+    (draw_hash_cmd) and once per style-record miss (pal_hash) -- and both are pure latency: an
+    FNV fold is a serial xor/multiply chain, so the byte count IS the cost.  Everything they
+    hash is 4-byte data (f32 coordinates, packed colours, whole gui_prim_t records), so the
+    unit of folding is the WORD, with a byte tail for the odd short field.
+
+    The extra `h ^= h >> 15` is what makes a word fold safe to substitute for four byte folds.
+    A multiply propagates bits upward only, so without it a difference confined to a value's
+    top byte (an alpha-only colour change) would stay pinned to the top bits of h forever and
+    never spread across the accumulation.  The xor-shift folds them back down, which gives
+    strictly better avalanche than the byte-at-a-time chain it replaces, at well under half its
+    dependency length.
+
+    The fold is frame-to-frame and in-memory only -- nothing persists a hash across runs -- so
+    the values these produce are free to change.
 ==============================================================================================*/
 
+/* One 4-byte mix: the FNV-1a step plus the down-fold described above. */
+static inline u32
+fnv1a_u32( u32 h, u32 v )
+{
+    h  = ( h ^ v ) * 16777619u;
+    h ^= h >> 15;
+    return h;
+}
+
+/* Whole-word fold with a byte tail.
+
+   The word is assembled from its bytes rather than loaded through a u32 pointer, for two
+   reasons that both have teeth.  ALIGNMENT: callers hash spans that are not 4-aligned -- a
+   text-pool substring starts wherever its command's offset lands -- and a fold that took the
+   word path only when the span happened to be aligned would hash the same string differently
+   at different pool offsets, which is precisely the false-dirty that draw_hash_cmd excludes
+   text.off to avoid.  DEBUG BUILDS: /Od inlines nothing and turns a memcpy of four bytes into
+   a CRT call, which would cost more than the byte chain this replaces.  Assembled explicitly,
+   the loads are independent of h and sit off the critical path, and optimized builds fold the
+   four of them back into one unaligned load.
+
+   The mix is spelled out here rather than calling fnv1a_u32 for the same /Od reason: a static
+   inline is a real call under it, and one per word inside this loop would undo the win. */
 static inline u32
 fnv1a( u32 h, const void* p, u32 n )
 {
     const u8* b = (const u8*)p;
-    for ( u32 i = 0; i < n; ++i ) h = ( h ^ b[ i ] ) * 16777619u;
-    return h;
-}
 
-/* fnv1a_u32 -- fold one u32 into h: 4 explicit byte mixes, no loop or function-call overhead.
-   Used wherever a u32 value is the unit being folded (segment metadata, pre-baked clip hashes,
-   per-command hash accumulation) so the inner loops in cache_diff_windows stay branch-free. */
-static inline u32
-fnv1a_u32( u32 h, u32 v )
-{
-    h = ( h ^ (u8)( v       ) ) * 16777619u;
-    h = ( h ^ (u8)( v >>  8 ) ) * 16777619u;
-    h = ( h ^ (u8)( v >> 16 ) ) * 16777619u;
-    h = ( h ^ (u8)( v >> 24 ) ) * 16777619u;
+    for ( ; n >= 4u; b += 4, n -= 4u )
+    {
+        u32 w = (u32)b[ 0 ] | ( (u32)b[ 1 ] << 8 )
+              | ( (u32)b[ 2 ] << 16 ) | ( (u32)b[ 3 ] << 24 );
+        h  = ( h ^ w ) * 16777619u;
+        h ^= h >> 15;
+    }
+    for ( u32 i = 0; i < n; ++i )
+        h = ( h ^ b[ i ] ) * 16777619u;
+
     return h;
 }
 
@@ -1074,8 +1111,8 @@ draw_hash_cmd( const gui_cmd_t* c )
     
     The slot and stamps the header. 
     
-    ALREADY folded (a multi-colour shape passes the OR of its folded colours -- visible if any
-    end is). `pad` grows the cull box on every side for shapes whose geometry reaches past the
+    ALREADY folded (a multi-color shape pass the OR of its folded colours -- visible if any end is).
+    `pad` grows the cull box on every side for shapes whose geometry reaches past the
     authored rect (the SDF AA skirt, a shadow's feather).  
     
     Returns NULL when the shape must not spend a slot; otherwise the caller fills the 
@@ -1096,11 +1133,14 @@ draw_cmd_claim( u8 type )
 {
     /* Claim the next command slot and stamp the ambient (clip_idx, vp) pair onto it.  vp is the
        batch key; clip_idx names the rect the tessellator resolves into the slot's local clip table
-       (the vertex clip band -- a clip change cannot cut a draw call either).  Stamping both is the
-       one thing every command must do and no command may get wrong.  Split out of draw_cmd_open
-       below because the pool-backed pushes cannot use that function's preamble (their pool copy has
-       to succeed before a slot is spent, and their cull is not an axis-aligned box test) but they owe
-       the identical stamp.  Seven sites open-coded these four lines before it had a name. */
+       (the vertex clip band -- a clip change cannot cut a draw call either).  
+       Stamping both is the one thing every command must do and no command may get wrong. 
+
+       Split out of draw_cmd_open below because the pool-backed pushes cannot use that function's
+       preamble (their pool copy has to succeed before a slot is spent, and their cull is not 
+       an axis-aligned box test) but they owe the identical stamp.  
+       
+       Seven sites open-coded these four lines before it had a name. */
 
     gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type      = type;
