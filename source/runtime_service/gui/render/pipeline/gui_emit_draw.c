@@ -239,6 +239,7 @@ fnv1a_u32( u32 h, u32 v )
 
    The mix is spelled out here rather than calling fnv1a_u32 for the same /Od reason: a static
    inline is a real call under it, and one per word inside this loop would undo the win. */
+
 static inline u32
 fnv1a( u32 h, const void* p, u32 n )
 {
@@ -972,10 +973,10 @@ draw_clamp_rounding( f32 w, f32 h )
 ==============================================================================================*/
 
 /*==============================================================================================
-    FNV-1a hash helper and per-command hash used by the retained cache.
+    command hashing -- FNV-1a hash helper and per-command hash used by the retained cache.
 
     draw_hash_cmd hashes a fully-filled gui_cmd_t at emit time while the data is still
-    L1-hot.  The hash is stored in s_draw.cmd_hashes and folded per window by
+    L1-hot. The hash is stored in s_draw.cmd_hashes and folded per window by
     cache_diff_windows (gui_build_cache.c) to detect frame-to-frame changes without
     re-scanning the command buffer after tessellation.
 
@@ -983,6 +984,7 @@ draw_clamp_rounding( f32 w, f32 h )
     rect_list.offset) because those values shift whenever an earlier-emitted window changes its
     pool volume, which would falsely dirty an unrelated window.  Their content bytes are folded
     directly instead.
+
 ==============================================================================================*/
 
 /* Payload byte count per command type, for the plain POD commands: one fnv1a fold of the union
@@ -991,6 +993,7 @@ draw_clamp_rounding( f32 w, f32 h )
    shift whenever an earlier-emitted window changes its pool volume and would falsely dirty an
    unrelated window.  Every union member starts at the same address, so the fold reads &c->rect
    as the generic payload pointer. */
+
 static const u8 k_cmd_hash_len[] = {
     [GUI_CMD_RECT_FILLED]   = sizeof( ( (gui_cmd_t*)0 )->rect ),
     [GUI_CMD_RECT_OUTLINE]  = sizeof( ( (gui_cmd_t*)0 )->rect_outline ),
@@ -1027,43 +1030,50 @@ static const u8 k_cmd_hash_len[] = {
 static u32
 draw_hash_cmd( const gui_cmd_t* c )
 {
-    /* Fold type+vp (packed into one u32) then the pre-baked clip hash.  The clip value -- not
-       the index -- is what matters so the same rect produces the same hash regardless of which
-       table slot it occupies this frame.  clip_hash_cache[i] is baked at push time (4 bytes
-       folded here vs 16 for the raw rect).  z is per-segment, folded in cache_diff_windows. */
+    /* Fold type + vp (packed into one u32) then the pre-baked clip hash.  
+       The clip value -- not the index -- is what matters so the same rect produces the same
+       hash regardless of which table slot it occupies this frame.  
+       
+       clip_hash_cache[i] is baked at push time (4 bytes folded here vs 16 for the raw rect).
+       z is per-segment, folded in cache_diff_windows. */
+
     u32 h  = 2166136261u;
     u32 tv = (u32)c->type | ( (u32)c->vp << 8 );
     h = fnv1a_u32( h, tv );
     h = fnv1a_u32( h, s_draw.clip_hash_cache[ c->clip_idx ] );
+
     switch ( c->type )
     {
         case GUI_CMD_TEXT:
-            h = fnv1a( h, &c->text.x,       sizeof c->text.x );
-            h = fnv1a( h, &c->text.y,       sizeof c->text.y );
-            h = fnv1a( h, &c->text.len,     sizeof c->text.len );
-            h = fnv1a( h, &c->text.clip_x0, sizeof c->text.clip_x0 );
-            h = fnv1a( h, &c->text.clip_x1, sizeof c->text.clip_x1 );
-            h = fnv1a( h, &c->text.abgr,    sizeof c->text.abgr );
-            h = fnv1a( h, &c->text.edge_w,   sizeof c->text.edge_w );
-            h = fnv1a( h, &c->text.edge_col, sizeof c->text.edge_col );
-            h = fnv1a( h, &c->text.font,    sizeof c->text.font );
+            h = fnv1a( h, &c->text.x,           sizeof c->text.x );
+            h = fnv1a( h, &c->text.y,           sizeof c->text.y );
+            h = fnv1a( h, &c->text.len,         sizeof c->text.len );
+            h = fnv1a( h, &c->text.clip_x0,     sizeof c->text.clip_x0 );
+            h = fnv1a( h, &c->text.clip_x1,     sizeof c->text.clip_x1 );
+            h = fnv1a( h, &c->text.abgr,        sizeof c->text.abgr );
+            h = fnv1a( h, &c->text.edge_w,      sizeof c->text.edge_w );
+            h = fnv1a( h, &c->text.edge_col,    sizeof c->text.edge_col );
+            h = fnv1a( h, &c->text.font,        sizeof c->text.font );
             h = fnv1a( h, s_draw.text_pool + c->text.off, c->text.len );   /* content while L1-hot */
             break;
+
         /* Folds scale and rot, so a run that spins re-tessellates every frame it moves.  That is
            the honest cost and the difference from PULSE: a pulse animates in the FRAGMENT off
            pc.time and its geometry never changes, while a transform is baked into vertices. */
+
         case GUI_CMD_TEXT_XF:
-            h = fnv1a( h, &c->text_xf.x,     sizeof c->text_xf.x );
-            h = fnv1a( h, &c->text_xf.y,     sizeof c->text_xf.y );
-            h = fnv1a( h, &c->text_xf.len,   sizeof c->text_xf.len );
-            h = fnv1a( h, &c->text_xf.scale, sizeof c->text_xf.scale );
-            h = fnv1a( h, &c->text_xf.rot,   sizeof c->text_xf.rot );
-            h = fnv1a( h, &c->text_xf.abgr,  sizeof c->text_xf.abgr );
+            h = fnv1a( h, &c->text_xf.x,        sizeof c->text_xf.x );
+            h = fnv1a( h, &c->text_xf.y,        sizeof c->text_xf.y );
+            h = fnv1a( h, &c->text_xf.len,      sizeof c->text_xf.len );
+            h = fnv1a( h, &c->text_xf.scale,    sizeof c->text_xf.scale );
+            h = fnv1a( h, &c->text_xf.rot,      sizeof c->text_xf.rot );
+            h = fnv1a( h, &c->text_xf.abgr,     sizeof c->text_xf.abgr );
             h = fnv1a( h, &c->text_xf.edge_w,   sizeof c->text_xf.edge_w );
             h = fnv1a( h, &c->text_xf.edge_col, sizeof c->text_xf.edge_col );
-            h = fnv1a( h, &c->text_xf.font,  sizeof c->text_xf.font );
+            h = fnv1a( h, &c->text_xf.font,     sizeof c->text_xf.font );
             h = fnv1a( h, s_draw.text_pool + c->text_xf.off, c->text_xf.len );
             break;
+
         case GUI_CMD_TEXT_SHADOW:
             h = fnv1a( h, &c->text_shadow.x,           sizeof c->text_shadow.x );
             h = fnv1a( h, &c->text_shadow.y,           sizeof c->text_shadow.y );
@@ -1077,6 +1087,7 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &c->text_shadow.font,        sizeof c->text_shadow.font );
             h = fnv1a( h, s_draw.text_pool + c->text_shadow.off, c->text_shadow.len );
             break;
+
         case GUI_CMD_POLYLINE:
             h = fnv1a( h, &c->polyline.pt_count,  sizeof c->polyline.pt_count );
             h = fnv1a( h, &c->polyline.thickness, sizeof c->polyline.thickness );
@@ -1086,11 +1097,13 @@ draw_hash_cmd( const gui_cmd_t* c )
             h = fnv1a( h, &s_draw.points[ c->polyline.pt_offset ],
                        c->polyline.pt_count * (u32)sizeof( gui_vec2_t ) );   /* content while L1-hot */
             break;
+
         case GUI_CMD_RECT_LIST:
             h = fnv1a_u32( h, c->rect_list.count );
             h = fnv1a( h, &s_draw.rect_pool[ c->rect_list.offset ],
                        c->rect_list.count * (u32)sizeof( gui_rect_col_t ) );   /* content while L1-hot */
             break;
+
         default:
             h = fnv1a( h, &c->rect, k_cmd_hash_len[ c->type ] );
             break;
@@ -1131,16 +1144,14 @@ draw_hash_cmd( const gui_cmd_t* c )
 static gui_cmd_t*
 draw_cmd_claim( u8 type )
 {
-    /* Claim the next command slot and stamp the ambient (clip_idx, vp) pair onto it.  vp is the
-       batch key; clip_idx names the rect the tessellator resolves into the slot's local clip table
-       (the vertex clip band -- a clip change cannot cut a draw call either).  
-       Stamping both is the one thing every command must do and no command may get wrong. 
+    /* Claim the next command slot and stamp the ambient (clip_idx, vp) pair onto it. 
+       vp is the batch key; clip_idx names the rect the tessellator resolves into the 
+       slot's local clip table (the vertex clip band). Stamping both is the one thing 
+       every command must do and no command may get wrong. 
 
-       Split out of draw_cmd_open below because the pool-backed pushes cannot use that function's
-       preamble (their pool copy has to succeed before a slot is spent, and their cull is not 
-       an axis-aligned box test) but they owe the identical stamp.  
-       
-       Seven sites open-coded these four lines before it had a name. */
+       Split out of draw_cmd_open below because the pool-backed pushes cannot use that 
+       function's preamble (their pool copy has to succeed before a slot is spent, and their 
+       cull is not an axis-aligned box test) but they owe the identical stamp. */
 
     gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
     c->type      = type;

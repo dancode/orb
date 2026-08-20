@@ -544,7 +544,6 @@ tess_fx_page_reset( void )
     s_tess.fx_page = s_tess.fx_page_used = s_tess.fx_memo_row = 0;
 }
 
-
 static u32
 tess_prim_local( void )
 {
