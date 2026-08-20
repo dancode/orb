@@ -625,25 +625,57 @@ draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, 
     path_line_if( cur, start, thickness, col );
 }
 
-/* Catmull-Rom tangent at a point from its two neighbours -- half the chord between them.  This
-   is the whole trick behind a self-balancing spline: no per-point control handle is ever
-   chosen by hand, the curve direction falls straight out of where the neighbouring points are.
-   Three collinear points give a tangent that already points down the line, so the cubic built
-   from it degenerates to a straight run with no bulge. */
+/* Centripetal-parameterized tangent DERIVATIVE at `cur` (Barry-Goldman / non-uniform
+   Catmull-Rom, alpha = 1/2) -- not a plain average of the two neighbour chords.  Plain chord
+   averaging ((next-prev)/2) weights the far segment's direction the same as the near segment's
+   no matter how their lengths compare, so a short segment sitting next to a long one gets
+   dragged onto a tangent it has no room to absorb smoothly, producing a visible kink right at
+   the short segment while the long segment barely bends.  Centripetal weighting corrects
+   this: each side's secant is weighted by the OTHER side's parameter length
+   (h = distance^0.5), so a point with one short and one long adjacent segment settles onto a
+   tangent dominated by the short segment's own direction -- the long segment absorbs the turn
+   over its own greater length instead of forcing it onto its short neighbour.  Collinear
+   neighbours still resolve to a tangent pointing straight down the line regardless of the
+   weighting (direction, not magnitude, decides straightness), so runs of collinear points stay
+   bulge-free exactly as before. */
 static gui_vec2_t
-smooth_tangent( gui_vec2_t prev, gui_vec2_t next )
+smooth_deriv( gui_vec2_t prev, gui_vec2_t cur, gui_vec2_t next )
 {
-    return ( gui_vec2_t ){ ( next.x - prev.x ) * 0.5f, ( next.y - prev.y ) * 0.5f };
+    f32 dx0 = cur.x - prev.x, dy0 = cur.y - prev.y;
+    f32 dx1 = next.x - cur.x, dy1 = next.y - cur.y;
+    f32 d0  = sqrtf( dx0 * dx0 + dy0 * dy0 );
+    f32 d1  = sqrtf( dx1 * dx1 + dy1 * dy1 );
+    if ( d0 < 1e-4f ) d0 = 1e-4f;
+    if ( d1 < 1e-4f ) d1 = 1e-4f;
+
+    f32 h0 = sqrtf( d0 ), h1 = sqrtf( d1 );
+    f32 w0 = h1 / ( h0 + h1 ), w1 = h0 / ( h0 + h1 );
+
+    return ( gui_vec2_t ){ w0 * dx0 / h0 + w1 * dx1 / h1, w0 * dy0 / h0 + w1 * dy1 / h1 };
+}
+
+/* Same derivative estimate at an open path's endpoint, which has only one side to draw from --
+   the single edge's own secant, so the segment touching it degenerates to a plain straight
+   cubic (matches smooth_deriv's units: dividing back out by this same edge's h in the caller
+   reproduces the endpoint's chord exactly, undershoot-free). */
+static gui_vec2_t
+edge_deriv( gui_vec2_t a, gui_vec2_t b )
+{
+    f32 dx = b.x - a.x, dy = b.y - a.y;
+    f32 d  = sqrtf( dx * dx + dy * dy );
+    if ( d < 1e-4f )
+        return ( gui_vec2_t ){ 0.0f, 0.0f };
+    f32 h = sqrtf( d );
+    return ( gui_vec2_t ){ dx / h, dy / h };
 }
 
 /* Point-to-point spline through every point in `pts`, curve shape entirely a function of point
    position -- no radius, no hand-picked control point (the Blueprint node-graph wire model:
    move a point and both curves touching it re-settle on their own).  Each segment is one
-   draw_bezier_cubic using the outgoing/incoming Catmull-Rom tangent of its two endpoints as
-   control-point offsets (the standard tangent-to-bezier /3 scale).  Open-path endpoints use a
-   one-sided full chord (no far neighbour to average against) rather than the halved interior
-   tangent, matching the usual open Catmull-Rom boundary rule so the end segments don't
-   undershoot.  A closed loop has no endpoints -- every tangent wraps. */
+   draw_bezier_cubic; its two control points are its endpoints' tangent derivatives
+   (smooth_deriv/edge_deriv) scaled by the segment's OWN parameter length `h_seg` and the usual
+   /3 tangent-to-bezier factor -- the segment-local scale is what keeps a short segment's curve
+   confined to its own length instead of overshooting to match a long neighbour's tangent. */
 static void
 draw_smooth_path( const gui_vec2_t* pts, u32 count, f32 thickness, bool closed, u32 col )
 {
@@ -658,16 +690,20 @@ draw_smooth_path( const gui_vec2_t* pts, u32 count, f32 thickness, bool closed, 
         {
             gui_vec2_t p0 = pts[ i ], p1 = pts[ i + 1 ];
 
-            gui_vec2_t t0 = ( i == 0 )
-                                ? ( gui_vec2_t ){ p1.x - p0.x, p1.y - p0.y }
-                                : smooth_tangent( pts[ i - 1 ], p1 );
-            gui_vec2_t t1 = ( i + 2 == count )
-                                ? ( gui_vec2_t ){ p1.x - p0.x, p1.y - p0.y }
-                                : smooth_tangent( p0, pts[ i + 2 ] );
+            f32 dxs = p1.x - p0.x, dys = p1.y - p0.y;
+            f32 h_seg = sqrtf( sqrtf( dxs * dxs + dys * dys ) );
 
-            draw_bezier_cubic( p0.x, p0.y, p0.x + t0.x / 3.0f, p0.y + t0.y / 3.0f,
-                               p1.x - t1.x / 3.0f, p1.y - t1.y / 3.0f, p1.x, p1.y,
-                               thickness, col );
+            gui_vec2_t m0 = ( i == 0 )
+                                ? edge_deriv( p0, p1 )
+                                : smooth_deriv( pts[ i - 1 ], p0, p1 );
+            gui_vec2_t m1 = ( i + 2 == count )
+                                ? edge_deriv( p0, p1 )
+                                : smooth_deriv( p0, p1, pts[ i + 2 ] );
+
+            draw_bezier_cubic( p0.x, p0.y,
+                               p0.x + m0.x * h_seg / 3.0f, p0.y + m0.y * h_seg / 3.0f,
+                               p1.x - m1.x * h_seg / 3.0f, p1.y - m1.y * h_seg / 3.0f,
+                               p1.x, p1.y, thickness, col );
         }
         return;
     }
@@ -677,12 +713,16 @@ draw_smooth_path( const gui_vec2_t* pts, u32 count, f32 thickness, bool closed, 
         u32 ni = ( i + 1 == count ) ? 0 : i + 1;
         gui_vec2_t p0 = pts[ i ], p1 = pts[ ni ];
 
-        gui_vec2_t t0 = smooth_tangent( pts[ ( i + count - 1 ) % count ], p1 );
-        gui_vec2_t t1 = smooth_tangent( p0, pts[ ( ni + 1 ) % count ] );
+        f32 dxs = p1.x - p0.x, dys = p1.y - p0.y;
+        f32 h_seg = sqrtf( sqrtf( dxs * dxs + dys * dys ) );
 
-        draw_bezier_cubic( p0.x, p0.y, p0.x + t0.x / 3.0f, p0.y + t0.y / 3.0f,
-                           p1.x - t1.x / 3.0f, p1.y - t1.y / 3.0f, p1.x, p1.y,
-                           thickness, col );
+        gui_vec2_t m0 = smooth_deriv( pts[ ( i + count - 1 ) % count ], p0, p1 );
+        gui_vec2_t m1 = smooth_deriv( p0, p1, pts[ ( ni + 1 ) % count ] );
+
+        draw_bezier_cubic( p0.x, p0.y,
+                           p0.x + m0.x * h_seg / 3.0f, p0.y + m0.y * h_seg / 3.0f,
+                           p1.x - m1.x * h_seg / 3.0f, p1.y - m1.y * h_seg / 3.0f,
+                           p1.x, p1.y, thickness, col );
     }
 }
 

@@ -1601,7 +1601,11 @@ static f32  s_cv_thick = 3.0f;
 static bool s_cv_ref   = true;
 static f32  s_cv_round = 22.0f;
 static f32  s_cv_run   = 90.0f;   /* leg length either side of the corner, endpoint-spacing demo */
-static f32  s_cv_smooth_y = 0.0f; /* vertical offset of the dragged point, smooth-path demo */
+
+static f32  s_cv_smooth_y1  = 0.0f;  /* vertical offset of the dragged point, smooth-path demo */
+static f32  s_cv_smooth_y2  = 0.0f;  /* vertical offset of the dragged point, smooth-path demo */
+static f32  s_cv_smooth_y3  = 0.0f;  /* vertical offset of the dragged point, smooth-path demo */
+static f32  s_cv_smooth_gap = 70.0f; /* flanking points' distance from the moved centre point */
 
 /* Sandbox-only exact reference: the same de Casteljau sum draw_bezier_cubic used to flatten
    before this campaign, kept here purely so the new field's approximation has something exact
@@ -1754,8 +1758,13 @@ win_curves( void )
         gui()->draw_text( r.x + 260.0f, r.y + 80.0f, INK_DIM, "same box, same radius" );
     }
 
+    static bool show_vertex = true;
     gui()->separator_text( "auto-smooth path -- move a point, the curve rebalances itself, no radius" );
-    gui()->slider_float( "point height", &s_cv_smooth_y, -70.0f, 70.0f );
+    gui()->slider_float_step( "point height center", &s_cv_smooth_y1, -80.0f, 80.0f, 5.0f );
+    gui()->slider_float_step( "point height middle", &s_cv_smooth_y2, -80.0f, 80.0f, 5.0f );
+    gui()->slider_float_step( "point height edges",  &s_cv_smooth_y3, -80.0f, 80.0f, 5.0f );
+    gui()->slider_float_step( "flank spacing",      &s_cv_smooth_gap, 8.0f, 360.0f, 5.0f );
+    gui()->checkbox( "show vertex", &show_vertex );
     {
         gui_rect_t r = gui()->canvas( 200.0f );
         gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
@@ -1763,24 +1772,34 @@ win_curves( void )
 
         /* draw_smooth_path has no radius: every point's tangent comes from its own neighbours
            (Catmull-Rom), so dragging the middle point re-settles the curve on both sides of it
-           by itself.  The two flanking points stay collinear with their own outer neighbours,
-           so those spans stay visually straight no matter where the middle point sits. */
+           by itself.  "flank spacing" pulls points 1 and 3 closer to or further from the moved
+           centre point -- shrinking it makes the two centre segments much shorter than the two
+           outer ones, exactly the uneven-segment-length case the centripetal tangent weighting
+           in smooth_deriv exists to keep kink-free: the short segment's own direction should
+           dominate its own tangent instead of getting dragged onto the long segment's slope.
+           The two outer segments stay collinear with their own far neighbours regardless, so
+           those spans stay visually straight no matter where the centre point or the gap sit. */
         f32        mid_y = r.y + r.h * 0.5f;
+        f32        cx    = r.x + r.w * 0.5f;
+
         gui_vec2_t path[ 5 ] = {
-            { r.x + 40.0f,  mid_y },
-            { r.x + 110.0f, mid_y },
-            { r.x + r.w * 0.5f, mid_y + s_cv_smooth_y },
-            { r.x + r.w - 110.0f, mid_y },
-            { r.x + r.w - 40.0f,  mid_y },
+            { r.x + 40.0f,             mid_y + s_cv_smooth_y3 },
+            { cx - s_cv_smooth_gap,    mid_y + s_cv_smooth_y2 },
+            { cx,                      mid_y + s_cv_smooth_y1 },
+            { cx + s_cv_smooth_gap,    mid_y + s_cv_smooth_y2 },
+            { r.x + r.w - 40.0f,       mid_y + s_cv_smooth_y3 },
         };
         gui()->draw_smooth_path( path, 5, s_cv_thick, false, TEAL );
 
-        for ( u32 i = 0; i < 5; ++i )
-            gui()->draw_circle( path[ i ].x, path[ i ].y, 3.0f, true, 0.0f, INK );
+        if ( show_vertex )
+        {
+            for ( u32 i = 0; i < 5; ++i )
+                gui()->draw_circle( path[ i ].x, path[ i ].y, 3.0f, true, 0.0f, INK );
+        }
 
         gui()->pop_clip();
 
-        gui()->textf( "5 points, one draggable -- no bulge at the flanking collinear points at any offset" );
+        gui()->textf( "5 points, three draggable -- no bulge at the flanking collinear points at any offset" );
     }
 }
 
