@@ -348,40 +348,40 @@ draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )
     Curves
 ==============================================================================================*/
 
-#define SYM_BEZIER_SEGS 24   /* flattening resolution for a bezier into a polyline */
-
-/* Quadratic bezier from p0 through control c to p1, flattened to a stroked polyline (easing
-   previews, simple wires). */
+/* Quadratic bezier from p0 through control c to p1: one GUI_FX_BEZIER quad, exact endpoints and
+   control point, approximate curve distance (easing previews, simple wires). */
 static void
 draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col )
 {
-    gui_vec2_t pts[ SYM_BEZIER_SEGS + 1 ];
-    for ( u32 i = 0; i <= SYM_BEZIER_SEGS; ++i )
-    {
-        f32 t = (f32)i / (f32)SYM_BEZIER_SEGS, u = 1.0f - t;
-        pts[ i ] = sv2( u * u * x0 + 2.0f * u * t * cx + t * t * x1,
-                        u * u * y0 + 2.0f * u * t * cy + t * t * y1 );
-    }
-    gui_draw_polyline( pts, SYM_BEZIER_SEGS + 1, sym_thick( thickness ),
-                         GUI_STROKE_CENTER, false, col );
+    draw_push_bezier( x0, y0, cx, cy, x1, y1, sym_thick( thickness ), col );
 }
 
-/* Cubic bezier from p0 with controls c0,c1 to p1, flattened to a stroked polyline (node-graph
-   wires, S-curves). */
+/* Cubic bezier from p0 with controls c0,c1 to p1 (node-graph wires, S-curves).  Split at t=0.5
+   by De Casteljau into two half-cubics sharing the curve's exact midpoint, then fit each half
+   to a quadratic whose control point is the average of the two derivative-matching estimates
+   (matching the cubic's tangent at the half's start, and separately at its end) -- a closed
+   form that needs no line-intersection solve and degrades gracefully on any input.  Not an
+   exact reduction, but close enough for a UI wire, and costs two GUI_FX_BEZIER quads instead
+   of a flattened 24-segment polyline. */
 static void
 draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
                    f32 x1, f32 y1, f32 thickness, u32 col )
 {
-    gui_vec2_t pts[ SYM_BEZIER_SEGS + 1 ];
-    for ( u32 i = 0; i <= SYM_BEZIER_SEGS; ++i )
-    {
-        f32 t = (f32)i / (f32)SYM_BEZIER_SEGS, u = 1.0f - t;
-        f32 b0 = u * u * u, b1 = 3.0f * u * u * t, b2 = 3.0f * u * t * t, b3 = t * t * t;
-        pts[ i ] = sv2( b0 * x0 + b1 * c0x + b2 * c1x + b3 * x1,
-                        b0 * y0 + b1 * c0y + b2 * c1y + b3 * y1 );
-    }
-    gui_draw_polyline( pts, SYM_BEZIER_SEGS + 1, sym_thick( thickness ),
-                         GUI_STROKE_CENTER, false, col );
+    f32 e0x = ( x0  + c0x ) * 0.5f, e0y = ( y0  + c0y ) * 0.5f;
+    f32 e1x = ( c0x + c1x ) * 0.5f, e1y = ( c0y + c1y ) * 0.5f;
+    f32 e2x = ( c1x + x1  ) * 0.5f, e2y = ( c1y + y1  ) * 0.5f;
+    f32 f0x = ( e0x + e1x ) * 0.5f, f0y = ( e0y + e1y ) * 0.5f;
+    f32 f1x = ( e1x + e2x ) * 0.5f, f1y = ( e1y + e2y ) * 0.5f;
+    f32 mx  = ( f0x + f1x ) * 0.5f, my  = ( f0y + f1y ) * 0.5f;
+
+    f32 q1lx = -0.25f * x0 + 0.75f * e0x + 0.75f * f0x - 0.25f * mx;
+    f32 q1ly = -0.25f * y0 + 0.75f * e0y + 0.75f * f0y - 0.25f * my;
+    f32 q1rx = -0.25f * mx + 0.75f * f1x + 0.75f * e2x - 0.25f * x1;
+    f32 q1ry = -0.25f * my + 0.75f * f1y + 0.75f * e2y - 0.25f * y1;
+
+    thickness = sym_thick( thickness );
+    draw_push_bezier( x0, y0, q1lx, q1ly, mx, my, thickness, col );
+    draw_push_bezier( mx, my, q1rx, q1ry, x1, y1, thickness, col );
 }
 
 /*==============================================================================================

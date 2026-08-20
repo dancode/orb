@@ -174,7 +174,7 @@ prim_census_reset( void )
 ==============================================================================================*/
 
 static const char* const k_census_field[] = {
-    "NONE", "BOX", "NGON", "TRI", "(4)", "(5)", "SEG", "ARC", "PIE", "(9)", "ARCGRAD",
+    "NONE", "BOX", "NGON", "TRI", "(4)", "BEZIER", "SEG", "ARC", "PIE", "(9)", "ARCGRAD",
 };
 
 #define CENSUS_FIELD_COUNT  ( sizeof( k_census_field ) / sizeof( k_census_field[ 0 ] ) )

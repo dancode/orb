@@ -752,6 +752,7 @@ static u32
 draw_apply_alpha( u32 abgr )
 {
     if ( s_draw.alpha >= 1.0f ) return abgr;                /* opaque -- the common path */
+
     u32 a = ( abgr >> 24 ) & 0xFFu;
     a = (u32)( (f32)a * s_draw.alpha + 0.5f );              /* scale + round the alpha byte */
     return ( abgr & 0x00FFFFFFu ) | ( a << 24 );

@@ -1567,6 +1567,36 @@ tess_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
                     GUI_QUAD_RULE_SKIRT, 0, 0, res_atlas_idx(), abgr, GUI_GLYPH_ID_NONE );
 }
 
+/* Tessellate a stroked quadratic bezier into s_tess: the GUI_FX_BEZIER field -- one quad over
+   the control points' bbox, thickened, with the three points about its centre riding the same
+   lanes GUI_FX_TRI's points do.  Unlike the triangle this shape has real width, so the bbox is
+   grown by the half-thickness (plus the AA pad) before the push -- GUI_QUAD_RULE_SKIRT only
+   grows a quad by the feather, not by a shape's own size. */
+static void
+tess_bezier( f32 ax, f32 ay, f32 cx, f32 cy, f32 bx, f32 by, f32 thickness, u32 abgr )
+{
+    f32 lox = fminf( ax, fminf( bx, cx ) ), hix = fmaxf( ax, fmaxf( bx, cx ) );
+    f32 loy = fminf( ay, fminf( by, cy ) ), hiy = fmaxf( ay, fmaxf( by, cy ) );
+    if ( hix <= lox || hiy <= loy )
+        return;
+    f32 half = thickness * 0.5f + TESS_FX_AA;
+    f32 qx   = ( lox + hix ) * 0.5f, qy = ( loy + hiy ) * 0.5f;
+
+    s_tess.cur_ops         |= GUI_OP_SELF;
+    s_tess.cur_prim.field   = (u32)GUI_FX_BEZIER;
+    s_tess.cur_prim.r_tl    = ax - qx;
+    s_tess.cur_prim.r_tr    = ay - qy;
+    s_tess.cur_prim.r_br    = bx - qx;
+    s_tess.cur_prim.r_bl    = by - qy;
+    s_tess.cur_prim.param_a = cx - qx;
+    s_tess.cur_prim.param_b = cy - qy;
+    s_tess.cur_prim.border  = thickness * 0.5f;
+    s_tess.cur_prim.feather = TESS_FX_AA;
+    s_tess.cur_rot_c = 1.0f;
+    tess_quad_push( qx, qy, ( hix - lox ) * 0.5f + half, ( hiy - loy ) * 0.5f + half,
+                    GUI_QUAD_RULE_SKIRT, 0, 0, res_atlas_idx(), abgr, GUI_GLYPH_ID_NONE );
+}
+
 /*==============================================================================================
     tess_circle_filled -- a disc, which is a rounded box whose radius reached its half-extent.
 
@@ -2745,6 +2775,11 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_TRIANGLE:
                 tess_triangle( c->tri.ax, c->tri.ay, c->tri.bx, c->tri.by,
                                c->tri.cx, c->tri.cy, c->tri.abgr );
+                break;
+
+            case GUI_CMD_BEZIER:
+                tess_bezier( c->bezier.ax, c->bezier.ay, c->bezier.cx, c->bezier.cy,
+                             c->bezier.bx, c->bezier.by, c->bezier.thickness, c->bezier.abgr );
                 break;
 
             /* The outline word is set once for the whole run: every glyph quad the loop emits

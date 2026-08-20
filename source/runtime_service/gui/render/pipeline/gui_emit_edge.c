@@ -130,5 +130,34 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     draw_cmd_seal();
 }
 
+/*==============================================================================================
+    draw_push_bezier -- emit a stroked quadratic bezier semantic command.
+==============================================================================================*/
+
+void
+draw_push_bezier( f32 ax, f32 ay, f32 cx, f32 cy, f32 bx, f32 by, f32 thickness, u32 abgr )
+{
+    u32 col  = draw_apply_alpha( abgr );
+    f32 half = thickness * 0.5f + 1.0f;   /* half-thickness plus a pixel of AA skirt slack */
+
+    /* Cull against the bounding box of the three control points -- a conservative but cheap
+       cover for the curve itself, which never leaves their convex hull. */
+    f32 minx = ax < bx ? ( ax < cx ? ax : cx ) : ( bx < cx ? bx : cx );
+    f32 maxx = ax > bx ? ( ax > cx ? ax : cx ) : ( bx > cx ? bx : cx );
+    f32 miny = ay < by ? ( ay < cy ? ay : cy ) : ( by < cy ? by : cy );
+    f32 maxy = ay > by ? ( ay > cy ? ay : cy ) : ( by > cy ? by : cy );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_BEZIER, col, minx - half, miny - half,
+                                  maxx - minx + 2.0f * half, maxy - miny + 2.0f * half, 0.0f );
+    if ( !c )
+        return;
+    c->bezier.ax        = ax; c->bezier.ay = ay;
+    c->bezier.cx        = cx; c->bezier.cy = cy;
+    c->bezier.bx        = bx; c->bezier.by = by;
+    c->bezier.thickness = thickness;
+    c->bezier.abgr      = col;
+    draw_cmd_seal();
+}
+
 // clang-format on
 /*============================================================================================*/

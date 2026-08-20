@@ -1,4 +1,5 @@
 /*==============================================================================================
+
     gui/render/pipeline/gui_emit_shape.c -- The quad family: fills, pictures and gradients.
 
     Every push whose shape is a plain rectangle carrying colour or a texture -- the fill, the
@@ -9,9 +10,11 @@
     rounded / outlined / bezel variants all resolve back onto it.
 
 ==============================================================================================*/
+
 // clang-format off
 
 /*==============================================================================================
+
     draw_rect_cmd -- shared base function for rect commands
 
     `rounding` arrives explicit and already resolved -- the wrappers below fold the ambient
@@ -20,6 +23,7 @@
     `corner_pow` travels the same way and for the same reason: a disc's corner IS the shape,
     so the one caller that names its own radius names its own profile too, and gets 
     the circle.
+
 ==============================================================================================*/
 
 static void
@@ -101,7 +105,7 @@ draw_push_rect_filled( f32 x, f32 y, f32 w, f32 h,      // rect
     samples the texture underneath it; see the effect band in gui.h.) */
 
 void
-draw_push_image( f32 x, f32 y, f32 w, f32 h,
+draw_push_image( f32 x,  f32 y,  f32 w,  f32 h,
                  f32 u0, f32 v0, f32 u1, f32 v1,
                  u32 tex_idx, u32 abgr )
 {
@@ -111,30 +115,42 @@ draw_push_image( f32 x, f32 y, f32 w, f32 h,
 
 /*==============================================================================================
 
-    draw_push_circle_filled -- a filled disc, which IS a rounded rect whose radius reached the
-    half-extent.  Not a command type of its own: the tessellator already derives everything a
-    disc needs from that shape (the SDF boundary, and the no-snap rule -- a square box whose
-    radius reached its half-extent has no straight edge to keep crisp, and quantizing a moving
-    dot's centre is exactly what must not happen).  The radius is passed EXPLICIT, bypassing the
-    ambient rounding -- a disc is fully round by definition, not by scope.
+    draw_push_circle_filled -- Is a rounded rect whose radius reached the half-extent.  
+    Not a command type of its own: the tessellator already derives everything a disc needs
+    from that shape (the SDF boundary, and the no-snap rule -- a square box whose radius 
+    reached its half-extent has no straight edge to keep crisp, and quantizing a moving
+    dot's centre is exactly what must not happen).  
+    
+    The radius is passed EXPLICIT, bypassing the ambient rounding -- a disc is fully round
+    by definition, not by scope.
 
 ==============================================================================================*/
 
 void
 draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 abgr )
 {
-    draw_rect_cmd( cx - r, cy - r, r * 2.0f, r * 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, abgr, r, 0.0f );
+    /* x, y, w, h are the bounding box of the disc */ 
+    /* u0..v1 are the full atlas UVs (the fragment never samples them) */
+    /* tex_idx is 0 for solid color, abgr is the disc's color, */
+    /* rounding is r (the radius), corner_pow is 0 (the disc's corner is a circle). */
+
+    draw_rect_cmd( cx - r, cy - r, r * 2.0f, r * 2.0f, 
+                   0.0f, 0.0f, 1.0f, 1.0f, 0, abgr, r, 0.0f );
 }
 
 /*==============================================================================================
+
     draw_push_rect_list -- emit N solid rects as ONE semantic command.
 
     The dense-shape escape valve: a caller drawing hundreds of small fills (timeline bars, graph
     columns, heatmap cells) would otherwise spend one command slot per rect and exhaust
-    GUI_MAX_CMDS long before the vertex budget.  Entries are copied into the per-frame rect pool
-    (the CMD_POLYLINE point-pool pattern) and tessellated into one quad each at flush time.
-    Per-entry alpha fold + clip cull happens here so the pool holds only visible work.  Entries
-    share the current clip; always square (no rounding), solid color (tex 0, self-sampled).
+    GUI_MAX_CMDS long before the vertex budget.
+    
+    Entries are copied into the per-frame rect pool (the CMD_POLYLINE point-pool pattern) and
+    tessellated into one quad each at flush time. Per-entry alpha fold + clip cull happens 
+    here so the pool holds only visible work.  Entries share the current clip; 
+    always square (no rounding), solid color (tex 0, self-sampled).
+
 ==============================================================================================*/
 
 void
@@ -149,8 +165,10 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
         u32 col = draw_apply_alpha( rects[ i ].abgr );
         if ( ( col >> 24 ) == 0u )   /* invisible under alpha blending (draw_push_rect_filled rule) */
             continue;
+
         if ( draw_cull_box( rects[ i ].x, rects[ i ].y, rects[ i ].w, rects[ i ].h ) )
             continue;
+
         s_draw.rect_pool[ s_draw.rect_count ]      = rects[ i ];
         s_draw.rect_pool[ s_draw.rect_count ].abgr = col;
         s_draw.rect_count++;

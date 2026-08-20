@@ -1720,10 +1720,15 @@ typedef enum
                               it like any field -- one quad over the bbox, no real triangle
                               rasterized.  (3 was PULSE, an op now.) */
 
-    /* 4 and 5 are unnamed.  They were TILE_U and TEXT_EDGE -- a texcoord scale, and a second
-       colour outside the glyph boundary.  Neither was ever a shape, and holding the field slot
-       meant an outlined glyph or a tiled strip could be nothing else.  Both are ops now
-       (GUI_OP_TILE_U, GUI_OP_TEXT_EDGE). */
+    /* 4 was TILE_U -- a texcoord scale, never a shape.  It is an op now (GUI_OP_TILE_U). */
+
+    GUI_FX_BEZIER    = 5,  /* stroked quadratic bezier: p0, control c, p1 about the shape centre,
+                              in the same radius + param lanes GUI_FX_TRI uses (a = r_tl,r_tr
+                              b = r_br,r_bl  c = param_a,_b), plus a half-thickness riding
+                              `border`.  Distance is a cheap fixed-sample approximation, not an
+                              exact curve solve -- nearest of a handful of points along the curve,
+                              refined against its two neighbour segments.  (5 was TEXT_EDGE, an op
+                              now: GUI_OP_TEXT_EDGE.) */
 
     GUI_FX_SEG       = 6,  /* CAPSULE: a line segment `radius` px thick, with round caps        */
 
@@ -2618,6 +2623,7 @@ typedef enum
     GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads (a BOX under GUI_OP_BAND
                              //   when rounded)
     GUI_CMD_TRIANGLE,        // solid triangle
+    GUI_CMD_BEZIER,          // stroked quadratic bezier, round caps: one GUI_FX_BEZIER quad
     GUI_CMD_TEXT,            // glyph run from the font atlas
     GUI_CMD_TEXT_XF,         // glyph run under a uniform scale + a rotation about its origin
     GUI_CMD_TEXT_SHADOW,     // glyph run plus an offset copy, both emitted from one string walk
@@ -2747,6 +2753,7 @@ typedef struct
            border alignment pushes the band outward, so this member never carries an align. */
         struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;  u32 abgr, col_border; } frame;
         struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
+        struct { f32 ax, ay, cx, cy, bx, by, thickness;          u32 abgr; } bezier;
 
         /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
            last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The

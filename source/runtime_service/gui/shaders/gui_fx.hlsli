@@ -496,6 +496,53 @@ fx_field_t fx_field( float2 px )
                               float2( dot( pq2, pq2 ), sg * ( v2.x * e2.y - v2.y * e2.x ) ) );
         f.d = -sqrt( dm.x ) * sign( dm.y );
     }
+    // field 5 BEZIER -- a stroked quadratic bezier: p0, control c, p1 about the shape centre, in
+    // TRI's own lanes (a = r_tl,r_tr  b = r_br,r_bl  c = param_a,param_b), thickened by the half
+    // riding `border` (soft.y).  Distance is a cheap approximation, not an exact curve solve:
+    // sample a fixed handful of points along the curve, keep the nearest, then refine against
+    // its two neighbour chords with the same segment-projection SEG's capsule uses above -- that
+    // hides the facets at any line weight a UI draws without a per-pixel root solve.  States no
+    // boundary coordinate, same as TRI: a dashed curve is not a shape anything asks for yet.
+    else if ( g_field == 5u )
+    {
+        float4 parm = prim_row( 3u );
+        float2 p0   = rad.xy;
+        float2 p1   = rad.zw;
+        float2 pc   = parm.xy;
+
+        static const int BEZIER_SAMPLES = 8;
+        float2 pts[ BEZIER_SAMPLES + 1 ];
+        [unroll]
+        for ( int i = 0; i <= BEZIER_SAMPLES; ++i )
+        {
+            float t = (float)i / (float)BEZIER_SAMPLES, u = 1.0 - t;
+            pts[ i ] = u * u * p0 + 2.0 * u * t * pc + t * t * p1;
+        }
+
+        float bestSq = 1e30;
+        int   bestI  = 0;
+        [unroll]
+        for ( int j = 0; j <= BEZIER_SAMPLES; ++j )
+        {
+            float2 v  = local - pts[ j ];
+            float  sq = dot( v, v );
+            if ( sq < bestSq ) { bestSq = sq; bestI = j; }
+        }
+
+        float d = sqrt( bestSq );
+        if ( bestI > 0 )
+        {
+            float2 a = pts[ bestI - 1 ], e = pts[ bestI ] - a, q = local - a;
+            d = min( d, length( q - e * clamp( dot( q, e ) / dot( e, e ), 0.0, 1.0 ) ) );
+        }
+        if ( bestI < BEZIER_SAMPLES )
+        {
+            float2 a = pts[ bestI ], e = pts[ bestI + 1 ] - a, q = local - a;
+            d = min( d, length( q - e * clamp( dot( q, e ) / dot( e, e ), 0.0, 1.0 ) ) );
+        }
+
+        f.d = d - soft.y;
+    }
     else
     {
         f.d = box_field( local, he, rad, soft.z );

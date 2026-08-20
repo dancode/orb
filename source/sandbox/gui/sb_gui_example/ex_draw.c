@@ -239,6 +239,7 @@ ex_draw_shapes( void )
         const f32 H   = 26.0f;
         f32       t   = (f32)gui()->get_time();
 
+        gui()->field_label_right( 224.0f );
         gui()->row2( 1.0f, 1.0f );
         {
             gui_rect_t r;
@@ -406,6 +407,8 @@ ex_draw_shapes( void )
             tr = gui()->empty( 0.0f, 22.0f );
             gui()->draw_text_shadow( tr.x + 4.0f, tr.y + 4.0f, "Shadowed text", 0xFFFFFFFFu, 0xFF000000u, 2.0f, 2.0f );
         }
+
+        gui()->field_label_right( 0.0f );
     }
     gui()->window_end();
 }

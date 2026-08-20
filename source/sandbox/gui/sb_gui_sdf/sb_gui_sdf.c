@@ -1589,6 +1589,125 @@ win_backdrops( void )
 }
 
 /*==============================================================================================
+    Curves -- GUI_FX_BEZIER, the stroked quadratic field, and the cubic split that rides it.
+
+    Each case draws the same curve twice: a dim 32-segment reference flatten of the EXACT cubic
+    underneath, and the new field's two-quad approximation on top in teal, so any gap between
+    them is something you can see rather than argue about.  Amber rings are the control points;
+    filled ink dots are the curve's own endpoints.
+==============================================================================================*/
+
+static f32  s_cv_thick = 3.0f;
+static bool s_cv_ref   = true;
+
+/* Sandbox-only exact reference: the same de Casteljau sum draw_bezier_cubic used to flatten
+   before this campaign, kept here purely so the new field's approximation has something exact
+   to be compared against on screen. */
+static void
+ref_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, u32 col )
+{
+    gui_vec2_t pts[ 33 ];
+    for ( u32 i = 0; i <= 32; ++i )
+    {
+        f32 t = (f32)i / 32.0f, u = 1.0f - t;
+        f32 b0 = u * u * u, b1 = 3.0f * u * u * t, b2 = 3.0f * u * t * t, b3 = t * t * t;
+        pts[ i ] = ( gui_vec2_t ){ b0 * x0 + b1 * c0x + b2 * c1x + b3 * x1,
+                                   b0 * y0 + b1 * c0y + b2 * c1y + b3 * y1 };
+    }
+    gui()->draw_polyline( pts, 33, 1.0f, GUI_STROKE_CENTER, false, col );
+}
+
+static void
+curve_case( gui_rect_t r, const char* label,
+           f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1 )
+{
+    gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+    gui()->push_clip( r.x, r.y, r.w, r.h );
+
+    if ( s_cv_ref )
+        ref_cubic( r.x + x0, r.y + y0, r.x + c0x, r.y + c0y,
+                  r.x + c1x, r.y + c1y, r.x + x1, r.y + y1, INK_DIM );
+
+    gui()->draw_bezier_cubic( r.x + x0, r.y + y0, r.x + c0x, r.y + c0y,
+                              r.x + c1x, r.y + c1y, r.x + x1, r.y + y1, s_cv_thick, TEAL );
+
+    gui()->draw_circle( r.x + x0,  r.y + y0,  3.0f, true,  0.0f, INK );
+    gui()->draw_circle( r.x + x1,  r.y + y1,  3.0f, true,  0.0f, INK );
+    gui()->draw_circle( r.x + c0x, r.y + c0y, 2.5f, false, 1.0f, AMBER );
+    gui()->draw_circle( r.x + c1x, r.y + c1y, 2.5f, false, 1.0f, AMBER );
+
+    gui()->pop_clip();
+    gui()->draw_text( r.x + 8.0f, r.y + r.h - 20.0f, INK_DIM, label );
+}
+
+static void
+win_curves( void )
+{
+    gui()->stack();
+    gui()->text_wrapped( "GUI_FX_BEZIER: one quad per quadratic span, a fixed 8-sample nearest"
+                         "-point search instead of a root solve.  A cubic (the node-graph wire "
+                         "shape) splits into two quadratic spans on the CPU, so this costs 2 "
+                         "quads total against the old 24-quad flattened polyline.  Dim line = "
+                         "the exact cubic; teal = what the field actually draws." );
+    gui()->checkbox( "show exact reference", &s_cv_ref );
+    gui()->slider_float( "stroke (px)", &s_cv_thick, 1.0f, 14.0f );
+
+    gui()->separator_text( "S-curve wire -- horizontal tangents both ends (the node-graph case)" );
+    {
+        gui_rect_t r = gui()->canvas( 160.0f );
+        curve_case( r, "flat-in / flat-out, small vertical offset",
+                   40.0f, 60.0f, 160.0f, 60.0f, 240.0f, 100.0f, 360.0f, 100.0f );
+    }
+
+    gui()->separator_text( "sharp turn -- vertical exit, horizontal entry" );
+    {
+        gui_rect_t r = gui()->canvas( 160.0f );
+        curve_case( r, "90 degree exit, 90 degree entry",
+                   60.0f, 130.0f, 60.0f, 20.0f, 300.0f, 20.0f, 340.0f, 130.0f );
+    }
+
+    gui()->separator_text( "steep S -- large vertical offset, tangents near-parallel to the ends" );
+    {
+        gui_rect_t r = gui()->canvas( 220.0f );
+        curve_case( r, "worst case for the two-quad cubic split",
+                   40.0f, 190.0f, 160.0f, 190.0f, 220.0f, 20.0f, 360.0f, 20.0f );
+    }
+
+    gui()->separator_text( "quadratic -- one span, no split, exact by construction" );
+    {
+        gui_rect_t r = gui()->canvas( 140.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+        gui()->push_clip( r.x, r.y, r.w, r.h );
+        gui()->draw_bezier_quad( r.x + 40.0f, r.y + 110.0f, r.x + 200.0f, r.y + 10.0f,
+                                 r.x + 360.0f, r.y + 110.0f, s_cv_thick, TEAL );
+        gui()->draw_circle( r.x + 40.0f,  r.y + 110.0f, 3.0f, true,  0.0f, INK );
+        gui()->draw_circle( r.x + 360.0f, r.y + 110.0f, 3.0f, true,  0.0f, INK );
+        gui()->draw_circle( r.x + 200.0f, r.y + 10.0f,  2.5f, false, 1.0f, AMBER );
+        gui()->pop_clip();
+    }
+
+    gui()->separator_text( "the node-graph wire at scale -- same shape Backdrops previews" );
+    {
+        gui_rect_t r = gui()->canvas( 200.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+        gui()->draw_grid( r, 12.0f, 1.0f, r.x, r.y, GUI_COLOR( 0x2C, 0x2C, 0x36, 0xFF ) );
+        gui()->push_clip( r.x, r.y, r.w, r.h );
+        gui_rect_t na = { r.x + 40.0f,  r.y + 40.0f,  120.0f, 56.0f };
+        gui_rect_t nb = { r.x + 320.0f, r.y + 110.0f, 120.0f, 56.0f };
+        if ( s_cv_ref )
+            ref_cubic( na.x + na.w, na.y + na.h * 0.5f, na.x + na.w + 60.0f, na.y + na.h * 0.5f,
+                      nb.x - 60.0f, nb.y + nb.h * 0.5f, nb.x, nb.y + nb.h * 0.5f, INK_DIM );
+        gui()->draw_bezier_cubic( na.x + na.w, na.y + na.h * 0.5f,
+                                  na.x + na.w + 60.0f, na.y + na.h * 0.5f,
+                                  nb.x - 60.0f, nb.y + nb.h * 0.5f,
+                                  nb.x, nb.y + nb.h * 0.5f, s_cv_thick, TEAL );
+        gui()->draw_round_rect( na, 6.0f, 6.0f, 6.0f, 6.0f, true, 0.0f, EDGE );
+        gui()->draw_round_rect( nb, 6.0f, 6.0f, 6.0f, 6.0f, true, 0.0f, EDGE );
+        gui()->pop_clip();
+    }
+}
+
+/*==============================================================================================
     Corners & Pills -- two shapes the record made free.
 
     Neither is a new field.  The corner PROFILE is one more number on the box record (param_c),
@@ -2039,6 +2158,7 @@ static sdf_demo_t s_demos[] = {
     { "Dials",           "Dials",           "draggable knob / clock / compass with rotated labels",       win_dials,     1280.0f, 1024.0f, false },
     { "New Verbs",       "New Verbs",       "box_xf / icon_xf / corner shadow / dashed + gradient arcs",  win_five,      1280.0f, 1024.0f, false },
     { "Backdrops",       "Backdrops",       "checker + line grid as one-quad fragment patterns",          win_backdrops, 1280.0f, 1024.0f, false },
+    { "Curves",          "Curves",          "GUI_FX_BEZIER: exact reference vs the 2-quad approximation", win_curves,    1280.0f, 1024.0f, false },
     { "Fills",           "Fills",           "gradients (linear / radial / conic) + inset + drop shadows", win_fills,     1280.0f, 1024.0f, false },
     { "Corners & Pills", "Corners & Pills", "corner smoothing + the capsule, filled and hollow",          win_corners,   1280.0f, 1024.0f, false },
     { "Animation & Ops", "Animation & Ops", "marching ants / spin / phase / ngon / align / midpoint",     win_anim_fx,   1280.0f, 1024.0f, false },

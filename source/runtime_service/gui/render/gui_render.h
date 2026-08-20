@@ -163,29 +163,29 @@ void            res_sdf_occupancy       ( f32* pct, u32* tenants, u32* w, u32* h
 
 void draw_reset( i32 display_w, i32 display_h );    // clear the list at the top of frame_begin
 
-void draw_set_alpha             ( f32 a );          // global opacity multiplier folded into every pushed shape
-f32  draw_get_alpha             ( void );           // ...read back, so a nested fade can multiply and restore
-void draw_set_rounding          ( f32 r );          // corner radius folded into every pushed filled/outline rect
-f32  draw_rounding              ( void );           // current ambient radius (save/restore around a sub-element)
-void draw_set_corner_smooth     ( f32 t );          // 0..1 corner profile riding with the radius; 0 = circular arc
-f32  draw_corner_smooth         ( void );           // ...read it back, same save/restore rule as the radius
+void draw_set_alpha             ( f32 a );                  // global opacity multiplier folded into every pushed shape
+f32  draw_get_alpha             ( void );                   // ...read back, so a nested fade can multiply and restore
+void draw_set_rounding          ( f32 r );                  // corner radius folded into every pushed filled/outline rect
+f32  draw_rounding              ( void );                   // current ambient radius (save/restore around a sub-element)
+void draw_set_corner_smooth     ( f32 t );                  // 0..1 corner profile riding with the radius; 0 = circular arc
+f32  draw_corner_smooth         ( void );                   // ...read it back, same save/restore rule as the radius
 void draw_set_anim_curve        ( u32 curve, f32 param );   // gui_curve_t shaping every animating shape pushed after
 void draw_get_anim_curve        ( u32* curve, f32* param ); // ...read it back, for save/restore
-void draw_set_anim_phase        ( f32 cycles );     // cycle offset added to every animating shape pushed after
-f32  draw_anim_phase            ( void );           // ...read it back, same save/restore rule
-void draw_set_border_align      ( f32 a );          // stroked-box band alignment: 0 inside, 0.5 centred, 1 outside
-f32  draw_border_align          ( void );           // ...read it back, same save/restore rule as the radius
-void draw_set_text_edge         ( f32 width, u32 abgr ); // second colour outside the glyph edge (SDF fonts)
+void draw_set_anim_phase        ( f32 cycles );             // cycle offset added to every animating shape pushed after
+f32  draw_anim_phase            ( void );                   // ...read it back, same save/restore rule
+void draw_set_border_align      ( f32 a );                  // stroked-box band alignment: 0 inside, 0.5 centred, 1 outside
+f32  draw_border_align          ( void );                   // ...read it back, same save/restore rule as the radius
+void draw_set_text_edge         ( f32 width, u32 abgr );    // second colour outside the glyph edge (SDF fonts)
 void draw_text_edge             ( f32* width, u32* abgr );  // read it back (save/restore around a run)
-void draw_set_text_clip_x       ( f32 x0, f32 x1 ); // glyph-clip window folded into every pushed text run
-void draw_clear_text_clip       ( void );           // restore the no-clip sentinel (unbounded text)
-void draw_set_sort_key          ( u32 z );          // paint order stamped on new commands (window z)
-void draw_set_viewport          ( i32 vp );    // viewport stamped on new commands (surface routing)
-void draw_set_band              ( u32 band );       // arena band: 0 = main UI, 1 = debug (GUI_WIN_DEBUG_BAND)
-u32  draw_band                  ( void );           // current band (sampled for popup band inheritance)
-void draw_set_window            ( gui_id_t win );   // stable window id stamped on new commands (cache key)
-void draw_set_font              ( u32 font );       // active font id, stamped onto each TEXT command (push/pop/use_font)
-u32  draw_get_font              ( void );           // current stamp font (save/restore around a scoped swap)
+void draw_set_text_clip_x       ( f32 x0, f32 x1 );         // glyph-clip window folded into every pushed text run
+void draw_clear_text_clip       ( void );                   // restore the no-clip sentinel (unbounded text)
+void draw_set_sort_key          ( u32 z );                  // paint order stamped on new commands (window z)
+void draw_set_viewport          ( i32 vp );                 // viewport stamped on new commands (surface routing)
+void draw_set_band              ( u32 band );               // arena band: 0 = main UI, 1 = debug (GUI_WIN_DEBUG_BAND)
+u32  draw_band                  ( void );                   // current band (sampled for popup band inheritance)
+void draw_set_window            ( gui_id_t win );           // stable window id stamped on new commands (cache key)
+void draw_set_font              ( u32 font );               // active font id, stamped onto each TEXT command (push/pop/use_font)
+u32  draw_get_font              ( void );                   // current stamp font (save/restore around a scoped swap)
 
 /* The paint cursor as one record (state in gui_emit_state.c; here -- the definer's
    side of the seam): the command segment tag (owning window, sort key, viewport, arena band --
@@ -341,6 +341,7 @@ void draw_push_grid             ( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f3
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr );
 void draw_push_frame            ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 col_bg, u32 col_border );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr );
+void draw_push_bezier           ( f32 ax, f32 ay, f32 cx, f32 cy, f32 bx, f32 by, f32 thickness, u32 abgr );
 
 /* A regular polygon as one GUI_FX_NGON quad: `sides` flat edges inscribed in circumradius r,
    rotated by `rot` (0 = a vertex up), corners rounded by `rounding` px.  thickness > 0 strokes
