@@ -386,19 +386,30 @@ draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y,
 
 /* Skip a straight run shorter than a quarter pixel -- a degenerate/duplicate input point, or a
    closed rounded_path's seeded start coinciding with its own first fillet entry, should never
-   cost a wasted zero-length capsule draw.
+   cost a wasted zero-length draw.
 
-   Uses gui_draw_capsule, not gui_draw_line: an axis-aligned gui_draw_line snaps to a pixel-grid
-   rect with square caps, while the fillet beside it (GUI_FX_BEZIER) is an unsnapped, round-capped
-   field.  Mixing the two puts the straight run's edge up to a pixel away from the fillet's at
-   every joint.  draw_capsule takes no snapping shortcut, so both pieces of the path resolve from
-   the same exact coordinates with matching round caps. */
+   Pushed as a flat-ended oriented box (draw_push_box_xf, rounding 0), not gui_draw_line or
+   gui_draw_capsule.  gui_draw_line's axis-aligned fast path snaps to the pixel grid, which the
+   unsnapped fillet beside it does not share -- that alone can put the two edges up to a pixel
+   apart.  A capsule avoids the snap but still has its own round cap at the joint, and that cap
+   is the SAME circle the fillet's own end already draws (same tangent point, same radius): two
+   independently-blended primitives both claiming that circle double their coverage across its
+   whole antialiased rim, since compositing a translucent edge over itself is not the same as
+   drawing it once.  A flat cut leaves only the fillet's round geometry at the joint, so the two
+   fringes touch only at the two points where the cut meets the stroke's long edges instead of
+   sharing an entire circle. */
 static void
 path_line_if( gui_vec2_t a, gui_vec2_t b, f32 thickness, u32 col )
 {
     f32 dx = b.x - a.x, dy = b.y - a.y;
-    if ( dx * dx + dy * dy > 0.0625f )
-        gui_draw_capsule( a.x, a.y, b.x, b.y, thickness, col );
+    f32 len2 = dx * dx + dy * dy;
+    if ( len2 <= 0.0625f )
+        return;
+
+    f32 len = sqrtf( len2 );
+    f32 mx  = ( a.x + b.x ) * 0.5f, my = ( a.y + b.y ) * 0.5f;
+    f32 rot = atan2f( dy, dx );
+    draw_push_box_xf( mx - len * 0.5f, my - thickness * 0.5f, len, thickness, 0.0f, 0.0f, rot, col );
 }
 
 /* One corner of a rounded path: pull back distance `r` along each of the corner's two adjacent
@@ -511,12 +522,13 @@ corner_bezier( gui_vec2_t entry, gui_vec2_t exit, gui_vec2_t center, f32 r, f32 
 /* A polyline whose corners are automatically filleted to `radius`, clamped per-corner so a
    fillet never eats past its own straight run (rounded_corner above) -- the "rounded rect bezel"
    guarantee applied to an arbitrary point-to-point path, instead of a hand-picked bezier control
-   point that can come out lopsided.  The whole path is ONE field family, GUI_FX_BEZIER: a straight
-   run is a degenerate span (control point on the line, gui_draw_capsule -- see corner_bezier for
-   why that is the same formula) and each fillet is two curved spans, so there is never a field
-   boundary at a joint for the antialiasing on either side to disagree across.  Streams the path in
-   one pass with no working array: each corner's clamp depends only on its own two neighbours, so
-   nothing needs the whole point set at once. */
+   point that can come out lopsided.  A straight run is a flat-capped box (path_line_if); each
+   fillet is two curved GUI_FX_BEZIER spans (corner_bezier).  The run stops flush at the fillet's
+   own tangent point rather than rounding its own end there, so only the fillet's curve supplies
+   the round geometry at a joint -- see path_line_if for why sharing it between both pieces would
+   double-count the antialiasing.  Streams the path in one pass with no working array: each
+   corner's clamp depends only on its own two neighbours, so nothing needs the whole point set at
+   once. */
 static void
 draw_rounded_path( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, bool closed,
                    u32 col )
