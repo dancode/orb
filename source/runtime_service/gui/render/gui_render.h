@@ -43,7 +43,6 @@
     EMIT runs per widget call. BUILD runs once per frame, lazily, from first gui_render_flush.
     SUBMIT runs once per surface.
 
-
 ==============================================================================================*/
 
 #include "engine/app/app_api.h"                 // APP_WIN_MAX -- the per-surface fan-out bound

@@ -1,33 +1,35 @@
 /*==============================================================================================
-    gui/render/pipeline/gui_build_cache.c -- Retained frame-geometry cache (BUILD phase).
+    gui/render/pipeline/gui_build_cache.c -- Retained frame-geometry cache
 
-    The render pipeline has three phases.  This file is the middle one, and is itself split
-    across three units so no single file carries the whole BUILD phase:
+    The render pipeline has three phases. This file is the middle one (BUILD), and 
+    is itself split across mutliple units:
 
-        EMIT   (gui_emit_*.c)      widgets push semantic shapes -> s_draw command list,
-                                    cut into per-(win,z,vp,band) segments, one hash baked per command.
-        BUILD  (this file +        once per frame (cache_build_frame, this file): diff each
-               gui_build_diff.c +  window's commands against last frame (gui_build_diff.c),
-               gui_build_place.c) reuse unchanged geometry in place or tessellate changed windows
-                                    (gui_build_place.c), then z-sort the result into a dispatch
-                                    table.  This file owns the shared slot/stats state both workers
-                                    read and write, plus the top-level driver that sequences them.
-        RENDER (gui_render_submit.c) once per surface: upload the surface's slot-union span (each
-                                    frame-in-flight region must hold complete geometry, so the
-                                    cache saves TESSELLATION, not upload) and emit one draw
-                                    call per cached GPU command.
+        EMIT   (gui_emit_*.c)   Widgets push semantic shapes -> s_draw command list, cut 
+                                into per-(win,z,vp,band) segments, one hash baked per command.
+
+        BUILD  (gui_build_*.c)  Once per frame (cache_build_frame, this file): diff each
+                                window's commands against last frame (gui_build_diff.c),
+                                reuse unchanged geometry in place or tessellate changed windows
+                                (gui_build_place.c), then z-sort the result into a dispatch
+                                table.  This file owns the shared slot/stats state both workers
+                                read and write, plus the top-level driver that sequences them.
+
+        RENDER (gui_render_.c)  Once per surface: upload the surface's slot-union span (each
+                                frame-in-flight region must hold complete geometry, so the
+                                cache saves TESSELLATION, not upload) and emit one draw
+                                call per cached GPU command.
 
     BUILD runs lazily on the first surface flush (cache_build_frame, guarded by s_frame_built)
-    because the semantic command list is shared across every surface -- the geometry it produces
-    is surface-independent.  build_frame_reset clears the guard at frame_begin.
+    because the semantic command list is shared across every surface -- the geometry it
+    produces is surface-independent.  build_frame_reset clears the guard at frame_begin.
 
 ==============================================================================================*/
 // clang-format off
 
-/* Reverse id->name lookup, defined later in this unit (gui_debug_overlay.c) -- used by the overflow
-   report below to name the window that blew the geometry caps.  Returns the registered title in
-   debug builds (windows register via DBG_NAME in window_begin_ex), NULL when the name registry is
-   compiled out (release) or the id was never registered. */
+/* Reverse id->name lookup, defined later in this unit (gui_debug_overlay.c) -- used by the 
+   overflow report below to name the window that blew the geometry caps.  Returns the registered
+   title in debug builds (windows register via DBG_NAME in window_begin_ex), NULL when the 
+   name registry is compiled out (release) or the id was never registered. */
 
 const char* gui_debug_name( gui_id_t id );
 
@@ -508,6 +510,7 @@ static void cache_place_slots( bool allow_reuse, cache_place_stats_t* st );
     the per-window slot table, and the back-to-front dispatch order -- all surface-independent.
 
     ID-KEYED in-place geometry reuse:
+
       A window is matched to last frame's slot by its ID (slot_prev_find), not by table position,
       so a window appearing or vanishing anywhere in the set never strips its neighbours of reuse
       (the old all-or-nothing set_stable rule made every hover tooltip re-tessellate the world).
@@ -518,6 +521,7 @@ static void cache_place_slots( bool allow_reuse, cache_place_stats_t* st );
       fragmentation until the repack fallback below compacts everything.
 
     Repack fallback:
+
       If placement overflows the arena, the whole placement pass is re-run once with reuse
       disabled: every window tessellates sequentially from 0, compacting all fragmentation in a
       single (heavier) frame.  Only if THAT still overflows is geometry genuinely dropped and the

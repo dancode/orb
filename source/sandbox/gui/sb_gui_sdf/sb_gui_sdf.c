@@ -2428,7 +2428,7 @@ win_shapes_baked( void )
     gui()->slider_float( "output scale (x)", &s_shape_scale, 0.15f, 5.0f );
     gui()->checkbox( "animate", &s_shape_anim );
     if ( s_shape_anim )
-        keep_awake();
+         keep_awake();
 
     gui()->separator_text( "the same shape under six verbs -- none of them shape-flavoured" );
     {

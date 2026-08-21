@@ -111,8 +111,10 @@ static struct
 
 } s_run;
 
-/* Frame-time EMA for the interactive readout (main() feeds it every frame). */
-static f32 s_dt_avg = 0.0f;
+/* Frame-time / emit-time EMAs for the interactive readout (main() feeds them every frame; emit
+   lags one frame behind dt since it isn't known until after bench_frame runs). */
+static f32 s_dt_avg   = 0.0f;
+static f32 s_emit_avg = 0.0f;
 
 static u32
 bench_measure_frames( void )
@@ -541,8 +543,9 @@ bench_interactive_frame( void )
 
         gui_render_stats_t rs = gui()->render_stats();
         gui()->textf( "emit-side stats (last frame):" );
-        gui()->textf( "  diff %.3f  tess %.3f  submit %.3f ms", rs.diff_ms, rs.tess_ms,
-                      rs.submit_ms );
+        gui()->textf( "  emit %.3f", s_emit_avg * 1000.0f );
+        gui()->textf( "  diff %.3f  tess %.3f  submit %.3f ms",
+                      rs.diff_ms, rs.tess_ms, rs.submit_ms );
         gui()->textf( "  gpu %.3f ms  quads %u  draws %u", rs.gpu_ms, rs.quad_count,
                       rs.draw_calls );
         gui()->separator();

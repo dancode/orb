@@ -1,4 +1,5 @@
 /*==============================================================================================
+
     /gui/render/pipeline/gui_build_diff.c -- Change detection (BUILD step 1).
 
     Split out of gui_build_cache.c: this file is the first of the two BUILD-phase workers that
@@ -14,6 +15,7 @@
 
     Hashing goes deep for TEXT and POLYLINE commands (which point into side pools): a
     same-length edit leaves the command struct byte-identical, so pool bytes are folded in too.
+
 ==============================================================================================*/
 // clang-format off
 

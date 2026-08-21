@@ -45,6 +45,7 @@ static f32  s_wall_value[ BENCH_WALL_MAX ];
 
 /* Every row is emitted -- no rows_clip -- because the emit cost of the whole list IS the
    measurement; offscreen rows still run layout, id, and state work. */
+
 static void
 scene_wall_begin( void )
 {
@@ -113,9 +114,11 @@ scene_table_rows( const bench_case_t* c, u32 frame )
     if ( gui()->window_begin( "Bench Table", GUI_WIN_NONE ) )
     {
         gui()->stack();
+        f32 avail = gui()->view_avail().y;
         if ( gui()->table_begin( "##bench", 5,
                                  GUI_TABLE_BORDERS_OUTER | GUI_TABLE_BORDERS_V
-                                 | GUI_TABLE_ROW_STRIPES | GUI_TABLE_SCROLL_Y, 0.0f ) )
+                                 | GUI_TABLE_ROW_STRIPES | GUI_TABLE_SCROLL_Y,
+                                 avail > 40.0f ? avail : 40.0f ) )
         {
             gui()->table_setup_column( "Name",  GUI_TABLE_COL_STRETCH, 0.0f  );
             gui()->table_setup_column( "Id",    GUI_TABLE_COL_FIXED,   70.0f );

@@ -26,7 +26,7 @@
       -settle <n>    settle frames per case (default 30).
       (no args)      interactive: a picker window loops any case live for eyeballing; the
                      scripted run is the one that measures.
-
+    
     Results land in artifacts/bench/gui_bench_YYYYMMDD_HHMMSS.txt (kept output, one file per
     run) and mirror to stdout.  NOTHING IS CACHED ACROSS MEASURED FRAMES BY DEFAULT: scripted
     runs pin force_redraw (the clean-frame skip never engages) and run every case with the
@@ -175,6 +175,8 @@ main( int argc, char** argv )
         }
         gui()->frame_end();
         f64 emit_ms = ( sys_tick_seconds() - t_emit ) * 1000.0;
+
+        s_emit_avg += ( ( f32 )emit_ms * 0.001f - s_emit_avg ) * 0.05f;
 
         gui()->boot_present_begin( NULL );
         gui()->boot_present_end();
