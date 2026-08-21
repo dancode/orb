@@ -121,8 +121,16 @@ static void
 vk_device_init_features( vk_feature_chain_t* f )
 {
     //-------------------------------------------------------
+    f->demote.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES;
+
+    /* fragment `discard` compiled as OpDemoteToHelperInvocation (dxc's vulkan1.3 target) --
+       the gui fragment's zero-coverage discard needs this bit at device creation */
+    f->demote.shaderDemoteToHelperInvocation = VK_TRUE;
+
+    //-------------------------------------------------------
     f->desc_idx.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-    
+    f->desc_idx.pNext = &f->demote;
+
     /* per-lane dynamic index into bindless array */
     f->desc_idx.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;  
 

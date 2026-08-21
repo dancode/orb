@@ -26,7 +26,15 @@
                             graceful degrade past GUI_MAX_VOLATILE (overflow blocks freeze).
       9  FULL SIEGE      -- routines 1-5 all at once at fractional load: mixed dirty windows,
                             slot sort + segment volume + state pressure in the same frame.
+      10 FILL FLOOD      -- N full-canvas solid layers: pure GPU fill rate.  Every fragment is
+                            an OP_SELF solid, so the overlay's gpu row reads the fragment
+                            shader's per-pixel cost directly.  No number key (they stop at 9);
+                            reach it by button or -test.
       0  IDLE            -- control panel only; the clean-frame skip should engage.
+
+    Command line: -test N boots straight into routine N; -bench S runs S seconds unattended,
+    printing one perf line per second (frame / gpu ms) and an average on exit -- the harness
+    for shader A/B measurements.
 
     Tests 1/4/5/6/7/9 pin force_redraw (time-driven or self-mutating -- they must not
     idle-skip); 2/3 are static between interactions, so the retained replay path is part of
@@ -44,6 +52,8 @@
 
 #include <stdio.h>
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "orb.h"
 #include "base/fmt.h"   // fmt_snprintf -- the bench's per-row formatting is part of what emit ms measures
@@ -74,6 +84,7 @@
 #define STRESS_DOCK_MAX    12      // test 6 docked-window cap
 #define STRESS_MUT_MAX     100     // test 7 row cap (big-class slots are 32 -- overflows them)
 #define STRESS_SWARM_MAX   24      // test 8 block cap (GUI_MAX_VOLATILE is 16 -- deliberate overflow)
+#define STRESS_FILL_MAX    1000    // test 10 layer cap (overdraw = layer count)
 
 static i32  s_test        = 0;     // active routine, 0 = idle
 static i32  s_flood_count = 40;
@@ -84,7 +95,10 @@ static i32  s_churn_count = 400;
 static i32  s_dock_count  = 10;
 static i32  s_mut_rows    = 60;
 static i32  s_swarm_count = 12;
+static i32  s_fill_layers = 200;
 static bool s_clip        = true;  // tests 2/3: virtualize offscreen rows via rows_clip
+
+static f64  s_bench_secs  = 0.0;   // > 0: unattended timed run (-bench), prints stats + exits
 
 static f32  s_dt_avg      = 0.0f;  // exponential frame-time average for the readout
 
@@ -564,6 +578,34 @@ stress_full_siege( void )
 }
 
 /*==============================================================================================
+    Test 10 -- FILL FLOOD: N full-canvas solid layers, so overdraw equals the layer count and
+    the frame cost is pure fragment work.  Every fragment is an OP_SELF solid fill, which makes
+    this the scene that isolates the fragment shader's flat-pixel price (the overlay's gpu row,
+    or -bench, is the readout).  CPU cost is negligible: N quads, one draw.
+==============================================================================================*/
+
+static void
+stress_fill_flood( i32 count )
+{
+    gui()->window_set_next_pos ( 40.0f, 70.0f, GUI_COND_ONCE );
+    gui()->window_set_next_size( 820.0f, 620.0f, GUI_COND_ONCE );
+    if ( gui()->window_begin( "Fill Flood", GUI_WIN_NONE ) )
+    {
+        gui()->stack();
+        gui()->textf( "%d full-canvas solid layers (overdraw x%d) -- gpu row is the readout",
+                      count, count );
+        f32        avail = gui()->view_avail().y;
+        gui_rect_t c     = gui()->canvas( avail > 40.0f ? avail : 40.0f );
+
+        gui()->push_clip( c.x, c.y, c.w, c.h );
+        for ( i32 i = 0; i < count; ++i )
+            gui()->draw_rect( c.x, c.y, c.w, c.h, stress_color( stress_hash( ( u32 )i ) ) );
+        gui()->pop_clip();
+    }
+    gui()->window_end();
+}
+
+/*==============================================================================================
     Control panel -- always shown; the only window in test 0 (idle-skip should engage there)
 ==============================================================================================*/
 
@@ -578,7 +620,10 @@ static const char* k_test_name[] = {
     "7  LAYOUT ROULETTE",
     "8  VOLATILE SWARM",
     "9  FULL SIEGE",
+    "10 FILL FLOOD",
 };
+
+#define STRESS_TEST_COUNT ( (i32)( sizeof( k_test_name ) / sizeof( k_test_name[ 0 ] ) ) )
 
 static void
 show_control( void )
@@ -594,9 +639,9 @@ show_control( void )
         gui()->textf( "dirty: %s", gui()->frame_dirty() ? "yes" : "no (replaying)" );
         gui()->separator();
 
-        gui()->text( "Keys 1-9 select a routine, 0 stops." );
+        gui()->text( "Keys 1-9 select a routine, 0 stops.  10 is button-only." );
         gui()->cols_n( 5 );
-        for ( i32 i = 0; i <= 9; ++i )
+        for ( i32 i = 0; i < STRESS_TEST_COUNT; ++i )
         {
             char label[ 8 ];
             fmt_snprintf( label, sizeof( label ), "%d", i );
@@ -616,6 +661,7 @@ show_control( void )
         gui()->slider_int( "dock wins",   &s_dock_count,  4,   STRESS_DOCK_MAX  );
         gui()->slider_int( "mutate rows", &s_mut_rows,    20,  STRESS_MUT_MAX   );
         gui()->slider_int( "swarm blks",  &s_swarm_count, 4,   STRESS_SWARM_MAX );
+        gui()->slider_int( "fill layers", &s_fill_layers, 10,  STRESS_FILL_MAX  );
         gui()->checkbox( "clip offscreen rows (2/3)", &s_clip );
 
         gui()->separator();
@@ -652,7 +698,9 @@ build_frame( void )
     /* Time-driven / self-mutating tests must not idle-skip; static tests measure the replay
        path instead -- and the swarm (8) measures idle-frame volatile replay itself. */
     gui()->set_force_redraw( s_test == 1 || s_test == 4 || s_test == 5
-                             || s_test == 6 || s_test == 7 || s_test == 9 );
+                             || s_test == 6 || s_test == 7 || s_test == 9
+                             || s_test == 10 );   /* 10: static scene, but the GPU replay each
+                                                     frame IS the measurement -- never idle-skip */
 
     switch ( s_test )
     {
@@ -665,6 +713,7 @@ build_frame( void )
         case 7: stress_layout_roulette( s_mut_rows    ); break;
         case 8: stress_volatile_swarm ( s_swarm_count ); break;
         case 9: stress_full_siege     (               ); break;
+        case 10: stress_fill_flood    ( s_fill_layers ); break;
         default:                                         break;
     }
 
@@ -678,8 +727,27 @@ build_frame( void )
 int
 main( int argc, char** argv )
 {
-    UNUSED( argc );
-    UNUSED( argv );
+    /* -test N boots straight into a routine; -bench S runs S seconds unattended and exits
+       (see the file header).  Anything else is ignored. */
+    for ( int i = 1; i < argc; ++i )
+    {
+        if ( strcmp( argv[ i ], "-test" ) == 0 && i + 1 < argc )
+        {
+            s_test = atoi( argv[ ++i ] );
+            if ( s_test < 0 || s_test >= STRESS_TEST_COUNT )
+                s_test = 0;
+        }
+        else if ( strcmp( argv[ i ], "-bench" ) == 0 && i + 1 < argc )
+        {
+            s_bench_secs = atof( argv[ ++i ] );
+        }
+        else if ( strcmp( argv[ i ], "-layers" ) == 0 && i + 1 < argc )
+        {
+            s_fill_layers = atoi( argv[ ++i ] );
+            if ( s_fill_layers < 1 )               s_fill_layers = 1;
+            if ( s_fill_layers > STRESS_FILL_MAX ) s_fill_layers = STRESS_FILL_MAX;
+        }
+    }
 
     mod_system_init();
     mod_static( sys );
@@ -738,6 +806,41 @@ main( int argc, char** argv )
         gui()->boot_present_begin( NULL );
         gui()->boot_present_end();
         gui()->boot_pace ( 0, 0 ); // ( 4, 16 );
+
+        /* Timed unattended run: one perf line per second on stdout, an average over everything
+           past the first warmup second (caches settling, timestamp latency), then exit.  gpu ms
+           comes from the rhi's timestamp pair via render stats -- GPU execution time, so the
+           numbers are valid at any present cadence. */
+        if ( s_bench_secs > 0.0 )
+        {
+            static f64 s_t0 = -1.0, s_t_next = 0.0;
+            static f64 s_gpu_sum = 0.0;
+            static i32 s_gpu_n   = 0;
+
+            f64 t = sys_tick_seconds();
+            if ( s_t0 < 0.0 ) { s_t0 = t; s_t_next = t + 1.0; }
+
+            gui_render_stats_t rs = gui()->render_stats();
+            if ( t - s_t0 > 1.0 && rs.gpu_ms > 0.0f )
+            {
+                s_gpu_sum += ( f64 )rs.gpu_ms;
+                s_gpu_n   += 1;
+            }
+            if ( t >= s_t_next )
+            {
+                s_t_next = t + 1.0;
+                printf( "[bench] t=%4.1f  frame %6.2f ms  gpu %6.3f ms  quads %u  draws %u\n",
+                        t - s_t0, s_dt_avg * 1000.0f, rs.gpu_ms, rs.quad_count, rs.draw_calls );
+                fflush( stdout );
+            }
+            if ( t - s_t0 >= s_bench_secs )
+            {
+                printf( "[bench] DONE  test %d  avg gpu %.3f ms over %d frames\n",
+                        s_test, s_gpu_n > 0 ? s_gpu_sum / ( f64 )s_gpu_n : 0.0, s_gpu_n );
+                fflush( stdout );
+                break;
+            }
+        }
     }
 
     ret_code = 0;

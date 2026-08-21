@@ -54,12 +54,13 @@ static bool s_step_play;
 static i32  s_step_rate = 20;   /* capped at 60: the whole drag range stays in the usable band */
 static f32  s_step_accum;
 
+/* Indexed by gui_cmd_type_t -- one name per enum value, in enum order. */
 static const char* k_step_type_name[] = {
-    "rect_filled", "rect_outline", "triangle", "text", "text_xf", "text_shadow",
+    "rect_filled", "rect_outline", "triangle", "bezier", "text", "text_xf", "text_shadow",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
     "sprite", "fx_box", "round_rect_ex", "arc", "pie",
     "arc_dash", "arc_grad", "image_xf", "checker", "grid",
-    "ngon", "box_dash", "frame",
+    "ngon", "box_dash", "frame", "repeat", "repeat_polar", "box_cut",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -272,8 +273,9 @@ step_cmd_detail( const step_cmd_info_t* ci )
         case GUI_CMD_NGON:
             gui_textf( "centre %.0f,%.0f   r %.1f   sides %u", c->ngon.cx, c->ngon.cy,
                        c->ngon.r, c->ngon.sides );
-            fmt_snprintf( b2, sizeof( b2 ), "round %.1f   t %.1f   rot %.0f deg",
-                          c->ngon.rounding, c->ngon.thickness, gui_degrees( c->ngon.rot ) );
+            fmt_snprintf( b2, sizeof( b2 ), "round %.1f   t %.1f   rot %.0f deg   star %.2f",
+                          c->ngon.rounding, c->ngon.thickness, gui_degrees( c->ngon.rot ),
+                          c->ngon.star );
             row2 = b2;
             break;
         case GUI_CMD_BOX_DASH:

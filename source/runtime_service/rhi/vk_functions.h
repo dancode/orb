@@ -151,6 +151,13 @@ VK_DEVICE_LEVEL_FUNCTION( vkWaitSemaphores )
 VK_DEVICE_LEVEL_FUNCTION( vkSignalSemaphore )
 VK_DEVICE_LEVEL_FUNCTION( vkGetSemaphoreCounterValue )
 
+/* Query pools -- GPU timestamps (vkCmdWriteTimestamp2 is synchronization2, core VK 1.3) */
+VK_DEVICE_LEVEL_FUNCTION( vkCreateQueryPool )
+VK_DEVICE_LEVEL_FUNCTION( vkDestroyQueryPool )
+VK_DEVICE_LEVEL_FUNCTION( vkGetQueryPoolResults )
+VK_DEVICE_LEVEL_FUNCTION( vkCmdResetQueryPool )
+VK_DEVICE_LEVEL_FUNCTION( vkCmdWriteTimestamp2 )
+
 /* Command pools and buffers */
 VK_DEVICE_LEVEL_FUNCTION( vkCreateCommandPool )
 VK_DEVICE_LEVEL_FUNCTION( vkDestroyCommandPool )

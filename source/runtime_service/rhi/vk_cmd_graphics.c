@@ -258,6 +258,16 @@ vk_cmd_frame_index( rhi_cmd_t cmd )
     return cmd ? cmd->frame : 0u;
 }
 
+/* GPU execution time of this command list's context frame; see rhi_api.h. */
+static f32
+vk_cmd_gpu_ms( rhi_cmd_t cmd )
+{
+    if ( !cmd )
+        return 0.0f;
+    vk_context_t* ctx = vk_ctx_get( cmd->ctx_id );
+    return ctx ? ctx->gpu_ms : 0.0f;
+}
+
 /*==============================================================================================
     Draw calls
 ==============================================================================================*/

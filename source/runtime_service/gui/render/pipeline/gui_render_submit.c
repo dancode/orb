@@ -460,6 +460,10 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
 
     zone_end( &s_stats.accum.submit_ms, t_submit );
 
+    /* The GPU-side counterpart: what this surface's context frame cost to EXECUTE, sampled from
+       the rhi's timestamp pair (trails by the frames-in-flight depth; see gui_render_stats_t). */
+    s_stats.accum.gpu_ms += rhi()->cmd_gpu_ms( cmd );
+
     // Fold this surface's draw-call count into the frame accumulator + lifetime peak (cache stats).
     cache_count_draw_calls( draw_calls );
 

@@ -334,6 +334,30 @@ vk_frame_begin( i32 ctx_id )
 
     vkCmdPipelineBarrier2( cmd_buf, &dep_info );
 
+    /* --- GPU frame timer. ---
+
+       Resolve the timestamp pair this slot recorded VK_MAX_FRAMES_IN_FLIGHT frames ago -- the
+       fence wait above guarantees the queries are available -- then reset the pair and write
+       this frame's opening timestamp.  TOP_OF_PIPE / BOTTOM_OF_PIPE bracket the whole buffer,
+       so gpu_ms is the context's full GPU frame, not any one pass. */
+
+    if ( ctx->query_pool != VK_NULL_HANDLE )
+    {
+        if ( ctx->gpu_ts_written[ frame ] )
+        {
+            u64 ts[ 2 ] = { 0 };
+            if ( vkGetQueryPoolResults( vk.device, ctx->query_pool, frame * 2u, 2u,
+                                        sizeof( ts ), ts, sizeof( u64 ),
+                                        VK_QUERY_RESULT_64_BIT ) == VK_SUCCESS )
+                ctx->gpu_ms = (f32)( (f64)( ts[ 1 ] - ts[ 0 ] )
+                            * (f64)vk.physical_device_props.limits.timestampPeriod * 1e-6 );
+            ctx->gpu_ts_written[ frame ] = false;
+        }
+        vkCmdResetQueryPool( cmd_buf, ctx->query_pool, frame * 2u, 2u );
+        vkCmdWriteTimestamp2( cmd_buf, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                              ctx->query_pool, frame * 2u );
+    }
+
     /* Initialize the command list slot and return a direct pointer to it. */
     ctx->cmd_lists[ frame ].vk_cmd = cmd_buf;
     ctx->cmd_lists[ frame ].ctx_id = ctx_id;
@@ -423,6 +447,15 @@ vk_frame_end( i32 ctx_id )
 
     vkCmdPipelineBarrier2( cmd_buf, &dep_info );
 
+    /* GPU frame timer: the closing timestamp of the pair frame_begin opened.  Written last so
+       the pair spans everything this buffer recorded; resolved when this slot comes around
+       again.  The written flag is set only after a successful submit below -- an unsubmitted
+       pair must not be read back. */
+
+    if ( ctx->query_pool != VK_NULL_HANDLE )
+        vkCmdWriteTimestamp2( cmd_buf, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+                              ctx->query_pool, frame * 2u + 1u );
+
     /* Close the command buffer.  It is invalid to submit an open command buffer, so we must do this
        before any of the following steps -- even if we encounter an error. */
 
@@ -504,6 +537,9 @@ vk_frame_end( i32 ctx_id )
          ctx->current_frame = ( ctx->current_frame + 1 ) % VK_MAX_FRAMES_IN_FLIGHT;
          return;
     }
+
+    if ( ctx->query_pool != VK_NULL_HANDLE )
+        ctx->gpu_ts_written[ frame ] = true;    // the pair is on the queue; readable once the fence signals
 
     /* --- Step 3: Hand the finished image to the display engine. ---
 

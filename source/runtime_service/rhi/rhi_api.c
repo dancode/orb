@@ -33,6 +33,7 @@ const rhi_api_t g_rhi_api_struct =
     .frame_end                  = vk_frame_end,
     .device_wait_idle           = vk_device_wait_idle,
     .cmd_frame_index            = vk_cmd_frame_index,
+    .cmd_gpu_ms                 = vk_cmd_gpu_ms,
 
     /* Buffer */
     .buffer_create              = vk_buffer_create,

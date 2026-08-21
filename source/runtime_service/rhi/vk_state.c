@@ -231,10 +231,23 @@ typedef struct vk_context_s
     struct rhi_cmd_s    cmd_lists               [ VK_MAX_FRAMES_IN_FLIGHT ];
 
     /* Tracks the current Vulkan layout of each slot's depth image.  Starts as UNDEFINED;
-       promoted to DEPTH_ATTACHMENT_OPTIMAL after the first barrier in frame_begin. 
+       promoted to DEPTH_ATTACHMENT_OPTIMAL after the first barrier in frame_begin.
        Safe to read here because the fence wait guarantees the prior use of this slot is done. */
 
     VkImageLayout       depth_layout            [ VK_MAX_FRAMES_IN_FLIGHT ];
+
+    /* --- GPU frame timer ---
+
+       Two timestamps per frame slot bracket the whole command buffer (frame_begin writes the
+       first, frame_end the last), so gpu_ms is the GPU execution time of one full context frame.
+       The slot's pair is read back at the next frame_begin that reuses the slot -- the fence
+       wait there guarantees the results are available -- so the value trails by
+       VK_MAX_FRAMES_IN_FLIGHT frames.  query_pool stays VK_NULL_HANDLE on hardware without
+       timestampComputeAndGraphics, and gpu_ms stays 0 there. */
+
+    VkQueryPool         query_pool;                                 // 2 * VK_MAX_FRAMES_IN_FLIGHT timestamp queries
+    bool                gpu_ts_written          [ VK_MAX_FRAMES_IN_FLIGHT ];  // slot has a submitted pair to read
+    f32                 gpu_ms;                                     // last resolved GPU frame duration
 
 } vk_context_t;
 

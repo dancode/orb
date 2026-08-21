@@ -50,6 +50,30 @@ vk_command_create( vk_context_t* ctx )
         ctx->cmd_lists[ i ].frame  = i;
     }
 
+    /* GPU frame timer: two timestamp queries per frame slot (see vk_context_t).  Skipped when
+       the device cannot timestamp graphics queues; frame_begin/frame_end test the handle. */
+    ctx->query_pool = VK_NULL_HANDLE;
+    ctx->gpu_ms     = 0.0f;
+    for ( u32 i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i )
+        ctx->gpu_ts_written[ i ] = false;
+
+    if ( vk.physical_device_props.limits.timestampComputeAndGraphics )
+    {
+        VkQueryPoolCreateInfo qp_ci = { 0 };
+        qp_ci.sType                 = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        qp_ci.queryType             = VK_QUERY_TYPE_TIMESTAMP;
+        qp_ci.queryCount            = 2u * VK_MAX_FRAMES_IN_FLIGHT;
+
+        r = vkCreateQueryPool( vk.device, &qp_ci, vk.alloc_cb, &ctx->query_pool );
+        if ( r != VK_SUCCESS )
+        {
+            /* The timer is diagnostics, not correctness: render without it. */
+            LOG_WARN( "command_create: vkCreateQueryPool: %s (gpu timer disabled)",
+                      string_VkResult( r ) );
+            ctx->query_pool = VK_NULL_HANDLE;
+        }
+    }
+
     LOG_INFO( "command_create: OK (ctx %d)", ctx->id );
     return true;
 }
@@ -63,6 +87,12 @@ vk_command_destroy( vk_context_t* ctx )
     /* Destroying the pool implicitly frees all command buffers allocated from it. */
     vkDestroyCommandPool( vk.device, ctx->command_pool, vk.alloc_cb );
     ctx->command_pool = VK_NULL_HANDLE;
+
+    if ( ctx->query_pool != VK_NULL_HANDLE )
+    {
+        vkDestroyQueryPool( vk.device, ctx->query_pool, vk.alloc_cb );
+        ctx->query_pool = VK_NULL_HANDLE;
+    }
 
     for ( u32 i = 0; i < VK_MAX_FRAMES_IN_FLIGHT; ++i )
     {

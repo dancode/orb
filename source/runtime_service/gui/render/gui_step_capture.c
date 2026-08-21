@@ -437,6 +437,28 @@ step_cmd_bounds( const gui_cmd_t* c )
         }
         case GUI_CMD_BOX_DASH:
             return ( gui_rect_t ){ c->box_dash.x, c->box_dash.y, c->box_dash.w, c->box_dash.h };
+        /* The repeated sets span the box the push derived -- same arithmetic, so the highlight
+           is the box drawn. */
+        case GUI_CMD_REPEAT:
+        {
+            f32 px = ( c->repeat.pitch_x > c->repeat.cell_w ) ? c->repeat.pitch_x
+                                                              : c->repeat.cell_w + 1.0f;
+            f32 py = ( c->repeat.pitch_y > c->repeat.cell_h ) ? c->repeat.pitch_y
+                                                              : c->repeat.cell_h + 1.0f;
+            f32 hx = (f32)( c->repeat.nx - 1u ) * 0.5f * px + c->repeat.cell_w * 0.5f;
+            f32 hy = (f32)( c->repeat.ny - 1u ) * 0.5f * py + c->repeat.cell_h * 0.5f;
+            return ( gui_rect_t ){ c->repeat.cx - hx, c->repeat.cy - hy, hx * 2.0f, hy * 2.0f };
+        }
+        case GUI_CMD_REPEAT_POLAR:
+        {
+            f32 hx = c->repeat_polar.orbit + c->repeat_polar.cell_w * 0.5f;
+            f32 hy = c->repeat_polar.orbit + c->repeat_polar.cell_h * 0.5f;
+            return ( gui_rect_t ){ c->repeat_polar.cx - hx, c->repeat_polar.cy - hy,
+                                   hx * 2.0f, hy * 2.0f };
+        }
+        /* The cut only removes ink, so the fill's own box bounds the shape. */
+        case GUI_CMD_BOX_CUT:
+            return ( gui_rect_t ){ c->box_cut.x, c->box_cut.y, c->box_cut.w, c->box_cut.h };
         /* Sprite / nine-slice paints exactly its box -- the slice expansion happens inside it. */
         case GUI_CMD_SPRITE:
             return ( gui_rect_t ){ c->sprite.x, c->sprite.y, c->sprite.w, c->sprite.h };

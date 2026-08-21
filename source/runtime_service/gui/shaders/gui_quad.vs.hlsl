@@ -126,22 +126,31 @@ vs_out_t main( uint vid : SV_VertexID )
     float4 q0 = float4( float2( ci ), float2( ew & 0xFFFFu, ew >> 16u ) ) * 0.25;
 
     // The index word is a tagged union (gui.h): a whole GLYPH carries an atlas ID where every
-    // other quad carries a style record, and neither has to make room for the other.
-    uint idx     = asuint( q.w );
-    uint tag     = idx >> GUI_QUAD_TAG_SHIFT;
-    bool isglyph = ( tag == GUI_QUAD_TAG_GLYPH );
-    bool isband  = ( tag == GUI_QUAD_TAG_BAND );
+    // other quad carries a style record; a STYLED glyph carries both -- the ID where GLYPH keeps
+    // it and a style where GLYPH keeps fx bits, so its ops ride a record while its rect stays
+    // repack-stable.
+    uint idx      = asuint( q.w );
+    uint tag      = idx >> GUI_QUAD_TAG_SHIFT;
+    bool isglyph  = ( tag == GUI_QUAD_TAG_GLYPH );
+    bool isstyled = ( tag == GUI_QUAD_TAG_GSTYLED );
+    bool isband   = ( tag == GUI_QUAD_TAG_BAND );
+    bool anyglyph = isglyph || isstyled;
 
-    uint style = isglyph ? 0u : ( ( idx >> GUI_QUAD_STYLE_SHIFT ) & GUI_QUAD_STYLE_MASK );
+    uint style = isglyph  ? 0u
+               : isstyled ? ( ( idx >> GUI_QUAD_GSTYLE_SHIFT ) & GUI_QUAD_GSTYLE_MASK )
+                          : ( ( idx >> GUI_QUAD_STYLE_SHIFT  ) & GUI_QUAD_STYLE_MASK  );
 
-    // A glyph is EXACT; a band is always SKIRT, which is what frees its rule bits to name the band.
-    uint rule = isglyph ? 0u : ( isband ? 1u : ( ( idx >> GUI_QUAD_RULE_SHIFT ) & 3u ) );
+    // A glyph is EXACT, styled or not; a band is always SKIRT, which is what frees its rule bits
+    // to name the band.
+    uint rule = anyglyph ? 0u : ( isband ? 1u : ( ( idx >> GUI_QUAD_RULE_SHIFT ) & 3u ) );
 
     // The instance extras: turn, animation phase, border colour.  Most quads name no record and
     // take the all-zero row, which IS the default -- an unrotated shape in step with the clock and
-    // no border band (gui.h, gui_fx_t).
-    uint   fxrow = isglyph ? ( ( idx >> GUI_QUAD_GFX_SHIFT ) & GUI_QUAD_GFX_MASK )
-                           : ( ( idx >> GUI_QUAD_FX_SHIFT  ) & GUI_QUAD_FX_MASK  );
+    // no border band (gui.h, gui_fx_t).  A STYLED glyph has no fx bits at all: its layout spent
+    // them on the style, so a rotated styled run takes the SHAPED tag instead.
+    uint   fxrow = isstyled ? 0u
+                 : isglyph  ? ( ( idx >> GUI_QUAD_GFX_SHIFT ) & GUI_QUAD_GFX_MASK )
+                            : ( ( idx >> GUI_QUAD_FX_SHIFT  ) & GUI_QUAD_FX_MASK  );
     float4 fxr   = fx_record( fxrow, 0u );
 
     // The shape's TURN, per instance -- a unit (cos, sin) packed like a uv pair, with the all-zero
@@ -178,8 +187,8 @@ vs_out_t main( uint vid : SV_VertexID )
     // samples a texture without being a glyph -- icons, sprites, a dashed line's stipple row, the
     // narrowed rect a glyph cut to its window carries -- takes it from row B of its instance
     // record.  A flat fill names no record and reads the zero rect it never samples.
-    uint2 uvw = isglyph ? glyph_uv( ( idx >> GUI_QUAD_GLYPH_SHIFT ) & GUI_QUAD_GLYPH_MASK )
-                        : asuint( fx_record( fxrow, 1u ).xy );
+    uint2 uvw = anyglyph ? glyph_uv( ( idx >> GUI_QUAD_GLYPH_SHIFT ) & GUI_QUAD_GLYPH_MASK )
+                         : asuint( fx_record( fxrow, 1u ).xy );
     float2 uv0 = unpack_unorm16x2( uvw.x );
     float2 uv1 = unpack_unorm16x2( uvw.y );
 
@@ -212,7 +221,7 @@ vs_out_t main( uint vid : SV_VertexID )
     o.prim     = style;
     o.rect     = q0;
     o.clip     = ( idx >> GUI_QUAD_CLIP_SHIFT ) & GUI_QUAD_CLIP_MASK;
-    o.tag      = tag | ( ( isglyph && ( idx & GUI_QUAD_SDF_BIT ) != 0u ) ? 4u : 0u );
+    o.tag      = tag | ( ( anyglyph && ( idx & GUI_QUAD_SDF_BIT ) != 0u ) ? 4u : 0u );
     o.border   = unpack_col( asuint( fxr.z ) );
     o.inst     = float4( rt, asuint( fxr.y ) / 65535.0, 0.0 );
     return o;

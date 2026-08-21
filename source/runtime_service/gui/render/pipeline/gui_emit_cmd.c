@@ -71,6 +71,7 @@ static const u8 k_cmd_hash_len[] = {
        command hashes stable frame-to-frame while it turns. */
 
     [GUI_CMD_REPEAT_POLAR]  = sizeof(( (gui_cmd_t*)0 )->repeat_polar ),
+    [GUI_CMD_BOX_CUT]       = sizeof(( (gui_cmd_t*)0 )->box_cut ),
 };
 
 static u32

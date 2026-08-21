@@ -325,7 +325,8 @@ void draw_push_arc_dashed       ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, 
 
 /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1) by ANGLE -- the gradient a 4-corner
    vertex colour cannot express.  col_b belongs to the shape, so it rides the STYLE record
-   (gui_prim_t.col_b), quantized through the uv pair's unorm16 on the way (GUI_FX_ARC_GRAD). */
+   (gui_prim_t.col_b); the fragment ramps on the sector's own arc-length coordinate
+   (GUI_OP_GRAD_ALONG). */
 void draw_push_arc_gradient     ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
                                   u32 col_a, u32 col_b );
 
@@ -345,9 +346,10 @@ void draw_push_bezier           ( f32 ax, f32 ay, f32 cx, f32 cy, f32 bx, f32 by
 
 /* A regular polygon as one GUI_FX_NGON quad: `sides` flat edges inscribed in circumradius r,
    rotated by `rot` (0 = a vertex up), corners rounded by `rounding` px.  thickness > 0 strokes
-   it (GUI_OP_BAND, border-align aware); 0 fills. */
+   it (GUI_OP_BAND, border-align aware); 0 fills.  star in (0..1) pulls each edge midpoint in to
+   star * r -- a `sides`-pointed star from the same quad; 0 = regular. */
 void draw_push_ngon             ( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 rounding,
-                                  f32 thickness, u32 abgr );
+                                  f32 thickness, f32 star, u32 abgr );
 
 /* A rounded-box outline cut by a perimeter dash -- the dashed border / marching ants.  dash/gap
    in arc-length px; `rate` scrolls the pattern in px/sec on pc.time, `phase` is a static px
@@ -362,18 +364,30 @@ void draw_push_box_dashed       ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
 void draw_push_box_trace        ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
                                   f32 frac, f32 laps, f32 at, u32 abgr );
 
+/* A rounded box minus a SECOND rounded box (GUI_OP_CUT_SHAPE) -- subtraction, which no number of
+   extra quads can paint: blending only adds ink.  The cut is stated by its ABSOLUTE centre plus
+   size, corner radius and edge AA; `soft` clamps up to the standard 1 px band. */
+void draw_push_box_cut          ( f32 x, f32 y, f32 w, f32 h, f32 rounding,
+                                  f32 cut_cx, f32 cut_cy, f32 cut_w, f32 cut_h,
+                                  f32 cut_r, f32 soft, u32 abgr );
+
 /* A LATTICE of one rounded cell (GUI_OP_REPEAT): nx by ny copies `pitch` apart, centred on
    (cx, cy).  ONE quad and one style record however many copies -- the fragment folds its
    coordinate into a cell.  The set's box is derived from the count, pitch and cell, here and at
-   tessellation, because the fragment recovers the count back out of it. */
+   tessellation, because the fragment recovers the count back out of it.
+   `col_b` != abgr ramps the copies toward it along the strip (GUI_OP_GRAD_CELL); `fill` >= 0
+   lights only that fraction of them (GUI_OP_CELL_FILL) -- pass abgr and -1 for the plain set. */
 void draw_push_repeat           ( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
-                                  f32 cell_w, f32 cell_h, f32 rounding, u32 abgr );
+                                  f32 cell_w, f32 cell_h, f32 rounding, u32 abgr,
+                                  u32 col_b, f32 fill );
 
 /* The angular twin: `n` copies on a circle of radius `orbit` (GUI_OP_REPEAT_POLAR).  A non-zero
-   `rate` (revolutions/sec) turns the ring on the shader clock, so a spinner is one quad whose
-   command bytes never change while it runs. */
+   `rate` (revolutions/sec) animates on the shader clock, so a spinner is one quad whose command
+   bytes never change while it runs.  With `col_b` == abgr the whole ring turns rigidly
+   (GUI_OP_SPIN); different, the dots stay put and the ramp toward col_b marches around them,
+   trailing the bright head (GUI_OP_GRAD_CELL) -- the tail spinner. */
 void draw_push_repeat_polar     ( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h,
-                                  f32 rounding, f32 rate, f32 phase, u32 abgr );
+                                  f32 rounding, f32 rate, f32 phase, u32 abgr, u32 col_b );
 
 /* A filled disc IS a rounded rect whose radius reached the half-extent -- this pushes
    GUI_CMD_RECT_FILLED with rounding = r, not a command of its own. */

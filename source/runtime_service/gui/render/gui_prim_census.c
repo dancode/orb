@@ -205,6 +205,10 @@ static const struct
     { GUI_OP_GLOW,        "GLOW"      },
     { GUI_OP_REPEAT,      "REPEAT"    },
     { GUI_OP_REPEAT_POLAR,"POLAR"     },
+    { GUI_OP_GRAD_ALONG,  "ALONG"     },
+    { GUI_OP_GRAD_CELL,   "CELL"      },
+    { GUI_OP_CELL_FILL,   "CELL_FILL" },
+    { GUI_OP_CUT_SHAPE,   "CUT_SHAPE" },
 };
 
 #define CENSUS_OP_COUNT  ( sizeof( k_census_op ) / sizeof( k_census_op[ 0 ] ) )

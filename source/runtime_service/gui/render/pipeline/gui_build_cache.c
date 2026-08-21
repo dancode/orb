@@ -133,6 +133,7 @@ build_stats_publish( void )
     s_stats.accum.upload_bytes     = 0;
     s_stats.accum.volatile_patched = 0;   // per-frame event count, same reset rule as draw_calls
     s_stats.accum.submit_ms        = 0.0f; // summed per surface flush, so same reset as draw_calls
+    s_stats.accum.gpu_ms           = 0.0f; // same summing rule; each surface adds its context's sample
 }
 
 /* Defined here (forward-declared in gui_build_volatile.c, included just above this file) because

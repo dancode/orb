@@ -371,14 +371,16 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                no longer a field of its own -- it is this same ARC under GUI_OP_DASH. */
             case GUI_CMD_ARC:
                 tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, c->arc.thickness,
-                             c->arc.a0, c->arc.a1, GUI_FX_ARC, 0.0f, 0.0f, 0.0f, 0.0f,
+                             c->arc.a0, c->arc.a1, GUI_FX_ARC, c->arc.abgr,
+                             0.0f, 0.0f,
                              c->arc.spin_rate, c->arc.spin_phase,
                              c->arc.curve, c->arc.curve_param, c->arc.abgr );
                 break;
 
             case GUI_CMD_PIE:
                 tess_fx_arc( c->arc.cx, c->arc.cy, c->arc.r, 0.0f,
-                             c->arc.a0, c->arc.a1, GUI_FX_PIE, 0.0f, 0.0f, 0.0f, 0.0f,
+                             c->arc.a0, c->arc.a1, GUI_FX_PIE, c->arc.abgr,
+                             0.0f, 0.0f,
                              c->arc.spin_rate, c->arc.spin_phase,
                              c->arc.curve, c->arc.curve_param, c->arc.abgr );
                 break;
@@ -386,19 +388,17 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_ARC_DASH:
                 tess_fx_arc( c->arc_dash.cx, c->arc_dash.cy, c->arc_dash.r,
                              c->arc_dash.thickness, c->arc_dash.a0, c->arc_dash.a1,
-                             GUI_FX_ARC, 0.0f, 0.0f,
+                             GUI_FX_ARC, c->arc_dash.abgr,
                              c->arc_dash.period / TESS_TAU, c->arc_dash.duty,
                              0.0f, 0.0f, 0u, 0.0f, c->arc_dash.abgr );
                 break;
 
-            /* GRAD splits col_b's four bytes across the two unorm16 uv lanes -- the shader
-               contract for the self-sampled sweep (gui.h).  Exact k/65535 through pack and back. */
+            /* The sweep is the plain ARC plus GUI_OP_GRAD_ALONG: col_b rides the record and the
+               fragment ramps on the sector's own arc-length coordinate. */
             case GUI_CMD_ARC_GRAD:
                 tess_fx_arc( c->arc_grad.cx, c->arc_grad.cy, c->arc_grad.r,
                              c->arc_grad.thickness, c->arc_grad.a0, c->arc_grad.a1,
-                             GUI_FX_ARC_GRAD,
-                             (f32)(   c->arc_grad.col_b         & 0xFFFFu ) / 65535.0f,
-                             (f32)( ( c->arc_grad.col_b >> 16 ) & 0xFFFFu ) / 65535.0f,
+                             GUI_FX_ARC, c->arc_grad.col_b,
                              0.0f, 0.0f, 0.0f, 0.0f, 0u, 0.0f, c->arc_grad.col_a );
                 break;
 
@@ -426,7 +426,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                     s_tess.cur_ops |= GUI_OP_BAND;
                 tess_fx_ngon( c->ngon.cx, c->ngon.cy, c->ngon.r, c->ngon.sides,
                               c->ngon.rot, c->ngon.rounding, c->ngon.thickness,
-                              c->ngon.abgr );
+                              c->ngon.star, c->ngon.abgr );
                 break;
 
             /* The dashed border: a BAND box whose coverage the fragment cuts on the perimeter
@@ -478,18 +478,28 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 tess_repeat_box( c->repeat.cx, c->repeat.cy, c->repeat.nx, c->repeat.ny,
                                  c->repeat.pitch_x, c->repeat.pitch_y,
                                  c->repeat.cell_w, c->repeat.cell_h,
-                                 c->repeat.rounding, c->repeat.abgr );
+                                 c->repeat.rounding, c->repeat.abgr,
+                                 c->repeat.col_b, c->repeat.fill );
                 break;
 
-            /* The ring: same one-quad trade taken angularly, and at a non-zero rate it spins in
-               the fragment -- so the command's bytes stay put while it turns. */
+            /* The ring: same one-quad trade taken angularly, and at a non-zero rate it animates
+               in the fragment -- so the command's bytes stay put while it moves. */
             case GUI_CMD_REPEAT_POLAR:
                 tess_repeat_polar( c->repeat_polar.cx, c->repeat_polar.cy,
                                    c->repeat_polar.n, c->repeat_polar.orbit,
                                    c->repeat_polar.cell_w, c->repeat_polar.cell_h,
                                    c->repeat_polar.rounding, c->repeat_polar.rate,
                                    c->repeat_polar.phase, c->repeat_polar.curve,
-                                   c->repeat_polar.curve_param, c->repeat_polar.abgr );
+                                   c->repeat_polar.curve_param, c->repeat_polar.abgr,
+                                   c->repeat_polar.col_b );
+                break;
+
+            /* Subtraction: the box minus the second box the record states (GUI_OP_CUT_SHAPE). */
+            case GUI_CMD_BOX_CUT:
+                tess_box_cut( c->box_cut.x, c->box_cut.y, c->box_cut.w, c->box_cut.h,
+                              c->box_cut.rounding, c->box_cut.cut_dx, c->box_cut.cut_dy,
+                              c->box_cut.cut_w, c->box_cut.cut_h,
+                              c->box_cut.cut_r, c->box_cut.cut_aa, c->box_cut.abgr );
                 break;
 
             case GUI_CMD_IMAGE_XF:

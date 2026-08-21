@@ -20,8 +20,10 @@
 // band covering.
 
 // The ops that read the animation clock.  One test decides whether row 5 is fetched at all, so a
-// static shape never pays for the timebase it does not use.
-#define OP_ANIMATED     ( OP_PULSE | OP_SPIN | OP_DASH )
+// static shape never pays for the timebase it does not use.  The two CELL ops belong here even
+// when they never move: their threshold and ramp anchor are the clock's k, which at rate 0 is
+// simply the instance's phase -- the per-instance value port.
+#define OP_ANIMATED     ( OP_PULSE | OP_SPIN | OP_DASH | OP_GRAD_CELL | OP_CELL_FILL )
 
 // gui_curve_t: the shaping stage between the timebase and the effect.
 #define CURVE_LINEAR    0u
@@ -99,6 +101,21 @@ static float g_spin_s = 0.0;
 // OP_FRAME's border-band coverage, stashed by fx_coverage for main() to composite over the fill
 // -- the band and the fill resolve from the same field evaluation, so they cannot disagree.
 static float g_frame_band = 0.0;
+
+// The field's boundary coordinate and its total, stashed by fx_coverage for the colour cascade:
+// OP_GRAD_ALONG ramps on g_s / g_slen in main(), off the same evaluation the coverage resolved
+// from.  Zero for a field that states no boundary, which reads as t = 0 -- the fill colour.
+static float g_s    = 0.0;
+static float g_slen = 0.0;
+
+// WHICH COPY of a repeated set this fragment is in, as the centre of the copy's slot in [0,1):
+// copy i of n reads (i + 0.5) / n.  The folds compute the index anyway to place the fragment in
+// its cell, so stating it costs nothing -- and it is what lets the copies DIFFER: GRAD_CELL ramps
+// colour across the set and CELL_FILL lights the first fraction of it, both from one record and
+// one quad.  The half-step keeps both ends honest: a threshold of 0 lights no copy and 1 lights
+// every copy, and a ramp samples each copy at the midpoint of its own band.  0.5 -- a set of one
+// -- outside the folds.
+static float g_cell_t = 0.5;
 
 // OP_GLOW's dropoff, off row 0 -- which main() already holds, so a glow costs no second fetch.
 // 0 when the op is absent, and the resolve below never reads it then.
@@ -180,6 +197,11 @@ float2 prim_local( float2 px, float4 rect )
         float2 last  = round( 2.0 * span / pitch );                  // n - 1, per axis
         float2 i     = clamp( round( ( p + span ) / pitch ), float2( 0.0, 0.0 ), last );
         p += span - i * pitch;
+
+        // The copy's slot, row-major with x fastest -- for the strips the cell ops actually
+        // serve (1 by n or n by 1) this is simply the position along the strip.
+        float nx = last.x + 1.0;
+        g_cell_t = ( i.y * nx + i.x + 0.5 ) / ( nx * ( last.y + 1.0 ) );
     }
     // The ANGULAR fold: n copies on a circle of radius `orbit`.  The plane is turned back by
     // whichever sector the fragment is in, which puts every copy on the +x axis at `orbit` -- so
@@ -189,10 +211,16 @@ float2 prim_local( float2 px, float4 rect )
     else if ( ( g_ops & OP_REPEAT_POLAR ) != 0u )
     {
         float4 rep = prim_row( 6u );
-        float  sec = 6.28318531 / max( rep.x, 1.0 );
+        float  n   = max( rep.x, 1.0 );
+        float  sec = 6.28318531 / n;
         float  a   = atan2( p.y, p.x );
-        a -= sec * floor( a / sec + 0.5 );                           // fold to one sector
+        float  k   = floor( a / sec + 0.5 );                         // this fragment's sector
+        a -= sec * k;                                                // fold to one sector
         p  = float2( cos( a ), sin( a ) ) * length( p ) - float2( rep.y, 0.0 );
+
+        // atan2's range makes k signed; the slot wants it on the circle's own [0, n).
+        k -= n * floor( k / n );
+        g_cell_t = ( k + 0.5 ) / n;
     }
     return p;
 }
@@ -237,8 +265,9 @@ float box_field( float2 p, float2 half_ext, float4 rad, float pw )
 // boundary point nearest `p`, walked clockwise -- four edges and four corner arcs, pieced
 // together from the same quadrant fold box_field runs.  OP_DASH cuts coverage on this axis, which
 // is what makes a dashed border meet itself: the emit site snapped the period so whole cycles fit
-// the total length this function reaches at the top-left arc's far end.
-float box_perimeter_s( float2 p, float2 he, float4 rad )
+// the total length this function reaches at the top-left arc's far end.  `total` is that whole
+// perimeter -- the cumulative sums below already reach it, so stating it costs one add.
+float box_perimeter_s( float2 p, float2 he, float4 rad, out float total )
 {
     float HP   = 1.57079633;
     float lt   = 2.0 * he.x - rad.x - rad.y;    // top edge length; the arcs are r * pi/2
@@ -251,6 +280,7 @@ float box_perimeter_s( float2 p, float2 he, float4 rad )
     float s_bl = s_b  + lb;
     float s_l  = s_bl + rad.w * HP;
     float s_tl = s_l  + 2.0 * he.y - rad.w - rad.x;
+    total      = s_tl + rad.x * HP;
 
     // The quadrant fold: q positive on both axes means the corner arc is nearest; otherwise the
     // larger component names the nearer edge.  Same radius-by-sign pick as box_field.
@@ -285,7 +315,8 @@ float box_perimeter_s( float2 p, float2 he, float4 rad )
     "an arc, but dashed".
 
         d       signed distance to the boundary, px, negative inside
-        s       the coordinate ALONG the boundary, px -- the axis DASH cuts on
+        s       the coordinate ALONG the boundary, px -- the axis DASH cuts and GRAD_ALONG ramps on
+        len     the boundary's total length, px -- what normalizes s
         aa      the width d resolves through (the style's feather, or a field's own default)
         mul     coverage from a field that has no boundary at all -- the lattice multiplies here
         shaped  false = no boundary: the d-based ops sit this one out, the rest still apply
@@ -299,6 +330,7 @@ struct fx_field_t
 {
     float d;
     float s;
+    float len;
     float aa;
     float mul;
     bool  shaped;
@@ -372,6 +404,7 @@ fx_field_t fx_field( float2 px )
     fx_field_t f;
     f.d      = 0.0;
     f.s      = 0.0;
+    f.len    = 0.0;
     f.aa     = 0.0;
     f.mul    = 1.0;
     f.shaped = false;
@@ -385,13 +418,12 @@ fx_field_t fx_field( float2 px )
     float4 rad  = prim_row( 1u );
     float4 soft = prim_row( 2u );
 
-    // fields 7 ARC / 8 PIE, and 10 ARC_GRAD which is an ARC that sweeps its colour.  A sector has
-    // no feather of its own, so it states the 1 px band it always drew with -- a caller that wants
-    // a soft sector now simply sets one.
+    // fields 7 ARC / 8 PIE.  A sector has no feather of its own, so it states the 1 px band it
+    // always drew with -- a caller that wants a soft sector now simply sets one.
     //
     // The coordinate is SIGNED here, folded only on x.  That is the whole trick: the sign is the
     // ANGLE, without which neither of these shapes can be expressed at all.
-    if ( g_field >= 7u && g_field <= 10u )
+    if ( g_field == 7u || g_field == 8u )
     {
         float4 parm = prim_row( 3u );
         float  ra   = parm.x;
@@ -425,8 +457,11 @@ fx_field_t fx_field( float2 px )
 
         // ARC-LENGTH from the sweep's start, which is what makes GUI_OP_DASH mean the same thing
         // on a sector as on a box: theta is the SIGNED angle from the bisector, so theta + ap is
-        // the angle travelled, and radius times that is the distance along the stroke.
+        // the angle travelled, and radius times that is the distance along the stroke.  The
+        // boundary's total is the full sweep at that radius, which is what GRAD_ALONG's ramp
+        // spans -- the value-sweep arc.
         f.s      = ( atan2( sl.x, sl.y ) + ap ) * ra;
+        f.len    = 2.0 * ap * ra;
         f.aa     = max( soft.x, 1.0 );
         f.shaped = true;
         return f;
@@ -450,28 +485,38 @@ fx_field_t fx_field( float2 px )
     if ( g_field == 6u )
     {
         float2 q = float2( abs( local.x ) - he.x, local.y );
-        f.d = length( float2( max( q.x, 0.0 ), q.y ) ) - rad.x;   // a capsule has one radius
-        f.s = local.x + he.x;                                     // distance from the start cap
+        f.d   = length( float2( max( q.x, 0.0 ), q.y ) ) - rad.x; // a capsule has one radius
+        f.s   = local.x + he.x;                                   // distance from the start cap
+        f.len = 2.0 * he.x;
     }
     // field 2 NGON -- the regular polygon: rad.y flat sides inscribed in circumradius hw, corners
     // rounded by rad.x px.  The fold reduces the plane to one edge's sector; the distance is then
     // to that edge SEGMENT, so corners are exact rather than the apothem approximation.  Rounding
     // shrinks the polygon and inflates the field back out, so the stated radius is the size drawn.
+    // rad.z > 0 is the STAR ratio: the folded sector's inner point (the edge midpoint, at the
+    // apothem cos(an) * R for a polygon) is pulled in to ratio * R, so the one edge tilts and the
+    // fold repeats it into an n-pointed star.  The polygon IS the star at ratio = cos(an), which
+    // is all `ecs` encodes -- the edge's direction from that inner point to the outer vertex --
+    // so both shapes are one code path and rad.z = 0 (the unused-lane rule) selects the polygon.
     else if ( g_field == 2u )
     {
         float  rr  = rad.x;
         float  R   = max( he.x - rr, 1.0 );
         float  an  = PI / max( rad.y, 3.0 );
         float2 acs = float2( cos( an ), sin( an ) );
+        float  ir  = ( rad.z > 0.0 ) ? min( rad.z, acs.x ) : acs.x;
+        float2 ecs = normalize( float2( acs.x - ir, acs.y ) );
         float  a0  = atan2( local.x, -local.y );          // 0 at the TOP vertex, y-down screen
         float  T   = 2.0 * an;
         float  bn  = ( a0 - T * floor( a0 / T ) ) - an;   // floor-mod: fmod truncates negatives
         float2 q   = length( local ) * float2( cos( bn ), abs( sin( bn ) ) );
         q -= R * acs;
-        q.y += clamp( -q.y, 0.0, R * acs.y );
-        f.d = length( q ) * sign( q.x ) - rr;
-        f.s = a0 * he.x;      // circumcircle arc-length: the polygon's own perimeter to within the
-                              // apothem ratio, which a dash pattern cannot see
+        q += ecs * clamp( -dot( q, ecs ), 0.0, R * acs.y / ecs.y );
+        f.d   = length( q ) * sign( q.x ) - rr;
+        f.s   = a0 * he.x;    // circumcircle arc-length: the polygon's own perimeter to within the
+                              // apothem ratio, which a dash pattern cannot see.  SIGNED about the
+                              // top vertex (a0 is atan2), so a GRAD_ALONG ramp covers half of it.
+        f.len = 6.28318531 * he.x;
     }
     // field 3 TRI -- a solid triangle: three points about the shape centre, in the style's
     // radius + param lanes (a = r_tl,r_tr  b = r_br,r_bl  c = param_a,param_b).  Exact signed
@@ -567,7 +612,7 @@ fx_field_t fx_field( float2 px )
     else
     {
         f.d = box_field( local, he, rad, soft.z );
-        f.s = box_perimeter_s( local, he, rad );
+        f.s = box_perimeter_s( local, he, rad, f.len );
     }
 
     f.aa     = soft.x;
@@ -583,6 +628,9 @@ float fx_coverage( float2 px )
 {
     fx_field_t f      = fx_field( px );
     float      border = prim_row( 2u ).y;
+
+    g_s    = f.s;
+    g_slen = f.len;
 
     // STAGE 2 -- the ops that bend the FIELD.  Both need a boundary to measure from.
     //
@@ -638,6 +686,21 @@ float fx_coverage( float2 px )
             cov = 0.0;
     }
 
+    // CUT_SHAPE -- subtraction proper: a SECOND rounded box, stated whole in row 6 and centred
+    // by the cut vector, carved out of whatever coverage the field produced.  The one
+    // composition blending cannot fake: painter's-order quads union and the clip table
+    // intersects, but nothing downstream of the blend can un-paint.  The edge resolves through
+    // its OWN aa, so the notch antialiases like any boundary -- where CUT above stays the hard
+    // flush cut a drop shadow hides under its caster.  No `shaped` gate: a plain fill minus a
+    // circle is a legitimate ask.
+    if ( ( g_ops & OP_CUT_SHAPE ) != 0u )
+    {
+        float4 cs = prim_row( 6u );      // cut half-extents, corner radius, edge aa
+        float2 cp = prim_local( px, prim_rect() ) - prim_row( 4u ).zw;
+        float  cd = box_field( cp, cs.xy, float4( cs.z, cs.z, cs.z, cs.z ), 0.0 );
+        cov = min( cov, 1.0 - fx_resolve( cd, cs.w ) );
+    }
+
     // INSET -- the inner shadow.  The falloff is re-measured INWARD from the boundary: full
     // strength against the edge, gone `aa` px in, and nothing outside it.  The second factor is the
     // ordinary 1 px edge band, so the outer rim antialiases exactly as the filled box's does rather
@@ -651,6 +714,15 @@ float fx_coverage( float2 px )
     // the shape shows before it has moved.
     if ( ( g_ops & OP_PULSE ) != 0u )
         cov *= 1.0 - prim_row( 3u ).x * g_k;
+
+    // CELL_FILL -- light only the copies whose slot sits under the clock's k: the segmented
+    // meter, from the same one quad the full set costs.  At rate 0 the threshold IS the
+    // instance's phase -- a static level, per element, off one shared record -- and a positive
+    // rate is the meter filling itself on the clock.  No antialiasing on the cut because it never
+    // lands on a shape: every copy is wholly on or wholly off, and the half-step in g_cell_t is
+    // what puts 0 at "none lit" and 1 at "all lit".
+    if ( ( g_ops & OP_CELL_FILL ) != 0u )
+        cov *= ( g_cell_t <= g_k ) ? 1.0 : 0.0;
 
     // GRID -- the lattice, cut into whatever coverage the field produced.  Like PULSE it needs no
     // boundary, so it reaches every shape and a plain fill alike.
@@ -697,7 +769,8 @@ float4 main( ps_in_t i ) : SV_Target0
     // atlas, so field and ops are 0 by construction and the texture is one of the two the push
     // block carries.  That is the majority of the frame's quads not touching the record buffer at
     // all -- and it is why the tag exists.
-    g_implicit = ( ( i.tag & 3u ) == GUI_QUAD_TAG_GLYPH );
+    uint tagk  = i.tag & 3u;
+    g_implicit = ( tagk == GUI_QUAD_TAG_GLYPH );
     if ( g_implicit )
     {
         g_row   = 0u;
@@ -714,6 +787,14 @@ float4 main( ps_in_t i ) : SV_Target0
         g_ops       = asuint( head.y );
         g_tex       = asuint( head.z );
         g_glow      = head.w;      // free: the row is already in registers
+
+        // A STYLED glyph names its record for the OPS (an outline, a gradient), never for the
+        // texture: glyph coverage must come from the atlas the glyph lives in, and taking the
+        // slot from the push block -- exactly as the plain GLYPH tag does -- is what keeps a
+        // cached styled run valid across an atlas re-register.
+        if ( tagk == GUI_QUAD_TAG_GSTYLED )
+            g_tex = ( ( i.tag & 4u ) != 0u ) ? ( TEX_MODE_SDF | pc.tex_sdf )
+                                             : ( TEX_MODE_COVERAGE | pc.tex_cov );
     }
 
     // Placement, clip, the turn and the animation phase all come off the per-quad interpolants,
@@ -816,32 +897,20 @@ float4 main( ps_in_t i ) : SV_Target0
     if ( ( g_ops & OP_TILE_U ) != 0u )
         uv.x *= prim_row( 7u ).y;
 
-    float4 s = u_textures[ NonUniformResourceIndex( tex_slot ) ]
-                   .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], uv );
-
-    // SELF-SAMPLED primitives (GUI_OP_SELF): the shape is solid colour, so the texel is not
-    // consulted (the sample above read a garbage location of a VALID texture, which is harmless and
-    // cheaper than a divergent skip).  The flag is an OP, not a property of the field, so whether a
-    // primitive is solid is the emit site's call: the same field fills solid here and carries real
-    // texcoords through draw_texture_in.
-    // Field 10 additionally sweeps the colour toward the record's second colour, lerped by the same
-    // signed angle the aperture cut uses -- the gradient a 4-corner vertex colour cannot express.
-    // Field 11 picks between the vertex colour and that same second colour by cell parity.
+    /* The texel term of the fill.  SELF primitives (GUI_OP_SELF) are solid colour: they take
+       white and skip the fetch, which measures ~1.4% cheaper than sampling anyway on an
+       all-solid scene (sb_gui_stress -test 10) and no worse in mixed waves, where the masked
+       lanes ride through the textured arm's fetch regardless.  The branch is uniform across any
+       one primitive -- the op rides the record -- and a 2x2 derivative quad never spans
+       primitives, so the implicit-lod Sample keeps valid derivatives inside its arm.
+       The flag is an OP, not a property of the field, so whether a primitive is solid is the
+       emit site's call: the same field fills solid here and carries real texcoords through
+       draw_texture_in. */
+    float4 s    = float4( 1.0, 1.0, 1.0, 1.0 );
     float4 vcol = i.color;
-    if ( ( g_ops & OP_SELF ) != 0u )
-    {
-        s = float4( 1.0, 1.0, 1.0, 1.0 );
-        if ( g_field == 10u )
-        {
-            float4 parm = prim_row( 3u );
-            float4 c2   = unpack_col( asuint( parm.w ) );
-            float  ap   = parm.z;
-            float2 sl   = prim_frame( i.sv_pos.xy, prim_rect() ).yx;
-            float  t    = saturate( ( atan2( sl.x, sl.y ) + ap )
-                                    / max( 2.0 * ap, 1e-4 ) );
-            vcol = lerp( vcol, c2, t );
-        }
-    }
+    if ( ( g_ops & OP_SELF ) == 0u )
+        s = u_textures[ NonUniformResourceIndex( tex_slot ) ]
+                .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], uv );
 
     // OP_CHECKER -- alternate the fill with the record's pattern colour in cell-sized squares.  The
     // pitch and the parity phase come from row 7, the phase as a fraction of the TWO-cell colour
@@ -866,30 +935,50 @@ float4 main( ps_in_t i ) : SV_Target0
     // where corner colours would be sampled out on the falloff skirt and arrive stretched by it.
     if ( ( g_ops & OP_GRAD ) != 0u )
     {
-        // prim_FRAME, not prim_local: a ramp belongs to the shape, and under OP_REPEAT the shape is
-        // the whole set -- a ramp folded into the cell would restart inside every copy.
-        float4 grect = prim_rect();
-        float2 lp    = prim_frame( i.sv_pos.xy, grect );
-        float2 g     = prim_row( 4u ).xy;
-        float  t;
+        float t;
 
-        if ( ( g_ops & OP_GRAD_RADIAL ) != 0u )
-            t = saturate( length( lp / max( grect.zw, float2( 1e-4, 1e-4 ) ) ) );
-        else if ( ( g_ops & OP_GRAD_CONIC ) != 0u )
-            // Angular, MIRRORED about the axis: full at the axis, gone at the far side, and the
-            // same on the way back.  A conic ramp that wrapped instead would meet itself at the
-            // axis with col_b against the fill colour and no transition between them -- a hard
-            // light/dark edge sitting in open space.  This one depends on |angle| alone, which is
-            // continuous across the far side, so there is no seam anywhere on the shape.
-            t = 1.0 - abs( atan2( g.x * lp.y - g.y * lp.x, dot( lp, g ) ) ) / PI;
+        // ALONG ramps on the BOUNDARY coordinate the field stated -- arc-length over the total,
+        // the same axis DASH cuts on -- so the value-sweep arc, a ramped border and a ramped
+        // capsule stroke are one op over shapes that already exist.  The spatial ramps below
+        // never need it, so the coordinate work they share is skipped entirely here.
+        if ( ( g_ops & OP_GRAD_ALONG ) != 0u )
+            t = saturate( g_s / max( g_slen, 1e-4 ) );
+        // CELL ramps by WHICH COPY of a repeated set the fragment is in, anchored to the clock's
+        // phase -- so the copies differ where the fold alone made them identical.  On the circle
+        // the ramp TRAILS the anchor (frac of phase minus slot): drive the phase with anim_rate
+        // and the bright head marches around a ring of dots that never move, fading behind
+        // itself -- the tail spinner, one quad, byte-identical every frame.  On the lattice the
+        // strip has ends, so the ramp clamps instead of wrapping.
+        else if ( ( g_ops & OP_GRAD_CELL ) != 0u )
+            t = ( ( g_ops & OP_REPEAT_POLAR ) != 0u ) ? frac( g_phi - g_cell_t )
+                                                      : saturate( g_cell_t - g_phi );
         else
         {
-            // g is a UNIT direction; the span it has to cover is the support width of the shape's
-            // own rectangle projected onto it -- recovered HERE from the placement interpolant
-            // rather than baked into the record, which is what lets one ramp style serve a chip
-            // and a panel instead of one record per size.
-            float ext = 2.0 * ( grect.z * abs( g.x ) + grect.w * abs( g.y ) );
-            t = saturate( dot( lp, g ) / max( ext, 1e-4 ) + 0.5 );
+            // prim_FRAME, not prim_local: a ramp belongs to the shape, and under OP_REPEAT the
+            // shape is the whole set -- a ramp folded into the cell would restart in every copy.
+            float4 grect = prim_rect();
+            float2 lp    = prim_frame( i.sv_pos.xy, grect );
+            float2 g     = prim_row( 4u ).xy;
+
+            if ( ( g_ops & OP_GRAD_RADIAL ) != 0u )
+                t = saturate( length( lp / max( grect.zw, float2( 1e-4, 1e-4 ) ) ) );
+            else if ( ( g_ops & OP_GRAD_CONIC ) != 0u )
+                // Angular, MIRRORED about the axis: full at the axis, gone at the far side, and
+                // the same on the way back.  A conic ramp that wrapped instead would meet itself
+                // at the axis with col_b against the fill colour and no transition between them --
+                // a hard light/dark edge sitting in open space.  This one depends on |angle|
+                // alone, which is continuous across the far side, so there is no seam anywhere on
+                // the shape.
+                t = 1.0 - abs( atan2( g.x * lp.y - g.y * lp.x, dot( lp, g ) ) ) / PI;
+            else
+            {
+                // g is a UNIT direction; the span it has to cover is the support width of the
+                // shape's own rectangle projected onto it -- recovered HERE from the placement
+                // interpolant rather than baked into the record, which is what lets one ramp
+                // style serve a chip and a panel instead of one record per size.
+                float ext = 2.0 * ( grect.z * abs( g.x ) + grect.w * abs( g.y ) );
+                t = saturate( dot( lp, g ) / max( ext, 1e-4 ) + 0.5 );
+            }
         }
 
         // The midpoint bend: grad_mid is the EXPONENT the emit site mapped the authored 0..1

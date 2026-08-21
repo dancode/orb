@@ -379,9 +379,11 @@ tess_glyph_uv( u32 glyph_id, u32* uv0, u32* uv1 )
 
     `glyph_id` past GUI_GLYPH_ID_NONE asks for the GLYPH tag: the quad names a glyph-table entry
     instead of carrying an atlas rect, and names no style record at all -- the fragment resolves
-    the text atlas from the push block.  That only holds while the ambient style says nothing but
-    "sample the font atlas", so a glyph under an op or a field falls back to the SHAPED tag with
-    the table's rect baked in, exactly like a straddling glyph.
+    the text atlas from the push block.  That holds while the ambient style says nothing but
+    "sample the font atlas".  A glyph under OPS alone (an SDF outline, a gradient) takes the
+    GLYPH_STYLED tag -- table ID plus the one style record the run dedups onto -- and only a
+    glyph under a FIELD or with instance extras falls back to the SHAPED tag with the table's
+    rect baked in, exactly like a straddling glyph.
 ==============================================================================================*/
 
 #define GUI_GLYPH_ID_NONE   0xFFFFFFFFu
@@ -515,6 +517,36 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
            arm carry it, where the field is a bit wider.  The record written just above is left
            behind: the SHAPED arm asks for one carrying the table's rect as well, which is a
            different record.  One wasted entry at the far end of a slot's fx pages. */
+    }
+    /* STYLED GLYPH -- ops but no field: the SDF outline, a gradient or a glow on text.  The tag
+       keeps everything that makes plain text cheap -- the table ID (repack-stable, no per-char
+       fx record) and the push-block texture -- and adds the ONE style record the whole run
+       dedups onto.  Only while the instance extras are empty: the layout spent its fx bits on
+       the style, so a rotated styled run falls through to SHAPED, which has room for both. */
+    else if ( glyph_id != GUI_GLYPH_ID_NONE && s_tess.cur_prim.field == 0u
+           && tess_fx_local( 0u, 0u ) == 0u )
+    {
+        ORB_ASSERT( gui_tex_index( tex_idx ) == ( gui_tex_mode( tex_idx ) == GUI_TEX_SDF
+                                                  ? res_sdf_idx() : res_atlas_idx() ) );
+
+        s_tess.cur_prim.tex = s_tess.cur_tex;
+        s_tess.cur_prim.ops = s_tess.cur_ops;
+
+        u32 style = tess_prim_local();
+        if ( style <= GUI_QUAD_GSTYLE_MASK )
+        {
+            s_tess.quads[ s_tess.quad_count++ ] = ( gui_quad_t ){
+                .cx   = pcx,
+                .cy   = pcy,
+                .hw   = phw,
+                .hh   = phh,
+                .idx  = gui_quad_idx_glyph_styled( s_tess.cur_clip_local, glyph_id,
+                                                   gui_tex_mode( tex_idx ) == GUI_TEX_SDF,
+                                                   style ),
+                .abgr = abgr,
+            };
+            goto counted;
+        }
     }
 
     if ( glyph_id != GUI_GLYPH_ID_NONE )

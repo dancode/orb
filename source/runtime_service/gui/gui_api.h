@@ -821,6 +821,9 @@ typedef struct gui_api_s
     void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
                                         bool filled, f32 thickness, u32 col );
     void ( *draw_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
+    /* The n-pointed star: draw_ngon with each edge midpoint pulled in to ratio * r.  ratio <= 0
+       takes the classic five-point proportion; the field caps it at the polygon's apothem. */
+    void ( *draw_star              )( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f32 thickness, u32 col );
     void ( *draw_circle            )( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
     void ( *draw_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
     void ( *draw_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
@@ -961,17 +964,34 @@ typedef struct gui_api_s
     void ( *draw_ticks             )( gui_rect_t bar, u32 n, f32 thickness, f32 len,
                                       bool vertical, u32 col );
 
-    /* The ANGULAR form of the same fold: `n` copies on a circle fitted to `box`.  ONE quad, and at
-       a non-zero `rate` (revolutions/sec) it turns on the SHADER CLOCK -- so a dot spinner's
-       command bytes never change while it spins and it re-tessellates nothing, where a
+    /* A segmented level meter: `n` cells across `bar`, the first `value` (0..1) fraction lit in
+       `col`, the rest in `col_off` (alpha 0 = nothing behind).  Two quads however many cells,
+       and the lit count is DATA on the record rather than geometry, so a moving level re-emits
+       one float (GUI_OP_CELL_FILL).  Fills left to right; cells honor the ambient rounding. */
+    void ( *draw_meter             )( gui_rect_t bar, u32 n, f32 value, u32 col, u32 col_off );
+
+    /* A rounded rect minus a second rounded rect (GUI_OP_CUT_SHAPE) -- true subtraction, which
+       no number of extra quads can paint: blending only adds ink.  The notched avatar behind a
+       status dot, the ticket silhouette.  `cut` shares `box`'s absolute space and may straddle
+       its edge; `soft` is the carved edge's AA band in px (clamped up to the standard 1 px).
+       ONE quad; ramps, patterns and the border FRAME compose over it like any other fill. */
+    void ( *draw_rect_cut          )( gui_rect_t box, f32 rounding, gui_rect_t cut,
+                                      f32 cut_rounding, f32 soft, u32 col );
+
+    /* The ANGULAR form of the same fold: `n` copies on a circle fitted to `box`.  ONE quad, and
+       at a non-zero `rate` (revolutions/sec) it animates on the SHADER CLOCK -- so a dot
+       spinner's command bytes never change while it runs and it re-tessellates nothing, where a
        hand-rotated ring of circles re-emits every frame.  Present frames with request_redraw
        while it shows, the draw_pulse contract; rate 0 is a static ring.
-       The ring turns as a rigid body -- every copy shares one record and one colour -- so this is
-       the mechanical spinner, not the one with a bright head and a faded tail.  push_anim_curve
-       with STAIR at `n` steps makes it advance exactly one dot per tick.
+       `col_tail` picks the spinner: 0 turns the ring as a rigid body -- the mechanical spinner
+       (push_anim_curve with STAIR at `n` steps advances one dot per tick) -- while non-zero
+       holds the dots still and marches a colour ramp toward col_tail around them, trailing the
+       bright head (GUI_OP_GRAD_CELL): the classic tail spinner.  col & 0x00FFFFFF fades the tail
+       out entirely.
        draw_dial_ticks is the same ring with a LONG cell: the fold turns each copy's frame with its
        position, so the marks point outward and a gauge face costs one quad. */
-    void ( *draw_dot_spinner       )( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col );
+    void ( *draw_dot_spinner       )( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col,
+                                      u32 col_tail );
     void ( *draw_dial_ticks        )( gui_rect_t box, u32 n, f32 thickness, f32 len,
                                       f32 rate, u32 col );
     /* Spinner: a 270-degree arc turning at `rate` revolutions/sec ON THE SHADER CLOCK

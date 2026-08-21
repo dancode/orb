@@ -1710,9 +1710,12 @@ typedef enum
     GUI_FX_BOX       = 1,  /* filled rounded box: coverage 1 inside the boundary, feathered across it */
 
     GUI_FX_NGON      = 2,  /* filled regular polygon: `sides` flat edges inscribed in radius hw,
-                              corners rounded by r_tl (row [2]: r_tl = rounding, r_tr = sides).
-                              Lands in the shared decode, so BAND / GRAD / CUT / INSET compose --
-                              a stroked hexagon badge is this field plus the band op, one quad. */
+                              corners rounded by r_tl (row [2]: r_tl = rounding, r_tr = sides,
+                              r_br = star inner-radius ratio -- 0 keeps the regular polygon,
+                              (0..1] pulls each edge midpoint in to ratio * radius, making an
+                              n-pointed star from the same fold).  Lands in the shared decode, so
+                              BAND / GRAD / CUT / INSET compose -- a stroked hexagon badge is this
+                              field plus the band op, one quad. */
 
     GUI_FX_TRI       = 3,  /* solid triangle: three points about the shape centre, in the record's
                               radius + param lanes (a = r_tl,r_tr  b = r_br,r_bl  c = param_a,_b).
@@ -1738,16 +1741,11 @@ typedef enum
     GUI_FX_ARC       = 7,  /* annular sector: a band of `tube` px centred on radius ra, round caps */
     GUI_FX_PIE       = 8,  /* filled wedge: the disc of radius ra cut to the aperture, sharp edges */
 
-    /* The SELF-SAMPLED sector modes.  Both emit with GUI_OP_SELF set, so the fragment forces
-       coverage to 1 and never consults the texel.  They read the same ra / tube / aperture the
-       plain sector does and add their own record members on top. */
-    /* 9 is unnamed.  It was ARC_DASH -- an ARC whose coverage an angular dash pattern cut -- which
-       existed only because GUI_OP_DASH could not reach a sector.  Every field states a boundary
-       coordinate now (see below), so a dashed arc is GUI_FX_ARC + GUI_OP_DASH like every other
-       dashed shape. */
-
-    GUI_FX_ARC_GRAD  = 10, /* ARC whose colour sweeps from the vertex colour at the sector start
-                              to the record's col_b at its end                                   */
+    /* 9 and 10 are unnamed.  Both were an ARC plus one effect an op could not yet reach: 9 was
+       ARC_DASH (an angular dash cut, from before every field stated a boundary coordinate for
+       GUI_OP_DASH), 10 was ARC_GRAD (a colour sweep along the stroke, from before
+       GUI_OP_GRAD_ALONG could ramp on that same coordinate).  A dashed arc is GUI_FX_ARC +
+       GUI_OP_DASH; a value sweep is GUI_FX_ARC + GUI_OP_GRAD + GUI_OP_GRAD_ALONG. */
 
     /* 11 and 12 are unnamed.  They were CHECKER and GRID -- the framebuffer-tiling patterns --
        and as FIELDS they could only ever cover a rectangle's whole area.  They are ops now
@@ -1761,15 +1759,18 @@ typedef enum
 
 /* WHAT A FIELD STATES, AND WHY THE OPS COMPOSE.
 
-   The fragment does not branch per field and then paint.  Each field resolves to the same four
-   values, and every op afterwards reads only those -- so an op never has to know which shape it
-   landed on, and a shape never has to reimplement an op:
+   The fragment does not branch per field and then paint.  Each field resolves to the same small
+   vocabulary, and every op afterwards reads only that -- so an op never has to know which shape
+   it landed on, and a shape never has to reimplement an op:
 
        d        signed distance to the boundary in px, negative inside.  BAND bends it into a
                 border, FRAME measures its band from it, the feather resolves it to coverage.
-       s        the coordinate ALONG the boundary, in px.  This is what DASH cuts on, and it is
-                why one dash op serves every shape: a box states perimeter arc-length, a sector
-                states radius * angle, a segment states distance along its axis.
+       s        the coordinate ALONG the boundary, in px.  This is what DASH cuts on and what
+                GRAD_ALONG ramps on, and it is why one op serves every shape: a box states
+                perimeter arc-length, a sector states radius * angle, a segment states distance
+                along its axis.
+       len      the boundary's total length in px -- what normalizes s.  A shape that states s
+                states len with it, so s / len is progress along the boundary on any of them.
        aa       the width d resolves through.  Usually the style's feather; a field with no
                 feather of its own (a sector) states the 1 px band it wants instead.
        mul      coverage a field contributes without having a boundary at all -- the lattice
@@ -1853,7 +1854,8 @@ typedef enum
     for; the fields that have no corners reuse the row rather than pad it out:
 
         BOX / SEG      r_tl, r_tr, r_br, r_bl   -- per-corner radii (SEG: r_tl = half-thickness)
-        NGON           r_tl = corner rounding (px), r_tr = side count
+        NGON           r_tl = corner rounding (px), r_tr = side count,
+                       r_br = star inner ratio (0 = regular polygon)
         TRI            r_tl..r_bl = two of the three points, about the quad's centre
         ARC_DASH       r_tl = dash period (turns), r_tr = on-duty fraction
         GRID           r_tl, r_tr = lattice phase per axis
@@ -1941,6 +1943,13 @@ typedef struct
        is deliberately absent from this row: it rides the instance record (gui_fx_t.phase),
        since a set of staggered elements shares one rate and differs only in phase.
 
+       At rate 0 the clock STANDS STILL at the instance's phase -- phi IS the phase, so
+       k = curve( phase ) -- and the phase lane becomes a per-instance 0..1 VALUE PORT: a static
+       level, angle or depth reaching the fragment through the fx record, with no style record
+       per value and no re-tessellation when it changes.  A meter's fill (GUI_OP_CELL_FILL), a
+       fixed spin angle, a per-element pulse depth are all this one lane; any op that reads k
+       serves either way, so an op needs no separate "static" form.
+
        anim_curve / anim_param are the shaping stage (gui_curve_t): what a normalized phase does
        between its endpoints.  The param's meaning belongs to the curve -- an exponent, a step
        count, a duty -- the same way anim_rate's unit belongs to its op.  This is what makes a
@@ -1960,13 +1969,14 @@ typedef struct
     u32 anim_curve;
     f32 anim_param, grad_mid;
 
-    /* Row 6 -- PER-OP, and at most one of the two claims it.  Each needs four lanes and neither
-       composes with the other (a repeated shape has no single perimeter for a dash to walk), so
-       they share the row rather than each taking one:
+    /* Row 6 -- PER-OP, and at most one of its claimants is live per record.  Each needs four
+       lanes and none composes with another (a repeated shape has no single perimeter for a dash
+       to walk; a notched one has no pattern), so they share the row rather than each taking one:
 
          GUI_OP_DASH           dash_period, dash_duty, dash_scroll  -- unused fourth lane
          GUI_OP_REPEAT         pitch x, pitch y, CELL half-extent x, y
          GUI_OP_REPEAT_POLAR   copy count, orbit radius, CELL half-extent x, y
+         GUI_OP_CUT_SHAPE      cut half-extent x, y, corner radius, edge aa
 
        Both repetition ops put the cell in the SAME two lanes, so the field reads its extent from
        one place whichever fold ran.
@@ -2035,13 +2045,55 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
 #define GUI_OP_SELF     ( 1u << 5 )   /* solid colour: do not consult the texel at all         */
 #define GUI_OP_GRAD     ( 1u << 6 )   /* ramp the fill from its own colour toward col_b        */
 
-/* The ramp's SHAPE, under GUI_OP_GRAD.  At most one; neither is the linear ramp, and the fragment
-   tests radial first, so both set reads as radial rather than as undefined.  Bits rather than a
-   small enum because they belong to the op word every other modifier lives in -- and unlike the
-   modifiers they are alternatives, which is a property of what a ramp IS, not of the storage. */
+/* The ramp's SHAPE, under GUI_OP_GRAD.  At most one; none is the linear ramp, and the fragment
+   tests along-the-boundary first, then radial, so an over-set record reads as one of them rather
+   than as undefined.  Bits rather than a small enum because they belong to the op word every
+   other modifier lives in -- and unlike the modifiers they are alternatives, which is a property
+   of what a ramp IS, not of the storage. */
 
 #define GUI_OP_GRAD_RADIAL  ( 1u << 7 )   /* centre -> rim, against the shape's own half-extent */
 #define GUI_OP_GRAD_CONIC   ( 1u << 8 )   /* angular, mirrored about the grad axis -- a sheen   */
+
+/* The ramp taken along the BOUNDARY instead of across the shape: t = s / len, the field's own
+   arc-length coordinate over its total -- the same axis GUI_OP_DASH cuts on, so it reaches every
+   shape that states one.  The value-sweep arc (draw_arc_gradient) is this op on GUI_FX_ARC; a
+   dashed border or a capsule stroke ramps the same way for free.  Reads col_b like every other
+   ramp, and grad_mid bends it like every other ramp. */
+
+#define GUI_OP_GRAD_ALONG   ( 1u << 20 )
+
+/* The CELL ops -- per-copy variation under the repetition folds.  The fold computes which copy a
+   fragment is in to place it; these read that index back as a slot coordinate, (i + 0.5) / n
+   over the whole set, so the copies can DIFFER while still sharing one record and one quad.
+   Both anchor to the animation clock's k, which at rate 0 is simply the instance's phase -- a
+   static per-element value reaching the fragment through the fx record's phase lane.
+
+   GRAD_CELL is a GRAD family shape (set GUI_OP_GRAD with it): the ramp runs toward col_b by COPY
+   rather than by position.  On REPEAT_POLAR it TRAILS the clock's anchor and wraps -- drive
+   anim_rate and the bright head marches around a ring of dots that never move, fading behind
+   itself: the tail spinner, re-tessellating nothing.  On REPEAT the strip has ends, so the ramp
+   clamps instead of wrapping.
+
+   CELL_FILL cuts coverage to the copies whose slot sits at or under k -- the segmented meter,
+   still the set's one quad.  0 lights none, 1 lights all, uniform steps between; no shape ever
+   shows a partial copy. */
+
+#define GUI_OP_GRAD_CELL    ( 1u << 21 )
+#define GUI_OP_CELL_FILL    ( 1u << 22 )
+
+/* SUBTRACTION proper: a SECOND rounded box, stated whole in row 6 (half-extents, corner radius,
+   edge aa) and centred by row 4's cut vector, carved out of whatever coverage the field
+   produced.  This is the one composition the renderer cannot get from more quads: painter's
+   order unions, the clip table intersects, but nothing downstream of the blend can un-paint --
+   so the notched avatar, the ticket silhouette and the punched card live on the record.
+
+   Distinct from GUI_OP_CUT on purpose: CUT is the drop shadow's flush hard cut against the
+   shape's OWN outline (zero extra lanes, dedups with the shadow), where this one carries its own
+   geometry and antialiases its edge through its own aa.  It claims row 6, so it is mutually
+   exclusive with DASH and the repetition folds -- a notched shape has no perimeter pattern to
+   walk, and the one place row 6 is written keeps the exclusivity visible. */
+
+#define GUI_OP_CUT_SHAPE    ( 1u << 23 )
 
 /* The animation and output ops.  SPIN and DASH both read the record's anim_rate/anim_phase (row
    6) against pc.time -- which is why the whole animation re-emits nothing: the record is
@@ -2268,14 +2320,16 @@ typedef struct
 
     // phase: the animation phase, a unorm16 over one cycle (gui_phase_pack).  The RATE stays on
     //   the style -- every spinner in a set turns at the same speed, and staggering the set is the
-    //   only thing phase is for.  0 = in step with the clock.
+    //   only thing phase is for.  0 = in step with the clock.  When the style's rate is 0 the
+    //   clock stands still HERE: this lane is then a per-instance 0..1 value port (a meter level,
+    //   a fixed angle -- see the row 5 doc), updated without touching any style record.
     u32 phase;
 
     // col_border: GUI_OP_FRAME's border band colour, and nothing else.  Named for the one thing it
     //   carries rather than "the second colour", because the STYLE has a second colour of its own
     //   (gui_prim_t.col_b) and the two are not interchangeable: every second colour belonging to
-    //   the SHAPE -- GRAD's far end, CHECKER's alternate, TEXT_EDGE's outline, ARC_GRAD's sweep
-    //   target -- lives on the style and deduplicates with it.  A border colour does not belong to
+    //   the SHAPE -- GRAD's far end, CHECKER's alternate, TEXT_EDGE's outline -- lives on the
+    //   style and deduplicates with it.  A border colour does not belong to
     //   the shape, so it rides the instance: an animated border -- or an animated fill, which
     //   rides the quad in `abgr` -- would otherwise mint a style record per frame.
     u32 col_border;
@@ -2355,7 +2409,18 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
                     SHAPED's layout with the rule field re-read: a band is always drawn SKIRT, so
                     those two bits are free to name the band instead.  See gui_quad_band below.
 
-   All three words are exactly full: there is no spare bit to widen a field with, so raising a pool
+     tag GLYPH_STYLED (3)
+                      bits 0-3    clip entry, as above
+                      bit  4      the SDF atlas bit, as GLYPH
+                      bits 5-17   glyph-table ID, as GLYPH
+                      bits 18-28  style record, slot-local or palette
+                      bit  29     spare
+                    A glyph that names a STYLE: the ops ride the record (an SDF outline, a
+                    gradient, a glow) while the atlas rect stays a table ID and the texture stays
+                    the push block's -- so styled text keeps everything that makes plain text
+                    cheap.  No fx bits: a ROTATED styled run takes the SHAPED fallback instead.
+
+   The words are exactly full: there is no spare bit to widen a field with, so raising a pool
    past what its field can name is a re-plan of this union, not a constant bump.  The glyph-table ID
    and the clip entry sit AT their fields' ceilings; the style and fx fields have slack at the caps
    currently shipping, and the static asserts beside GUI_MAX_PRIMS are what keep that true.
@@ -2367,16 +2432,14 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
 
    fx 0 = no record, which reads as identity turn / zero phase / no border.  Row 0 of a slot's
    records is never an fx record, which is what lets 0 mean that -- the tessellator leaves record 0
-   alone rather than opening a page there.
-
-   Tag 3 is unspent.  It is where a glyph that needs a STYLE (an SDF outline) would land; it takes
-   the SHAPED layout today. */
+   alone rather than opening a page there. */
 
 #define GUI_QUAD_TAG_SHIFT     30u
 #define GUI_QUAD_TAG_MASK      0x3u
 #define GUI_QUAD_TAG_SHAPED    0u
 #define GUI_QUAD_TAG_GLYPH     1u
 #define GUI_QUAD_TAG_BAND      2u
+#define GUI_QUAD_TAG_GLYPH_STYLED  3u
 
 #define GUI_QUAD_CLIP_SHIFT    0u
 #define GUI_QUAD_CLIP_MASK     0xFu
@@ -2423,6 +2486,8 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
 #define GUI_QUAD_GLYPH_MASK    0x1FFFu
 #define GUI_QUAD_GFX_SHIFT     18u
 #define GUI_QUAD_GFX_MASK      0xFFFu
+#define GUI_QUAD_GSTYLE_SHIFT  18u   // GLYPH_STYLED: the style record, where GLYPH keeps fx bits
+#define GUI_QUAD_GSTYLE_MASK   0x7FFu
 
 /* Pack a SHAPED index word.  Each field is masked rather than trusted: an index past its own
    width would otherwise silently corrupt the field above it, where a clamped one draws with the
@@ -2476,6 +2541,24 @@ gui_quad_idx_glyph( u32 clip, u32 glyph_id, bool sdf, u32 fx_row )
          | ( ( glyph_id & GUI_QUAD_GLYPH_MASK ) << GUI_QUAD_GLYPH_SHIFT )
          | ( ( fx_row   & GUI_QUAD_GFX_MASK   ) << GUI_QUAD_GFX_SHIFT   )
          | ( GUI_QUAD_TAG_GLYPH << GUI_QUAD_TAG_SHIFT );
+}
+
+/* Pack a GLYPH_STYLED index word: the glyph arm with a STYLE where the fx bits were.  The record
+   carries the run's ops (an outline, a gradient); the texture still comes from the push block, so
+   styled text keeps the repack stability plain text has. */
+
+static inline u32
+gui_quad_idx_glyph_styled( u32 clip, u32 glyph_id, bool sdf, u32 style )
+{
+    ORB_ASSERT( clip     <= GUI_QUAD_CLIP_MASK &&
+                glyph_id <= GUI_QUAD_GLYPH_MASK &&
+                style    <= GUI_QUAD_GSTYLE_MASK );
+
+    return ( ( clip     & GUI_QUAD_CLIP_MASK   ) << GUI_QUAD_CLIP_SHIFT   )
+         | ( sdf ? GUI_QUAD_SDF_BIT : 0u )
+         | ( ( glyph_id & GUI_QUAD_GLYPH_MASK  ) << GUI_QUAD_GLYPH_SHIFT  )
+         | ( ( style    & GUI_QUAD_GSTYLE_MASK ) << GUI_QUAD_GSTYLE_SHIFT )
+         | ( GUI_QUAD_TAG_GLYPH_STYLED << GUI_QUAD_TAG_SHIFT );
 }
 
 static inline u32 gui_quad_tag  ( u32 idx ) { return ( idx >> GUI_QUAD_TAG_SHIFT   ) & GUI_QUAD_TAG_MASK;   }
@@ -2643,7 +2726,8 @@ typedef enum
     GUI_CMD_ARC_DASH,        // arc cut by an angular dash pattern (GUI_FX_ARC + GUI_OP_DASH): dotted rings,
                              //   marching ants, tick dials -- still one quad
     GUI_CMD_ARC_GRAD,        // arc whose colour sweeps col_a -> col_b along the sector
-                             //   (GUI_FX_ARC_GRAD): the hot/cold value arc -- still one quad
+                             //   (GUI_FX_ARC + GUI_OP_GRAD_ALONG): the hot/cold value arc --
+                             //   still one quad
     GUI_CMD_IMAGE_XF,        // textured quad under a rotation about its centre: rotated icons,
                              //   images, markers -- the text_xf treatment for one quad
     GUI_CMD_CHECKER,         // two-colour cell pattern resolved in the FRAGMENT (GUI_OP_CHECKER):
@@ -2661,6 +2745,8 @@ typedef enum
                              //   tick strips, segmented bars -- one quad whatever the count
     GUI_CMD_REPEAT_POLAR,    // n copies on a circle (GUI_OP_REPEAT_POLAR): dot rings, dial faces,
                              //   and with SPIN a rotating spinner that re-tessellates nothing
+    GUI_CMD_BOX_CUT,         // rounded box minus a SECOND rounded box (GUI_OP_CUT_SHAPE): the
+                             //   notched avatar, the ticket silhouette -- subtraction, one quad
 
 } gui_cmd_type_t;
 
@@ -2904,11 +2990,12 @@ typedef struct
         /* The arc under an angular dash cut.  `period` is radians per dash+gap cycle -- the emit
            side quantizes it so a WHOLE number of cycles fits the sweep, which is what keeps a
            closed dashed ring from showing a seam where the pattern meets itself; `duty` is the
-           on-fraction.  Both reach the fragment through the record (GUI_FX_ARC_DASH). */
+           on-fraction.  Both reach the fragment through the record (GUI_OP_DASH). */
         struct { f32 cx, cy, r, thickness, a0, a1; f32 period, duty; u32 abgr; } arc_dash;
         /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1).  col_b reaches the fragment
-           through the record; it lerps by angle/aperture (GUI_FX_ARC_GRAD) -- the one gradient a
-           4-corner vertex colour could never express, because it varies by ANGLE, not position. */
+           through the record; GUI_OP_GRAD_ALONG lerps by the arc-length coordinate over the sweep
+           -- the one gradient a 4-corner vertex colour could never express, because it varies by
+           ANGLE, not position. */
         struct { f32 cx, cy, r, thickness, a0, a1; u32 col_a, col_b; } arc_grad;
         /* A textured quad under a rotation about its CENTRE -- the text_xf treatment applied to
            one quad (tess_quad_xf).  UVs resolve at emit exactly as draw_push_icon's do: an icon
@@ -2933,8 +3020,9 @@ typedef struct
                  u32 abgr; f32 rounding, corner_pow; } grid;
         /* Regular polygon (GUI_FX_NGON): `sides` flat edges inscribed in circumradius r, rotated
            by `rot` (radians, 0 = a vertex pointing up), corners rounded by `rounding` px.
-           thickness > 0 strokes it (GUI_OP_BAND); 0 fills. */
-        struct { f32 cx, cy, r, rounding, rot, thickness; u32 sides; u32 abgr; } ngon;
+           thickness > 0 strokes it (GUI_OP_BAND); 0 fills.  star > 0 pulls each edge midpoint in
+           to star * r, drawing a `sides`-pointed star from the same field; 0 = regular. */
+        struct { f32 cx, cy, r, rounding, rot, thickness, star; u32 sides; u32 abgr; } ngon;
         /* Rounded-box outline cut by a perimeter dash (GUI_OP_BAND + GUI_OP_DASH).  dash/gap are
            arc-length px (the draw_dashed_line vocabulary); the tessellator snaps the period so
            whole cycles fit the perimeter.  `rate` scrolls the pattern in px/sec on pc.time --
@@ -2946,16 +3034,27 @@ typedef struct
         /* A LATTICE of one rounded cell (GUI_OP_REPEAT): nx by ny copies, `pitch` apart
            centre-to-centre, centred on (cx, cy).  The cell's size is stated rather than the set's
            box, because the set's box is derived from the two and the fragment recovers the count
-           back out of it (gui_build_tess.c, tess_repeat_box).  ONE quad however many copies. */
+           back out of it (gui_build_tess.c, tess_repeat_box).  ONE quad however many copies.
+           `col_b` != abgr ramps the copies toward it along the strip (GUI_OP_GRAD_CELL); `fill`
+           >= 0 lights only that fraction of them (GUI_OP_CELL_FILL) -- the segmented meter. */
         struct { f32 cx, cy; f32 pitch_x, pitch_y; f32 cell_w, cell_h; f32 rounding;
-                 u32 nx, ny; u32 abgr; } repeat;
+                 u32 nx, ny; u32 abgr; u32 col_b; f32 fill; } repeat;
         /* A RING of one rounded cell (GUI_OP_REPEAT_POLAR): `n` copies on a circle of radius
-           `orbit` about (cx, cy).  `rate` turns the ring on the shader clock in revolutions/sec
-           (GUI_OP_SPIN) -- and because that animates in the FRAGMENT, these bytes are identical
-           every frame and a spinner re-tessellates nothing.  `curve`/`curve_param` shape the turn
-           (gui_curve_t): STAIR at `n` steps is the clock-hand tick. */
+           `orbit` about (cx, cy).  `rate` animates on the shader clock in revolutions/sec -- and
+           because that animates in the FRAGMENT, these bytes are identical every frame and a
+           spinner re-tessellates nothing.  What the rate DRIVES depends on `col_b`: equal to
+           abgr, the whole ring turns rigidly (GUI_OP_SPIN); different, the dots stay put and a
+           colour ramp toward col_b marches around them, trailing the bright head -- the tail
+           spinner (GUI_OP_GRAD_CELL).  `curve`/`curve_param` shape either motion (gui_curve_t):
+           STAIR at `n` steps is the clock-hand tick. */
         struct { f32 cx, cy; f32 orbit; f32 cell_w, cell_h; f32 rounding;
-                 f32 rate, phase, curve_param; u32 n, curve, abgr; } repeat_polar;
+                 f32 rate, phase, curve_param; u32 n, curve, abgr; u32 col_b; } repeat_polar;
+        /* A rounded box with a SECOND rounded box carved out of it (GUI_OP_CUT_SHAPE) -- the
+           subtraction no number of extra quads can paint.  The cut's centre is an OFFSET from
+           the shape's centre (the record's cut vector); `cut_aa` is the carved edge's own AA
+           band in px. */
+        struct { f32 x, y, w, h; f32 rounding; f32 cut_dx, cut_dy, cut_w, cut_h;
+                 f32 cut_r, cut_aa; u32 abgr; } box_cut;
     };
 } gui_cmd_t;
 
@@ -3813,6 +3912,14 @@ typedef struct
     f32 diff_ms;            // BUILD step 1: hash + diff every window (cache_diff_windows)
     f32 tess_ms;            // BUILD step 2: reuse or tessellate every window, incl. a repack retry
     f32 submit_ms;          // SUBMIT: uploads + draw-call recording, summed over surfaces
+
+    /* What the GPU spent EXECUTING, timestamped on the GPU itself (rhi cmd_gpu_ms) and summed
+       over this frame's surfaces -- the counterpart to the CPU zones above, which only ever see
+       recording cost.  Each surface's sample is its context's whole command buffer (for a
+       gui-only surface that is the clear + the gui pass), and it trails by the frames-in-flight
+       depth.  Reads zero only on hardware without graphics-queue timestamps; unlike the zones
+       above it needs no clock hook. */
+    f32 gpu_ms;             // GPU execution, summed over surfaces, ~2 frames latent
 
 } gui_render_stats_t;
 

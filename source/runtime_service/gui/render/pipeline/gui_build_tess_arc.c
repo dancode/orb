@@ -5,7 +5,7 @@
     Part 5 of 7 of the CPU-side quad-record builder (see gui_build_tess_state.c for the family
     overview).  Holds tess_circle_filled (a disc, built on tess_fx_box), tess_fx_ngon (regular
     polygons), tess_round_rect_ex (four independent corner radii plus a ramp), and tess_fx_arc
-    (circular sectors -- ARC/PIE/ARC_GRAD, stroked or filled, spun or dashed).  TESS_PI /
+    (circular sectors -- ARC/PIE, stroked or filled, spun, dashed or colour-swept).  TESS_PI /
     TESS_HALF_PI / TESS_TAU are defined here and used by later files in this family.
 
     Included right after gui_build_tess_sdf.c (needs tess_fx_box, tess_fx_box_core, tess_quad_push).
@@ -44,12 +44,13 @@ tess_circle_filled( f32 pcx, f32 pcy, f32 r, u32 abgr )
     ribbon; the field resolves the exact boundary at any size, and a stroked form is the same
     quad under GUI_OP_BAND -- set by the replay case before this runs, the ambient-ops rule every
     shape follows.  The record's row [2] re-partitions for the field: r_tl is the corner
-    rounding, r_tr the side count (gui.h).
+    rounding, r_tr the side count, r_br the star inner-radius ratio -- 0 for the regular
+    polygon, per the unused-lane dedup rule (gui.h).
 ==============================================================================================*/
 
 static void
 tess_fx_ngon( f32 pcx, f32 pcy, f32 r, u32 sides, f32 rot, f32 rounding,
-              f32 border, u32 abgr )
+              f32 border, f32 star, u32 abgr )
 {
     if ( r <= 0.0f )
         return;
@@ -57,6 +58,7 @@ tess_fx_ngon( f32 pcx, f32 pcy, f32 r, u32 sides, f32 rot, f32 rounding,
     s_tess.cur_prim.field   = (u32)GUI_FX_NGON;
     s_tess.cur_prim.r_tl    = rounding;
     s_tess.cur_prim.r_tr    = (f32)sides;
+    s_tess.cur_prim.r_br    = star;
     s_tess.cur_prim.feather = TESS_FX_AA;
     s_tess.cur_prim.border  = ( s_tess.cur_ops & GUI_OP_BAND ) ? border : 0.0f;
     s_tess.cur_rot_c = cosf( rot );
@@ -152,14 +154,16 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
 #define TESS_HALF_PI  1.57079632679490f
 #define TESS_TAU      6.28318530717959f
 
-/* `mode` is GUI_FX_ARC, GUI_FX_PIE, or GUI_FX_ARC_GRAD, which additionally carries its second
-   colour in (uvx, uvy) -- the pair the fragment recovers from the quad's flat uv word (gui.h).
-   Every sector is self-sampled (GUI_OP_SELF): the fragment never reads a texel, ARC/PIE included,
-   so the atlas index the quad carries is only there to keep the bound slot valid.
-   A non-zero `dash_turns` dashes the sector through GUI_OP_DASH, in period-turns and on-duty. */
+/* `mode` is GUI_FX_ARC or GUI_FX_PIE.  Every sector is self-sampled (GUI_OP_SELF): the fragment
+   never reads a texel, so the atlas index the quad carries is only there to keep the bound slot
+   valid.
+   A non-zero `dash_turns` dashes the sector through GUI_OP_DASH, in period-turns and on-duty.
+   A `grad_col` differing from `abgr` sweeps the colour toward it along the stroke
+   (GUI_OP_GRAD_ALONG); passing `abgr` states no sweep -- a ramp between one colour and itself
+   is that colour, the tess_round_rect_ex rule. */
 static void
 tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
-             gui_fx_mode_t mode, f32 uvx, f32 uvy, f32 dash_turns, f32 dash_duty,
+             gui_fx_mode_t mode, u32 grad_col, f32 dash_turns, f32 dash_duty,
              f32 spin_rate, f32 spin_phase, u32 curve, f32 curve_param, u32 abgr )
 {
     if ( r <= 0.0f )
@@ -187,8 +191,7 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
        A dashed or gradient sector never reroutes: the dash cut and the sweep both measure against
        the sector's own frame, which the exact ring does not build -- and at aperture pi the sector
        formula serves them exactly, so a closed dashed ring is this same one quad. */
-    if ( sweep >= TESS_TAU && dash_turns <= 0.0f
-      && ( mode == GUI_FX_ARC || mode == GUI_FX_PIE ) )
+    if ( sweep >= TESS_TAU && dash_turns <= 0.0f && grad_col == abgr )
     {
         if ( pie )
         {
@@ -286,17 +289,12 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
         s_tess.cur_prim.anim_param = curve_param;
     }
 
-    /* ARC_GRAD still carries its second colour as a packed pair, which the self-sampled bit
-       announces: the fragment forces coverage to 1 and never reads the texel, so the white texel
-       is not needed and the atlas stays bound only to keep the index valid. */
-    if ( mode == GUI_FX_ARC_GRAD )
+    /* The colour sweep: ramp the fill toward col_b along the arc-length coordinate the sector
+       states -- the same axis the dash cuts on (GUI_OP_GRAD_ALONG). */
+    if ( grad_col != abgr )
     {
-        s_tess.cur_ops |= GUI_OP_SELF;
-
-        u32 bu = (u32)( uvx * 65535.0f + 0.5f );
-        u32 bv = (u32)( uvy * 65535.0f + 0.5f );
-        s_tess.cur_prim.col_b = ( bu & 0xFFu ) | ( ( bu >> 8 ) << 8 )
-                              | ( ( bv & 0xFFu ) << 16 ) | ( ( bv >> 8 ) << 24 );
+        s_tess.cur_ops |= GUI_OP_GRAD | GUI_OP_GRAD_ALONG;
+        s_tess.cur_prim.col_b = grad_col;
     }
 
     static const f32 lsx[ 4 ] = { -1.0f, 1.0f, 1.0f, -1.0f };

@@ -268,7 +268,21 @@ static void
 draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col )
 {
     draw_push_ngon( cx, cy, r, sides, rot + SYM_PI * 0.5f, draw_rounding(),
-                    filled ? 0.0f : sym_thick( thickness ), col );
+                    filled ? 0.0f : sym_thick( thickness ), 0.0f, col );
+}
+
+/* An n-pointed star: the n-gon with each edge midpoint pulled in to ratio * r (the field's star
+   parameter), so a rating mark or a badge is the same one quad the polygon is.  ratio <= 0 takes
+   the classic five-point proportion; the useful range runs from ~0.3 (sharp) to the polygon's
+   apothem (flat), and the field caps it there.  Same `rot` convention as draw_ngon. */
+static void
+draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f32 thickness,
+           u32 col )
+{
+    if ( ratio <= 0.0f )
+        ratio = 0.5f;
+    draw_push_ngon( cx, cy, r, points, rot + SYM_PI * 0.5f, draw_rounding(),
+                    filled ? 0.0f : sym_thick( thickness ), ratio, col );
 }
 
 /* Circle at arbitrary radius: filled or stroked (a ring of `thickness`).  The ring is the outlined
@@ -995,7 +1009,8 @@ static void
 draw_dot_grid( gui_rect_t at, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y, f32 size, u32 col )
 {
     gui_vec2_t c = gui_rect_center( at );
-    draw_push_repeat( c.x, c.y, nx, ny, pitch_x, pitch_y, size, size, draw_rounding(), col );
+    draw_push_repeat( c.x, c.y, nx, ny, pitch_x, pitch_y, size, size, draw_rounding(),
+                      col, col, -1.0f );
 }
 
 /* N tick marks across `bar` -- ruler gradations, slider detents, timeline marks.  The pitch is
@@ -1028,22 +1043,67 @@ draw_ticks( gui_rect_t bar, u32 n, f32 thickness, f32 len, bool vertical, u32 co
 
     gui_vec2_t c = gui_rect_center( bar );
     if ( vertical )
-        draw_push_repeat( c.x, c.y, 1u, n, t, pitch, len, t, 0.0f, col );
+        draw_push_repeat( c.x, c.y, 1u, n, t, pitch, len, t, 0.0f, col, col, -1.0f );
     else
-        draw_push_repeat( c.x, c.y, n, 1u, pitch, t, t, len, 0.0f, col );
+        draw_push_repeat( c.x, c.y, n, 1u, pitch, t, t, len, 0.0f, col, col, -1.0f );
 }
 
-/* A ring of `n` dots fitted to `box`, turning at `rate` revolutions/sec on the SHADER CLOCK.  One
-   quad and one style record for the whole ring, and the command's bytes are identical every frame
-   while it turns -- so unlike a hand-rotated ring of circles it re-tessellates nothing.  rate 0 is
-   a static ring; the caller presents frames with gui()->request_redraw() while it spins, the
-   draw_pulse contract.
-
-   The ring turns as a rigid body: every dot shares one record and one colour, so this is the
-   mechanical spinner rather than the one with a bright head chasing a faded tail.  Pair it with a
-   STAIR curve of `n` steps and it advances exactly one dot per tick. */
+/* A segmented level meter: `n` cells across `bar`, the first `value` fraction of them lit.  TWO
+   quads however many cells -- the unlit strip, then the lit cut over it (GUI_OP_CELL_FILL) --
+   and the lit count rides the record's phase lane rather than the geometry, so a moving level
+   changes one command float.  `col_off` with alpha 0 draws no unlit strip at all.  Fills left to
+   right; cells honor the ambient rounding. */
 static void
-draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col )
+draw_meter( gui_rect_t bar, u32 n, f32 value, u32 col, u32 col_off )
+{
+    if ( n == 0u || bar.w <= 0.0f || bar.h <= 0.0f )
+        return;
+
+    /* Cap the count at what fits -- the draw_ticks rule: the bar's bounds are the contract, and
+       more cells than pixels means the densest meter that still fits. */
+    u32 nmax = (u32)( bar.w / 3.0f );
+    if ( nmax < 1u ) nmax = 1u;
+    if ( n > nmax )  n = nmax;
+
+    f32 pitch = bar.w / (f32)n;
+    f32 g     = pitch * 0.3f;
+    if ( g < 1.0f ) g = 1.0f;
+
+    f32 v = ( value < 0.0f ) ? 0.0f : ( value > 1.0f ) ? 1.0f : value;
+
+    gui_vec2_t c = gui_rect_center( bar );
+    if ( col_off & 0xFF000000u )
+        draw_push_repeat( c.x, c.y, n, 1u, pitch, bar.h, pitch - g, bar.h, draw_rounding(),
+                          col_off, col_off, -1.0f );
+    draw_push_repeat( c.x, c.y, n, 1u, pitch, bar.h, pitch - g, bar.h, draw_rounding(),
+                      col, col, v );
+}
+
+/* A rounded rect with a second rounded rect CARVED OUT of it -- subtraction, the one composition
+   extra quads cannot paint (blending only adds ink).  The notched avatar, the ticket silhouette:
+   `cut` is stated in the same absolute space as `box` and may straddle its edge; `soft` is the
+   carved edge's AA band (clamped up to the standard 1 px). */
+static void
+draw_rect_cut( gui_rect_t box, f32 rounding, gui_rect_t cut, f32 cut_rounding, f32 soft, u32 col )
+{
+    draw_push_box_cut( box.x, box.y, box.w, box.h, rounding,
+                       cut.x + cut.w * 0.5f, cut.y + cut.h * 0.5f, cut.w, cut.h,
+                       cut_rounding, soft, col );
+}
+
+/* A ring of `n` dots fitted to `box`, animating at `rate` revolutions/sec on the SHADER CLOCK.
+   One quad and one style record for the whole ring, and the command's bytes are identical every
+   frame while it moves -- so unlike a hand-rotated ring of circles it re-tessellates nothing.
+   rate 0 is a static ring; the caller presents frames with gui()->request_redraw() while it
+   spins, the draw_pulse contract.
+
+   `col_tail` picks which of the two spinners this is.  0: the ring turns as a rigid body -- every
+   dot one record, one colour -- the mechanical spinner (pair with a STAIR curve of `n` steps and
+   it advances exactly one dot per tick).  Non-zero: the dots stay put and a colour ramp toward
+   col_tail marches around them, trailing the bright head (GUI_OP_GRAD_CELL) -- the classic tail
+   spinner; col & 0x00FFFFFF fades the tail out entirely. */
+static void
+draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col, u32 col_tail )
 {
     gui_vec2_t c = gui_rect_center( box );
     f32        d = ( dot > 1.0f ) ? dot : 1.0f;
@@ -1051,7 +1111,8 @@ draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col )
     if ( r < 1.0f ) r = 1.0f;
 
     /* Round cells: the radius reaches the cell's half-extent, which is what makes a dot a dot. */
-    draw_push_repeat_polar( c.x, c.y, n, r, d, d, d * 0.5f, rate, 0.0f, col );
+    draw_push_repeat_polar( c.x, c.y, n, r, d, d, d * 0.5f, rate, 0.0f, col,
+                            col_tail ? col_tail : col );
 }
 
 /* A dial face: `n` tick marks on a circle fitted to `box`, each `len` px long and pointing
@@ -1068,7 +1129,7 @@ draw_dial_ticks( gui_rect_t box, u32 n, f32 thickness, f32 len, f32 rate, u32 co
     if ( r < 1.0f ) r = 1.0f;
 
     /* The cell is long on the fold's +x axis, which the fold points away from the centre. */
-    draw_push_repeat_polar( c.x, c.y, n, r, l, t, 0.0f, rate, 0.0f, col );
+    draw_push_repeat_polar( c.x, c.y, n, r, l, t, 0.0f, rate, 0.0f, col, col );
 }
 
 /* Resize grip dots: a triangular 1-2-3 cluster of small square dots in the lower-right of `box`,
@@ -1084,7 +1145,7 @@ draw_grip_dots( gui_rect_t box, u32 col )
 
     for ( u32 row = 0; row < 3; ++row )                           /* row r has r+1 dots */
         draw_push_repeat( x1 + d * 0.5f - (f32)row * g * 0.5f, y1 + d * 0.5f - (f32)row * g,
-                          row + 1u, 1u, g, g, d, d, 0.0f, col );
+                          row + 1u, 1u, g, g, d, d, 0.0f, col, col, -1.0f );
 }
 
 /* Loading spinner: a 270-degree arc turning at `rate` revolutions/sec, fitted to `box`.  The
@@ -1155,6 +1216,8 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
 
 void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col )
                                                                                { draw_ngon( cx, cy, r, sides, rot, filled, thickness, col ); }
+void gui_draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f32 thickness, u32 col )
+                                                                               { draw_star( cx, cy, r, points, ratio, rot, filled, thickness, col ); }
 void gui_draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col ) { draw_circle( cx, cy, r, filled, thickness, col ); }
 void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )  { draw_arc( cx, cy, r, a0, a1, thickness, col ); }
 void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )                 { draw_pie( cx, cy, r, a0, a1, col ); }
@@ -1231,8 +1294,12 @@ void gui_draw_dot_grid( gui_rect_t at, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
                                                                                { draw_dot_grid( at, nx, ny, pitch_x, pitch_y, size, col ); }
 void gui_draw_ticks( gui_rect_t bar, u32 n, f32 thickness, f32 len, bool vertical, u32 col )
                                                                                { draw_ticks( bar, n, thickness, len, vertical, col ); }
-void gui_draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col )
-                                                                               { draw_dot_spinner( box, n, dot, rate, col ); }
+void gui_draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col, u32 col_tail )
+                                                                               { draw_dot_spinner( box, n, dot, rate, col, col_tail ); }
+void gui_draw_meter( gui_rect_t bar, u32 n, f32 value, u32 col, u32 col_off )
+                                                                               { draw_meter( bar, n, value, col, col_off ); }
+void gui_draw_rect_cut( gui_rect_t box, f32 rounding, gui_rect_t cut, f32 cut_rounding, f32 soft, u32 col )
+                                                                               { draw_rect_cut( box, rounding, cut, cut_rounding, soft, col ); }
 void gui_draw_dial_ticks( gui_rect_t box, u32 n, f32 thickness, f32 len, f32 rate, u32 col )
                                                                                { draw_dial_ticks( box, n, thickness, len, rate, col ); }
 void gui_draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col ) { draw_spinner( box, rate, thickness, col ); }

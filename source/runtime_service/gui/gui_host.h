@@ -214,6 +214,7 @@ void gui_draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 col );
 void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
 void gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, bool filled, f32 thickness, u32 col );
 void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
+void gui_draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f32 thickness, u32 col );
 void gui_draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
 void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
 void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
@@ -249,7 +250,9 @@ void gui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_
 void gui_draw_grip( gui_rect_t box, u32 col );
 void gui_draw_dot_grid( gui_rect_t at, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y, f32 size, u32 col );
 void gui_draw_ticks( gui_rect_t bar, u32 n, f32 thickness, f32 len, bool vertical, u32 col );
-void gui_draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col );
+void gui_draw_meter( gui_rect_t bar, u32 n, f32 value, u32 col, u32 col_off );
+void gui_draw_rect_cut( gui_rect_t box, f32 rounding, gui_rect_t cut, f32 cut_rounding, f32 soft, u32 col );
+void gui_draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col, u32 col_tail );
 void gui_draw_dial_ticks( gui_rect_t box, u32 n, f32 thickness, f32 len, f32 rate, u32 col );
 void gui_draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col );
 void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );

@@ -56,6 +56,7 @@ static struct
     f32             s_diff_ms;          // smooth BUILD step 1 -- hash + diff
     f32             s_tess_ms;          // smooth BUILD step 2 -- reuse or tessellate
     f32             s_submit_ms;        // smooth SUBMIT -- uploads + draw calls
+    f32             s_gpu_ms;           // smooth GPU execution (timestamped on the GPU, ~2 frames latent)
 
     bool            emit_captured;      // emit_ms latched at frame_end this frame
 
@@ -112,6 +113,8 @@ perf_zones_publish( void )
                                                     : s_perf.s_tess_ms   * 0.9f + rs.tess_ms   * 0.1f;
     s_perf.s_submit_ms = s_perf.s_submit_ms <= 0.0f ? rs.submit_ms
                                                     : s_perf.s_submit_ms * 0.9f + rs.submit_ms * 0.1f;
+    s_perf.s_gpu_ms    = s_perf.s_gpu_ms    <= 0.0f ? rs.gpu_ms
+                                                    : s_perf.s_gpu_ms    * 0.9f + rs.gpu_ms    * 0.1f;
 }
 
 /*==============================================================================================
@@ -320,6 +323,11 @@ overlay_perf( int mode )
             gui_textf( "  diff  %5.2f ms", s_perf.s_diff_ms );
             gui_textf( "  tess  %5.2f ms", s_perf.s_tess_ms );
             gui_textf( "  submit %4.2f ms", s_perf.s_submit_ms );
+
+            /* The GPU's own clock, apart from the CPU children above: what the recorded frame
+               cost to EXECUTE, from the rhi's timestamp pair.  Not a child of render -- it runs
+               ~2 frames behind and overlaps the CPU rows in wall time. */
+            gui_textf( "gpu     %5.2f ms", s_perf.s_gpu_ms );
 
             /* Full loop breakdown -- tier 2 only. Tiers 3+ swap this for geometry/pool stats,
                where these fence/sleep numbers are just noise.

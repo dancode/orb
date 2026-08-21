@@ -107,6 +107,14 @@ typedef struct rhi_api_s
        invalid command list. */
     u32 (*cmd_frame_index)( rhi_cmd_t cmd );
 
+    /* GPU execution time, in milliseconds, of the most recently resolved frame on this command
+       list's context -- the whole command buffer between frame_begin and frame_end, timestamped
+       on the GPU, so it measures what the frame actually cost to execute rather than to record.
+       The value trails by the frames-in-flight depth (a slot's timestamps are read back when the
+       slot is reused).  Returns 0 on hardware without graphics-queue timestamps and for an
+       invalid command list. */
+    f32 (*cmd_gpu_ms)( rhi_cmd_t cmd );
+
     /* ---- Buffer ---- */
 
     /* Allocates a GPU buffer according to desc.  Memory type and usage flags must be

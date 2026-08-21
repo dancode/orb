@@ -55,6 +55,10 @@ static const char* s_optional_exts[ VK_OPT_EXT_COUNT ] =
 
 typedef struct
 {
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures  demote;            /* fragment `discard` as demote: VK 1.3.  dxc's
+                                                                                  vulkan1.3 target compiles discard to
+                                                                                  OpDemoteToHelperInvocation, so the gui's
+                                                                                  zero-coverage discard needs the feature bit  */
     VkPhysicalDeviceDescriptorIndexingFeatures              desc_idx;          /* bindless indexing: VK 1.2                    */
     VkPhysicalDeviceBufferDeviceAddressFeatures             bda;               /* GPU buffer pointers: VK 1.2                  */
     VkPhysicalDeviceDynamicRenderingFeatures                dyn_rend;          /* renderpass-free: VK 1.3                      */
@@ -190,7 +194,9 @@ vk_device_validate( VkPhysicalDevice dev,
     /* Chain all required 1.0/1.2/1.3 feature structs so vkGetPhysicalDeviceFeatures2
        populates every flag in one call, then reject the device if any requirement fails. */
     vk_feature_chain_t f    = { 0 };
+    f.demote.sType          = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES;
     f.desc_idx.sType        = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+    f.desc_idx.pNext        = &f.demote;
     f.bda.sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
     f.bda.pNext             = &f.desc_idx;
     f.dyn_rend.sType        = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
@@ -229,7 +235,8 @@ vk_device_validate( VkPhysicalDevice dev,
     /* VK 1.3 requirements */
     if ( !f.dyn_rend.dynamicRendering ||
          !f.sync2.synchronization2    ||
-         !f.timeline.timelineSemaphore ) {
+         !f.timeline.timelineSemaphore ||
+         !f.demote.shaderDemoteToHelperInvocation ) {
         return false;
     }
 

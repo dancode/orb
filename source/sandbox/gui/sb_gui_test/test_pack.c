@@ -218,6 +218,18 @@ test_quad_layout( void )
     test_equal( GUI_QUAD_SDF_BIT, gidx & GUI_QUAD_SDF_BIT );
     test_equal( 0u, gui_quad_idx_glyph( 11u, 7000u, false, 3000u ) & GUI_QUAD_SDF_BIT );
 
+    /* GLYPH_STYLED: the glyph arm with a STYLE where the fx bits were.  Its style field must
+       reach the whole style space -- slot-local AND palette -- since a styled run dedups onto
+       either.  One spare bit (29) is the arm's only slack. */
+    test_equal( GUI_QUAD_GSTYLE_MASK, GUI_QUAD_STYLE_MASK );
+    test_true ( GUI_PAL_FIRST + GUI_PAL_MAX - 1u <= GUI_QUAD_GSTYLE_MASK );
+    u32 sidx = gui_quad_idx_glyph_styled( 11u, 7000u, true, 1337u );
+    test_equal( GUI_QUAD_TAG_GLYPH_STYLED, gui_quad_tag  ( sidx ) );
+    test_equal( 11u,                       gui_quad_clip ( sidx ) );
+    test_equal( 7000u,                     gui_quad_glyph( sidx ) );
+    test_equal( 1337u, ( sidx >> GUI_QUAD_GSTYLE_SHIFT ) & GUI_QUAD_GSTYLE_MASK );
+    test_equal( GUI_QUAD_SDF_BIT, sidx & GUI_QUAD_SDF_BIT );
+
     /* Two glyph table entries per float4 row is what the vertex stage's ID -> row split assumes,
        and the region must hold a whole number of rows. */
     test_equal(  8u, (u32)sizeof( gui_glyph_uv_t ) );
@@ -294,7 +306,10 @@ test_prim_ops( void )
                         GUI_OP_PULSE, GUI_OP_STRIPES, GUI_OP_SELF,
                         GUI_OP_GRAD, GUI_OP_GRAD_RADIAL, GUI_OP_GRAD_CONIC,
                         GUI_OP_SPIN, GUI_OP_DASH, GUI_OP_DITHER, GUI_OP_FRAME,
-                        GUI_OP_TILE_U, GUI_OP_TEXT_EDGE, GUI_OP_CHECKER, GUI_OP_GRID };
+                        GUI_OP_TILE_U, GUI_OP_TEXT_EDGE, GUI_OP_CHECKER, GUI_OP_GRID,
+                        GUI_OP_GLOW, GUI_OP_REPEAT, GUI_OP_REPEAT_POLAR,
+                        GUI_OP_GRAD_ALONG, GUI_OP_GRAD_CELL, GUI_OP_CELL_FILL,
+                        GUI_OP_CUT_SHAPE };
 
     u32 seen = 0u;
     for ( u32 i = 0; i < ARRAY_COUNT( ops ); ++i )
@@ -304,7 +319,7 @@ test_prim_ops( void )
         test_equal( 0u, seen & ops[ i ] );                /* and not one already spent */
         seen |= ops[ i ];
     }
-    test_equal( 0x1FFFFu, seen );
+    test_equal( 0xFFFFFFu, seen );
 }
 
 /*============================================================================================*/

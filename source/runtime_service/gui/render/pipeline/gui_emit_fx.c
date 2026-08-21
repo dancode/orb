@@ -281,8 +281,8 @@ draw_push_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr )
 /*==============================================================================================
     draw_push_arc_dashed / draw_push_arc_gradient -- the self-sampled sector variants.
 
-    Both are the plain arc's geometry with one extra word of parameters riding the quad's flat uv
-    to the fragment (GUI_FX_ARC_DASH / GUI_FX_ARC_GRAD, gui.h).  Emit's share of the work:
+    Both are the plain arc's geometry plus one op on the sector's boundary coordinate
+    (GUI_OP_DASH / GUI_OP_GRAD_ALONG, gui.h).  Emit's share of the work:
 
     DASH quantizes the caller's pixel vocabulary (dash/gap arc-length px at radius r, the
     draw_dashed_line terms) into an angular period that divides the sweep a WHOLE number of times.
@@ -437,16 +437,21 @@ draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 angle, bool stri
     size and the corner can round.  `rounding` shrinks the polygon and inflates the field back
     out, so the stated circumradius is the size drawn.  The border-align ambient applies to the
     stroked form exactly as it does to the rect outline -- same inflation, same reasoning.
+
+    `star` in (0..1) pulls each edge midpoint in to star * r, drawing a `sides`-pointed star
+    from the same field; 0 keeps the regular polygon.  The ratio is capped just under the
+    apothem, past which the "star" would bow outside the polygon it is cut from.
 ==============================================================================================*/
 
 void
 draw_push_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 rounding,
-                f32 thickness, u32 abgr )
+                f32 thickness, f32 star, u32 abgr )
 {
     if ( r <= 0.0f )
         return;
     if ( sides < 3u )  sides = 3u;
     if ( sides > 64u ) sides = 64u;
+    if ( star < 0.0f ) star = 0.0f;
 
     if ( thickness > 0.0f )
     {
@@ -468,6 +473,7 @@ draw_push_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 rounding,
     c->ngon.rounding  = rounding;
     c->ngon.rot       = rot;
     c->ngon.thickness = thickness;
+    c->ngon.star      = star;
     c->ngon.sides     = sides;
     c->ngon.abgr      = col;
     draw_cmd_seal();
@@ -592,6 +598,41 @@ draw_push_box_trace( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
 }
 
 /*==============================================================================================
+    draw_push_box_cut -- a rounded box minus a SECOND rounded box (GUI_OP_CUT_SHAPE).
+
+    The cut's centre arrives ABSOLUTE and leaves as an offset from the shape's centre, which is
+    the form the record stores (the cut vector).  The culled box is the fill's own -- the cut
+    only ever removes ink, so the fill's bounds still bound the shape.
+==============================================================================================*/
+
+void
+draw_push_box_cut( f32 x, f32 y, f32 w, f32 h, f32 rounding,
+                   f32 cut_cx, f32 cut_cy, f32 cut_w, f32 cut_h, f32 cut_r, f32 soft,
+                   u32 abgr )
+{
+    if ( w <= 0.0f || h <= 0.0f )
+        return;
+
+    u32 col = draw_apply_alpha( abgr );
+
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_BOX_CUT, col, x, y, w, h, 1.0f );
+    if ( !c )
+        return;
+    c->box_cut.x        = x;
+    c->box_cut.y        = y;
+    c->box_cut.w        = w;
+    c->box_cut.h        = h;
+    c->box_cut.rounding = rounding;
+    c->box_cut.cut_dx   = cut_cx - ( x + w * 0.5f );
+    c->box_cut.cut_dy   = cut_cy - ( y + h * 0.5f );
+    c->box_cut.cut_w    = cut_w;
+    c->box_cut.cut_h    = cut_h;
+    c->box_cut.cut_r    = cut_r;
+    c->box_cut.cut_aa   = soft;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
     draw_push_repeat -- a lattice of one rounded cell, from ONE quad.
 
     nx by ny copies, `pitch` apart centre-to-centre, centred on (cx, cy).  The fragment folds its
@@ -606,7 +647,7 @@ draw_push_box_trace( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
 
 void
 draw_push_repeat( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
-                  f32 cell_w, f32 cell_h, f32 rounding, u32 abgr )
+                  f32 cell_w, f32 cell_h, f32 rounding, u32 abgr, u32 col_b, f32 fill )
 {
     if ( nx == 0u || ny == 0u || cell_w <= 0.0f || cell_h <= 0.0f )
         return;
@@ -617,9 +658,12 @@ draw_push_repeat( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
     f32 hx = (f32)( nx - 1u ) * 0.5f * px + cell_w * 0.5f;
     f32 hy = (f32)( ny - 1u ) * 0.5f * py + cell_h * 0.5f;
 
+    /* Both ends fold the ambient alpha, and "no ramp" (col_b == abgr) survives the fold because
+       the two fold identically.  Visible if EITHER end is, the gradient rule. */
     u32 col = draw_apply_alpha( abgr );
+    u32 cb  = draw_apply_alpha( col_b );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_REPEAT, col,
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_REPEAT, col | cb,
                                   cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
     if ( !c )
         return;
@@ -633,6 +677,8 @@ draw_push_repeat( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
     c->repeat.nx       = nx;
     c->repeat.ny       = ny;
     c->repeat.abgr     = col;
+    c->repeat.col_b    = cb;
+    c->repeat.fill     = fill;
     draw_cmd_seal();
 }
 
@@ -648,7 +694,7 @@ draw_push_repeat( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
 
 void
 draw_push_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h,
-                        f32 rounding, f32 rate, f32 phase, u32 abgr )
+                        f32 rounding, f32 rate, f32 phase, u32 abgr, u32 col_b )
 {
     if ( n == 0u || orbit <= 0.0f || cell_w <= 0.0f || cell_h <= 0.0f )
         return;
@@ -657,9 +703,12 @@ draw_push_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h
     f32 hx = orbit + cell_w * 0.5f;
     f32 hy = orbit + cell_h * 0.5f;
 
+    /* Both colours fold the ambient alpha, and "no ramp" (col_b == abgr) survives the fold
+       because the two fold identically.  Visible if EITHER end is, the gradient rule. */
     u32 col = draw_apply_alpha( abgr );
+    u32 cb  = draw_apply_alpha( col_b );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_REPEAT_POLAR, col,
+    gui_cmd_t* c = draw_cmd_open( GUI_CMD_REPEAT_POLAR, col | cb,
                                   cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
     if ( !c )
         return;
@@ -673,6 +722,7 @@ draw_push_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h
     c->repeat_polar.phase    = phase + s_draw.anim_phase;
     c->repeat_polar.n        = n;
     c->repeat_polar.abgr     = col;
+    c->repeat_polar.col_b    = cb;
     /* A static ring takes no curve however the ambient is set: the command hash must not move for
        a shape whose motion nothing reads.  The same rule draw_fx_box_cmd applies to a shadow. */
     c->repeat_polar.curve       = ( rate > 0.0f ) ? s_draw.anim_curve : 0u;

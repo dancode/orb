@@ -94,6 +94,11 @@ typedef struct
     f32 rep_pitch_x, rep_pitch_y;
     f32 rep_cell_hx, rep_cell_hy;
 
+    /* GUI_OP_CUT_SHAPE: the subtracted box's own geometry, row 6's fourth claimant.  Its centre
+       rides cut_dx/cut_dy above -- the same vector GUI_OP_CUT offsets its flush cut by. */
+    f32 cut_hx, cut_hy;
+    f32 cut_r, cut_aa;
+
 } tess_fx_aux_t;
 
 /* `aux` NULL is a plain fill with neither extra -- almost every caller. */
@@ -229,9 +234,18 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         s_tess.cur_prim.dash_scroll = aux->rep_cell_hx;
         s_tess.cur_prim.reserved_c  = aux->rep_cell_hy;
     }
-    if ( aux && ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_SPIN ) ) )
+    if ( aux && ( s_tess.cur_ops & GUI_OP_CUT_SHAPE ) )
+    {
+        s_tess.cur_prim.dash_period = aux->cut_hx;
+        s_tess.cur_prim.dash_duty   = aux->cut_hy;
+        s_tess.cur_prim.dash_scroll = aux->cut_r;
+        s_tess.cur_prim.reserved_c  = aux->cut_aa;
+    }
+    if ( aux && ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_SPIN
+                                   | GUI_OP_GRAD_CELL | GUI_OP_CELL_FILL ) ) )
         s_tess.cur_prim.anim_rate = aux->anim_rate;
-    if ( aux && ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_PULSE | GUI_OP_SPIN ) ) )
+    if ( aux && ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_PULSE | GUI_OP_SPIN
+                                   | GUI_OP_GRAD_CELL | GUI_OP_CELL_FILL ) ) )
     {
         s_tess.cur_prim.anim_curve = aux->anim_curve;
         s_tess.cur_prim.anim_param = aux->anim_param;
@@ -240,7 +254,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
 
     /* GUI_OP_FRAME's border colour does NOT land here -- it rides the quad (cur_col_border, set by
        the dispatcher before this call), so an animated border never adds a style record.  This
-       record's own col_b is the SHAPE's second colour (GRAD, CHECKER, TEXT_EDGE, ARC_GRAD); the
+       record's own col_b is the SHAPE's second colour (GRAD, CHECKER, TEXT_EDGE); the
        two are different lanes on purpose.  See gui_fx_t.col_border (gui.h) and the dispatch of
        GUI_CMD_FRAME below. */
 
@@ -255,10 +269,11 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
         s_tess.cur_prim.col_b    = aux->grad_col;
         s_tess.cur_prim.grad_mid = aux->grad_mid;
 
-        /* A radial ramp has no axis, so it stays ZERO rather than carrying an angle the fragment
-           will not read -- otherwise two identical radial fills authored at different angles take
-           two records for no reason (tess_prim_local memos on the record's bytes). */
-        if ( !( s_tess.cur_ops & GUI_OP_GRAD_RADIAL ) )
+        /* A radial ramp has no axis, and neither does the per-copy one, so both stay ZERO rather
+           than carrying an angle the fragment will not read -- otherwise two identical fills
+           authored at different angles take two records for no reason (tess_prim_local memos on
+           the record's bytes). */
+        if ( !( s_tess.cur_ops & ( GUI_OP_GRAD_RADIAL | GUI_OP_GRAD_CELL ) ) )
         {
             s_tess.cur_prim.grad_x = cosf( aux->grad_ang );
             s_tess.cur_prim.grad_y = sinf( aux->grad_ang );
@@ -269,7 +284,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        caller that wants a shadow cast straight down onto the ground under its subject; a non-zero
        offset is the DIRECTIONAL cast, the falloff measured from this outline while the hole is
        taken against the caster's. */
-    if ( aux && ( s_tess.cur_ops & GUI_OP_CUT ) )
+    if ( aux && ( s_tess.cur_ops & ( GUI_OP_CUT | GUI_OP_CUT_SHAPE ) ) )
     {
         /* `+ 0.0f` folds NEGATIVE ZERO onto positive.  A caller that negates an offset it was
            handed hands one down for free (draw_push_skirt passes -ox), and -0.0f compares equal to
@@ -309,7 +324,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
 
 static void
 tess_repeat_box( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
-                 f32 cell_w, f32 cell_h, f32 rounding, u32 abgr )
+                 f32 cell_w, f32 cell_h, f32 rounding, u32 abgr, u32 grad_col, f32 fill )
 {
     if ( nx == 0u || ny == 0u || cell_w <= 0.0f || cell_h <= 0.0f )
         return;
@@ -341,6 +356,21 @@ tess_repeat_box( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
 
     s_tess.cur_ops |= GUI_OP_REPEAT;
 
+    /* Per-copy variation, both static forms of the animation clock: the ramp toward grad_col
+       (GUI_OP_GRAD_CELL) and the lit fraction (GUI_OP_CELL_FILL), whose threshold rides the
+       instance phase at rate 0.  The phase lane wraps at 1, so a full meter states itself just
+       under it -- every copy's slot sits below 0.9999 at any count the lattice can hold. */
+    if ( grad_col != abgr )
+    {
+        s_tess.cur_ops |= GUI_OP_GRAD | GUI_OP_GRAD_CELL;
+        aux.grad_col = grad_col;
+    }
+    if ( fill >= 0.0f )
+    {
+        s_tess.cur_ops |= GUI_OP_CELL_FILL;
+        aux.anim_phase = ( fill < 0.9999f ) ? fill : 0.9999f;
+    }
+
     /* Through the ordinary box path so the cell gets the same clamps, the same solid-fill
        convention and the same corner profile every other rounded shape does.  It states the SET's
        rect; the record's cell extent is what the field actually measures against. */
@@ -367,7 +397,8 @@ tess_repeat_box( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
 
 static void
 tess_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h,
-                   f32 rounding, f32 rate, f32 phase, u32 curve, f32 curve_param, u32 abgr )
+                   f32 rounding, f32 rate, f32 phase, u32 curve, f32 curve_param,
+                   u32 abgr, u32 grad_col )
 {
     if ( n == 0u || cell_w <= 0.0f || cell_h <= 0.0f || orbit <= 0.0f )
         return;
@@ -392,12 +423,24 @@ tess_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h,
 
     s_tess.cur_ops |= GUI_OP_REPEAT_POLAR;
 
+    /* The ramp toward grad_col, by copy (GUI_OP_GRAD_CELL).  Under a rate it is what the clock
+       drives INSTEAD of the frame: the dots stay put and the bright head marches around them,
+       fading behind itself -- the tail spinner.  SPIN would move the copies themselves, and the
+       two readings of one rate compose into a double crawl, so a ring takes one or the other. */
+    if ( grad_col != abgr )
+    {
+        s_tess.cur_ops |= GUI_OP_GRAD | GUI_OP_GRAD_CELL;
+        aux.grad_col   = grad_col;
+        aux.anim_phase = phase;      /* at rate 0 the phase alone anchors the static ramp */
+    }
+
     /* SPIN turns prim_frame, which is upstream of the angular fold, so the whole ring rotates as
        one rigid body.  With CURVE_STAIR at `n` steps it advances exactly one copy per step -- the
        mechanical clock-hand spinner, from the same record as the smooth one. */
     if ( rate > 0.0f )
     {
-        s_tess.cur_ops  |= GUI_OP_SPIN;
+        if ( grad_col == abgr )
+            s_tess.cur_ops |= GUI_OP_SPIN;
         aux.anim_rate    = rate;
         aux.anim_phase   = phase;
         aux.anim_curve   = curve;
@@ -407,6 +450,49 @@ tess_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h,
     const f32 r4[ 4 ] = { rounding, rounding, rounding, rounding };
     tess_fx_box_core( cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, r4, TESS_FX_AA, 0.0f,
                       0.0f, 0.0f, 0.0f, 0, 0, 1, 1, 0, abgr, &aux );
+}
+
+/*----------------------------------------------------------------------------------------------
+    tess_box_cut -- a rounded box with a SECOND rounded box carved out of it (GUI_OP_CUT_SHAPE).
+
+    Subtraction is the one composition more quads cannot build -- blending only ever adds ink --
+    so it is the one that has to ride the record.  The cut's own geometry takes row 6 (the per-op
+    row) and its centre the cut vector; the carved edge antialiases through its own aa band, so
+    the notch reads as a boundary rather than a scissor bite.
+----------------------------------------------------------------------------------------------*/
+
+static void
+tess_box_cut( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 dx, f32 dy,
+              f32 cut_w, f32 cut_h, f32 cut_r, f32 cut_aa, u32 abgr )
+{
+    f32 chx = cut_w * 0.5f, chy = cut_h * 0.5f;
+
+    /* A degenerate cut carves nothing; the fill is what the caller stated, so draw that. */
+    if ( chx > 0.0f && chy > 0.0f )
+    {
+        f32 lim = ( chx < chy ) ? chx : chy;
+        if ( cut_r > lim )  cut_r = lim;
+        if ( cut_r < 0.0f ) cut_r = 0.0f;
+
+        tess_fx_aux_t aux = { 0 };
+        aux.cut_dx = dx;
+        aux.cut_dy = dy;
+        aux.cut_hx = chx;
+        aux.cut_hy = chy;
+        aux.cut_r  = cut_r;
+        aux.cut_aa = ( cut_aa > TESS_FX_AA ) ? cut_aa : TESS_FX_AA;
+
+        s_tess.cur_ops |= GUI_OP_CUT_SHAPE;
+
+        const f32 r4[ 4 ] = { rounding, rounding, rounding, rounding };
+        tess_fx_box_core( x, y, w, h, r4, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f,
+                          0, 0, 1, 1, 0, abgr, &aux );
+        return;
+    }
+
+    const f32 r4[ 4 ] = { rounding, rounding, rounding, rounding };
+    tess_fx_box_core( x, y, w, h, r4, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f,
+                      0, 0, 1, 1, 0, abgr, NULL );
 }
 
 /* The uniform-radius entry every rounded shape in the library goes through.  Four copies of one

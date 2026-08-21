@@ -358,7 +358,7 @@ ex_draw_shapes( void )
                Compare with the arc spinner two rows down -- both re-tessellate nothing. */
             static i32 p_sdots = 8;      /* dots around the ring */
             r = gui()->canvas( H );
-            gui()->draw_dot_spinner( ex_sym_box( r, H ), (u32)p_sdots, 3.0f, 0.6f, acc );
+            gui()->draw_dot_spinner( ex_sym_box( r, H ), (u32)p_sdots, 3.0f, 0.6f, acc, 0u );
             gui()->slider_int( "Spinner dots", &p_sdots, 3, 16 );
 
             static i32 p_dial = 12;      /* marks around the dial face */

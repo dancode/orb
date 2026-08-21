@@ -691,6 +691,39 @@ win_gauges( void )
 
     gui()->text( "gauge anatomy: track arc + value arc + 11 tick capsules + needle capsule + "
                  "hub disc + one scaled SDF readout = ~15 quads, one batch" );
+
+    gui()->separator_text( "cell ops -- the copies differ, still ONE quad per set" );
+
+    /* The repetition folds now expose WHICH copy a fragment is in, so the copies can vary:
+       GRAD_CELL ramps colour by copy (the tail spinner -- dots never move, the bright head
+       marches), CELL_FILL lights the first fraction (the segmented meter -- the level is a
+       record float, not geometry). */
+    {
+        gui_rect_t row = gui()->canvas( 110.0f );
+        gui()->draw_rect( row.x, row.y, row.w, row.h, PANEL );
+        gui()->push_clip( row.x, row.y, row.w, row.h );
+
+        f32 ry = row.y + row.h * 0.5f;
+
+        /* Tail spinner: col_tail with alpha 0 fades the tail out entirely. */
+        gui()->draw_dot_spinner( ( gui_rect_t ){ row.x + 36.0f, ry - 38.0f, 60.0f, 60.0f },
+                                 10u, 8.0f, 0.8f, ACCENT, ACCENT & 0x00FFFFFFu );
+        text_xf_centered( row.x + 66.0f, ry + 40.0f, INK_DIM, "tail spinner", 0.9f, 0.0f );
+
+        /* The same ring fading toward a colour instead of out. */
+        gui()->draw_dot_spinner( ( gui_rect_t ){ row.x + 150.0f, ry - 38.0f, 60.0f, 60.0f },
+                                 12u, 7.0f, 0.8f, AMBER, EDGE );
+        text_xf_centered( row.x + 180.0f, ry + 40.0f, INK_DIM, "fade to track", 0.9f, 0.0f );
+
+        /* Segment meter: 14 cells, two quads, the slider above drives one float. */
+        gui()->draw_meter( ( gui_rect_t ){ row.x + 260.0f, ry - 12.0f, 260.0f, 24.0f },
+                           14u, s_gauge_v, s_gauge_v > 0.85f ? HIT : HEAL, EDGE );
+        text_xf_centered( row.x + 390.0f, ry + 40.0f, INK_DIM,
+                          "draw_meter -- 14 cells, 2 quads", 0.9f, 0.0f );
+
+        gui()->pop_clip();
+        keep_awake();
+    }
 }
 
 /*==============================================================================================
@@ -2139,6 +2172,44 @@ win_fills( void )
     gui()->text_wrapped( "an inset's interior is HOLLOW -- the band is only `depth` deep, so one "
                          "on a full-size panel costs the rim, not the panel." );
 
+    gui()->separator_text( "subtraction -- a second box carved out (GUI_OP_CUT_SHAPE)" );
+    {
+        /* Blending can union (painter's order) and the clip table can intersect; SUBTRACT is the
+           one set operation that had to land on the record.  The checker shows through the holes
+           -- there is no ink there to see through. */
+        gui_rect_t r = gui()->canvas( 120.0f );
+        gui()->draw_checker( r, 12.0f, GUI_COLOR( 0x2A, 0x2A, 0x30, 0xFF ),
+                                       GUI_COLOR( 0x22, 0x22, 0x28, 0xFF ) );
+
+        /* The notched avatar: a rounded card minus a circle at its corner, the status dot
+           sitting in the carved gap -- the shape behind every chat presence badge. */
+        {
+            gui_rect_t a = { r.x + 24.0f, r.y + 24.0f, 72.0f, 72.0f };
+            gui_rect_t n = { a.x + a.w - 30.0f, a.y + a.h - 30.0f, 36.0f, 36.0f };
+            gui()->draw_rect_cut( a, 16.0f, n, 18.0f, 1.0f, GUI_COLOR( 0x50, 0x54, 0x60, 0xFF ) );
+            gui()->draw_circle( n.x + 18.0f, n.y + 18.0f, 12.0f, true, 0.0f,
+                                GUI_COLOR( 0x2E, 0xCC, 0x71, 0xFF ) );
+        }
+
+        /* The punched tag: a hole fully INSIDE the silhouette.  A hole is the shape no stack of
+           quads can build -- the checker shows through because there is no ink there at all. */
+        {
+            gui_rect_t t = { r.x + 140.0f, r.y + 30.0f, 150.0f, 60.0f };
+            gui()->draw_rect_cut( t, 12.0f,
+                                  ( gui_rect_t ){ t.x + 14.0f, t.y + t.h * 0.5f - 9.0f,
+                                                  18.0f, 18.0f },
+                                  9.0f, 1.0f, GUI_COLOR( 0xC8, 0xA4, 0x50, 0xFF ) );
+        }
+
+        /* A SOFT cut: the same subtract with a wide aa band -- an eroded / fading edge. */
+        gui()->draw_rect_cut( ( gui_rect_t ){ r.x + 340.0f, r.y + 24.0f, 90.0f, 72.0f }, 12.0f,
+                              ( gui_rect_t ){ r.x + 400.0f, r.y + 6.0f, 70.0f, 70.0f },
+                              35.0f, 18.0f, GUI_COLOR( 0x3E, 0x8E, 0xC0, 0xFF ) );
+
+        gui()->text( "left: the notched avatar (dot sits in carved space, not on ink)   "
+                     "middle: the punched tag   right: a soft-edged cut" );
+    }
+
     gui()->separator_text( "stripes + hatch -- the lattice cut on ONE axis, turned (GRID's spare bits)" );
     {
         gui_rect_t r = gui()->canvas( 130.0f );
@@ -2180,6 +2251,7 @@ static f32 s_ants_speed  = 24.0f;   /* px/sec the border pattern scrolls        
 static f32 s_spin_rate   = 1.0f;    /* spinner revolutions per second              */
 static f32 s_ngon_round  = 6.0f;    /* ngon corner rounding, px                    */
 static i32 s_ngon_sides  = 6;       /* ngon side count                             */
+static f32 s_star_ratio  = 0.5f;    /* star inner-radius ratio                     */
 static f32 s_mid         = 0.5f;    /* gradient midpoint, 0..1                     */
 
 static void
@@ -2242,6 +2314,23 @@ win_anim_fx( void )
         gui()->draw_ngon( r.x + 290.0f, cy, 44.0f, (u32)s_ngon_sides, s_time * 0.5f, false, 10.0f, AMBER );
         gui()->draw_set_rounding( save );
         dial_label( r.x + 180.0f, cy + 58.0f, INK_DIM, "one quad each", 0.9f );
+    }
+
+    gui()->separator_text( "the star ratio -- the same ngon quad, edge midpoints pulled in" );
+    gui()->slider_float( "inner ratio", &s_star_ratio, 0.2f, 0.9f );
+    {
+        gui_rect_t r  = gui()->canvas( 120.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+        f32 cy = r.y + 60.0f;
+
+        f32 save = gui()->draw_rounding();
+        gui()->draw_set_rounding( 0.0f );
+        gui()->draw_star( r.x +  70.0f, cy, 44.0f, 5, s_star_ratio, -GUI_PI * 0.5f, true, 0.0f, AMBER );
+        gui()->draw_star( r.x + 180.0f, cy, 44.0f, (u32)s_ngon_sides, s_star_ratio, -GUI_PI * 0.5f, false, 3.0f, INK );
+        gui()->draw_set_rounding( 5.0f );   /* the rounded star point, from the shared field rounding */
+        gui()->draw_star( r.x + 290.0f, cy, 44.0f, 5, s_star_ratio, s_time * 0.5f, true, 0.0f, TEAL );
+        gui()->draw_set_rounding( save );
+        dial_label( r.x + 180.0f, cy + 58.0f, INK_DIM, "still one quad each", 0.9f );
     }
 
     gui()->separator_text( "stroke alignment -- inside / centred / outside, one ambient" );
@@ -2316,7 +2405,7 @@ static sdf_demo_t s_demos[] = {
     { "Curves",          "Curves",          "GUI_FX_BEZIER: exact reference vs the 2-quad approximation", win_curves,    1280.0f, 1024.0f, false },
     { "Fills",           "Fills",           "gradients (linear / radial / conic) + inset + drop shadows", win_fills,     1280.0f, 1024.0f, false },
     { "Corners & Pills", "Corners & Pills", "corner smoothing + the capsule, filled and hollow",          win_corners,   1280.0f, 1024.0f, false },
-    { "Animation & Ops", "Animation & Ops", "marching ants / spin / phase / ngon / align / midpoint",     win_anim_fx,   1280.0f, 1024.0f, false },
+    { "Animation & Ops", "Animation & Ops", "marching ants / spin / phase / ngon + star / align",         win_anim_fx,   1280.0f, 1024.0f, false },
 };
 
 #define SDF_DEMO_COUNT ( (i32)( sizeof( s_demos ) / sizeof( s_demos[ 0 ] ) ) )
