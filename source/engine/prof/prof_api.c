@@ -17,7 +17,7 @@
    that slot -- which is how a hot-reloaded game DLL finds a profiler living inside the
    host exe. func_api_size is the ABI handshake: if a reloaded DLL disagrees on the struct
    size, the swap is refused up front instead of corrupting memory through a mis-shaped
-   table.                                                                                  */
+   table. */
 
 /*==============================================================================================
     API Struct

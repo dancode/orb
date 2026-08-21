@@ -2,8 +2,9 @@
 
     runtime_service/gui/gui_api.c -- Module vtable and lifecycle descriptor.
 
-    The actual function table gui.c assembles: one line per public function, mapping the name a
-    caller uses (e.g. .draw_rect) to the real function that implements it (gui_draw_rect).
+    The actual function table gui.c assembles: one line per public function, mapping the name
+    a caller uses (e.g. .draw_rect) to the real function that implements it (gui_draw_rect).
+    
     Included last by gui.c specifically so every function from every other file is already
     visible by the time this table tries to name them.
 
