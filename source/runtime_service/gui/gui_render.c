@@ -18,8 +18,6 @@
     one level up (gui_draw.c), which packs glyph/icon pixels into a shared atlas and tells this
     unit where to find them.
 
-    Include order matters: each file sees statics from files included above it:
-
     Three subfolders name the backend's parts:
 
         resource:   The GPU atlases this unit owns.
@@ -29,33 +27,44 @@
     Only gui_render.h sits at render/ root.
 
     --------------------------------------------------------------------------------------------
-    Taxonomy:
+    Taxonomy (include order -- each file below sees statics from every file listed above it):
 
     resource/
-     gui_atlas.h/.c        -- one GPU atlas texture: create/upload/destroy, either pixel format
-     gui_res_atlas.h/.c    -- the three atlases over that primitive: R8 COVERAGE (fonts +
-                              icons share one tex_idx so both batch), RGBA SPRITE, SDF (latter two lazy)
+     gui_atlas.h/.c            -- one GPU atlas texture: create/upload/destroy, either pixel format
+     gui_res_atlas.h/.c        -- the three atlases over that primitive: R8 COVERAGE (fonts +
+                                  icons share one tex_idx so both batch), RGBA SPRITE, SDF (latter two lazy)
     pipeline/
-     gui_emit_state.c      -- EMIT: draw list state -- s_draw, draw_reset, clip stack, ambient
-     gui_emit_cmd.c        -- EMIT: command record -- draw_cmd_claim/_open/_seal, draw_hash_cmd
-     gui_emit_shape.c      -- EMIT: fills, pictures, gradients, draw_push_icon
-     gui_emit_fx.c         -- EMIT: SDF surfaces -- shadows, sectors, patterns, lattices
-     gui_emit_edge.c       -- EMIT: outlines, bezels, the bare triangle
-     gui_emit_text.c       -- EMIT: glyph runs -- draw_push_text, _shadow, _xf
-     gui_emit_path.c       -- EMIT: line/path stroking -- draw_line, draw_polyline, path_*
-     gui_build_tess.c      -- BUILD: CPU tessellator -- s_tess, tess_reset, tess_dispatch
-     gui_build_volatile.c  -- BUILD: volatile-widget inline-emit replay (see gui_render.h)
-     gui_build_cache.c     -- BUILD: retained frame-geometry cache -- cache_build_frame, s_cache
-     gui_render_init.c     -- RENDER: shared GPU resources, created once -- pipeline, samplers, push-constants
-     gui_render_submit.c   -- RENDER: per-surface GPU submit -- gui_render_flush, debug-mode/time setters
+     gui_emit_state.c          -- EMIT: draw list state -- s_draw, draw_reset, clip stack, ambient
+     gui_emit_cmd.c            -- EMIT: command record -- draw_cmd_claim/_open/_seal, draw_hash_cmd
+     gui_emit_shape.c          -- EMIT: fills, pictures, gradients, draw_push_icon
+     gui_emit_fx.c             -- EMIT: SDF surfaces -- shadows, sectors, patterns, lattices
+     gui_emit_edge.c           -- EMIT: outlines, bezels, the bare triangle
+     gui_emit_text.c           -- EMIT: glyph runs -- draw_push_text, _shadow, _xf
+     gui_emit_path.c           -- EMIT: line/path stroking -- draw_line, draw_polyline, path_*
+     gui_build_tess_state.c    -- BUILD: tessellator state -- s_tess arenas, ambient, overflow/dirty tracking
+     gui_build_tess_quad.c     -- BUILD: quad-record core -- tess_quad_push, quantizers, style/fx dedup
+     gui_build_tess_sprite.c   -- BUILD: nine-slice sprite expansion, hollow-rect outlines
+     gui_build_tess_sdf.c      -- BUILD: rounded-box SDF family -- fx_box, repeat lattices, triangle/bezier
+     gui_build_tess_arc.c      -- BUILD: circles, n-gons, round-rect corners, arcs/sectors
+     gui_build_tess_text.c     -- BUILD: tiling patterns, glyph runs, dashed lines
+     gui_build_tess_dispatch.c -- BUILD: polyline stroker + tess_dispatch, the command-type switch
+     gui_build_volatile.c      -- BUILD: volatile-widget inline-emit replay (see gui_render.h)
+     gui_build_cache.c         -- BUILD: retained-cache driver -- cache_build_frame sequences diff + place
+     gui_build_diff.c          -- BUILD: change detection -- hashes each window's commands vs last frame
+     gui_build_place.c         -- BUILD: per-window placement -- reuse cached geometry or retessellate
+     gui_render_init.c         -- RENDER: shared GPU resources, created once -- pipeline, samplers, push-constants
+     gui_render_pal.c          -- RENDER: the style palette -- frame-global style records past every arena region
+     gui_render_intern.c       -- RENDER: what enters the palette -- lookup, interning, per-command memo, style epoch
+     gui_render_submit.c       -- RENDER: per-surface GPU submit -- gui_render_flush, debug-mode/time setters
 
     utility/
-     gui_debug_overlay.c   -- DEBUG OVERLAY: second draw list, flushed on top (Debug only) --
-                              reads resource/ AND pipeline/ internals, which is why it can't live in either subfolder
-     gui_dash_capture.c    -- CAPTURE: pipeline snapshot for the dashboard shell (GUI_PIPELINE_DASHBOARD)
-     gui_select_capture.c  -- CAPTURE: flagged windows' text runs, for chrome's selection controller
-     gui_step_capture.c    -- CAPTURE: band-0 command list + the frozen-frame reload (GUI_CMD_STEPPER)
-     gui_render_mem.c      -- MEMORY ACCOUNTING: sums every backend static's sizeof -- included last so it sees them all
+     gui_prim_census.c         -- STYLE CENSUS: session-wide record-reuse histogram (GUI_PRIM_CENSUS only)
+     gui_debug_overlay.c       -- DEBUG OVERLAY: second draw list, flushed on top (Debug only) --
+                                  reads resource/ AND pipeline/ internals, which is why it can't live in either subfolder
+     gui_dash_capture.c        -- CAPTURE: pipeline snapshot for the dashboard shell (GUI_PIPELINE_DASHBOARD)
+     gui_select_capture.c      -- CAPTURE: flagged windows' text runs, for chrome's selection controller
+     gui_step_capture.c        -- CAPTURE: band-0 command list + the frozen-frame reload (GUI_CMD_STEPPER)
+     gui_render_mem.c          -- MEMORY ACCOUNTING: sums every backend static's sizeof -- included last so it sees them all
 
     --------------------------------------------------------------------------------------------
     Frame Pipeline:
@@ -143,13 +152,13 @@
 #include "runtime_service/gui/render/pipeline/gui_emit_path.c"
 
 /*==============================================================================================
-    Style Censeus
+    Style Census
 
-    STYLE RECORD CENSUS: session-wide histogram of the records the tessellator emits, 
-    and of the arena entries each one costs across window slots.  
-    
-    Before gui_build_tess.c because that file calls its hooks; depends on nothing but 
-    the public gui types. Compiled out unless GUI_PRIM_CENSUS.
+    STYLE RECORD CENSUS: session-wide histogram of the records the tessellator emits,
+    and of the arena entries each one costs across window slots.
+
+    Before the gui_build_tess_*.c family because those files call its hooks; depends on
+    nothing but the public gui types. Compiled out unless GUI_PRIM_CENSUS.
 
 ==============================================================================================*/
 
@@ -159,7 +168,7 @@
     Pipeline Build
 ==============================================================================================*/
 
-/* tessellation primitives (gui_cmd_t -> s_tess geometry), */
+/* tessellation primitives (gui_cmd_t -> s_tess geometry) */
 #include "runtime_service/gui/render/pipeline/gui_build_tess_state.c"
 #include "runtime_service/gui/render/pipeline/gui_build_tess_quad.c"
 #include "runtime_service/gui/render/pipeline/gui_build_tess_sprite.c"
@@ -216,11 +225,11 @@
 #include "runtime_service/gui/render/utility/gui_render_mem.c"
 
 /*==============================================================================================
-    Initializatiom
+    Initialization
 
-    Backend lifecycle seam -- the entry point the frame orchestrator. Ties together whatever 
-    the backend needs to stand up as a whole; today that's just the RENDER stage's GPU 
-    resources, but it's the one place to add more later without a caller reaching into a 
+    Backend lifecycle seam -- the entry point the frame orchestrator calls. Ties together whatever
+    the backend needs to stand up as a whole; today that's just the RENDER stage's GPU
+    resources, but it's the one place to add more later without a caller reaching into a
     stage-specific name.
 ==============================================================================================*/
 
