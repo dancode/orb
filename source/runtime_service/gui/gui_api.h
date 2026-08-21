@@ -553,6 +553,11 @@ typedef struct gui_api_s
     void ( *pop_font           )( void );
     u32  ( *font_active_id     )( void );   // id of the currently active font (save/restore, or just to inspect)
 
+    /* The bindless index + pixel size backing a loaded font id's live GPU atlas, for
+       previewing it through image_texture / draw_texture_in (0 / {0,0} if empty). */
+    u32        ( *font_atlas_idx  )( u32 font_id );
+    gui_vec2_t ( *font_atlas_size )( u32 font_id );
+
     /*===========================  custom draw -- canvas primitives, symbols, paths  ============================*/
 
     /* Low-level draw list access -- the bare-metal drawing calls: no widget, no layout, just
@@ -716,6 +721,8 @@ typedef struct gui_api_s
 
     void ( *draw_brush )( gui_rect_t r, const gui_brush_t* brush );
 
+    /*=============================  ambient draw state -- save, set, draw, restore  =============================*/
+
     /* Ambient corner rounding for the rect-shaped verbs (draw_rect / draw_brush / draw_frame /
        draw_texture_in / draw_shadow).  Ambient rather than a parameter because it applies to
        verbs that have no business growing one, and because a container wants to round everything
@@ -782,70 +789,119 @@ typedef struct gui_api_s
     void ( *draw_set_text_edge )( f32 width, u32 abgr );
     void ( *draw_text_edge     )( f32* width, u32* abgr );
 
-    /* Font atlas access -- the bindless index + pixel size backing a loaded font id, for previewing
-       its live GPU atlas through image_texture / draw_texture_in above (0 / {0,0} if empty). */
-    u32        ( *font_atlas_idx  )( u32 font_id );
-    gui_vec2_t ( *font_atlas_size )( u32 font_id );
+    /*==========================  the shape catalog -- the one-quad SDF draw verbs  ==========================*/
 
-    /* Symbol + shape draw primitives -- the shape-drawing toolbox: checkmarks, arrows, circles,
-       rounded rects, beziers, and more, the same primitives the built-in widgets use to draw
-       their own chrome, exposed here for a custom widget to use too (the draw_* family, Dear
-       ImGui's AddXxx / Render* analogue). Drawn through the normal vertex pipeline
-       (lines / triangles / circles), NOT the icon atlas.
-       They share the draw_* verb with draw_rect / draw_text / draw_line above -- everything that
-       pushes geometry into the draw list is draw_*; render() is reserved for the frame flush.  The
-       built-in widgets draw their check marks, arrows, bullets and close crosses through these, and
-       the broader shape
-       palette (frames, per-corner rounded rects, polygons, arcs / pie, beziers, dashes, checker /
-       hatch / gradient fills, soft shadows, outlined / shadowed text, grips, spinners) is exposed so
-       editor / custom widgets can paint them.  Implemented in gui_symbol.c.  (WHICH mark a widget
-       draws -- tick vs disc, triangle vs chevron -- is style, not a draw call: a theme authors
-       the GUI_VAR_*_SHAPE pick and push_style_var scopes it.)
+    /* THE SHAPE CATALOG -- the drawing toolbox every built-in widget paints its own chrome
+       with, exposed so custom widgets and editors can paint the same way: symbols, shapes,
+       lines and paths, patterns, light and shadow, repeated sets, and clock-driven motion,
+       each in its own section below (Dear ImGui's AddXxx / Render* analogue, implemented in
+       gui_symbol.c).  Everything that pushes geometry into the draw list is draw_*; render()
+       is reserved for the frame flush.
 
-       Pipeline note: draw_gradient is an exact one-quad blend ramped in the fragment
-       (GUI_CMD_RECT_GRADIENT), and draw_shadow / draw_round_rect are exact SDF surfaces -- ONE
-       quad whose fragment shader resolves the boundary analytically, so their edges are
-       antialiased at any radius and softness and they merge into the batch already open.  Only a
-       STROKED per-corner outline still walks a tessellated perimeter; the filled form is a
-       surface like any other.  Angles for arc / pie / progress are radians, screen-space
-       (y down).  `thickness` is the stroke width for the stroked forms. */
+       Nearly every verb resolves as ONE SDF quad: the fragment evaluates the shape's boundary
+       analytically (gui_prim.h, the effect band), so edges antialias at any size, radius and
+       softness, curved shapes have no segment count to tune, and a call merges into the batch
+       already open.  The exceptions that still walk tessellated geometry are the polyline /
+       path family, hatch / stripes, and a STROKED per-corner outline.
+
+       Shared vocabulary, defined once:
+         - angles are RADIANS in screen space: 0 points +x, positive turns clockwise (y down).
+         - `rounding` is a corner radius in px.  A verb with no radius parameter honors the
+           ambient rounding (draw_set_rounding); one that takes its own ignores the ambient.
+         - `thickness` is a stroked form's stroke width in px; closed outlines honor the
+           border-align ambient (draw_set_border_align).
+         - `feather` -- and a shadow's `spread` -- is the SOFT EDGE: how many px the boundary
+           fades across (a design tool's feather / blur).  0 keeps the crisp 1 px antialiased
+           edge.
+         - `grow` is how far a boundary TRAVELS outward in px (negative shrinks) -- the swell
+           and ripple verbs' reach.
+         - the motion words -- `rate`, `phase`, the wave's curve -- are defined once at the
+           clock-driven motion section below.
+         - WHICH mark a widget draws (tick vs disc, triangle vs chevron) is style, not a draw
+           call: a theme authors the GUI_VAR_*_SHAPE pick and push_style_var scopes it. */
+
+    /*===================================  symbols -- the widget glyph marks  ====================================*/
+
+    /* The marks widget chrome is drawn from -- menu ticks, tree arrows, close crosses, resize
+       grips.  Each fits itself to the box or point it is given and takes one colour. */
 
     void ( *draw_check_mark        )( gui_rect_t box, u32 col );
     void ( *draw_arrow             )( gui_rect_t box, gui_dir_t dir, u32 col );
-    void ( *draw_bullet            )( f32 cx, f32 cy, f32 r, u32 col );
-    void ( *draw_close             )( gui_rect_t box, u32 col );
     void ( *draw_arrow_pointing_at )( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 col );
     void ( *draw_chevron           )( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 col );
     void ( *draw_plus_minus        )( gui_rect_t box, bool plus, f32 thickness, u32 col );
+    void ( *draw_close             )( gui_rect_t box, u32 col );
+    void ( *draw_bullet            )( f32 cx, f32 cy, f32 r, u32 col );
+    void ( *draw_grip              )( gui_rect_t box, u32 col );
+
+    /*===============================  shapes -- boxes, polygons, discs, sectors  ================================*/
+
+    /* The box family first, then the radial shapes, then the circular sectors.  Filled or
+       stroked per the convention above; every one is a single SDF quad. */
+
     void ( *draw_frame             )( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
                                         bool filled, f32 thickness, u32 col );
-    void ( *draw_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
-    /* The n-pointed star: draw_ngon with each edge midpoint pulled in to ratio * r.  ratio <= 0
-       takes the classic five-point proportion; the field caps it at the polygon's apothem. */
-    void ( *draw_star              )( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f32 thickness, u32 col );
-    void ( *draw_circle            )( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
-    void ( *draw_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
-    void ( *draw_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
-    /* The arc cut by an angular dash pattern -- dotted rings, marching ants, tick dials.  dash/gap
-       are arc-length pixels at radius r (the draw_dashed_line vocabulary); the period is snapped so
-       whole cycles fit the sweep, so a closed dashed ring meets itself without a seam.  Animate by
-       rotating a0/a1 together: the pattern rides the sector's frame.  Still ONE quad. */
-    void ( *draw_arc_dashed        )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
-                                      f32 dash, f32 gap, u32 col );
-    /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1) by ANGLE -- the hot/cold value
-       arc.  A per-vertex colour cannot express this (it varies by angle, not position); the
-       fragment lerps it from the aperture it already computes.  Still ONE quad. */
-    void ( *draw_arc_gradient      )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
-                                      u32 col_a, u32 col_b );
     /* The SDF box under a rotation about its centre (radians, screen space) -- rotated cards,
        tilted badges, the plate behind rotated text.  feather 0 = crisp 1 px AA; wider = a rotated
        soft shadow.  Same single quad as the upright box. */
     void ( *draw_box_xf            )( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col );
-    /* Per-corner radii AND a feather -- the soft drop shadow under a tab or asymmetric card,
-       which draw_shadow (one radius) cannot shape.  feather 0 is the crisp per-corner fill. */
-    void ( *draw_round_rect_shadow )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
-                                      f32 feather, u32 col );
+    /* A rounded rect minus a second rounded rect -- true subtraction, which no number of extra
+       quads can paint: blending only adds ink.  The notched avatar behind a status dot, the
+       ticket silhouette.  `cut` shares `box`'s absolute space and may straddle its edge; `soft`
+       is the carved edge's AA band in px (clamped up to the standard 1 px).  ONE quad; ramps,
+       patterns and the border frame compose over it like any other fill. */
+    void ( *draw_rect_cut          )( gui_rect_t box, f32 rounding, gui_rect_t cut,
+                                      f32 cut_rounding, f32 soft, u32 col );
+    void ( *draw_circle            )( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
+    void ( *draw_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
+    /* The n-pointed star: draw_ngon with each edge midpoint pulled in to ratio * r.  ratio <= 0
+       takes the classic five-point proportion; the field caps it at the polygon's apothem. */
+    void ( *draw_star              )( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f32 thickness, u32 col );
+    void ( *draw_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
+    void ( *draw_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
+    /* The arc cut by an angular dash pattern -- dotted rings, tick dials.  dash/gap are arc-length
+       pixels at radius r (the draw_dashed_line vocabulary); the period is snapped so whole cycles
+       fit the sweep, so a closed dashed ring meets itself without a seam.  Animate by rotating
+       a0/a1 together: the pattern rides the sector's frame. */
+    void ( *draw_arc_dashed        )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
+                                      f32 dash, f32 gap, u32 col );
+    /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1) by ANGLE -- the hot/cold value
+       arc.  A per-vertex colour cannot express this (it varies by angle, not position); the
+       fragment lerps it from the aperture it already computes. */
+    void ( *draw_arc_gradient      )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
+                                      u32 col_a, u32 col_b );
+    /* The determinate ring: an arc of `frac` (0..1) of a full turn from 12 o'clock. */
+    void ( *draw_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
+
+    /*=========================================  lines, curves + paths  ==========================================*/
+
+    /* Straight and curved strokes (gui_stroke_align_t; see gui.h for the pixel model).
+       draw_line     -- one segment, CENTER_BIASED: H/V lines render pixel-crisp, others antialiased.
+       draw_capsule  -- the PILL: the same segment named as a shape, so it keeps its round caps and
+                        its exact boundary at every angle instead of straightening into a snapped
+                        rect when it happens to be horizontal.  The _outline form hollows it to a
+                        `border` px wall -- still one quad, since the fragment bends the same field.
+       draw_polyline -- a connected point array with miter-limited corners (always antialiased);
+                        `closed` joins the last point back to the first (rect / polygon outlines).
+       path_*        -- the retained form: clear, append points with path_line_to, then path_stroke
+                        (which strokes and clears the buffer).  Up to GUI_PATH_MAX points.
+
+           gui()->draw_line( 10, 10, 200, 80, 2.0f, col );      // a 2px antialiased diagonal
+           gui()->draw_capsule( 20, 40, 90, 40, 14.0f, col );   // a 14px tall pill
+           gui()->path_line_to( x0, y0 ); gui()->path_line_to( x1, y1 ); ...
+           gui()->path_stroke( 1.5f, GUI_STROKE_CENTER, false, col ); */
+
+    void ( *draw_line     )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+    void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
+    void ( *draw_capsule  )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+    void ( *draw_capsule_outline )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness,
+                                    f32 border, u32 abgr );
+    void ( *draw_polyline )( const gui_vec2_t* pts, u32 count, f32 thickness,
+                             gui_stroke_align_t align, bool closed, u32 abgr );
+    void ( *path_clear    )( void );
+    void ( *path_line_to  )( f32 x, f32 y );
+    void ( *path_stroke   )( f32 thickness, gui_stroke_align_t align, bool closed, u32 abgr );
     void ( *draw_bezier_quad       )( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
     void ( *draw_bezier_cubic      )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
     /* A polyline whose corners are auto-filleted to `radius`, clamped per-corner to half its
@@ -871,12 +927,17 @@ typedef struct gui_api_s
        itself.  Both clamps are in the same already-DPI-scaled space as the pin coordinates. */
     void ( *draw_wire              )( f32 x0, f32 y0, f32 x1, f32 y1, f32 min_tan, f32 max_tan,
                                       f32 thickness, u32 col );
-    void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
+
+    /*===============================  patterns + gradients -- what fills a shape  ===============================*/
+
+    /* What a rect is filled WITH rather than what shape it is.  checker and grid tile in the
+       fragment, so any area and any cell count is ONE quad; both land inside the ambient
+       rounding's boundary.  hatch and stripes are tessellated line fills. */
+
     void ( *draw_checker           )( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
     /* Line lattice over `box`: a `thickness` px line every `cell` px, over NOTHING -- layer it on
        your own fill.  Anchored to (origin_x, origin_y) in screen px, so a panning canvas passes
-       its content origin and the lattice rides the pan.  ONE quad, like draw_checker: both tile
-       in the fragment, so area and cell count cost nothing.  Major/minor graph paper = two calls. */
+       its content origin and the lattice rides the pan.  Major/minor graph paper = two calls. */
     void ( *draw_grid              )( gui_rect_t box, f32 cell, f32 thickness,
                                       f32 origin_x, f32 origin_y, u32 col );
     void ( *draw_hatch             )( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
@@ -892,21 +953,108 @@ typedef struct gui_api_s
     void ( *draw_round_rect_gradient )( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
                                         gui_grad_t kind, f32 angle, f32 mid );
 
+    /*============================  light + shadow -- the soft single-quad surfaces  =============================*/
+
+    /* Five soft surfaces sharing one economy: each is a single quad whose falloff the fragment
+       resolves, merged into the open batch at any size and softness.  Picking one:
+
+         draw_shadow             filled soft cast -- MEANT to show through a translucent subject
+         draw_drop_shadow        the cast with the caster's silhouette cut out: the standard
+                                 panel shadow, directional via (off_x, off_y)
+         draw_inset_shadow       the falloff turned inward -- the pressed well / inner shadow
+         draw_glow               exponential falloff -- reads as light, not blur; draw it
+                                 BEFORE the body it halos
+         draw_round_rect_shadow  per-corner radii + feather -- the soft cast under a tab or
+                                 asymmetric card, which one-radius draw_shadow cannot shape
+
+       All honor the ambient rounding except draw_round_rect_shadow, which states its own.
+       `spread` / `feather` / `depth` is how far the falloff reaches, in px. */
+
+    void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );
+    /* Nothing paints inside `box`: the falloff is measured from the shadow's outline while the
+       hole is cut against the CASTER's, (off_x, off_y) px away -- which is what gives the cast
+       a direction.  (0, 0) is the even cast on all four sides. */
+    void ( *draw_drop_shadow       )( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col );
+    void ( *draw_inset_shadow      )( gui_rect_t box, f32 depth, u32 col );
+    /* Light falls off by a constant fraction per pixel, so the exponential halo reads as
+       emission where the linear one reads as blur.  The core is filled, so it shows through a
+       translucent subject.  Focus rings, validation states, drag targets, recording indicators;
+       composed with draw_pulse's clock it breathes for free. */
+    void ( *draw_glow              )( gui_rect_t box, f32 spread, u32 col );
+    void ( *draw_round_rect_shadow )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
+                                      f32 feather, u32 col );
+
+    /*=================================  sets + meters -- one quad, many copies  =================================*/
+
+    /* Repeated copies of one cell, folded in the FRAGMENT: however many copies, each set is ONE
+       quad and ONE style record, so a 3x3 dot field and a 40-tick ruler cost the same.  Cells
+       honor the ambient rounding (dots, squares or pills). */
+
+    /* nx by ny copies `pitch` apart centre-to-centre, centred in `at`; `size` is the cell's
+       side, and the pitch is floored just above it so copies never touch. */
+    void ( *draw_dot_grid          )( gui_rect_t at, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
+                                      f32 size, u32 col );
+    /* The one-axis form with the pitch solved from the count and the span, so the first and
+       last marks land on the ends -- ruler gradations, slider detents, timeline marks.  `len`
+       is how far each tick reaches across the bar (0 = all the way). */
+    void ( *draw_ticks             )( gui_rect_t bar, u32 n, f32 thickness, f32 len,
+                                      bool vertical, u32 col );
+    /* The angular form: `n` marks on a circle fitted to `box`, each turned to point outward --
+       the gauge face, one quad.  A non-zero `rate` (revolutions/sec) spins it on the shader
+       clock (the motion section's contract); 0 is the static face. */
+    void ( *draw_dial_ticks        )( gui_rect_t box, u32 n, f32 thickness, f32 len,
+                                      f32 rate, u32 col );
+    /* A segmented level meter: `n` cells across `bar`, the first `value` (0..1) fraction lit in
+       `col`, the rest in `col_off` (alpha 0 = nothing behind).  Two quads however many cells,
+       and the lit count is DATA on the record rather than geometry, so a moving level re-emits
+       one float.  Fills left to right. */
+    void ( *draw_meter             )( gui_rect_t bar, u32 n, f32 value, u32 col, u32 col_off );
+
+    /*=======================  clock-driven motion -- animates with zero re-tessellation  ========================*/
+
+    /* Everything here animates in the FRAGMENT on the shared shader clock: the emitted command
+       is byte-identical every frame, so the window keeps its retained geometry and the motion
+       re-tessellates NOTHING -- where easing a value yourself (anim_ease) dirties the window
+       every frame it moves.  One contract covers every verb below:
+
+         - the clock advancing does not schedule a frame.  Call request_redraw() each frame the
+           effect should visibly run -- the same contract a volatile widget has.
+         - `rate` is cycles per second; what one cycle IS belongs to the verb (a breath, a lap,
+           a revolution).  rate 0 stands the clock still at `phase`.
+         - `phase` offsets the wave in cycles, so a row of same-rate elements staggers instead
+           of beating in lockstep; 0 = in step.  One-shots: anim_once turns an event time into
+           the (rate, phase) to emit with and reports when to stop -- draw the settled state
+           from there.
+         - the wave's shape between its endpoints is the ambient curve (draw_set_anim_curve).
+
+       Picking a spinner: draw_spinner is the sweeping 270-degree arc; draw_dot_spinner the dot
+       ring (rigid, or tail-chasing); draw_border_tracer laps the widget's own outline. */
+
+    /* A rounded fill whose ALPHA breathes: `rate` in Hz, `depth` the 0..1 fraction of alpha
+       taken at the trough.  The "this is live / recording" indicator.  Honors the ambient
+       rounding. */
+    void ( *draw_pulse             )( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col );
+    /* A rounded fill whose SIZE breathes: the boundary travels `grow` px past the box (negative
+       shrinks) as the clock runs one cycle.  The pop, the hover grow, the press shrink, the
+       breathing focus ring.  At rate 0 it is a static per-element size offset off one shared
+       style.  Honors the ambient rounding. */
+    void ( *draw_swell             )( gui_rect_t box, f32 rate, f32 grow, f32 phase, u32 col );
+    /* The sonar ping: a hollow ring of `thickness` px hugging radius `r` that swells `grow`
+       px outward while it fades, expanding and dying on one clock.  `rate` repeats it; for a
+       single ping use anim_once and stop drawing when it reports done.  The attention ping, the
+       click ripple, the radar pulse. */
+    void ( *draw_ripple            )( f32 cx, f32 cy, f32 r, f32 thickness, f32 grow,
+                                      f32 rate, f32 phase, u32 col );
     /* The dashed rounded border -- and at a non-zero `speed` (px/sec) the MARCHING ANTS, the
-       selection border that scrolls on the shader clock: the command's bytes never change while
-       it runs, so the ants re-tessellate nothing (present frames with request_redraw, the
-       draw_pulse contract).  dash/gap are arc-length px (the draw_dashed_line vocabulary); the
-       period snaps so whole cycles fit the perimeter and a closed border meets itself.  Honors
-       the border-align ambient. */
+       selection border that scrolls on the clock.  dash/gap are arc-length px (the
+       draw_dashed_line vocabulary); the period snaps so whole cycles fit the perimeter and a
+       closed border meets itself.  Honors the border-align ambient. */
     void ( *draw_round_rect_dashed )( gui_rect_t box, f32 rounding, f32 thickness,
                                       f32 dash, f32 gap, f32 speed, u32 col );
-
     /* The BORDER TRACER: one arc of `frac` of the outline (0..1) travelling around it at `rate`
-       laps/sec -- indeterminate progress that traces the shape it belongs to rather than sitting
-       beside it as a bar.  Mechanically the dashed border with a single cycle spanning the whole
-       perimeter, so it is the same ONE quad, and the arc moves in the fragment on the shader
-       clock: the command's bytes never change while it runs and it re-tessellates nothing.
-       Present frames with request_redraw while it shows, the draw_pulse contract.
+       laps/sec -- indeterminate progress that traces the shape it belongs to rather than
+       sitting beside it as a bar.  Mechanically the dashed border with a single cycle spanning
+       the whole perimeter.
        draw_border_progress is the determinate twin -- `t` places the arc 0..1 around the border
        from the top-left instead of the clock doing it.  That value IS in the command, so it
        re-tessellates its window as it moves, exactly as a progress bar's fill width does. */
@@ -914,135 +1062,27 @@ typedef struct gui_api_s
                                     f32 frac, f32 rate, u32 col );
     void ( *draw_border_progress )( gui_rect_t box, f32 rounding, f32 thickness,
                                     f32 frac, f32 t, u32 col );
-    void ( *draw_inset_shadow      )( gui_rect_t box, f32 depth, u32 col );
-    void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );
-    /* A GLOW: draw_shadow's surface with its falloff resolved EXPONENTIALLY rather than linearly.
-       Light falls off by a constant fraction per pixel, so an exponential halo reads as emission
-       where the linear one reads as blur -- and it is the same single quad in the same batch, only
-       the curve differs.  `spread` is how far the light reaches, the draw_shadow vocabulary; the
-       core is filled, so it shows through a translucent subject.  Draw it before the body.
-       Under the ambient rounding like draw_shadow.  Focus rings, validation states, drag targets,
-       recording indicators -- and composed with draw_pulse's clock it breathes for free, since
-       neither op re-tessellates anything. */
-    void ( *draw_glow              )( gui_rect_t box, f32 spread, u32 col );
-    /* The drop shadow proper: draw_shadow's falloff with the CASTER'S silhouette cut out of it,
-       laid (off_x, off_y) px away from the box that casts it.  Nothing paints inside `box`, so a
-       translucent panel shows what is behind it rather than its own shadow's core -- and because
-       the cut is taken against the caster while the falloff is measured from the shadow, the cast
-       has a DIRECTION.  (0, 0) is the even cast on all four sides.  Use draw_shadow for a filled
-       cast MEANT to be seen through its subject, or draw_glow for one that reads as light. */
-    void ( *draw_drop_shadow       )( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col );
-
-    /* draw_pulse -- a rect whose fill alpha breathes in and out on a clock, for a "this is
-       live / recording" indicator, without costing any extra GPU work each frame it breathes.
-       A rounded fill whose alpha breathes on the shared frame clock, evaluated in the FRAGMENT.
-       Its point is what it avoids: the emitted command is byte-identical every frame, so the
-       window's retained geometry stays valid and the animation re-tessellates nothing -- unlike
-       easing the color yourself, which dirties the window's hash on every frame it moves and
-       throws that window's geometry away.  (The per-frame vertex UPLOAD is unaffected either way:
-       the frame's region is written whole regardless of what was retained.)  `rate` is in Hz and
-       `depth` the 0..1 fraction of alpha taken at the trough.  Honors the ambient rounding.
-       The clock advancing does not schedule a frame: call request_redraw while the pulse is
-       live, the same contract a volatile widget has.  `phase` offsets the wave in cycles, so a
-       row of same-rate indicators can stagger instead of beating in lockstep; 0 = in step. */
-    void ( *draw_pulse             )( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col );
-
-    /* draw_swell -- a rect whose SIZE breathes: the boundary travels `amp` px past the box
-       (negative shrinks) as the clock's k runs 0..1, shaped by the ambient curve
-       (draw_set_anim_curve).  draw_pulse's economics exactly -- byte-identical commands, zero
-       re-tessellation -- where anim_ease, the CPU tween, dirties the window every frame the
-       geometry moves.  The pop, the hover grow, the press shrink, the breathing focus ring.
-       Rate 0 stands the clock at `phase`: a static per-element size offset off one shared
-       style.  One-shots anchor with anim_once, the phase-anchoring contract.  Honors the
-       ambient rounding; request_redraw while it runs, the draw_pulse contract. */
-    void ( *draw_swell             )( gui_rect_t box, f32 rate, f32 amp, f32 phase, u32 col );
-
-    /* draw_ripple -- the sonar ping: a hollow ring of `thickness` px hugging radius `r` that
-       swells `spread` px outward while it fades, expanding and dying on ONE clock, from one
-       quad whose bytes never change while it runs.  `rate` repeats it; for a single ping use
-       anim_once + draw_set_anim_phase and stop drawing when it reports done.  The attention
-       ping, the click ripple, the radar pulse. */
-    void ( *draw_ripple            )( f32 cx, f32 cy, f32 r, f32 thickness, f32 spread,
-                                      f32 rate, f32 phase, u32 col );
-    void ( *draw_text_outline      )( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
-    void ( *draw_text_shadow       )( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
-    void ( *draw_grip              )( gui_rect_t box, u32 col );
-
-    /* A LATTICE of one rounded cell: nx by ny copies `pitch` apart centre-to-centre, centred in
-       `at`.  ONE quad and ONE style record however many copies -- the fragment folds its own
-       coordinate into a cell, so a 3x3 dot field and a 40-tick ruler cost the same.  That is the
-       point of it: a lattice was affordable before only while the count stayed small.
-       `size` is the cell's side, and the pitch is floored just above it so copies never touch.
-       Honors the ambient rounding, so the cells can be dots, squares or pills.
-       draw_ticks is the one-axis form with the pitch solved from the count and the span, so the
-       first and last marks land on the ends -- ruler gradations, slider detents, timeline marks.
-       `len` is how far each tick reaches across the bar (0 = all the way). */
-    void ( *draw_dot_grid          )( gui_rect_t at, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
-                                      f32 size, u32 col );
-    void ( *draw_ticks             )( gui_rect_t bar, u32 n, f32 thickness, f32 len,
-                                      bool vertical, u32 col );
-
-    /* A segmented level meter: `n` cells across `bar`, the first `value` (0..1) fraction lit in
-       `col`, the rest in `col_off` (alpha 0 = nothing behind).  Two quads however many cells,
-       and the lit count is DATA on the record rather than geometry, so a moving level re-emits
-       one float (GUI_OP_CELL_FILL).  Fills left to right; cells honor the ambient rounding. */
-    void ( *draw_meter             )( gui_rect_t bar, u32 n, f32 value, u32 col, u32 col_off );
-
-    /* A rounded rect minus a second rounded rect (GUI_OP_CUT_SHAPE) -- true subtraction, which
-       no number of extra quads can paint: blending only adds ink.  The notched avatar behind a
-       status dot, the ticket silhouette.  `cut` shares `box`'s absolute space and may straddle
-       its edge; `soft` is the carved edge's AA band in px (clamped up to the standard 1 px).
-       ONE quad; ramps, patterns and the border FRAME compose over it like any other fill. */
-    void ( *draw_rect_cut          )( gui_rect_t box, f32 rounding, gui_rect_t cut,
-                                      f32 cut_rounding, f32 soft, u32 col );
-
-    /* The ANGULAR form of the same fold: `n` copies on a circle fitted to `box`.  ONE quad, and
-       at a non-zero `rate` (revolutions/sec) it animates on the SHADER CLOCK -- so a dot
-       spinner's command bytes never change while it runs and it re-tessellates nothing, where a
-       hand-rotated ring of circles re-emits every frame.  Present frames with request_redraw
-       while it shows, the draw_pulse contract; rate 0 is a static ring.
-       `col_tail` picks the spinner: 0 turns the ring as a rigid body -- the mechanical spinner
-       (push_anim_curve with STAIR at `n` steps advances one dot per tick) -- while non-zero
-       holds the dots still and marches a colour ramp toward col_tail around them, trailing the
-       bright head (GUI_OP_GRAD_CELL): the classic tail spinner.  col & 0x00FFFFFF fades the tail
-       out entirely.
-       draw_dial_ticks is the same ring with a LONG cell: the fold turns each copy's frame with its
-       position, so the marks point outward and a gauge face costs one quad. */
+    /* A 270-degree arc turning at `rate` revolutions/sec -- the stock indeterminate spinner. */
+    void ( *draw_spinner           )( gui_rect_t box, f32 rate, f32 thickness, u32 col );
+    /* `n` dots on a circle fitted to `box`.  `col_tail` picks the motion: 0 turns the ring as a
+       rigid body -- the mechanical spinner (draw_set_anim_curve with STAIR at `n` steps
+       advances one dot per tick) -- while non-zero holds the dots still and marches a colour
+       ramp toward col_tail around them, trailing the bright head: the classic tail spinner.
+       col & 0x00FFFFFF fades the tail out entirely.  rate 0 is a static dot ring. */
     void ( *draw_dot_spinner       )( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col,
                                       u32 col_tail );
-    void ( *draw_dial_ticks        )( gui_rect_t box, u32 n, f32 thickness, f32 len,
-                                      f32 rate, u32 col );
-    /* Spinner: a 270-degree arc turning at `rate` revolutions/sec ON THE SHADER CLOCK
-       (GUI_OP_SPIN) -- byte-identical command every frame, so it re-tessellates nothing.
-       Present frames with request_redraw while it shows, the draw_pulse contract. */
-    void ( *draw_spinner           )( gui_rect_t box, f32 rate, f32 thickness, u32 col );
-    void ( *draw_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
 
-    /* Line / path stroking (gui_stroke_align_t; see gui.h for the pixel model).
-       draw_line     -- one segment, CENTER_BIASED: H/V lines render pixel-crisp, others antialiased.
-       draw_capsule  -- the PILL: the same segment named as a shape, so it keeps its round caps and
-                        its exact boundary at every angle instead of straightening into a snapped
-                        rect when it happens to be horizontal.  The _outline form hollows it to a
-                        `border` px wall -- still one quad, since the fragment bends the same field.
-       draw_polyline -- a connected point array with miter-limited corners (always antialiased);
-                        `closed` joins the last point back to the first (rect / polygon outlines).
-       path_*        -- the retained form: clear, append points with path_line_to, then path_stroke
-                        (which strokes and clears the buffer).  Up to GUI_PATH_MAX points.
+    /*==============================================  text effects  ==============================================*/
 
-           gui()->draw_line( 10, 10, 200, 80, 2.0f, col );      // a 2px antialiased diagonal
-           gui()->draw_capsule( 20, 40, 90, 40, 14.0f, col );   // a 14px tall pill
-           gui()->path_line_to( x0, y0 ); gui()->path_line_to( x1, y1 ); ...
-           gui()->path_stroke( 1.5f, GUI_STROKE_CENTER, false, col ); */
+    /* One-call forms of the ambient text edge (draw_set_text_edge): an outline, or a colour
+       offset (dx, dy) px behind the run.  SDF fonts only, like the ambient. */
 
-    void ( *draw_line     )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
-    void ( *draw_capsule  )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
-    void ( *draw_capsule_outline )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness,
-                                    f32 border, u32 abgr );
-    void ( *draw_polyline )( const gui_vec2_t* pts, u32 count, f32 thickness,
-                             gui_stroke_align_t align, bool closed, u32 abgr );
-    void ( *path_clear    )( void );
-    void ( *path_line_to  )( f32 x, f32 y );
-    void ( *path_stroke   )( f32 thickness, gui_stroke_align_t align, bool closed, u32 abgr );
+    void ( *draw_text_outline      )( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
+    void ( *draw_text_shadow       )( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
+
+    /*==================================================  clip  ==================================================*/
+
+    /* The scissor rectangle subsequent draws are cut to; pop restores the previous one. */
 
     void ( *push_clip )( f32 x, f32 y, f32 w, f32 h );
     void ( *pop_clip  )( void );
