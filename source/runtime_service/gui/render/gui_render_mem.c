@@ -102,10 +102,12 @@ backend_memory( u32 live_viewports )
        A dynamic bucket -- it exists only once an atlas / tenant does. */
     s.cpu_atlas_bytes = res_atlas_cpu_bytes();
 
-    /* RENDER: pipeline / sampler / push state, plus the published style palette the flush uploads
-       from.  Small and fixed -- the shaders are loaded from bin/shaders and never sit in the exe's
-       .rdata. */
-    s.cpu_render_bytes = (u32)( sizeof( s_render ) + sizeof( s_pal ) );
+    /* RENDER: pipeline / sampler / push state, the published style palette the flush uploads from,
+       and the palette's own working set -- the live table, its content-hash lookup, the candidate
+       hashes waiting on a second sighting, and the per-command parked answers.  The shaders are
+       loaded from bin/shaders and never sit in the exe's .rdata. */
+    s.cpu_render_bytes = (u32)( sizeof( s_render ) + sizeof( s_pal ) + sizeof( s_bake )
+                              + sizeof( s_cmd_entry ) + sizeof( s_cmd_hash ) );
 
     /* Text-selection run capture (always compiled; a product feature). */
     s.cpu_select_bytes = (u32)sizeof( s_select_cap );

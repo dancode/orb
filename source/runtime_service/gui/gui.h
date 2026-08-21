@@ -2823,9 +2823,9 @@ typedef struct
    before moving a number -- and when content goes missing, the build's overflow warning names
    which of these it was. */
 
-#define GUI_MAX_QUADS        8192 * 2        /* per-frame quad records (gui_quad_t)              */
-#define GUI_MAX_PRIMS        512 * 2         /* per-frame style records (gui_prim_t)             */
-#define GUI_MAX_CMDS         1024 * 2        /* per-frame semantic draw commands                 */
+#define GUI_MAX_QUADS        ( 8192 * 2 )       /* per-frame quad records (gui_quad_t)              */
+#define GUI_MAX_PRIMS        ( 512 * 2 )        /* per-frame style records (gui_prim_t)             */
+#define GUI_MAX_CMDS         ( 1024 * 2 )       /* per-frame semantic draw commands                 */
 #define GUI_MAX_PATH_PTS     2048            /* per-frame total polyline / path point pool       */
 #define GUI_MAX_RECT_ENTRIES 4096            /* per-frame total draw_rects batch pool            */
 #define GUI_MAX_TEXT_POOL    ( 16 * 1024 )   /* per-frame flat string copy pool for text cmds    */
@@ -2899,7 +2899,7 @@ ORB_STATIC_ASSERT( GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK,
 ==============================================================================================*/
 
 #define GUI_PAL_FIRST  1024u   /* first style index that resolves against the palette */
-#define GUI_PAL_MAX     512u   /* palette entries, ACROSS every live style scale       */
+#define GUI_PAL_MAX     256u   /* palette entries, ACROSS every live style scale       */
 
 ORB_STATIC_ASSERT( GUI_MAX_PRIMS <= GUI_PAL_FIRST,
                    "the style arena grew into the palette's index range -- raise GUI_PAL_FIRST" );
