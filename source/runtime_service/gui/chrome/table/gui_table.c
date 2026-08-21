@@ -469,14 +469,23 @@ table_columns_build( gui_table_t* t )
 /* Resolve column positions and widths through the engine (persist override > setup / fit >
    stretch).  The strip is always the OPEN REGION's content column -- header and body share that
    one authoritative width, which is why every re-resolve (drag, reorder, fit, reset) reads it
-   back from the live layout frame rather than carrying a remembered box around. */
+   back from the live layout frame rather than carrying a remembered box around.
+
+   The width is the region's VIEW, not its content_w: view already excludes the vertical
+   scrollbar gutter (region_gutters, gui_scroll.c), which is the property this wants, but
+   content_w ALSO widens to last frame's measured overflow (layout_seed_content) so a wheel can
+   reach it.  A STRETCH column fills whatever width it is handed, and that fill is exactly the
+   kind of overflow the widening chases -- feeding content_w back in here would grow the track by
+   the same amount every frame with no bound, shoving every column after it further right each
+   frame until they scroll out of the table. */
 static void
 table_columns_resolve( gui_table_t* t )
 {
     f32 init_w[ GUI_TABLE_COLS_MAX ];
     i32 init_n = table_init_widths( t, init_w );
+    f32 track_w = lf()->view.w - lf()->pad.l - lf()->pad.r;
     table_tracks_resolve( t->persist, init_w, init_n, t->disp, t->ndisp,
-                          lf()->content_x, lf()->content_w, t->col_x, t->col_w );
+                          lf()->content_x, track_w, t->col_x, t->col_w );
 }
 
 /* Size a logical column to the content measured last frame; col < 0 fits every visible column.
