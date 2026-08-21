@@ -19,13 +19,13 @@
     unit where to find them.
 
     Include order matters: each file sees statics from files included above it:
-    
-    Three subfolders name the backend's parts: 
-    
+
+    Three subfolders name the backend's parts:
+
         resource:   The GPU atlases this unit owns.
         pipeline:   The per-frame EMIT -> BUILD -> RENDER path.
         utility:    The debug overlay, dashboard, text selection, frame stepper.
-                  
+
     Only gui_render.h sits at render/ root.
 
     --------------------------------------------------------------------------------------------
@@ -35,7 +35,6 @@
      gui_atlas.h/.c        -- one GPU atlas texture: create/upload/destroy, either pixel format
      gui_res_atlas.h/.c    -- the three atlases over that primitive: R8 COVERAGE (fonts +
                               icons share one tex_idx so both batch), RGBA SPRITE, SDF (latter two lazy)
-
     pipeline/
      gui_emit_state.c      -- EMIT: draw list state -- s_draw, draw_reset, clip stack, ambient
      gui_emit_cmd.c        -- EMIT: command record -- draw_cmd_claim/_open/_seal, draw_hash_cmd
@@ -47,7 +46,7 @@
      gui_build_tess.c      -- BUILD: CPU tessellator -- s_tess, tess_reset, tess_dispatch
      gui_build_volatile.c  -- BUILD: volatile-widget inline-emit replay (see gui_render.h)
      gui_build_cache.c     -- BUILD: retained frame-geometry cache -- cache_build_frame, s_cache
-     gui_render_init.c     -- RENDER: shared GPU resources, created once -- pipeline, samplers, push-constant layout
+     gui_render_init.c     -- RENDER: shared GPU resources, created once -- pipeline, samplers, push-constants
      gui_render_submit.c   -- RENDER: per-surface GPU submit -- gui_render_flush, debug-mode/time setters
 
     utility/
@@ -61,13 +60,13 @@
     --------------------------------------------------------------------------------------------
     Frame Pipeline:
 
-    EMIT (real frames only): widgets write shape lines to a list -- nothing draws yet. Idle
-    frame: skipped, the previous frame's records are reused as-is.
+    EMIT (real frames only): widgets write shape lines to a list -- nothing draws yet.
+    Idle frame: skipped, the previous frame's records are reused as-is.
 
     BUILD - diff: hash each window's list and compare to last frame; only changed windows
     proceed. Idle frame: skipped too.
 
-    BUILD - tessellate: changed windows become 16-byte quad records (gui_quad_t) in one CPU
+    BUILD - tess: changed windows become 16-byte quad records (gui_quad_t) in one CPU
     arena, one record per shape, no vertex or index buffer. Unchanged windows keep their
     existing records untouched, exactly where they were. Each record's clip tag is a permanent
     address (cache slot x 16 + which clip) into that window's fixed shelf, so cached records
@@ -76,37 +75,31 @@
     RENDER - flush (every presented frame): quad records -- the live arena span, copied into
     this frame's region of the global quad table (2 GPU-rotated regions, so every region needs
     the full set, changed or not). Clip rects -- almost never; a shelf resends only if its stale
-    flag is set (max 512 B/shelf), so a stable frame ships zero clip bytes. Push constants -- one
-    per surface (matrix, samplers, clock, shelf-table base). Then one bufferless draw call per
-    window, back to front (6*N vertices; the vertex stage expands corners via SV_VertexID, the
-    fragment stage clips by reading the shelf each quad names). Fully idle app: nothing at all.
+    flag is set (max 512 B/shelf), so a stable frame ships zero clip bytes. Push constants
+    -- one per surface (matrix, samplers, clock, shelf-table base). Then one bufferless draw
+    call per window, back to front (6*N vertices; the vertex stage expands corners via SV_VertexID,
+    the fragment stage clips by reading the shelf each quad names). Fully idle app: nothing at all.
 
 ==============================================================================================*/
+// clang-format off
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stddef.h>   // offsetof -- the style census names gui_prim_t's lanes by offset
-#include <stdarg.h>   // va_list  -- the census's bounded string append
+#include <stddef.h>     // offsetof -- the style census names gui_prim_t's lanes by offset
+#include <stdarg.h>     // va_list  -- the census's bounded string append
 #include <math.h>
 
 #include "orb.h"
-#include "base/fmt.h"   // fmt_snprintf / fmt_vsnprintf -- CRT-free formatting on the per-frame text paths
+#include "base/fmt.h"   // fmt_snprintf / fmt_vsnprintf -- CRT-free formatting for text paths
 #include "base/utf8.h"  // codepoint stepping in the glyph-run tessellators + stepper AABB walks
 
-/* This unit's world, and nothing above it (R11: the include list IS the dependency graph).
-   THE RENDER SERVER sees the public gui types, the engine APIs, and its own header -- never
-   the interact server or a library unit.  The debug header is the sanctioned severable
-   instrumentation (this unit IMPLEMENTS the capture entry points it declares). */
-
-#include "runtime_service/gui/render/gui_render.h"      /* pulls gui_host.h + rhi/app APIs */
-#include "runtime_service/gui/debug/gui_debug.h"
-
-// clang-format off
 /*==============================================================================================
     Unity build
 ==============================================================================================*/
 
+#include "runtime_service/gui/render/gui_render.h"      /* pulls gui_host.h + rhi/app APIs */
+#include "runtime_service/gui/debug/gui_debug.h"
 
 /*==============================================================================================
     GUI Resources : the texture atlases fonts, icons, sprites and SDF glyphs pack into.
@@ -139,7 +132,6 @@
     draw_push_icon lives here rather than with the icon resource (the draw unit's now): 
     it queues a semantic command like every other draw_push_*, resolving UVs through the 
     sprite source contract instead of the resource reaching up into EMIT itself. 
-
 ==============================================================================================*/
 
 #include "runtime_service/gui/render/pipeline/gui_emit_state.c"
@@ -150,20 +142,24 @@
 #include "runtime_service/gui/render/pipeline/gui_emit_text.c"
 #include "runtime_service/gui/render/pipeline/gui_emit_path.c"
 
-// STYLE RECORD CENSUS: session-wide histogram of the records the tessellator emits, and of the
-// arena entries each one costs across window slots.  Before gui_build_tess.c because that file
-// calls its hooks; depends on nothing but the public gui types.  Compiled out unless
-// GUI_PRIM_CENSUS.
+/*==============================================================================================
+    Style Censeus
+
+    STYLE RECORD CENSUS: session-wide histogram of the records the tessellator emits, 
+    and of the arena entries each one costs across window slots.  
+    
+    Before gui_build_tess.c because that file calls its hooks; depends on nothing but 
+    the public gui types. Compiled out unless GUI_PRIM_CENSUS.
+
+==============================================================================================*/
+
 #include "runtime_service/gui/render/utility/gui_prim_census.c"
 
 /*==============================================================================================
     Pipeline Build
 ==============================================================================================*/
 
-// pipeline/ BUILD, part A: tessellation primitives (gui_cmd_t -> s_tess geometry), split by
-// aspect -- state/diagnostics, the quad-record core, sprites, the SDF box family, arcs/circles,
-// patterns/text, and the dispatcher, in dependency order.  No public surface -- driven entirely
-// from part B (cache_tess_window / cache_build_frame).
+/* tessellation primitives (gui_cmd_t -> s_tess geometry), */
 #include "runtime_service/gui/render/pipeline/gui_build_tess_state.c"
 #include "runtime_service/gui/render/pipeline/gui_build_tess_quad.c"
 #include "runtime_service/gui/render/pipeline/gui_build_tess_sprite.c"
@@ -172,78 +168,60 @@
 #include "runtime_service/gui/render/pipeline/gui_build_tess_text.c"
 #include "runtime_service/gui/render/pipeline/gui_build_tess_dispatch.c"
 
-// pipeline/ BUILD, part A.5: volatile widgets (inline-emit callback replay) -- see that file's header.
-// After the gui_build_tess_*.c family (needs s_tess + tess_dispatch + s_volatile_patching); before
-// gui_build_cache.c (defines the cache_slot_lookup / cache_invalidate_window /
-// cache_count_volatile_patch helpers this file forward-declares).
+/* volatile widgets (inline-emit callback replay) */
 #include "runtime_service/gui/render/pipeline/gui_build_volatile.c"
 
-// pipeline/ BUILD, part B: shared slot/stats state + the cache_build_frame driver that sequences
-// parts B.1/B.2 below.  Forward-declares cache_diff_windows / cache_place_slots, so it must come
-// first; their definitions can follow anywhere later in the unity build.
+/* shared slot/stats state + the cache_build_frame driver that sequences */
 #include "runtime_service/gui/render/pipeline/gui_build_cache.c"
 
-// pipeline/ BUILD, part B.1: change detection -- diffs this frame's command hashes against last
-// frame's, fills s_cache (gui_build_cache.c's cache_place_slots reads it).
+/* change detection -- diffs this frame's command hashes against last frame */
 #include "runtime_service/gui/render/pipeline/gui_build_diff.c"
 
-// pipeline/ BUILD, part B.2: per-window placement -- reuse or tessellate each window from
-// gui_build_diff.c's s_cache, driven by cache_build_frame (gui_build_cache.c).
+/* per-window placement -- reuse or tessellate each window */
 #include "runtime_service/gui/render/pipeline/gui_build_place.c"
 
 /*==============================================================================================
     Pipeline Render
 ==============================================================================================*/
 
-// pipeline/ RENDER, part A: shared GPU resources (pipeline, samplers), created once.
+/* shared GPU resources (pipeline, samplers), created once */
 #include "runtime_service/gui/render/pipeline/gui_render_init.c"
 
-// pipeline/ RENDER, part B: the style palette -- shared records past every arena region.  After
-// gui_render_init.c because it writes into that unit's prim_buf and region layout.
+/* the style palette -- shared style records past every arena region. */
 #include "runtime_service/gui/render/pipeline/gui_render_pal.c"
 
-// pipeline/ RENDER, part B2: what goes IN the palette -- the lookup, interning, the per-command
-// memo and the style epoch.  After gui_render_pal.c, which it publishes into; the build and
-// placement passes call it through the prototypes in gui_render.h.
+/* what goes IN the palette -- the lookup, interning, the per-command memo and the style epoch */
 #include "runtime_service/gui/render/pipeline/gui_render_intern.c"
 
-// pipeline/ RENDER, part C: per-surface submit (gui_render_flush).
+/* per-surface submit (gui_render_flush) */
 #include "runtime_service/gui/render/pipeline/gui_render_submit.c"
 
 /*==============================================================================================
     Utility: Debug / Capture / Memory Accounting
 ==============================================================================================*/
 
-// DEBUG OVERLAY: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY.  Lives in
-// utility/ -- see the file banner above for why.
+/* DEBUG OVERLAY: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY */
 #include "runtime_service/gui/render/utility/gui_debug_overlay.c"
 
-// PIPELINE DASHBOARD capture: snapshots the pipeline at the two capture points for the shell
-// (gui_dashboard.c) to draw with the standard API.  Compiled out unless GUI_PIPELINE_DASHBOARD.
-// Last so it sees every pipeline static it snapshots (s_draw, s_tess, the slot tables,
-// s_volatile, s_tess_gen_next).
+/* PIPELINE DASHBOARD capture: snapshots the pipeline at the two capture points for the shell */
 #include "runtime_service/gui/render/utility/gui_dash_capture.c"
 
-// TEXT-SELECTION run capture: copies flagged windows' text commands into a persistent run
-// buffer at the build seam for the chrome unit's selection controller (chrome/window/gui_select.c).
-// Always compiled (a product feature).  Last (with the captures below) so it sees s_draw.
+/* TEXT-SELECTION run capture: copies flagged windows' text commands into a persistent run */
 #include "runtime_service/gui/render/utility/gui_select_capture.c"
 
-// COMMAND STEPPER capture + frozen-frame replay: snapshots the band-0 command list at the build
-// seam and pre-loads it back at every draw_reset while frozen.  Compiled out unless
-// GUI_CMD_STEPPER.  Last (with the dash capture) so it sees the emit statics it copies (s_draw).
+/* COMMAND STEPPER capture + frozen-frame replay: snapshots and walks back to debug */
 #include "runtime_service/gui/render/utility/gui_step_capture.c"
 
-// MEMORY ACCOUNTING: sizeof-sums every backend static into the gui_mem_stats_t buckets.  MUST
-// stay the very last include -- unity visibility only flows downward, and the full-accounting
-// contract is that every static above is in scope here.
+/* MEMORY ACCOUNTING: sizeof-sums every backend static into the gui_mem_stats_t buckets */
 #include "runtime_service/gui/render/utility/gui_render_mem.c"
 
 /*==============================================================================================
-    Backend lifecycle seam -- the entry point the frame orchestrator (gui_init / gui_shutdown,
-    frame/gui_frame_loop.c) calls.  Ties together whatever the backend needs to stand up as a
-    whole; today that's just the RENDER stage's GPU resources, but it's the one place to add
-    more later without a caller reaching into a stage-specific name.
+    Initializatiom
+
+    Backend lifecycle seam -- the entry point the frame orchestrator. Ties together whatever 
+    the backend needs to stand up as a whole; today that's just the RENDER stage's GPU 
+    resources, but it's the one place to add more later without a caller reaching into a 
+    stage-specific name.
 ==============================================================================================*/
 
 bool
