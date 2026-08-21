@@ -74,8 +74,8 @@ dash_capture_build( void )
     for ( u32 c = 0; c < sn->cmd_count; ++c )
     {
         const tess_gpu_cmd_t* gc = &s_tess.gpu_cmds[ c ];
-        sn->cmds[ c ].elem_count = gc->cmd.elem_count;
-        sn->cmds[ c ].tex_idx    = gc->cmd.tex_idx;
+        sn->cmds[ c ].elem_count = gc->elem_count;
+        sn->cmds[ c ].tex_idx    = gc->tex_idx;
         sn->cmds[ c ].vp         = gc->vp;
         sn->cmds[ c ].qbase      = gc->qbase;
     }
@@ -122,7 +122,7 @@ dash_capture_build( void )
         {
             const tess_gpu_cmd_t* gc = &s_tess.gpu_cmds[ sl->cmd_base + k ];
             if ( gc->vp == GUI_VP_INVALID )   continue;   /* dormant volatile pad     */
-            if ( gc->cmd.elem_count == 0 )    continue;   /* empty -- never dispatched */
+            if ( gc->elem_count == 0 )        continue;   /* empty -- never dispatched */
             ++live;
         }
         sn->tess_cmds += live;

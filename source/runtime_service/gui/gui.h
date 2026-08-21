@@ -1805,8 +1805,8 @@ typedef void ( *gui_volatile_fn )( gui_id_t id, bool is_replay );
     (gui_render.c) tessellates each command into quad records at flush time.  This separates
     the UI logic from any graphics API knowledge.
 
-    GPU draw commands (gui_gpu_cmd_t) are a backend-private type defined in gui_emit_state.c;
-    they carry a quad range and diagnostic state for one GPU draw call.
+    GPU draw commands (tess_gpu_cmd_t) are a backend-private type defined in
+    gui_build_tess_state.c; they carry a quad range and diagnostic state for one GPU draw call.
 ==============================================================================================*/
 
 typedef enum
@@ -1923,7 +1923,9 @@ gui_tex_index( u32 tex_idx )
 /* One semantic draw command.  The 4-byte header carries the command type, the index of the active
    clip rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), and
    the target viewport.  z lives in gui_cmd_seg_t (per-segment, constant within a window) and is not
-   repeated here.  Reducing the header from 28 bytes to 4 bytes brings the struct from 72 -> 48 bytes.
+   repeated here.  The struct's size is the 4-byte header plus the largest union member (fx_box);
+   the slack in narrower members costs nothing downstream -- a push writes only its own member and
+   the retained-cache hash folds per-type payload lengths, never the full union.
    tex_idx == 0 in rect means solid color (white texel).
    rounding (rect / rect_outline) is the corner radius baked from the ambient draw rounding at emit
    time, already clamped to the rect; 0 tessellates as a plain square shape.  corner_pow rides

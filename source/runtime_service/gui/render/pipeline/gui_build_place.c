@@ -222,9 +222,10 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
     for ( u32 k = 0; k < nc; ++k )
     {
         u32 ci = slot->cmd_base + k;
-        s_tess.gpu_cmds[ ci ].cmd   = s_win_cached[ cache_idx ][ k ].cmd;
-        s_tess.gpu_cmds[ ci ].vp    = s_win_cached[ cache_idx ][ k ].vp;
-        s_tess.gpu_cmds[ ci ].qbase = (u16)( slot->quad_base + s_win_cached[ cache_idx ][ k ].lqbase );
+        s_tess.gpu_cmds[ ci ].elem_count = s_win_cached[ cache_idx ][ k ].elem_count;
+        s_tess.gpu_cmds[ ci ].tex_idx    = s_win_cached[ cache_idx ][ k ].tex_idx;
+        s_tess.gpu_cmds[ ci ].vp         = s_win_cached[ cache_idx ][ k ].vp;
+        s_tess.gpu_cmds[ ci ].qbase      = (u16)( slot->quad_base + s_win_cached[ cache_idx ][ k ].lqbase );
     }
     s_tess.cmd_count += nc;
 
@@ -398,9 +399,10 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     for ( u32 k = 0; k < nc; ++k )
     {
         u32 ci = slot->cmd_base + k;
-        s_win_cached[ cache_idx ][ k ].cmd    = s_tess.gpu_cmds[ ci ].cmd;
-        s_win_cached[ cache_idx ][ k ].vp     = s_tess.gpu_cmds[ ci ].vp;
-        s_win_cached[ cache_idx ][ k ].lqbase = (u16)( s_tess.gpu_cmds[ ci ].qbase - slot->quad_base );
+        s_win_cached[ cache_idx ][ k ].elem_count = s_tess.gpu_cmds[ ci ].elem_count;
+        s_win_cached[ cache_idx ][ k ].tex_idx    = s_tess.gpu_cmds[ ci ].tex_idx;
+        s_win_cached[ cache_idx ][ k ].vp         = s_tess.gpu_cmds[ ci ].vp;
+        s_win_cached[ cache_idx ][ k ].lqbase     = (u16)( s_tess.gpu_cmds[ ci ].qbase - slot->quad_base );
     }
     slot->cmd_cached = true;
     slot->valid      = true;

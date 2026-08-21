@@ -79,7 +79,10 @@
 
 static struct
 {
-    gui_prim_t rec[ GUI_PAL_MAX ];   // the table, in entry order
+    /* No record storage here: the table's bytes live in gui_render_pal.c's s_pal.rec, and this
+       unit writes entries straight into it (pal_intern).  `count` is the LIVE count -- it runs
+       ahead of the published one between a build that interned and that frame's first flush,
+       which folds the difference in via pal_publish_pending. */
     u32        count;
     u32        digest;               // style inputs the table was built against (0 = never)
 
@@ -90,9 +93,7 @@ static struct
     u32        scale_count;
 
     u16        slot[ PAL_SLOTS ];    // entry + 1 per slot; 0 = empty
-    u32        memo;                 // last entry pal_find answered with (~0u = none)
     u32        hits, misses;         // probe outcome since the last reset, for the dump
-    u32        memo_hits;            // of hits, the share the memo served without hashing
 
     /* Candidate hashes and the build frame each was last seen in.  frame 0 = empty slot,
        which is why the counter starts at 1. */
@@ -167,12 +168,13 @@ pal_hash( const gui_prim_t* rec )
 }
 
 /*  Which palette entry holds this record, or GUI_PAL_NONE.  The hot path of the whole campaign:
-    called once per style-record miss in tess_prim_local, so it tries a one-deep memo, then walks a
-    couple of slots and does one full compare on the candidate.  The compare is not optional -- a
-    hash collision that returned the wrong entry would draw the wrong shape.
+    called once per style-record miss in tess_prim_local -- it folds the record's live rows, walks
+    a couple of slots and does one full compare on the candidate.  The compare is not optional --
+    a hash collision that returned the wrong entry would draw the wrong shape.
 
-    Every path but the memo folds the record's live rows, which is a serial chain and still
-    the dearest thing on the per-quad path; the memo exists to keep a repeat off it. */
+    No memo of its own: the caller's answer memo and the per-command parked answers ahead of it
+    absorb the repeats (measured 98%+ of hits), so a memo here served under 1% and cost a
+    128-byte compare on every call that reached it. */
 
 /*  The A/B switch.  Off, pal_find answers nothing, pal_intern declines, and every style falls back
     to the per-slot memo and the arena -- the exact behaviour that existed before the palette, style
@@ -203,34 +205,16 @@ pal_find( const gui_prim_t* rec )
     if ( s_bake.count == 0u || !s_pal_on )
         return GUI_PAL_NONE;
 
-    /* One-deep memo over the last ANSWERED entry.  A plain repeat never reaches it --
-       tess_prim_local memoizes its own last answer whatever produced it -- so what is left
-       for this one is the ALTERNATION: a palette style and an arena style traded turn by
-       turn, where the caller's memo holds the arena record and every return to the palette
-       one would otherwise re-fold and re-probe.
-       The compare is against the ENTRY's own bytes -- no copy to keep in step, because the hit
-       below is confirmed by this same full compare, so the entry IS what the caller asked for.
-       Counted as a hit: the question the rate answers is what share of styles the palette served,
-       and this served one.  Held by index rather than by pointer so a growing table cannot leave
-       it dangling, and cleared by pal_epoch along with the table it names. */
-    if ( s_bake.memo < s_bake.count
-      && memcmp( &s_bake.rec[ s_bake.memo ], rec, sizeof( gui_prim_t ) ) == 0 )
-    {
-        ++s_bake.hits;
-        ++s_bake.memo_hits;
-        return s_bake.memo;
-    }
-
     u32 i = pal_hash( rec ) & PAL_SLOT_MASK;
     for ( u32 probe = 0; probe < PAL_SLOTS; ++probe, i = ( i + 1u ) & PAL_SLOT_MASK )
     {
         u16 e = s_bake.slot[ i ];
         if ( e == 0u )
             break;                                     /* empty slot: the record is not in here */
-        if ( memcmp( &s_bake.rec[ e - 1u ], rec, sizeof( gui_prim_t ) ) == 0 )
+        if ( memcmp( &s_pal.rec[ e - 1u ], rec, sizeof( gui_prim_t ) ) == 0 )
         {
             ++s_bake.hits;
-            return s_bake.memo = (u32)( e - 1u );
+            return (u32)( e - 1u );
         }
     }
 
@@ -401,7 +385,7 @@ pal_cmd_learn( u32 ci, u32 style )
 const gui_prim_t*
 pal_entry( u32 entry )
 {
-    return entry < s_bake.count ? &s_bake.rec[ entry ] : NULL;
+    return entry < s_bake.count ? &s_pal.rec[ entry ] : NULL;
 }
 
 void
@@ -431,7 +415,7 @@ pal_intern( const gui_prim_t* rec )
     }
 
     u32 entry = s_bake.count++;
-    s_bake.rec[ entry ] = *rec;
+    s_pal.rec[ entry ] = *rec;   /* straight into the one table (gui_render_pal.c) */
     pal_slot_insert( entry, hash );
 
     s_bake.pub_dirty = true;
@@ -440,10 +424,10 @@ pal_intern( const gui_prim_t* rec )
 
 /*  Fold this frame's interned entries into the published table.  Called from the flush,
     between the build that may have added them and the upload that has to carry them
-    (gui_render_submit.c).  Extends rather than republishes: entries below `count` are
-    byte-identical to what is already there, and an in-flight frame only ever names an index
-    below the count IT was uploaded with, so the bytes being written are ones no draw can be
-    reading. */
+    (gui_render_submit.c).  The entries' bytes are already in place -- pal_intern writes the
+    one table directly -- so publishing is only moving the count forward: entries below the
+    old count keep their meaning, and an in-flight frame only ever names an index below the
+    count IT was uploaded with. */
 
 void
 pal_publish_pending( void )
@@ -451,7 +435,7 @@ pal_publish_pending( void )
     if ( !s_bake.pub_dirty )
         return;
     s_bake.pub_dirty = false;
-    render_pal_extend( s_bake.rec, s_bake.count );
+    render_pal_publish( s_bake.count );
 }
 
 /*  Forget every scale.  The build re-notes each one as its windows land, so this runs at the top of
@@ -548,8 +532,7 @@ pal_epoch( void )
     s_bake.count  = 0;
 
     memset( s_bake.slot, 0, sizeof( s_bake.slot ) );
-    s_bake.memo = ~0u;
-    s_bake.hits = s_bake.misses = s_bake.memo_hits = s_bake.cmd_hits = 0;
+    s_bake.hits = s_bake.misses = s_bake.cmd_hits = 0;
     s_bake.full_drops = 0;
 
     /* Every parked answer names an entry of the table just dropped.  A stale one would fail its
@@ -561,7 +544,7 @@ pal_epoch( void )
     memset( s_bake.cand, 0, sizeof( s_bake.cand ) );
     s_bake.cand_count = 0;
 
-    render_pal_publish( s_bake.rec, s_bake.count );
+    render_pal_publish( 0 );
     s_bake.pub_dirty = false;
     return true;
 }
@@ -583,14 +566,10 @@ pal_dump( void )
     u32 probes = s_bake.hits + s_bake.misses;
 
     gui_log( GUI_LOG_INFO, "" );
-    /* memo share is of the HITS, not of all probes: it says how much of what the palette answered
-       came back without folding the record, which is the only part of a hit that costs anything. */
     gui_log( GUI_LOG_INFO, "---- STYLE PALETTE (%u of %u entries over %u style scale(s); %u/%u "
-                           "probes hit since the epoch, %.1f%%; %u of those hits memoed, %.1f%%) ----",
+                           "probes hit since the epoch, %.1f%%) ----",
              s_bake.count, (u32)GUI_PAL_MAX, s_bake.scale_count, s_bake.hits, probes,
-             probes ? 100.0f * (f32)s_bake.hits / (f32)probes : 0.0f,
-             s_bake.memo_hits,
-             s_bake.hits ? 100.0f * (f32)s_bake.memo_hits / (f32)s_bake.hits : 0.0f );
+             probes ? 100.0f * (f32)s_bake.hits / (f32)probes : 0.0f );
 
     /* What is still in flight: candidates are records seen once and waiting on a second build
        frame to earn an entry, so a large held count beside a small table is a UI drawing values
@@ -611,7 +590,7 @@ pal_dump( void )
            census folds the relocating atlas slot out of `tex` before hashing, and a raw entry would
            differ from the row it covers in that one lane and nothing else. */
         gui_prim_t key;
-        census_normalize( &key, &s_bake.rec[ i ] );
+        census_normalize( &key, &s_pal.rec[ i ] );
 
         char line[ 256 ];
         census_rec_line( line, sizeof( line ), i + 1u, &key );

@@ -426,13 +426,12 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
 
         for ( u32 k = 0; k < slot->cmd_count; ++k )
         {
-            u32                    ci = slot->cmd_base + k;
+            u32                   ci = slot->cmd_base + k;
             const tess_gpu_cmd_t* gc = &s_tess.gpu_cmds[ ci ];
-            const gui_gpu_cmd_t*  dc = &gc->cmd;
 
             if ( gc->vp != vp_index )
                 continue;
-            if ( dc->elem_count == 0 )
+            if ( gc->elem_count == 0 )
                 continue;
 
             ++s_render.state_draws;
@@ -450,7 +449,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
             /* elem_count is QUADS and qbase the arena-absolute first quad; the pull vertex stage
                divides VertexIndex (which includes first_vertex) back down. */
             rhi()->cmd_draw( cmd, &( rhi_draw_args_t ){
-                .vertex_count   = dc->elem_count * 6u,
+                .vertex_count   = gc->elem_count * 6u,
                 .instance_count = 1,
                 .first_vertex   = gc->qbase * 6u,
                 .first_instance = 0,

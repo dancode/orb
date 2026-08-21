@@ -29,28 +29,6 @@
 // clang-format off
 
 /*==============================================================================================
-
-    GPU Command -- backend-private GPU draw command after tessellation.
-
-    One bounded range of quads -- the unit the GPU sees (not exposed in gui.h) 
-    The public gui_cmd_t carries semantic shapes; the BUILD phase (gui_build_tess_*.c)
-    tessellates those into these.
-
-==============================================================================================*/
-
-typedef struct
-{
-    u32          elem_count;    // number of quads to draw (6 vertices each)
-
-    /* The texture of the command's FIRST primitive, kept for diagnostics only (the dashboard
-       tooltip).  It is no longer a batch key and no longer describes the whole command: the
-       texture rides the style record (gui_prim_t), so one command can span several. */
-
-    u32          tex_idx;       // first primitive's model|slot -- diagnostic, not a batch key
-
-} gui_gpu_cmd_t;
-
-/*==============================================================================================
     CPU Draw list -- the per-frame command buffer and segment table.
 
     Commands are pushed into cmds[] by the widget layer.  Whenever (win, z, vp, band) changes,

@@ -237,9 +237,10 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
    reuse path needs no fixup when the slot's absolute quad_base is unchanged. */
 typedef struct
 {
-    gui_gpu_cmd_t cmd;     // texture slot, element count (quads)
-    i16           vp;      // viewport this command targets (GUI_VP_INVALID = dormant volatile pad)
-    u16           lqbase;  // quad base relative to slot->quad_base (0-relative)
+    u32 elem_count;    // number of quads the command draws
+    u32 tex_idx;       // first primitive's model|slot -- diagnostic only (tess_gpu_cmd_t)
+    i16 vp;            // viewport this command targets (GUI_VP_INVALID = dormant volatile pad)
+    u16 lqbase;        // quad base relative to slot->quad_base (0-relative)
 
 } win_slot_cmd_t;
 

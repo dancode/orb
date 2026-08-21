@@ -13,8 +13,11 @@
     A quad naming one resolves it against pc.pal_base instead of pc.prim_base, and gets a record
     that cost the arena nothing.
 
-    This file owns the CPU-side table and its upload.  What goes IN it is decided in
-    gui_render_intern.c; this unit takes a set of records and makes them addressable.
+    This file owns the ONE CPU-side table and its upload.  What goes IN it is decided in
+    gui_render_intern.c, which writes entries straight into rec[] (unity visibility flows
+    downward; the intern unit is included after this one) and then publishes the new count.
+    There is no second staging copy: within an epoch the table is append-only and an entry's
+    bytes never change once written, so the only thing "publish" has to move is the count.
 
     UPLOAD.  One block per frame-in-flight (GUI_PAL_REGION_COUNT), because publish can land at any
     time -- a theme switch, a DPI change -- while earlier frames are still reading the old table.
@@ -27,70 +30,37 @@
 
 static struct
 {
-    gui_prim_t rec  [ GUI_PAL_MAX ];              // the published table, ready for the GPU
-    u32        count;                             // entries published (0 = palette unused)
+    gui_prim_t rec  [ GUI_PAL_MAX ];              // THE table -- intern writes it, upload reads it
+    u32        count;                             // entries published (0 = palette unused).  The
+                                                  //   intern unit's live count may run ahead of
+                                                  //   this between a build and its first flush
     u32        gen;                               // bumped by publish; what the blocks chase
     u32        block_gen[ GUI_PAL_REGION_COUNT ]; // generation each frame's block holds
 
 } s_pal;
 
 /*==============================================================================================
-    render_pal_publish -- install a table, replacing whatever was there.
+    render_pal_publish -- make rec[0, count) the addressable table.
 
-    Replaces rather than patches: every record in a table was learned against one style grid, so a
-    partial update would leave records from two different themes addressable at once.  Entries past
-    `count` keep whatever they held -- nothing names them, since an index is only ever handed out
-    for an entry of the live table.
+    Both callers preserve the invariant the retained cache depends on: entries below the old
+    count keep their bytes and their meaning.  pal_publish_pending GROWS the count (interning is
+    append-only, so a cached quad naming entry 12 still means entry 12 and no re-place is owed);
+    pal_epoch resets it to 0, and answers for that by forcing the full re-place itself.
 
-    Safe to call every frame; identical content still costs the two uploads, so the caller invokes
-    it when the style epoch moves, not on a timer.
+    The generation bump is what carries the change: each frame-in-flight block re-uploads at its
+    next flush.  The appended entries' bytes sit past what any in-flight frame was uploaded
+    with, so an earlier frame reading its own block cannot be reading them.
 ==============================================================================================*/
 
 static void
-render_pal_publish( const gui_prim_t* recs, u32 count )
+render_pal_publish( u32 count )
 {
     if ( count > GUI_PAL_MAX )
-    {
-        GUI_WARN_ONCE( "style palette overflow: %u entries published, cap %u -- the tail is "
-                       "dropped and its styles fall back to per-slot records.\n",
-                       count, (u32)GUI_PAL_MAX );
         count = GUI_PAL_MAX;
-    }
-
-    if ( count )
-        memcpy( s_pal.rec, recs, count * sizeof( gui_prim_t ) );
     s_pal.count = count;
 
     /* A fresh generation every publish.  The blocks compare rather than clear a flag, so a publish
        that lands between two surfaces of the same frame still reaches both frames' blocks. */
-    ++s_pal.gen;
-}
-
-/*==============================================================================================
-    render_pal_extend -- grow the table without disturbing what is already in it.
-
-    The publish above replaces, and a replace invalidates every palette index in cached
-    geometry. This one only APPENDS: entries below the current count keep their bytes and
-    their meaning, so a cached quad naming entry 12 still means entry 12 and no re-place is
-    owed.  That is the whole reason interning can run during tessellation while an epoch
-    reset cannot (gui_render_intern.c).
-
-    Still a generation bump, because the blocks have to carry the new tail before a draw
-    names it.  The bytes it writes sit past what any in-flight frame was uploaded with, so an
-    earlier frame reading its own block cannot be reading them.
-==============================================================================================*/
-
-static void
-render_pal_extend( const gui_prim_t* recs, u32 count )
-{
-    if ( count > GUI_PAL_MAX )
-        count = GUI_PAL_MAX;
-    if ( count <= s_pal.count )
-        return;
-
-    memcpy( &s_pal.rec[ s_pal.count ], &recs[ s_pal.count ],
-            ( count - s_pal.count ) * sizeof( gui_prim_t ) );
-    s_pal.count = count;
     ++s_pal.gen;
 }
 

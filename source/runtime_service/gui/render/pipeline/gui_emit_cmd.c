@@ -38,6 +38,7 @@ static const u8 k_cmd_hash_len[] = {
     [GUI_CMD_RECT_OUTLINE]  = sizeof(( (gui_cmd_t*)0 )->rect_outline ),
     [GUI_CMD_FRAME]         = sizeof(( (gui_cmd_t*)0 )->frame ),
     [GUI_CMD_TRIANGLE]      = sizeof(( (gui_cmd_t*)0 )->tri ),
+    [GUI_CMD_BEZIER]        = sizeof(( (gui_cmd_t*)0 )->bezier ),
     [GUI_CMD_LINE]          = sizeof(( (gui_cmd_t*)0 )->line ),
     [GUI_CMD_DASHED_LINE]   = sizeof(( (gui_cmd_t*)0 )->dash ),
     [GUI_CMD_RECT_GRADIENT] = sizeof(( (gui_cmd_t*)0 )->gradient ),
@@ -152,6 +153,12 @@ draw_hash_cmd( const gui_cmd_t* c )
             break;
 
         default:
+            /* Every plain POD command has a non-zero entry above; zero means a command type was
+               added without registering its payload length, and its bytes would silently never
+               fold -- the retained cache would treat every change to it as "unchanged". */
+            ORB_ASSERT_MSG( k_cmd_hash_len[ c->type ] != 0,
+                            "gui command type missing from k_cmd_hash_len -- its payload "
+                            "does not hash and the retained cache cannot see it change" );
             h = fnv1a( h, &c->rect, k_cmd_hash_len[ c->type ] );
             break;
     }

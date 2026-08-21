@@ -31,21 +31,24 @@
 ==============================================================================================*/
 // clang-format off
 
-/* One GPU command plus its placement -- the AOS command record. Every consumer (the merge
-   check, the flush loop, the volatile copy-back, the dashboard capture) reads a WHOLE command
-   at a given index; none sweeps a single field across all commands, so the fields that belong
-   to one command live together in one cache line rather than in parallel arrays keyed on the
-   same index. qbase is explicit (not accumulated from elem_counts at flush) so the quad arena
-   may hold reserved gaps -- volatile block headroom -- between commands.
-   
-   Mirrors dash_cmd_t (the snapshot type in gui_render.h), which was AOS from the start; 
-   this is the live half catching up. */
+/* One GPU draw command -- the AOS command record.  Every consumer (the merge check, the flush
+   loop, the volatile copy-back, the dashboard capture) reads a WHOLE command at a given index;
+   none sweeps a single field across all commands, so the fields that belong to one command live
+   together in one cache line rather than in parallel arrays keyed on the same index.  qbase is
+   explicit (not accumulated from elem_counts at flush) so the quad arena may hold reserved
+   gaps -- volatile block headroom -- between commands. */
 
 typedef struct
 {
-    gui_gpu_cmd_t cmd;      // elem_count (quads), tex_idx -- the GPU draw-call unit
-    i16           vp;       // viewport for this command (GUI_VP_INVALID = dormant volatile pad)
-    u16           qbase;    // quad slot -- first quad of command (its draw's first_vertex / 6)
+    u32 elem_count;    // number of quads to draw (the flush multiplies by 6 at the cmd_draw)
+
+    /* The texture of the command's FIRST primitive, kept for diagnostics only (the dashboard
+       tooltip).  Not a batch key and not a description of the whole command: the texture rides
+       the style record (gui_prim_t), so one command can span several. */
+    u32 tex_idx;
+
+    i16 vp;            // viewport for this command (GUI_VP_INVALID = dormant volatile pad)
+    u16 qbase;         // quad slot -- first quad of command (its draw's first_vertex / 6)
 
 } tess_gpu_cmd_t;
 

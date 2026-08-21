@@ -168,9 +168,10 @@ tess_ensure_gpu_cmd( void )
        may go on to span several. */
 
     s_tess.gpu_cmds[ s_tess.cmd_count++ ] = ( tess_gpu_cmd_t ){
-        .cmd   = { .elem_count = 0, .tex_idx = s_tess.cur_tex },
-        .vp    = (i16)s_tess.cur_vp,
-        .qbase = (u16)s_tess.quad_count,
+        .elem_count = 0,
+        .tex_idx    = s_tess.cur_tex,
+        .vp         = (i16)s_tess.cur_vp,
+        .qbase      = (u16)s_tess.quad_count,
     };
     return true;
 }
@@ -290,10 +291,7 @@ tess_prim_local( void )
        no arena entry, and the same entry serves every other window drawing the same shape, which
        is the duplication no memo depth can reach (see TESS_PRIM_MEMO_DEPTH above).  A hit returns
        an ABSOLUTE index the flush resolves against pc.pal_base rather than a slot-local one; both
-       ride the same field and the shader tells them apart by range (gui.h, GUI_PAL_FIRST).
-       pal_find carries a one-deep memo of its own, which now covers only the mirror of the
-       case above: the palette half of a palette/arena alternation, where the answer memo
-       holds the arena record and this probe would otherwise re-fold and re-probe. */
+       ride the same field and the shader tells them apart by range (gui.h, GUI_PAL_FIRST). */
 
     u32 entry = pal_find( &s_tess.cur_prim );
     if ( entry < (u32)GUI_PAL_MAX )
@@ -342,6 +340,19 @@ tess_prim_local( void )
    and still one QUARTER of a record each. */
 
 #define TESS_FX_PER_PAGE   ( GUI_PRIM_ROWS / GUI_FX_ROWS )   /* a style record is four fx records */
+
+/* True when the ambient instance extras pack to the all-default fx record -- exactly the case
+   tess_fx_local( 0, 0 ) answers 0 for.  A caller that only needs the ANSWER must test this
+   instead of calling tess_fx_local: that function APPENDS a row when the ambient is non-empty,
+   so using it as a predicate leaks an fx row per probe. */
+static inline bool
+tess_fx_ambient_empty( void )
+{
+    return gui_xform_pack( s_tess.cur_rot_c, s_tess.cur_rot_s ) == 0u
+        && gui_phase_pack( s_tess.cur_phase ) == 0u
+        && s_tess.cur_col_border == 0u
+        && s_tess.cur_swell == 0.0f;
+}
 
 static u32
 tess_fx_local( u32 uv0, u32 uv1 )
@@ -585,9 +596,12 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
        keeps everything that makes plain text cheap -- the table ID (repack-stable, no per-char
        fx record) and the push-block texture -- and adds the ONE style record the whole run
        dedups onto.  Only while the instance extras are empty: the layout spent its fx bits on
-       the style, so a rotated styled run falls through to SHAPED, which has room for both. */
+       the style, so a rotated styled run falls through to SHAPED, which has room for both.
+       The emptiness test must be the side-effect-free one -- tess_fx_local ALLOCATES a row
+       when the ambient is non-empty, so probing with it here cost a wasted fx row per glyph
+       on every rotated styled run (the SHAPED path below allocates the real one). */
     else if ( glyph_id != GUI_GLYPH_ID_NONE && s_tess.cur_prim.field == 0u
-           && tess_fx_local( 0u, 0u ) == 0u )
+           && tess_fx_ambient_empty() )
     {
         ORB_ASSERT( gui_tex_index( tex_idx ) == ( gui_tex_mode( tex_idx ) == GUI_TEX_SDF
                                                   ? res_sdf_idx() : res_atlas_idx() ) );
@@ -640,7 +654,7 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
 counted:
 
     /* elem_count counts QUADS under this backend; the flush multiplies by six at the draw. */
-    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].cmd.elem_count += band ? GUI_QUAD_BAND_COUNT : 1;
+    s_tess.gpu_cmds[ s_tess.cmd_count - 1 ].elem_count += band ? GUI_QUAD_BAND_COUNT : 1;
 
     if ( s_tess.cur_is_text && !s_volatile_patching )
         s_tess.slot_text_quads++;
