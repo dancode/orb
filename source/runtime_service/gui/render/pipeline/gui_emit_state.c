@@ -5,7 +5,7 @@
     EMIT is the pipeline's first phase: widgets push semantic gui_cmd_t records (no vertices yet)
     that BUILD later tessellates.  It spans six files, included in this order by gui_render.c:
 
-        gui_emit_state.c   this file -- s_draw, the frame reset, the clip stack, the ambient
+        gui_emit_state.c   this file: s_draw, the frame reset, the clip stack, the ambient
         gui_emit_cmd.c     the command record: claim, stamp, hash, seal
 
         types of emitted shapes, each in its own file:
@@ -200,10 +200,11 @@ static struct
     gui_render.c).
 
     These run on the two hottest loops in the whole backend -- once per emitted command
-    (draw_hash_cmd) and once per style-record miss (pal_hash) -- and both are pure latency: an
-    FNV fold is a serial xor/multiply chain, so the byte count IS the cost.  Everything they
-    hash is 4-byte data (f32 coordinates, packed colours, whole gui_prim_t records), so the
-    unit of folding is the WORD, with a byte tail for the odd short field.
+    (draw_hash_cmd) and once per style-record miss (pal_hash) -- and both are pure latency:
+    an FNV fold is a serial xor/multiply chain, so the byte count IS the cost.  
+    
+    Everything they hash is 4-byte data (f32 coords, packed colours, whole gui_prim_t records), 
+    so the unit of folding is the WORD, with a byte tail for the odd short field.
 
     The extra `h ^= h >> 15` is what makes a word fold safe to substitute for four byte folds.
     A multiply propagates bits upward only, so without it a difference confined to a value's

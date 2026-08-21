@@ -5,126 +5,81 @@
     --------------------------------------------------------------------------------------------
     Overview:
 
-    This is the part of the GUI that actually puts pixels on the screen. It is a small,
-    general-purpose 2d renderer -- rectangles, lines, and text turned into batches of QUAD
-    RECORDS -- that has no idea what a "widget" is. Everything above it (layout, style, widgets)
-    eventually boils down to a handful of simple draw commands ("fill this rect," "draw this
-    line of text"), and this unit's only job is to turn that command list into records the GPU
-    can expand, and submit them each frame.
+    The part of the GUI that puts pixels on the screen: a small 2d renderer -- rects, lines,
+    text -- batched into QUAD RECORDS, with no idea what a "widget" is. Everything above it
+    (layout, style, widgets) boils down to simple draw commands ("fill this rect", "draw this
+    text"); this unit's only job is turning that command list into GPU-expandable records and
+    submitting them each frame. It owns the whole pixel pipeline: collect the frame's draw
+    commands, tessellate each shape into a 16-byte record (CPU-side), stroke lines and paths,
+    flush to the GPU, and a debug overlay for watching it all run.
 
-    It owns the whole pixel pipeline: collecting the draw commands for a frame, turning each
-    shape into one 16-byte record (the CPU tessellator), stroking lines and paths, flushing
-    everything to the GPU, and a debug overlay for watching all of that while it runs.
+    It never sees the interact server -- no ids, no hover/click, input stays entirely above this
+    layer -- and it does not know what a font or icon actually IS; that belongs to the draw unit
+    one level up (gui_draw.c), which packs glyph/icon pixels into a shared atlas and tells this
+    unit where to find them.
 
-    Two things this unit deliberately does not know about. First, it never sees the interact
-    server -- no ids, no widget state, no hover or click -- input and interaction stay entirely
-    above this layer. Second, it does not know what a font or an icon actually IS; that
-    knowledge belongs to the draw unit one level up (gui_draw.c), which packs glyph and icon
-    pixels into a shared texture and tells this unit where in that texture to find them.
-
-    Include order matters: each file can reference statics from files included above it. That
-    order lives in the #include list below, not in the filenames. Two subfolders name the two
-    halves of the backend:
-
-        resource/  -- the GPU-backed textures this unit owns (the shared atlases), each with
-                       its own init/shutdown/query functions that the pipeline below reads
-                       from, never reaching into pipeline/ itself.
-
-        pipeline/  -- the per-frame path a draw command takes: EMIT (collect the command list)
-                       -> BUILD (turn it into quad records, reusing cached geometry where nothing
-                       changed) -> RENDER (send it to the GPU). Named for the stage each file
-                       implements.
-
-    Everything else sits at the render/ root: the debug overlay, and three "capture" files that
-    each snapshot the pipeline's internal state for some outside consumer -- the debug
-    dashboard, text selection, the frame stepper -- that is not allowed to reach into the
-    pipeline directly.
+    Include order matters: each file sees statics from files included above it:
     
+    Three subfolders name the backend's parts: 
+    
+        resource:   The GPU atlases this unit owns.
+        pipeline:   The per-frame EMIT -> BUILD -> RENDER path.
+        utility:    The debug overlay, dashboard, text selection, frame stepper.
+                  
+    Only gui_render.h sits at render/ root.
+
     --------------------------------------------------------------------------------------------
-    Resource:
+    Taxonomy:
 
-    resource/gui_atlas.h/.c         -- shared GPU-atlas asset: gui_atlas_t, gui_atlas_create/upload/destroy
-    resource/gui_res_atlas.h/.c     -- the THREE resource atlases over one packer: the R8 COVERAGE
-                                        atlas (one texture, one bindless slot) fonts and icons pack
-                                        into so all core UI draws batch together, the RGBA SPRITE
-                                        atlas for authored art, and the SDF atlas for distance-field
-                                        glyphs -- the latter two created lazily, on first use
+    resource/
+     gui_atlas.h/.c        -- one GPU atlas texture: create/upload/destroy, either pixel format
+     gui_res_atlas.h/.c    -- the three atlases over that primitive: R8 COVERAGE (fonts +
+                              icons share one tex_idx so both batch), RGBA SPRITE, SDF (latter two lazy)
+
+    pipeline/
+     gui_emit_state.c      -- EMIT: draw list state -- s_draw, draw_reset, clip stack, ambient
+     gui_emit_cmd.c        -- EMIT: command record -- draw_cmd_claim/_open/_seal, draw_hash_cmd
+     gui_emit_shape.c      -- EMIT: fills, pictures, gradients, draw_push_icon
+     gui_emit_fx.c         -- EMIT: SDF surfaces -- shadows, sectors, patterns, lattices
+     gui_emit_edge.c       -- EMIT: outlines, bezels, the bare triangle
+     gui_emit_text.c       -- EMIT: glyph runs -- draw_push_text, _shadow, _xf
+     gui_emit_path.c       -- EMIT: line/path stroking -- draw_line, draw_polyline, path_*
+     gui_build_tess.c      -- BUILD: CPU tessellator -- s_tess, tess_reset, tess_dispatch
+     gui_build_volatile.c  -- BUILD: volatile-widget inline-emit replay (see gui_render.h)
+     gui_build_cache.c     -- BUILD: retained frame-geometry cache -- cache_build_frame, s_cache
+     gui_render_init.c     -- RENDER: shared GPU resources, created once -- pipeline, samplers, push-constant layout
+     gui_render_submit.c   -- RENDER: per-surface GPU submit -- gui_render_flush, debug-mode/time setters
+
+    utility/
+     gui_debug_overlay.c   -- DEBUG OVERLAY: second draw list, flushed on top (Debug only) --
+                              reads resource/ AND pipeline/ internals, which is why it can't live in either subfolder
+     gui_dash_capture.c    -- CAPTURE: pipeline snapshot for the dashboard shell (GUI_PIPELINE_DASHBOARD)
+     gui_select_capture.c  -- CAPTURE: flagged windows' text runs, for chrome's selection controller
+     gui_step_capture.c    -- CAPTURE: band-0 command list + the frozen-frame reload (GUI_CMD_STEPPER)
+     gui_render_mem.c      -- MEMORY ACCOUNTING: sums every backend static's sizeof -- included last so it sees them all
+
     --------------------------------------------------------------------------------------------
-    Pipeline:
+    Frame Pipeline:
 
-    pipeline/gui_emit_state.c       -- EMIT: the draw list itself: s_draw, draw_reset, the clip stack, the ambient
-    pipeline/gui_emit_cmd.c         -- EMIT: the command record: draw_cmd_claim / _open / _seal, draw_hash_cmd
-    pipeline/gui_emit_shape.c       -- EMIT: fills, pictures, gradients (incl. draw_push_icon)
-    pipeline/gui_emit_fx.c          -- EMIT: the SDF surfaces: shadows, sectors, patterns, lattices
-    pipeline/gui_emit_edge.c        -- EMIT: outlines, bezels, the bare triangle
-    pipeline/gui_emit_text.c        -- EMIT: glyph runs: draw_push_text, _shadow, _xf (text pool)
-    pipeline/gui_emit_path.c        -- EMIT: line / path stroking: draw_line, draw_polyline, path_* (uses s_draw)
-    pipeline/gui_build_tess.c       -- BUILD: CPU tessellation engine: s_tess, tess_reset, tess_dispatch, tess_* helpers
-    pipeline/gui_build_volatile.c   -- BUILD: volatile-widget inline-emit replay (see gui_render.h)
-    pipeline/gui_build_cache.c      -- BUILD: retained frame-geometry cache: cache_build_frame, s_cache, s_dispatch, the build_* seam.    
-    pipeline/gui_render_init.c      -- RENDER: shared GPU resources, created once: pipeline, samplers,
-                                        the push-constant layout (render_init/shutdown, TU-local)
-    pipeline/gui_render_submit.c    -- RENDER: per-surface GPU submit: gui_render_flush, the
-                                        debug-mode/time setters
-    --------------------------------------------------------------------------------------------
-    Utility:
+    EMIT (real frames only): widgets write shape lines to a list -- nothing draws yet. Idle
+    frame: skipped, the previous frame's records are reused as-is.
 
-    gui_debug_overlay.c             -- DEBUG OVERLAY: bolt-on second draw list, flushed on top (Debug only).  Stays
-                                        at the render/ root -- it reads resource/ AND pipeline/ internals plus the
-                                        frontend's DBG_* capture calls, so it does not belong to either subfolder.
+    BUILD - diff: hash each window's list and compare to last frame; only changed windows
+    proceed. Idle frame: skipped too.
 
-    gui_dash_capture.c              -- CAPTURE: pipeline snapshot for the dashboard shell (GUI_PIPELINE_DASHBOARD)
-    gui_select_capture.c            -- CAPTURE: flagged windows' text runs, for chrome's selection controller
-    gui_step_capture.c              -- CAPTURE: band-0 command list + the frozen-frame reload (GUI_CMD_STEPPER)
+    BUILD - tessellate: changed windows become 16-byte quad records (gui_quad_t) in one CPU
+    arena, one record per shape, no vertex or index buffer. Unchanged windows keep their
+    existing records untouched, exactly where they were. Each record's clip tag is a permanent
+    address (cache slot x 16 + which clip) into that window's fixed shelf, so cached records
+    stay correct forever.
 
-    gui_render_mem.c                -- MEMORY ACCOUNTING: backend_memory sizeof-sums every backend static;
-                                        must be included last so it sees them all.
-    --------------------------------------------------------------------------------------------
-    Frame Overview:
-
-    Step 1 -- Write the shopping list (EMIT).
-
-    * Every widget you call (button, text, ...) doesn't draw anything.
-    * It just writes a line on a list: "rectangle here, this color", "text there, clipped to this".
-    * This is essentially a list of shapes.
-    * This only happens on a real frame, but if you didn't touch anything and nothing animated,
-      we don't even write the list, we just reuse the previous frame's records.
-
-    Step 2 -- Compare with the previous shape list (BUILD: diff).
-
-    * For each window we hash its lines and compare with last frame. 
-      "Same as before? Great, don't redo your work."
-    * Only windows whose list actually changed go to step 3. 
-    * On a totally idle frame, this whole step is skipped too!
-
-    Step 3 -- Turn the shapes into quad records (BUILD: tessellate).
-
-    * Changed windows get turned into 16-byte quad records (gui_quad_t) in one big CPU-side
-      arena -- one record per shape, no vertex buffer and no index buffer anywhere.
-    * Unchanged windows keep the records they already had, sitting exactly where they were
-      last frame -- nothing moves, nothing is repacked.
-    * Each record carries its own clip tag: "clip me with rect #N".
-    * N is a permanent address: this window's fixed shelf in the clip cupboard
-      (its cache slot x 16 + which clip).
-    * Because the address is permanent, cached records stay correct forever.
-
-    Step 4 -- Ship it (RENDER: flush, every presented frame).
-
-    * This is the part that talks to the GPU, and here's exactly what gets uploaded now:
-    * Quad records: the live span of the arena, copied into this frame's region of the global
-      quad table. The GPU rotates between 2 regions, so each frame's region must contain
-      everything, changed or not.
-    * Clip rects: usually nothing at all. Each window's clips live on its fixed shelf in the GPU cupboard.
-      A shelf is re-sent only if a little "stale" flag says its contents changed (max 512 bytes per shelf).
-      Stable frame = zero clip bytes.
-    * Push constants: one single push per surface -- matrix, samplers, clock, and "the cupboard starts here".
-
-    * Then one bufferless draw call per window, back to front: cmd_draw of 6 * N bare vertices;
-      the vertex stage pulls each record by SV_VertexID and expands the corners itself, and the
-      fragment shader does the clipping by reading the shelf each quad named.
-
-    * So per frame: quad records always (that's the frames-in-flight tax), clips almost never,
-      push constants once. And if the app is fully idle and nothing presents -- nothing at all.
+    RENDER - flush (every presented frame): quad records -- the live arena span, copied into
+    this frame's region of the global quad table (2 GPU-rotated regions, so every region needs
+    the full set, changed or not). Clip rects -- almost never; a shelf resends only if its stale
+    flag is set (max 512 B/shelf), so a stable frame ships zero clip bytes. Push constants -- one
+    per surface (matrix, samplers, clock, shelf-table base). Then one bufferless draw call per
+    window, back to front (6*N vertices; the vertex stage expands corners via SV_VertexID, the
+    fragment stage clips by reading the shelf each quad names). Fully idle app: nothing at all.
 
 ==============================================================================================*/
 
@@ -152,11 +107,16 @@
     Unity build
 ==============================================================================================*/
 
-// resource/ -- foundation: the GPU-atlas helper, then the resource atlases, then fonts + icons +
-// sprites built on them.  gui_atlas.h/.c factors out the raw create/upload/destroy of one GPU
-// texture at either pixel format; gui_res_atlas.h/.c owns both atlases (one texture and one
-// bindless slot each) that fonts, icons and sprites pack into as tenants, so everything of a kind
-// resolves to one tex_idx -- and since that word rides the vertex, the kinds batch together too.
+
+/*==============================================================================================
+    GUI Resources : the texture atlases fonts, icons, sprites and SDF glyphs pack into.
+
+    gui_atlas is the primitive: create/upload/destroy of one GPU texture, in either pixel
+    format. gui_res_atlas is the policy layer on top of it -- it owns the three atlases
+    (R8 coverage, RGBA sprite, SDF) as separate packers, each with its own texture and
+    bindless slot, and assigns every tenant a tex_idx into the atlas it belongs to. Since
+    tex_idx rides the vertex, draws into the same atlas batch together for free.
+==============================================================================================*/
 
 #include "runtime_service/gui/render/resource/gui_atlas.h"
 #include "runtime_service/gui/render/resource/gui_atlas.c"
@@ -169,9 +129,8 @@
 
 /*==============================================================================================
     Pipeline Emit
-==============================================================================================*/
-/*
-    the semantic draw list (s_draw) and the pushes built on it, split by what each
+
+    The semantic draw list (s_draw) and the pushes built on it, split by what each
     file emits.  The order is a dependency chain and not a preference: _state owns s_draw and
     the ambient every later file reads, _cmd owns the claim/hash/seal every push calls, and
     _shape defines draw_push_rect_filled / _outline, which the bezel, the disc, the icon and
@@ -180,7 +139,8 @@
     draw_push_icon lives here rather than with the icon resource (the draw unit's now): 
     it queues a semantic command like every other draw_push_*, resolving UVs through the 
     sprite source contract instead of the resource reaching up into EMIT itself. 
-*/
+
+==============================================================================================*/
 
 #include "runtime_service/gui/render/pipeline/gui_emit_state.c"
 #include "runtime_service/gui/render/pipeline/gui_emit_cmd.c"
@@ -194,7 +154,7 @@
 // arena entries each one costs across window slots.  Before gui_build_tess.c because that file
 // calls its hooks; depends on nothing but the public gui types.  Compiled out unless
 // GUI_PRIM_CENSUS.
-#include "runtime_service/gui/render/gui_prim_census.c"
+#include "runtime_service/gui/render/utility/gui_prim_census.c"
 
 /*==============================================================================================
     Pipeline Build
@@ -251,33 +211,33 @@
 #include "runtime_service/gui/render/pipeline/gui_render_submit.c"
 
 /*==============================================================================================
-    Debug / Capture / Memory Accounting
+    Utility: Debug / Capture / Memory Accounting
 ==============================================================================================*/
 
-// DEBUG OVERLAY: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY.  Stays at the
-// render/ root -- see the file banner above for why.
-#include "runtime_service/gui/render/gui_debug_overlay.c"
+// DEBUG OVERLAY: a parallel mini-pipeline, compiled out unless GUI_DEBUG_OVERLAY.  Lives in
+// utility/ -- see the file banner above for why.
+#include "runtime_service/gui/render/utility/gui_debug_overlay.c"
 
 // PIPELINE DASHBOARD capture: snapshots the pipeline at the two capture points for the shell
 // (gui_dashboard.c) to draw with the standard API.  Compiled out unless GUI_PIPELINE_DASHBOARD.
 // Last so it sees every pipeline static it snapshots (s_draw, s_tess, the slot tables,
 // s_volatile, s_tess_gen_next).
-#include "runtime_service/gui/render/gui_dash_capture.c"
+#include "runtime_service/gui/render/utility/gui_dash_capture.c"
 
 // TEXT-SELECTION run capture: copies flagged windows' text commands into a persistent run
 // buffer at the build seam for the chrome unit's selection controller (chrome/window/gui_select.c).
 // Always compiled (a product feature).  Last (with the captures below) so it sees s_draw.
-#include "runtime_service/gui/render/gui_select_capture.c"
+#include "runtime_service/gui/render/utility/gui_select_capture.c"
 
 // COMMAND STEPPER capture + frozen-frame replay: snapshots the band-0 command list at the build
 // seam and pre-loads it back at every draw_reset while frozen.  Compiled out unless
 // GUI_CMD_STEPPER.  Last (with the dash capture) so it sees the emit statics it copies (s_draw).
-#include "runtime_service/gui/render/gui_step_capture.c"
+#include "runtime_service/gui/render/utility/gui_step_capture.c"
 
 // MEMORY ACCOUNTING: sizeof-sums every backend static into the gui_mem_stats_t buckets.  MUST
 // stay the very last include -- unity visibility only flows downward, and the full-accounting
 // contract is that every static above is in scope here.
-#include "runtime_service/gui/render/gui_render_mem.c"
+#include "runtime_service/gui/render/utility/gui_render_mem.c"
 
 /*==============================================================================================
     Backend lifecycle seam -- the entry point the frame orchestrator (gui_init / gui_shutdown,

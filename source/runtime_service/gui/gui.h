@@ -2825,15 +2825,14 @@ typedef struct
    before moving a number -- and when content goes missing, the build's overflow warning names
    which of these it was. */
 
-#define GUI_MAX_QUADS        ( 8192 * 2 )       /* per-frame quad records (gui_quad_t)              */
-#define GUI_MAX_PRIMS        ( 512 * 2 )        /* per-frame style records (gui_prim_t)             */
-#define GUI_MAX_CMDS         ( 1024 * 2 )       /* per-frame semantic draw commands                 */
-#define GUI_MAX_PATH_PTS     2048            /* per-frame total polyline / path point pool       */
-#define GUI_MAX_RECT_ENTRIES 4096            /* per-frame total draw_rects batch pool            */
-#define GUI_MAX_TEXT_POOL    ( 16 * 1024 )   /* per-frame flat string copy pool for text cmds    */
-#define GUI_MAX_CLIP_RECTS   64              /* per-frame clip table entries; u8 index caps at 256 */
-
-#define GUI_CLIP_DEPTH       32                      /* push_clip / pop_clip nesting depth       */
+#define GUI_MAX_QUADS           ( 8192 * 2 )   // per-frame quad records (gui_quad_t)
+#define GUI_MAX_PRIMS           ( 512 * 2 )    // per-frame style records (gui_prim_t)
+#define GUI_MAX_CMDS            ( 1024 * 2 )   // per-frame semantic draw commands
+#define GUI_MAX_PATH_PTS        ( 2048 )       // per-frame total polyline / path point pool
+#define GUI_MAX_RECT_ENTRIES    ( 4096 )       // per-frame total draw_rects batch pool
+#define GUI_MAX_TEXT_POOL       ( 16 * 1024 )  // per-frame flat string copy pool for text cmds
+#define GUI_MAX_CLIP_RECTS      ( 64 )         // per-frame clip table entries; u8 index caps at 256
+#define GUI_CLIP_DEPTH          ( 32 )         // push_clip / pop_clip nesting depth
 
 /* Style records are counted per STATE CHANGE, not per quad -- a glyph run is one, a run of flat
    fills sharing a texture and a clip is one, and identically-styled shapes dedup across
@@ -2929,17 +2928,17 @@ static inline u32  gui_style_pal   ( u32 entry ) { return GUI_PAL_FIRST + entry;
 
     A full accounting of what the gui system holds, split by WHERE it lives:
 
-      - GPU:        Device memory -- per-viewport geometry buffers, atlas textures, and (Debug)
+    - GPU:          Device memory -- per-viewport geometry buffers, atlas textures, and (Debug)
                     the debug overlay's own buffers.  Dynamic: created at init / viewport_open,
                     released at shutdown / viewport_close.
 
-      - CPU static: EVERY fixed backend buffer baked into the image (.bss/.rdata) -- the draw
+    - CPU static:   EVERY fixed backend buffer baked into the image (.bss/.rdata) -- the draw
                     list, tessellation staging, retained cache, font/atlas/icon registries,
                     render state + embedded shaders, capture buffers, debug tooling.  Present
                     for the whole run whether one window is open or fifty; summed exhaustively
                     in render/gui_render_mem.c (the accounting contract lives there).
 
-      - CPU heap:   One malloc block per live context (header + state / popup / window /
+    - CPU heap:     One malloc block per live context (header + state / popup / window /
                     viewport / dock pools).  Dynamic: grows only when a secondary context is
                     created.
 

@@ -1,12 +1,12 @@
 /*==============================================================================================
     gui/render/pipeline/gui_emit_cmd.c -- The command record: claim, stamp, hash, seal.
 
-    The machinery every draw_push_* shares.  draw_cmd_claim spends a slot and stamps the ambient
-    (clip_idx, vp) pair; draw_cmd_open runs the gates that decide whether a slot may be spent at
-    all; draw_cmd_seal bakes the retained-cache hash while the payload is still L1-hot.
+    The machinery every draw_push_* shares. draw_cmd_claim spends a slot and stamps the 
+    ambient (clip_idx, vp) pair; draw_cmd_open runs the gates that decide whether a slot
+    may be spent at all; draw_cmd_seal bakes the retained-cache hash while the payload 
+    is still L1-hot.
 
-    Between gui_emit_state.c (owns s_draw and the fnv1a helpers this folds through) and the shape
-    files that call it.
+    Between gui_emit_state.c owns the s_draw and the fnv1a helpers this folds through.
 
 ==============================================================================================*/
 // clang-format off
@@ -34,6 +34,7 @@
    as the generic payload pointer. */
 
 static const u8 k_cmd_hash_len[] = {
+
     [GUI_CMD_RECT_FILLED]   = sizeof(( (gui_cmd_t*)0 )->rect ),
     [GUI_CMD_RECT_OUTLINE]  = sizeof(( (gui_cmd_t*)0 )->rect_outline ),
     [GUI_CMD_FRAME]         = sizeof(( (gui_cmd_t*)0 )->frame ),

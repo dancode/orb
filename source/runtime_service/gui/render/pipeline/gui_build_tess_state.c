@@ -45,6 +45,7 @@ typedef struct
     /* The texture of the command's FIRST primitive, kept for diagnostics only (the dashboard
        tooltip).  Not a batch key and not a description of the whole command: the texture rides
        the style record (gui_prim_t), so one command can span several. */
+
     u32 tex_idx;
 
     i16 vp;            // viewport for this command (GUI_VP_INVALID = dormant volatile pad)
