@@ -89,37 +89,44 @@ uint style_row( uint style )
     return rec * PRIM_ROWS;
 }
 
-// The style record's OP bits, mirroring gui.h's GUI_OP_*.  Both stages read them -- the fragment
-// to run the cascade, the vertex stage to size a band covering -- so this is the one shader-side
-// copy.  Keep it in step with gui.h and rebuild.
-#define OP_BAND         0x01u
-#define OP_CUT          0x02u
-#define OP_INSET        0x04u
-#define OP_PULSE        0x08u
-#define OP_STRIPES      0x10u
-#define OP_SELF         0x20u
-#define OP_GRAD         0x40u
-#define OP_GRAD_RADIAL  0x80u
-#define OP_GRAD_CONIC   0x100u
-#define OP_SPIN         0x200u
-#define OP_DASH         0x400u
-#define OP_DITHER       0x800u
-#define OP_FRAME        0x1000u
-#define OP_GLOW         0x20000u
-#define OP_REPEAT       0x40000u
-#define OP_REPEAT_POLAR 0x80000u
-#define OP_GRAD_ALONG   0x100000u
-#define OP_GRAD_CELL    0x200000u
-#define OP_CELL_FILL    0x400000u
-#define OP_CUT_SHAPE    0x800000u
-#define OP_SWELL        0x1000000u
+// The style record's OP bits and the field enum, mirroring gui_prim.h's GUI_OP_* and
+// gui_fx_mode_t.  Both stages read the ops -- the fragment to run the cascade, the vertex
+// stage to size a band covering -- so this is the one shader-side copy.  Keep it in step with
+// gui_prim.h and rebuild.
+#define OP_BAND         0x1u
+#define OP_CUT          0x2u
+#define OP_INSET        0x4u
+#define OP_GLOW         0x8u
+#define OP_SWELL        0x10u
+#define OP_CUT_SHAPE    0x20u
+#define OP_SELF         0x40u
+#define OP_GRAD         0x80u
+#define OP_GRAD_RADIAL  0x100u
+#define OP_GRAD_CONIC   0x200u
+#define OP_GRAD_ALONG   0x400u
+#define OP_GRAD_CELL    0x800u
+#define OP_CELL_FILL    0x1000u
+#define OP_FRAME        0x2000u
+#define OP_TILE_U       0x4000u
+#define OP_TEXT_EDGE    0x8000u
+#define OP_CHECKER      0x10000u
+#define OP_GRID         0x20000u
+#define OP_STRIPES      0x40000u
+#define OP_REPEAT       0x80000u
+#define OP_REPEAT_POLAR 0x100000u
+#define OP_PULSE        0x200000u
+#define OP_SPIN         0x400000u
+#define OP_DASH         0x800000u
+#define OP_DITHER       0x1000000u
 
-// The PATTERN ops: what a shape is filled or cut WITH, rather than what shape it is.  All read
-// row 7 and at most one is live per record.
-#define OP_TILE_U       0x2000u
-#define OP_TEXT_EDGE    0x4000u
-#define OP_CHECKER      0x8000u
-#define OP_GRID         0x10000u
+#define FX_NONE         0u
+#define FX_BOX          1u
+#define FX_NGON         2u
+#define FX_TRI          3u
+#define FX_BEZIER       4u
+#define FX_SEG          5u
+#define FX_ARC          6u
+#define FX_PIE          7u
 
 #define GUI_QUAD_SDF_BIT       ( 1u << 4 )
 #define GUI_QUAD_GLYPH_SHIFT   5u

@@ -332,10 +332,10 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                    number the pulse had to displace whichever shape it was applied to.  Set before
                    the tessellator runs because the interior hole is sized from them (see
                    `reach`). */
-                if ( c->fx_box.variant == 1u )   s_tess.cur_ops |= GUI_OP_CUT;
-                if ( c->fx_box.variant == 2u )   s_tess.cur_ops |= GUI_OP_INSET;
-                if ( c->fx_box.variant == 3u )   s_tess.cur_ops |= GUI_OP_GLOW;
-                if ( c->fx_box.variant == 4u )   s_tess.cur_ops |= GUI_OP_BAND;
+                if ( c->fx_box.variant == GUI_FX_BOX_SKIRT )   s_tess.cur_ops |= GUI_OP_CUT;
+                if ( c->fx_box.variant == GUI_FX_BOX_INSET )   s_tess.cur_ops |= GUI_OP_INSET;
+                if ( c->fx_box.variant == GUI_FX_BOX_GLOW )    s_tess.cur_ops |= GUI_OP_GLOW;
+                if ( c->fx_box.variant == GUI_FX_BOX_RING )    s_tess.cur_ops |= GUI_OP_BAND;
                 if ( c->fx_box.rate    > 0.0f )  s_tess.cur_ops |= GUI_OP_PULSE;
                 if ( c->fx_box.swell  != 0.0f )  s_tess.cur_ops |= GUI_OP_SWELL;
                 {

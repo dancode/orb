@@ -243,9 +243,9 @@ round_rect_perimeter_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, gui_v
    closed antialiased polyline draws it correctly already. */
 void
 draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
-                    bool filled, f32 thickness, u32 col )
+                    f32 thickness, u32 col )
 {
-    if ( filled )
+    if ( thickness <= 0.0f )
     {
         draw_push_round_rect_ex( b.x, b.y, b.w, b.h, rtl, rtr, rbr, rbl, 0.0f, col, col,
                                  0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
@@ -265,10 +265,10 @@ draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
    caller already speaks -- the field's own reference (a vertex up) differs by a quarter turn,
    folded in here. */
 static void
-draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col )
+draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col )
 {
     draw_push_ngon( cx, cy, r, sides, rot + SYM_PI * 0.5f, draw_rounding(),
-                    filled ? 0.0f : sym_thick( thickness ), 0.0f, col );
+                    ( thickness <= 0.0f ) ? 0.0f : sym_thick( thickness ), 0.0f, col );
 }
 
 /* An n-pointed star: the n-gon with each edge midpoint pulled in to ratio * r (the field's star
@@ -276,17 +276,15 @@ draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness
    the classic five-point proportion; the useful range runs from ~0.3 (sharp) to the polygon's
    apothem (flat), and the field caps it there.  Same `rot` convention as draw_ngon. */
 static void
-draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f32 thickness,
-           u32 col )
+draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness, u32 col )
 {
     if ( ratio <= 0.0f )
         ratio = 0.5f;
     draw_push_ngon( cx, cy, r, points, rot + SYM_PI * 0.5f, draw_rounding(),
-                    filled ? 0.0f : sym_thick( thickness ), ratio, col );
+                    ( thickness <= 0.0f ) ? 0.0f : sym_thick( thickness ), ratio, col );
 }
 
-/* Circle at arbitrary radius: filled or stroked (a ring of `thickness`).  The ring is the outlined
-   form -- pass filled = false with a thickness.
+/* Circle at arbitrary radius: thickness 0 fills the disc, a positive thickness strokes the ring.
 
    NEITHER form samples the circle any more.  Both are signed-distance surfaces the fragment
    resolves, so the boundary is exact at any radius and the geometry is fixed-cost: what used to be
@@ -305,9 +303,9 @@ draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f
      - tess_fx_box does not grid-snap a circle (it derives that), so a ring and a filled disc at the
        same centre stay concentric to the sub-pixel.  Concentric marks are the common case here. */
 void
-draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col )
+draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col )
 {
-    if ( filled )
+    if ( thickness <= 0.0f )
     {
         draw_push_circle_filled( cx, cy, r, col );
         return;
@@ -1218,7 +1216,7 @@ void gui_draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 col )   
 /* shapes */
 void
 gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
-                         bool filled, f32 thickness, u32 col )
+                         f32 thickness, u32 col )
 {
     /* Uniform-radius fast path: route an equal-cornered rect -- filled or stroked -- through the
        backend's single rounded-rect command, which is an SDF surface (one quad, exact analytic
@@ -1229,20 +1227,22 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
     {
         f32 save = draw_rounding();
         draw_set_rounding( r_tl );
-        if ( filled ) draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0, 0, 1, 1, 0, col );
-        else          draw_push_rect_outline( box.x, box.y, box.w, box.h,
-                                              sym_thick( thickness ), col );
+        if ( thickness <= 0.0f )
+            draw_push_rect_filled ( box.x, box.y, box.w, box.h, 0, 0, 1, 1, 0, col );
+        else
+            draw_push_rect_outline( box.x, box.y, box.w, box.h,
+                                    sym_thick( thickness ), col );
         draw_set_rounding( save );
         return;
     }
-    draw_round_rect_ex( box, r_tl, r_tr, r_br, r_bl, filled, thickness, col );
+    draw_round_rect_ex( box, r_tl, r_tr, r_br, r_bl, thickness, col );
 }
 
-void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col )
-                                                                               { draw_ngon( cx, cy, r, sides, rot, filled, thickness, col ); }
-void gui_draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f32 thickness, u32 col )
-                                                                               { draw_star( cx, cy, r, points, ratio, rot, filled, thickness, col ); }
-void gui_draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col ) { draw_circle( cx, cy, r, filled, thickness, col ); }
+void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col )
+                                                                               { draw_ngon( cx, cy, r, sides, rot, thickness, col ); }
+void gui_draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness, u32 col )
+                                                                               { draw_star( cx, cy, r, points, ratio, rot, thickness, col ); }
+void gui_draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col )          { draw_circle( cx, cy, r, thickness, col ); }
 void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )  { draw_arc( cx, cy, r, a0, a1, thickness, col ); }
 void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )                 { draw_pie( cx, cy, r, a0, a1, col ); }
 

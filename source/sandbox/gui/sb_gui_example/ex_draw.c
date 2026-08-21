@@ -269,11 +269,11 @@ ex_draw_shapes( void )
             gui()->slider_int( "Bullet radius", &p_bull, 2, 10 );
 
             static i32 p_sides = 6;
-            r = gui()->canvas( H ); gui()->draw_ngon( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, (u32)p_sides, t*0.3f, true, 0.0f, acc );
+            r = gui()->canvas( H ); gui()->draw_ngon( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, (u32)p_sides, t*0.3f, 0.0f, acc );
             gui()->slider_int( "Polygon sides", &p_sides, 3, 12 );
 
             static i32 p_ring = 2;       /* stroke weight, px */
-            r = gui()->canvas( H ); gui()->draw_circle( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, false, (f32)p_ring, acc );
+            r = gui()->canvas( H ); gui()->draw_circle( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, (f32)p_ring, acc );
             gui()->slider_int( "Ring weight", &p_ring, 1, 6 );
 
             static i32 p_arc = 240;      /* whole degrees */
@@ -285,7 +285,7 @@ ex_draw_shapes( void )
             gui()->slider_int( "Pie sweep (deg)", &p_pie, 20, 360 );
 
             static i32 p_round = 8;      /* corner radius, px */
-            r = gui()->canvas( H ); gui()->draw_round_rect( ex_sym_box( r, H ), (f32)p_round, (f32)p_round, 0.0f, 0.0f, true, 0.0f, 0xFF4A90D0u );
+            r = gui()->canvas( H ); gui()->draw_round_rect( ex_sym_box( r, H ), (f32)p_round, (f32)p_round, 0.0f, 0.0f, 0.0f, 0xFF4A90D0u );
             gui()->slider_int( "Tab corner (px)", &p_round, 0, 13 );
 
             static i32 p_border = 2;     /* frame border, px */
@@ -606,13 +606,13 @@ ex_draw_custom( void )
             f32 kcy = box.y + box.h * 0.5f;
             f32 kr  = box.w * 0.42f;
             u32 body = st.active ? 0xFF3E5A78u : st.hover ? 0xFF35485E : 0xFF2C3A4A;
-            gui()->draw_circle( kcx, kcy, kr, true, 0.0f, body );
+            gui()->draw_circle( kcx, kcy, kr, 0.0f, body );
             gui()->draw_progress_arc( kcx, kcy, kr - 3.0f, knob, 3.0f, EX_AMBR );
             f32 a = ( -0.75f + knob * 1.5f ) * GUI_PI;      /* -135..+135 deg */
             gui()->draw_line( kcx, kcy, kcx + sinf( a ) * kr * 0.8f, kcy - cosf( a ) * kr * 0.8f,
                               2.0f, EX_INK );
             if ( st.nav )
-                gui()->draw_circle( kcx, kcy, kr + 4.0f, false, 1.0f, EX_CYAN );
+                gui()->draw_circle( kcx, kcy, kr + 4.0f, 1.0f, EX_CYAN );
         }
         gui()->slider_float( "knob (same value)", &knob, 0.0f, 1.0f );
 

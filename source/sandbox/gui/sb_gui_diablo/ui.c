@@ -250,18 +250,18 @@ ui_globe( gui_rect_t r, f32 frac, u32 fill_abgr, const char* caption )
     f32 cx  = r.x + r.w * 0.5f;
     f32 cy  = r.y + r.h * 0.5f;
 
-    gui()->draw_circle( cx, cy, rad, true, 0.0f, s_style.globe_bg );
+    gui()->draw_circle( cx, cy, rad, 0.0f, s_style.globe_bg );
 
     /* bottom-up liquid fill: clip the circle to the bottom `frac` of its box */
     if ( frac > 0.0f )
     {
         f32 lid = ( cy + rad ) - frac * ( 2.0f * rad );
         gui()->push_clip( cx - rad, lid, 2.0f * rad, ( cy + rad ) - lid );
-        gui()->draw_circle( cx, cy, rad, true, 0.0f, fill_abgr );
+        gui()->draw_circle( cx, cy, rad, 0.0f, fill_abgr );
         gui()->pop_clip();
     }
 
-    gui()->draw_circle( cx, cy, rad, false, 3.0f, s_style.globe_ring );
+    gui()->draw_circle( cx, cy, rad, 3.0f, s_style.globe_ring );
     if ( caption && caption[ 0 ] )
         gui()->draw_text_in( r, GUI_ALIGN_CENTER, s_style.text, caption );
 }

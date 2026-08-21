@@ -469,7 +469,7 @@ gui_draw_border_align( void )
     Width is limited in practice by the spread baked into the atlas, past which the field is flat
     and the outline stops growing rather than tearing.  Save and restore like the radius above:
 
-        f32 sw; u32 sc; gui()->draw_text_edge( &sw, &sc );
+        f32 sw; u32 sc; gui()->draw_get_text_edge( &sw, &sc );
         gui()->draw_set_text_edge( 2.0f, 0xFF000000u );   // 2 px black outline
         gui()->draw_text( x, y, 0xFFFFFFFFu, "Title" );
         gui()->draw_set_text_edge( sw, sc );
@@ -482,9 +482,9 @@ gui_draw_set_text_edge( f32 width, u32 abgr )
 }
 
 void
-gui_draw_text_edge( f32* width, u32* abgr )
+gui_draw_get_text_edge( f32* width, u32* col )
 {
-    draw_text_edge( width, abgr );
+    draw_text_edge( width, col );
 }
 
 /* Font atlas access -- bridges the font registry (gui_font.h / gui_render.h) to the RGBA texture

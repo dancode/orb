@@ -146,8 +146,8 @@ screen_game( i32 vp )
     {
         /* damper glide to the last click; anim keeps frames coming until it settles */
         gui_vec2_t pos = gui()->anim_vec2( 0xD1AB70u, s_move_target, 6.0f );
-        gui()->draw_circle( pos.x, pos.y, 10.0f, true,  0.0f, GUI_COLOR( 0xc8, 0x50, 0x20, 0xff ) );
-        gui()->draw_circle( pos.x, pos.y, 10.0f, false, 2.0f, GUI_COLOR( 0xe8, 0xc0, 0x50, 0xff ) );
+        gui()->draw_circle( pos.x, pos.y, 10.0f, 0.0f, GUI_COLOR( 0xc8, 0x50, 0x20, 0xff ) );
+        gui()->draw_circle( pos.x, pos.y, 10.0f, 2.0f, GUI_COLOR( 0xe8, 0xc0, 0x50, 0xff ) );
     }
 
     /* ---- XP strip: a thin meter across the top of the band, trimmed 10u off each end ---- */

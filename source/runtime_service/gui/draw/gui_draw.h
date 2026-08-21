@@ -51,7 +51,7 @@ void draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w );
    that resolve their own look), the styled painters, and label_natural_w all live in the
    stock unit (stock/gui_stock_internal.h). */
 void draw_bullet( f32 cx, f32 cy, f32 r, u32 color );
-void draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
+void draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col );
 void draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
 void draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
                                gui_grad_t kind, f32 angle, f32 mid );
@@ -63,7 +63,7 @@ void draw_border_progress( gui_rect_t box, f32 rounding, f32 thickness,
                            f32 frac, f32 t, u32 col );
 void draw_inset_shadow( gui_rect_t box, f32 depth, u32 col );
 void draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col );
-void draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, bool filled,
+void draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
                          f32 thickness, u32 col );
 void draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
 void draw_grid( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f32 origin_y, u32 col );

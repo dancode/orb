@@ -815,7 +815,7 @@ ex_layout_hud( void )
             gui_rect_t mm = gui_anchor_box( hud, 92.0f, 92.0f, GUI_ALIGN_RIGHT | GUI_ALIGN_TOP,
                                             ( gui_pad_t ){ 10, 42, 10, 10 } );
             gui()->draw_rect( mm.x, mm.y, mm.w, mm.h, panel );
-            gui()->draw_circle( mm.x + mm.w * 0.5f, mm.y + mm.h * 0.5f, 5.0f, true, 0.0f, good );
+            gui()->draw_circle( mm.x + mm.w * 0.5f, mm.y + mm.h * 0.5f, 5.0f, 0.0f, good );
             gui()->draw_text_in( mm, GUI_ALIGN_CENTER | GUI_ALIGN_BOTTOM, ink, "MAP" );
         }
 

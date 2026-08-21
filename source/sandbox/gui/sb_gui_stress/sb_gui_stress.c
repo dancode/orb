@@ -284,9 +284,9 @@ stress_draw_storm( i32 count )
 
             switch ( ( h >> 5 ) & 3 )
             {
-                case 0: gui()->draw_circle( x, y, r, ( h & 1 ) != 0, 1.5f, col );          break;
+                case 0: gui()->draw_circle( x, y, r, ( h & 1 ) ? 0.0f : 1.5f, col );       break;
                 case 1: gui()->draw_ngon  ( x, y, r, 3 + ( ( h >> 7 ) & 3 ), spin,
-                                            ( h & 2 ) != 0, 1.5f, col );                   break;
+                                            ( h & 2 ) ? 0.0f : 1.5f, col );                break;
                 case 2: gui()->draw_line  ( x - r, y, x + r * cosf( spin ),
                                             y + r * sinf( spin ), 1.5f, col );             break;
                 default: gui()->draw_arc  ( x, y, r, spin, spin + 4.0f, 2.0f, col );       break;

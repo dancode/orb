@@ -165,9 +165,9 @@ panel_caps( void )
 
     /* The true endpoints -- a 3 px dot each.  A capsule's ink stops exactly `thickness / 2` past
        these, which is what a round cap IS; the old ribbon stopped square on them. */
-    gui()->draw_circle( x0, y0, 2.5f, true, 0.0f, MARK );
-    gui()->draw_circle( x1, y1, 2.5f, true, 0.0f, MARK );
-    gui()->draw_circle( cell.x + cell.w - 70.0f, y0, 2.5f, true, 0.0f, MARK );
+    gui()->draw_circle( x0, y0, 2.5f, 0.0f, MARK );
+    gui()->draw_circle( x1, y1, 2.5f, 0.0f, MARK );
+    gui()->draw_circle( cell.x + cell.w - 70.0f, y0, 2.5f, 0.0f, MARK );
 
     gui()->pop_clip();
 

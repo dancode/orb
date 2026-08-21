@@ -568,9 +568,9 @@ typedef struct gui_api_s
        budget one draw_rect at a time.
        push_clip / pop_clip set the current scissor rectangle. */
 
-    void ( *draw_rect  )( f32 x, f32 y, f32 w, f32 h, u32 abgr );
+    void ( *draw_rect  )( f32 x, f32 y, f32 w, f32 h, u32 col );
     void ( *draw_rects )( const gui_rect_col_t* rects, u32 count );
-    void ( *draw_text  )( f32 x, f32 y, u32 abgr, const char* str );
+    void ( *draw_text  )( f32 x, f32 y, u32 col, const char* str );
 
     /* volatile_cb -- an escape hatch for content that must keep animating even on frames where
        the rest of the UI is frozen because nothing changed (a live clock readout, a spinning
@@ -613,7 +613,7 @@ typedef struct gui_api_s
        re-tessellates on the frames it moves (unlike draw_pulse, which animates in the fragment
        and never re-emits).  That is a few quads, not a frame -- but a hundred spinning labels is
        a hundred runs of glyph work per frame, and a caller wanting that should say so knowingly. */
-    void ( *draw_text_xf )( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot );
+    void ( *draw_text_xf )( f32 x, f32 y, u32 col, const char* str, f32 scale, f32 rot );
 
     /* Icons -- small symbols (a folder, a gear, a checkmark, an editor glyph) packed at runtime
        into one shared R8 atlas texture so they all batch into the same draw call as text.
@@ -781,13 +781,13 @@ typedef struct gui_api_s
        Ambient like the radius above, and saved/restored the same way -- reading the pair back and
        setting it again is exact, so there is no separate raw setter:
 
-           f32 sw; u32 sc; gui()->draw_text_edge( &sw, &sc );
+           f32 sw; u32 sc; gui()->draw_get_text_edge( &sw, &sc );
            gui()->draw_set_text_edge( 2.0f, 0xFF000000u );   // 2 px black outline
            gui()->draw_text( x, y, 0xFFFFFFFFu, "Title" );
            gui()->draw_set_text_edge( sw, sc ); */
 
-    void ( *draw_set_text_edge )( f32 width, u32 abgr );
-    void ( *draw_text_edge     )( f32* width, u32* abgr );
+    void ( *draw_set_text_edge )( f32 width, u32 col );
+    void ( *draw_get_text_edge )( f32* width, u32* col );
 
     /*==========================  the shape catalog -- the one-quad SDF draw verbs  ==========================*/
 
@@ -805,10 +805,12 @@ typedef struct gui_api_s
        path family, hatch / stripes, and a STROKED per-corner outline.
 
        Shared vocabulary, defined once:
+         - every colour (`col`, `col_a`/`col_b`) is one packed ABGR word -- GUI_COLOR( r,g,b,a ).
          - angles are RADIANS in screen space: 0 points +x, positive turns clockwise (y down).
          - `rounding` is a corner radius in px.  A verb with no radius parameter honors the
            ambient rounding (draw_set_rounding); one that takes its own ignores the ambient.
-         - `thickness` is a stroked form's stroke width in px; closed outlines honor the
+         - `thickness` picks fill vs stroke on the shapes that offer both: 0 FILLS the shape,
+           a positive value strokes its outline that many px wide.  Closed outlines honor the
            border-align ambient (draw_set_border_align).
          - `feather` -- and a shadow's `spread` -- is the SOFT EDGE: how many px the boundary
            fades across (a design tool's feather / blur).  0 keeps the crisp 1 px antialiased
@@ -841,7 +843,7 @@ typedef struct gui_api_s
 
     void ( *draw_frame             )( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
-                                        bool filled, f32 thickness, u32 col );
+                                        f32 thickness, u32 col );
     /* The SDF box under a rotation about its centre (radians, screen space) -- rotated cards,
        tilted badges, the plate behind rotated text.  feather 0 = crisp 1 px AA; wider = a rotated
        soft shadow.  Same single quad as the upright box. */
@@ -853,11 +855,11 @@ typedef struct gui_api_s
        patterns and the border frame compose over it like any other fill. */
     void ( *draw_rect_cut          )( gui_rect_t box, f32 rounding, gui_rect_t cut,
                                       f32 cut_rounding, f32 soft, u32 col );
-    void ( *draw_circle            )( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
-    void ( *draw_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
+    void ( *draw_circle            )( f32 cx, f32 cy, f32 r, f32 thickness, u32 col );
+    void ( *draw_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col );
     /* The n-pointed star: draw_ngon with each edge midpoint pulled in to ratio * r.  ratio <= 0
        takes the classic five-point proportion; the field caps it at the polygon's apothem. */
-    void ( *draw_star              )( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f32 thickness, u32 col );
+    void ( *draw_star              )( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness, u32 col );
     void ( *draw_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
     void ( *draw_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
     /* The arc cut by an angular dash pattern -- dotted rings, tick dials.  dash/gap are arc-length
@@ -892,16 +894,16 @@ typedef struct gui_api_s
            gui()->path_line_to( x0, y0 ); gui()->path_line_to( x1, y1 ); ...
            gui()->path_stroke( 1.5f, GUI_STROKE_CENTER, false, col ); */
 
-    void ( *draw_line     )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+    void ( *draw_line     )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 col );
     void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
-    void ( *draw_capsule  )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
+    void ( *draw_capsule  )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 col );
     void ( *draw_capsule_outline )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness,
-                                    f32 border, u32 abgr );
+                                    f32 border, u32 col );
     void ( *draw_polyline )( const gui_vec2_t* pts, u32 count, f32 thickness,
-                             gui_stroke_align_t align, bool closed, u32 abgr );
+                             gui_stroke_align_t align, bool closed, u32 col );
     void ( *path_clear    )( void );
     void ( *path_line_to  )( f32 x, f32 y );
-    void ( *path_stroke   )( f32 thickness, gui_stroke_align_t align, bool closed, u32 abgr );
+    void ( *path_stroke   )( f32 thickness, gui_stroke_align_t align, bool closed, u32 col );
     void ( *draw_bezier_quad       )( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
     void ( *draw_bezier_cubic      )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
     /* A polyline whose corners are auto-filleted to `radius`, clamped per-corner to half its
@@ -2181,7 +2183,7 @@ typedef struct gui_api_s
 
             gui_comp_button_t b = gui()->comp_button( "save", r );          // logic
             u32 face = gui()->style_color( GUI_ROLE_BG, gui()->item_phase( b.state ) );  // look
-            gui()->draw_round_rect( r, 8,8,8,8, true, 0.0f, face );          // your paint
+            gui()->draw_round_rect( r, 8,8,8,8, 0.0f, face );          // your paint
 
         The two style reads that pairing needs (item_phase / style_color) sit with the rest of
         the style surface in GUI_STYLE above -- ONE vocabulary, whichever tier you build on.

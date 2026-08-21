@@ -136,7 +136,7 @@ ex_interact_queries( void )
         gui_rect_t q_rect      = gui()->get_item_rect();
 
         /* Outline the reported rect right where the item sits. */
-        gui()->draw_round_rect( q_rect, 3.0f, 3.0f, 3.0f, 3.0f, false, 1.0f,
+        gui()->draw_round_rect( q_rect, 3.0f, 3.0f, 3.0f, 3.0f, 1.0f,
                                 GUI_COLOR( 0x4F, 0xC3, 0xF7, 0xFF ) );
 
         /* Edge events latch for a moment so a one-frame pulse is visible. */

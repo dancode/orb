@@ -701,8 +701,7 @@ panel_surface( void )
         for ( u32 i = 0; i < 5; ++i )
         {
             gui()->draw_round_rect( ( gui_rect_t ){ bx, y + 20.0f, 78.0f, 44.0f },
-                                    radii[ i ], radii[ i ], radii[ i ], radii[ i ],
-                                    true, 0.0f, TEAL );
+                                    radii[ i ], radii[ i ], radii[ i ], radii[ i ], 0.0f, TEAL );
             bx += 86.0f;
         }
     }
@@ -716,7 +715,7 @@ panel_surface( void )
         for ( u32 i = 0; i < 4; ++i )
         {
             gui()->draw_round_rect( ( gui_rect_t ){ bx, y + 20.0f, 98.0f, 44.0f },
-                                    12.0f, 12.0f, 12.0f, 12.0f, false, bw[ i ], AMBER );
+                                    12.0f, 12.0f, 12.0f, 12.0f, bw[ i ], AMBER );
             bx += 106.0f;
         }
     }
@@ -844,7 +843,7 @@ panel_pulse( void )
         f32 a   = pulse_wave( 1.0f, 0.8f, gui()->get_time() );
         u32 col = GUI_COLOR( 0xB0, 0x60, 0xE0, (u32)( a * 255.0f + 0.5f ) );
         gui()->draw_round_rect( ( gui_rect_t ){ rx + 160.0f, cell.y + 30.0f, 110.0f, 44.0f },
-                                4.0f, 4.0f, 4.0f, 4.0f, true, 0.0f, col );
+                                4.0f, 4.0f, 4.0f, 4.0f, 0.0f, col );
     }
     gui()->draw_text( rx + 160.0f, cell.y + 82.0f, INK_DIM,
                       s_pulse_cpu_on ? "CPU: re-emit" : "CPU: off" );

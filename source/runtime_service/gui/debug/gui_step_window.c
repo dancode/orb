@@ -98,7 +98,7 @@ step_swatch( gui_rect_t r, f32 x, const char* label, u32 abgr )
 {
     gui_draw_rect( x, r.y + 1.0f, r.h - 2.0f, r.h - 2.0f, abgr | 0xFF000000u );
     gui_draw_round_rect( ( gui_rect_t ){ x, r.y + 1.0f, r.h - 2.0f, r.h - 2.0f },
-                         0.0f, 0.0f, 0.0f, 0.0f, false, 1.0f, STEP_COL_DIM );
+                         0.0f, 0.0f, 0.0f, 0.0f, 1.0f, STEP_COL_DIM );
     char buf[ 48 ];
     fmt_snprintf( buf, sizeof( buf ), "%s 0x%08X", label, abgr );
     gui_draw_text( x + r.h + 4.0f, r.y, STEP_COL_DIM, buf );
@@ -206,10 +206,10 @@ step_cmd_detail( const step_cmd_info_t* ci )
             fmt_snprintf( b2, sizeof( b2 ), "round %.1f   feather %.1f   rate %.2f Hz   depth %.2f   swell %.1f%s",
                           c->fx_box.rounding, c->fx_box.feather, c->fx_box.rate, c->fx_box.depth,
                           c->fx_box.swell,
-                          ( c->fx_box.variant == 1u ) ? "   skirt"
-                          : ( c->fx_box.variant == 2u ) ? "   inset"
-                          : ( c->fx_box.variant == 3u ) ? "   glow"
-                          : ( c->fx_box.variant == 4u ) ? "   ring" : "" );
+                          ( c->fx_box.variant == GUI_FX_BOX_SKIRT ) ? "   skirt"
+                          : ( c->fx_box.variant == GUI_FX_BOX_INSET ) ? "   inset"
+                          : ( c->fx_box.variant == GUI_FX_BOX_GLOW )  ? "   glow"
+                          : ( c->fx_box.variant == GUI_FX_BOX_RING )  ? "   ring" : "" );
             row2 = b2;
             break;
         case GUI_CMD_ROUND_RECT_EX:
@@ -374,7 +374,7 @@ step_highlight_rect( gui_rect_t r, i32 vp, u32 abgr )
     draw_scope_set( hl );
     draw_push_clip_root();
     gui_draw_round_rect( ( gui_rect_t ){ r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f },
-                         0.0f, 0.0f, 0.0f, 0.0f, false, 2.0f, abgr );
+                         0.0f, 0.0f, 0.0f, 0.0f, 2.0f, abgr );
     draw_pop_clip_rect();
     draw_scope_set( save );
 }

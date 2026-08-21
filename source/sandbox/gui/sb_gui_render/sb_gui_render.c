@@ -83,10 +83,10 @@ page_fills( void )
     gui()->draw_rect( r.x, r.y, r.w, r.h, AMBER );
 
     r = cell( 1, 6, "round rect" );
-    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, true, 0.0f, TEAL );
+    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 0.0f, TEAL );
 
     r = cell( 2, 6, "round rect border" );
-    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, false, 2.0f, TEAL );
+    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 2.0f, TEAL );
 
     r = cell( 3, 6, "gradient v" );
     gui()->draw_gradient( r, AMBER, PLUM, true );
@@ -96,7 +96,7 @@ page_fills( void )
 
     r = cell( 5, 6, "circle" );
     gui()->draw_circle( r.x + r.w * 0.5f, r.y + r.h * 0.5f,
-                        ( r.h < r.w ? r.h : r.w ) * 0.5f - 4.0f, true, 0.0f, PLUM );
+                        ( r.h < r.w ? r.h : r.w ) * 0.5f - 4.0f, 0.0f, PLUM );
 }
 
 /*==============================================================================================

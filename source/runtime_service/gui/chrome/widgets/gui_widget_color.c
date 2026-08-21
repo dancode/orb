@@ -438,9 +438,9 @@ color_picker_body( gui_id_t id, f32* v, u32 n, gui_color_edit_flags_t flags )
            ground.  Half-pixel centered so the 1.5px ring straddles the pick point evenly. */
         f32 ccx = floorf( sv_r.x + s * ( sv_r.w - 1.0f ) ) + 0.5f;
         f32 ccy = floorf( sv_r.y + ( 1.0f - val ) * ( sv_r.h - 1.0f ) ) + 0.5f;
-        draw_circle( ccx, ccy, PICKER_CURSOR_R, true, 0.0f, cur_rgb );
-        draw_circle( ccx, ccy, PICKER_CURSOR_R, false, 1.5f, GUI_COLOR( 255, 255, 255, 255 ) );
-        draw_circle( ccx, ccy, PICKER_CURSOR_R + 1.5f, false, 1.0f, GUI_COLOR( 0, 0, 0, 160 ) );
+        draw_circle( ccx, ccy, PICKER_CURSOR_R, 0.0f, cur_rgb );
+        draw_circle( ccx, ccy, PICKER_CURSOR_R, 1.5f, GUI_COLOR( 255, 255, 255, 255 ) );
+        draw_circle( ccx, ccy, PICKER_CURSOR_R + 1.5f, 1.0f, GUI_COLOR( 0, 0, 0, 160 ) );
 
         /* Hue bar: the six-sector rainbow, one gradient quad per sector; edges snapped
            cumulatively so sectors tile without seams. */

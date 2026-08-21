@@ -413,7 +413,7 @@ fx_field_t fx_field( float2 px )
 
     // 0 NONE -- a plain fill or a glyph.  No boundary of its own, and it still reaches every
     // coverage op below, which is why a flat rect can pulse or wear a lattice.
-    if ( g_field == 0u )
+    if ( g_field == FX_NONE )
         return f;
 
     float4 rect = prim_rect();
@@ -425,7 +425,7 @@ fx_field_t fx_field( float2 px )
     //
     // The coordinate is SIGNED here, folded only on x.  That is the whole trick: the sign is the
     // ANGLE, without which neither of these shapes can be expressed at all.
-    if ( g_field == 7u || g_field == 8u )
+    if ( g_field == FX_ARC || g_field == FX_PIE )
     {
         float4 parm = prim_row( 3u );
         float  ra   = parm.x;
@@ -438,7 +438,7 @@ fx_field_t fx_field( float2 px )
         float2 sl   = prim_local( px, rect ).yx;
         float2 q    = float2( abs( sl.x ), sl.y );
 
-        if ( g_field == 8u )
+        if ( g_field == FX_PIE )
         {
             // PIE: the disc intersected with the angular wedge.  `l` is the disc, `m` the distance
             // to the radial edge (a segment from the centre out to the rim, hence the clamp to ra),
@@ -484,7 +484,7 @@ fx_field_t fx_field( float2 px )
     // midpoint -- fold the along axis against the half-length and leave the across axis signed,
     // because length() squares it anyway.  No interior term: this form is already the exact signed
     // distance in the core, where the rounded box's length-only form saturates.
-    if ( g_field == 6u )
+    if ( g_field == FX_SEG )
     {
         float2 q = float2( abs( local.x ) - he.x, local.y );
         f.d   = length( float2( max( q.x, 0.0 ), q.y ) ) - rad.x; // a capsule has one radius
@@ -500,7 +500,7 @@ fx_field_t fx_field( float2 px )
     // fold repeats it into an n-pointed star.  The polygon IS the star at ratio = cos(an), which
     // is all `ecs` encodes -- the edge's direction from that inner point to the outer vertex --
     // so both shapes are one code path and rad.z = 0 (the unused-lane rule) selects the polygon.
-    else if ( g_field == 2u )
+    else if ( g_field == FX_NGON )
     {
         float  rr  = rad.x;
         float  R   = max( he.x - rr, 1.0 );
@@ -526,7 +526,7 @@ fx_field_t fx_field( float2 px )
     // other field.  The points ride the STYLE rather than the quad: a triangle is a rare shape
     // (arrowheads, markers), so a record per triangle costs less than widening every quad.
     // States no boundary coordinate -- a dashed triangle is not a shape anything asks for.
-    else if ( g_field == 3u )
+    else if ( g_field == FX_TRI )
     {
         float4 parm = prim_row( 3u );
         float2 a  = rad.xy;
@@ -552,7 +552,7 @@ fx_field_t fx_field( float2 px )
     // approach.  Unsigned, like SEG's capsule: a stroke has no interior of its own to be inside
     // of.  States no boundary coordinate, same as TRI: a dashed curve is not a shape anything
     // asks for yet.
-    else if ( g_field == 5u )
+    else if ( g_field == FX_BEZIER )
     {
         float4 parm = prim_row( 3u );
         float2 p0   = rad.xy;
@@ -785,7 +785,7 @@ float4 main( ps_in_t i ) : SV_Target0
     if ( g_implicit )
     {
         g_row   = 0u;
-        g_field = 0u;
+        g_field = FX_NONE;
         g_ops   = 0u;
         g_tex   = ( ( i.tag & 4u ) != 0u ) ? ( TEX_MODE_SDF | pc.tex_sdf )
                                            : ( TEX_MODE_COVERAGE | pc.tex_cov );

@@ -1883,6 +1883,15 @@ gui_tex_index( u32 tex_idx )
    string lives in the pool until the next frame_begin, so the command is valid through flush.
    Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
 
+/* The fx_box command's `variant`: which fill the one soft-box geometry resolves as.  The
+   tessellator maps each to the op it stamps (gui_build_tess_dispatch.c). */
+
+#define GUI_FX_BOX_FILL   0u   // the filled surface -- shadow / glow meant to show through
+#define GUI_FX_BOX_SKIRT  1u   // interior cut away (GUI_OP_CUT) -- the drop shadow
+#define GUI_FX_BOX_INSET  2u   // falloff turned inward (GUI_OP_INSET) -- the inner shadow
+#define GUI_FX_BOX_GLOW   3u   // exponential falloff (GUI_OP_GLOW) -- light, not blur
+#define GUI_FX_BOX_RING   4u   // bent into a border band (GUI_OP_BAND) -- the ripple's ring
+
 typedef struct
 {
     u8 type;       // gui_cmd_type_t, fits u8 (23 values)
@@ -1985,19 +1994,20 @@ typedef struct
            coordinate is box-local and affine, so rotating the four corner POSITIONS preserves the
            field under interpolation -- a rotated card costs the same one quad.  0 for
            every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap.
-           `variant` picks which of the three fills this is, all sharing the one geometry:
-             0 BOX    -- the filled surface: a glow or halo MEANT to be seen through its subject.
-             1 SKIRT  -- the interior cut away (GUI_OP_CUT), same outward falloff, painting
-                         nothing inside the boundary.  What a DROP shadow wants: the core of a
-                         filled one is only ever seen through whatever it sits behind, which is a
-                         translucent panel dimming itself.
-             2 INSET  -- the falloff turned INWARD (GUI_OP_INSET), painting from the boundary
-                         `feather` px in and nothing outside.  The inner shadow / pressed well.
-             3 GLOW   -- the outward falloff resolved EXPONENTIALLY (GUI_OP_GLOW): light,
-                         not blur.
-             4 RING   -- the field bent into a border band of `border` px (GUI_OP_BAND): the
-                         hollow ring the ripple wants, since a swelling band travels outward
-                         with nothing in its middle.
+           `variant` picks which of the five fills this is (GUI_FX_BOX_*), all sharing the one
+           geometry:
+             FILL   -- the filled surface: a glow or halo MEANT to be seen through its subject.
+             SKIRT  -- the interior cut away (GUI_OP_CUT), same outward falloff, painting
+                       nothing inside the boundary.  What a DROP shadow wants: the core of a
+                       filled one is only ever seen through whatever it sits behind, which is a
+                       translucent panel dimming itself.
+             INSET  -- the falloff turned INWARD (GUI_OP_INSET), painting from the boundary
+                       `feather` px in and nothing outside.  The inner shadow / pressed well.
+             GLOW   -- the outward falloff resolved EXPONENTIALLY (GUI_OP_GLOW): light,
+                       not blur.
+             RING   -- the field bent into a border band of `border` px (GUI_OP_BAND): the
+                       hollow ring the ripple wants, since a swelling band travels outward
+                       with nothing in its middle.
            A non-zero `rate` adds GUI_OP_PULSE on top of whichever variant is set, so a cut or
            inset surface can breathe as readily as a filled one.
            A non-zero `swell` adds GUI_OP_SWELL: the boundary itself travels `swell * k` px

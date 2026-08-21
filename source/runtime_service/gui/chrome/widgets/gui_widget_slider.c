@@ -125,7 +125,7 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
     f32 fill_w = t * ( track_r.w - SLIDER_KNOB_W );
     if ( fill_w > 0.0f )
         draw_round_rect_ex( ( gui_rect_t ){ track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f },
-                            ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, true, 0.0f,
+                            ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, 0.0f,
                             style_col_mix( GUI_ROLE_ACCENT, mix ) );
 
     /* Knob (grab): the GRAB row, which exists precisely so this element has somewhere to stand.
@@ -141,8 +141,8 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
         f32 kcx = knob_x + SLIDER_KNOB_W * 0.5f;
         f32 kcy = track_r.y + track_r.h * 0.5f;
         f32 kr  = track_r.h * 0.5f;
-        draw_circle( kcx, kcy, kr, true,  0.0f,      style_col_mix( GUI_ROLE_GRAB, mix ) );
-        draw_circle( kcx, kcy, kr, false, WIN_BORDER, COL_BORDER_IDLE );
+        draw_circle( kcx, kcy, kr, 0.0f,      style_col_mix( GUI_ROLE_GRAB, mix ) );
+        draw_circle( kcx, kcy, kr, WIN_BORDER, COL_BORDER_IDLE );
     }
     else
     {

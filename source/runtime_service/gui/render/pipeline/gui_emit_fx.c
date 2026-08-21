@@ -103,8 +103,8 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
 void
 draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                     0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, GUI_FX_BOX_FILL, 0.0f, 0.0f, 0.0f, 0.0f,
+                     0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 /* x,y,w,h is the CASTER; (ox, oy) is how far the shadow falls from it.  The command carries the
@@ -114,7 +114,7 @@ void
 draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
                  f32 ox, f32 oy, u32 abgr )
 {
-    draw_fx_box_cmd( x + ox, y + oy, w, h, rounding, feather, 1u,
+    draw_fx_box_cmd( x + ox, y + oy, w, h, rounding, feather, GUI_FX_BOX_SKIRT,
                      0.0f, 0.0f, 0.0f, 0.0f, -ox, -oy, 0.0f, 0.0f, abgr );
 }
 
@@ -127,8 +127,8 @@ draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
 void
 draw_push_glow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, feather, 3u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                     0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, GUI_FX_BOX_GLOW, 0.0f, 0.0f, 0.0f, 0.0f,
+                     0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 /* The inner shadow: the same surface with its falloff turned inward (GUI_OP_INSET), painting
@@ -138,7 +138,7 @@ draw_push_glow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr 
 void
 draw_push_inset( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 depth, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, depth, 2u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+    draw_fx_box_cmd( x, y, w, h, rounding, depth, GUI_FX_BOX_INSET, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
                      0.0f, 0.0f, abgr );
 }
 
@@ -146,7 +146,7 @@ void
 draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, f32 phase,
                  u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0u, rate, depth, phase, 0.0f,
+    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, GUI_FX_BOX_FILL, rate, depth, phase, 0.0f,
                      0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
@@ -159,7 +159,7 @@ void
 draw_push_swell( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 amp, f32 phase,
                  u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0u, rate, 0.0f, phase, 0.0f,
+    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, GUI_FX_BOX_FILL, rate, 0.0f, phase, 0.0f,
                      0.0f, 0.0f, amp, 0.0f, abgr );
 }
 
@@ -175,7 +175,7 @@ draw_push_ripple( f32 cx, f32 cy, f32 r, f32 thickness, f32 spread, f32 rate, f3
 {
     if ( r <= 0.0f || thickness <= 0.0f )
         return;
-    draw_fx_box_cmd( cx - r, cy - r, r * 2.0f, r * 2.0f, r, TESS_FX_AA, 4u, rate, fade, phase,
+    draw_fx_box_cmd( cx - r, cy - r, r * 2.0f, r * 2.0f, r, TESS_FX_AA, GUI_FX_BOX_RING, rate, fade, phase,
                      0.0f, 0.0f, 0.0f, spread, thickness, abgr );
 }
 
@@ -187,7 +187,7 @@ draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot
 {
     draw_fx_box_cmd( x, y, w, h, rounding,
                      ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
-                     0u, 0.0f, 0.0f, 0.0f, rot, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
+                     GUI_FX_BOX_FILL, 0.0f, 0.0f, 0.0f, rot, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 /*==============================================================================================

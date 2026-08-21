@@ -196,7 +196,7 @@ f32  gui_draw_border_align( void );
 
 /* ambient second colour outside the glyph edge -- outlined / shadowed SDF text from one quad */
 void gui_draw_set_text_edge( f32 width, u32 abgr );
-void gui_draw_text_edge( f32* width, u32* abgr );
+void gui_draw_get_text_edge( f32* width, u32* col );
 
 /* font atlas access -- bindless index + pixel size for previewing a font's live GPU atlas */
 u32 gui_font_atlas_idx( u32 font_id );
@@ -212,10 +212,10 @@ void gui_draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 co
 void gui_draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 col );
 void gui_draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 col );
 void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
-void gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, bool filled, f32 thickness, u32 col );
-void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, bool filled, f32 thickness, u32 col );
-void gui_draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, bool filled, f32 thickness, u32 col );
-void gui_draw_circle( f32 cx, f32 cy, f32 r, bool filled, f32 thickness, u32 col );
+void gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 thickness, u32 col );
+void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col );
+void gui_draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness, u32 col );
+void gui_draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col );
 void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
 void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
 void gui_draw_arc_dashed( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, f32 dash, f32 gap, u32 col );
