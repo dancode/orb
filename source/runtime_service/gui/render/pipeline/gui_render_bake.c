@@ -100,6 +100,11 @@ static const f32 k_pal_stroke[] = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.
 
 #define PAL_MAX_SCALES  2u
 
+/*  TRIAL: 0 runs the bake with no authored rows, so the table starts empty every theme change and
+    pal_intern is the only thing that fills it.  Set back to 1 to restore the table. */
+
+#define PAL_BAKE_ROWS   0
+
 static struct
 {
     gui_prim_t rec[ GUI_PAL_MAX ];   // rows harvested this bake, before publish
@@ -139,6 +144,7 @@ static struct
     u32        cand_count;
     u32        frame;                // build frames since start; bumped by pal_style_reset
     u32        interned;             // entries pal_intern added since the last bake
+    u32        cmd_hits;             // of hits, the share a command's parked answer served
     u32        full_drops;           // records that qualified with no room left
     bool       baking;               // pal_rows is running: its own records must not intern
     bool       pub_dirty;            // interned entries not folded into the published table
@@ -382,6 +388,89 @@ pal_cand_qualifies( u32 hash )
     return false;
 }
 
+/*==============================================================================================
+    The PER-COMMAND memo -- a style answer parked at the command site that produced it.
+
+    The record a semantic command builds is a function of that command's payload: the ambient
+    draw state is folded in at PUSH time, not read at tessellation (gui_emit_state.c says so
+    of text_edge, and it holds for the rest -- a retained window re-tessellates long after the
+    ambient has moved on).  So if a command's bytes are what they were the last time it
+    tessellated, the record it is about to build is the record it built then, and the answer
+    can be reused without folding or probing anything.
+
+    The KEY IS ALREADY PAID FOR.  draw_hash_cmd folds every command at emit time for the
+    retained cache's diff (s_draw.cmd_hashes), so this costs one u32 compare per command.
+    That hash folds strictly MORE than the record depends on -- the clip entry, for one, which
+    no record reads -- which is the direction that is safe: it can be over-sensitive and cost a
+    probe, it cannot be under-sensitive and hand back the wrong shape.
+
+    ONLY PALETTE ANSWERS ARE PARKED.  An arena index means "record N of the slot being
+    tessellated right now", which is meaningless a frame later; a palette index is absolute and
+    outlives the frame.  Since interning, almost every answer is a palette one, so the
+    restriction costs nothing and removes the whole class of stale-arena-index bugs.
+
+    AND IT IS STILL CONFIRMED BY COMPARE.  tess_prim_local memcmps the entry before believing
+    it, so a re-bake that moved what index E holds, a command-list shift that put another
+    command at this index, or a hash collision all resolve to a failed compare and the ordinary
+    path -- never to a wrong shape.  That is why there is no epoch counter: the compare IS one.
+
+    Indexed by the GLOBAL command index, which shifts when an earlier window emits a different
+    number of commands.  A shift invalidates the tail for exactly one frame and re-converges on
+    the next -- a self-healing hint, never an assumption.
+==============================================================================================*/
+
+/* entry + 1, so a zeroed table reads as "nothing parked" without an init pass. */
+static u16 s_cmd_entry[ GUI_MAX_CMDS ];
+static u32 s_cmd_hash [ GUI_MAX_CMDS ];
+
+/*  What this command answered last time, if its bytes have not moved since. */
+
+u32
+pal_cmd_hint( u32 ci )
+{
+    if ( ci >= (u32)GUI_MAX_CMDS || !s_pal_on )
+        return GUI_PAL_NONE;
+    if ( s_cmd_entry[ ci ] == 0u || s_cmd_hash[ ci ] != s_draw.cmd_hashes[ ci ] )
+        return GUI_PAL_NONE;
+
+    u32 e = (u32)s_cmd_entry[ ci ] - 1u;
+    return e < s_bake.count ? e : GUI_PAL_NONE;
+}
+
+/*  Park the answer this command just finished with.  A style that resolved into the arena
+    parks nothing -- see the header above. */
+
+void
+pal_cmd_learn( u32 ci, u32 style )
+{
+    if ( ci >= (u32)GUI_MAX_CMDS )
+        return;
+
+    if ( !gui_style_is_pal( style ) )
+    {
+        s_cmd_entry[ ci ] = 0u;
+        return;
+    }
+    s_cmd_entry[ ci ] = (u16)( ( style - GUI_PAL_FIRST ) + 1u );
+    s_cmd_hash [ ci ] = s_draw.cmd_hashes[ ci ];
+}
+
+/*  One entry's bytes, for the compare that confirms a hint.  NULL past the published table.
+    */
+
+const gui_prim_t*
+pal_entry( u32 entry )
+{
+    return entry < s_bake.count ? &s_bake.rec[ entry ] : NULL;
+}
+
+void
+pal_cmd_hit( void )
+{
+    ++s_bake.hits;
+    ++s_bake.cmd_hits;
+}
+
 u32
 pal_intern( const gui_prim_t* rec )
 {
@@ -519,6 +608,7 @@ pal_row_open( u32 ops )
     s_tess.cur_phase      = 0.0f;
     s_tess.cur_swell      = 0.0f;
     s_tess.cur_prim       = ( gui_prim_t ){ 0 };
+    s_tess.cmd_hint       = GUI_PAL_NONE;   /* a row is no command; it inherits no answer */
     s_tess.prim_count     = 0;       /* the emitter appends at 0 and we read it straight back */
     s_tess.quad_count     = 0;
 }
@@ -769,8 +859,13 @@ pal_bake( void )
 
     memset( s_bake.slot, 0, sizeof( s_bake.slot ) );
     s_bake.memo = ~0u;   /* same reason, and count rising as rows harvest would revive it */
-    s_bake.hits = s_bake.misses = s_bake.memo_hits = 0;
+    s_bake.hits = s_bake.misses = s_bake.memo_hits = s_bake.cmd_hits = 0;
     s_bake.interned = s_bake.full_drops = 0;
+
+    /* Every parked answer names an entry of the table about to be replaced.  A stale one
+       would fail its compare and cost nothing, but clearing keeps the reasoning to one
+       sentence. */
+    memset( s_cmd_entry, 0, sizeof( s_cmd_entry ) );
 
     /* The candidates go with the table: they are hashes of records built at the OLD style,
        and a theme or DPI change means nothing that qualified against them will be drawn
@@ -785,8 +880,11 @@ pal_bake( void )
 
     /* Newest scale first, so if the table ever fills it is the least recently seen surface that
        loses its tail rather than the one the user is looking at. */
-    for ( u32 s = s_bake.scale_count; s-- > 0; )
-        pal_rows( s_bake.scale[ s ].var );
+    /* TRIAL: authored rows disabled -- the table starts empty and interning fills it.
+       Set PAL_BAKE_ROWS back to 1 to bring the bake back. */
+    if ( PAL_BAKE_ROWS )
+        for ( u32 s = s_bake.scale_count; s-- > 0; )
+            pal_rows( s_bake.scale[ s ].var );
 
     s_bake.baking = false;
     s_bake.baked  = s_bake.count;
@@ -836,6 +934,12 @@ pal_dump( void )
              s_bake.baked, s_bake.count - s_bake.baked,
              s_bake.full_drops ? "  TABLE FULL" : "",
              s_bake.cand_count, s_pal_intern_on ? "interning on" : "interning OFF" );
+
+    /* The per-command memo's share of the hits.  What it answers is how much of the lookup
+       the command sites absorbed before anything had to be folded or probed at all. */
+    gui_log( GUI_LOG_INFO, "     %u of those hits came from a parked command answer, %.1f%%",
+             s_bake.cmd_hits,
+             s_bake.hits ? 100.0f * (f32)s_bake.cmd_hits / (f32)s_bake.hits : 0.0f );
 
     for ( u32 s = 0; s < s_bake.scale_count; ++s )
     {

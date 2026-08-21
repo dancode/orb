@@ -248,6 +248,13 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
         s_tess.cur_clip_local = tess_clip_local( c->clip_idx );
         s_tess.cur_vp         = c->vp;
 
+        /* The style answer this command site parked last time, if its bytes have not moved
+           since (gui_render_bake.c, pal_cmd_hint).  One u32 compare against a hash the emit
+           phase already folded; tess_prim_local confirms whatever comes back before using it.
+           */
+        s_tess.cmd_hint       = pal_cmd_hint( ci );
+        s_tess.cmd_style_out  = 0u;    /* an arena index: "nothing resolved yet" */
+
         /* The op word is ambient over ONE command and cleared here, so a case that sets it
            cannot leak the effect onto the next primitive.  That containment is the whole reason
            it can be ambient at all -- it lets an outline reach every glyph of a run without
@@ -646,6 +653,11 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 tess_sprite( c );
                 break;
         }
+
+        /* Park what this command resolved, for the next pass over it.  A command that commits
+           several styles parks the LAST -- as much as one hint can hold -- and one that
+           commits none (a plain glyph run resolves no style at all) parks nothing. */
+        pal_cmd_learn( ci, s_tess.cmd_style_out );
     }
 
     if ( open_vid != GUI_ID_NONE )

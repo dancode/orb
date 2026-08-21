@@ -153,6 +153,26 @@ static struct
     u32         prim_memo_floor;
     bool        prim_memo_valid;
 
+    /* The palette entry the CURRENT semantic command resolved to the last time it
+       tessellated, or GUI_PAL_NONE.  Set once per command by tess_dispatch and read by
+       tess_prim_local, which confirms it against the entry's own bytes before believing it.
+
+       This is the memo the two above cannot be: both are one deep, so a window alternating
+       among a dozen styles -- a toolbar of different buttons, a table with several column
+       looks -- evicts them on every step and folds the record again for each.  A command site
+       is a stable address for its own answer, so a dozen alternating commands keep a dozen
+       live memos. Where it comes from is gui_render_bake.c (pal_cmd_hint), keyed on the
+       command hash the emit phase already folds for the retained cache. */
+
+    u32         cmd_hint;
+
+    /* What the current command has resolved so far, for the park at its end.  Separate from
+       cur_prim_local because that one must survive across commands -- the answer memo hands
+       it straight back -- while this has to read "nothing yet" at each command's start, which
+       it does by being an ARENA index (0) that pal_cmd_learn declines to park. */
+
+    u32         cmd_style_out;
+
     /* The open FX PAGE -- a style-arena record carrying four gui_fx_t records (gui.h).  fx_page is
        the record's slot-local index and fx_page_used how many of its four entries are spent; a
        fifth takes a new page.  fx_memo_row is the last row committed, so a run of quads wanting

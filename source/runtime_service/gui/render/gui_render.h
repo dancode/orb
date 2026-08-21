@@ -586,6 +586,26 @@ u32                 pal_find                ( const gui_prim_t* rec );
 
 u32                 pal_intern              ( const gui_prim_t* rec );
 
+/* The PER-COMMAND style memo: a palette answer parked at the command site that produced it,
+   keyed on the command hash the emit phase already folds for the retained cache
+   (render/pipeline/gui_render_bake.c).  pal_cmd_hint returns what this command answered the
+   last time it tessellated -- GUI_PAL_NONE when its bytes have moved since -- and
+   pal_cmd_learn parks the answer it just gave (arena answers are declined: they name a slot
+   that no longer exists).
+
+   A hint is a hint: tess_prim_local compares the entry's bytes before believing it, so a
+   re-bake, a shifted command list or a hash collision cost a probe and never a wrong shape.
+   pal_cmd_hit records a confirmed one for the dump. */
+
+u32                 pal_cmd_hint            ( u32 ci );
+void                pal_cmd_learn           ( u32 ci, u32 style );
+void                pal_cmd_hit             ( void );
+
+/* One published palette entry's bytes, or NULL past the table -- the compare behind a hint.
+   */
+
+const gui_prim_t*   pal_entry               ( u32 entry );
+
 /* Fold entries interned during this frame's build into the published table, before the upload
    that has to carry them.  No-op on a frame that interned nothing, which is every steady
    frame. */

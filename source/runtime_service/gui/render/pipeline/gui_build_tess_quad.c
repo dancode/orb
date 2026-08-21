@@ -61,6 +61,7 @@ tess_reset( void )
     s_tess.cur_prim_local       = 0;
     s_tess.prim_dedup_floor     = 0;
     s_tess.prim_memo_valid      = false;  /* base/floor return to 0, the arena does not */
+    s_tess.cmd_hint             = GUI_PAL_NONE;
     s_tess.fx_page              = s_tess.fx_page_used = s_tess.fx_memo_row = 0;
     s_tess.fx_page_count        = 0;
     s_tess.slot_clips           = NULL;
@@ -229,6 +230,7 @@ tess_prim_answer( u32 local )
     s_tess.prim_memo_base  = s_tess.slot_prim_base;
     s_tess.prim_memo_floor = s_tess.prim_dedup_floor;
     s_tess.prim_memo_valid = true;
+    s_tess.cmd_style_out   = local;
     return s_tess.cur_prim_local = local;
 }
 
@@ -250,7 +252,24 @@ tess_prim_local( void )
       && s_tess.prim_memo_base  == s_tess.slot_prim_base
       && s_tess.prim_memo_floor == s_tess.prim_dedup_floor
       && memcmp( &s_tess.prim_memo_rec, &s_tess.cur_prim, sizeof( gui_prim_t ) ) == 0 )
-        return s_tess.cur_prim_local;
+        return s_tess.cmd_style_out = s_tess.cur_prim_local;
+
+    /* Then the answer this COMMAND gave the last time it tessellated (gui_build_tess_state.c,
+       cmd_hint).  Confirmed against the entry's own bytes, so a re-bake, a shifted command
+       list or a hash collision all land on a failed compare and the ordinary path below --
+       never on a wrong shape.  What it buys over the memo above is the ALTERNATION: a dozen
+       commands cycling through a dozen styles keep a dozen live answers instead of evicting
+       one. */
+
+    if ( s_tess.cmd_hint != GUI_PAL_NONE )
+    {
+        const gui_prim_t* e = pal_entry( s_tess.cmd_hint );
+        if ( e && memcmp( e, &s_tess.cur_prim, sizeof( gui_prim_t ) ) == 0 )
+        {
+            pal_cmd_hit();
+            return tess_prim_answer( gui_style_pal( s_tess.cmd_hint ) );
+        }
+    }
 
     u32 hi = s_tess.prim_count;
     u32 lo = ( s_tess.prim_dedup_floor > s_tess.slot_prim_base )
