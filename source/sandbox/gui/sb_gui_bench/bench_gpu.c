@@ -176,8 +176,8 @@ scene_op_matrix( const bench_case_t* c, u32 frame )
 {
     UNUSED( frame );
 
-    gui()->window_set_next_pos ( 8.0f, 30.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 1264.0f, 682.0f, GUI_COND_ONCE );
+    gui()->window_set_next_pos ( BENCH_STAGE_X, BENCH_STAGE_Y, GUI_COND_ONCE );
+    gui()->window_set_next_size( BENCH_STAGE_W, BENCH_STAGE_H, GUI_COND_ONCE );
     if ( gui()->window_begin( "Bench Ops", GUI_WIN_NONE ) )
     {
         gui()->stack();
@@ -215,8 +215,8 @@ scene_fill_layers( const bench_case_t* c, u32 frame )
 {
     UNUSED( frame );
 
-    gui()->window_set_next_pos ( 8.0f, 30.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 1264.0f, 682.0f, GUI_COND_ONCE );
+    gui()->window_set_next_pos ( BENCH_STAGE_X, BENCH_STAGE_Y, GUI_COND_ONCE );
+    gui()->window_set_next_size( BENCH_STAGE_W, BENCH_STAGE_H, GUI_COND_ONCE );
     if ( gui()->window_begin( "Bench Fill", GUI_WIN_NONE ) )
     {
         gui()->stack();

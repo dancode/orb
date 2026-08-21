@@ -128,7 +128,8 @@ main( int argc, char** argv )
        retained-cache levers every frame and would fight the harness. */
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title = "ORB -- gui bench",
-        .w     = 1280, .h = 720,
+        .x     = 32, .y = 32,  
+        .w     = ( i32 )BENCH_HOST_W, .h = ( i32 )BENCH_HOST_H,
         .font  = GUI_FONT_JETBRAINS,
         .clock = sys_tick_seconds,          /* arms the diff/tess/submit zones */
         .sleep = sys_sleep_milliseconds,

@@ -33,6 +33,22 @@
 #define BENCH_WARMUP_SECONDS   1.0   // free-run before the first case (cold caches, first-touch
                                      //   pipeline + atlas work; the sb_gui_stress precedent)
 
+/* Shared window layout -- the host boots at 1280x720 (sb_gui_bench.c).  Every scene confines
+   itself to the STAGE rect on the left so the interactive picker (bench_core.c) always has its
+   own column on the right, whichever case is looping live. */
+#define BENCH_HOST_W    1280 + 640
+#define BENCH_HOST_H    720 + 320
+
+#define BENCH_PICKER_W  480.0f
+#define BENCH_PICKER_H  640.0f + 320.0f
+#define BENCH_PICKER_X  ( BENCH_HOST_W - BENCH_PICKER_W - 20.0f )
+#define BENCH_PICKER_Y  40.0f
+
+#define BENCH_STAGE_X   20.0f
+#define BENCH_STAGE_Y   40.0f
+#define BENCH_STAGE_W   ( BENCH_PICKER_X - BENCH_STAGE_X - 20.0f )
+#define BENCH_STAGE_H   BENCH_PICKER_H
+
 typedef struct bench_case_s bench_case_t;
 
 /* A scene emitter runs once per frame inside the default context.  `frame` counts from zero at

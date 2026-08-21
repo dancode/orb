@@ -292,9 +292,9 @@ bench_report_build( void )
     const char* cfg = "Unknown";
 #endif
 
-    rep( "gui_bench  %04u-%02u-%02u %02u:%02u:%02u  build=%s  1280x720  settle=%u  measure=%u\n",
-         dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second,
-         cfg, s_arg_settle, bench_measure_frames() );
+    rep( "gui_bench  %04u-%02u-%02u %02u:%02u:%02u  build=%s  %ux%u  settle=%u  measure=%u\n",
+         dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, cfg,
+         ( u32 )BENCH_HOST_W, ( u32 )BENCH_HOST_H, s_arg_settle, bench_measure_frames() );
     if ( s_arg_case )
         rep( "PARTIAL run: -case %s\n", s_arg_case );
     rep( "medians below; spread (med/avg/min/p95) at the bottom.  gpu trails ~2 frames and is\n"
@@ -529,8 +529,8 @@ bench_interactive_frame( void )
 {
     bench_registry_build();
 
-    gui()->window_set_next_pos ( 880.0f, 40.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 380.0f, 640.0f, GUI_COND_ONCE );
+    gui()->window_set_next_pos ( BENCH_PICKER_X, BENCH_PICKER_Y, GUI_COND_ONCE );
+    gui()->window_set_next_size( BENCH_PICKER_W, BENCH_PICKER_H, GUI_COND_ONCE );
     if ( gui()->window_begin( "Bench Picker", GUI_WIN_NONE ) )
     {
         gui()->stack();

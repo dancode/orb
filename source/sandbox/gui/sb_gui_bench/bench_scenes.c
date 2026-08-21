@@ -48,8 +48,8 @@ static f32  s_wall_value[ BENCH_WALL_MAX ];
 static void
 scene_wall_begin( void )
 {
-    gui()->window_set_next_pos ( 20.0f, 40.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 700.0f, 640.0f, GUI_COND_ONCE );
+    gui()->window_set_next_pos ( BENCH_STAGE_X, BENCH_STAGE_Y, GUI_COND_ONCE );
+    gui()->window_set_next_size( BENCH_STAGE_W, BENCH_STAGE_H, GUI_COND_ONCE );
 }
 
 static void
@@ -108,8 +108,8 @@ static void
 scene_table_rows( const bench_case_t* c, u32 frame )
 {
     UNUSED( frame );
-    gui()->window_set_next_pos ( 20.0f, 40.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 700.0f, 640.0f, GUI_COND_ONCE );
+    gui()->window_set_next_pos ( BENCH_STAGE_X, BENCH_STAGE_Y, GUI_COND_ONCE );
+    gui()->window_set_next_size( BENCH_STAGE_W, BENCH_STAGE_H, GUI_COND_ONCE );
     if ( gui()->window_begin( "Bench Table", GUI_WIN_NONE ) )
     {
         gui()->stack();
@@ -154,17 +154,29 @@ scene_table_rows( const bench_case_t* c, u32 frame )
 static bool s_six_check[ 24 ];
 static f32  s_six_value[ 24 ];
 
+#define BENCH_SIX_COLS 3u
+#define BENCH_SIX_ROWS 2u
+#define BENCH_SIX_GAP  15.0f
+
 static void
 scene_six_windows( u32 frame, bool animated )
 {
+    /* A 3x2 grid sized to exactly fill the stage rect -- the gaps are fixed, the cell size
+       falls out of BENCH_STAGE_W/H so the grid always sits clear of the picker column. */
+    f32 cell_w = ( BENCH_STAGE_W - ( f32 )( BENCH_SIX_COLS - 1 ) * BENCH_SIX_GAP )
+               / ( f32 )BENCH_SIX_COLS;
+    f32 cell_h = ( BENCH_STAGE_H - ( f32 )( BENCH_SIX_ROWS - 1 ) * BENCH_SIX_GAP )
+               / ( f32 )BENCH_SIX_ROWS;
+
     for ( u32 w = 0; w < 6; ++w )
     {
         char title[ 32 ];
         fmt_snprintf( title, sizeof( title ), "Bench Win %u", w );
 
-        gui()->window_set_next_pos ( 20.0f + ( f32 )( w % 3 ) * 320.0f,
-                                     40.0f + ( f32 )( w / 3 ) * 330.0f, GUI_COND_ONCE );
-        gui()->window_set_next_size( 300.0f, 310.0f, GUI_COND_ONCE );
+        gui()->window_set_next_pos ( BENCH_STAGE_X + ( f32 )( w % 3 ) * ( cell_w + BENCH_SIX_GAP ),
+                                     BENCH_STAGE_Y + ( f32 )( w / 3 ) * ( cell_h + BENCH_SIX_GAP ),
+                                     GUI_COND_ONCE );
+        gui()->window_set_next_size( cell_w, cell_h, GUI_COND_ONCE );
         if ( gui()->window_begin( title, GUI_WIN_NONE ) )
         {
             gui()->stack();
@@ -288,8 +300,8 @@ scene_text_wall( const bench_case_t* c, u32 frame )
     UNUSED( frame );
     const char* line = bench_text_line();
 
-    gui()->window_set_next_pos ( 20.0f, 40.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 940.0f, 660.0f, GUI_COND_ONCE );
+    gui()->window_set_next_pos ( BENCH_STAGE_X, BENCH_STAGE_Y, GUI_COND_ONCE );
+    gui()->window_set_next_size( BENCH_STAGE_W, BENCH_STAGE_H, GUI_COND_ONCE );
     if ( gui()->window_begin( "Bench Text", GUI_WIN_NONE ) )
     {
         gui()->stack();
@@ -349,13 +361,21 @@ scene_text_wall( const bench_case_t* c, u32 frame )
 static bool s_comp_check[ 8 ];
 static f32  s_comp_value[ 8 ];
 
+#define BENCH_COMP_PANES 3u
+#define BENCH_COMP_GAP   15.0f
+
 static void
 scene_composite( const bench_case_t* c, u32 frame )
 {
     UNUSED( c ); UNUSED( frame );
 
-    gui()->window_set_next_pos ( 20.0f, 40.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 360.0f, 560.0f, GUI_COND_ONCE );
+    /* Three panes filling the stage rect side by side, same recipe as scene_six_windows --
+       the pane width falls out of BENCH_STAGE_W so the row always ends clear of the picker. */
+    f32 pane_w = ( BENCH_STAGE_W - ( f32 )( BENCH_COMP_PANES - 1 ) * BENCH_COMP_GAP )
+               / ( f32 )BENCH_COMP_PANES;
+
+    gui()->window_set_next_pos ( BENCH_STAGE_X, BENCH_STAGE_Y, GUI_COND_ONCE );
+    gui()->window_set_next_size( pane_w, BENCH_STAGE_H, GUI_COND_ONCE );
     if ( gui()->window_begin( "Bench Form", GUI_WIN_NONE ) )
     {
         gui()->stack();
@@ -389,8 +409,9 @@ scene_composite( const bench_case_t* c, u32 frame )
     }
     gui()->window_end();
 
-    gui()->window_set_next_pos ( 400.0f, 40.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 420.0f, 560.0f, GUI_COND_ONCE );
+    gui()->window_set_next_pos ( BENCH_STAGE_X + pane_w + BENCH_COMP_GAP, BENCH_STAGE_Y,
+                                 GUI_COND_ONCE );
+    gui()->window_set_next_size( pane_w, BENCH_STAGE_H, GUI_COND_ONCE );
     if ( gui()->window_begin( "Bench List", GUI_WIN_NONE ) )
     {
         gui()->stack();
@@ -422,8 +443,9 @@ scene_composite( const bench_case_t* c, u32 frame )
     }
     gui()->window_end();
 
-    gui()->window_set_next_pos ( 860.0f, 40.0f, GUI_COND_ONCE );
-    gui()->window_set_next_size( 380.0f, 560.0f, GUI_COND_ONCE );
+    gui()->window_set_next_pos ( BENCH_STAGE_X + 2.0f * ( pane_w + BENCH_COMP_GAP ), BENCH_STAGE_Y,
+                                 GUI_COND_ONCE );
+    gui()->window_set_next_size( pane_w, BENCH_STAGE_H, GUI_COND_ONCE );
     if ( gui()->window_begin( "Bench Reading", GUI_WIN_NONE ) )
     {
         gui()->stack();
