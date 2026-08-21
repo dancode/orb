@@ -409,20 +409,24 @@ typedef struct
        AND a lattice is two quads by nature.  They were fields once, which is exactly why they
        could not sit inside a rounded panel or a sector -- a field IS the shape.
 
-       CHECKER and GRID work in SV_Position pixels, not the shape's local frame: a backdrop's
-       pattern belongs to the screen grid, and a shape-local coordinate's ulp reaches a full pixel
-       at the corners of a fullscreen panel.  pat_phase re-anchors the pattern to the SHAPE, so a
-       backdrop drags with its window instead of sliding under it; the emit site derives it against
-       the same quantized pitch this row carries, since a phase and a pitch that disagree walk the
-       pattern off its anchor across a wide panel.
+       CHECKER and GRID work in SV_Position pixels, not the shape's HALF2 effect coordinate,
+       whose ulp reaches a full pixel at the corners of a fullscreen panel.  The pattern ANCHORS
+       AT THE QUAD'S OWN RECT: the fragment takes the pixel coordinate relative to the box origin
+       it already receives (the placement interpolant, exact quarter-pixel fixed point), so the
+       record holds no absolute position and one record serves every placement -- a row of
+       checkered swatches dedups to a single style, and a moving patterned surface changes only
+       its quad.  pat_phase carries only the residue of an EXPLICIT anchor relative to that
+       origin (draw_grid's panning content origin); box-anchored callers send zero.  The emit
+       site derives that residue against the same quantized pitch this row carries, since a phase
+       and a pitch that disagree walk the pattern off its anchor across a wide panel.
 
          GUI_OP_TILE_U     pat_size = repeat count multiplied into u before sampling
          GUI_OP_TEXT_EDGE  pat_size = outline width px      pat_col = the outline colour
          GUI_OP_CHECKER    pat_cell = cell px               pat_col = the alternate colour
-                           pat_phase = per-axis phase, a fraction of the TWO-cell colour period
-                           (one cell of phase would simply swap the two colours)
+                           pat_phase = per-axis anchor residue, a fraction of the TWO-cell
+                           colour period (one cell of phase would simply swap the two colours)
          GUI_OP_GRID       pat_cell = cell px, pat_size = line width px, pat_angle = row 2
-                           pat_phase = per-axis phase, a fraction of ONE cell
+                           pat_phase = per-axis anchor residue, a fraction of ONE cell
        pat_phase is a unorm16 pair through gui_uv_pack, x in the low half. */
 
     f32 pat_cell, pat_size;

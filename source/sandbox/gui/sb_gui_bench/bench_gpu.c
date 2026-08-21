@@ -18,14 +18,14 @@
 ==============================================================================================*/
 // clang-format off
 
-/* 12 x 7 cells x 6 layers = 504 cells covering the canvas six times over (~5.5 Mpix shaded at
-   1280x720).  Cell count is bounded by the SHIPPING CAPS, not by taste: total cells must stay
-   under GUI_MAX_CMDS with the window chrome beside them, and -- because some ops anchor their
-   pattern to their own box and so mint one style record per cell (checker and stripes do) --
-   under GUI_MAX_PRIMS too.  The bench prices the pipeline inside its caps; overflow belongs to
-   sb_gui_stress, and the runner flags any case that saturated a pool anyway. */
-#define BENCH_OP_COLS    12u
-#define BENCH_OP_ROWS    7u
+/* 16 x 9 cells x 6 layers = 864 cells covering the canvas six times over (~5.5 Mpix shaded at
+   1280x720).  Cell count is bounded by GUI_MAX_CMDS: total cells must stay under it with the
+   window chrome beside them.  Style records no longer bind -- the pattern ops anchor at the
+   quad's own rect, so a whole grid of one config dedups to a handful of records.  The bench
+   prices the pipeline inside its caps; overflow belongs to sb_gui_stress, and the runner flags
+   any case that saturated a pool anyway. */
+#define BENCH_OP_COLS    16u
+#define BENCH_OP_ROWS    9u
 #define BENCH_OP_LAYERS  6u
 
 /* The op-matrix configurations, one case each.  Order is the report order; op_self is first
@@ -136,7 +136,7 @@ bench_op_cell( bench_op_t op, gui_rect_t r, u32 col )
 
         case BENCH_OP_RING:         gui()->draw_ring( r, 3.0f, col );                        break;
         case BENCH_OP_CHECKER:      gui()->draw_checker( r, 16.0f, col, c2 );                break;
-        case BENCH_OP_GRID:         gui()->draw_grid( r, 16.0f, 1.0f, 0.0f, 0.0f, col );     break;
+        case BENCH_OP_GRID:         gui()->draw_grid( r, 16.0f, 1.0f, r.x, r.y, col );       break;
         case BENCH_OP_STRIPES:      gui()->draw_stripes( r, 10.0f, 2.0f, 0.7f, col );        break;
         case BENCH_OP_REPEAT:       gui()->draw_dot_grid( r, 8, 4, 14.0f, 14.0f, 6.0f, col ); break;
         case BENCH_OP_REPEAT_POLAR: gui()->draw_dial_ticks( r, 24, 2.0f, 8.0f, 0.0f, col );  break;
@@ -258,7 +258,7 @@ static const bench_case_t k_op_cases[] =
     BENCH_OP_CASE( BENCH_OP_RING,         "op_ring",         "field-borne band, 3 px"            ),
     BENCH_OP_CASE( BENCH_OP_CHECKER,      "op_checker",      "fragment checker, 16 px cells"     ),
     BENCH_OP_CASE( BENCH_OP_GRID,         "op_grid",         "fragment line lattice"             ),
-    BENCH_OP_CASE( BENCH_OP_STRIPES,      "op_stripes",      "tessellated stripes (many quads)"  ),
+    BENCH_OP_CASE( BENCH_OP_STRIPES,      "op_stripes",      "fragment stripe lattice"           ),
     BENCH_OP_CASE( BENCH_OP_REPEAT,       "op_repeat",       "linear repeat fold, 8x4 dots"      ),
     BENCH_OP_CASE( BENCH_OP_REPEAT_POLAR, "op_repeat_polar", "polar repeat fold, 24 ticks"       ),
     BENCH_OP_CASE( BENCH_OP_PULSE,        "op_pulse",        "clock alpha breath"                ),

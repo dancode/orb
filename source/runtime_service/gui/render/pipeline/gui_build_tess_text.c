@@ -23,12 +23,16 @@
     The rasterizer's own pixel coordinate is exact everywhere at any size.  (It also means the
     pattern assumes the pixel-space ortho mvp, which is the only mvp this pipeline has.)
 
-    The CPU's share is the ANCHOR: quantize the cell pitch EXACTLY as the packed word carries it
-    (1/4 px), then derive the phase against that quantized pitch -- deriving it against the raw
-    pitch would let phase and pitch disagree by up to 1/8 px per cell, which walks the pattern
-    off its anchor across a wide panel.  The checker's phase is a fraction of the TWO-cell
-    colour period (one cell of phase would swap the colours); the grid's is a fraction of one
-    cell.  Both ride the style record's pattern row (gui_prim_t, pat_phase).
+    The ANCHOR is the quad's own rect: the fragment subtracts the placement it already receives
+    (i.rect, exact quarter-pixel fixed point) from the pixel coordinate, so the record carries
+    no absolute position and ONE record serves every placement -- a row of swatches dedups to a
+    single style, and a moving patterned surface changes only its quad.  pat_phase holds only
+    the RESIDUE OF AN EXPLICIT ANCHOR relative to the box origin (draw_grid's panning content
+    origin); the box-anchored callers (checker, stripes, hatch) leave it zero.  Where a residue
+    is derived it is derived against the same pitch the record carries, since a phase and a
+    pitch that disagree walk the pattern off its anchor across a wide panel.  The checker's
+    phase is a fraction of the TWO-cell colour period (one cell of phase would swap the
+    colours); the grid's is a fraction of one cell.
 ==============================================================================================*/
 
 /* A pattern quad, with the shape it lands in.  A zero radius is the plain rectangle the pattern
@@ -59,13 +63,10 @@ tess_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, f32 rounding, u32 col_a, u32
 
     cell = tess_clamp_cell( cell );
 
-    f32 period = 2.0f * cell;
-    f32 phx    = ( x - period * floorf( x / period ) ) / period;
-    f32 phy    = ( y - period * floorf( y / period ) ) / period;
-
-    s_tess.cur_prim.pat_cell  = cell;
-    s_tess.cur_prim.pat_phase = gui_uv_pack( phx, phy );
-    s_tess.cur_prim.pat_col   = col_b;
+    /* No phase: the fragment anchors at the quad's own rect, and a checker has no explicit
+       anchor to be relative to.  The cleared record's zero IS the anchor. */
+    s_tess.cur_prim.pat_cell = cell;
+    s_tess.cur_prim.pat_col  = col_b;
     s_tess.cur_ops |= GUI_OP_SELF | GUI_OP_CHECKER;
 
     tess_pattern_push( x, y, w, h, rounding, col_a );
@@ -87,14 +88,20 @@ tess_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 cell, f32 thickness,
        pattern off its anchor. */
     angle -= TESS_PI * floorf( angle / TESS_PI );
 
-    /* The lattice anchor, mod the quantized pitch.  (ox, oy) is a screen-space content origin
-       and may be anywhere (a panned canvas sends large negatives); only its residue matters.
-       The anchor is rotated INTO lattice space first, because that is the space the fragment
-       does its mod in -- rotation is linear, so R(px - o) is R(px) - R(o), and the phase is the
-       residue of R(o).  Taking the residue before the rotation would anchor the wrong point. */
+    /* The lattice anchor RELATIVE TO THE BOX ORIGIN, mod the quantized pitch.  (ox, oy) is a
+       screen-space content origin and may be anywhere (a panned canvas sends large negatives);
+       only its residue matters.  It is snapped exactly as the box was, so the common "anchored
+       at my own origin" call (stripes, hatch, a static backdrop) yields a phase of EXACTLY
+       zero and the record dedups across placements -- the fragment supplies the box origin
+       from the quad's own rect.  The relative anchor is rotated INTO lattice space first,
+       because that is the space the fragment does its mod in -- rotation is linear, so
+       R(p - o) is R(p) - R(o), and the phase is the residue of R(o).  Taking the residue
+       before the rotation would anchor the wrong point. */
+    f32 dx  = tess_snap_px( ox ) - x;
+    f32 dy  = tess_snap_px( oy ) - y;
     f32 acs = cosf( angle ), asn = sinf( angle );
-    f32 rx  =  ox * acs + oy * asn;
-    f32 ry  = -ox * asn + oy * acs;
+    f32 rx  =  dx * acs + dy * asn;
+    f32 ry  = -dx * asn + dy * acs;
 
     f32 phx = ( rx - cell * floorf( rx / cell ) ) / cell;
     f32 phy = ( ry - cell * floorf( ry / cell ) ) / cell;

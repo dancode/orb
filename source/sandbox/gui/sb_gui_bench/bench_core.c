@@ -366,10 +366,9 @@ bench_report_build( void )
                      rep_ms( r->gpu.med, r->gpu_frames == 0 ),
                      r->gpu.med - base->gpu.med );
             }
-            rep( "(equal cell coverage per config; a field shades its whole quad footprint, and\n"
-                 " stripes is tessellated -- read its quad column before its delta.  A NEGATIVE\n"
-                 " delta is real: sparse ops (ring, dash, repeat, seg) leave most of the cell\n"
-                 " empty and the zero-coverage discard kills those pixels early)\n" );
+            rep( "(equal cell coverage per config; a field shades its whole quad footprint.\n"
+                 " A NEGATIVE delta is real: sparse ops (ring, dash, repeat, seg) leave most of\n"
+                 " the cell empty and the zero-coverage discard kills those pixels early)\n" );
         }
     }
 

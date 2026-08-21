@@ -978,9 +978,9 @@ typedef struct gui_api_s
 
     /*===============================  patterns + gradients -- what fills a shape  ===============================*/
 
-    /* What a rect is filled WITH rather than what shape it is.  checker and grid tile in the
-       fragment, so any area and any cell count is ONE quad; both land inside the ambient
-       rounding's boundary.  hatch and stripes are tessellated line fills. */
+    /* What a rect is filled WITH rather than what shape it is.  All four tile in the fragment
+       (hatch and stripes are the lattice cut on one axis), so any area and any cell count is
+       ONE quad, and every one lands inside the ambient rounding's boundary. */
 
     void ( *draw_checker           )( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
     /* Line lattice over `box`: a `thickness` px line every `cell` px, over NOTHING -- layer it on

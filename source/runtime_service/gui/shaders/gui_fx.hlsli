@@ -367,10 +367,13 @@ float fx_dash_cut( float s, float period, float duty )
     return saturate( 0.5 + d_on );
 }
 
-// OP_GRID -- the line lattice, as coverage.  It works in SV_Position pixels, not the shape's local
-// frame: a backdrop's pattern belongs to the screen grid, and a shape-local coordinate's ulp
-// reaches a full pixel at the corners of a fullscreen panel.  pat_phase re-anchors it to the shape
-// so a backdrop drags with its window instead of sliding under it.
+// OP_GRID -- the line lattice, as coverage.  It works in SV_Position pixels, not the shape's HALF2
+// effect coordinate, whose ulp reaches a full pixel at the corners of a fullscreen panel.  The
+// pattern ANCHORS at the quad's own rect: the pixel coordinate is taken relative to the box origin
+// (g_rect, exact quarter-pixel fixed point), so the record carries no absolute position, one
+// record serves every placement, and a backdrop drags with its window by construction.  pat_phase
+// holds only the residue of an EXPLICIT anchor relative to that origin (a panned canvas's content
+// origin); the box-anchored callers send zero.
 //
 // Being an op rather than a field is the whole difference between "a rectangle of graph paper" and
 // "graph paper inside whatever shape this is" -- the coverage below multiplies into the field's,
@@ -383,15 +386,17 @@ float fx_grid_mul( float2 px )
     float  ang  = prim_row( 2u ).w;
     float2 ph   = unpack_unorm16x2( asuint( pat.z ) );
 
+    float2 rel = px - ( g_rect.xy - g_rect.zw );    // pixels from the box origin
+
     // Into LATTICE space first, so everything below is the axis-aligned case it always was.  The
     // rotation is of the pixel coordinate, not of the pattern: the phase the emit site sent was
     // computed against the ROTATED anchor for exactly this reason (tess_grid), so the lines still
     // land on the anchor after the turn instead of sliding off it.
-    float2 q = px;
+    float2 q = rel;
     if ( ang != 0.0 )
     {
         float cs = cos( ang ), sn = sin( ang );
-        q = float2( px.x * cs + px.y * sn, -px.x * sn + px.y * cs );
+        q = float2( rel.x * cs + rel.y * sn, -rel.x * sn + rel.y * cs );
     }
 
     float2 p  = q - ph * cell;
@@ -968,17 +973,20 @@ float4 main( ps_in_t i ) : SV_Target0
         s = u_textures[ NonUniformResourceIndex( tex_slot ) ]
                 .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], uv );
 
-    // OP_CHECKER -- alternate the fill with the record's pattern colour in cell-sized squares.  The
-    // pitch and the parity phase come from row 7, the phase as a fraction of the TWO-cell colour
-    // period (one cell of phase would simply swap the colours).  Parity is floor-based like every
-    // pattern mod here, since fmod truncates.  As an op it lands on whatever shape the field drew,
-    // so the transparency chequerboard behind a swatch is the swatch's own rounded rect.
+    // OP_CHECKER -- alternate the fill with the record's pattern colour in cell-sized squares.
+    // Anchored at the quad's own rect like OP_GRID (the pixel coordinate is taken relative to the
+    // box origin), so the record is position-free and every same-styled swatch shares one.  The
+    // phase lane stays as a fraction of the TWO-cell colour period for an explicit anchor (one
+    // cell of phase would simply swap the colours); a plain checker sends zero.  Parity is
+    // floor-based like every pattern mod here, since fmod truncates.  As an op it lands on
+    // whatever shape the field drew, so the transparency chequerboard behind a swatch is the
+    // swatch's own rounded rect.
     if ( ( g_ops & OP_CHECKER ) != 0u )
     {
         float4 pat  = prim_row( 7u );
         float  cell = pat.x;
         float2 ph   = unpack_unorm16x2( asuint( pat.z ) ) * ( 2.0 * cell );
-        float2 t    = ( i.sv_pos.xy - ph ) / cell;
+        float2 t    = ( i.sv_pos.xy - ( g_rect.xy - g_rect.zw ) - ph ) / cell;
         float  k    = floor( t.x ) + floor( t.y );
         if ( k - 2.0 * floor( k * 0.5 ) >= 0.5 )
             vcol = unpack_col( asuint( pat.w ) );
