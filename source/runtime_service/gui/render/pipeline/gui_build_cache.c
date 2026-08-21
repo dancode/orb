@@ -4,21 +4,24 @@
     The render pipeline has three phases. This file is the middle one (BUILD), and 
     is itself split across mutliple units:
 
-        EMIT   (gui_emit_*.c)   Widgets push semantic shapes -> s_draw command list, cut 
-                                into per-(win,z,vp,band) segments, one hash baked per command.
+        EMIT (gui_emit_*.c)   
+        
+        Widgets push semantic shapes -> s_draw command list, cut into per-(win,z,vp,band)
+        segments, one hash baked per command.
 
-        BUILD  (gui_build_*.c)  Once per frame (cache_build_frame, this file): diff each
-                                window's commands against last frame (gui_build_diff.c),
-                                reuse unchanged geometry in place or tessellate changed windows
-                                (gui_build_place.c), then z-sort the result into a dispatch
-                                table.  This file owns the shared slot/stats state both workers
-                                read and write, plus the top-level driver that sequences them.
+        BUILD (gui_build_*.c)  Once per frame (cache_build_frame, this file): 
+                                
+        Diff each window's commands against last frame (gui_build_diff.c), 
+        reuse unchanged  geometry in place or tessellate changed windows (gui_build_place.c), 
+        then z-sort  the result into a dispatch table.This file owns the shared slot/stats state
+        both workers read and write, plus the top-level driver that sequences them.
 
-        RENDER (gui_render_.c)  Once per surface: upload the surface's slot-union span (each
-                                frame-in-flight region must hold complete geometry, so the
-                                cache saves TESSELLATION, not upload) and emit one draw
-                                call per cached GPU command.
-
+        RENDER (gui_render_*.c)
+        
+        Once per surface: upload the surface's slot-union span (each frame-in-flight region
+        must hold complete geometry, so the cache saves TESSELLATION, not upload) and emit
+        one draw call per cached GPU command.
+    
     BUILD runs lazily on the first surface flush (cache_build_frame, guarded by s_frame_built)
     because the semantic command list is shared across every surface -- the geometry it
     produces is surface-independent.  build_frame_reset clears the guard at frame_begin.
@@ -36,24 +39,28 @@ const char* gui_debug_name( gui_id_t id );
 /*==============================================================================================
     Once-per-frame guard.
 
-    The first surface flush triggers cache_build_frame and stamps s_frame_built; later surfaces
-    reuse the slot and dispatch tables untouched.
+    The first surface flush triggers cache_build_frame and stamps s_frame_built; 
+    later surfaces reuse the slot and dispatch tables untouched.
 ==============================================================================================*/
 
 static bool s_frame_built;
-
-/* Walls this build hit OUTSIDE the tessellation passes (TESS_OVF_*, gui_build_tess_state.c) -- today
-   just the window cap, latched during the diff.  Kept apart from s_tess.overflow because that one
-   is a property of ONE placement pass and tess_reset clears it, which the repack retry relies on;
-   this is a property of the whole build.  Cleared at the top of cache_build_frame, folded into the
-   overflow report at the bottom. */
-static u32 s_build_walls;
 
 void
 build_frame_reset( void )
 {
     s_frame_built = false;
 }
+
+/*==============================================================================================
+
+    When the window count exceeds RENDER_MAX_WIN during the diff/hashing pass 
+    (before tessellation), the extra window is silently dropped and this flag is set. 
+    At end-of-frame it's OR'd into s_tess.overflow to produce the unified warning
+    mask. Reset to 0 each frame by cache_build_frame().
+
+==============================================================================================*/
+
+static u32 s_diff_window_overflow;
 
 /*==============================================================================================
     Per-frame render stats.
@@ -536,7 +543,7 @@ cache_build_frame( void )
          return;
 
     s_frame_built = true;
-    s_build_walls = 0u;
+    s_diff_window_overflow = 0u;
 
     /* Before anything tessellates: refresh the glyph UV table if a font's tenant changed
        or an atlas repacked, so every ID emitted this frame and every rect behind it come
@@ -676,7 +683,7 @@ cache_build_frame( void )
         ps.overflow_at_prim = s_tess.prim_count;
     }
 
-    u32  hit = s_tess.overflow | s_build_walls;   /* this pass's walls, plus the diff's */
+    u32  hit = s_tess.overflow | s_diff_window_overflow;   /* this pass's walls, plus the diff's */
     char walls[ 128 ];
     tess_overflow_walls( hit, walls, (u32)sizeof( walls ) );
 

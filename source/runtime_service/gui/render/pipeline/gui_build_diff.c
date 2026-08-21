@@ -152,7 +152,7 @@ cache_diff_windows( void )
                this happens before any of them, while the culprit window is still in hand. */
             if ( s_cache.cur_n >= RENDER_MAX_WIN )
             {
-                s_build_walls |= TESS_OVF_WINDOWS;
+                s_diff_window_overflow |= TESS_OVF_WINDOWS;
                 GUI_WARN_ONCE( "more than %u windows this frame -- extra windows "
                                "are not rendered. Raise RENDER_MAX_WIN (gui_render.h).\n",
                                RENDER_MAX_WIN );
