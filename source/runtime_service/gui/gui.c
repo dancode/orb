@@ -36,8 +36,8 @@
 #include "runtime_service/gui/debug/gui_debug.h"
 
 /*============================================================================================*/
-/* Sibling module APIs -- fetched once at module init (gui_api.c),
-   read everywhere via the extern accessors. THIS is the one TU that defines the pointer storage. */
+/* Sibling module APIs -- fetched once at module init (gui_api.c), read everywhere via the
+   extern accessors. THIS is the one TU that defines the pointer storage. */
 
 #include "engine/app/app_api.h"
 #include "runtime_service/rhi/rhi_api.h"

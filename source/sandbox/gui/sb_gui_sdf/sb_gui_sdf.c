@@ -164,6 +164,7 @@ shape_paint_keyhole( u8* out, f32 inset )
 
 /* Twelve teeth around a hub with a bore: small features at the scale where a single-channel field
    starts rounding corners off, which is the honest limit of the whole approach. */
+
 static void
 shape_paint_gear( u8* out )
 {
@@ -2404,9 +2405,11 @@ win_fills( void )
 
 /* Under the default bake's reach on purpose: a 128-texel ink padded 8 and drawn near 1:1 reaches
    about 7 px, so this starts inside the ceiling and the last panel is where you go past it. */
+
 static f32  s_shape_glow  = 6.0f;    /* glow spread, px -- swept past the reach in the last panel */
 static f32  s_shape_ring  = 3.0f;    /* border band width, px                                     */
 static bool s_shape_anim  = true;
+static f32  s_shape_scale = 1.0f;    /* output scale, x -- drives the size ladder's specimen pair  */
 
 static void
 win_shapes_baked( void )
@@ -2420,8 +2423,9 @@ win_shapes_baked( void )
     }
 
     gui()->field_label_right( 240.0f );
-    gui()->slider_float( "glow spread (px)", &s_shape_glow, 0.0f, 48.0f );
-    gui()->slider_float( "border (px)",      &s_shape_ring, 0.5f, 12.0f );
+    gui()->slider_float( "glow spread (px)", &s_shape_glow,  0.0f, 48.0f );
+    gui()->slider_float( "border (px)",      &s_shape_ring,  0.5f, 12.0f );
+    gui()->slider_float( "output scale (x)", &s_shape_scale, 0.15f, 5.0f );
     gui()->checkbox( "animate", &s_shape_anim );
     if ( s_shape_anim )
         keep_awake();
@@ -2508,6 +2512,72 @@ win_shapes_baked( void )
         gui()->draw_text( r.x + 164.0f, y + side + 6.0f, INK_DIM, "gear, ring only" );
         gui()->draw_text( r.x + 304.0f, y + side + 6.0f, INK_DIM, "gear, filled" );
     }
+
+    gui()->separator_text( "output scale -- a bigger rect, and nothing else" );
+    {
+        /* ORDINARY scaling, the kind any caller gets by sizing the rect it draws into: no op, no
+           record lane, nothing different in the command bytes but four floats.  The fragment takes
+           fwidth() of the sampled distance, so the antialiasing band is one pixel and a 3 px border
+           is 3 px at every size on these rows -- what changes with size is the ART.
+
+           128 texels is the ink's longest edge (GUI_SHAPE_SIZE_DEFAULT), so side / 128 is how many
+           pixels one stored texel is stretched across.  Past 1.0 the bake's own resolution is the
+           limit and corners round off; well under it the screen is, and thin members thin out. */
+        static const f32 k_ladder[ 7 ] = { 12.0f, 16.0f, 24.0f, 32.0f, 48.0f, 64.0f, 96.0f };
+
+        gui_shape_id_t k_id[ 2 ] = { s_shape_keyhole, s_shape_gear };
+        const char*    k_nm[ 2 ] = { "keyhole", "gear (fine detail)" };
+
+        gui_rect_t r = gui()->canvas( 268.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        /* One baseline per row, bottom-aligned: the sizes are meant to be read against each other,
+           and a shared TOP edge leaves the small end looking like it is floating. */
+        for ( u32 row = 0; row < 2; ++row )
+        {
+            f32 foot = r.y + 20.0f + (f32)row * 126.0f + 96.0f;
+            f32 x    = r.x + 16.0f;
+
+            for ( u32 i = 0; i < 7; ++i )
+            {
+                f32 s = k_ladder[ i ];
+                gui()->draw_shape_in( ( gui_rect_t ){ x, foot - s, s, s }, k_id[ row ], INK );
+                x += s + 12.0f;
+            }
+            gui()->draw_text( x + 10.0f, foot - 52.0f, INK_DIM, k_nm[ row ] );
+        }
+
+        /* The slider's own specimen pair, capped to the width the region actually has.  The labels
+           quote the size DRAWN rather than the one asked for, so they stay true when the cap bites. */
+        f32 side = 96.0f * s_shape_scale;
+        f32 fit  = ( r.w - 60.0f ) * 0.5f;
+        if ( side > fit )  side = fit;
+        if ( side < 4.0f ) side = 4.0f;
+
+        gui_rect_t q = gui()->canvas( side + 32.0f );
+        gui()->draw_rect( q.x, q.y, q.w, q.h, PANEL );
+
+        f32 sy = q.y + 6.0f;
+        f32 ax = q.x + 20.0f;
+        f32 bx = q.x + 40.0f + side;
+        gui()->draw_shape_in( ( gui_rect_t ){ ax, sy, side, side }, s_shape_keyhole, INK );
+        gui()->draw_shape_in( ( gui_rect_t ){ bx, sy, side, side }, s_shape_gear,    INK );
+
+        char msg[ 96 ];
+        f32  per_tex = side / (f32)GUI_SHAPE_SIZE_DEFAULT;
+
+        fmt_snprintf( msg, sizeof( msg ), "keyhole  %.0f px   %.2f px/texel",
+                      (double)side, (double)per_tex );
+        gui()->draw_text( ax, sy + side + 8.0f, INK_DIM, msg );
+
+        fmt_snprintf( msg, sizeof( msg ), "gear  %.0f px   %.2f px/texel",
+                      (double)side, (double)per_tex );
+        gui()->draw_text( bx, sy + side + 8.0f, INK_DIM, msg );
+    }
+    gui()->text_wrapped( "scaling the rect is not the swell above: the boundary stays put, so holes "
+                         "and members grow with the plate and the art stays itself at any size.  "
+                         "The edge holds one pixel of antialiasing throughout -- what the ladder "
+                         "shows is the bake's resolution arriving, corners rounding off first." );
 
     gui()->separator_text( "the reach ceiling -- what the bake padded for, and not one px more" );
     {
