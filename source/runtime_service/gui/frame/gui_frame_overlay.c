@@ -755,7 +755,7 @@ static gui_wait_events_fn s_hook_wait;
 void
 gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_fn wait_events )
 {
-    s_perf.clock = clock;        /* adopted by perf_frame_begin / render brackets next frame */
+    s_perf.clock = clock;            /* adopted by perf_frame_begin / render brackets next frame */
     gui_render_set_clock( clock );   /* the render server times its own phases with the same one */
     s_hook_sleep = sleep_ms;
     s_hook_wait  = wait_events;

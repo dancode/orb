@@ -89,11 +89,11 @@ gui_render_stats( void )
 /*==============================================================================================
     Phase timing.
 
-    The render server links no clock, so the host's arrives through the same one-way seam
-    gui_render_set_time uses.  Without one every zone reads zero and the arithmetic below is two
-    predictable branches -- the reason this is not compiled out: the phase split is the only way to
-    tell a frame that tessellated too much from one that uploaded too much, and a number that
-    exists only in a debug build is a number nobody has when it matters.
+    The render server links no clock, so the host's arrives through gui_render_set_time.  
+    Without one every zone reads zero and the arithmetic below is two predictable branches 
+    -- the reason this is not compiled out: the phase split is the only way to tell a frame 
+    that tessellated too much from one that uploaded too much, and a number that exists 
+    only in a debug build is a number nobody has when it matters.
 ==============================================================================================*/
 
 static gui_clock_fn s_zone_clock;
@@ -105,6 +105,7 @@ gui_render_set_clock( gui_clock_fn fn )
 }
 
 /* Open a zone: the clock now, or 0 when there is none to read. */
+
 static f64
 zone_begin( void )
 {
@@ -115,6 +116,7 @@ zone_begin( void )
    frame -- cache_place_slots under the repack retry, gui_render_flush per surface -- reports what
    the frame actually spent, not what its last pass did.  Callers zero `dst` where the phase's
    publish rule says to. */
+
 static void
 zone_end( f32* dst, f64 t0 )
 {

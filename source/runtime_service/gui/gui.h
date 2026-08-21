@@ -2921,15 +2921,17 @@ static inline u32  gui_style_pal   ( u32 entry ) { return GUI_PAL_FIRST + entry;
 
     A full accounting of what the gui system holds, split by WHERE it lives:
 
-      - GPU       : device memory -- per-viewport geometry buffers, atlas textures, and (Debug)
+      - GPU:        Device memory -- per-viewport geometry buffers, atlas textures, and (Debug)
                     the debug overlay's own buffers.  Dynamic: created at init / viewport_open,
                     released at shutdown / viewport_close.
+
       - CPU static: EVERY fixed backend buffer baked into the image (.bss/.rdata) -- the draw
                     list, tessellation staging, retained cache, font/atlas/icon registries,
                     render state + embedded shaders, capture buffers, debug tooling.  Present
                     for the whole run whether one window is open or fifty; summed exhaustively
                     in render/gui_render_mem.c (the accounting contract lives there).
-      - CPU heap  : one malloc block per live context (header + state / popup / window /
+
+      - CPU heap:   One malloc block per live context (header + state / popup / window /
                     viewport / dock pools).  Dynamic: grows only when a secondary context is
                     created.
 
@@ -2950,6 +2952,7 @@ typedef struct
        of entries per (frame-in-flight, viewport), so its size is cap x stride x gpu_regions and a
        raised cap costs that multiplier.  The glyph table is one shared copy, replaced rather than
        rewritten, so it pays the multiplier once. */
+
     u32 gpu_quad_bytes;         // quad records   -- GUI_MAX_QUADS x 16 B x gpu_regions
     u32 gpu_style_bytes;        // style records  -- (GUI_MAX_PRIMS + 1) x 128 B x gpu_regions,
                                 //   plus GUI_PAL_MAX x 128 B per frame-in-flight (the palette)
@@ -3018,13 +3021,15 @@ typedef struct
     u32 cmd_count_all;      // physical command pool fill, both bands (cap: GUI_MAX_CMDS)
     u32 clip_count_all;     // physical clip table fill, both bands (cap: GUI_MAX_CLIP_RECTS)
     u32 seg_count;          // physical segment count, both bands (cap: GUI_MAX_SEGS)
+
     u32 text_pool_used;     // physical text pool bytes, both bands (cap: GUI_MAX_TEXT_POOL)
-    u32 quad_count;         // quad records that DRAW -- one record IS one whole shape (a fill, a
-                            //   glyph, a capsule segment); debug band excluded
+
+    u32 quad_count;         // quad records that DRAW -- one record IS one whole shape 
+                            //   (a fill, a glyph, a capsule segment); debug band excluded
     u32 prim_count;         // style-arena records the drawing windows own: distinct styles after
-                            //   dedup, plus one page per four fx instance records
-    u32 quad_count_all;     // physical quad arena fill, both bands, slot padding included
-                            //   (cap: GUI_MAX_QUADS) -- the number the cap is hit against
+                            //   dedup, plus one page per four fx instance records.
+
+    u32 quad_count_all;     // physical quad arena fill, both bands, slot padding included (cap: GUI_MAX_QUADS) 
     u32 prim_count_all;     // physical style arena fill, both bands (cap: GUI_MAX_PRIMS)
 
     u32 win_total;          // windows tracked this frame
