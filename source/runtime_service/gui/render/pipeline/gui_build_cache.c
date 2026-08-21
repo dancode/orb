@@ -1,30 +1,17 @@
 /*==============================================================================================
+
     gui/render/pipeline/gui_build_cache.c -- Retained frame-geometry cache
 
-    The render pipeline has three phases. This file is the middle one (BUILD), and 
-    is itself split across mutliple units:
+    The render pipeline runs in three phases: EMIT (gui_emit_*.c) pushes semantic shapes into
+    a per-(win,z,vp,band) command list; BUILD (gui_build_*.c) diffs commands against last frame
+    (gui_build_diff.c), tessellates only what changed (gui_build_place.c and gui_build_tess_*.c),
+    and z-sorts the result into a dispatch table; RENDER (gui_render_*.c) uploads the changed
+    geometry and issues one draw call per cached GPU command.
 
-        EMIT (gui_emit_*.c)   
-        
-        Widgets push semantic shapes -> s_draw command list, cut into per-(win,z,vp,band)
-        segments, one hash baked per command.
-
-        BUILD (gui_build_*.c)  Once per frame (cache_build_frame, this file): 
-                                
-        Diff each window's commands against last frame (gui_build_diff.c), 
-        reuse unchanged  geometry in place or tessellate changed windows (gui_build_place.c), 
-        then z-sort  the result into a dispatch table.This file owns the shared slot/stats state
-        both workers read and write, plus the top-level driver that sequences them.
-
-        RENDER (gui_render_*.c)
-        
-        Once per surface: upload the surface's slot-union span (each frame-in-flight region
-        must hold complete geometry, so the cache saves TESSELLATION, not upload) and emit
-        one draw call per cached GPU command.
-    
-    BUILD runs lazily on the first surface flush (cache_build_frame, guarded by s_frame_built)
-    because the semantic command list is shared across every surface -- the geometry it
-    produces is surface-independent.  build_frame_reset clears the guard at frame_begin.
+    This file is the BUILD phase's shared state and driver: the slot/stats bookkeeping both
+    diff and tessellate touch, plus cache_build_frame, which sequences them. It runs once per
+    frame, lazily on the first surface flush (guarded by s_frame_built, since the command list
+    is shared across every surface); build_frame_reset clears the guard at frame_begin.
 
 ==============================================================================================*/
 // clang-format off
@@ -52,12 +39,12 @@ build_frame_reset( void )
 }
 
 /*==============================================================================================
+    Window overflow flag
 
     When the window count exceeds RENDER_MAX_WIN during the diff/hashing pass 
     (before tessellation), the extra window is silently dropped and this flag is set. 
     At end-of-frame it's OR'd into s_tess.overflow to produce the unified warning
     mask. Reset to 0 each frame by cache_build_frame().
-
 ==============================================================================================*/
 
 static u32 s_diff_window_overflow;
@@ -65,29 +52,31 @@ static u32 s_diff_window_overflow;
 /*==============================================================================================
     Per-frame render stats.
 
-    accum is built by two phases that do NOT run on the same schedule: BUILD (cache_diff_windows /
-    cache_build_frame -- cmd_count, quad_count, prim_count, win_total, win_retained,
-    quad_retained) runs at most once per REAL frame, guarded by s_frame_built, and is skipped
-    entirely on an idle frame (frame_dirty()==false); SUBMIT (cache_count_draw_calls /
-    cache_count_upload -- draw_calls, upload_batches, upload_bytes) runs every single frame, real
-    or idle, once per surface flush, because the GPU replays cached geometry every frame regardless.
+    Accum has two groups of fields, written on different schedules:
 
-    build_stats_publish runs at every frame_begin, real or idle.  It must NOT blanket-zero
-    accum: the BUILD fields are plain assignments ("="), not accumulations, so on an idle frame
-    they still hold the last real frame's correct totals and should be left alone -- publishing
-    them again is exactly right (nothing changed).  Only the SUBMIT fields need a per-frame reset,
-    since they are "+=" summed across this frame's surface flushes and would otherwise double-count
-    forever.  Zeroing the whole struct here (the previous bug) made win_total/win_retained/etc
-    collapse to 0 after any idle frame, which read on screen as the retained-window count randomly
-    flickering between correct and zero every time the idle-skip kicked in -- nothing was actually
-    wrong with retention, only with how the overlay reported it.
+      BUILD fields (cmd_count, quad_count, prim_count, win_total, win_retained, quad_retained)
+        -- assigned (not accumulated) at most once per real frame, by cache_build_frame. 
+           Skipped entirely on an idle frame, so they still hold last frame's values -- correctly, 
+           since nothing changed.
+
+      SUBMIT fields (draw_calls, upload_batches, upload_bytes, volatile_patched, submit_ms, gpu_ms)
+        -- summed ("+=") once per surface flush, every frame, real or idle, since the GPU
+           replays cached geometry regardless.
+
+    build_stats_publish() runs every frame_begin. It only resets the SUBMIT fields; zeroing
+    BUILD fields too would erase last frame's valid totals on every idle frame 
+    (a past bug: the retained-window count flickered to 0 whenever the idle-skip kicked in).
+
 ==============================================================================================*/
 
 static struct
 {
-    gui_render_stats_t accum;        // BUILD fields persist across idle frames; SUBMIT fields reset every frame
-    gui_render_stats_t published;    // last frame's completed totals (what the overlay reads)
-    u32                draw_call_hwm; // peak indexed draws in any single frame (lifetime)
+    // BUILD fields persist across idle frames
+    // SUBMIT fields reset every frame
+
+    gui_render_stats_t accum;               // build + submit accumulated fields.
+    gui_render_stats_t published;           // last frame's completed accum totals (the overlay)
+    u32                draw_call_hwm;       // peak indexed draws in any single frame (lifetime)
 
 } s_stats;
 

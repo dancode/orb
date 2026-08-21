@@ -3008,8 +3008,11 @@ typedef struct
    perf overlay / dashboard must not count themselves in what they display), while POOL FILL
    (_all) fields are the physical count in the shared bucket, tooling included -- overflow
    pressure against a cap is physical, so netting it would hide real risk. */
+
 typedef struct
 {
+    /* --- BUILD: geometry produced or reused this frame. --- */
+
     u32 cmd_count;          // semantic draw commands the UI emitted (debug band excluded)
     u32 clip_count;         // clip table entries referenced by those commands (debug band excluded)
     u32 cmd_count_all;      // physical command pool fill, both bands (cap: GUI_MAX_CMDS)
@@ -3023,32 +3026,36 @@ typedef struct
     u32 quad_count_all;     // physical quad arena fill, both bands, slot padding included
                             //   (cap: GUI_MAX_QUADS) -- the number the cap is hit against
     u32 prim_count_all;     // physical style arena fill, both bands (cap: GUI_MAX_PRIMS)
-    u32 draw_calls;         // GPU draw calls (batches), summed over surfaces
 
     u32 win_total;          // windows tracked this frame
     u32 win_retained;       // windows whose geometry was reused (no re-tessellation)
     u32 quad_retained;      // quad records that came from prev-frame copy, not re-tessellated
 
-    u32 upload_batches;     // number of buffer write calls per frame
-    u32 upload_bytes;       // total bytes written into the quad / style / clip tables
+    /* diff_ms/tess_ms follow the BUILD publish rule: they hold the last REAL frame's cost across
+       an idle one, since that is still what the geometry on screen cost.  Inert without a clock
+       hook (gui()->frame_set_hooks) -- both read zero without one. */
 
-    u32 volatile_patched;   // volatile_cb rows whose geometry was patched in place this frame
-                           // (idle replay or a live real-frame reuse-patch) -- a separate signal
-                           // from win_retained: a window with an animating volatile widget still
-                           // counts as fully retained; this is what actually moved.
+    f32 diff_ms;             // BUILD step 1: hash + diff every window (cache_diff_windows)
+    f32 tess_ms;             // BUILD step 2: reuse or tessellate every window, incl. a repack retry
 
-    /* Where the render time went, in ms, split at the three phase seams (BUILD's two halves and
-       SUBMIT).  Inert without a clock hook (gui()->frame_set_hooks) -- all three read zero.
+    /* --- SUBMIT: what it cost to get that geometry on screen. --- */
 
-       diff/tess follow the BUILD publish rule and hold the last REAL frame's cost across an idle
-       one, since that is still what the geometry on screen cost; submit_ms is summed over this
-       frame's surface flushes and resets every frame, because the GPU replays even an idle frame.
+    u32 draw_calls;          // GPU draw calls (batches), summed over surfaces
+    u32 upload_batches;      // number of buffer write calls per frame
+    u32 upload_bytes;        // total bytes written into the quad / style / clip tables
 
-       They do NOT sum to the host's measured render time: the debug overlay's own flush and the
-       per-surface setup around these zones sit outside all three. */
-    f32 diff_ms;            // BUILD step 1: hash + diff every window (cache_diff_windows)
-    f32 tess_ms;            // BUILD step 2: reuse or tessellate every window, incl. a repack retry
-    f32 submit_ms;          // SUBMIT: uploads + draw-call recording, summed over surfaces
+    u32 volatile_patched;    // volatile_cb rows whose geometry was patched in place this frame
+                             // (idle replay or a live real-frame reuse-patch) -- a separate signal
+                             // from win_retained: a window with an animating volatile widget still
+                             // counts as fully retained; this is what actually moved.
+
+    /* submit_ms is summed over this frame's surface flushes and resets every frame, because the
+       GPU replays even an idle frame.  Also inert without a clock hook -- reads zero without one.
+
+       Neither diff_ms/tess_ms nor submit_ms sum to the host's measured render time: the debug
+       overlay's own flush and the per-surface setup around these zones sit outside all three. */
+
+    f32 submit_ms;           // SUBMIT: uploads + draw-call recording, summed over surfaces
 
     /* What the GPU spent EXECUTING, timestamped on the GPU itself (rhi cmd_gpu_ms) and summed
        over this frame's surfaces -- the counterpart to the CPU zones above, which only ever see
@@ -3056,7 +3063,8 @@ typedef struct
        gui-only surface that is the clear + the gui pass), and it trails by the frames-in-flight
        depth.  Reads zero only on hardware without graphics-queue timestamps; unlike the zones
        above it needs no clock hook. */
-    f32 gpu_ms;             // GPU execution, summed over surfaces, ~2 frames latent
+
+    f32 gpu_ms;              // GPU execution, summed over surfaces, ~2 frames latent
 
 } gui_render_stats_t;
 
