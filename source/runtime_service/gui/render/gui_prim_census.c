@@ -75,7 +75,7 @@ census_normalize( gui_prim_t* dst, const gui_prim_t* src )
 
 /* The record's IDENTITY, folded over the whole 128 bytes: the hash column of every dump,
    and what makes two runs joinable.  pal_dump prints the palette table through this same
-   formatter, so a baked entry and the census row it covers carry equal hashes.
+   formatter, so a palette entry and the census row it covers carry equal hashes.
    Deliberately not pal_hash, which folds only a record's live rows -- that one is a probe
    key on the per-quad path and is free to be weaker; this one is read by a human
    comparing two sessions. */
@@ -294,8 +294,8 @@ census_cat( char* buf, u32 cap, u32 w, const char* fmt, ... )
 
 /*  One record as "<n> <hash> lane=value ..." -- every non-zero lane, named, and nothing else.  The
     shared spelling of a style record: the census prints its candidates through it and the palette
-    bake prints its table through it (pal_dump, pipeline/gui_render_bake.c), so a baked entry and
-    the census row it is meant to cover are the same line of text when they match. */
+    prints its table through it (pal_dump, pipeline/gui_render_intern.c), so an entry and the census
+    row it covers are the same line of text when they match. */
 
 void
 census_rec_line( char* buf, u32 cap, u32 n, const gui_prim_t* rec )
@@ -380,8 +380,8 @@ census_win_str( gui_id_t id, char* buf, u32 cap )
      COLLAPSE           what the distinct count would be with the record's two COLOURS masked out
                         (col_b, pat_col).  A large gap says the tail is one shape in many colours,
                         which a palette cannot dedup but moving those lanes onto the quad would.
-     PALETTE CANDIDATES the top entries with every non-zero lane named, so the palette bake table
-                        is transcribed rather than reverse-engineered. */
+     PALETTE CANDIDATES the top entries with every non-zero lane named, so what the palette should
+                        be holding is transcribed rather than reverse-engineered. */
 
 #define CENSUS_CANDIDATES  64u
 
@@ -431,7 +431,7 @@ prim_census_dump( const char* tag )
     /* The HASH column is what makes two runs comparable.  It keys the record's content, so the same
        hash in a "dark" run and a "rounded" run is the same record -- which is the whole differential
        test: a record that appears in both is theme-INDEPENDENT (a literal, or content), and one that
-       appears in only one moved because a style var moved it, i.e. it is on a bakeable path. */
+       appears in only one moved because a style var moved it, i.e. it scales with the theme. */
     gui_log( GUI_LOG_INFO, "" );
     gui_log( GUI_LOG_INFO, "  #  hash      entries    cum%%   quads  passes  field    ops           "
                            "             radii                edge             tex       first window" );
@@ -500,7 +500,7 @@ prim_census_dump( const char* tag )
                  tot_app ? 100.0f * (f32)colour_app / (f32)tot_app : 0.0f );
     }
 
-    /* PALETTE CANDIDATES -- every non-zero lane, named.  This is what the bake writes. */
+    /* PALETTE CANDIDATES -- every non-zero lane, named.  What the palette should be holding. */
     gui_log( GUI_LOG_INFO, "" );
     gui_log( GUI_LOG_INFO, "---- PALETTE CANDIDATES (non-zero lanes) ------------------------------" );
 

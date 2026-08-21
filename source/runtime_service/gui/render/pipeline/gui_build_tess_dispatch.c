@@ -249,7 +249,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
         s_tess.cur_vp         = c->vp;
 
         /* The style answer this command site parked last time, if its bytes have not moved
-           since (gui_render_bake.c, pal_cmd_hint).  One u32 compare against a hash the emit
+           since (gui_render_intern.c, pal_cmd_hint).  One u32 compare against a hash the emit
            phase already folded; tess_prim_local confirms whatever comes back before using it.
            */
         s_tess.cmd_hint       = pal_cmd_hint( ci );

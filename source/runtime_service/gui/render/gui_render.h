@@ -565,12 +565,13 @@ void                build_dump_geometry     ( void );
 
 void                build_style_census      ( const char* tag, bool clear );
 
-/* Re-derive the style palette when the landed style, DPI or atlas slot has moved, and publish it
-   (render/pipeline/gui_render_bake.c).  Cheap and self-gating: a frame whose inputs are unchanged
-   costs one fold over the style vars.  Must run with the tessellation arena idle -- its rows emit
-   through the real tessellators and rewind the counters afterwards. */
+/* Empty the style palette when the landed style, DPI or atlas slot has moved, and publish the
+   empty table (render/pipeline/gui_render_intern.c).  Every entry was learned against the old style
+   and nothing will draw those records again.  Cheap and self-gating: a frame whose inputs are
+   unchanged costs one fold.  True means the table was dropped, which invalidates every palette
+   index in cached geometry -- the caller answers with a full re-place. */
 
-bool                pal_bake                ( void );
+bool                pal_epoch               ( void );
 
 /* Which palette entry holds this record, or GUI_PAL_NONE.  Content-addressed and confirmed by a
    full compare, so a hit is a byte-for-byte equal record and can never be the wrong shape. */
@@ -578,23 +579,24 @@ bool                pal_bake                ( void );
 u32                 pal_find                ( const gui_prim_t* rec );
 
 /* Offer a record the palette does not hold an entry of its own, returning it or GUI_PAL_NONE.
-   Granted on the SECOND BUILD FRAME a record is seen in, so a style earns a shared entry by
-   being drawn again while a per-frame value never does.  Append-only: an entry handed out
-   keeps its index for the life of the table, which is what lets this run during tessellation
-   without invalidating the palette indices in cached geometry.  A declined record costs
-   nothing -- it takes a per-slot arena entry exactly as it did before. */
+   The ONE way an entry is created: granted on the SECOND BUILD FRAME a record is seen in, so a
+   style earns a shared entry by being drawn again while a per-frame value never does.  Nothing is
+   authored or registered -- that is what lets the palette cover a UI layer the engine has never
+   seen.  Append-only: an entry handed out keeps its index for the life of the epoch, which is what
+   lets this run during tessellation without invalidating the palette indices in cached geometry.
+   A declined record costs nothing -- it takes a per-slot arena entry exactly as it did before. */
 
 u32                 pal_intern              ( const gui_prim_t* rec );
 
 /* The PER-COMMAND style memo: a palette answer parked at the command site that produced it,
    keyed on the command hash the emit phase already folds for the retained cache
-   (render/pipeline/gui_render_bake.c).  pal_cmd_hint returns what this command answered the
+   (render/pipeline/gui_render_intern.c).  pal_cmd_hint returns what this command answered the
    last time it tessellated -- GUI_PAL_NONE when its bytes have moved since -- and
    pal_cmd_learn parks the answer it just gave (arena answers are declined: they name a slot
    that no longer exists).
 
-   A hint is a hint: tess_prim_local compares the entry's bytes before believing it, so a
-   re-bake, a shifted command list or a hash collision cost a probe and never a wrong shape.
+   A hint is a hint: tess_prim_local compares the entry's bytes before believing it, so an epoch
+   reset, a shifted command list or a hash collision cost a probe and never a wrong shape.
    pal_cmd_hit records a confirmed one for the dump. */
 
 u32                 pal_cmd_hint            ( u32 ci );
@@ -612,10 +614,10 @@ const gui_prim_t*   pal_entry               ( u32 entry );
 
 void                pal_publish_pending     ( void );
 
-/* A/B switch for interning alone.  Off, the palette holds the bake table and nothing else, so
-   a run can attribute coverage to the authored rows or to what the frame taught itself.
-   Unlike pal_set_enabled this invalidates nothing: entries already interned stay valid and
-   keep answering, so flipping it costs no re-place in either direction. */
+/* A/B switch for interning alone.  Off, the table stops growing and every style beyond what it
+   already holds takes a per-slot record -- which is what a run measures the palette's coverage
+   against.  Unlike pal_set_enabled this invalidates nothing: entries already interned stay valid
+   and keep answering, so flipping it costs no re-place in either direction. */
 
 bool                pal_intern_enabled      ( void );
 void                pal_set_intern          ( bool on );
@@ -628,30 +630,27 @@ void                pal_set_intern          ( bool on );
 bool                pal_enabled             ( void );
 void                pal_set_enabled         ( bool on );
 
-/* Note a landed style as one the palette must cover -- GUI_VAR_COUNT floats in gui_style_var_t
-   order, already through the em scale.  The one-way seam gui_render_set_time crosses: this unit
-   does not read the style grid, it is told what the grid says.
+/* Note a landed style as one of the scales in play -- GUI_VAR_COUNT floats in gui_style_var_t
+   order, already through the em scale.  Only their hash is kept; the palette never reads a var, it
+   only has to notice when one moves.  The one-way seam gui_render_set_time crosses: this unit does
+   not read the style grid, it is told what the grid says.
 
    Called once per building frame for the primary surface, and again from every mixed-DPI landing
-   (gui_dpi_land): two monitors at different scales put two live style scales in one frame, and each
-   needs its own rows because a scale reaches the record as scaled lane values.  Repeats are free --
-   a scale already noted is recognised by content.
+   (gui_dpi_land): two monitors at different scales put two live style scales in one frame, and both
+   are legitimately live because a scale reaches the record as scaled lane values.  Repeats are
+   free -- a scale already noted is recognised by content.
 
-   pal_style_reset drops the set; run it only at the top of a frame that will EMIT, since a clean
-   frame lands nothing and an emptied set would re-bake and discard the very geometry the idle skip
-   exists to keep. */
+   pal_style_reset drops the set AND ticks the build-frame counter interning qualifies against; run
+   it only at the top of a frame that will EMIT, since a clean frame lands nothing and an emptied
+   set would trip the epoch and discard the very geometry the idle skip exists to keep. */
 
 void                pal_style_set           ( const f32* vars, u32 count );
 void                pal_style_reset         ( void );
 
-/* Log the table the last bake produced, in the census's own record spelling -- so a baked entry and
-   the census row it is meant to cover read as the same line.  Printed with every census dump. */
+/* Log the live table in the census's own record spelling -- so an entry and the census row it
+   covers read as the same line.  Printed with every census dump. */
 
 void                pal_dump                ( void );
-
-/* Fit a corner radius to a rect, the way every rounded emit does (pipeline/gui_emit_state.c). */
-
-f32                 draw_clamp_round_of     ( f32 r, f32 w, f32 h );
 
 /*==============================================================================================
     Volatile widgets -- an inline-emit callback replayed in place on frames the UI build is

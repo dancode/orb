@@ -2880,9 +2880,9 @@ ORB_STATIC_ASSERT( GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK,
     fx rows are NOT palettized: they stay slot-local against prim_base, so a palette style still
     composes with a per-instance turn, animation phase and uv rect.
 
-    Palette CONTENT is baked, not constant: radii, feather and border widths scale with em and DPI
-    (gui_style_apply), so the table is rebuilt when the style bake changes.  Static in SLOT, baked
-    in CONTENT.
+    Palette CONTENT is learned, not constant: radii, feather and border widths scale with em and DPI
+    (gui_style_apply), so the table is emptied and re-learned when the landed style moves.  Static in
+    SLOT, live in CONTENT.
 
     MIXED DPI needs no second addressing scheme.  Two monitors at different scales put two style
     scales in one frame (gui_frame_dpi.c: windows build sequentially and each lands its own), and a
@@ -2890,14 +2890,12 @@ ORB_STATIC_ASSERT( GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK,
     which is a different record by its bytes.  So both scales' vocabularies simply coexist in the one
     table, and the content-addressed lookup separates them for free.
 
-    ENTRIES ARRIVE TWO WAYS.  The BAKE writes the chrome vocabulary up front from a table of
-    rows (render/pipeline/gui_render_bake.c); INTERNING adds whatever else the frame turns out
-    to draw, on second sighting, as it is drawn.  The second route is what makes the palette
-    reach a UI layer the engine has never seen -- a custom theme's own shapes are covered by
-    being drawn twice, with nothing registered anywhere.  Both land in the same table and are
-    indistinguishable to every reader, which is why the cap sizes for the whole working set
-    rather than for the bake table: a theme's vocabulary is tens of entries, an application's
-    is hundreds.
+    ENTRIES ARE EARNED, NOT AUTHORED.  There is one route in: a record the frame draws again in a
+    later build frame takes an entry on the spot (pal_intern, render/pipeline/gui_render_intern.c).
+    Nothing is registered, named or declared anywhere, which is what lets the palette reach a UI
+    layer the engine has never seen -- a custom theme's own shapes are covered by being drawn twice.
+    The cap therefore sizes for a whole application's working set, not for chrome's: a theme's
+    vocabulary is tens of entries, an application's is hundreds.
 ==============================================================================================*/
 
 #define GUI_PAL_FIRST  1024u   /* first style index that resolves against the palette */

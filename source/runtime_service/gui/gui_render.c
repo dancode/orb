@@ -242,10 +242,10 @@
 // gui_render_init.c because it writes into that unit's prim_buf and region layout.
 #include "runtime_service/gui/render/pipeline/gui_render_pal.c"
 
-// pipeline/ RENDER, part B2: what goes IN the palette.  After gui_render_pal.c (it publishes into
-// that unit) and after gui_build_tess.c (its rows run the real emitters); the placement pass calls
-// it through the prototype in gui_render.h.
-#include "runtime_service/gui/render/pipeline/gui_render_bake.c"
+// pipeline/ RENDER, part B2: what goes IN the palette -- the lookup, interning, the per-command
+// memo and the style epoch.  After gui_render_pal.c, which it publishes into; the build and
+// placement passes call it through the prototypes in gui_render.h.
+#include "runtime_service/gui/render/pipeline/gui_render_intern.c"
 
 // pipeline/ RENDER, part C: per-surface submit (gui_render_flush).
 #include "runtime_service/gui/render/pipeline/gui_render_submit.c"

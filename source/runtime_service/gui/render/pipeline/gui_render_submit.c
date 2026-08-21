@@ -361,7 +361,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
 
        The pending fold has to happen HERE, past the build kick at the top of this function: a
        style interned while this frame tessellated is named by quads about to be drawn, so its
-       bytes must reach the block before the draws do (pal_intern, gui_render_bake.c). */
+       bytes must reach the block before the draws do (pal_intern, gui_render_intern.c). */
     pal_publish_pending();
     render_pal_upload( frame );
     push.pal_base = render_pal_base( frame );

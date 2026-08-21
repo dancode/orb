@@ -426,18 +426,17 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
 
     tess_reset();
 
-    /* The palette, while the arena is still empty: its rows tessellate through the real emitters
-       into the head of it and rewind, so this is the one point in the pass where they cannot land
-       inside a slot's geometry.  Self-gating -- a frame whose style has not moved does nothing.
+    /* The style palette's epoch check, self-gating: a frame whose theme, DPI and atlas layout have
+       not moved costs one fold and does nothing.
 
-       A bake that PUBLISHED forces a full re-place.  A cached slot's quads carry palette indices
-       baked against the previous table, and the table is re-derived rather than patched: entry 12
+       An epoch that DROPPED the table forces a full re-place.  A cached slot's quads carry palette
+       indices learned against the old table, and the table is emptied rather than patched: entry 12
        under one theme is a different record under the next, so a reused slot would draw the wrong
        shape.  Costs one heavy frame on a theme or DPI change, which already re-tessellates
        everything for its own reasons -- the geometry generation bumps with it so every in-flight
        upload region goes stale. */
 
-    if ( pal_bake() )
+    if ( pal_epoch() )
     {
         ++s_geo_gen;
         allow_reuse = false;

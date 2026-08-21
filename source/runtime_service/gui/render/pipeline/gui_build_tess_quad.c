@@ -255,7 +255,7 @@ tess_prim_local( void )
         return s_tess.cmd_style_out = s_tess.cur_prim_local;
 
     /* Then the answer this COMMAND gave the last time it tessellated (gui_build_tess_state.c,
-       cmd_hint).  Confirmed against the entry's own bytes, so a re-bake, a shifted command
+       cmd_hint).  Confirmed against the entry's own bytes, so an epoch reset, a shifted command
        list or a hash collision all land on a failed compare and the ordinary path below --
        never on a wrong shape.  What it buys over the memo above is the ALTERNATION: a dozen
        commands cycling through a dozen styles keep a dozen live answers instead of evicting
@@ -307,8 +307,8 @@ tess_prim_local( void )
 
     /* Nothing anywhere holds this record.  Before spending an arena entry on it, offer it to
        the palette: a record the frame has drawn before earns a shared entry here and stops
-       costing one per slot from now on, which is how a UI layer the bake table never heard of
-       gets covered (pal_intern, gui_render_bake.c).  Declining is the common answer, and the
+       costing one per slot from now on, which is how a UI layer the engine has never seen
+       gets covered (pal_intern, gui_render_intern.c).  Declining is the common answer, and the
        cost of declining is one fold. */
 
     u32 in = pal_intern( &s_tess.cur_prim );

@@ -13,8 +13,8 @@
     A quad naming one resolves it against pc.pal_base instead of pc.prim_base, and gets a record
     that cost the arena nothing.
 
-    This file owns the CPU-side table and its upload.  What goes IN it is the bake's business:
-    render_pal_publish takes a finished set of records and this unit makes them addressable.
+    This file owns the CPU-side table and its upload.  What goes IN it is decided in
+    gui_render_intern.c; this unit takes a set of records and makes them addressable.
 
     UPLOAD.  One block per frame-in-flight (GUI_PAL_REGION_COUNT), because publish can land at any
     time -- a theme switch, a DPI change -- while earlier frames are still reading the old table.
@@ -35,15 +35,15 @@ static struct
 } s_pal;
 
 /*==============================================================================================
-    render_pal_publish -- install a baked table.
+    render_pal_publish -- install a table, replacing whatever was there.
 
-    Replaces the whole palette rather than patching entries: the bake derives every record from
-    one style grid, so a partial update would leave records from two different themes addressable
-    at once.  Entries past `count` keep whatever they held -- nothing names them, since an index is
-    only ever handed out for an entry the same bake produced.
+    Replaces rather than patches: every record in a table was learned against one style grid, so a
+    partial update would leave records from two different themes addressable at once.  Entries past
+    `count` keep whatever they held -- nothing names them, since an index is only ever handed out
+    for an entry of the live table.
 
-    Safe to call every frame; identical content still costs the two uploads, so the bake should
-    call it when its inputs move, not on a timer.
+    Safe to call every frame; identical content still costs the two uploads, so the caller invokes
+    it when the style epoch moves, not on a timer.
 ==============================================================================================*/
 
 static void
@@ -72,8 +72,8 @@ render_pal_publish( const gui_prim_t* recs, u32 count )
     The publish above replaces, and a replace invalidates every palette index in cached
     geometry. This one only APPENDS: entries below the current count keep their bytes and
     their meaning, so a cached quad naming entry 12 still means entry 12 and no re-place is
-    owed.  That is the whole reason interning can run during tessellation while a re-bake
-    cannot (gui_render_bake.c).
+    owed.  That is the whole reason interning can run during tessellation while an epoch
+    reset cannot (gui_render_intern.c).
 
     Still a generation bump, because the blocks have to carry the new tail before a draw
     names it.  The bytes it writes sit past what any in-flight frame was uploaded with, so an

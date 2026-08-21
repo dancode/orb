@@ -998,26 +998,18 @@ draw_scope_set( gui_draw_scope_t s )
     s_draw.text_clip_x1 = s.text_clip_x1;
 }
 
-f32
-draw_clamp_round_of( f32 r, f32 w, f32 h )
-{
-    /* Fit a radius to a rect: no corner may eat more than half of either extent, and a radius
-       the clamp leaves under half a pixel is not a corner at all.  
-       
-       Split from the ambient reader below so the palette bake can ask what a given radius 
-       WOULD become over a given rect without touching the paint cursor (gui_render_bake.c). */
+/* Fit the ambient corner radius to a rect: no corner may eat more than half of either extent, and
+   a radius the clamp leaves under half a pixel is not a corner at all. */
 
+static f32
+draw_clamp_rounding( f32 w, f32 h )
+{
+    f32 r  = s_draw.rounding;
     f32 hw = ( w < 0.0f ? -w : w ) * 0.5f;
     f32 hh = ( h < 0.0f ? -h : h ) * 0.5f;
     if ( r > hw ) r = hw;
     if ( r > hh ) r = hh;
     return r < 0.5f ? 0.0f : r;   /* sub-pixel radius -> square fast path */
-}
-
-static f32
-draw_clamp_rounding( f32 w, f32 h )
-{
-    return draw_clamp_round_of( s_draw.rounding, w, h );
 }
 
 // clang-format on

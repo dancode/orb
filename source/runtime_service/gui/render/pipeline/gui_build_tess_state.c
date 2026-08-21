@@ -137,7 +137,7 @@ static struct
        prim_count where it was, so a run of one style misses it on every quad.
 
        The memo owns a COPY rather than pointing at the answer's home: an arena entry is
-       rewritten by a later fx page and a palette entry by a re-bake, and a pointer into
+       rewritten by a later fx page and a palette entry by an epoch reset, and a pointer into
        either would compare against bytes that had moved on.
 
        base/floor are the validity guard, and they are the whole of it -- an answer is
@@ -161,7 +161,7 @@ static struct
        among a dozen styles -- a toolbar of different buttons, a table with several column
        looks -- evicts them on every step and folds the record again for each.  A command site
        is a stable address for its own answer, so a dozen alternating commands keep a dozen
-       live memos. Where it comes from is gui_render_bake.c (pal_cmd_hint), keyed on the
+       live memos. Where it comes from is gui_render_intern.c (pal_cmd_hint), keyed on the
        command hash the emit phase already folds for the retained cache. */
 
     u32         cmd_hint;

@@ -223,15 +223,14 @@ static bool s_frame_dirty = true;   /* start true: forces a full first-frame bui
    skip so the UI rebuilds and re-renders unconditionally.  Toggled via gui()->set_force_redraw. */
 static bool s_force_redraw = false;
 
-/*  Hand the style the render server cannot read down to the palette bake (pal_style_set,
-    render/gui_render.h).  The whole var block, not the vars the bake happens to use, so a new bake
-    row can never inherit a stale table.
+/*  Hand the style the render server cannot read down to the style palette (pal_style_set,
+    render/gui_render.h).  The whole var block, so anything that moves a lane value trips the
+    palette's epoch and the table is re-learned rather than left holding dead records.
 
     Two callers, and both are needed.  frame_begin notes the PRIMARY surface's style, which is the
     only one most frames have.  gui_dpi_land notes each additional one as its window comes up, since
-    mixed-DPI monitors put more than one live style scale in a single frame -- and the bake has to
-    hold rows for every scale that will emit, not just viewport 0's.  Repeats are free: the bake
-    recognises a scale it already holds by content. */
+    mixed-DPI monitors put more than one live style scale in a single frame and each produces its
+    own records.  Repeats are free: a scale already noted is recognised by content. */
 
 static void
 pal_style_note( void )
