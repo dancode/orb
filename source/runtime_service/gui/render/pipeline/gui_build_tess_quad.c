@@ -60,6 +60,7 @@ tess_reset( void )
     s_tess.slot_tess_gen        = 0;
     s_tess.cur_prim_local       = 0;
     s_tess.prim_dedup_floor     = 0;
+    s_tess.prim_memo_valid      = false;  /* base/floor return to 0, the arena does not */
     s_tess.fx_page              = s_tess.fx_page_used = s_tess.fx_memo_row = 0;
     s_tess.fx_page_count        = 0;
     s_tess.slot_clips           = NULL;
@@ -179,11 +180,13 @@ tess_ensure_gpu_cmd( void )
    record is assembled from half a dozen ambient fields and nothing upstream has a name for the
    combination.
 
-   The memo is the whole performance story.  A glyph run is one semantic command emitting hundreds
-   of quads under one unchanging record, and a run of flat fills sharing a texture and a clip is
-   the same: comparing against the last appended record collapses each to ONE entry.  That only
-   works because emitters leave the fields their field does not read at zero (gui.h) -- a writer
-   that stamped its rect into a GUI_FX_NONE record would give every fill an entry of its own.
+   The memos are the whole performance story, and they are read in order of what each can
+   cover: the last ANSWER, then the last few ARENA APPENDS, then the palette.  A glyph run is
+   one semantic command emitting hundreds of quads under one unchanging record, and a run of
+   flat fills sharing a texture and a clip is the same, so each collapses onto one entry and
+   most quads never reach past the first compare.  That only works because emitters leave the
+   fields their field does not read at zero (gui.h) -- a writer that stamped its rect into a
+   GUI_FX_NONE record would give every fill an entry of its own.
 
    Past the arena a slot degrades to its own first record, mirroring tess_clip_local's fallback to
    slab entry 0: a wrong shape is bad, but a wild index into a storage buffer is worse.  The
@@ -215,6 +218,20 @@ tess_fx_page_reset( void )
     s_tess.fx_page = s_tess.fx_page_used = s_tess.fx_memo_row = 0;
 }
 
+/* Keep an answer as the memo the next quad tests against, and hand it back.  Every exit from
+   tess_prim_local that produced a real index goes through here; the overflow fallback
+   deliberately does not, since 0 there is a degraded answer rather than a resolved one. */
+
+static inline u32
+tess_prim_answer( u32 local )
+{
+    s_tess.prim_memo_rec   = s_tess.cur_prim;
+    s_tess.prim_memo_base  = s_tess.slot_prim_base;
+    s_tess.prim_memo_floor = s_tess.prim_dedup_floor;
+    s_tess.prim_memo_valid = true;
+    return s_tess.cur_prim_local = local;
+}
+
 static u32
 tess_prim_local( void )
 {
@@ -223,36 +240,61 @@ tess_prim_local( void )
 
     PRIM_CENSUS_QUAD( &s_tess.cur_prim );
 
+    /* The last ANSWER, ahead of everything (gui_build_tess_state.c, prim_memo_rec).  One
+       compare against bytes this function itself wrote, and it serves the repeat whatever
+       produced the answer -- an arena entry, a palette entry, or this memo again.  That is
+       the case the two memos below cannot cover between them: both are keyed on where a
+       record LANDED, and an answer that landed nowhere leaves neither of them holding it. */
+
+    if ( s_tess.prim_memo_valid
+      && s_tess.prim_memo_base  == s_tess.slot_prim_base
+      && s_tess.prim_memo_floor == s_tess.prim_dedup_floor
+      && memcmp( &s_tess.prim_memo_rec, &s_tess.cur_prim, sizeof( gui_prim_t ) ) == 0 )
+        return s_tess.cur_prim_local;
+
     u32 hi = s_tess.prim_count;
     u32 lo = ( s_tess.prim_dedup_floor > s_tess.slot_prim_base )
              ? s_tess.prim_dedup_floor : s_tess.slot_prim_base;
     u32 n  = ( hi > lo ) ? hi - lo : 0u;
     if ( n > TESS_PRIM_MEMO_DEPTH ) n = TESS_PRIM_MEMO_DEPTH;
 
-    /* Depth 1 first, alone: a homogeneous run -- a glyph run, consecutive flat fills -- hits here
-       and never pays for the lookup below.  That is most quads. */
+    /* Depth 1 next, alone: the record the last APPEND landed, which the answer memo above
+       holds only while that append was also the last answer.  An alternation between a
+       palette style and an arena one breaks that, and this catches the arena half without
+       paying for the lookup. */
 
     if ( n >= 1u && memcmp( &s_tess.prims[ hi - 1u ], &s_tess.cur_prim,
                             sizeof( gui_prim_t ) ) == 0 )
-        return s_tess.cur_prim_local = ( hi - 1u ) - s_tess.slot_prim_base;
+        return tess_prim_answer( ( hi - 1u ) - s_tess.slot_prim_base );
 
     /* Then the PALETTE, ahead of the deeper memo walk.  A hit costs this slot nothing at all --
        no arena entry, and the same entry serves every other window drawing the same shape, which
        is the duplication no memo depth can reach (see TESS_PRIM_MEMO_DEPTH above).  A hit returns
        an ABSOLUTE index the flush resolves against pc.pal_base rather than a slot-local one; both
        ride the same field and the shader tells them apart by range (gui.h, GUI_PAL_FIRST).
-       pal_find carries its own one-deep memo, which is what covers the repeat this arena memo
-       structurally cannot: a palette hit appends nothing, so depth 1 above never sees it. */
+       pal_find carries a one-deep memo of its own, which now covers only the mirror of the
+       case above: the palette half of a palette/arena alternation, where the answer memo
+       holds the arena record and this probe would otherwise re-fold and re-probe. */
 
     u32 entry = pal_find( &s_tess.cur_prim );
     if ( entry < (u32)GUI_PAL_MAX )
-        return s_tess.cur_prim_local = gui_style_pal( entry );
+        return tess_prim_answer( gui_style_pal( entry ) );
 
     for ( u32 k = 2; k <= n; ++k ) {
         if ( memcmp( &s_tess.prims[ hi - k ], &s_tess.cur_prim, sizeof( gui_prim_t )) == 0 ) {
-            return s_tess.cur_prim_local = ( hi - k ) - s_tess.slot_prim_base;
+            return tess_prim_answer( ( hi - k ) - s_tess.slot_prim_base );
         }
     }
+
+    /* Nothing anywhere holds this record.  Before spending an arena entry on it, offer it to
+       the palette: a record the frame has drawn before earns a shared entry here and stops
+       costing one per slot from now on, which is how a UI layer the bake table never heard of
+       gets covered (pal_intern, gui_render_bake.c).  Declining is the common answer, and the
+       cost of declining is one fold. */
+
+    u32 in = pal_intern( &s_tess.cur_prim );
+    if ( in < (u32)GUI_PAL_MAX )
+        return tess_prim_answer( gui_style_pal( in ) );
 
     if ( hi >= GUI_MAX_PRIMS )
     {
@@ -265,9 +307,8 @@ tess_prim_local( void )
     PRIM_CENSUS_APPEND( &s_tess.cur_prim );
 
     s_tess.prims[ hi ] = s_tess.cur_prim;
-    s_tess.cur_prim_local = hi - s_tess.slot_prim_base;
     s_tess.prim_count++;
-    return s_tess.cur_prim_local;
+    return tess_prim_answer( hi - s_tess.slot_prim_base );
 }
 
 /* Resolve the ambient turn / phase / border colour plus this quad's texture rect to an fx record,

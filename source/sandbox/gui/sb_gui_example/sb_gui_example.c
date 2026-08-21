@@ -53,12 +53,17 @@ main( int argc, char** argv )
        -nopal turns the style palette off for the whole run, interactive or scripted.  Pairing it
        with -census is the A/B: the same workload with and without the shared table, so the two
        dumps show what the palette reclaims -- and, more usefully, that the RECORD SET is the same
-       either way.  A record present in one run and not the other is a palette bug. */
-    bool census = false, nopal = false;
+       either way.  A record present in one run and not the other is a palette bug.
+
+       -nointern leaves the palette on but holds it to the BAKE TABLE alone, which is the
+       finer A/B: it separates what the authored chrome rows cover from what the frame
+       interned for itself, and the record set must again be identical across the pair. */
+    bool census = false, nopal = false, nointern = false;
     for ( int i = 1; i < argc; ++i )
     {
-        if ( strcmp( argv[ i ], "-census" ) == 0 ) census = true;
-        if ( strcmp( argv[ i ], "-nopal"  ) == 0 ) nopal  = true;
+        if ( strcmp( argv[ i ], "-census"   ) == 0 ) census   = true;
+        if ( strcmp( argv[ i ], "-nopal"    ) == 0 ) nopal    = true;
+        if ( strcmp( argv[ i ], "-nointern" ) == 0 ) nointern = true;
     }
 
     /* Load modules -- gui's full dependency set is just rhi + app (+ the engine core stack). */
@@ -117,6 +122,12 @@ main( int argc, char** argv )
     {
         gui()->debug_set_style_palette( false );
         printf( "[sb_gui_example] style palette OFF -- every window mints its own style records\n" );
+    }
+
+    if ( nointern )
+    {
+        gui()->debug_set_style_intern( false );
+        printf( "[sb_gui_example] interning OFF -- palette holds the bake table alone\n" );
     }
 
     if ( census && !ex_census_start() )

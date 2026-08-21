@@ -128,6 +128,31 @@ static struct
     u32         cur_prim_local;
     u32         prim_dedup_floor;
 
+    /* The last ANSWER tess_prim_local gave, and the context it was given in.  A repeat
+       quad -- another row of the same table, another segment of one polyline, the next
+       shape of a run under one unchanging record -- compares equal here and reuses
+       cur_prim_local outright.  It catches what neither of the two memos below it
+       structurally can: the arena memo compares against the record at prim_count-1, and
+       an answer that APPENDED NOTHING (a palette hit, or a hit on this memo) leaves
+       prim_count where it was, so a run of one style misses it on every quad.
+
+       The memo owns a COPY rather than pointing at the answer's home: an arena entry is
+       rewritten by a later fx page and a palette entry by a re-bake, and a pointer into
+       either would compare against bytes that had moved on.
+
+       base/floor are the validity guard, and they are the whole of it -- an answer is
+       slot-LOCAL, so it means something else the moment the slot origin moves, and the
+       records behind the floor belong to a reservation this pass does not own.  Guarding
+       on the two values rather than invalidating at each site that moves them is what
+       keeps a new such site from silently inheriting a stale answer.  tess_reset clears
+       the flag because both values legitimately return to 0 there while the arena
+       underneath them is gone. */
+
+    gui_prim_t  prim_memo_rec;
+    u32         prim_memo_base;
+    u32         prim_memo_floor;
+    bool        prim_memo_valid;
+
     /* The open FX PAGE -- a style-arena record carrying four gui_fx_t records (gui.h).  fx_page is
        the record's slot-local index and fx_page_used how many of its four entries are spent; a
        fifth takes a new page.  fx_memo_row is the last row committed, so a run of quads wanting

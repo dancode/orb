@@ -66,6 +66,34 @@ render_pal_publish( const gui_prim_t* recs, u32 count )
     ++s_pal.gen;
 }
 
+/*==============================================================================================
+    render_pal_extend -- grow the table without disturbing what is already in it.
+
+    The publish above replaces, and a replace invalidates every palette index in cached
+    geometry. This one only APPENDS: entries below the current count keep their bytes and
+    their meaning, so a cached quad naming entry 12 still means entry 12 and no re-place is
+    owed.  That is the whole reason interning can run during tessellation while a re-bake
+    cannot (gui_render_bake.c).
+
+    Still a generation bump, because the blocks have to carry the new tail before a draw
+    names it.  The bytes it writes sit past what any in-flight frame was uploaded with, so an
+    earlier frame reading its own block cannot be reading them.
+==============================================================================================*/
+
+static void
+render_pal_extend( const gui_prim_t* recs, u32 count )
+{
+    if ( count > GUI_PAL_MAX )
+        count = GUI_PAL_MAX;
+    if ( count <= s_pal.count )
+        return;
+
+    memcpy( &s_pal.rec[ s_pal.count ], &recs[ s_pal.count ],
+            ( count - s_pal.count ) * sizeof( gui_prim_t ) );
+    s_pal.count = count;
+    ++s_pal.gen;
+}
+
 /*  Where this frame's block starts, in RECORDS -- what goes out as pc.pal_base.  Flush-constant:
     unlike prim_base it does not move as the dispatch walk crosses window slots, because the whole
     point of a palette entry is that every slot resolves it the same way. */

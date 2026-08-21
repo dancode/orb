@@ -357,7 +357,12 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     /* The palette's block for this frame-in-flight, in the same buffer past every region (gui.h,
        GUI_PAL_FIRST).  Flush-constant where prim_base is not: a palette index means the same
        record to every window slot, which is the whole reason it exists.  Brought up to date first
-       -- the upload is a no-op unless the bake published since this frame last ran. */
+       -- the upload is a no-op unless the bake published since this frame last ran.
+
+       The pending fold has to happen HERE, past the build kick at the top of this function: a
+       style interned while this frame tessellated is named by quads about to be drawn, so its
+       bytes must reach the block before the draws do (pal_intern, gui_render_bake.c). */
+    pal_publish_pending();
     render_pal_upload( frame );
     push.pal_base = render_pal_base( frame );
 

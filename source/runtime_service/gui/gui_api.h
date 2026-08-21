@@ -3168,6 +3168,18 @@ typedef struct gui_api_s
     void                ( *debug_set_style_palette )( bool on );
     bool                ( *debug_style_palette     )( void );
 
+    /* Style INTERNING on/off -- the finer half of the lever above, behind "Style interning".
+       On (default), a record the palette never predicted earns a shared entry once the frame
+       has drawn it again, so a UI layer the engine has never seen gets the same coverage
+       chrome does. Off, the palette holds the authored bake table alone.
+
+       Free to flip either way: interning only ever appends, so entries already handed out
+       keep their meaning and no geometry is invalidated.  Turning it back on simply resumes.
+       */
+
+    void                ( *debug_set_style_intern  )( bool on );
+    bool                ( *debug_style_intern      )( void );
+
     /* Retained-skip: when on (default), an unchanged frame skips tessellation.  Toggle to benchmark
        or confirm that the hash-upfront path produces identical output to the reference. */
     void ( *set_retained_skip )( bool on );

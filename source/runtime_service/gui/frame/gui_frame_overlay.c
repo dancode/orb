@@ -1110,6 +1110,7 @@ debug_hotkeys( void )
 #define SEL_TESS    "Tess cache"
 #define SEL_IDLE    "Idle skip"
 #define SEL_PAL     "Style palette"
+#define SEL_INTERN  "Style interning"
 #define SEL_FONTS   "Font registry"
 #define SEL_MEM     "Memory"
 #define SEL_PERF    "NP+ perf"
@@ -1157,7 +1158,7 @@ selector_content_w( f32 label_w )
 
     /* Checkbox rows: indicator box + gap + label. */
     static const char* const k_lever[] = { SEL_FORCE, SEL_TESS, SEL_IDLE, SEL_PAL,
-                                           SEL_FONTS, SEL_MEM };
+                                           SEL_INTERN, SEL_FONTS, SEL_MEM };
     for ( u32 i = 0; i < sizeof( k_lever ) / sizeof( k_lever[ 0 ] ); ++i )
     {
         f32 row = CHECKBOX_SZ + WIDGET_PAD + font_text_w( k_lever[ i ] );
@@ -1246,6 +1247,14 @@ debug_selector_menu( void )
         bool pal = pal_enabled();
         if ( gui_checkbox( SEL_PAL, &pal ) )
             pal_set_enabled( pal );
+
+        /* The finer half: on, a record nothing predicted earns a palette entry once the
+           frame has drawn it again; off, the palette holds the authored bake table alone.
+           Free to flip either way -- interning only appends, so nothing already handed out
+           changes meaning. */
+        bool intern = pal_intern_enabled();
+        if ( gui_checkbox( SEL_INTERN, &intern ) )
+            pal_set_intern( intern );
 
         gui_checkbox( SEL_FONTS, &s_dbg_font_open );
         gui_checkbox( SEL_MEM,   &s_dbg_mem_open  );

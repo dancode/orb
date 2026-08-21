@@ -603,6 +603,8 @@ const gui_api_t g_gui_api_struct =
     .debug_style_census                 = build_style_census,
     .debug_set_style_palette            = pal_set_enabled,
     .debug_style_palette                = pal_enabled,
+    .debug_set_style_intern             = pal_set_intern,
+    .debug_style_intern                 = pal_intern_enabled,
     .set_retained_skip                  = build_set_retained_skip,
     .retained_skip                      = build_retained_skip,
 

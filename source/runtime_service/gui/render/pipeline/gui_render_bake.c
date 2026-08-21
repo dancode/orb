@@ -69,8 +69,28 @@ static const f32 k_pal_stroke[] = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.
     shape, which is the one failure mode this design has no defence against.  Matching on what the
     record IS cannot be wrong: a hit is a byte-for-byte equal record. */
 
-#define PAL_SLOTS      256u                    /* >> GUI_PAL_MAX; power of two for the mask */
+#define PAL_SLOTS      2048u                   /* >> GUI_PAL_MAX; power of two for the mask */
 #define PAL_SLOT_MASK  ( PAL_SLOTS - 1u )
+
+/*  The CANDIDATE set: hashes of records that missed the table once and have not earned an
+    entry yet.  Interning on FIRST sight would be wrong -- a record whose lanes move every
+    frame (an arc whose start angle animates, a gradient tracking a drag) is distinct every
+    time it is built, and a table that never evicts would fill with single-use entries in
+    seconds and then have no room for the styles that do repeat.
+
+    The qualifying test is therefore "seen again in a LATER BUILD FRAME", not "seen twice".
+    A repeat inside one frame proves only that several windows drew it at one instant, which
+    two spinners at the same angle satisfy; a repeat across frames is what distinguishes a
+    style from a value, and a style tessellated repeatedly is exactly the one an entry pays
+    for.
+
+    Hashes only, no records: a collision here interns something one frame early, which costs
+    nothing -- the table itself is confirmed by full compare, so this set cannot cause a
+    wrong answer, only a wrong moment.  It fills with the by-products of animation and is
+    wiped whole when it does; anything mid-qualification simply re-qualifies. */
+
+#define PAL_CAND_SLOTS  4096u
+#define PAL_CAND_MASK   ( PAL_CAND_SLOTS - 1u )
 
 /*  How many distinct style SCALES the table can cover at once.  Mixed-DPI puts more than one in a
     single frame -- each window lands its own surface's scale as it comes up (gui_frame_dpi.c) -- and
@@ -102,17 +122,82 @@ static struct
     u32        hits, misses;         // probe outcome since the last bake, for the dump
     u32        memo_hits;            // of hits, the share the memo served without hashing
 
+    /* Entries the bake rows produced, so the dump can say which half of the table is the
+       authored chrome vocabulary and which the frame interned for itself.  Everything below
+       `baked` came from pal_rows; everything above it from pal_intern. */
+    u32        baked;
+
+    /* Candidate hashes and the build frame each was last seen in.  frame 0 = empty slot,
+       which is why the counter starts at 1. */
+    struct
+    {
+        u32 hash;
+        u32 frame;
+
+    } cand[ PAL_CAND_SLOTS ];
+
+    u32        cand_count;
+    u32        frame;                // build frames since start; bumped by pal_style_reset
+    u32        interned;             // entries pal_intern added since the last bake
+    u32        full_drops;           // records that qualified with no room left
+    bool       baking;               // pal_rows is running: its own records must not intern
+    bool       pub_dirty;            // interned entries not folded into the published table
+
 } s_bake;
 
-/*  FNV-1a over the whole record -- the same fold the census hashes with, over the same bytes, so a
-    baked entry and the census row it covers agree by construction.  A record is 128 bytes of
-    4-byte lanes, so the shared helper folds it as 32 words (gui_emit_state.c); this is the hottest
-    hash in the backend, running once per style-record memo miss in tess_prim_local. */
+/*  FNV-1a over the record's LIVE ROWS -- the probe key for the table below, and the hottest
+    hash in the backend: it runs once per style-record memo miss in tess_prim_local.
+
+    A record leaves every lane its field and ops do not read at zero (gui_prim.h), the same
+    invariant the dedup memo already depends on, so an all-zero 16-byte row carries no
+    identity.  Folding one anyway costs four links of a serial multiply chain and
+    distinguishes nothing: a flat fill is one live row out of eight, and the full fold spent
+    32 links to say what four say.  The row mask is folded first, so two records whose live
+    rows differ still separate before their lanes are compared.
+
+    The hash is a PROBE ACCELERATOR, never an answer.  pal_find confirms every candidate with
+    a full 128-byte compare, so a weaker key can only lengthen a probe chain -- it can never
+    resolve to the wrong entry, and therefore never draw the wrong shape.  That is what makes
+    narrowing it safe.
+
+    NOT the fold the census hashes with (render/gui_prim_census.c).  The census prints an
+    identity over the whole record and pal_dump prints the table through that same formatter,
+    so the two dumps still join on equal hashes; this one never leaves the probe.
+
+    Read through a byte pointer and reassembled, like fnv1a itself (gui_emit_state.c): a u32
+    view over a struct of mixed u32/f32 lanes is an aliasing violation the POSIX toolchains do
+    optimize against, and a 4-byte memcpy per lane is a CRT call under /Od. */
 
 static u32
 pal_hash( const gui_prim_t* rec )
 {
-    return fnv1a( 2166136261u, rec, (u32)sizeof( gui_prim_t ) );
+    const u8* b = (const u8*)rec;
+    u32       w[ GUI_PRIM_ROWS * 4u ];
+    u32       mask = 0u;
+
+    for ( u32 r = 0; r < GUI_PRIM_ROWS; ++r )
+    {
+        u32 any = 0u;
+        for ( u32 c = 0; c < 4u; ++c, b += 4 )
+        {
+            u32 v = (u32)b[ 0 ] | ( (u32)b[ 1 ] << 8 )
+                  | ( (u32)b[ 2 ] << 16 ) | ( (u32)b[ 3 ] << 24 );
+            w[ r * 4u + c ] = v;
+            any            |= v;
+        }
+        if ( any )
+            mask |= 1u << r;
+    }
+
+    u32 h = fnv1a_u32( 2166136261u, mask );
+    for ( u32 r = 0; r < GUI_PRIM_ROWS; ++r )
+    {
+        if ( !( mask & ( 1u << r ) ) )
+            continue;
+        for ( u32 c = 0; c < 4u; ++c )
+            h = fnv1a_u32( h, w[ r * 4u + c ] );
+    }
+    return h;
 }
 
 /*  Which palette entry holds this record, or GUI_PAL_NONE.  The hot path of the whole campaign:
@@ -120,8 +205,8 @@ pal_hash( const gui_prim_t* rec )
     couple of slots and does one full compare on the candidate.  The compare is not optional -- a
     hash collision that returned the wrong entry would draw the wrong shape.
 
-    Every path but the memo folds the whole 128-byte record, which is a serial chain and by some way
-    the most expensive thing per quad in the tessellator; the memo exists to keep a repeat off it. */
+    Every path but the memo folds the record's live rows, which is a serial chain and still
+    the dearest thing on the per-quad path; the memo exists to keep a repeat off it. */
 
 /*  The A/B switch.  Off, pal_find answers nothing and every style falls back to the per-slot memo
     and the arena -- the exact behaviour that existed before the palette, style bloat and all.  It
@@ -153,11 +238,11 @@ pal_find( const gui_prim_t* rec )
     if ( s_bake.count == 0u || !s_pal_on )
         return GUI_PAL_NONE;
 
-    /* One-deep memo over the last ANSWERED entry, and the reason it lives here rather than in the
-       caller's probe chain: tess_prim_local's arena memo compares against the record at
-       prim_count-1, and a palette hit appends nothing, so prim_count never moves and a run of one
-       style misses that memo on every quad and re-hashes all 128 bytes.  A table of same-background
-       rows or a toolbar of one button is exactly that run.
+    /* One-deep memo over the last ANSWERED entry.  A plain repeat never reaches it --
+       tess_prim_local memoizes its own last answer whatever produced it -- so what is left
+       for this one is the ALTERNATION: a palette style and an arena style traded turn by
+       turn, where the caller's memo holds the arena record and every return to the palette
+       one would otherwise re-fold and re-probe.
        The compare is against the ENTRY's own bytes -- no copy to keep in step, because the hit
        below is confirmed by this same full compare, so the entry IS what the caller asked for.
        Counted as a hit: the question the rate answers is what share of styles the palette served,
@@ -190,6 +275,19 @@ pal_find( const gui_prim_t* rec )
     return GUI_PAL_NONE;
 }
 
+/*  Point the lookup at one entry.  The probe walks to the first empty slot: the table is
+    append-only within a bake, so no slot is ever vacated and a walk can never step over the
+    entry it is looking for. */
+
+static void
+pal_slot_insert( u32 entry, u32 hash )
+{
+    u32 i = hash & PAL_SLOT_MASK;
+    while ( s_bake.slot[ i ] != 0u )
+        i = ( i + 1u ) & PAL_SLOT_MASK;
+    s_bake.slot[ i ] = (u16)( entry + 1u );
+}
+
 /*  Rebuild the lookup over the rows just harvested.  Runs once per bake, never per frame. */
 
 static void
@@ -198,12 +296,134 @@ pal_index( void )
     memset( s_bake.slot, 0, sizeof( s_bake.slot ) );
 
     for ( u32 e = 0; e < s_bake.count; ++e )
+        pal_slot_insert( e, pal_hash( &s_bake.rec[ e ] ) );
+}
+
+/*==============================================================================================
+    pal_intern -- give a record the frame keeps drawing an entry of its own.
+
+    The bake table states what CHROME draws.  This is the other half, and the half that
+    reaches a UI layer the engine has never seen: a record nothing predicted, seen again in a
+    later frame, takes an entry on the spot.  A custom theme's inner-shadowed input box is
+    covered by being drawn twice.  Nothing is registered, named, or declared -- the qualifying
+    evidence is the drawing itself.
+
+    Called from tess_prim_local on a FULL miss, the coldest path it has: the answer memo, the
+    arena memo, the palette and the arena walk have all failed, and the alternative is an
+    arena append.  So the hash is folded here rather than threaded out of pal_find -- once per
+    never-before-seen record per slot, against a fold that is now a handful of words.
+
+    APPEND-ONLY, and that is what makes it safe against the retained geometry cache.  A cached
+    window's quads carry palette indices from earlier frames; growing the table cannot move
+    them, so an intern needs no re-place and no generation bump -- unlike a re-bake, which
+    re-derives every entry and does force one (pal_bake).  It also means no eviction and no
+    freelist: an id handed out is an id for the life of the epoch.  Recycling one would need
+    the liveness of every RETAINED slot, which a per-frame counter cannot see (a steady UI
+    re-tessellates nothing), and the wrong answer there is a cached window silently drawing
+    another style's shape.
+
+    A full table simply stops interning.  The record takes a per-slot arena entry exactly as
+    it did before any of this existed -- the same "a miss costs nothing" the bake relies on.
+==============================================================================================*/
+
+/* Interning A/B switch, separate from pal_enabled: off, the palette holds the bake table
+   alone -- the Stage 6 behaviour -- so a run can attribute coverage to the authored rows or
+   to what the frame taught itself.  Like pal_enabled it is a lookup-time switch and not a
+   teardown, but unlike it there is nothing to invalidate: entries already interned stay valid
+   and keep answering. */
+
+static bool s_pal_intern_on = true;
+
+bool pal_intern_enabled( void ) { return s_pal_intern_on; }
+
+void
+pal_set_intern( bool on )
+{
+    s_pal_intern_on = on;
+}
+
+/*  Has this record been seen in an EARLIER build frame?  Records the sighting either way, so
+    the first call for a record returns false and arms the second. */
+
+static bool
+pal_cand_qualifies( u32 hash )
+{
+    if ( !hash ) hash = 1u;                      /* 0 would read as an empty slot */
+
+    u32 i = hash & PAL_CAND_MASK;
+    for ( u32 probe = 0; probe < PAL_CAND_SLOTS; ++probe, i = ( i + 1u ) & PAL_CAND_MASK )
     {
-        u32 i = pal_hash( &s_bake.rec[ e ] ) & PAL_SLOT_MASK;
-        while ( s_bake.slot[ i ] != 0u )
-            i = ( i + 1u ) & PAL_SLOT_MASK;
-        s_bake.slot[ i ] = (u16)( e + 1u );
+        if ( s_bake.cand[ i ].frame == 0u )
+            break;
+        if ( s_bake.cand[ i ].hash == hash )
+        {
+            if ( s_bake.cand[ i ].frame == s_bake.frame )
+                return false;              /* same frame: another window, not another build */
+            s_bake.cand[ i ].frame = s_bake.frame;
+            return true;
+        }
     }
+
+    /* Not held.  Wipe rather than probe forever when the set is full -- what fills it is the
+       by-product of animation, and anything real re-qualifies within two frames. */
+    if ( s_bake.cand_count >= PAL_CAND_SLOTS / 2u )
+    {
+        memset( s_bake.cand, 0, sizeof( s_bake.cand ) );
+        s_bake.cand_count = 0;
+        i = hash & PAL_CAND_MASK;
+    }
+
+    while ( s_bake.cand[ i ].frame != 0u )
+        i = ( i + 1u ) & PAL_CAND_MASK;
+
+    s_bake.cand[ i ].hash  = hash;
+    s_bake.cand[ i ].frame = s_bake.frame;
+    ++s_bake.cand_count;
+    return false;
+}
+
+u32
+pal_intern( const gui_prim_t* rec )
+{
+    if ( !s_pal_on || !s_pal_intern_on || s_bake.baking )
+        return GUI_PAL_NONE;
+
+    u32 hash = pal_hash( rec );
+    if ( !pal_cand_qualifies( hash ) )
+        return GUI_PAL_NONE;
+
+    if ( s_bake.count >= (u32)GUI_PAL_MAX )
+    {
+        ++s_bake.full_drops;
+        GUI_WARN_ONCE( "style palette full (%u entries) -- styles that qualify from here "
+                       "take per-slot records instead; raise GUI_PAL_MAX if this UI's "
+                       "working set is genuinely this wide.\n", (u32)GUI_PAL_MAX );
+        return GUI_PAL_NONE;
+    }
+
+    u32 entry = s_bake.count++;
+    s_bake.rec[ entry ] = *rec;
+    pal_slot_insert( entry, hash );
+
+    ++s_bake.interned;
+    s_bake.pub_dirty = true;
+    return entry;
+}
+
+/*  Fold this frame's interned entries into the published table.  Called from the flush,
+    between the build that may have added them and the upload that has to carry them
+    (gui_render_submit.c).  Extends rather than republishes: entries below `count` are
+    byte-identical to what is already there, and an in-flight frame only ever names an index
+    below the count IT was uploaded with, so the bytes being written are ones no draw can be
+    reading. */
+
+void
+pal_publish_pending( void )
+{
+    if ( !s_bake.pub_dirty )
+        return;
+    s_bake.pub_dirty = false;
+    render_pal_extend( s_bake.rec, s_bake.count );
 }
 
 /*  Forget every scale.  The build re-notes each one as its windows land, so this runs at the top of
@@ -215,6 +435,12 @@ void
 pal_style_reset( void )
 {
     s_bake.scale_count = 0;
+
+    /* The BUILD FRAME counter, and this is the one call that ticks once per frame that will
+       tessellate -- which is exactly the unit pal_cand_qualifies measures in.  An
+       idle-skipped frame builds nothing, so it must not count: a record would otherwise
+       qualify against a frame in which nothing was drawn at all. */
+    ++s_bake.frame;
 }
 
 /*  Note a landed style as one of the scales the table must cover.  Called once at the top of a
@@ -522,7 +748,9 @@ pal_rows( const f32* var )
     the pass that follows sees the arena exactly as tess_reset left it.
 
     Returns true only when it PUBLISHED, which the caller reads as "every baked palette index in
-    cached geometry is now stale" and answers with a full re-place.
+    cached geometry is now stale" and answers with a full re-place.  That is what separates
+    a bake from an intern: this REPLACES the table, so entry 12 means a different record
+    afterwards, while pal_intern only ever appends and owes nothing.
 ==============================================================================================*/
 
 bool
@@ -542,11 +770,26 @@ pal_bake( void )
     memset( s_bake.slot, 0, sizeof( s_bake.slot ) );
     s_bake.memo = ~0u;   /* same reason, and count rising as rows harvest would revive it */
     s_bake.hits = s_bake.misses = s_bake.memo_hits = 0;
+    s_bake.interned = s_bake.full_drops = 0;
+
+    /* The candidates go with the table: they are hashes of records built at the OLD style,
+       and a theme or DPI change means nothing that qualified against them will be drawn
+       again. */
+    memset( s_bake.cand, 0, sizeof( s_bake.cand ) );
+    s_bake.cand_count = 0;
+
+    /* Interning off for the duration.  A row that interned itself would leave prim_count
+       where it was and the harvest below would find nothing to keep -- the same trap the slot
+       clear above exists for, arriving by a different door. */
+    s_bake.baking = true;
 
     /* Newest scale first, so if the table ever fills it is the least recently seen surface that
        loses its tail rather than the one the user is looking at. */
     for ( u32 s = s_bake.scale_count; s-- > 0; )
         pal_rows( s_bake.scale[ s ].var );
+
+    s_bake.baking = false;
+    s_bake.baked  = s_bake.count;
 
     /* Leave the arena as we found it. */
     s_tess.prim_count = 0;
@@ -556,6 +799,7 @@ pal_bake( void )
 
     pal_index();
     render_pal_publish( s_bake.rec, s_bake.count );
+    s_bake.pub_dirty = false;   /* the replace above carried everything the table holds */
     return true;
 }
 
@@ -584,6 +828,14 @@ pal_dump( void )
              probes ? 100.0f * (f32)s_bake.hits / (f32)probes : 0.0f,
              s_bake.memo_hits,
              s_bake.hits ? 100.0f * (f32)s_bake.memo_hits / (f32)s_bake.hits : 0.0f );
+
+    /* How the table filled: authored rows against what the frame taught itself.  A large
+       interned share on a stock theme means the bake table is missing shapes chrome actually
+       draws; on a custom layer it is the mechanism working as intended. */
+    gui_log( GUI_LOG_INFO, "     %u baked + %u interned%s   (%u candidate hashes held, %s)",
+             s_bake.baked, s_bake.count - s_bake.baked,
+             s_bake.full_drops ? "  TABLE FULL" : "",
+             s_bake.cand_count, s_pal_intern_on ? "interning on" : "interning OFF" );
 
     for ( u32 s = 0; s < s_bake.scale_count; ++s )
     {

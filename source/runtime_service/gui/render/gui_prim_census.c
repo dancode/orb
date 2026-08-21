@@ -73,8 +73,12 @@ census_normalize( gui_prim_t* dst, const gui_prim_t* src )
     dst->tex = src->tex & GUI_TEX_MODE_MASK;
 }
 
-/* The same fold pal_hash uses, over the same bytes, so a census row and the palette entry that
-   covers it agree by construction (gui_render_bake.c). */
+/* The record's IDENTITY, folded over the whole 128 bytes: the hash column of every dump,
+   and what makes two runs joinable.  pal_dump prints the palette table through this same
+   formatter, so a baked entry and the census row it covers carry equal hashes.
+   Deliberately not pal_hash, which folds only a record's live rows -- that one is a probe
+   key on the per-quad path and is free to be weaker; this one is read by a human
+   comparing two sessions. */
 static u32
 census_hash( const gui_prim_t* rec )
 {

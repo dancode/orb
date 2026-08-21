@@ -577,6 +577,29 @@ bool                pal_bake                ( void );
 
 u32                 pal_find                ( const gui_prim_t* rec );
 
+/* Offer a record the palette does not hold an entry of its own, returning it or GUI_PAL_NONE.
+   Granted on the SECOND BUILD FRAME a record is seen in, so a style earns a shared entry by
+   being drawn again while a per-frame value never does.  Append-only: an entry handed out
+   keeps its index for the life of the table, which is what lets this run during tessellation
+   without invalidating the palette indices in cached geometry.  A declined record costs
+   nothing -- it takes a per-slot arena entry exactly as it did before. */
+
+u32                 pal_intern              ( const gui_prim_t* rec );
+
+/* Fold entries interned during this frame's build into the published table, before the upload
+   that has to carry them.  No-op on a frame that interned nothing, which is every steady
+   frame. */
+
+void                pal_publish_pending     ( void );
+
+/* A/B switch for interning alone.  Off, the palette holds the bake table and nothing else, so
+   a run can attribute coverage to the authored rows or to what the frame taught itself.
+   Unlike pal_set_enabled this invalidates nothing: entries already interned stay valid and
+   keep answering, so flipping it costs no re-place in either direction. */
+
+bool                pal_intern_enabled      ( void );
+void                pal_set_intern          ( bool on );
+
 /* A/B switch for the palette lookup.  Off, every style takes a per-slot arena record exactly as it
    did before the palette existed -- more style bloat, identical pixels.  Flipping it re-places all
    geometry (cached quads hold the answers the old setting gave), so it is a debug lever, not a
