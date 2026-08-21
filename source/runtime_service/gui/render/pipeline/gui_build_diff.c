@@ -218,14 +218,19 @@ cache_diff_windows( void )
             }
             h = fnv1a_u32( h, s_draw.cmd_hashes[ i ] );
 
-            /* Per-command generation folds: the two commands whose uvs are still resolved at
-               TESS time against a movable atlas placement.  A sprite bakes its atlas rect fresh
-               each tessellation; a dashed line bakes the assist row's V, which moves when the
-               coverage atlas grows.  Folding only on the commands that carry the dependency
-               keeps every other window repack-immune. */
+            /* Per-command generation folds: the commands whose uvs are still resolved at TESS time
+               against a movable atlas placement.  A sprite bakes its atlas rect fresh each
+               tessellation; a dashed line bakes the assist row's V, which moves when the coverage
+               atlas grows; an fx_box CARRYING A SHAPE resolves the SDF tenant it names the same
+               way.  Folding only on the commands that carry the dependency keeps every other
+               window repack-immune -- which is why the shape case tests the lane rather than the
+               type: an ordinary rounded box states no atlas and must stay immune. */
 
                  if ( s_draw.cmds[ i ].type == GUI_CMD_SPRITE )      h = fnv1a_u32( h, res_sprite_generation() );
             else if ( s_draw.cmds[ i ].type == GUI_CMD_DASHED_LINE ) h = fnv1a_u32( h, res_atlas_generation() );
+            else if ( s_draw.cmds[ i ].type == GUI_CMD_FX_BOX
+                   && s_draw.cmds[ i ].fx_box.shape != GUI_SHAPE_NONE )
+                                                                     h = fnv1a_u32( h, res_sdf_generation() );
         }
         s_cache.cur[ bi ].hash = h;
 

@@ -25,6 +25,19 @@
 
 #define ICON_MAX       256u     // max distinct icons
 
+/* The stored field's half-range for an SDF icon, in TEXELS (gui_sdf_bake.c).  It bounds two things
+   and neither is the antialiasing -- the fragment recovers that from fwidth() and does not care
+   what the spread is.  What it bounds is how wide a GUI_OP_TEXT_EDGE outline can grow before the
+   field saturates, and the quantization: 127 levels over the spread, so 4 px gives ~32 levels
+   across the one-pixel AA band.  An icon wants an outline, not a halo, so it stays narrow -- a
+   baked SHAPE, which wears the whole effect cascade, pads far wider (gui_shape.c). */
+#define ICON_SDF_SPREAD        4.0f
+
+/* Longest edge of the stored field when the caller does not name one.  Large enough that a toolbar
+   icon never magnifies past its own texel grid, small enough that a full set fits the SDF atlas
+   (1024x512): 64x64 is 4 KB, so ~128 icons share the page with the fonts. */
+#define ICON_SDF_SIZE_DEFAULT  64u
+
 /*==============================================================================================
     State
 ==============================================================================================*/
@@ -166,7 +179,7 @@ icon_register_sdf( const char* name, u32 w, u32 h, const u8* coverage, u32 out_m
     if ( ow == 0 ) ow = 1;
     if ( oh == 0 ) oh = 1;
 
-    if ( icon_sdf_touches_border( coverage, w, h ) )
+    if ( sdf_bake_touches_border( coverage, w, h ) )
     {
         gui_log( GUI_LOG_WARN,
                  "icon '%s' reaches the edge of its own bitmap -- its distance field cannot "
@@ -177,7 +190,7 @@ icon_register_sdf( const char* name, u32 w, u32 h, const u8* coverage, u32 out_m
     u8* field = (u8*)malloc( (size_t)ow * oh );
     if ( !field )
         return GUI_ICON_NONE;
-    if ( !icon_sdf_build( coverage, w, h, field, ow, oh ) )
+    if ( !sdf_bake_build( coverage, w, h, field, ow, oh, ICON_SDF_SPREAD ) )
     {
         free( field );
         return GUI_ICON_NONE;

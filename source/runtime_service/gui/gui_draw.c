@@ -55,9 +55,10 @@
 #include "runtime_service/gui/draw/gui_glyph_internal.c"
 #include "runtime_service/gui/draw/gui_glyph_table.c"
 #include "runtime_service/gui/draw/gui_glyph.c"
-#include "runtime_service/gui/draw/gui_icon_sdf.c"
+#include "runtime_service/gui/draw/gui_sdf_bake.c"
 #include "runtime_service/gui/draw/gui_icon.c"
 #include "runtime_service/gui/draw/gui_icon_load.c"
+#include "runtime_service/gui/draw/gui_shape.c"
 #include "runtime_service/gui/draw/gui_sprite.c"
 
 #include "runtime_service/gui/draw/gui_paint.c"
@@ -86,6 +87,10 @@ gui_draw_boot( void )
     }
     icon_load_builtins();
 
+    /* Baked shapes are the same layer over the SDF atlas, and stand up with the icons for the same
+       reason: registration has to be legal from the moment an app can call it. */
+    shape_init();
+
     return true;
 }
 
@@ -93,6 +98,7 @@ void
 gui_draw_shutdown( void )
 {
     sprite_registry_shutdown();
+    shape_shutdown();
     icon_atlas_shutdown();
     font_shutdown();
 }

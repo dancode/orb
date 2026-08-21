@@ -133,6 +133,27 @@ typedef enum
     GUI_FX_ARC       = 6,  /* annular sector: a band of `tube` px centred on radius ra, round caps */
     GUI_FX_PIE       = 7,  /* filled wedge: the disc of radius ra cut to the aperture, sharp edges */
 
+    GUI_FX_TEX       = 8,  /* BAKED art: the field is SAMPLED from the SDF atlas rather than
+                              evaluated, so a silhouette no closed-form expression describes -- a
+                              keyhole, a gear, a badge -- carries the whole op cascade.  The
+                              fragment recovers a PIXEL distance from the screen-space derivative
+                              of the texel (gui_fx.hlsli), which is what makes it scale and rotate
+                              like every analytic field beside it.
+
+                              Row 1 is unused; row 2's `feather` means exactly what it means for
+                              GUI_FX_BOX -- the AA band, and GUI_OP_INSET's depth -- and that reuse
+                              is what lets the ops run unchanged.  The quad's uv spans the whole
+                              padded tenant and its rect is the padded box, so the SKIRT rule's
+                              existing uv grow-and-clamp samples out into the margin and goes flat
+                              at the tenant edge.
+
+                              Two limits are structural rather than unfinished.  The field holds
+                              only the `spread` texels the bake padded for, so a border or glow
+                              reaching further saturates and stops.  And an R8 field carries no
+                              arc-length coordinate, so it states no boundary coordinate: GUI_OP_
+                              DASH and GUI_OP_GRAD_ALONG have nothing to walk and are dropped at
+                              the emit site rather than drawing something arbitrary. */
+
     /* RETIRED fields, all folded into ops -- a field is the SHAPE itself, and each of these was
        an effect an op can now apply to ANY shape.  Do not re-add as fields:
          TILE_U -> GUI_OP_TILE_U        TEXT_EDGE -> GUI_OP_TEXT_EDGE

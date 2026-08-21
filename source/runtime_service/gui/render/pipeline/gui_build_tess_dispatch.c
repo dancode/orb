@@ -255,6 +255,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
            shares. */
         s_tess.cur_ops        = 0u;
         s_tess.cur_corner_pow = 0.0f;
+        s_tess.cur_fx_field   = 0u;
         s_tess.cur_col_border = 0u;
         s_tess.cur_rot_c      = 1.0f;
         s_tess.cur_rot_s      = 0.0f;
@@ -351,10 +352,47 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                     aux.anim_param = c->fx_box.curve_param;
                     aux.swell_amp  = c->fx_box.swell;
                     s_tess.cur_corner_pow = c->fx_box.corner_pow;
+
+                    /* A BAKED shape takes the place of the analytic box: same surface, same ops,
+                       its distance sampled from the SDF atlas instead of evaluated.  The uv is
+                       resolved HERE rather than at emit because an atlas repack moves the tenant
+                       under geometry the retained cache may hold for many frames -- the sprite's
+                       rule, and res_sdf_generation folds into the window hash to force the
+                       re-resolve (gui_build_diff.c).  The rect the command carries is already the
+                       PADDED box, so the uv spans the tenant whole and the skirt reaches the
+                       margin every effect travels through. */
+                    f32 u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
+                    u32 tex = 0u;
+                    if ( c->fx_box.shape != GUI_SHAPE_NONE )
+                    {
+                        tex = shape_tex( c->fx_box.shape );
+                        if ( tex == 0u || !shape_uv( c->fx_box.shape, &u0, &v0, &u1, &v1 ) )
+                            break;   /* atlas not up yet -- skip the quad, as a glyph run does */
+
+                        s_tess.cur_fx_field = (u32)GUI_FX_TEX;
+
+                        /* Both of these walk the field's BOUNDARY COORDINATE, which a stored
+                           distance field does not have -- there is no arc length in an R8 texel.
+                           Dropped rather than left to cut on a coordinate that is always zero, so
+                           the shape draws right and the mistake is stated once. */
+                        if ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_GRAD_ALONG ) )
+                        {
+                            static bool warned;
+                            s_tess.cur_ops &= ~( GUI_OP_DASH | GUI_OP_GRAD_ALONG );
+                            if ( !warned )
+                            {
+                                warned = true;
+                                gui_log( GUI_LOG_WARN,
+                                         "DASH / GRAD_ALONG dropped on a baked shape -- a sampled "
+                                         "field states no boundary coordinate to walk" );
+                            }
+                        }
+                    }
+
                     tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
                                  c->fx_box.rounding, c->fx_box.feather, c->fx_box.border,
                                  c->fx_box.rate, c->fx_box.depth, c->fx_box.rot,
-                                 0, 0, 1, 1, 0, c->fx_box.abgr, &aux );
+                                 u0, v0, u1, v1, tex, c->fx_box.abgr, &aux );
                 }
                 break;
 

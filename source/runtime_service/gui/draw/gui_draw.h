@@ -111,7 +111,7 @@ void font_slot_release      ( u32 id );                     // free font id: atl
    source half the emit layer consumes) is declared in render/gui_render.h. */
 gui_icon_id_t   icon_register     ( const char* name, u32 w, u32 h, const u8* coverage );
 gui_icon_id_t   icon_load_file    ( const char* name, const char* path );  // decode PNG/... -> R8 coverage -> icon_register
-/* The distance-field pair.  Same coverage input; the bytes are transformed (draw/gui_icon_sdf.c)
+/* The distance-field pair.  Same coverage input; the bytes are transformed (draw/gui_sdf_bake.c)
    and land in the SDF atlas instead, so the icon becomes resolution independent and takes an
    outline.  out_max is the longest edge of the STORED field (0 = default); the SOURCE should be
    several times that and should carry a transparent margin. */
@@ -121,6 +121,15 @@ void            icon_load_builtins( void );                                // re
 gui_icon_id_t   icon_find         ( const char* name );
 bool            icon_atlas_init   ( void );   // enable icon registration (shared atlas owns GPU)
 void            icon_atlas_shutdown( void );  // clear the icon table
+
+/* Baked SDF shape registry (draw/gui_shape.c).  Where an SDF icon is a field read as ALPHA in the
+   colour stage, a shape is a field read as the fragment's DISTANCE -- so the whole op cascade
+   reaches it.  The three the RENDER unit consumes -- shape_metrics at emit, shape_uv / shape_tex at
+   tessellation -- are declared in render/gui_render.h with the other source contracts. */
+gui_shape_id_t  shape_register    ( const char* name, u32 w, u32 h, const u8* coverage,
+                                    const gui_shape_bake_t* bake );   // NULL = every default
+gui_shape_id_t  shape_find        ( const char* name );
+f32             shape_reach       ( gui_shape_id_t id, gui_rect_t r );  // effect ceiling, px
 
 /* Sprite registry + nine-slice authoring (draw/gui_sprite.c).  The colour sibling of the icon
    table: an icon is coverage the vertex colour paints, a sprite is art the vertex colour tints.

@@ -990,6 +990,17 @@ draw_swell( gui_rect_t box, f32 rate, f32 grow, f32 phase, u32 col )
     draw_push_swell( box.x, box.y, box.w, box.h, draw_rounding(), rate, grow, phase, col );
 }
 
+/* A hollow ring hugging `box`: the shape's own field bent into a band of `t` px lying inside the
+   boundary, in one quad.  What separates it from draw_round_rect's stroke is that the band IS the
+   field, so it composes with everything measured against one -- it swells, it glows, it breathes,
+   and under an ambient baked shape it traces that silhouette instead of a rectangle.  Honors the
+   ambient rounding, like every other surface here. */
+static void
+draw_ring( gui_rect_t box, f32 t, u32 col )
+{
+    draw_push_ring( box.x, box.y, box.w, box.h, draw_rounding(), t, col );
+}
+
 /* The sonar ping: a hollow ring hugging radius `r` that swells `grow` px outward while it
    fades, expanding and dying on ONE clock -- from one quad whose bytes never change while it
    runs.  The linear default curve is right here: its snap-back is the ripple restarting.  For a
@@ -1308,6 +1319,7 @@ void gui_draw_drop_shadow( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32
                                                                                { draw_drop_shadow( box, spread, off_x, off_y, col ); }
 void gui_draw_pulse   ( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col ) { draw_pulse( box, rate, depth, phase, col ); }
 void gui_draw_swell   ( gui_rect_t box, f32 rate, f32 grow, f32 phase, u32 col )  { draw_swell( box, rate, grow, phase, col ); }
+void gui_draw_ring    ( gui_rect_t box, f32 t, u32 col )                  { draw_ring( box, t, col ); }
 void gui_draw_ripple  ( f32 cx, f32 cy, f32 r, f32 thickness, f32 grow, f32 rate, f32 phase, u32 col )
                                                                                { draw_ripple( cx, cy, r, thickness, grow, rate, phase, col ); }
 

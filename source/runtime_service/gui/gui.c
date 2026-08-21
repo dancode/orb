@@ -2,19 +2,19 @@
 
     runtime_service/gui/gui.c -- THE GUI MODULE FACE: vtable + descriptor + DLL exports.
 
-    This is the GUI module's front door -- the one thing the rest of the engine actually links
-    against. When other code calls gui()->draw_rect(...) or any other function on the module,
-    it is going through a table of function pointers this file assembles. This file carries no
-    logic of its own: the frame orchestration lives in the separate gui_frame.c unit, and every
-    widget / layout / render path lives in its own carved unit (GUI_ARCHITECTURE.md). This
-    unit's whole job is to build that function table (g_gui_api_struct) and the small descriptor
-    that tells the module system how to load, hot-reload, and unload this module.
+    The GUI module's front door -- the one the rest of the engine actually links against. 
+    When other code calls gui()->draw_rect(...) or any other function on the module,
+    it is going through a table of function pointers this file assembles. This file carries
+    no logic of its own: the frame orchestration lives in the separate gui_frame.c unit, and
+    every widget / layout / render path lives in its own carved unit (GUI_ARCHITECTURE.md). 
+    
+    This unit's whole job is to build that function table (g_gui_api_struct) and the small
+    descriptor that tells the module system how to load, hot-reload, and unload this module.
 
-    It includes every other unit's header for one reason: building the function table means
-    naming every function in it, and those functions are declared across all the internal unit
-    headers. This is also the one file that owns the actual storage for the pointers to the
-    sibling app/rhi module APIs this module depends on -- fetched once when the module loads,
-    and read everywhere else in the GUI through a shared accessor rather than refetched per unit.
+    It includes every other unit's header since building the function table means naming 
+    every function in it. This file owns the storage for the pointers to the sibling app/rhi
+    module APIs this module depends on -- fetched once when the module loads, and read 
+    everywhere else in the GUI through a shared accessor rather than refetched per unit.
 
 ==============================================================================================*/
 

@@ -168,6 +168,14 @@ static struct
        only touches it to override one shape. */
     f32 corner_pow;
 
+    /* Ambient BAKED SHAPE: while it is set, the fx_box family draws that shape's sampled field in
+       place of the analytic rounded box, and every one of them -- shadow, glow, inset, ring, pulse,
+       swell -- reaches authored art without a verb of its own.  Ambient for the reason the radius
+       is: it is a property of WHAT IS BEING DRAWN rather than of each effect, and threading it
+       through six calls would state the same thing six times.  Scoped and cleared by the caller
+       (draw_set_shape, GUI_SHAPE_NONE), the draw_set_rounding contract. */
+    gui_shape_id_t shape;
+
     /* Ambient ANIMATION CURVE, folded into every shape that carries a clock -- the pulse, the
        spinner, the marching ants (gui_curve_t, gui_prim_t row 5).  Ambient rather than a
        parameter on each of those calls because it is one property of MOTION, and a seam that
@@ -392,6 +400,7 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.alpha                = 1.0f;
     s_draw.rounding             = 0.0f;                 /* square until a seam sets the resolved radius */
     s_draw.corner_pow           = 0.0f;                 /* circular arcs until the frame installs the style */
+    s_draw.shape                = GUI_SHAPE_NONE;       /* analytic boxes until a caller names a baked one */
     s_draw.border_align         = 0.0f;                 /* borders lie inside until a caller moves them */
     s_draw.text_clip_x0         = -GUI_TEXT_NO_CLIP;    /* unclipped until a seam sets a window */
     s_draw.text_clip_x1         =  GUI_TEXT_NO_CLIP;
@@ -798,6 +807,31 @@ f32
 draw_rounding( void )
 {
     return s_draw.rounding;
+}
+
+/*==============================================================================================
+    The ambient BAKED SHAPE -- what the fx_box family draws instead of a rounded box.
+
+    Set it and every effect verb in that family (shadow, glow, inset, ring, pulse, swell, the
+    rotated box) resolves its coverage from the shape's sampled field; clear it with
+    GUI_SHAPE_NONE and they go back to the analytic box.  Save-and-restore like the radius, since
+    both are ambient over a span the caller chooses rather than over a frame.
+
+    The verbs themselves are untouched by this, which is the point: an op reads a distance and has
+    no interest in which field produced one, so a keyhole wears the same border a panel does
+    without a second vocabulary existing to say so.
+==============================================================================================*/
+
+void
+draw_set_shape( gui_shape_id_t id )
+{
+    s_draw.shape = id;
+}
+
+gui_shape_id_t
+draw_shape( void )
+{
+    return s_draw.shape;
 }
 
 /* The corner PROFILE that rides with the radius: how much of the corner is curved, rather than

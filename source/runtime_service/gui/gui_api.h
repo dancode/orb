@@ -669,6 +669,52 @@ typedef struct gui_api_s
                                           u32 out_max );
     gui_icon_id_t ( *load_icon_sdf     )( const char* name, const char* path, u32 out_max );
 
+    /* BAKED SHAPES -- the same distance field as an SDF icon, read one stage earlier, which is the
+       whole difference and a large one.  An SDF icon's texel becomes ALPHA in the colour stage,
+       after the effect cascade has already run, so an outline is the only thing that can be made
+       from it.  A shape's texel becomes the fragment's DISTANCE before a single op has run, so it
+       is a FIELD in exactly the sense a rounded box is -- and every op reaches it.
+
+       What that unlocks is the silhouette no expression and no record can state: the record's own
+       subtraction tops out at one rounded-box cut and no stack of quads can un-paint ink, so a
+       keyhole, a gear, a notched badge had nowhere to come from.  Bake one and it wears the border,
+       the glow, the inset, the swell, the pulse and the cut a panel wears.
+
+       draw_set_shape is how the existing verbs are aimed at it -- it is ambient like the corner
+       radius, so draw_shadow / draw_glow / draw_inset / draw_ring / draw_pulse / draw_swell need no
+       shape-flavoured twin and never will:
+
+           gui()->draw_set_shape( keyhole );
+           gui()->draw_glow  ( r, 0.0f, 18.0f, AMBER );
+           gui()->draw_ring  ( r, 0.0f,  2.0f, INK   );
+           gui()->draw_set_shape( GUI_SHAPE_NONE );
+
+       draw_shape_in is the flat placement primitive for callers who want the art and no effect --
+       the shape analogue of draw_icon_in, and it saves and restores the ambient itself.
+
+       THE ONE NUMBER TO RESPECT is shape_reach.  A stored field only holds the margin the bake
+       padded for (gui_shape_bake_t.spread, 8 texels by default), scaled by how big the shape is
+       drawn; a border or glow asking to travel further does not fade out, it stops dead where the
+       texels saturate.  Ask for the ceiling rather than discovering it visually.
+
+       Two ops are unavailable and always will be: DASH and GRAD_ALONG walk a boundary coordinate,
+       and an R8 distance field carries no arc length.  They are dropped with one warning rather
+       than cutting on a coordinate that is always zero.
+
+       The source art follows the SDF icon rules -- transform at several times the stored size, or
+       the field is smooth around a staircase -- with the margin the one thing it need NOT bring:
+       GUI_SDF_PAD_GROW makes the margin itself.  GUI_SDF_PAD_KEEP is the import path for art that
+       already carries spacing (a 128x128 authored with room), and GUI_SDF_PAD_INSET shrinks the art
+       inside a fixed tenant when atlas area is the scarce thing. */
+
+    gui_shape_id_t ( *register_shape )( const char* name, u32 w, u32 h, const u8* coverage,
+                                        const gui_shape_bake_t* bake );   // NULL = every default
+    gui_shape_id_t ( *find_shape     )( const char* name );
+    gui_vec2_t     ( *shape_size     )( gui_shape_id_t id );   // the INK's stored size, texels
+    f32            ( *shape_reach    )( gui_shape_id_t id, gui_rect_t r );  // effect ceiling, px
+    void           ( *draw_set_shape )( gui_shape_id_t id );   // GUI_SHAPE_NONE restores the box
+    void           ( *draw_shape_in  )( gui_rect_t r, gui_shape_id_t id, u32 col );
+
 
     /* RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
        image) as a full-color quad; the texel is the color, tint_abgr multiplies (0 = untinted).
@@ -1047,6 +1093,13 @@ typedef struct gui_api_s
        click ripple, the radar pulse. */
     void ( *draw_ripple            )( f32 cx, f32 cy, f32 r, f32 thickness, f32 grow,
                                       f32 rate, f32 phase, u32 col );
+    /* A hollow ring hugging `box`: a band of `t` px lying inside the boundary, cut from the
+       shape's own FIELD rather than stroked around its perimeter.  That is the difference from
+       draw_round_rect's outline and the reason to reach for this one -- a field-borne band
+       composes with everything else measured against a field, so it swells, glows and breathes,
+       and under an ambient baked shape it traces that silhouette instead of a rectangle.  One
+       quad.  Honors the ambient rounding. */
+    void ( *draw_ring              )( gui_rect_t box, f32 t, u32 col );
     /* The dashed rounded border -- and at a non-zero `speed` (px/sec) the MARCHING ANTS, the
        selection border that scrolls on the clock.  dash/gap are arc-length px (the
        draw_dashed_line vocabulary); the period snaps so whole cycles fit the perimeter and a

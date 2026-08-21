@@ -90,6 +90,11 @@ static struct
                                command for the same reason cur_ops is: it reaches all four corners
                                of a shape without threading a parameter through every fill in the
                                library, and cannot leak onto the next command.  0 = circular arcs */
+    u32         cur_fx_field;   /* the FIELD the box family writes, when it is not the analytic box.
+                               Only GUI_FX_TEX sets it today: a baked shape is the same surface
+                               with its distance sampled instead of evaluated, so it rides
+                               tess_fx_box_core rather than forking it.  0 = whatever the emitter
+                               states for itself, and cleared per command like cur_ops.          */
 
     /* GLYPH ATTRIBUTION -- ambient over one glyph run, read by tess_quad_push.  Only the two text
        tessellators (tess_text_n, tess_text_xf) raise the flag, and every quad they push while it

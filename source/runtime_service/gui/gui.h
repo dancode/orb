@@ -98,6 +98,56 @@ typedef u32 gui_icon_id_t;
 typedef u32 gui_sprite_id_t;
 #define GUI_SPRITE_NONE 0u
 
+/* Shape handle -- identifies one piece of authored art baked into the SDF atlas as a signed
+   DISTANCE FIELD rather than as coverage (register_shape).  What that buys is the whole effect
+   cascade: a shape is a FIELD SOURCE, so the same border, glow, inset, swell, pulse and
+   subtraction that reach a rounded box reach a keyhole, a gear or a badge silhouette -- the
+   silhouettes no closed-form field and no single record-borne cut can describe.
+
+   The difference from an SDF ICON, which is also a field in the same atlas, is where it resolves:
+   an icon's texel is read in the colour stage as alpha, so only an outline can be drawn from it,
+   where a shape's texel becomes the fragment's distance before a single op has run.
+
+   Effects reach exactly as far as the bake padded (gui_shape_bake_t.spread) and no further -- past
+   that the stored field saturates and the effect stops rather than fading.  shape_reach reports
+   that limit in px for a given rect.  0 means "no shape", and every draw helper no-ops on it. */
+
+typedef u32 gui_shape_id_t;
+#define GUI_SHAPE_NONE 0u
+
+/* Where a shape bake gets the margin its field needs.  All three run one path -- crop to the ink,
+   add margin, downsample -- and differ only in what gui_shape_bake_t.out_max names. */
+
+typedef enum
+{
+    GUI_SDF_PAD_GROW = 0,   /* out_max is the INK's longest edge; the tenant comes out 2 * spread
+                               larger.  The default: the caller states the art size it wants and
+                               the bake pays for the reach out of atlas area.                    */
+    GUI_SDF_PAD_KEEP,       /* out_max is the TENANT's longest edge and the source is used
+                               UNCROPPED -- the import path for art authored with its own spacing.
+                               The margin is measured rather than made, and a short one caps the
+                               effective spread (reported back, so shape_reach cannot overstate). */
+    GUI_SDF_PAD_INSET,      /* out_max is the TENANT's longest edge; the ART shrinks inside it to
+                               make room.  Costs ink resolution, spends no extra atlas.          */
+
+} gui_sdf_pad_t;
+
+/* How to bake one shape.  A NULL descriptor at register_shape takes every default. */
+
+typedef struct
+{
+    u32           out_max;  // stored longest edge, texels (0 = GUI_SHAPE_SIZE_DEFAULT)
+    f32           spread;   // texels of field either side of the outline (0 = GUI_SHAPE_SPREAD).
+                            //   The reach every effect is bounded by, and the quantization it
+                            //   trades against: a byte holds 127 levels over the spread, so 8
+                            //   leaves ~16 across the 1 px AA band and 16 would leave 8 and band
+    gui_sdf_pad_t pad;      // where the margin comes from
+
+} gui_shape_bake_t;
+
+#define GUI_SHAPE_SIZE_DEFAULT  128u
+#define GUI_SHAPE_SPREAD        8.0f
+
 /* Viewport handle -- a plain i32 index into the global viewport pool, naming a render
    surface backed by an OS window.  Returned by viewport_open; passed to render,
    viewport_resize, viewport_close, and window_set_next_viewport.  A valid handle is
@@ -2023,9 +2073,16 @@ typedef struct
         /* `phase` offsets the pulse wave in CYCLES, so same-rate pulses can stagger instead of
            beating in lockstep; 0 for every non-pulsing variant.  `curve`/`curve_param` shape the
            wave (gui_curve_t), baked from the ambient at push time. */
+        /* `shape` names a baked SDF shape (register_shape) to take the place of the rounded box,
+           0 being the analytic box every caller had before.  Every variant above is unchanged by
+           it -- the ops read a distance and do not care which field produced one -- so a glow, a
+           ring or a swell reaches authored art through the same command that reaches a rect.
+           x,y,w,h is then the PADDED box, inflated at emit from the caller's ink rect so the quad
+           covers the field's margin; the ID travels rather than the UVs, since an SDF-atlas repack
+           moves the tenant under geometry the retained cache may hold for many frames. */
         struct { f32 x, y, w, h; f32 rounding, corner_pow, feather, rate, depth, rot;
                  u32 abgr, variant; f32 cut_dx, cut_dy; f32 phase;
-                 u32 curve; f32 curve_param; f32 swell, border; } fx_box;
+                 u32 curve; f32 curve_param; f32 swell, border; u32 shape; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME one quad a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape

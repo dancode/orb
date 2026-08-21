@@ -49,6 +49,46 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
        than approximated with the diagonal, because the exact box is four multiplies and the
        diagonal wrongly keeps every long thin rotated bar on screen. */
 
+    /* A BAKED shape (the ambient draw_set_shape) replaces the analytic box, and the rect the caller
+       stated is where its INK goes.  The quad has to be the PADDED box instead: the field's margin
+       is what every border and glow travels through, and a quad stopping at the ink would leave the
+       skirt clamping against the tenant's edge texel with nothing to reach into.
+
+       The ink is aspect-FIT rather than stretched, the draw_icon_in rule -- and here it is not only
+       taste: the fragment recovers its distance from a screen-space derivative, so a non-uniform
+       scale makes the antialiasing band wider on one axis than the other and every effect measured
+       in px stops being isotropic.
+
+       Metrics rather than uvs, because these are the numbers a repack cannot move; the tenant's
+       PLACEMENT is resolved in the tessellator (shape_uv). */
+    gui_shape_id_t shape = s_draw.shape;
+    if ( shape != GUI_SHAPE_NONE )
+    {
+        u32 ix, iy, iw, ih, fw, fh;
+        if ( !shape_metrics( shape, &ix, &iy, &iw, &ih, &fw, &fh, NULL )
+          || iw == 0 || ih == 0 )
+            return;
+
+        f32 sx = w / (f32)iw, sy = h / (f32)ih;
+        f32 s  = ( sx < sy ) ? sx : sy;
+
+        /* Centre the fitted ink in the rect the caller gave, then step back to the tenant origin
+           by where the ink sits inside it -- so the padded box lands with the art exactly where an
+           aspect-fit icon would have put it. */
+        f32 ink_w = (f32)iw * s,   ink_h = (f32)ih * s;
+        f32 ink_x = x + ( w - ink_w ) * 0.5f;
+        f32 ink_y = y + ( h - ink_h ) * 0.5f;
+
+        x = ink_x - (f32)ix * s;
+        y = ink_y - (f32)iy * s;
+        w = (f32)fw * s;
+        h = (f32)fh * s;
+
+        /* The sampled field is the shape; a corner radius on top of it would round the padded BOX,
+           which is a rectangle the art does not fill. */
+        rounding = 0.0f;
+    }
+
     f32 pad = feather * 0.5f + 1.0f + fmaxf( swell, 0.0f );
     f32 bx = x, by = y, bw = w, bh = h;
     if ( rot != 0.0f )
@@ -83,6 +123,7 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
     c->fx_box.cut_dy        = cut_dy;
     c->fx_box.swell         = swell;
     c->fx_box.border        = border;
+    c->fx_box.shape         = shape;
 
     /* A pulse that names no curve breathes on the raised cosine it always has: a sawtooth would
        snap back to full every cycle, which is not what breathing is.  Resolved here, at the one
@@ -140,6 +181,30 @@ draw_push_inset( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 depth, u32 abgr )
 {
     draw_fx_box_cmd( x, y, w, h, rounding, depth, GUI_FX_BOX_INSET, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
                      0.0f, 0.0f, abgr );
+}
+
+/* The hollow ring: the surface with its field bent into a border band of `t` px lying INSIDE the
+   boundary (GUI_OP_BAND).  The ripple has always used this variant; what it did not have was a
+   rect-taking verb, so an outline that swells, glows or breathes had to be a circle.  One quad,
+   and the band is the shape's own field rather than a stroked perimeter -- which is what lets it
+   trace a BAKED shape's silhouette exactly. */
+void
+draw_push_ring( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t, u32 abgr )
+{
+    if ( t <= 0.0f )
+        return;
+    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, GUI_FX_BOX_RING, 0.0f, 0.0f, 0.0f, 0.0f,
+                     0.0f, 0.0f, 0.0f, t, abgr );
+}
+
+/* The plain fill: the surface with no op at all.  It exists for the BAKED shape, which has no
+   other way to be drawn simply -- every other verb in this family carries an effect, and a shape
+   wants to be paintable before it wants to glow. */
+void
+draw_push_shape( f32 x, f32 y, f32 w, f32 h, u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, 0.0f, TESS_FX_AA, GUI_FX_BOX_FILL, 0.0f, 0.0f, 0.0f, 0.0f,
+                     0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 void
@@ -668,6 +733,7 @@ draw_push_box_cut( f32 x, f32 y, f32 w, f32 h, f32 rounding,
     c->box_cut.cut_h    = cut_h;
     c->box_cut.cut_r    = cut_r;
     c->box_cut.cut_aa   = soft;
+    c->box_cut.abgr     = col;
     draw_cmd_seal();
 }
 

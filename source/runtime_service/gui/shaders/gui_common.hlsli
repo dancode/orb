@@ -127,6 +127,7 @@ uint style_row( uint style )
 #define FX_SEG          5u
 #define FX_ARC          6u
 #define FX_PIE          7u
+#define FX_TEX          8u
 
 #define GUI_QUAD_SDF_BIT       ( 1u << 4 )
 #define GUI_QUAD_GLYPH_SHIFT   5u

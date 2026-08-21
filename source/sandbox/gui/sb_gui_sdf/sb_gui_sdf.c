@@ -29,10 +29,12 @@
 ==============================================================================================*/
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
 #include "orb.h"
+#include "base/fmt.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
 #include "engine/sys/sys_host.h"
@@ -99,6 +101,116 @@ load_fonts( void )
     printf( "[sb_gui_sdf] coverage %s   field %s\n",
             s_cov_is_fallback ? "MISSING (using the built-in 16px face)" : COV_ASSET,
             s_font_sdf ? SDF_ASSET : "MISSING" );
+    fflush( stdout );
+}
+
+/*==============================================================================================
+    Baked SHAPE art -- generated here, not loaded, so the demo has no asset to go missing.
+
+    A shape wants source art several times its stored size (the transform runs at source resolution
+    and the field is downsampled), so these rasterize at 512 and bake down.  Coverage is all this
+    side owes: one byte per pixel, 255 inside the silhouette.
+==============================================================================================*/
+
+#define SHAPE_SRC   512u
+
+static gui_shape_id_t s_shape_keyhole;   /* a plate with a keyhole cut clean through it */
+static gui_shape_id_t s_shape_gear;      /* twelve teeth -- the fine-detail case */
+static gui_shape_id_t s_shape_keep;      /* the same keyhole art imported with its own margin */
+
+/* The rounded-box distance every plate below is cut from, in normalized units. */
+static f32
+shape_box_d( f32 px, f32 py, f32 cx, f32 cy, f32 hx, f32 hy, f32 r )
+{
+    f32 qx = fabsf( px - cx ) - ( hx - r );
+    f32 qy = fabsf( py - cy ) - ( hy - r );
+    f32 ax = ( qx > 0.0f ) ? qx : 0.0f;
+    f32 ay = ( qy > 0.0f ) ? qy : 0.0f;
+    f32 mx = ( qx > qy ) ? qx : qy;
+    return ( ( mx < 0.0f ) ? mx : 0.0f ) + sqrtf( ax * ax + ay * ay ) - r;
+}
+
+/* THE shape the record cannot state: a plate minus a circle minus a tapered slot.  Two
+   subtractions, and one of them lands wholly inside the silhouette -- so no stack of quads builds
+   it (blending only adds ink) and GUI_OP_CUT_SHAPE's single rounded-box cut cannot either. */
+static void
+shape_paint_keyhole( u8* out, f32 inset )
+{
+    for ( u32 y = 0; y < SHAPE_SRC; ++y )
+        for ( u32 x = 0; x < SHAPE_SRC; ++x )
+        {
+            f32 u = ( (f32)x + 0.5f ) / (f32)SHAPE_SRC;
+            f32 v = ( (f32)y + 0.5f ) / (f32)SHAPE_SRC;
+
+            f32  he    = 0.5f - inset;
+            bool plate = shape_box_d( u, v, 0.5f, 0.5f, he, he, he * 0.26f ) <= 0.0f;
+
+            f32  dx   = u - 0.5f, dy = v - 0.40f;
+            bool bore = ( dx * dx + dy * dy ) <= ( 0.105f * 0.105f );
+
+            /* The slot widens toward the bottom, which is what makes the silhouette read as a
+               keyhole rather than as a circle with a stick under it. */
+            bool slot = false;
+            if ( v >= 0.40f && v <= 0.74f )
+            {
+                f32 t  = ( v - 0.40f ) / 0.34f;
+                f32 hw = 0.042f + t * 0.052f;
+                slot = ( fabsf( u - 0.5f ) <= hw );
+            }
+
+            out[ y * SHAPE_SRC + x ] = ( plate && !bore && !slot ) ? 255u : 0u;
+        }
+}
+
+/* Twelve teeth around a hub with a bore: small features at the scale where a single-channel field
+   starts rounding corners off, which is the honest limit of the whole approach. */
+static void
+shape_paint_gear( u8* out )
+{
+    for ( u32 y = 0; y < SHAPE_SRC; ++y )
+        for ( u32 x = 0; x < SHAPE_SRC; ++x )
+        {
+            f32 u = ( (f32)x + 0.5f ) / (f32)SHAPE_SRC - 0.5f;
+            f32 v = ( (f32)y + 0.5f ) / (f32)SHAPE_SRC - 0.5f;
+            f32 r = sqrtf( u * u + v * v );
+            f32 a = atan2f( v, u );
+
+            /* The tooth profile: the outer radius swings between root and tip twelve times round. */
+            f32 tooth = 0.5f + 0.5f * cosf( a * 12.0f );
+            f32 outer = 0.30f + 0.075f * ( tooth > 0.5f ? 1.0f : 0.0f );
+
+            bool body = ( r <= outer ) && ( r >= 0.115f );
+            out[ y * SHAPE_SRC + x ] = body ? 255u : 0u;
+        }
+}
+
+/* Called once after boot, with the atlas standing: the bakes pack into the SDF atlas the fonts
+   share.  Three registrations of two silhouettes -- the third is the same keyhole art imported
+   under GUI_SDF_PAD_KEEP, so the reach panel can show what a short margin costs. */
+static void
+load_shapes( void )
+{
+    u8* cov = (u8*)malloc( (size_t)SHAPE_SRC * SHAPE_SRC );
+    if ( !cov )
+        return;
+
+    shape_paint_keyhole( cov, 0.06f );
+    s_shape_keyhole = gui()->register_shape( "keyhole", SHAPE_SRC, SHAPE_SRC, cov, NULL );
+
+    /* KEEP takes the source uncropped and measures whatever margin the art brought.  This one
+       brought 0.02 of the canvas, well under the 8 texels the default asks for, so it registers
+       with a capped reach and says so. */
+    shape_paint_keyhole( cov, 0.02f );
+    s_shape_keep = gui()->register_shape( "keyhole_keep", SHAPE_SRC, SHAPE_SRC, cov,
+                                          &( gui_shape_bake_t ){ .pad = GUI_SDF_PAD_KEEP } );
+
+    shape_paint_gear( cov );
+    s_shape_gear = gui()->register_shape( "gear", SHAPE_SRC, SHAPE_SRC, cov, NULL );
+
+    free( cov );
+
+    printf( "[sb_gui_sdf] shapes: keyhole %u  keep %u  gear %u\n",
+            s_shape_keyhole, s_shape_keep, s_shape_gear );
     fflush( stdout );
 }
 
@@ -2274,6 +2386,177 @@ win_fills( void )
 }
 
 /*==============================================================================================
+    Baked Shapes -- authored art wearing the effect band.
+
+    Every other window here draws a field the fragment EVALUATES.  This one draws a field it
+    SAMPLES: a coverage bitmap transformed to a signed distance, packed into the SDF atlas, and
+    read as the fragment's distance before a single op has run.  From there nothing is special --
+    the border, the glow, the inset, the swell and the subtraction are the same ops on the same
+    rows, because an op reads a distance and has no interest in where one came from.
+
+    What that buys is the silhouette nothing else here can state.  The record's own subtraction is
+    ONE rounded-box cut, and painter's-order quads can only ever add ink, so a plate with a keyhole
+    through it -- two cuts, one of them wholly interior -- had no way to exist.
+
+    What it costs is REACH.  The field holds only the margin the bake padded for, so every effect
+    below has a ceiling, and the last panel is that ceiling being hit on purpose.
+==============================================================================================*/
+
+/* Under the default bake's reach on purpose: a 128-texel ink padded 8 and drawn near 1:1 reaches
+   about 7 px, so this starts inside the ceiling and the last panel is where you go past it. */
+static f32  s_shape_glow  = 6.0f;    /* glow spread, px -- swept past the reach in the last panel */
+static f32  s_shape_ring  = 3.0f;    /* border band width, px                                     */
+static bool s_shape_anim  = true;
+
+static void
+win_shapes_baked( void )
+{
+    gui()->stack();
+
+    if ( !s_shape_keyhole )
+    {
+        gui()->text_colored( AMBER, "no shape registered -- the SDF atlas refused the bake" );
+        return;
+    }
+
+    gui()->field_label_right( 240.0f );
+    gui()->slider_float( "glow spread (px)", &s_shape_glow, 0.0f, 48.0f );
+    gui()->slider_float( "border (px)",      &s_shape_ring, 0.5f, 12.0f );
+    gui()->checkbox( "animate", &s_shape_anim );
+    if ( s_shape_anim )
+        keep_awake();
+
+    gui()->separator_text( "the same shape under six verbs -- none of them shape-flavoured" );
+    {
+        /* The whole claim of the feature, stated as code: draw_set_shape is ambient, so these are
+           the SAME calls a rounded panel takes.  There is no draw_shape_glow and there never needs
+           to be one. */
+        gui_rect_t r = gui()->canvas( 170.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        f32 cell = ( r.w - 70.0f ) / 6.0f;
+        f32 side = ( cell < 120.0f ) ? cell : 120.0f;
+        f32 y    = r.y + 22.0f;
+
+        static const char* k_label[ 6 ] = { "fill", "ring", "glow", "inset", "swell", "pulse" };
+        u32 k_col[ 6 ] = { EDGE, TEAL, AMBER, EDGE, VIOLET, ACCENT };
+
+        gui()->draw_set_shape( s_shape_keyhole );
+        for ( u32 i = 0; i < 6; ++i )
+        {
+            gui_rect_t b = { r.x + 10.0f + (f32)i * ( cell + 10.0f ), y, side, side };
+            f32        k = s_shape_anim ? 1.0f : 0.0f;
+
+            switch ( i )
+            {
+                case 0: gui()->draw_shape_in( b, s_shape_keyhole, k_col[ i ] );  break;
+                case 1: gui()->draw_ring    ( b, s_shape_ring, k_col[ i ] );     break;
+
+                /* A glow is drawn UNDER its subject, exactly as it is for a panel -- the halo is
+                   the shape's own field resolved exponentially outward. */
+                case 2: gui()->draw_glow( b, s_shape_glow, k_col[ i ] );
+                        gui()->draw_shape_in( b, s_shape_keyhole, EDGE );
+                        break;
+
+                case 3: gui()->draw_shape_in( b, s_shape_keyhole, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
+                        gui()->draw_inset_shadow( b, 10.0f, GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
+                        break;
+
+                /* SWELL moves the BOUNDARY -- the sampled one, so the keyhole's slot narrows as the
+                   plate grows.  Byte-identical commands the whole time it runs. */
+                case 4: gui()->draw_swell( b, k * 0.4f, 6.0f, 0.0f, k_col[ i ] );  break;
+                case 5: gui()->draw_pulse( b, k * 0.8f, 0.55f, 0.0f, k_col[ i ] ); break;
+            }
+            gui()->draw_set_shape( s_shape_keyhole );   /* draw_shape_in restores; re-arm */
+        }
+        gui()->draw_set_shape( GUI_SHAPE_NONE );
+
+        for ( u32 i = 0; i < 6; ++i )
+            gui()->draw_text( r.x + 10.0f + (f32)i * ( cell + 10.0f ), y + side + 6.0f,
+                              INK_DIM, k_label[ i ] );
+    }
+    gui()->text_wrapped( "the keyhole is a plate MINUS a circle MINUS a slot -- two subtractions, "
+                         "one of them wholly interior.  No number of quads paints that, and the "
+                         "record's own cut carries exactly one rounded box." );
+
+    gui()->separator_text( "composition -- the ops do not know the field is sampled" );
+    {
+        gui_rect_t r = gui()->canvas( 150.0f );
+        gui()->draw_checker( r, 12.0f, GUI_COLOR( 0x2A, 0x2A, 0x30, 0xFF ),
+                                       GUI_COLOR( 0x22, 0x22, 0x28, 0xFF ) );
+
+        f32 side = 110.0f;
+        f32 y    = r.y + 18.0f;
+
+        /* A baked shape carrying the RECORD's cut: the sampled field and the analytic one composing
+           in a single fragment, which is the test that the mode is a field rather than a texture. */
+        gui()->draw_set_shape( s_shape_keyhole );
+        gui()->draw_glow( ( gui_rect_t ){ r.x + 24.0f, y, side, side }, 10.0f,
+                          GUI_COLOR( 0x20, 0xC0, 0xB0, 0x60 ) );
+        gui()->draw_shape_in( ( gui_rect_t ){ r.x + 24.0f, y, side, side }, s_shape_keyhole, TEAL );
+
+        /* The gear: the fine-detail case.  Twelve teeth is where a single-channel field starts
+           rounding its corners, and drawing it big is how you see that honestly. */
+        gui()->draw_set_shape( s_shape_gear );
+        gui()->draw_ring( ( gui_rect_t ){ r.x + 164.0f, y, side, side }, s_shape_ring, AMBER );
+
+        gui()->draw_set_shape( s_shape_gear );
+        gui()->draw_shape_in( ( gui_rect_t ){ r.x + 304.0f, y, side, side }, s_shape_gear, INK_DIM );
+        gui()->draw_set_shape( GUI_SHAPE_NONE );
+
+        gui()->draw_text( r.x + 24.0f,  y + side + 6.0f, INK_DIM, "shape + glow" );
+        gui()->draw_text( r.x + 164.0f, y + side + 6.0f, INK_DIM, "gear, ring only" );
+        gui()->draw_text( r.x + 304.0f, y + side + 6.0f, INK_DIM, "gear, filled" );
+    }
+
+    gui()->separator_text( "the reach ceiling -- what the bake padded for, and not one px more" );
+    {
+        /* The one number a caller has to respect.  Sweep the glow slider: the halo grows normally
+           until it reaches the margin the bake stored, then STOPS -- it does not keep fading out,
+           because past the spread there are no texels holding a distance to fade across.
+           The KEEP import beside it carries a shorter margin and stops sooner, which is the same
+           limit arriving from the import side rather than from the bake. */
+        gui_rect_t r = gui()->canvas( 190.0f );
+        gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
+
+        f32        side = 120.0f;
+        f32        y    = r.y + 20.0f;
+        gui_rect_t a    = { r.x + 40.0f,  y, side, side };
+        gui_rect_t b    = { r.x + 260.0f, y, side, side };
+
+        gui()->draw_set_shape( s_shape_keyhole );
+        gui()->draw_glow( a, s_shape_glow, AMBER );
+        gui()->draw_shape_in( a, s_shape_keyhole, EDGE );
+
+        if ( s_shape_keep )
+        {
+            gui()->draw_set_shape( s_shape_keep );
+            gui()->draw_glow( b, s_shape_glow, AMBER );
+            gui()->draw_shape_in( b, s_shape_keep, EDGE );
+        }
+        gui()->draw_set_shape( GUI_SHAPE_NONE );
+
+        char msg[ 96 ];
+        fmt_snprintf( msg, sizeof( msg ), "PAD_GROW  reach %.1f px",
+                      (double)gui()->shape_reach( s_shape_keyhole, a ) );
+        gui()->draw_text( a.x, y + side + 8.0f, INK_DIM, msg );
+
+        if ( s_shape_keep )
+        {
+            fmt_snprintf( msg, sizeof( msg ), "PAD_KEEP  reach %.1f px",
+                          (double)gui()->shape_reach( s_shape_keep, b ) );
+            gui()->draw_text( b.x, y + side + 8.0f, INK_DIM, msg );
+        }
+    }
+    gui()->text_wrapped( "push the glow past the quoted reach and the halo stops rather than "
+                         "fading: a stored field holds the margin the bake paid atlas for, and "
+                         "saturates past it.  shape_reach is the ceiling, in px, for the rect you "
+                         "are about to draw into." );
+
+    gui()->field_label_right( 0.0f );
+}
+
+/*==============================================================================================
     Animation & Ops -- the shader-clock family and the newest record lanes in one window:
     marching ants (perimeter dash scrolling on pc.time), the zero-retess spinner (GUI_OP_SPIN),
     staggered pulses (anim_phase), the SDF ngon, stroke alignment, and the gradient midpoint.
@@ -2440,6 +2723,7 @@ static sdf_demo_t s_demos[] = {
     { "Fills",           "Fills",           "gradients (linear / radial / conic) + inset + drop shadows", win_fills,     1280.0f, 1024.0f, false },
     { "Corners & Pills", "Corners & Pills", "corner smoothing + the capsule, filled and hollow",          win_corners,   1280.0f, 1024.0f, false },
     { "Animation & Ops", "Animation & Ops", "marching ants / spin / phase / ngon + star / align",         win_anim_fx,   1280.0f, 1024.0f, false },
+    { "Baked Shapes",    "Baked Shapes",    "authored art as a FIELD: border / glow / swell / reach",     win_shapes_baked, 1280.0f, 1024.0f, false },
 };
 
 #define SDF_DEMO_COUNT ( (i32)( sizeof( s_demos ) / sizeof( s_demos[ 0 ] ) ) )
@@ -2577,6 +2861,7 @@ main( int argc, char** argv )
     }
 
     load_fonts();
+    load_shapes();
 
     f32 dt = 0.0f;
     while ( gui()->boot_poll( &dt ) )

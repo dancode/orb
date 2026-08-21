@@ -244,6 +244,71 @@ gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col )
 }
 
 /*==============================================================================================
+    Baked SDF shapes -- authored art that behaves like a FIELD rather than like a picture.
+
+    register_shape bakes a coverage bitmap into a distance field (draw/gui_sdf_bake.c) and packs it
+    into the SDF atlas; from then on the id names a shape the effect band can reach.  draw_set_shape
+    is what aims the existing verbs at it -- while it is set, draw_shadow, draw_glow, draw_inset,
+    draw_ring, draw_pulse and draw_swell resolve their coverage from the shape's field instead of
+    from a rounded box, so a keyhole or a gear wears the same chrome a panel does with no verb of
+    its own.  Clear it with GUI_SHAPE_NONE, the draw_set_rounding contract.
+
+    shape_reach is the one number a caller has to respect: effects travel only as far as the bake
+    padded for, and past that the stored field saturates and the effect stops.
+==============================================================================================*/
+
+gui_shape_id_t
+gui_register_shape( const char* name, u32 w, u32 h, const u8* coverage,
+                    const gui_shape_bake_t* bake )
+{
+    return shape_register( name, w, h, coverage, bake );
+}
+
+gui_shape_id_t
+gui_find_shape( const char* name )
+{
+    return shape_find( name );
+}
+
+/* The INK's stored size -- what a rect is aspect-fitted against, not the padded tenant.  A caller
+   thinks in art, and the margin is the bake's business. */
+gui_vec2_t
+gui_shape_size( gui_shape_id_t id )
+{
+    u32 iw = 0, ih = 0;
+    if ( !shape_metrics( id, NULL, NULL, &iw, &ih, NULL, NULL, NULL ) )
+        return ( gui_vec2_t ){ 0.0f, 0.0f };
+    return ( gui_vec2_t ){ (f32)iw, (f32)ih };
+}
+
+f32
+gui_shape_reach( gui_shape_id_t id, gui_rect_t r )
+{
+    return shape_reach( id, r );
+}
+
+void
+gui_draw_set_shape( gui_shape_id_t id )
+{
+    draw_set_shape( id );
+}
+
+/* One shape painted flat into a rect the caller already holds -- the shape analogue of
+   draw_icon_in, and the discoverable way in for anyone who has not met the ambient yet.  Sets and
+   restores the ambient around the one push, so it composes inside a caller's own scope. */
+void
+gui_draw_shape_in( gui_rect_t r, gui_shape_id_t id, u32 col )
+{
+    if ( id == GUI_SHAPE_NONE )
+        return;
+
+    gui_shape_id_t prev = draw_shape();
+    draw_set_shape( id );
+    draw_push_shape( r.x, r.y, r.w, r.h, col ? col : 0xFFFFFFFFu );
+    draw_set_shape( prev );
+}
+
+/*==============================================================================================
     RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
     image) as a full-color quad.  Unlike image() (R8 icon atlas, texel = coverage), the texel IS
     the color: GUI_TEX_RGBA in the command's tex_idx mode field flips the fragment shader to RGBA

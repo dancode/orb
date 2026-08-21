@@ -164,6 +164,15 @@ void gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col );
 void gui_draw_icon_in( gui_rect_t r, gui_icon_id_t id, u32 col );
 void gui_draw_icon_xf( gui_rect_t r, gui_icon_id_t id, u32 col, f32 rot );
 
+/* baked SDF shapes -- authored art the effect band can reach */
+gui_shape_id_t gui_register_shape( const char* name, u32 w, u32 h, const u8* coverage,
+                                   const gui_shape_bake_t* bake );
+gui_shape_id_t gui_find_shape( const char* name );
+gui_vec2_t gui_shape_size( gui_shape_id_t id );
+f32 gui_shape_reach( gui_shape_id_t id, gui_rect_t r );
+void gui_draw_set_shape( gui_shape_id_t id );
+void gui_draw_shape_in( gui_rect_t r, gui_shape_id_t id, u32 col );
+
 /* RGBA textures -- arbitrary bindless texture as a full-color quad (scene viewport) */
 void gui_image_texture( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
 void gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
@@ -246,6 +255,7 @@ void gui_draw_glow( gui_rect_t box, f32 spread, u32 col );
 void gui_draw_drop_shadow( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col );
 void gui_draw_pulse( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col );
 void gui_draw_swell( gui_rect_t box, f32 rate, f32 grow, f32 phase, u32 col );
+void gui_draw_ring( gui_rect_t box, f32 t, u32 col );
 void gui_draw_ripple( f32 cx, f32 cy, f32 r, f32 thickness, f32 grow, f32 rate, f32 phase,
                       u32 col );
 void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );

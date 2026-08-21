@@ -286,6 +286,7 @@ pal_row_open( u32 ops )
 {
     s_tess.cur_ops        = ops;
     s_tess.cur_corner_pow = 0.0f;
+    s_tess.cur_fx_field   = 0u;
     s_tess.cur_col_border = 0u;
     s_tess.cur_rot_c      = 1.0f;
     s_tess.cur_rot_s      = 0.0f;

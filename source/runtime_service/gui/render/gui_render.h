@@ -140,6 +140,25 @@ bool sprite_get    ( gui_sprite_id_t id,
                      f32* u0, f32* v0, f32* u1, f32* v1,
                      u32* w, u32* h, gui_pad_t* slice );
 
+/* Baked-shape PLACEMENT: the uv span of the whole padded tenant, and the tex_idx naming the SDF
+   atlas with its sampling model.  Resolved at TESSELLATION time for the sprite's reason -- an
+   atlas repack moves the tenant under geometry the retained cache may hold for many frames, and
+   res_sdf_generation folding into the window hash forces the re-resolve.
+
+   The uv spans the tenant rather than the ink because the margin has to be REACHABLE: the field
+   past the outline is the whole of a shape's border and glow, and a uv stopping at the ink would
+   clamp every effect off at the boundary. */
+bool shape_uv      ( gui_shape_id_t id, f32* u0, f32* v0, f32* u1, f32* v1 );
+u32  shape_tex     ( gui_shape_id_t id );
+
+/* The shape's DIMENSIONS, in stored texels: where the ink sits and how big the padded tenant is.
+   Read at EMIT time, where the caller's ink rect is inflated into the padded box the quad must
+   cover.  Split from the two above because these are exactly the numbers a repack CANNOT move --
+   an emit-baked rect derived from them stays correct however the atlas is reshuffled, which is
+   what lets the placement resolve late without the geometry having to. */
+bool shape_metrics ( gui_shape_id_t id, u32* ink_x, u32* ink_y, u32* ink_w, u32* ink_h,
+                     u32* full_w, u32* full_h, f32* spread );
+
 /*==============================================================================================
     Shared resource atlas (resource/gui_res_atlas.c)
 
@@ -169,6 +188,8 @@ void draw_set_rounding          ( f32 r );                  // corner radius fol
 f32  draw_rounding              ( void );                   // current ambient radius (save/restore around a sub-element)
 void draw_set_corner_smooth     ( f32 t );                  // 0..1 corner profile riding with the radius; 0 = circular arc
 f32  draw_corner_smooth         ( void );                   // ...read it back, same save/restore rule as the radius
+void draw_set_shape             ( gui_shape_id_t id );      // baked field the fx_box family draws instead of a box
+gui_shape_id_t draw_shape       ( void );                   // ...read it back, same save/restore rule as the radius
 void draw_set_anim_curve        ( u32 curve, f32 param );   // gui_curve_t shaping every animating shape pushed after
 void draw_get_anim_curve        ( u32* curve, f32* param ); // ...read it back, for save/restore
 void draw_set_anim_phase        ( f32 cycles );             // cycle offset added to every animating shape pushed after
@@ -285,6 +306,16 @@ void draw_push_inset            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
 void draw_push_glow             ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr );
 void draw_push_pulse            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth,
                                   f32 phase, u32 abgr );
+
+/* The hollow ring (GUI_OP_BAND): a border band of `t` px lying inside the boundary, from the
+   shape's own field rather than a stroked perimeter.  The rect-taking form of the variant
+   draw_push_ripple already used -- so an outline can swell, glow or trace a baked shape. */
+void draw_push_ring             ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t, u32 abgr );
+
+/* The plain fill of whatever the ambient draw_set_shape names -- the same surface every verb above
+   pushes, with no op on it.  Only useful under a baked shape: with none set it is a square fill,
+   which draw_push_rect_filled already is. */
+void draw_push_shape            ( f32 x, f32 y, f32 w, f32 h, u32 abgr );
 
 /* The swelling fill (GUI_OP_SWELL): the boundary itself travels `amp` px past the authored rect
    (negative shrinks) as the clock's k runs 0..1 -- animated geometry with byte-identical command

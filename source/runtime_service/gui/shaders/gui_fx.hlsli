@@ -123,6 +123,13 @@ static float g_cell_t = 0.5;
 // 0 when the op is absent, and the resolve below never reads it then.
 static float g_glow = 0.0;
 
+// FX_TEX's field, in PIXELS and negative inside -- the fx_field_t convention, which is the
+// OPPOSITE of the sign the atlas stores.  Sampled and differentiated in main() rather than in
+// fx_field below, for two reasons: fwidth() wants the flattest control flow it can get, and the
+// colour stage must not fetch the same texel a second time to re-derive coverage the field has
+// already resolved.
+static float g_texd = 0.0;
+
 float4 prim_row( uint r )
 {
     return g_implicit ? float4( 0.0, 0.0, 0.0, 0.0 )
@@ -419,6 +426,22 @@ fx_field_t fx_field( float2 px )
     float4 rect = prim_rect();
     float4 rad  = prim_row( 1u );
     float4 soft = prim_row( 2u );
+
+    // FX_TEX -- the BAKED field: authored art, sampled instead of evaluated, so a silhouette with
+    // no closed form wears every op below exactly as a rounded box does.  main() already sampled
+    // and differentiated it, so all that happens here is stating it in the vocabulary.
+    //
+    // The feather lane means what it means for every other field -- the AA band, and OP_INSET's
+    // depth -- which is what makes the reuse total rather than approximate.  No boundary
+    // coordinate: an R8 distance field carries no arc length, so s and len stay 0 and the emit
+    // site drops the two ops that would have read them rather than letting them walk nothing.
+    if ( g_field == FX_TEX )
+    {
+        f.d      = g_texd;
+        f.aa     = soft.x;
+        f.shaped = true;
+        return f;
+    }
 
     // fields 7 ARC / 8 PIE.  A sector has no feather of its own, so it states the 1 px band it
     // always drew with -- a caller that wants a soft sector now simply sets one.
@@ -875,6 +898,27 @@ float4 main( ps_in_t i ) : SV_Target0
     uint tex_slot = g_tex & TEX_INDEX_MASK;
     uint samp     = ( tex_mode == 0u ) ? pc.samp_point : pc.samp_image;
 
+    /* FX_TEX's field, fetched HERE so the shape has a distance before a single op runs.  This one
+       sample is the whole difference between a baked shape and an SDF icon: an icon's texel is read
+       far below as alpha, after the cascade has already finished, which is why nothing but an
+       outline can be drawn from one.
+
+       The derivative is what makes the result a PIXEL distance whatever the quad was scaled or
+       rotated to, exactly as it does for distance-field text -- so a border authored as 2 px is
+       2 px at every size, with no scale carried anywhere. The sign flips because the atlas stores
+       positive-inside (128 = the outline, orb_font.h) and fx_field_t states negative-inside.
+
+       Taken before the zero-coverage discard below, so unlike the text path this mode keeps that
+       early-out: by the time a lane can be killed its neighbours already have the value they need
+       to differentiate against. */
+    if ( g_field == FX_TEX )
+    {
+        float raw = u_textures[ NonUniformResourceIndex( tex_slot ) ]
+                        .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], i.uv ).r
+                  - ( 128.0 / 255.0 );
+        g_texd = -raw / max( fwidth( raw ), 1e-6 );
+    }
+
     /* COVERAGE, resolved before the texel so a fragment the field does not reach can leave without
        paying for the rest of this function.  Every shape that covers more area than it paints has
        an interior or an exterior at EXACTLY zero -- a BAND's or a FRAME's inside, a CUT skirt's
@@ -920,7 +964,7 @@ float4 main( ps_in_t i ) : SV_Target0
        draw_texture_in. */
     float4 s    = float4( 1.0, 1.0, 1.0, 1.0 );
     float4 vcol = i.color;
-    if ( ( g_ops & OP_SELF ) == 0u )
+    if ( ( g_ops & OP_SELF ) == 0u && g_field != FX_TEX )
         s = u_textures[ NonUniformResourceIndex( tex_slot ) ]
                 .Sample( u_samplers[ NonUniformResourceIndex( samp ) ], uv );
 
@@ -1010,7 +1054,14 @@ float4 main( ps_in_t i ) : SV_Target0
        that is what it actually wants. */
     float alpha = vcol.a;
 
-    if ( tex_mode == 1u )
+    if ( g_field == FX_TEX )
+    {
+        /* Nothing to fold: this shape's texel became its DISTANCE at the top of the function and
+           has already been through the whole cascade.  A baked shape is a field wearing the vertex
+           colour, so it lands here exactly where an analytic one does -- which is the point of the
+           mode, and why it takes no colour path of its own. */
+    }
+    else if ( tex_mode == 1u )
     {
         // GUI_TEX_RGBA -- full-RGBA image (scene viewport / arbitrary bindless texture): the texel
         // IS the colour, with the fill colour acting as a tint.  The texel arrives LINEAR:

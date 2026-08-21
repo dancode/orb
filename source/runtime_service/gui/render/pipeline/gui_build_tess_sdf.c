@@ -182,7 +182,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        skirt is a rasterization detail the vertex stage grows the covering by (GUI_QUAD_RULE_
        SKIRT) -- the field the fragment resolves is measured from the real boundary, so the
        record states that one.  All four radii travel. */
-    s_tess.cur_prim.field   = (u32)GUI_FX_BOX;
+    s_tess.cur_prim.field   = s_tess.cur_fx_field ? s_tess.cur_fx_field : (u32)GUI_FX_BOX;
     s_tess.cur_prim.r_tl    = rq[ 0 ];
     s_tess.cur_prim.r_tr    = rq[ 1 ];
     s_tess.cur_prim.r_br    = rq[ 2 ];
@@ -308,8 +308,19 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        of wide BAND/CUT/INSET surfaces; a record stores one rectangle, so the interior rasterizes
        at zero coverage instead -- the fields early-out cheaply and UI fill is nowhere near
        bound.  The uv rect is the authored span; the vertex stage scales it over the skirt and
-       clamps at the corners, so a textured rounded quad shows its picture at authored size. */
-    tess_quad_push( cx, cy, hx, hy, GUI_QUAD_RULE_SKIRT,
+       clamps at the corners, so a textured rounded quad shows its picture at authored size.
+
+       A BAKED shape takes the EXACT rule instead, and the two reasons are the same fact seen from
+       both ends.  Its uv must land on the quad one-to-one: the field IS the texels, so a mapping
+       that stretched the authored span over a grown covering would shrink the shape inside its own
+       rect by the pad -- invisible at a 1 px feather and plainly wrong at a wide glow's.  And it
+       needs no growth to begin with: the quad is already the PADDED box, so the covering ends
+       exactly where the stored field saturates.  Nothing can paint past it because there is
+       nothing out there to paint with. */
+    u32 rule = ( s_tess.cur_prim.field == (u32)GUI_FX_TEX )
+             ? (u32)GUI_QUAD_RULE_EXACT : (u32)GUI_QUAD_RULE_SKIRT;
+
+    tess_quad_push( cx, cy, hx, hy, rule,
                     gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr,
                     GUI_GLYPH_ID_NONE );
 }
