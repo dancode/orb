@@ -978,6 +978,30 @@ draw_pulse( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col )
     draw_push_pulse( box.x, box.y, box.w, box.h, draw_rounding(), rate, depth, phase, col );
 }
 
+/* A rounded fill whose SIZE breathes: the boundary travels `amp` px past the box (negative
+   shrinks) as the clock's k runs 0..1, shaped by the ambient curve -- the pop, the hover grow,
+   the press shrink, with the pulse's own economics: byte-identical commands, zero
+   re-tessellation, where anim_ease (the CPU tween) re-emits every frame the geometry moves.
+   Honors the ambient rounding; request_redraw while it runs, the draw_pulse contract.
+
+   Rate 0 stands the clock at `phase` -- a static per-element size offset off one shared style,
+   the value port; one-shots anchor via anim_once, the phase-anchoring contract. */
+static void
+draw_swell( gui_rect_t box, f32 rate, f32 amp, f32 phase, u32 col )
+{
+    draw_push_swell( box.x, box.y, box.w, box.h, draw_rounding(), rate, amp, phase, col );
+}
+
+/* The sonar ping: a hollow ring hugging radius `r` that swells `spread` px outward while it
+   fades, expanding and dying on ONE clock -- from one quad whose bytes never change while it
+   runs.  The linear default curve is right here: its snap-back is the ripple restarting.  For a
+   single ping, anim_once + draw_set_anim_phase and stop drawing when it reports done. */
+static void
+draw_ripple( f32 cx, f32 cy, f32 r, f32 thickness, f32 spread, f32 rate, f32 phase, u32 col )
+{
+    draw_push_ripple( cx, cy, r, thickness, spread, rate, phase, 1.0f, col );
+}
+
 /*==============================================================================================
     Text effects + decorations
 ==============================================================================================*/
@@ -1283,6 +1307,9 @@ void gui_draw_glow    ( gui_rect_t box, f32 spread, u32 col )             { draw
 void gui_draw_drop_shadow( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col )
                                                                                { draw_drop_shadow( box, spread, off_x, off_y, col ); }
 void gui_draw_pulse   ( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col ) { draw_pulse( box, rate, depth, phase, col ); }
+void gui_draw_swell   ( gui_rect_t box, f32 rate, f32 amp, f32 phase, u32 col )   { draw_swell( box, rate, amp, phase, col ); }
+void gui_draw_ripple  ( f32 cx, f32 cy, f32 r, f32 thickness, f32 spread, f32 rate, f32 phase, u32 col )
+                                                                               { draw_ripple( cx, cy, r, thickness, spread, rate, phase, col ); }
 
 /* text effects + decorations */
 void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline )

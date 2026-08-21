@@ -23,7 +23,7 @@
 // static shape never pays for the timebase it does not use.  The two CELL ops belong here even
 // when they never move: their threshold and ramp anchor are the clock's k, which at rate 0 is
 // simply the instance's phase -- the per-instance value port.
-#define OP_ANIMATED     ( OP_PULSE | OP_SPIN | OP_DASH | OP_GRAD_CELL | OP_CELL_FILL )
+#define OP_ANIMATED     ( OP_PULSE | OP_SPIN | OP_DASH | OP_GRAD_CELL | OP_CELL_FILL | OP_SWELL )
 
 // gui_curve_t: the shaping stage between the timebase and the effect.
 #define CURVE_LINEAR    0u
@@ -57,7 +57,8 @@ struct ps_in_t
     nointerpolation float4 border : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
                                                   //   rides the quad, never the style
     nointerpolation float4 inst   : TEXCOORD5;   // per-instance lanes off the quad: xy = the turn
-                                                  //   (cos, sin), z = animation phase in cycles
+                                                  //   (cos, sin), z = animation phase in cycles,
+                                                  //   w = OP_SWELL's amplitude in px
     nointerpolation uint   tag    : TEXCOORD6;   // GUI_QUAD_TAG_* in bits 0-1, "the SDF atlas" in
                                                   //   bit 2 (gui.h, the quad index word)
 };
@@ -78,11 +79,12 @@ static uint g_tex;      // sampling model | bindless slot
 // to walk with no record behind it, since every op bit is clear and every field is 0.
 static bool g_implicit;
 
-// The per-instance lanes, off the quad rather than the style: the shape's turn, and the animation
-// phase in cycles.  Every animating op reads the phase the same way, which is what lets one style
-// drive a whole staggered set.
+// The per-instance lanes, off the quad rather than the style: the shape's turn, the animation
+// phase in cycles, and OP_SWELL's amplitude in px.  Every animating op reads the phase the same
+// way, which is what lets one style drive a whole staggered set.
 static float2 g_rot   = float2( 1.0, 0.0 );
 static float  g_phase = 0.0;
+static float  g_swell = 0.0;
 
 // The animation clock, resolved once in main() and read by every animating op instead of pc.time.
 // g_phi is where in the cycle this fragment sits; g_k is that phase after the record's curve has
@@ -632,6 +634,15 @@ float fx_coverage( float2 px )
     g_s    = f.s;
     g_slen = f.len;
 
+    // SWELL -- the boundary itself moves: the instance's amplitude, run through the clock's k.
+    // First, upstream of every other op, so what they see IS the moved boundary -- FRAME and
+    // BAND ride it outward (the sonar ripple is BAND on a swelling field), GLOW's halo travels,
+    // INSET re-measures from wherever the edge is now.  The boundary coordinate is left alone:
+    // s/len are measured on the rest shape, and a dash pattern stretching as its shape breathes
+    // is not what anyone asked for.
+    if ( f.shaped && ( g_ops & OP_SWELL ) != 0u )
+        f.d -= g_swell * g_k;
+
     // STAGE 2 -- the ops that bend the FIELD.  Both need a boundary to measure from.
     //
     // FRAME's band is taken from the field BEFORE BAND touches it, so the band's outer edge lands
@@ -802,6 +813,7 @@ float4 main( ps_in_t i ) : SV_Target0
     g_rect          = i.rect;
     g_rot           = i.inst.xy;
     g_phase         = i.inst.z;
+    g_swell         = i.inst.w;
     uint clip_entry = i.clip;
 
     // The animation clock, resolved once for every op that reads it.  anim_rate is cycles/sec off

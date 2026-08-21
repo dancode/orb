@@ -2,22 +2,27 @@
 
     gui/render/pipeline/gui_build_tess_state.c -- tessellation state + diagnostics.
 
-    Part 1 of 7 of the CPU-side quad-record builder (gui_build_tess_*.c), which translates the
-    frame's semantic gui_cmd_t list (s_draw) into quad records in s_tess: ONE 16-byte gui_quad_t
-    per shape (gui.h), expanded by SV_VertexID in gui_quad.vs.hlsl -- there is no vertex buffer
-    and no index buffer.  Nothing in this file family touches the GPU API.
+    Part 1 of 7 of the CPU-side quad-record builder (gui_build_tess_*.c), which translates
+    the frame's semantic gui_cmd_t list (s_draw) into quad records in s_tess: 
+    
+    ONE 16-byte gui_quad_t per shape (gui.h), expanded by SV_VertexID in gui_quad.vs.hlsl
 
-    This file holds the s_tess struct itself (the quad/style/gpu-cmd arenas plus every ambient
-    field the emitters below read), the TESS_OVF_* overflow bits, s_volatile_patching, the
-    geometry-generation/dirty-span tracking (s_geo_gen, s_patch_pending), and the cold
-    s_tess_stats diagnostics block the dashboard and overlay read.  Every later file in this
-    family (gui_build_tess_quad.c, _sprite.c, _sdf.c, _arc.c, _text.c, _dispatch.c) reads and
-    writes s_tess as file-scope shared state -- this works because all seven are #include'd 
-    into one translation unit (gui_render.c), never compiled separately.
+    -- there is no vertex buffer and no index buffer. 
+    -- Nothing in this file family touches the GPU API.
 
-    s_tess is read only by the two units included after this family: gui_build_cache.c (the
-    BUILD phase fills it via tess_dispatch) and gui_render_submit.c (gui_render_flush uploads 
-    it and emits draw calls).  No file above the backend unit touches it.
+    This file holds the s_tess struct itself:
+    
+        - quad/style/gpu-cmd arenas plus every ambient field the emitters below read
+        - overflow bits, s_volatile_patching, the geometry-generation/dirty-span tracking
+        - cold s_tess_stats diagnostics block the dashboard and overlay read
+    
+    Every later file in this family _quad, _sdf, _arc, _text, _dispact, reads and writes s_tess.
+
+    s_tess is read only by the two units included after this family: 
+    
+        - gui_build_cache.c (the BUILD phase fills it via tess_dispatch) and 
+        - gui_render_submit.c (gui_render_flush uploads it and emits draw calls).
+        - No file above the backend unit touches it.
 
     Included by gui_render.c after gui_emit_path.c (provides v2, seg_normal,
     stroke_center_offset, STROKE_* constants) and before gui_build_cache.c 
@@ -141,10 +146,12 @@ static struct
        tess_quad_push, which folds it into the quad unread by the style.  Cleared per command.
          cur_col_border  GUI_OP_FRAME's border band colour (0 = unused)
          cur_rot_c       the turn, as a unit pair; (1, 0) is the identity a plain shape leaves
-         cur_phase       animation phase in cycles (0 = in step with the clock) */
+         cur_phase       animation phase in cycles (0 = in step with the clock)
+         cur_swell       GUI_OP_SWELL's amplitude in px (0 = unused; negative shrinks) */
     u32         cur_col_border;
     f32         cur_rot_c, cur_rot_s;
     f32         cur_phase;
+    f32         cur_swell;
 
     /* per-slot tesellation context */
 

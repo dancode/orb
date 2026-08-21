@@ -1962,6 +1962,8 @@ typedef struct
          GUI_OP_DASH   k slides the pattern one dash period along the shape's boundary
                        coordinate -- the marching ants.
          GUI_OP_PULSE  k is the depth of the breath: coverage *= 1 - param_a * k.
+         GUI_OP_SWELL  k moves the boundary: d -= swell * k, the instance's own amplitude
+                       (gui_fx_t.swell) -- the shape grows or shrinks on the clock.
          GUI_OP_GRAD   grad_mid = the exponent bending the ramp's t about its midpoint, mapped
                        once at the emit site (ln 0.5 / ln mid); 0 means the linear default. */
 
@@ -2094,6 +2096,23 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
    walk, and the one place row 6 is written keeps the exclusivity visible. */
 
 #define GUI_OP_CUT_SHAPE    ( 1u << 23 )
+
+/* The clock-driven DISTANCE BIAS: the boundary itself moves.  The field's distance is shifted by
+   swell * k, so the shape grows from its authored rect to `swell` px past it (negative shrinks)
+   as the clock's k runs 0..1 -- geometry animating with byte-identical commands, where the CPU
+   tween (anim_ease) re-tessellates every frame.  Runs BEFORE the field-bending ops, so BAND's
+   ring rides the moving boundary outward (the sonar ripple), GLOW's halo swells, INSET breathes.
+
+   The amplitude is per-INSTANCE (gui_fx_t.swell), not a style lane: differently-sized swells off
+   one shared record, and the vertex stage grows the covering by the same lane it already fetches
+   -- the reach costs no extra loads in either stage.  At rate 0 the clock stands still at the
+   instance's phase, so the lane is a static per-element size offset -- the value port, again.
+
+   Box family only (the fx_box faces): sectors spend their param lanes, and their covering does
+   not grow.  Excluded from the band covering (tess_band_worth_it) -- the hole is measured at
+   rest, and a swelling boundary moves into it. */
+
+#define GUI_OP_SWELL        ( 1u << 24 )
 
 /* The animation and output ops.  SPIN and DASH both read the record's anim_rate/anim_phase (row
    6) against pc.time -- which is why the whole animation re-emits nothing: the record is
@@ -2334,7 +2353,13 @@ typedef struct
     //   rides the quad in `abgr` -- would otherwise mint a style record per frame.
     u32 col_border;
 
-    u32 reserved_a;     // pads row A to a whole row; written zero so dedup compares cleanly
+    // swell: GUI_OP_SWELL's amplitude, px -- how far the boundary travels at the clock's k = 1
+    //   (negative shrinks).  Per-instance for the same reason the turn is: a set of elements
+    //   swelling by their own ranges shares one style record.  BOTH stages read it -- the vertex
+    //   stage grows the SKIRT covering by its positive part off the row it already fetches, the
+    //   fragment biases the field's distance -- so the reach costs no extra load anywhere.
+    //   0.0f when unused, which is also all-zero bits, so the "no record" default still holds.
+    f32 swell;
 
     /* Row B -- the TEXTURE RECT, the min and max corners of the atlas span this instance samples,
        each two unorm16 over [0,1] (gui_uv_pack).  It sits here for the same reason the three lanes
@@ -2932,8 +2957,17 @@ typedef struct
                          translucent panel dimming itself.
              2 INSET  -- the falloff turned INWARD (GUI_OP_INSET), painting from the boundary
                          `feather` px in and nothing outside.  The inner shadow / pressed well.
+             3 GLOW   -- the outward falloff resolved EXPONENTIALLY (GUI_OP_GLOW): light,
+                         not blur.
+             4 RING   -- the field bent into a border band of `border` px (GUI_OP_BAND): the
+                         hollow ring the ripple wants, since a swelling band travels outward
+                         with nothing in its middle.
            A non-zero `rate` adds GUI_OP_PULSE on top of whichever variant is set, so a cut or
            inset surface can breathe as readily as a filled one.
+           A non-zero `swell` adds GUI_OP_SWELL: the boundary itself travels `swell * k` px
+           (negative shrinks), riding the same clock -- the pop, the breathing outline, and with
+           variant 4 plus a full-depth pulse the sonar ripple, all in one quad whose bytes never
+           change while it runs.
            `cut_dx`/`cut_dy` move the SKIRT's cut off the shape it is drawn on: x,y,w,h is where
            the shadow lies and the cut offset says where the caster sits relative to it, so the
            falloff is measured from one outline while the hole is taken against another.  That is
@@ -2945,7 +2979,7 @@ typedef struct
            wave (gui_curve_t), baked from the ambient at push time. */
         struct { f32 x, y, w, h; f32 rounding, corner_pow, feather, rate, depth, rot;
                  u32 abgr, variant; f32 cut_dx, cut_dy; f32 phase;
-                 u32 curve; f32 curve_param; } fx_box;
+                 u32 curve; f32 curve_param; f32 swell, border; } fx_box;
         /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
            the SAME one quad a uniform rounded rect emits; the one thing that differs is
            that each quad carries its own packed word, because the radius is the only shape

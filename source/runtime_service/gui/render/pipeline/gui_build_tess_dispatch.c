@@ -259,6 +259,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
         s_tess.cur_rot_c      = 1.0f;
         s_tess.cur_rot_s      = 0.0f;
         s_tess.cur_phase      = 0.0f;
+        s_tess.cur_swell      = 0.0f;
 
         /* The record is cleared WHOLE, and it matters for two reasons: a leftover rect or radius
            does not merely paint wrong, it defeats the memo -- a run of flat fills carrying stale
@@ -325,15 +326,18 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                rounded fill whose record is correct for every frame it runs, so the retained
                slot never invalidates and the breathing costs no re-tessellation. */
             case GUI_CMD_FX_BOX:
-                /* All four of these are the one GUI_FX_BOX mode; the variant and the rate pick
-                   which ops ride the tex word.  They are INDEPENDENT flags rather than a choice of
-                   one, which is what lets a cut or inset surface breathe -- as a mode number the
-                   pulse had to displace whichever shape it was applied to.  Set before the
-                   tessellator runs because the interior hole is sized from them (see `reach`). */
+                /* All of these are the one GUI_FX_BOX mode; the variant, the rate and the swell
+                   pick which ops ride the tex word.  They are INDEPENDENT flags rather than a
+                   choice of one, which is what lets a cut or inset surface breathe -- as a mode
+                   number the pulse had to displace whichever shape it was applied to.  Set before
+                   the tessellator runs because the interior hole is sized from them (see
+                   `reach`). */
                 if ( c->fx_box.variant == 1u )   s_tess.cur_ops |= GUI_OP_CUT;
                 if ( c->fx_box.variant == 2u )   s_tess.cur_ops |= GUI_OP_INSET;
                 if ( c->fx_box.variant == 3u )   s_tess.cur_ops |= GUI_OP_GLOW;
+                if ( c->fx_box.variant == 4u )   s_tess.cur_ops |= GUI_OP_BAND;
                 if ( c->fx_box.rate    > 0.0f )  s_tess.cur_ops |= GUI_OP_PULSE;
+                if ( c->fx_box.swell  != 0.0f )  s_tess.cur_ops |= GUI_OP_SWELL;
                 {
                     /* The cut boundary, for the DIRECTIONAL cast: the command states where the
                        shadow is drawn, and this says where the caster it belongs to sits relative
@@ -345,9 +349,10 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                     aux.anim_phase = c->fx_box.phase;
                     aux.anim_curve = c->fx_box.curve;
                     aux.anim_param = c->fx_box.curve_param;
+                    aux.swell_amp  = c->fx_box.swell;
                     s_tess.cur_corner_pow = c->fx_box.corner_pow;
                     tess_fx_box( c->fx_box.x, c->fx_box.y, c->fx_box.w, c->fx_box.h,
-                                 c->fx_box.rounding, c->fx_box.feather, 0.0f,
+                                 c->fx_box.rounding, c->fx_box.feather, c->fx_box.border,
                                  c->fx_box.rate, c->fx_box.depth, c->fx_box.rot,
                                  0, 0, 1, 1, 0, c->fx_box.abgr, &aux );
                 }

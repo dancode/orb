@@ -286,6 +286,17 @@ void draw_push_glow             ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
 void draw_push_pulse            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth,
                                   f32 phase, u32 abgr );
 
+/* The swelling fill (GUI_OP_SWELL): the boundary itself travels `amp` px past the authored rect
+   (negative shrinks) as the clock's k runs 0..1 -- animated geometry with byte-identical command
+   bytes.  Rate 0 stands the clock at `phase`: a static per-element size offset, the value port. */
+void draw_push_swell            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 amp,
+                                  f32 phase, u32 abgr );
+
+/* The ripple: a hollow ring of `thickness` px at rest radius `r`, swelling `spread` px outward
+   while a pulse of depth `fade` thins it away -- the sonar ping, one quad, one clock. */
+void draw_push_ripple           ( f32 cx, f32 cy, f32 r, f32 thickness, f32 spread, f32 rate,
+                                  f32 phase, f32 fade, u32 abgr );
+
 /* The same SDF box surface under a rotation about its CENTRE (radians, screen space).  The fx
    coordinate is box-local and affine, so only the four corner positions turn -- same quadrant
    quads, same field, no snap (a rotated box has no axis-aligned edge to keep crisp). */

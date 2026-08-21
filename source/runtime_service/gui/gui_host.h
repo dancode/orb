@@ -245,6 +245,9 @@ void gui_draw_shadow( gui_rect_t box, f32 spread, u32 col );
 void gui_draw_glow( gui_rect_t box, f32 spread, u32 col );
 void gui_draw_drop_shadow( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col );
 void gui_draw_pulse( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col );
+void gui_draw_swell( gui_rect_t box, f32 rate, f32 amp, f32 phase, u32 col );
+void gui_draw_ripple( f32 cx, f32 cy, f32 r, f32 thickness, f32 spread, f32 rate, f32 phase,
+                      u32 col );
 void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
 void gui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
 void gui_draw_grip( gui_rect_t box, u32 col );

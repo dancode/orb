@@ -13,7 +13,7 @@
         Shape Economy       every SDF primitive next to its vertex price
         Gauges & Meters     radial gauge, progress rings, spinners -- arcs as instruments
         Charts & Data       donut with hover, sparkline, a rect_list bar wall
-        Depth & Motion      shadow elevation, glow, pulse, badges, a capsule toggle
+        Depth & Motion      shadow elevation, glow, pulse, swell/ripple, badges, a toggle
         Radial Menu         pie/arc wedges as hit-tested interactive UI
         Dials               a draggable knob, a clock, a compass with rotated labels
 
@@ -1098,6 +1098,49 @@ win_depth( void )
 
         gui()->draw_text( cell.x + 400.0f, cell.y + 30.0f, INK_DIM,
                           "click the chip -- all three run one cycle from that instant" );
+    }
+
+    /* SWELL: the boundary itself rides the clock (GUI_OP_SWELL) -- the pulse's economics
+       applied to SIZE.  The ripple is its loudest composition: a hollow ring swelling outward
+       while a full-depth pulse fades it, the sonar ping from one quad. */
+    gui()->separator_text( "swell and ripple -- the boundary itself rides the clock" );
+    {
+        gui_rect_t cell = gui()->canvas( 96.0f );
+        gui()->draw_rect( cell.x, cell.y, cell.w, cell.h, PANEL );
+
+        f32 save = gui()->draw_rounding();
+
+        /* Breathe: SINE carries the boundary `amp` px out and back.  The commands are
+           byte-identical every frame -- anim_ease would re-tessellate each one. */
+        gui()->draw_set_rounding( 8.0f );
+        gui()->draw_set_anim_curve( GUI_CURVE_SINE, 0.0f );
+        gui()->draw_swell( ( gui_rect_t ){ cell.x + 30.0f, cell.y + 32.0f, 92.0f, 32.0f },
+                           0.4f, 6.0f, 0.0f, GUI_COLOR( 0x30, 0x38, 0x58, 0xFF ) );
+        gui()->draw_set_anim_curve( GUI_CURVE_LINEAR, 0.0f );
+        gui()->draw_set_rounding( save );
+        dial_label( cell.x + 76.0f, cell.y + 48.0f, INK_DIM, "breathe", 0.9f );
+
+        /* The value port: rate 0 stands the clock at each instance's phase, so five discs at
+           five sizes share ONE style record -- the amplitude is per-instance and the size IS
+           the phase. */
+        gui()->draw_set_rounding( 11.0f );
+        for ( u32 i = 0; i < 5; ++i )
+            gui()->draw_swell( ( gui_rect_t ){ cell.x + 190.0f + (f32)i * 36.0f,
+                                               cell.y + 37.0f, 22.0f, 22.0f },
+                               0.0f, -8.0f, (f32)i * 0.2f, ACCENT );
+        gui()->draw_set_rounding( save );
+        gui()->draw_text( cell.x + 196.0f, cell.y + 68.0f, INK_DIM,
+                          "rate 0: phase = size, one style" );
+
+        /* The radar ping: two staggered ripples around a static dot -- three quads total, and
+           none of their bytes ever change while it runs. */
+        f32 px = cell.x + 460.0f, py = cell.y + 48.0f;
+        gui()->draw_circle( px, py, 4.0f, true, 0.0f, HEAL );
+        gui()->draw_ripple( px, py, 8.0f, 2.0f, 26.0f, 0.6f, 0.0f, HEAL );
+        gui()->draw_ripple( px, py, 8.0f, 2.0f, 26.0f, 0.6f, 0.5f, HEAL );
+        gui()->draw_text( px + 44.0f, py - 8.0f, INK_DIM, "ripple -- the ping" );
+
+        keep_awake();
     }
 
     gui()->text( "a pulse's command bytes never change -- its hash never changes -- the window's "
@@ -2397,7 +2440,7 @@ static sdf_demo_t s_demos[] = {
     { "Shape Economy",   "Shape Economy",   "every SDF primitive next to its vertex price",               win_shapes,    1280.0f, 1024.0f, false },
     { "Gauges & Meters", "Gauges & Meters", "radial gauge / progress ring / segments / spinners",         win_gauges,    1280.0f, 1024.0f, false },
     { "Charts & Data",   "Charts & Data",   "donut with hover / sparkline / one-command bar wall",        win_charts,    1280.0f, 1024.0f, false },
-    { "Depth & Motion",  "Depth & Motion",  "shadow elevation / glow / pulse / badge / toggle",           win_depth,     1280.0f, 1024.0f, false },
+    { "Depth & Motion",  "Depth & Motion",  "shadow elevation / glow / pulse / swell / ripple / toggle",  win_depth,     1280.0f, 1024.0f, false },
     { "Radial Menu",     "Radial Menu",     "arc wedges as hit-tested interactive UI",                    win_radial,    1280.0f, 1024.0f, false },
     { "Dials",           "Dials",           "draggable knob / clock / compass with rotated labels",       win_dials,     1280.0f, 1024.0f, false },
     { "New Verbs",       "New Verbs",       "box_xf / icon_xf / corner shadow / dashed + gradient arcs",  win_five,      1280.0f, 1024.0f, false },

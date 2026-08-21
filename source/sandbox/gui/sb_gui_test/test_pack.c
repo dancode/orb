@@ -126,6 +126,7 @@ test_quad_layout( void )
     test_equal(  0u, (u32)offsetof( gui_fx_t, xform      ) );
     test_equal(  4u, (u32)offsetof( gui_fx_t, phase      ) );
     test_equal(  8u, (u32)offsetof( gui_fx_t, col_border ) );
+    test_equal( 12u, (u32)offsetof( gui_fx_t, swell      ) );
     test_equal( 16u, (u32)offsetof( gui_fx_t, uv0        ) );
     test_equal( 20u, (u32)offsetof( gui_fx_t, uv1        ) );
     test_equal(  0u, GUI_PRIM_ROWS % GUI_FX_ROWS );
@@ -309,7 +310,7 @@ test_prim_ops( void )
                         GUI_OP_TILE_U, GUI_OP_TEXT_EDGE, GUI_OP_CHECKER, GUI_OP_GRID,
                         GUI_OP_GLOW, GUI_OP_REPEAT, GUI_OP_REPEAT_POLAR,
                         GUI_OP_GRAD_ALONG, GUI_OP_GRAD_CELL, GUI_OP_CELL_FILL,
-                        GUI_OP_CUT_SHAPE };
+                        GUI_OP_CUT_SHAPE, GUI_OP_SWELL };
 
     u32 seen = 0u;
     for ( u32 i = 0; i < ARRAY_COUNT( ops ); ++i )
@@ -319,7 +320,7 @@ test_prim_ops( void )
         test_equal( 0u, seen & ops[ i ] );                /* and not one already spent */
         seen |= ops[ i ];
     }
-    test_equal( 0xFFFFFFu, seen );
+    test_equal( 0x1FFFFFFu, seen );
 }
 
 /*============================================================================================*/

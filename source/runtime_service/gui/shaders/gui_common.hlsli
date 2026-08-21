@@ -112,6 +112,7 @@ uint style_row( uint style )
 #define OP_GRAD_CELL    0x200000u
 #define OP_CELL_FILL    0x400000u
 #define OP_CUT_SHAPE    0x800000u
+#define OP_SWELL        0x1000000u
 
 // The PATTERN ops: what a shape is filled or cut WITH, rather than what shape it is.  All read
 // row 7 and at most one is live per record.
@@ -128,8 +129,8 @@ uint style_row( uint style )
 #define GUI_QUAD_GSTYLE_SHIFT  18u   // GLYPH_STYLED: a style record where GLYPH keeps fx bits
 #define GUI_QUAD_GSTYLE_MASK   0x7FFu
 
-// The INSTANCE EXTRAS record (gui_fx_t): row A is the turn, the animation phase and the border
-// colour; row B is the texture rect.  It lives in the STYLE arena, four records to a style slot,
+// The INSTANCE EXTRAS record (gui_fx_t): row A is the turn, the animation phase, the border
+// colour and the swell amplitude; row B is the texture rect.  It lives in the STYLE arena, four records to a style slot,
 // and the quad names it by slot-local ROW index -- so the fetch is the style buffer at the slot's
 // base, offset by rows rather than by records.  Row 0 can never be one, which is what lets 0 mean
 // "no record": identity turn, zero phase, no border, no texture rect.

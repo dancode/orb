@@ -39,15 +39,17 @@
 
 static void
 draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 variant,
-                 f32 rate, f32 depth, f32 phase, f32 rot, f32 cut_dx, f32 cut_dy, u32 abgr )
+                 f32 rate, f32 depth, f32 phase, f32 rot, f32 cut_dx, f32 cut_dy,
+                 f32 swell, f32 border, u32 abgr )
 {
     /* Cull against the GROWN box: the falloff skirt is real geometry (feather/2 past the rect,
        plus the tessellator's pixel of slack), and a shadow whose box is just off screen still
-       paints a band on it.  A rotated box culls against its rotated AABB -- computed here rather
+       paints a band on it.  A swelling boundary reaches `swell` px further at full stretch.
+       A rotated box culls against its rotated AABB -- computed here rather
        than approximated with the diagonal, because the exact box is four multiplies and the
        diagonal wrongly keeps every long thin rotated bar on screen. */
 
-    f32 pad = feather * 0.5f + 1.0f;
+    f32 pad = feather * 0.5f + 1.0f + fmaxf( swell, 0.0f );
     f32 bx = x, by = y, bw = w, bh = h;
     if ( rot != 0.0f )
     {
@@ -79,24 +81,30 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
     c->fx_box.variant       = variant;
     c->fx_box.cut_dx        = cut_dx;
     c->fx_box.cut_dy        = cut_dy;
+    c->fx_box.swell         = swell;
+    c->fx_box.border        = border;
 
     /* A pulse that names no curve breathes on the raised cosine it always has: a sawtooth would
        snap back to full every cycle, which is not what breathing is.  Resolved here, at the one
-       site that knows the shape is pulsing at all.  A shadow is not animated, so it takes no
-       curve however the ambient is set -- the command hash must not move for a shape whose
-       motion nothing reads. */
+       site that knows the shape is pulsing at all.  A SWELL keeps the ambient as stated -- its
+       sawtooth is the ripple restarting, which is what the linear default means there -- and a
+       rate-0 swell is the value port, whose curve shapes the standing phase.  A shadow is not
+       animated, so it takes no curve however the ambient is set -- the command hash must not
+       move for a shape whose motion nothing reads. */
 
-    c->fx_box.curve       = ( rate <= 0.0f ) ? 0u
-                          : ( ( s_draw.anim_curve == GUI_CURVE_LINEAR )
-                              ? (u32)GUI_CURVE_SINE : s_draw.anim_curve );
-    c->fx_box.curve_param = ( rate > 0.0f ) ? s_draw.anim_curve_param : 0.0f;
+    bool animated = ( rate > 0.0f ) || ( swell != 0.0f );
+    c->fx_box.curve       = !animated ? 0u
+                          : ( swell == 0.0f && s_draw.anim_curve == GUI_CURVE_LINEAR )
+                              ? (u32)GUI_CURVE_SINE : s_draw.anim_curve;
+    c->fx_box.curve_param = animated ? s_draw.anim_curve_param : 0.0f;
     draw_cmd_seal();
 }
 
 void
 draw_push_shadow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 0u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                     0.0f, 0.0f, abgr );
 }
 
 /* x,y,w,h is the CASTER; (ox, oy) is how far the shadow falls from it.  The command carries the
@@ -107,7 +115,7 @@ draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
                  f32 ox, f32 oy, u32 abgr )
 {
     draw_fx_box_cmd( x + ox, y + oy, w, h, rounding, feather, 1u,
-                     0.0f, 0.0f, 0.0f, 0.0f, -ox, -oy, abgr );
+                     0.0f, 0.0f, 0.0f, 0.0f, -ox, -oy, 0.0f, 0.0f, abgr );
 }
 
 /* The glow: the same surface with its outward falloff resolved EXPONENTIALLY (GUI_OP_GLOW) rather
@@ -119,7 +127,8 @@ draw_push_skirt( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
 void
 draw_push_glow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, feather, 3u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, 3u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                     0.0f, 0.0f, abgr );
 }
 
 /* The inner shadow: the same surface with its falloff turned inward (GUI_OP_INSET), painting
@@ -129,7 +138,8 @@ draw_push_glow( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 abgr 
 void
 draw_push_inset( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 depth, u32 abgr )
 {
-    draw_fx_box_cmd( x, y, w, h, rounding, depth, 2u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
+    draw_fx_box_cmd( x, y, w, h, rounding, depth, 2u, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                     0.0f, 0.0f, abgr );
 }
 
 void
@@ -137,7 +147,36 @@ draw_push_pulse( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 depth, 
                  u32 abgr )
 {
     draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0u, rate, depth, phase, 0.0f,
-                     0.0f, 0.0f, abgr );
+                     0.0f, 0.0f, 0.0f, 0.0f, abgr );
+}
+
+/* The swelling fill: the plain surface under GUI_OP_SWELL -- the boundary itself travels `amp`
+   px past the authored rect (negative shrinks) as the clock's k runs 0..1, shaped by the ambient
+   curve.  Geometry animating with byte-identical command bytes, the draw_push_pulse contract --
+   where anim_ease, the CPU tween, re-tessellates every frame it moves.  At rate 0 the clock
+   stands at `phase`: a static per-element size offset off one shared style -- the value port. */
+void
+draw_push_swell( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 rate, f32 amp, f32 phase,
+                 u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding, TESS_FX_AA, 0u, rate, 0.0f, phase, 0.0f,
+                     0.0f, 0.0f, amp, 0.0f, abgr );
+}
+
+/* The ripple: a hollow ring (GUI_OP_BAND) whose boundary swells `spread` px outward while a
+   pulse of depth `fade` thins it away -- the sonar ping, expanding and dying on ONE clock, from
+   one quad whose bytes never change while it runs.  The linear curve is the right default: its
+   snap-back is the ripple restarting.  One shot: anim_once + draw_set_anim_phase, then stop
+   drawing it, the phase-anchoring contract.  `r` is the ring's REST radius (it hugs its subject
+   at k = 0), `thickness` the band width, `fade` 0..1 how gone it is at full stretch. */
+void
+draw_push_ripple( f32 cx, f32 cy, f32 r, f32 thickness, f32 spread, f32 rate, f32 phase,
+                  f32 fade, u32 abgr )
+{
+    if ( r <= 0.0f || thickness <= 0.0f )
+        return;
+    draw_fx_box_cmd( cx - r, cy - r, r * 2.0f, r * 2.0f, r, TESS_FX_AA, 4u, rate, fade, phase,
+                     0.0f, 0.0f, 0.0f, spread, thickness, abgr );
 }
 
 /* The rotated box: same surface, four corner positions turned about the box centre.  The default
@@ -148,7 +187,7 @@ draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot
 {
     draw_fx_box_cmd( x, y, w, h, rounding,
                      ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
-                     0u, 0.0f, 0.0f, 0.0f, rot, 0.0f, 0.0f, abgr );
+                     0u, 0.0f, 0.0f, 0.0f, rot, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
 /*==============================================================================================

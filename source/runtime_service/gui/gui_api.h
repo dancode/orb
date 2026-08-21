@@ -946,6 +946,24 @@ typedef struct gui_api_s
        live, the same contract a volatile widget has.  `phase` offsets the wave in cycles, so a
        row of same-rate indicators can stagger instead of beating in lockstep; 0 = in step. */
     void ( *draw_pulse             )( gui_rect_t box, f32 rate, f32 depth, f32 phase, u32 col );
+
+    /* draw_swell -- a rect whose SIZE breathes: the boundary travels `amp` px past the box
+       (negative shrinks) as the clock's k runs 0..1, shaped by the ambient curve
+       (draw_set_anim_curve).  draw_pulse's economics exactly -- byte-identical commands, zero
+       re-tessellation -- where anim_ease, the CPU tween, dirties the window every frame the
+       geometry moves.  The pop, the hover grow, the press shrink, the breathing focus ring.
+       Rate 0 stands the clock at `phase`: a static per-element size offset off one shared
+       style.  One-shots anchor with anim_once, the phase-anchoring contract.  Honors the
+       ambient rounding; request_redraw while it runs, the draw_pulse contract. */
+    void ( *draw_swell             )( gui_rect_t box, f32 rate, f32 amp, f32 phase, u32 col );
+
+    /* draw_ripple -- the sonar ping: a hollow ring of `thickness` px hugging radius `r` that
+       swells `spread` px outward while it fades, expanding and dying on ONE clock, from one
+       quad whose bytes never change while it runs.  `rate` repeats it; for a single ping use
+       anim_once + draw_set_anim_phase and stop drawing when it reports done.  The attention
+       ping, the click ripple, the radar pulse. */
+    void ( *draw_ripple            )( f32 cx, f32 cy, f32 r, f32 thickness, f32 spread,
+                                      f32 rate, f32 phase, u32 col );
     void ( *draw_text_outline      )( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
     void ( *draw_text_shadow       )( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
     void ( *draw_grip              )( gui_rect_t box, u32 col );

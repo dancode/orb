@@ -80,6 +80,8 @@ typedef struct
     f32 anim_rate;        // CYCLES/SEC, for every animating op -- one unit, whatever a cycle
                           //   means to the op reading it (gui.h row 5)
     f32 anim_phase;       // CYCLES, the static offset that staggers same-rate elements
+    f32 swell_amp;        // GUI_OP_SWELL: how far the boundary travels at k = 1, px (negative
+                          //   shrinks).  A PER-INSTANCE lane (gui_fx_t.swell), not a style one
     u32 anim_curve;       // gui_curve_t: what the phase does between its endpoints
     f32 anim_param;       // the curve's own parameter -- exponent, step count, duty
     f32 dash_period;      // GUI_OP_DASH: px per on+off cycle, already snapped to the perimeter
@@ -191,10 +193,17 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     s_tess.cur_rot_s = rsn;
     /* The pulse states only its DEPTH as a parameter of its own; its rate joins the shared
        animation clock, which is what lets a curve authored once shape the breath, the spin and
-       the marching ants alike. */
+       the marching ants alike.  SWELL rides the same clock off the same `rate` parameter -- one
+       timebase, so a shape that grows AND fades does both on one k. */
     s_tess.cur_prim.param_a = ( s_tess.cur_ops & GUI_OP_PULSE ) ? depth : 0.0f;
-    if ( s_tess.cur_ops & GUI_OP_PULSE )
+    if ( s_tess.cur_ops & ( GUI_OP_PULSE | GUI_OP_SWELL ) )
         s_tess.cur_prim.anim_rate = rate;
+
+    /* SWELL's amplitude is a PER-INSTANCE lane (gui_fx_t.swell), not a style one: elements
+       swelling by their own ranges share one record.  The `+ 0.0f` folds negative zero, the
+       cut-vector rule -- an fx record differing only in the sign of nothing must not exist. */
+    if ( aux && ( s_tess.cur_ops & GUI_OP_SWELL ) )
+        s_tess.cur_swell = aux->swell_amp + 0.0f;
 
     /* The corner profile -- ambient over the command, like the ops, and applied only where there
        is a corner to profile: a square box has no arc to reshape, and leaving the lane at zero is
@@ -245,7 +254,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
                                    | GUI_OP_GRAD_CELL | GUI_OP_CELL_FILL ) ) )
         s_tess.cur_prim.anim_rate = aux->anim_rate;
     if ( aux && ( s_tess.cur_ops & ( GUI_OP_DASH | GUI_OP_PULSE | GUI_OP_SPIN
-                                   | GUI_OP_GRAD_CELL | GUI_OP_CELL_FILL ) ) )
+                                   | GUI_OP_GRAD_CELL | GUI_OP_CELL_FILL | GUI_OP_SWELL ) ) )
     {
         s_tess.cur_prim.anim_curve = aux->anim_curve;
         s_tess.cur_prim.anim_param = aux->anim_param;

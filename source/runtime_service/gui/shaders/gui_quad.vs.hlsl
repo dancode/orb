@@ -104,7 +104,7 @@ struct vs_out_t
                                                   //   an instance lane, never the style
     nointerpolation float4 inst   : TEXCOORD5;   // per-instance lanes off the quad:
                                                   //   xy = the turn (cos, sin), z = animation
-                                                  //   phase in cycles, w unused
+                                                  //   phase in cycles, w = swell amplitude px
     nointerpolation uint   tag    : TEXCOORD6;   // GUI_QUAD_TAG_* in bits 0-1, "the SDF atlas"
                                                   //   in bit 2.  A GLYPH names no style record,
                                                   //   so the fragment takes its texture from the
@@ -164,9 +164,15 @@ vs_out_t main( uint vid : SV_VertexID )
     // The one style fetch the expansion needs: row 2 leads with the feather the SDF pad derives
     // from.  Cache-hot -- a window's quads share a handful of styles -- and skipped entirely for
     // the rules that take no pad, which is every glyph.
+    //
+    // The instance's swell amplitude (gui_fx_t.swell, GUI_OP_SWELL) grows the pad too: the
+    // boundary travels up to that far past the authored rect, and the covering has to be there
+    // when it arrives.  Unconditional -- the lane is 0.0 on every record that does not swell,
+    // and a shrink (negative) needs no room.
     float pad = 0.0;
     if ( rule == 1u || rule == 2u )
-        pad = u_buffers[ pc.prim_buf ][ style_row( style ) + 2u ].x * 0.5 + 1.0;
+        pad = u_buffers[ pc.prim_buf ][ style_row( style ) + 2u ].x * 0.5 + 1.0
+            + max( fxr.w, 0.0 );
 
     float2 he = q0.zw;
     if ( rule == 2u )
@@ -223,6 +229,6 @@ vs_out_t main( uint vid : SV_VertexID )
     o.clip     = ( idx >> GUI_QUAD_CLIP_SHIFT ) & GUI_QUAD_CLIP_MASK;
     o.tag      = tag | ( ( anyglyph && ( idx & GUI_QUAD_SDF_BIT ) != 0u ) ? 4u : 0u );
     o.border   = unpack_col( asuint( fxr.z ) );
-    o.inst     = float4( rt, asuint( fxr.y ) / 65535.0, 0.0 );
+    o.inst     = float4( rt, asuint( fxr.y ) / 65535.0, fxr.w );
     return o;
 }

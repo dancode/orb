@@ -290,6 +290,7 @@ pal_row_open( u32 ops )
     s_tess.cur_rot_c      = 1.0f;
     s_tess.cur_rot_s      = 0.0f;
     s_tess.cur_phase      = 0.0f;
+    s_tess.cur_swell      = 0.0f;
     s_tess.cur_prim       = ( gui_prim_t ){ 0 };
     s_tess.prim_count     = 0;       /* the emitter appends at 0 and we read it straight back */
     s_tess.quad_count     = 0;

@@ -385,7 +385,8 @@ step_cmd_bounds( const gui_cmd_t* c )
            outlined at its box alone looks like the highlight is the thing that is wrong. */
         case GUI_CMD_FX_BOX:
         {
-            f32 g = c->fx_box.feather * 0.5f;
+            /* A swelling boundary reaches `swell` px further at full stretch. */
+            f32 g = c->fx_box.feather * 0.5f + fmaxf( c->fx_box.swell, 0.0f );
             if ( c->fx_box.rot != 0.0f )
             {
                 /* Rotated: the rotated AABB of the grown box, the emit-side cull's arithmetic. */

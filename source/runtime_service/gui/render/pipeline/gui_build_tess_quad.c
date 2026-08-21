@@ -76,6 +76,7 @@ tess_reset( void )
     s_tess.cur_rot_c            = 1.0f;
     s_tess.cur_rot_s            = 0.0f;
     s_tess.cur_phase            = 0.0f;
+    s_tess.cur_swell            = 0.0f;
 }
 
 /* Name the texture the next quad's style will CARRY (tess_quad_push folds it into the record).
@@ -289,10 +290,11 @@ tess_fx_local( u32 uv0, u32 uv1 )
         .xform      = gui_xform_pack( s_tess.cur_rot_c, s_tess.cur_rot_s ),
         .phase      = gui_phase_pack( s_tess.cur_phase ),
         .col_border = s_tess.cur_col_border,
+        .swell      = s_tess.cur_swell,
         .uv0        = uv0,
         .uv1        = uv1,
     };
-    if ( fx.xform == 0u && fx.phase == 0u && fx.col_border == 0u
+    if ( fx.xform == 0u && fx.phase == 0u && fx.col_border == 0u && fx.swell == 0.0f
       && fx.uv0 == 0u && fx.uv1 == 0u )
         return 0u;      /* the whole record is the default -- the majority of quads, text included */
 
@@ -413,9 +415,10 @@ tess_band_worth_it( f32 qhw, f32 qhh, u32 rule )
        repeated shape leaves at zero coverage is the space BETWEEN its copies, which is not the
        single rectangle band_local knows how to tile.  A band covering there would carve away real
        ink -- and under the polar fold the empty region is the hole in the middle of a ring, which
-       is a shape band_local has no way to state at all. */
+       is a shape band_local has no way to state at all.  SWELL is excluded with them: the hole is
+       measured against the REST boundary, and a swelling boundary moves into it on the clock. */
     if ( rule != GUI_QUAD_RULE_SKIRT || p->field != (u32)GUI_FX_BOX
-      || ( ops & ( GUI_OP_FRAME | GUI_OP_REPEAT | GUI_OP_REPEAT_POLAR ) ) )
+      || ( ops & ( GUI_OP_FRAME | GUI_OP_REPEAT | GUI_OP_REPEAT_POLAR | GUI_OP_SWELL ) ) )
         return false;
 
     /* EXACTLY one hole-cutting op.  Each of the three states where its own coverage reaches zero,
