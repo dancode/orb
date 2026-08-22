@@ -259,10 +259,13 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
             w[ 1 ] = floorf( e->rect.y + 0.5f );
             w[ 2 ] = floorf( e->rect.x + e->rect.w + 0.5f );
             w[ 3 ] = floorf( e->rect.y + e->rect.h + 0.5f );
+            /* Second float4: (radius, feather, flags, value).  flags/value are u32 bit patterns
+               riding a float lane -- the fragment reads them back with asuint, the same trick
+               the style row's head uses for g_field/g_ops. */
             w[ 4 ] = e->radius;
-            w[ 5 ] = 0.0f;
-            w[ 6 ] = 0.0f;
-            w[ 7 ] = 0.0f;
+            w[ 5 ] = e->feather;
+            memcpy( &w[ 6 ], &e->flags, sizeof( u32 ) );
+            memcpy( &w[ 7 ], &e->value, sizeof( u32 ) );
         }
         rhi()->buffer_write( s_render.clip_buf, stage,
                              sl->clip_count * (u32)GUI_CLIP_ENTRY_BYTES,

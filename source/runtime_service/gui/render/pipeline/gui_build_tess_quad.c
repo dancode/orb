@@ -93,7 +93,8 @@ tess_set_tex( u32 tex_idx )
 
 /* Resolve the ambient clip to an ABSOLUTE entry index in the frame clip region: the window's
    fixed slab base plus its position in the slot's LOCAL clip table, appending a new entry at
-   first sight.  Content-keyed -- (rect, radius) is the whole identity -- and first-seen ordered
+   first sight.  Content-keyed -- the full entry (rect, radius, feather, flags, value) is the
+   identity -- and first-seen ordered
    over the window's own commands, so a window whose commands hash identical reproduces identical
    indices: the property that lets a cached quad bake its clip entry.  The slab base
    is keyed by the window's id-keyed stable cache slot, so the absolute index survives as long as
@@ -116,12 +117,15 @@ tess_clip_local( u8 ci )
 
     const gui_rect_t* r   = &s_draw.clip_table[ ci ];
     f32               rad = s_draw.clip_radius[ ci ];
+    f32               fea = s_draw.clip_feather[ ci ];
+    u32               flg = s_draw.clip_flags[ ci ];
+    u32               val = s_draw.clip_value[ ci ];
     u32               n   = *s_tess.slot_clip_count;
     for ( u32 g = 0; g < n; ++g )
     {
         const gui_clip_entry_t* e = &s_tess.slot_clips[ g ];
         if ( e->rect.x == r->x && e->rect.y == r->y && e->rect.w == r->w && e->rect.h == r->h
-          && e->radius == rad )
+          && e->radius == rad && e->feather == fea && e->flags == flg && e->value == val )
             return s_tess.clip_memo_local = g;
     }
     if ( n >= GUI_WIN_CLIP_MAX )
@@ -129,7 +133,13 @@ tess_clip_local( u8 ci )
         s_tess.overflow |= TESS_OVF_WIN_CLIPS;
         return s_tess.clip_memo_local = 0u;
     }
-    s_tess.slot_clips[ n ] = ( gui_clip_entry_t ){ .rect = *r, .radius = rad };
+    s_tess.slot_clips[ n ] = ( gui_clip_entry_t ){
+        .rect    = *r,
+        .radius  = rad,
+        .feather = fea,
+        .flags   = flg,
+        .value   = val,
+    };
     *s_tess.slot_clip_count = n + 1;
     if ( s_tess.slot_clip_pending )
         *s_tess.slot_clip_pending = 0xFF;

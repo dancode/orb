@@ -779,24 +779,54 @@ float fx_coverage( float2 px )
 // (and the gui itself before its first upload) is never clipped by garbage.
 //
 // Entries are two float4s: [0] = (x0, y0, x1, y1) pixel EDGES, pre-snapped CPU-side to the same
-// grid the hardware scissor was, so radius-0 coverage is bit-identical to the scissor it
-// replaces (fragment centres sit at .5 against integer edges; no AA band on purpose -- a clip is
-// a cut, not a shape).  radius > 0 evaluates the rounded-box field with a 1 px AA band instead:
-// the clip a scissor rect could never express.
+// grid the hardware scissor was, so a flag-free entry's coverage is bit-identical to the scissor
+// it replaces (fragment centres sit at .5 against integer edges; no AA band on purpose -- a clip
+// is a cut, not a shape).  [1] = (radius, feather, flags, value); flags and value are u32 bit
+// patterns riding float lanes (asuint), the same trick the style row's head uses.  ROUND flag
+// bits (0-3) pick which corners the shared radius applies to: a flagged entry evaluates the
+// rounded-box field with a 1 px AA band, selecting the radius per quadrant, so an unflagged
+// corner of the same entry stays square.  FEATHER flag bits (4-7) fade coverage over `feather`
+// px inward from each flagged edge.  value is reserved (0 today).
 float clip_coverage( uint clip, float2 p )
 {
     if ( pc.clip_buf == 0u )
         return 1.0;
-    uint   e   = ( pc.clip_base + clip ) * 2u;
-    float4 r   = u_buffers[ pc.clip_buf ][ e ];
-    float  rad = u_buffers[ pc.clip_buf ][ e + 1u ].x;
-    if ( rad <= 0.0 )
-        return ( p.x >= r.x && p.y >= r.y && p.x < r.z && p.y < r.w ) ? 1.0 : 0.0;
-    float2 c = ( r.xy + r.zw ) * 0.5;
-    float2 h = ( r.zw - r.xy ) * 0.5 - float2( rad, rad );
-    float2 q = abs( p - c ) - h;
-    float  d = min( max( q.x, q.y ), 0.0 ) + length( max( q, float2( 0.0, 0.0 ) ) ) - rad;
-    return saturate( 0.5 - d );
+    uint   e     = ( pc.clip_base + clip ) * 2u;
+    float4 r     = u_buffers[ pc.clip_buf ][ e ];
+    float4 x     = u_buffers[ pc.clip_buf ][ e + 1u ];
+    float  rad   = x.x;
+    uint   flags = asuint( x.z );
+
+    float cov;
+    if ( rad <= 0.0 || ( flags & 0xFu ) == 0u )
+        cov = ( p.x >= r.x && p.y >= r.y && p.x < r.z && p.y < r.w ) ? 1.0 : 0.0;
+    else
+    {
+        // Rounded box, radius selected by quadrant: TL=1 TR=2 BR=4 BL=8 (y grows downward).
+        // On a quadrant seam both sides read the straight edge's distance, so mixed corners
+        // meet without a crease.
+        float2 c   = ( r.xy + r.zw ) * 0.5;
+        uint   bit = ( p.x < c.x ) ? ( ( p.y < c.y ) ? 1u : 8u )
+                                   : ( ( p.y < c.y ) ? 2u : 4u );
+        float  cr  = ( ( flags & bit ) != 0u ) ? rad : 0.0;
+        float2 h   = ( r.zw - r.xy ) * 0.5 - float2( cr, cr );
+        float2 q   = abs( p - c ) - h;
+        float  d   = min( max( q.x, q.y ), 0.0 ) + length( max( q, float2( 0.0, 0.0 ) ) ) - cr;
+        cov        = saturate( 0.5 - d );
+    }
+
+    // Per-edge feather: each flagged edge fades coverage to 0 at the edge over `feather` px.
+    // Multiplied into the cut rather than min-combined so a feathered rounded corner composes.
+    float fea = x.y;
+    if ( fea > 0.0 && ( flags & 0xF0u ) != 0u )
+    {
+        float inv = 1.0 / fea;
+        if ( ( flags & 0x10u ) != 0u ) cov *= saturate( ( p.y - r.y ) * inv );  // top
+        if ( ( flags & 0x20u ) != 0u ) cov *= saturate( ( r.z - p.x ) * inv );  // right
+        if ( ( flags & 0x40u ) != 0u ) cov *= saturate( ( r.w - p.y ) * inv );  // bottom
+        if ( ( flags & 0x80u ) != 0u ) cov *= saturate( ( p.x - r.x ) * inv );  // left
+    }
+    return cov;
 }
 
 float4 main( ps_in_t i ) : SV_Target0

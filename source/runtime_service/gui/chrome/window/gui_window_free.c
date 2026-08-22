@@ -737,8 +737,16 @@ window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 tit
            as a single draw command.  Content scrolled under the title bar or border is
            overpainted by the chrome window_end draws last; anything past the outer edge is
            clipped here.  The body region reuses this clip (own_clip false) -- it does not push
-           a second one; only a child_begin inside the window adds another. */
-        draw_push_clip_rect( win->x, win->y, win->w, disp_h );
+           a second one; only a child_begin inside the window adds another.
+
+           The BOTTOM corners round with the window: content there sits on the body face's
+           corner arc with nothing overpainting it, so a square clip would let it poke past the
+           arc.  The top corners stay square -- the title bar chrome draws over them last and is
+           itself rounded, so rounding the clip there would only shave the chrome's own edge.
+           A maximized window fills flush to the surface (square face), so its clip is square. */
+        f32 clip_round = ( win->maximized && !win->minimized ) ? 0.0f : ROUND_WIN;
+        draw_push_clip_rect_ex( win->x, win->y, win->w, disp_h, clip_round, 0.0f,
+                                UI_CLIP_ROUND_BL | UI_CLIP_ROUND_BR );
         s_scope.clip = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
 
         /* Window body background.  Skipped for a frame-only shell: its body stays empty so the

@@ -128,11 +128,15 @@ static struct
        index (cur_clip_idx) is available O(1) at emit time -- no per-emit search. */
 
     gui_rect_t      clip_table      [ GUI_MAX_CLIP_RECTS ];     /* flat pool of all clip rects this frame   */
-    f32             clip_radius     [ GUI_MAX_CLIP_RECTS ];     /* per-entry corner radius; 0 = square cut.
-                                                                   Part of the entry's identity: baked into
+    f32             clip_radius     [ GUI_MAX_CLIP_RECTS ];     /* per-entry shared corner radius; 0 = square
+                                                                   cut.  Like the three arrays below it is
+                                                                   part of the entry's identity: baked into
                                                                    clip_hash_cache, matched by dedup, read
                                                                    by tess_clip_local into the slot table  */
-    u32             clip_hash_cache [ GUI_MAX_CLIP_RECTS ];     /* fnv1a of (rect, radius), baked when added */
+    f32             clip_feather    [ GUI_MAX_CLIP_RECTS ];     /* shared edge fade width, px; 0 = hard edge */
+    u32             clip_flags      [ GUI_MAX_CLIP_RECTS ];     /* UI_CLIP_* corner/edge selection bits      */
+    u32             clip_value      [ GUI_MAX_CLIP_RECTS ];     /* reserved lane (opacity/blur later); 0     */
+    u32             clip_hash_cache [ GUI_MAX_CLIP_RECTS ];     /* fnv1a of the whole identity, baked on add */
     u32             clip_table_n;                               /* entries used this frame                  */
     u8              clip_idx_stack  [ GUI_CLIP_DEPTH ];         /* parallel to clip_stack: index per level  */
     u8              cur_clip_idx;                               /* top-of-stack index, stamped on each emit */
@@ -376,6 +380,20 @@ draw_set_cmd_owner( gui_id_t id )
 
 #endif
 
+/* The clip entry's identity hash: every field the dedup matches on, in one recipe, shared by
+   clip_append and draw_reset's slot-0 seed (which must fold identically or the root could never
+   dedup against a later identical push). */
+static u32
+clip_identity_hash( const gui_rect_t* r, f32 radius, f32 feather, u32 flags, u32 value )
+{
+    u32 h = fnv1a( 2166136261u, r, sizeof( gui_rect_t ) );
+    h     = fnv1a( h, &radius,  sizeof( f32 ) );
+    h     = fnv1a( h, &feather, sizeof( f32 ) );
+    h     = fnv1a( h, &flags,   sizeof( u32 ) );
+    h     = fnv1a( h, &value,   sizeof( u32 ) );
+    return h;
+}
+
 /*==============================================================================================
     draw_reset -- call at the top of the frame (frame_begin)
 ==============================================================================================*/
@@ -432,12 +450,14 @@ draw_reset( i32 display_w, i32 display_h )
 
     /* Seed the clip table: slot 0 = full display rect.  clip_idx_stack[0] and cur_clip_idx both
        start at 0 so every emitter finds the root clip without a push being required first.
-       The hash folds (rect, radius) exactly as clip_append's does, or slot 0 could never dedup. */
+       The hash is clip_append's identity recipe, or slot 0 could never dedup. */
 
     s_draw.clip_table[ 0 ]      = ( gui_rect_t ){ 0.0f, 0.0f, (f32)display_w, (f32)display_h };
     s_draw.clip_radius[ 0 ]     = 0.0f;
-    s_draw.clip_hash_cache[ 0 ] = fnv1a( 2166136261u, &s_draw.clip_table[ 0 ], sizeof( gui_rect_t ) );
-    s_draw.clip_hash_cache[ 0 ] = fnv1a( s_draw.clip_hash_cache[ 0 ], &s_draw.clip_radius[ 0 ], sizeof( f32 ) );
+    s_draw.clip_feather[ 0 ]    = 0.0f;
+    s_draw.clip_flags[ 0 ]      = 0u;
+    s_draw.clip_value[ 0 ]      = 0u;
+    s_draw.clip_hash_cache[ 0 ] = clip_identity_hash( &s_draw.clip_table[ 0 ], 0.0f, 0.0f, 0u, 0u );
     s_draw.clip_stack[ 0 ]      = s_draw.clip_table[ 0 ];
     s_draw.clip_table_n         = 1;
     s_draw.clip_idx_stack[ 0 ]  = 0;
@@ -481,7 +501,7 @@ draw_reset( i32 display_w, i32 display_h )
    invalid sentinel and is never written. */
 
 static u8
-clip_append( gui_rect_t r, f32 radius )
+clip_append( gui_rect_t r, f32 radius, f32 feather, u32 flags, u32 value )
 {
     /* Frozen replay: suppressed band-0 spans must not grow the table (the frozen entries plus
        the live debug band share its 64 slots).  Slot 0 is the frozen frame's root -- the display
@@ -495,15 +515,24 @@ clip_append( gui_rect_t r, f32 radius )
     f32 max_r = ( ( r.w < r.h ) ? r.w : r.h ) * 0.5f;
     if ( radius > max_r ) radius = max_r;
     if ( radius < 0.0f )  radius = 0.0f;
+    if ( feather < 0.0f ) feather = 0.0f;
 
-    u32 h = fnv1a( 2166136261u, &r, sizeof( gui_rect_t ) );
-    h     = fnv1a( h, &radius, sizeof( f32 ) );
+    /* Normalize the identity so equivalent requests dedup: a radius/feather with no flag naming
+       a corner/edge is inert, and a flag with a zero radius/feather is too.  One canonical form
+       for each, picked here at the single append choke point. */
+    if ( radius  <= 0.0f ) flags &= ~(u32)UI_CLIP_ROUND_ALL;
+    if ( feather <= 0.0f ) flags &= ~(u32)UI_CLIP_FEATHER_ALL;
+    if ( ( flags & UI_CLIP_ROUND_ALL )   == 0u ) radius  = 0.0f;
+    if ( ( flags & UI_CLIP_FEATHER_ALL ) == 0u ) feather = 0.0f;
+
+    u32 h = clip_identity_hash( &r, radius, feather, flags, value );
     for ( u32 i = 0; i < s_draw.clip_table_n; ++i )
         if ( s_draw.clip_hash_cache[ i ] == h )
         {
             const gui_rect_t* t = &s_draw.clip_table[ i ];
             if ( t->x == r.x && t->y == r.y && t->w == r.w && t->h == r.h
-              && s_draw.clip_radius[ i ] == radius )
+              && s_draw.clip_radius[ i ] == radius && s_draw.clip_feather[ i ] == feather
+              && s_draw.clip_flags[ i ] == flags   && s_draw.clip_value[ i ]   == value )
                 return (u8)i;
         }
     if ( s_draw.clip_table_n < GUI_MAX_CLIP_RECTS - 1u )
@@ -511,6 +540,9 @@ clip_append( gui_rect_t r, f32 radius )
         u8 ci = (u8)s_draw.clip_table_n++;
         s_draw.clip_table      [ ci ] = r;
         s_draw.clip_radius     [ ci ] = radius;
+        s_draw.clip_feather    [ ci ] = feather;
+        s_draw.clip_flags      [ ci ] = flags;
+        s_draw.clip_value      [ ci ] = value;
         s_draw.clip_hash_cache [ ci ] = h;
         return ci;
     }
@@ -575,13 +607,13 @@ bool draw_cull_box( f32 x, f32 y, f32 w, f32 h )
 ==============================================================================================*/
 
 static void
-draw_push_clip_body( f32 x, f32 y, f32 w, f32 h, f32 radius )
+draw_push_clip_body( f32 x, f32 y, f32 w, f32 h, f32 radius, f32 feather, u32 flags, u32 value )
 {
     /* Intersect with the enclosing clip so a nested region can never clip outside its parent.
        The push always happens -- a clipped-out region pushes a zero rect and draws nothing --
        so every push has a matching pop and the stack stays balanced. */
     gui_rect_t c  = rect_intersect( ( gui_rect_t ){ x, y, w, h }, clip_current() );
-    u8         ci = clip_append( c, radius );
+    u8         ci = clip_append( c, radius, feather, flags, value );
 
     if ( s_draw.clip_depth < GUI_CLIP_DEPTH )
     {
@@ -597,13 +629,19 @@ draw_push_clip_body( f32 x, f32 y, f32 w, f32 h, f32 radius )
 void
 draw_push_clip_rect( f32 x, f32 y, f32 w, f32 h )
 {
-    draw_push_clip_body( x, y, w, h, 0.0f );
+    draw_push_clip_body( x, y, w, h, 0.0f, 0.0f, 0u, 0u );
 }
 
 void
 draw_push_clip_rect_rounded( f32 x, f32 y, f32 w, f32 h, f32 radius )
 {
-    draw_push_clip_body( x, y, w, h, radius );
+    draw_push_clip_body( x, y, w, h, radius, 0.0f, UI_CLIP_ROUND_ALL, 0u );
+}
+
+void
+draw_push_clip_rect_ex( f32 x, f32 y, f32 w, f32 h, f32 radius, f32 feather, u32 flags )
+{
+    draw_push_clip_body( x, y, w, h, radius, feather, flags, 0u );
 }
 
 void
@@ -629,7 +667,7 @@ draw_set_root_clip( f32 w, f32 h )
 {
     gui_rect_t r              = ( gui_rect_t ){ 0.0f, 0.0f, w, h };
     s_draw.clip_stack[ 0 ]    = r;
-    u8 ci                     = clip_append( r, 0.0f );
+    u8 ci                     = clip_append( r, 0.0f, 0.0f, 0u, 0u );
     s_draw.clip_idx_stack[ 0 ] = ci;
     s_draw.cur_clip_idx        = ci;
 }

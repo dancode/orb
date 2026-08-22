@@ -231,6 +231,9 @@ void draw_push_clip_rect        ( f32 x, f32 y, f32 w, f32 h ); // push clip, in
 void draw_push_clip_rect_rounded( f32 x, f32 y, f32 w, f32 h, f32 radius ); // same, corners rounded in the
                                                                 //   FRAGMENT (clip_coverage) -- radius
                                                                 //   clamped to the half-extent
+void draw_push_clip_rect_ex     ( f32 x, f32 y, f32 w, f32 h,   // full control: UI_CLIP_* flags pick
+                                  f32 radius, f32 feather,      //   which corners the radius rounds and
+                                  u32 flags );                  //   which edges the feather fades over
 void draw_pop_clip_rect         ( void );                       // pop the top clip
 void draw_push_clip_root        ( void );                       // push the full-display clip (popup escape)
 void draw_set_root_clip         ( f32 w, f32 h );               // set clip_stack[0] to a surface size
@@ -510,9 +513,30 @@ const char*             select_run_text( const gui_select_run_t* run );  /* NUL-
 typedef struct
 {
     gui_rect_t rect;      // the clip rect, unsnapped pixels (the flush snaps edges on upload)
-    f32        radius;    // corner radius; 0 = the hard scissor-parity cut
+    f32        radius;    // shared corner radius; 0 = the hard scissor-parity cut
+    f32        feather;   // shared edge fade width in pixels; 0 = hard edge
+    u32        flags;     // UI_CLIP_* bits: which corners round, which edges feather
+    u32        value;     // reserved (future: global opacity / blur); 0 today
 
 } gui_clip_entry_t;
+
+/* Which corners the entry's shared radius applies to and which edges its shared feather applies
+   to.  No flags set with radius/feather 0 is the plain scissor-parity cut.  Bits 8-11 are
+   reserved for a clip mode (e.g. inverse clip); 12+ free. */
+enum
+{
+    UI_CLIP_ROUND_TL       = 1u << 0,
+    UI_CLIP_ROUND_TR       = 1u << 1,
+    UI_CLIP_ROUND_BR       = 1u << 2,
+    UI_CLIP_ROUND_BL       = 1u << 3,
+    UI_CLIP_ROUND_ALL      = 0xFu,
+
+    UI_CLIP_FEATHER_TOP    = 1u << 4,
+    UI_CLIP_FEATHER_RIGHT  = 1u << 5,
+    UI_CLIP_FEATHER_BOTTOM = 1u << 6,
+    UI_CLIP_FEATHER_LEFT   = 1u << 7,
+    UI_CLIP_FEATHER_ALL    = 0xF0u,
+};
 
 /* Distinct clips per window slot.  This used to trade against RENDER_MAX_WIN, because the product
    of the two had to fit a 9-bit band in the vertex's tex word -- which is why the stress bench ran

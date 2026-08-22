@@ -373,7 +373,7 @@ volatile_cb_close( gui_volatile_fn fn, const gui_rect_t* cell )
                 {
                     memo_src = src;
                     memo_dst = clip_append( rect_intersect( *cell, s_draw.clip_table[ src ] ),
-                                            0.0f );
+                                            0.0f, 0.0f, 0u, 0u );
                 }
                 s_draw.cmds[ i ].clip_idx   = memo_dst;
                 s_draw.cmds[ i ].clip_empty = rect_empty( s_draw.clip_table[ memo_dst ] );
