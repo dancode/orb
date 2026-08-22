@@ -823,6 +823,7 @@ bool gui_debug_is_enabled( void ) { return s_debug_enabled; }
 
 static int  s_dbg_perf_mode;     /* perf overlay tier, NP_ADD cycles 0..DBG_PERF_TIERS-1     */
 static int  s_dbg_state_mode;    /* state overlay tier, NP_SUB cycles 0..3                  */
+static int  s_dbg_dpi_step;      /* index into k_dpi_scale; 0 = AUTO (the shipping default)  */
 static bool s_dbg_font_open;     /* font registry overlay, selector menu checkbox toggles  */
 static bool s_dbg_mem_open;      /* memory overlay, selector menu checkbox toggles          */
 static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */
@@ -887,9 +888,19 @@ static const char* const k_perf_tier   [] = { "off", "fps", "+timings", "+counts
 static const char* const k_state_tier  [] = { "off", "ids", "+focus", "+popups" };
 static const char* const k_render_mode [] = { "normal", "wireframe", "batch" };
 
+/* The DPI ladder the selector's scale slider walks.  Step 0 is AUTO -- follow each surface's own
+   monitor scale, the shipping default -- and every step above it pins GUI_DPI_MANUAL at that
+   factor on every surface.  A ladder rather than a continuous slider because the interesting
+   question is "does the UI hold together at 2x", not "what happens at 1.37x", and because the
+   landed size is quantized by the font family's available bakes anyway (exact only with a runtime
+   baker installed), so neighbouring fractions would often resolve to the same UI. */
+static const f32         k_dpi_scale [] = { 0.0f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f };
+static const char* const k_dpi_name  [] = { "auto", "0.75x", "1x", "1.25x", "1.5x", "2x", "3x" };
+
 #define DBG_LAYER_COUNT  ( (u32)( sizeof( k_dbg_layer   ) / sizeof( k_dbg_layer  [ 0 ] ) ) )
 #define DBG_PERF_TIERS   ( (int)( sizeof( k_perf_tier   ) / sizeof( k_perf_tier  [ 0 ] ) ) )
 #define DBG_STATE_TIERS  ( (int)( sizeof( k_state_tier  ) / sizeof( k_state_tier [ 0 ] ) ) )
+#define DBG_DPI_STEPS    ( (int)( sizeof( k_dpi_scale   ) / sizeof( k_dpi_scale  [ 0 ] ) ) )
 
 /* Return every debug mode to normal. Called when the master arm switches off, so disarming
    visibly clears the screen (overlays, selector menu, layer rects, render mode) instead of
@@ -1085,7 +1096,8 @@ debug_hotkeys( void )
 
     An actual UI, where C/F/I/P/O used to be single letters read out of the raw key stream:
     - Three checkboxes: retained skip, force redraw, idle skip.
-    - Perf/state overlay tier sliders.
+    - Perf/state overlay tier sliders, plus a UI-SCALE ladder (AUTO, then pinned factors) so a
+      layout can be checked at another DPI without a second monitor or a relaunch.
     - A KEY LEGEND at the bottom: every key-driven setting, its name, and live value (lit when
       on). This is what makes the numpad keys usable without reading source -- a tier slider
       reading "3" says nothing, "NP+ perf +counts" does. The seven layer bits (NP1-NP7) have no
@@ -1115,6 +1127,7 @@ debug_hotkeys( void )
 #define SEL_MEM     "Memory"
 #define SEL_PERF    "NP+ perf"
 #define SEL_STATE   "NP- state"
+#define SEL_DPI     "ui scale"
 
    /*============================================================================================*/
 /* One legend line: "<key> <name>" plus its value where it has one (a tier/mode; NULL for the
@@ -1191,6 +1204,15 @@ selector_content_w( f32 label_w )
                                             k_dbg_layer[ i ].name, NULL ) );
         if ( row > w ) w = row;
     }
+
+    /* The scale readout, at every rung it can name and against the widest landed figure the
+       clamp allows (dpi_set caps at 4x), so stepping the ladder never breathes the panel. */
+    for ( int i = 0; i < DBG_DPI_STEPS; ++i )
+    {
+        fmt_snprintf( buf, sizeof( buf ), "dpi %s -- landed %.2fx", k_dpi_name[ i ], 4.0f );
+        f32 row = font_text_w( buf );
+        if ( row > w ) w = row;
+    }
     return w;
 }
 
@@ -1211,7 +1233,10 @@ debug_selector_menu( void )
        single "<key> <name> <value>" run (e.g. "NP- state +retained"), not two columns of them.
        Panel width = widest row it can print + the region's own left/right inset
        (REGION_PAD_DEFAULT = WIDGET_PAD each side); label_w holds the longest slider label. */
-    f32 label_w = font_text_w( SEL_STATE ) + WIDGET_PAD;
+    f32 label_w = font_text_w( SEL_STATE );
+    f32 dpi_lbl = font_text_w( SEL_DPI );
+    if ( dpi_lbl > label_w ) label_w = dpi_lbl;
+    label_w += WIDGET_PAD;
     f32 w       = selector_content_w( label_w ) + 2.0f * WIDGET_PAD;
     f32 x       = (f32)s_io.display_w - w - 8.0f;
 
@@ -1264,7 +1289,31 @@ debug_selector_menu( void )
         gui_field_label_left( label_w );
         gui_slider_int( SEL_PERF,  &s_dbg_perf_mode,  0, DBG_PERF_TIERS  - 1 );
         gui_slider_int( SEL_STATE, &s_dbg_state_mode, 0, DBG_STATE_TIERS - 1 );
+
+        /* UI scale, so a layout can be checked at 2x without a second monitor or a relaunch.
+           Re-read from the engine first: a host driving dpi_set itself (from a cvar, say) owns
+           the wheel, and the row must report that rather than assert over it.  Only the step is
+           kept -- gui_dpi_scale() reports the LANDED size, which the font family's available
+           bakes quantize, so mapping it back to a rung would drift.
+
+           Deliberately NOT restored by debug_reset: closing the panel to look at a layout is the
+           common move, and snapping the scale back would undo the very thing being looked at --
+           the same reason the palette levers are exempt. */
+        if ( gui_dpi_mode() != GUI_DPI_MANUAL )
+            s_dbg_dpi_step = 0;
+
+        if ( gui_slider_int( SEL_DPI, &s_dbg_dpi_step, 0, DBG_DPI_STEPS - 1 ) )
+            gui_dpi_set( s_dbg_dpi_step == 0 ? GUI_DPI_AUTO : GUI_DPI_MANUAL,
+                         k_dpi_scale[ s_dbg_dpi_step ] );
         gui_field_set( NULL );
+
+        /* What the slider ASKED for beside what the font actually landed on.  The two differ
+           whenever the managed family has no bake at the requested size and no runtime baker is
+           installed to mint one, which is exactly the case worth seeing while testing a scale. */
+        char dpi_line[ 48 ];
+        fmt_snprintf( dpi_line, sizeof( dpi_line ), "dpi %s -- landed %.2fx",
+                      k_dpi_name[ s_dbg_dpi_step ], gui_dpi_scale() );
+        gui_text_colored( s_dbg_dpi_step ? COL_MARK_IDLE : COL_TEXT_SECONDARY_IDLE, dpi_line );
 
         /* Key legend, straight down: tier rows spell out the number their slider shows; layer
            rows are the only state readout NP1-NP7 have. */

@@ -2875,10 +2875,10 @@ typedef struct
     GUI_FRAME -- limits
 ==============================================================================================*/
 
-/* A quad record is one SHAPE -- a fill, a glyph, a capsule segment, a whole arc -- so 8K covers
-   the busiest measured frame (every sb_gui demo window plus the pipeline dashboard) several times
-   over.  The storage cost is what to weigh when moving it: the quad table holds a full set for
-   every (frame-in-flight, viewport) region, so 8192 x 16 B x 8 regions = 1 MB of device memory.
+/* A quad record is one SHAPE -- a fill, a glyph, a capsule segment, a whole arc -- so 8K 
+   covers the busiest measured frame several times over. The storage cost is what to weigh
+   when moving it: the quad table holds a full set for every (frame-in-flight, viewport)
+   region, so 8192 x 16 B x 8 regions = 1 MB of device memory.
 
    ONE set of caps: the ~4x stress-bench fork these carried is retired, and sb_gui_stress
    benches the shipping numbers.  Several of its routines deliberately push a pool past its

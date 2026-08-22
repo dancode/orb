@@ -89,6 +89,12 @@ void           viewport_destroy( i32 vp );                                      
 void           gui_dpi_base_set( gui_font_family_t fam, u32 landed_px );                      /* gui_frame_dpi.c */
 bool           gui_dpi_poll    ( void );                                                      /* gui_frame_dpi.c */
 
+/* The public DPI trio (gui_host.h), forward-declared for the same include-order reason: the
+   selector menu's ui-scale slider is in gui_frame_overlay.c, which precedes gui_frame_dpi.c. */
+void           gui_dpi_set     ( gui_dpi_mode_t mode, f32 scale );                            /* gui_frame_dpi.c */
+gui_dpi_mode_t gui_dpi_mode    ( void );                                                      /* gui_frame_dpi.c */
+f32            gui_dpi_scale   ( void );                                                      /* gui_frame_dpi.c */
+
 u32            font_resolve           ( gui_font_family_t fam, const char* name, u32 size_px,
                                         bool held, u32* out_landed_px );                      /* gui_frame_resolve.c */
 void           font_resolve_boot      ( gui_font_family_t fam, u32 size_px, u32* out_landed_px );
