@@ -161,6 +161,49 @@ backend_pool_report( void )
     GUI_POOL_ROW( "style records",  s_tess_stats.prim_hwm,  GUI_MAX_PRIMS );
     GUI_POOL_ROW( "gpu draw cmds",  s_tess_stats.cmd_hwm,   GUI_MAX_CMDS );
     GUI_POOL_ROW( "semantic cmds",  s_draw.cmd_hwm,         GUI_MAX_CMDS );
+
+    /* Per-type breakdown of the row above: which gui_cmd_type_t values actually fill the
+       semantic cmd pool, each against the same GUI_MAX_CMDS cap.  Each type's peak is its own
+       independent lifetime high-water mark (may not all have landed on the same frame), same
+       as every other row in this report -- read it as "how big could this type alone get",
+       not as a breakdown that sums to the pool's peak. */
+    {
+        static const char* const k_cmd_type_name[ GUI_CMD_COUNT ] = {
+            [GUI_CMD_RECT_FILLED]   = "  rect_filled",
+            [GUI_CMD_RECT_OUTLINE]  = "  rect_outline",
+            [GUI_CMD_TRIANGLE]      = "  triangle",
+            [GUI_CMD_BEZIER]        = "  bezier",
+            [GUI_CMD_TEXT]          = "  text",
+            [GUI_CMD_TEXT_XF]       = "  text_xf",
+            [GUI_CMD_TEXT_SHADOW]   = "  text_shadow",
+            [GUI_CMD_LINE]          = "  line",
+            [GUI_CMD_POLYLINE]      = "  polyline",
+            [GUI_CMD_DASHED_LINE]   = "  dashed_line",
+            [GUI_CMD_RECT_GRADIENT] = "  rect_gradient",
+            [GUI_CMD_RECT_LIST]     = "  rect_list",
+            [GUI_CMD_SPRITE]        = "  sprite",
+            [GUI_CMD_FX_BOX]        = "  fx_box",
+            [GUI_CMD_ROUND_RECT_EX] = "  round_rect_ex",
+            [GUI_CMD_ARC]           = "  arc",
+            [GUI_CMD_PIE]           = "  pie",
+            [GUI_CMD_ARC_DASH]      = "  arc_dash",
+            [GUI_CMD_ARC_GRAD]      = "  arc_grad",
+            [GUI_CMD_IMAGE_XF]      = "  image_xf",
+            [GUI_CMD_CHECKER]       = "  checker",
+            [GUI_CMD_GRID]          = "  grid",
+            [GUI_CMD_NGON]          = "  ngon",
+            [GUI_CMD_BOX_DASH]      = "  box_dash",
+            [GUI_CMD_FRAME]         = "  frame",
+            [GUI_CMD_REPEAT]        = "  repeat",
+            [GUI_CMD_REPEAT_POLAR]  = "  repeat_polar",
+            [GUI_CMD_BOX_CUT]       = "  box_cut",
+        };
+
+        for ( u32 t = 0; t < GUI_CMD_COUNT; ++t )
+            if ( s_draw.cmd_type_hwm[ t ] > 0 )
+                GUI_POOL_ROW( k_cmd_type_name[ t ], s_draw.cmd_type_hwm[ t ], GUI_MAX_CMDS );
+    }
+
     GUI_POOL_ROW( "cmd segments",   s_draw.seg_hwm,         GUI_MAX_SEGS );
     GUI_POOL_ROW( "clip rects",     s_draw.clip_hwm,        GUI_MAX_CLIP_RECTS );
     GUI_POOL_ROW( "text pool (B)",  s_draw.text_hwm,        GUI_MAX_TEXT_POOL );

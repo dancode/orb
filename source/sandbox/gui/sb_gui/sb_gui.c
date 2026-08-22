@@ -175,7 +175,7 @@ show_demo_window( bool* p_open )
            true forever and defeat the idle-skip entirely (the exact problem volatile widgets exist
            to route around; see demo_volatile_pulse_cb above for the widget that keeps animating anyway). */
         
-        bool emit_volatile = true;
+        bool emit_volatile = false;
         if ( emit_volatile )
         {
             gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );

@@ -1859,6 +1859,8 @@ typedef enum
     GUI_CMD_BOX_CUT,         // rounded box minus a SECOND rounded box (GUI_OP_CUT_SHAPE): the
                              //   notched avatar, the ticket silhouette -- subtraction, one quad
 
+    GUI_CMD_COUNT,           // sentinel: number of command types, not a type itself
+
 } gui_cmd_type_t;
 
 /* Sentinel half-extent for an unclipped text command: any real glyph sits well inside this, so
@@ -1919,10 +1921,13 @@ gui_tex_index( u32 tex_idx )
     return tex_idx & ~GUI_TEX_MODE_MASK;
 }
 
-/*============================================================================================*/
-/* One semantic draw command.  The 4-byte header carries the command type, the index of the active
-   clip rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), and
-   the target viewport.  z lives in gui_cmd_seg_t (per-segment, constant within a window) and is not
+/*==============================================================================================
+    Command Structure
+
+    One semantic draw command.  The 4-byte header carries the command type, the index of the 
+    active clip rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), 
+
+   and the target viewport.  z lives in gui_cmd_seg_t (per-segment, constant within a window) and is not
    repeated here.  The struct's size is the 4-byte header plus the largest union member (fx_box);
    the slack in narrower members costs nothing downstream -- a push writes only its own member and
    the retained-cache hash folds per-type payload lengths, never the full union.
@@ -1933,7 +1938,9 @@ gui_tex_index( u32 tex_idx )
    (0 = circular); it is the exponent the record carries, not the 0..1 amount a caller authors.
    text.off is a byte offset into the frame's text pool (s_draw.text_pool), not a pointer: the
    string lives in the pool until the next frame_begin, so the command is valid through flush.
-   Storing an offset instead of a const char* keeps the union at 4-byte alignment. */
+   Storing an offset instead of a const char* keeps the union at 4-byte alignment.
+
+==============================================================================================*/
 
 /* The fx_box command's `variant`: which fill the one soft-box geometry resolves as.  The
    tessellator maps each to the op it stamps (gui_build_tess_dispatch.c). */
@@ -1946,10 +1953,11 @@ gui_tex_index( u32 tex_idx )
 
 typedef struct
 {
-    u8 type;       // gui_cmd_type_t, fits u8 (23 values)
-    u8 clip_idx;   // index into per-frame s_draw.clip_table (set at push time)
-    u8 vp;         // target viewport (GUI_MAX_VIEWPORTS = 4, fits u8)
-    u8 _pad;
+    u8 type;        // gui_cmd_type_t, fits u8 (GUI_CMD_COUNT values)
+    u8 clip_idx;    // index into per-frame s_draw.clip_table (set at push time)
+    u8 vp;          // target viewport (GUI_MAX_VIEWPORTS = 4)
+    u8 _pad;        // unused
+
     union
     {
         struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding, corner_pow; u32 tex_idx; u32 abgr; } rect;
@@ -2198,8 +2206,8 @@ typedef struct
 } gui_cmd_t;
 
 /*==============================================================================================
-    GUI_DRAW -- direction: a cardinal direction, the ImGuiDir analogue.  Passed to arrow_button (and any
-    future directional widget) to pick which way the glyph points.
+    GUI_DRAW -- direction: a cardinal direction, the ImGuiDir analogue.  Passed to 
+    arrow_button (and any future directional widget) to pick which way the glyph points.
 ==============================================================================================*/
 
 typedef enum

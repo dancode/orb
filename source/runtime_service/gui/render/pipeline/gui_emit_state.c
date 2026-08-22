@@ -29,15 +29,15 @@
 // clang-format off
 
 /*==============================================================================================
-    CPU Draw list + Draw Segments -- the per-frame command buffer and segment table.
+    CPU Draw list + Draw Segments -- per-frame command buffer and segment table.
 
     Commands are pushed into cmds[] by the widget layer.  Whenever (win, z, vp, band)       
     changes, the current open span is closed and a new one is opened, so the buffer is
     partitioned into contiguous per-(win,z,vp,band) segments.  
     
-    cache_tess_window walks these segments per window rather than re-scanning the full 
-    command buffer.  [lo, hi) is a half-open range; the final segment's hi is closed at
-    build time.  win=0 is the background (non-window) draw layer.
+    Place: cache_tess_window walks these segments per window rather than re-scanning the 
+    full command buffer.  [lo, hi) is a half-open range; the final segment's hi is closed
+    at build time.  win=0 is the background (non-window) draw layer.
 
     A segment's key is only what decides backend dispatch -- which window owns the geometry,
     where it sorts, which surface it lands on, which arena band it is accounted to. 
@@ -73,10 +73,10 @@ static struct
     u32             cmd_hashes      [ GUI_MAX_CMDS ];           // per-command hash baked at emit (for cache diff)
     gui_id_t        cmd_volatile_id [ GUI_MAX_CMDS ];           // GUI_ID_NONE, or the volatile widget owning this cmd
 
-#ifdef GUI_CMD_STEPPER
+    #ifdef GUI_CMD_STEPPER
     gui_id_t        cmd_owner       [ GUI_MAX_CMDS ];           // emitting widget id (0 = chrome); stepper display only
     gui_id_t        cur_owner;                                  // stamped by item_state (STEP_SET_OWNER); 0 at window seams
-#endif
+    #endif
 
     gui_vec2_t      points          [ GUI_MAX_PATH_PTS ];       // point pool for CMD_POLYLINE data; indexed by pt_offset
     gui_rect_col_t  rect_pool       [ GUI_MAX_RECT_ENTRIES ];   // rect pool for CMD_RECT_LIST data; indexed by offset
@@ -100,6 +100,14 @@ static struct
        (render/gui_render_mem.c), which prints all of them against their #defines. */
 
     u32             cmd_hwm, pt_hwm, rect_hwm, text_hwm, clip_hwm, seg_hwm;
+
+    /* Per-type high-water mark: the most commands of each gui_cmd_type_t ever live in cmds[] at
+       once.  Tallied by draw_reset scanning the closing frame's settled [0, cmd_count) range --
+       not by counting draw_cmd_claim calls, because a volatile-widget patch (gui_build_volatile.c)
+       or the command stepper (gui_step_capture.c) can rewind cmd_count and re-emit a range, which
+       would double-count a claim-based tally.  Sizes the hot/cold command split (which types are
+       common enough to stay inline vs which are rare enough to sidecar) from measured traffic. */
+    u32             cmd_type_hwm   [ GUI_CMD_COUNT ];
 
     gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */
     u32             cur_z;          /* sort key tracked per-segment (draw_seg_retag; NOT baked per command) */
@@ -346,6 +354,15 @@ draw_reset( i32 display_w, i32 display_h )
     if ( s_draw.text_pool_used > s_draw.text_hwm ) s_draw.text_hwm = s_draw.text_pool_used;
     if ( s_draw.clip_table_n   > s_draw.clip_hwm ) s_draw.clip_hwm = s_draw.clip_table_n;
     if ( s_draw.seg_count      > s_draw.seg_hwm  ) s_draw.seg_hwm  = s_draw.seg_count;
+
+    {
+        u32 type_count[ GUI_CMD_COUNT ] = { 0 };
+        for ( u32 i = 0; i < s_draw.cmd_count; ++i )
+            type_count[ s_draw.cmds[ i ].type ]++;
+        for ( u32 t = 0; t < GUI_CMD_COUNT; ++t )
+            if ( type_count[ t ] > s_draw.cmd_type_hwm[ t ] )
+                s_draw.cmd_type_hwm[ t ] = type_count[ t ];
+    }
 
     s_draw.cmd_count       = 0;
     s_draw.pt_count        = 0;
