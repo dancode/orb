@@ -147,8 +147,9 @@ gui_print_mem_stats( void )
     gui_log( GUI_LOG_INFO, "  -- GPU device (%u live surface%s, %u table regions) --------",
              s.viewport_count, s.viewport_count == 1u ? "" : "s", s.gpu_regions );
     GUI_MEM_ROW( "atlas textures",   s.gpu_texture_bytes );
-    /* The regioned tables broken out: each carries a full set of entries per (frame-in-flight,
-       viewport), so these are the rows where a raised GUI_MAX_* cap actually lands. */
+    /* The regioned tables broken out: quad/style carry a full set of entries per (frame-in-flight,
+       viewport), clip carries a full set per frame-in-flight only (window-keyed, not viewport-
+       keyed) -- these are the rows where a raised GUI_MAX_* cap actually lands. */
     GUI_MEM_ROW( "  quad records",   s.gpu_quad_bytes  );
     GUI_MEM_ROW( "  style records",  s.gpu_style_bytes );
     GUI_MEM_ROW( "  clip entries",   s.gpu_clip_bytes  );

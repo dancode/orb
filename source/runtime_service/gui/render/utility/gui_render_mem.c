@@ -34,16 +34,19 @@ backend_memory( u32 live_viewports )
     /* Sprite and SDF atlases report 0 until something creates them. */
     s.gpu_texture_bytes = res_atlas_bytes() + res_sprite_bytes() + res_sdf_bytes();
 
-    /* The storage-buffer tables the pipeline resolves through.  The first three are REGIONED --
-       one copy per (frame-in-flight, viewport), because they are rewritten every frame and an
-       in-flight draw must not read a region another surface is filling -- so their sizes already
-       carry that multiplier and none of them scales with live_viewports.  The glyph table is the
-       exception: it changes only when a font enters the atlas or a repack moves a page, so ONE
+    /* The storage-buffer tables the pipeline resolves through.  The first three are REGIONED,
+       because they are rewritten every frame and an in-flight draw must not read a region another
+       surface is filling -- so their sizes already carry that multiplier and none of them scales
+       with live_viewports.  Quad/style carry one copy per (frame-in-flight, viewport), since they
+       hold per-surface geometry; clip carries one copy per frame-in-flight only, since a window's
+       clip slab means the same thing to every viewport (gui_render_init.c).  The glyph table is
+       the exception: it changes only when a font enters the atlas or a repack moves a page, so ONE
        buffer serves every surface and is replaced wholesale on the rare rebuild.
 
        The style bucket carries a second thing: the palette blocks behind the arena regions, which
        are per frame-in-flight only (gui_render_pal.c) since their content is surface-independent. */
-    s.gpu_regions = (u32)GUI_QUAD_REGION_COUNT;
+    s.gpu_regions      = (u32)GUI_QUAD_REGION_COUNT;
+    s.gpu_clip_regions = (u32)GUI_CLIP_REGION_COUNT;
     if ( rhi_handle_valid( s_render.clip_buf ) )
         s.gpu_clip_bytes  = (u32)( GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES );
     if ( rhi_handle_valid( s_render.prim_buf ) )

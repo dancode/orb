@@ -292,18 +292,21 @@ static u8               s_win_cached_live [ RENDER_MAX_WIN ];
 
 /* Clip-slab upload masks, keyed like the cache above: bit r set = region r's GPU copy of this
    window's clip slab is stale.  tess_clip_local sets all bits when it appends an entry; the
-   flush clears one bit per slab it uploads.  One bit per (frame-in-flight, viewport) region. */
+   flush clears one bit per slab it uploads.  One bit per frame-in-flight region -- the clip
+   table is window-keyed, not viewport-keyed (gui_render_init.c), so a slab has no per-viewport
+   copies to track. */
 
-ORB_STATIC_ASSERT( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS <= 8,
-                   "clip slab pending mask is a u8 -- one bit per (frame, viewport) region" );
+ORB_STATIC_ASSERT( RHI_MAX_FRAMES_IN_FLIGHT <= 8,
+                   "clip slab pending mask is a u8 -- one bit per frame-in-flight region" );
 
 static u8               s_clip_slab_pending[ RENDER_MAX_WIN ];
 
-/* Record-range upload masks, keyed and shaped exactly like the clip masks above, and needed for a
-   reason the clip slabs do not have: a clip slab sits at a FIXED offset (cache_idx * the per-window
-   cap), so only its content can go stale, while a record range is packed and therefore moves.  So
-   this is set by every fresh tessellation -- which is the only thing that can change either the
-   content or the base -- and cleared one bit per range the flush uploads. */
+/* Record-range upload masks, keyed like the clip masks above but shaped differently: this one
+   still carries a bit per (frame-in-flight, viewport) region, because a record range is packed
+   per surface and therefore moves, while a clip slab sits at a FIXED offset (cache_idx * the
+   per-window cap) that means the same thing to every viewport.  So this is set by every fresh
+   tessellation -- which is the only thing that can change either the content or the base -- and
+   cleared one bit per range the flush uploads. */
 
 static u8               s_prim_range_pending[ RENDER_MAX_WIN ];
 

@@ -83,15 +83,17 @@ typedef struct
     REGION is an array of fixed per-window SLABS -- one per stable cache slot, GUI_WIN_CLIP_MAX
     entries each, at cache_idx * GUI_WIN_CLIP_MAX -- the same base the window's quads bake
     into the clip band, so uploads land at fixed offsets and can never overflow.  One region per
-    (frame-in-flight, viewport), because the buffer is shared across surfaces whose in-flight
-    draws read their own frames' entries.
+    frame-in-flight only, NOT per viewport: a window's cache slot is unique across the whole app
+    (cache_idx comes from the single global RENDER_MAX_WIN table, gui_build_cache.c), so its slab
+    means the same thing to every surface -- unlike the quad/prim tables, which carry per-surface
+    geometry and so still need a (frame-in-flight, viewport) region each.
 ==============================================================================================*/
 
 #define GUI_CLIP_ENTRY_FLOATS  8u
 #define GUI_CLIP_ENTRY_BYTES   ( GUI_CLIP_ENTRY_FLOATS * 4u )
 #define GUI_CLIP_REGION_MAX    ( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX )     /* entries per region */
 #define GUI_CLIP_REGION_BYTES  ( GUI_CLIP_REGION_MAX * GUI_CLIP_ENTRY_BYTES )
-#define GUI_CLIP_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
+#define GUI_CLIP_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT )
 
 /*==============================================================================================
     Primitive record region sizing -- the storage buffer the fragment resolves a shape from.

@@ -111,8 +111,8 @@ render_batch_debug_color( u32 i )
 
     The scissor is set ONCE, to the full surface: clipping is resolved per fragment against the
     frame clip table (gui_fx.hlsli, clip_coverage), which this flush also uploads -- each
-    dispatched slot's local clip entries, concatenated into this (frame, viewport) region, with
-    the slot's base entry pushed per draw (pc.clip_base).
+    dispatched slot's local clip entries, concatenated into this frame's clip region (window-
+    keyed, not viewport-keyed), with the slot's base entry pushed per draw (pc.clip_base).
 ==============================================================================================*/
 
 void
@@ -166,6 +166,12 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     bool geo_dirty   = s_region_geo_gen[ clip_region ] != s_geo_gen;
     if ( geo_dirty )
         s_region_geo_gen[ clip_region ] = s_geo_gen;
+
+    /* The clip table is window-keyed, not viewport-keyed (gui_render_init.c): a window's cache
+       slot is unique across the whole app, so its slab means the same thing to every surface.
+       It gets its own frame-only region index rather than reusing clip_region above, which still
+       carries the viewport dimension for the (per-surface) quad/prim tables. */
+    u32 clip_frame_region = frame;
 
     /* The glyph UV table, keyed on its own generation rather than the geometry's: the rects only
        move when a font's pixels enter the atlas or a repack shifts a page.  A move replaces the
@@ -221,19 +227,23 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     }
 
     /* Frame clip table upload: each window's local clip entries live at a FIXED SLAB of this
-       (frame, viewport) region -- cache_idx * GUI_WIN_CLIP_MAX, the same base its quads baked
+       frame's clip region -- cache_idx * GUI_WIN_CLIP_MAX, the same base its quads baked
        into the clip band -- so a slab only re-uploads when its content changed
        (s_clip_slab_pending, set by tess_clip_local on append).  A stable frame uploads nothing;
-       nothing per-slot reaches the push constants. */
+       nothing per-slot reaches the push constants.  Still gated on sl->vp == vp_index below even
+       though the slab itself has no viewport dimension: a window is dispatched to exactly one
+       surface, so this is what keeps the upload from being attempted (and the pending bit
+       cleared) from a surface that never touches this window. */
     u8 region_bit = (u8)( 1u << clip_region );
+    u8 clip_region_bit = (u8)( 1u << clip_frame_region );
     for ( u32 d = 0; d < s_dispatch_count; ++d )
     {
         const win_geo_slot_t* sl = s_dispatch[ d ];
         if ( sl->vp != vp_index || sl->clip_count == 0 )
             continue;
-        if ( !( s_clip_slab_pending[ sl->cache_idx ] & region_bit ) )
+        if ( !( s_clip_slab_pending[ sl->cache_idx ] & clip_region_bit ) )
             continue;
-        s_clip_slab_pending[ sl->cache_idx ] &= (u8)~region_bit;
+        s_clip_slab_pending[ sl->cache_idx ] &= (u8)~clip_region_bit;
 
         f32 stage[ GUI_WIN_CLIP_MAX * GUI_CLIP_ENTRY_FLOATS ];
         for ( u32 c = 0; c < sl->clip_count; ++c )
@@ -256,7 +266,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
         }
         rhi()->buffer_write( s_render.clip_buf, stage,
                              sl->clip_count * (u32)GUI_CLIP_ENTRY_BYTES,
-                             clip_region * (u32)GUI_CLIP_REGION_BYTES
+                             clip_frame_region * (u32)GUI_CLIP_REGION_BYTES
                                  + sl->cache_idx * GUI_WIN_CLIP_MAX * (u32)GUI_CLIP_ENTRY_BYTES );
     }
 
@@ -344,7 +354,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
        region origin for the same reason prim_base is: the walk pushes before any draw of a slot,
        so an in-bounds seed keeps a never-read value from being an out-of-range read. */
     push.clip_buf  = s_render.clip_buf_idx;
-    push.clip_base = clip_region * (u32)GUI_CLIP_REGION_MAX;
+    push.clip_base = clip_frame_region * (u32)GUI_CLIP_REGION_MAX;
 
     /* Record plumbing.  The buffer slot is flush-constant like the clip one; prim_base is NOT --
        records are packed per window slot, so it is re-pushed from the tail as the walk crosses a
@@ -414,7 +424,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
            that put them back.  Filtered against the last values pushed -- a surface showing one
            window pushes once, and consecutive slots that happen to share both bases push nothing. */
         u32 slot_prim_base = clip_region * (u32)GUI_PRIM_REGION_MAX + slot->prim_base;
-        u32 slot_clip_base = clip_region * (u32)GUI_CLIP_REGION_MAX
+        u32 slot_clip_base = clip_frame_region * (u32)GUI_CLIP_REGION_MAX
                            + slot->cache_idx * (u32)GUI_WIN_CLIP_MAX;
         if ( push.prim_base != slot_prim_base || push.clip_base != slot_clip_base )
         {

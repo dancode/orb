@@ -518,7 +518,7 @@ overlay_memory( void )
         fmt_snprintf( det, sizeof( det ), "%u x %u reg", (u32)GUI_MAX_PRIMS, ms.gpu_regions );
         overlay_mem_row( "style tbl", det, ms.gpu_style_bytes );
         fmt_snprintf( det, sizeof( det ), "%u x %u reg",
-                      (u32)( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX ), ms.gpu_regions );
+                      (u32)( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX ), ms.gpu_clip_regions );
         overlay_mem_row( "clip tbl", det, ms.gpu_clip_bytes );
         fmt_snprintf( det, sizeof( det ), "%u ids", (u32)GUI_GLYPH_TABLE_MAX );
         overlay_mem_row( "glyph tbl", det, ms.gpu_glyph_bytes );

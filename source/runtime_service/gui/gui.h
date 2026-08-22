@@ -1978,7 +1978,7 @@ typedef struct
     u8  clip_idx;    // index into per-frame s_draw.clip_table (set at push time)
     u8  vp;          // target viewport (GUI_MAX_VIEWPORTS = 4)
     u8  clip_empty;  // baked at push time: s_draw.clip_table[clip_idx] bounds no pixels, so this
-                      // command paints nothing -- build passes skip it without touching clip_table
+                     // command paints nothing -- build passes skip it without touching clip_table
     u32 offset;      // byte offset into s_draw.cmd_pool, see draw_cmd_ext_slot()
 
 } gui_cmd_t;
@@ -2901,6 +2901,7 @@ typedef struct
    types (fx_box et al) draws down that headroom instead of forcing every command to reserve
    it up front.  Retune from the per-type high-water marks in backend_pool_report once real
    traffic has been measured. */
+
 #define GUI_CMD_POOL_BYTES      ( GUI_MAX_CMDS * 32 )
 #define GUI_MAX_PATH_PTS        ( 2048 )       // per-frame total polyline / path point pool
 #define GUI_MAX_RECT_ENTRIES    ( 4096 )       // per-frame total draw_rects batch pool
@@ -3029,17 +3030,19 @@ typedef struct
     u32 gpu_table_bytes;        // the storage-buffer tables the shader resolves through, summed --
                                 //   sized by the pool caps, not by how many surfaces are open
 
-    /* The table total, split by which table.  The first three are REGIONED: each holds a full set
-       of entries per (frame-in-flight, viewport), so its size is cap x stride x gpu_regions and a
-       raised cap costs that multiplier.  The glyph table is one shared copy, replaced rather than
-       rewritten, so it pays the multiplier once. */
+    /* The table total, split by which table.  The first three are REGIONED, so a raised cap costs
+       a region multiplier: quad/style hold a full set of entries per (frame-in-flight, viewport)
+       since they carry per-surface geometry (gpu_regions); clip holds a full set per frame-in-
+       flight only, since a window's clip slab is the same for every viewport (gpu_clip_regions).
+       The glyph table is one shared copy, replaced rather than rewritten, so it pays no multiplier. */
 
     u32 gpu_quad_bytes;         // quad records   -- GUI_MAX_QUADS x 16 B x gpu_regions
     u32 gpu_style_bytes;        // style records  -- (GUI_MAX_PRIMS + 1) x 128 B x gpu_regions,
                                 //   plus GUI_PAL_MAX x 128 B per frame-in-flight (the palette)
-    u32 gpu_clip_bytes;         // clip entries   -- window slabs x 32 B x gpu_regions
+    u32 gpu_clip_bytes;         // clip entries   -- window slabs x 32 B x gpu_clip_regions
     u32 gpu_glyph_bytes;        // glyph UV table -- GUI_GLYPH_TABLE_MAX x 8 B, ONE copy
-    u32 gpu_regions;            // frames-in-flight x viewport slots the regioned tables carry
+    u32 gpu_regions;            // frames-in-flight x viewport slots the quad/style tables carry
+    u32 gpu_clip_regions;       // frames-in-flight only -- clip is window-keyed, not viewport-keyed
     u32 gpu_debug_bytes;        // debug-overlay quad table (Debug builds; 0 when compiled out)
     u32 gpu_total;              // sum of the section above
     u32 viewport_count;         // live GPU surfaces
