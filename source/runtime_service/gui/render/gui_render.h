@@ -640,22 +640,25 @@ const gui_prim_t*   pal_entry               ( u32 entry );
 
 void                pal_publish_pending     ( void );
 
-/* A/B switch for interning alone.  Off, the table stops growing and every style beyond what it
-   already holds takes a per-slot record -- which is what a run measures the palette's coverage
-   against; entries already interned stay valid and keep answering, so switching off owes no
-   re-place.  Switching back ON runs an epoch, because interning only reaches records that
-   tessellate and a settled UI tessellates nothing.  Debug selector menu: "Style interning". */
+/* The palette's A/B lever -- ONE axis of three states (gui_palette_mode_t, gui.h): OFF (no lookup,
+   every style takes a per-slot arena record exactly as before the palette existed -- more bloat,
+   identical pixels), FROZEN (the table answers, nothing new is learned), LEARNING (the default).
 
-bool                pal_intern_enabled      ( void );
-void                pal_set_intern          ( bool on );
+   One control rather than a lookup switch beside a learning switch, because the two are not
+   independent: interning is the only route into the table, so "no learning" from a cold start
+   leaves the lookup nothing to answer with and is indistinguishable from OFF.
 
-/* A/B switch for the palette lookup.  Off, every style takes a per-slot arena record exactly as it
-   did before the palette existed -- more style bloat, identical pixels.  Flipping it runs an epoch
-   (cached quads hold the answers the old setting gave), so it is a debug lever, not a per-frame
-   one.  Debug selector menu: "Style palette". */
+   Every transition but LEARNING -> FROZEN runs an epoch (cached quads hold the answers the old
+   mode gave, and a thaw has to re-place or it reaches nothing), so this is a debug lever, not a
+   per-frame one.  Debug selector menu: "style pal". */
 
-bool                pal_enabled             ( void );
-void                pal_set_enabled         ( bool on );
+gui_palette_mode_t  pal_mode                ( void );
+void                pal_set_mode            ( gui_palette_mode_t mode );
+
+/* Entries the table holds right now, for the selector menu's readout.  A count, not a handle --
+   nothing resolves an index through it. */
+
+u32                 pal_entry_count         ( void );
 
 /* Note a landed style as one of the scales in play -- GUI_VAR_COUNT floats in gui_style_var_t
    order, already through the em scale.  Only their hash is kept; the palette never reads a var, it

@@ -2880,10 +2880,6 @@ typedef struct
    when moving it: the quad table holds a full set for every (frame-in-flight, viewport)
    region, so 8192 x 16 B x 8 regions = 1 MB of device memory.
 
-   ONE set of caps: the ~4x stress-bench fork these carried is retired, and sb_gui_stress
-   benches the shipping numbers.  Several of its routines deliberately push a pool past its
-   capacity, which is how the overflow report and the dashboard's OVERFLOWED marker get exercised.
-
    Every cap here is measured, not guessed at: gui_print_mem_stats prints each pool's lifetime
    high-water mark against its cap, and the shutdown log repeats the BUILD three.  Read those
    before moving a number -- and when content goes missing, the build's overflow warning names
@@ -2988,6 +2984,25 @@ static inline u32  gui_style_pal   ( u32 entry ) { return GUI_PAL_FIRST + entry;
 /* "No entry" from a palette lookup.  Past GUI_PAL_MAX rather than a signed -1, so the one test a
    caller writes is `< GUI_PAL_MAX` and a miss can never index the table. */
 #define GUI_PAL_NONE  0xFFFFFFFFu
+
+/*  What the palette is doing -- the debug A/B lever, one axis rather than two.  The lookup and
+    the learning are not independent: interning is the ONLY route into the table, so "no learning"
+    from a cold start leaves the lookup with nothing to answer and is indistinguishable from off.
+    Three states is the whole honest space.
+
+    (Spelled GUI_PALETTE_* to stay visually apart from the GUI_PAL_* index-space constants above;
+    these name a mode, those name a slot.) */
+
+typedef enum
+{
+    GUI_PALETTE_OFF = 0,   // no lookup: every style takes a per-slot arena record, as before the
+                           //   palette existed -- more records, identical pixels
+    GUI_PALETTE_FROZEN,    // the table answers but earns nothing new; what a run measures the
+                           //   learned set's coverage against
+    GUI_PALETTE_LEARNING   // the default: answers, and a record drawn again in a later build
+                           //   frame earns an entry
+
+} gui_palette_mode_t;
 
 /*============================================================================================*/
 /* Command segments: one contiguous span of the command list per (win, z, vp, band) the emit

@@ -177,33 +177,54 @@ pal_hash( const gui_prim_t* rec )
     absorb the repeats (measured 98%+ of hits), so a memo here served under 1% and cost a
     128-byte compare on every call that reached it. */
 
-/*  The A/B switch.  Off, pal_find answers nothing, pal_intern declines, and every style falls back
-    to the per-slot memo and the arena -- the exact behaviour that existed before the palette, style
-    bloat and all.  Flipping it costs an epoch in each direction, which is what makes it usable for
-    A/B'ing a suspected palette artefact against the same frame without it. */
+/*==============================================================================================
+    The A/B lever -- ONE axis, three states (gui_palette_mode_t, gui.h).
 
-static bool s_pal_on = true;
+    OFF makes pal_find and pal_cmd_hint answer nothing and pal_intern decline, so every style
+    falls back to the per-slot memo and the arena -- the exact behaviour that existed before the
+    palette, style bloat and all.  That is what makes a suspected palette artefact A/B-able
+    against the same frame without it.
 
-bool pal_enabled( void ) { return s_pal_on; }
+    FROZEN keeps the lookup and stops the learning: the table answers with what it already holds
+    while anything new takes a per-slot record.  It measures the coverage of the learned set, and
+    it is only meaningful once a session has learned something -- from a cold start it is OFF with
+    extra steps, which is exactly why this is one control and not two checkboxes.
+==============================================================================================*/
+
+static gui_palette_mode_t s_pal_mode = GUI_PALETTE_LEARNING;
+
+gui_palette_mode_t pal_mode( void ) { return s_pal_mode; }
+
+/* Entries the table holds right now -- the LIVE count, so a frame that just interned reads its
+   own additions.  A readout only; nothing resolves an index through it. */
+u32 pal_entry_count( void ) { return s_bake.count; }
 
 void
-pal_set_enabled( bool on )
+pal_set_mode( gui_palette_mode_t mode )
 {
-    if ( s_pal_on == on )
+    if ( s_pal_mode == mode )
         return;
-    s_pal_on = on;
+    gui_palette_mode_t prev = s_pal_mode;
+    s_pal_mode = mode;
 
-    /* Cached geometry carries the answers the old setting gave, so the switch has to reach the
-       geometry, not just the next quad.  Clearing the digest makes the next pal_epoch republish,
-       and the placement pass already reads a republish as "re-place everything" -- the same route
-       a theme change takes (gui_build_cache.c). */
-    s_bake.digest = 0u;
+    /* Every transition but one needs an epoch.  Away from or back to OFF, because cached geometry
+       carries the answers the old mode gave and the switch has to reach the geometry, not just the
+       next quad.  FROZEN -> LEARNING, because interning only reaches records that TESSELLATE and a
+       settled UI tessellates nothing -- without it the thaw would look like nothing happened.
+
+       LEARNING -> FROZEN is the exception and owes nothing: entries already handed out stay valid
+       and keep answering, which is the whole point of freezing.
+
+       Clearing the digest makes the next pal_epoch drop and republish, and the placement pass
+       already reads that as "re-place everything" -- the same route a theme change takes. */
+    if ( !( prev == GUI_PALETTE_LEARNING && mode == GUI_PALETTE_FROZEN ) )
+        s_bake.digest = 0u;
 }
 
 u32
 pal_find( const gui_prim_t* rec )
 {
-    if ( s_bake.count == 0u || !s_pal_on )
+    if ( s_bake.count == 0u || s_pal_mode == GUI_PALETTE_OFF )
         return GUI_PAL_NONE;
 
     u32 i = pal_hash( rec ) & PAL_SLOT_MASK;
@@ -257,30 +278,6 @@ pal_slot_insert( u32 entry, u32 hash )
     A full table simply stops interning.  The record takes a per-slot arena entry exactly as
     it did before any of this existed -- the same "a miss costs nothing" stated at the top.
 ==============================================================================================*/
-
-/* Interning A/B switch, separate from pal_enabled: off, the table stops growing and every
-   style beyond what it already holds takes a per-slot record, which is what a run measures
-   the palette's coverage against. */
-
-static bool s_pal_intern_on = true;
-
-bool pal_intern_enabled( void ) { return s_pal_intern_on; }
-
-void
-pal_set_intern( bool on )
-{
-    if ( s_pal_intern_on == on )
-        return;
-    s_pal_intern_on = on;
-
-    /* Switching interning ON only reaches records that TESSELLATE, and a settled UI tessellates
-       nothing -- so on its own the lever would look dead until the user happened to change a
-       window.  Clearing the digest runs the ordinary epoch instead: two re-places, and the table
-       learns the frame's whole working set at once.  Switching it OFF owes none of that -- entries
-       already handed out stay valid and keep answering. */
-    if ( on )
-        s_bake.digest = 0u;
-}
 
 /*  Has this record been seen in an EARLIER build frame?  Records the sighting either way, so
     the first call for a record returns false and arms the second. */
@@ -362,7 +359,7 @@ static u32 s_cmd_hash [ GUI_MAX_CMDS ];
 u32
 pal_cmd_hint( u32 ci )
 {
-    if ( ci >= (u32)GUI_MAX_CMDS || !s_pal_on )
+    if ( ci >= (u32)GUI_MAX_CMDS || s_pal_mode == GUI_PALETTE_OFF )
         return GUI_PAL_NONE;
     if ( s_cmd_entry[ ci ] == 0u || s_cmd_hash[ ci ] != s_draw.cmd_hashes[ ci ] )
         return GUI_PAL_NONE;
@@ -408,7 +405,7 @@ pal_cmd_hit( void )
 u32
 pal_intern( const gui_prim_t* rec )
 {
-    if ( !s_pal_on || !s_pal_intern_on )
+    if ( s_pal_mode != GUI_PALETTE_LEARNING )
         return GUI_PAL_NONE;
 
     u32 hash = pal_hash( rec );
@@ -611,25 +608,22 @@ pal_dump( void )
 #ifdef GUI_PRIM_CENSUS
     u32 probes = s_bake.hits + s_bake.misses;
 
+    /* The MODE is named rather than left to be inferred: an empty table reads the same whether
+       the palette is off, frozen before it learned anything, or simply new. */
+    static const char* const k_mode[] = { "OFF", "FROZEN", "learning" };
+
     gui_log( GUI_LOG_INFO, "" );
-    gui_log( GUI_LOG_INFO, "---- STYLE PALETTE%s (%u of %u entries over %u style scale(s); %u/%u "
+    gui_log( GUI_LOG_INFO, "---- STYLE PALETTE [%s] (%u of %u entries over %u style scale(s); %u/%u "
                            "probes hit since the epoch, %.1f%%) ----",
-             s_pal_on ? "" : " -- DISABLED",
+             k_mode[ (u32)s_pal_mode % 3u ],
              s_bake.count, (u32)GUI_PAL_MAX, s_bake.scale_count, s_bake.hits, probes,
              probes ? 100.0f * (f32)s_bake.hits / (f32)probes : 0.0f );
 
-    /* Both A/B switches, spelled out.  An empty table is the same readout whether the palette is
-       off or simply has not learned anything yet, so the state has to be printed rather than
-       inferred from the counts above.
-
-       What is still in flight: candidates are records seen once and waiting on a second build
+    /* What is still in flight: candidates are records seen once and waiting on a second build
        frame to earn an entry, so a large held count beside a small table is a UI drawing values
        rather than styles -- animation, drags, anything whose lanes move every frame. */
-    gui_log( GUI_LOG_INFO, "     %u candidate hashes held%s   (palette %s, interning %s)",
-             s_bake.cand_count,
-             s_bake.full_drops ? "  TABLE FULL" : "",
-             s_pal_on        ? "on" : "OFF",
-             s_pal_intern_on ? "on" : "OFF" );
+    gui_log( GUI_LOG_INFO, "     %u candidate hashes held%s", s_bake.cand_count,
+             s_bake.full_drops ? "  TABLE FULL" : "" );
 
     /* The per-command memo's share of the hits.  What it answers is how much of the lookup
        the command sites absorbed before anything had to be folded or probed at all. */

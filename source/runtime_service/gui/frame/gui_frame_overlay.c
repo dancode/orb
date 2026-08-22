@@ -897,10 +897,14 @@ static const char* const k_render_mode [] = { "normal", "wireframe", "batch" };
 static const f32         k_dpi_scale [] = { 0.0f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f };
 static const char* const k_dpi_name  [] = { "auto", "0.75x", "1x", "1.25x", "1.5x", "2x", "3x" };
 
+/* The style palette's three modes, in gui_palette_mode_t order -- what its slider's number means. */
+static const char* const k_pal_mode  [] = { "off", "frozen", "learning" };
+
 #define DBG_LAYER_COUNT  ( (u32)( sizeof( k_dbg_layer   ) / sizeof( k_dbg_layer  [ 0 ] ) ) )
 #define DBG_PERF_TIERS   ( (int)( sizeof( k_perf_tier   ) / sizeof( k_perf_tier  [ 0 ] ) ) )
 #define DBG_STATE_TIERS  ( (int)( sizeof( k_state_tier  ) / sizeof( k_state_tier [ 0 ] ) ) )
 #define DBG_DPI_STEPS    ( (int)( sizeof( k_dpi_scale   ) / sizeof( k_dpi_scale  [ 0 ] ) ) )
+#define DBG_PAL_MODES    ( (int)( sizeof( k_pal_mode    ) / sizeof( k_pal_mode   [ 0 ] ) ) )
 
 /* Return every debug mode to normal. Called when the master arm switches off, so disarming
    visibly clears the screen (overlays, selector menu, layer rects, render mode) instead of
@@ -1096,8 +1100,10 @@ debug_hotkeys( void )
 
     An actual UI, where C/F/I/P/O used to be single letters read out of the raw key stream:
     - Three checkboxes: retained skip, force redraw, idle skip.
-    - Perf/state overlay tier sliders, plus a UI-SCALE ladder (AUTO, then pinned factors) so a
-      layout can be checked at another DPI without a second monitor or a relaunch.
+    - Perf/state overlay tier sliders, a UI-SCALE ladder (AUTO, then pinned factors) so a layout
+      can be checked at another DPI without a second monitor or a relaunch, and the STYLE PALETTE
+      mode (off / frozen / learning), which is one axis rather than two boxes because the lookup
+      and the learning are not independent -- see gui_palette_mode_t.
     - A KEY LEGEND at the bottom: every key-driven setting, its name, and live value (lit when
       on). This is what makes the numpad keys usable without reading source -- a tier slider
       reading "3" says nothing, "NP+ perf +counts" does. The seven layer bits (NP1-NP7) have no
@@ -1121,13 +1127,12 @@ debug_hotkeys( void )
 #define SEL_FORCE   "Force redraw"
 #define SEL_TESS    "Tess cache"
 #define SEL_IDLE    "Idle skip"
-#define SEL_PAL     "Style palette"
-#define SEL_INTERN  "Style interning"
 #define SEL_FONTS   "Font registry"
 #define SEL_MEM     "Memory"
 #define SEL_PERF    "NP+ perf"
 #define SEL_STATE   "NP- state"
 #define SEL_DPI     "ui scale"
+#define SEL_PAL     "style pal"
 
    /*============================================================================================*/
 /* One legend line: "<key> <name>" plus its value where it has one (a tier/mode; NULL for the
@@ -1170,8 +1175,7 @@ selector_content_w( f32 label_w )
     f32  w = font_text_w( SEL_HINT );
 
     /* Checkbox rows: indicator box + gap + label. */
-    static const char* const k_lever[] = { SEL_FORCE, SEL_TESS, SEL_IDLE, SEL_PAL,
-                                           SEL_INTERN, SEL_FONTS, SEL_MEM };
+    static const char* const k_lever[] = { SEL_FORCE, SEL_TESS, SEL_IDLE, SEL_FONTS, SEL_MEM };
     for ( u32 i = 0; i < sizeof( k_lever ) / sizeof( k_lever[ 0 ] ); ++i )
     {
         f32 row = CHECKBOX_SZ + WIDGET_PAD + font_text_w( k_lever[ i ] );
@@ -1205,11 +1209,19 @@ selector_content_w( f32 label_w )
         if ( row > w ) w = row;
     }
 
-    /* The scale readout, at every rung it can name and against the widest landed figure the
-       clamp allows (dpi_set caps at 4x), so stepping the ladder never breathes the panel. */
+    /* The two slider readouts, each at every value it can name and against the widest figure it
+       can print -- the dpi clamp's 4x ceiling, and a full palette -- so stepping either one never
+       breathes the panel. */
     for ( int i = 0; i < DBG_DPI_STEPS; ++i )
     {
         fmt_snprintf( buf, sizeof( buf ), "dpi %s -- landed %.2fx", k_dpi_name[ i ], 4.0f );
+        f32 row = font_text_w( buf );
+        if ( row > w ) w = row;
+    }
+    for ( int i = 0; i < DBG_PAL_MODES; ++i )
+    {
+        fmt_snprintf( buf, sizeof( buf ), "palette %s -- %u entries",
+                      k_pal_mode[ i ], (u32)GUI_PAL_MAX );
         f32 row = font_text_w( buf );
         if ( row > w ) w = row;
     }
@@ -1233,9 +1245,14 @@ debug_selector_menu( void )
        single "<key> <name> <value>" run (e.g. "NP- state +retained"), not two columns of them.
        Panel width = widest row it can print + the region's own left/right inset
        (REGION_PAD_DEFAULT = WIDGET_PAD each side); label_w holds the longest slider label. */
-    f32 label_w = font_text_w( SEL_STATE );
-    f32 dpi_lbl = font_text_w( SEL_DPI );
-    if ( dpi_lbl > label_w ) label_w = dpi_lbl;
+    /* Widest slider label -- the four share one left column, so the tracks line up. */
+    static const char* const k_slider_lbl[] = { SEL_PERF, SEL_STATE, SEL_DPI, SEL_PAL };
+    f32 label_w = 0.0f;
+    for ( u32 i = 0; i < sizeof( k_slider_lbl ) / sizeof( k_slider_lbl[ 0 ] ); ++i )
+    {
+        f32 lw = font_text_w( k_slider_lbl[ i ] );
+        if ( lw > label_w ) label_w = lw;
+    }
     label_w += WIDGET_PAD;
     f32 w       = selector_content_w( label_w ) + 2.0f * WIDGET_PAD;
     f32 x       = (f32)s_io.display_w - w - 8.0f;
@@ -1264,27 +1281,10 @@ debug_selector_menu( void )
 
         gui_checkbox( SEL_IDLE,  &s_idle_skip );
 
-        /* Off, every style takes a per-slot arena record the way it did before the palette --
-           more records, the same pixels.  Any difference on screen between the two settings is a
-           palette bug, which is the whole point of the lever.  Deliberately NOT restored by
-           debug_reset: comparing the two states usually means closing this panel so it stops
-           covering what is being compared. */
-        bool pal = pal_enabled();
-        if ( gui_checkbox( SEL_PAL, &pal ) )
-            pal_set_enabled( pal );
-
-        /* The finer half: on, a record earns a palette entry once the frame has drawn it
-           again; off, the table stops growing and everything beyond it takes a per-slot
-           record.  Switching back on re-places every window, since interning only reaches
-           records that tessellate and the windows on screen are cached. */
-        bool intern = pal_intern_enabled();
-        if ( gui_checkbox( SEL_INTERN, &intern ) )
-            pal_set_intern( intern );
-
         gui_checkbox( SEL_FONTS, &s_dbg_font_open );
         gui_checkbox( SEL_MEM,   &s_dbg_mem_open  );
 
-        /* Tier sliders under a left label column, so the two labels align and the tracks line up
+        /* Tier sliders under a left label column, so the labels align and the tracks line up
            with each other instead of each starting after its own label's width. */
         gui_field_label_left( label_w );
         gui_slider_int( SEL_PERF,  &s_dbg_perf_mode,  0, DBG_PERF_TIERS  - 1 );
@@ -1305,15 +1305,33 @@ debug_selector_menu( void )
         if ( gui_slider_int( SEL_DPI, &s_dbg_dpi_step, 0, DBG_DPI_STEPS - 1 ) )
             gui_dpi_set( s_dbg_dpi_step == 0 ? GUI_DPI_AUTO : GUI_DPI_MANUAL,
                          k_dpi_scale[ s_dbg_dpi_step ] );
+
+        /* The style palette, as ONE axis: off / frozen / learning (gui_palette_mode_t, gui.h).
+           A lookup switch beside a learning switch read as independent and are not -- interning
+           is the only route into the table, so "no learning" from a cold start leaves the lookup
+           nothing to answer with and is OFF wearing a different label.  Three states is the whole
+           honest space, and a slider says so where two checkboxes implied four.
+
+           Any difference on screen between the modes is a palette bug, which is the whole point
+           of the lever.  Deliberately NOT restored by debug_reset: comparing two modes usually
+           means closing this panel so it stops covering what is being compared. */
+        int pal_step = (int)pal_mode();
+        if ( gui_slider_int( SEL_PAL, &pal_step, 0, DBG_PAL_MODES - 1 ) )
+            pal_set_mode( (gui_palette_mode_t)pal_step );
         gui_field_set( NULL );
 
-        /* What the slider ASKED for beside what the font actually landed on.  The two differ
-           whenever the managed family has no bake at the requested size and no runtime baker is
-           installed to mint one, which is exactly the case worth seeing while testing a scale. */
-        char dpi_line[ 48 ];
-        fmt_snprintf( dpi_line, sizeof( dpi_line ), "dpi %s -- landed %.2fx",
+        /* Both sliders' readouts, for the same reason the key legend below exists: a track
+           reading "1" says nothing.  Lit while the setting is off its default. */
+        char line[ 48 ];
+
+        fmt_snprintf( line, sizeof( line ), "dpi %s -- landed %.2fx",
                       k_dpi_name[ s_dbg_dpi_step ], gui_dpi_scale() );
-        gui_text_colored( s_dbg_dpi_step ? COL_MARK_IDLE : COL_TEXT_SECONDARY_IDLE, dpi_line );
+        gui_text_colored( s_dbg_dpi_step ? COL_MARK_IDLE : COL_TEXT_SECONDARY_IDLE, line );
+
+        fmt_snprintf( line, sizeof( line ), "palette %s -- %u entries",
+                      k_pal_mode[ pal_step ], pal_entry_count() );
+        gui_text_colored( pal_step != (int)GUI_PALETTE_LEARNING ? COL_MARK_IDLE
+                                                                : COL_TEXT_SECONDARY_IDLE, line );
 
         /* Key legend, straight down: tier rows spell out the number their slider shows; layer
            rows are the only state readout NP1-NP7 have. */

@@ -3155,30 +3155,28 @@ typedef struct gui_api_s
 
     void                ( *debug_style_census )( const char* tag, bool clear );
 
-    /* Style palette on/off -- the A/B lever behind the debug selector menu's "Style palette" box.
-       On (default), a style the frame-global palette already holds costs the emitting window no
-       arena record at all.  Off, every window mints its own copy exactly as it did before the
-       palette existed: more style records, the same pixels.  ANY visible difference between the two
-       is a palette bug, which is what the switch is for.
+    /* Style palette mode -- the A/B lever behind the debug selector menu's "style pal" slider,
+       one axis of three (gui_palette_mode_t, gui.h):
 
-       Not free to flip -- cached geometry carries the answers the old setting gave, so a change
-       re-places every window's geometry once.  A debug lever, not a per-frame one.  Scripted so a
-       driver can census the same workload both ways and diff the two dumps. */
+         GUI_PALETTE_LEARNING  (default) a style the frame-global palette holds costs the emitting
+                               window no arena record at all, and a record the palette does not
+                               hold yet earns a shared entry once the frame has drawn it again --
+                               which is how a UI layer the engine has never seen gets the same
+                               coverage chrome does.
+         GUI_PALETTE_FROZEN    the table answers with what it already learned; anything new mints
+                               a per-slot record.  Measures the learned set's coverage -- and only
+                               says anything once a session HAS learned something.
+         GUI_PALETTE_OFF       every window mints its own copy exactly as it did before the palette
+                               existed: more style records, the same pixels.
 
-    void                ( *debug_set_style_palette )( bool on );
-    bool                ( *debug_style_palette     )( void );
+       ANY visible difference between the modes is a palette bug, which is what the lever is for.
 
-    /* Style INTERNING on/off -- the finer half of the lever above, behind "Style interning".
-       On (default), a record the palette never predicted earns a shared entry once the frame
-       has drawn it again, so a UI layer the engine has never seen gets the same coverage
-       chrome does. Off, the palette holds the authored bake table alone.
+       Not free to flip -- cached geometry carries the answers the old mode gave, so every change
+       but LEARNING -> FROZEN re-places every window's geometry.  A debug lever, not a per-frame
+       one.  Scripted so a driver can census the same workload each way and diff the dumps. */
 
-       Free to flip either way: interning only ever appends, so entries already handed out
-       keep their meaning and no geometry is invalidated.  Turning it back on simply resumes.
-       */
-
-    void                ( *debug_set_style_intern  )( bool on );
-    bool                ( *debug_style_intern      )( void );
+    void                ( *debug_set_style_palette )( gui_palette_mode_t mode );
+    gui_palette_mode_t  ( *debug_style_palette     )( void );
 
     /* Retained-skip: when on (default), an unchanged frame skips tessellation.  Toggle to benchmark
        or confirm that the hash-upfront path produces identical output to the reference. */
