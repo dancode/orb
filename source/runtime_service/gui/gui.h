@@ -1932,14 +1932,16 @@ gui_tex_index( u32 tex_idx )
 
    One semantic draw command is an 8-byte index record (gui_cmd_t): the command type, the index
    of the active clip rect in the per-frame clip table (assigned at clip-push time), the target
-   viewport, and a byte offset into s_draw.cmd_pool where the command's actual payload lives.
+   viewport, whether that clip rect is empty (baked at the same time, so build passes can skip
+   a command without touching clip_table), and a byte offset into s_draw.cmd_pool where the
+   command's actual payload lives.
 
    The payload pool holds every command at its own natural size (see gui_cmd_ext_t).
 
-   -- a `tri` costs what a tri costs, an `fx_box` costs what an fx_box costs, and neither 
-   pays for the other's width. k_cmd_hash_len[] (gui_emit_cmd.c) is the single source of truth
-   for each type's payload size, used both to claim pool space at emit time and to fold the 
-   retained-cache hash; a type missing from that table asserts rather than silently under-hashing.
+   - A `tri` costs what a tri costs, an `fx_box` costs what an fx_box costs.
+   - The k_cmd_hash_len[] is the single source of truth for each type's payload size.
+   - Used both to claim pool space at emit time and to fold the retained-cache hash.
+   - A type missing from that table asserts rather than silently under-hashing.
 
    * The z lives in gui_cmd_seg_t (per-segment, constant within a window).
    * tex_idx == 0 in rect means solid color: tessellation rewrites it to res_atlas_idx() for
@@ -1975,7 +1977,8 @@ typedef struct
     u8  type;        // gui_cmd_type_t, fits u8 (GUI_CMD_COUNT values)
     u8  clip_idx;    // index into per-frame s_draw.clip_table (set at push time)
     u8  vp;          // target viewport (GUI_MAX_VIEWPORTS = 4)
-    u8  _pad;        // unused
+    u8  clip_empty;  // baked at push time: s_draw.clip_table[clip_idx] bounds no pixels, so this
+                      // command paints nothing -- build passes skip it without touching clip_table
     u32 offset;      // byte offset into s_draw.cmd_pool, see draw_cmd_ext_slot()
 
 } gui_cmd_t;

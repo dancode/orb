@@ -375,10 +375,11 @@ volatile_cb_close( gui_volatile_fn fn, const gui_rect_t* cell )
                     memo_dst = clip_append( rect_intersect( *cell, s_draw.clip_table[ src ] ),
                                             0.0f );
                 }
-                s_draw.cmds[ i ].clip_idx = memo_dst;
+                s_draw.cmds[ i ].clip_idx   = memo_dst;
+                s_draw.cmds[ i ].clip_empty = rect_empty( s_draw.clip_table[ memo_dst ] );
             }
 
-            if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
+            if ( !s_draw.cmds[ i ].clip_empty )
                 any_visible = true;
         }
 
@@ -533,7 +534,7 @@ volatile_patch( gui_volatile_slot_t* row, u32 lo, u32 hi )
        the patch tessellates exactly the command set a real capture would. */
     u32 n = 0;
     for ( u32 i = lo; i < hi; ++i )
-        if ( !rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
+        if ( !s_draw.cmds[ i ].clip_empty )
             s_patch_order[ n++ ] = (u16)i;
 
     u32  quad_ck    = s_tess.quad_count;

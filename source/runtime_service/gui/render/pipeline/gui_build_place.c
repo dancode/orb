@@ -56,7 +56,7 @@ cache_tess_window( const render_win_hash_t* wh )
     for ( u16 si = wh->seg_head; si != SEG_CHAIN_END; si = s_seg_next[ si ] )
         for ( u32 i = segs[ si ].lo; i < segs[ si ].hi; ++i )
         {
-            if ( rect_empty( s_draw.clip_table[ s_draw.cmds[ i ].clip_idx ] ) )
+            if ( s_draw.cmds[ i ].clip_empty )
                 continue;
             gui_id_t vid = s_draw.cmd_volatile_id[ i ];
             if ( vid != GUI_ID_NONE && volatile_row_confined( vid ) )

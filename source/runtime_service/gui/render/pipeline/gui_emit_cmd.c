@@ -235,10 +235,11 @@ draw_cmd_claim( u8 type )
     function's preamble (their pool copy has to succeed before a slot is spent, and
     their cull is not an axis-aligned box test) but they owe the identical stamp. */
 
-    gui_cmd_t* c = &s_draw.cmds[ s_draw.cmd_count++ ];
-    c->type      = type;
-    c->clip_idx  = s_draw.cur_clip_idx;
-    c->vp        = (u8)s_draw.cur_vp;
+    gui_cmd_t* c   = &s_draw.cmds[ s_draw.cmd_count++ ];
+    c->type        = type;
+    c->clip_idx    = s_draw.cur_clip_idx;
+    c->vp          = (u8)s_draw.cur_vp;
+    c->clip_empty  = rect_empty( s_draw.clip_table[ c->clip_idx ] );
 
     return c;
 }
