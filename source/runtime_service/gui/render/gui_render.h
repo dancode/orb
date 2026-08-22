@@ -961,9 +961,8 @@ void                gui_render_set_time     ( f32 seconds );
        (TEXT only, stable until release), win/z/vp/font the owning segment's tag. */
     typedef struct
     {
-        gui_cmd_t   cmd;      /* the raw frozen command; the shell decodes the union per type --
-                                 RECT_FILL / TEXT read straight off it, every other type reads
-                                 through step_cmd_ext(&cmd) for its cold payload */
+        gui_cmd_t   cmd;      /* the raw frozen command envelope; the shell resolves its payload
+                                 through step_cmd_ext(&cmd) and decodes the union per type */
         gui_rect_t  bounds;   /* pixel bbox (highlight aid; TEXT/thick strokes approximate) */
         gui_rect_t  clip;     /* frozen scissor rect the command renders under */
         const char* text;     /* TEXT: frozen pool string; NULL for every other type */
@@ -989,10 +988,9 @@ void                gui_render_set_time     ( f32 seconds );
     u32  step_seg_count( void );
     bool step_seg_info ( u32 index, step_seg_info_t* out );
 
-    /* Resolves a frozen command's cold payload (every type but RECT_FILL / TEXT) -- the shell's
-       one way to reach a union member step_cmd_info_t.cmd no longer carries inline.  Backend-side
-       because the frozen cold pool (s_step.cmds' tail bytes) lives there; undefined for RECT_FILL
-       / TEXT, which never claim a cold slot. */
+    /* Resolves a frozen command's payload -- the shell's one way to reach the union
+       step_cmd_info_t.cmd no longer carries inline.  Backend-side because the frozen payload
+       pool (s_step.cmd_pool) lives there; valid for every command type. */
     const gui_cmd_ext_t* step_cmd_ext( const gui_cmd_t* c );
 
     /* Pick: topmost VISIBLE frozen command whose bounds contain the point on viewport `vp` --

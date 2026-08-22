@@ -112,7 +112,7 @@ static void
 step_cmd_detail( const step_cmd_info_t* ci )
 {
     const gui_cmd_t*      c    = &ci->cmd;
-    const gui_cmd_ext_t*  e    = step_cmd_ext( c );   /* meaningless, but harmless, for RECT_FILL/TEXT */
+    const gui_cmd_ext_t*  e    = step_cmd_ext( c );   /* every type's payload, including RECT_FILL/TEXT */
     const char*           row2 = NULL;   /* NULL = blank second row */
     char                  b2[ 96 ];
 
@@ -120,8 +120,8 @@ step_cmd_detail( const step_cmd_info_t* ci )
     {
         case GUI_CMD_RECT_FILL:
             gui_textf( "rect %.0f,%.0f  %.0f x %.0f   round %.1f",
-                       c->rect_fill.x, c->rect_fill.y, c->rect_fill.w, c->rect_fill.h,
-                       c->rect_fill.rounding );
+                       e->rect_fill.x, e->rect_fill.y, e->rect_fill.w, e->rect_fill.h,
+                       e->rect_fill.rounding );
             fmt_snprintf( b2, sizeof( b2 ), "solid" );
             row2 = b2;
             break;
@@ -163,8 +163,8 @@ step_cmd_detail( const step_cmd_info_t* ci )
             row2 = b2;
             break;
         case GUI_CMD_TEXT:
-            gui_textf( "pos %.0f,%.0f   len %u%s", c->text.x, c->text.y, c->text.len,
-                       ( c->text.clip_x1 < GUI_TEXT_NO_CLIP ) ? "   (glyph-clipped)" : "" );
+            gui_textf( "pos %.0f,%.0f   len %u%s", e->text.x, e->text.y, e->text.len,
+                       ( e->text.clip_x1 < GUI_TEXT_NO_CLIP ) ? "   (glyph-clipped)" : "" );
             fmt_snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
             row2 = b2;
             break;
@@ -336,11 +336,11 @@ step_cmd_detail( const step_cmd_info_t* ci )
                it is read through the matching member, not positionally. */
             switch ( (gui_cmd_type_t)c->type )
             {
-                case GUI_CMD_RECT_FILL:     step_swatch( r, r.x, "color", c->rect_fill.abgr );    break;
+                case GUI_CMD_RECT_FILL:     step_swatch( r, r.x, "color", e->rect_fill.abgr );    break;
                 case GUI_CMD_RECT_TEX:      step_swatch( r, r.x, "color", e->rect_tex.abgr );     break;
                 case GUI_CMD_RECT_OUTLINE:  step_swatch( r, r.x, "color", e->rect_outline.abgr ); break;
                 case GUI_CMD_TRIANGLE:      step_swatch( r, r.x, "color", e->tri.abgr );          break;
-                case GUI_CMD_TEXT:          step_swatch( r, r.x, "color", c->text.abgr );         break;
+                case GUI_CMD_TEXT:          step_swatch( r, r.x, "color", e->text.abgr );         break;
                 case GUI_CMD_TEXT_XF:       step_swatch( r, r.x, "color", e->text_xf.abgr );      break;
                 case GUI_CMD_TEXT_SHADOW:
                 {

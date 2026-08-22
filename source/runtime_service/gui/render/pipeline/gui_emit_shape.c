@@ -42,7 +42,7 @@ draw_rect_cmd( f32 x,  f32 y,  f32 w,  f32 h,
        Anything else is a texture, which only the cold RECT_TEX path needs to hold. */
     if ( tex_idx == 0u )
     {
-        gui_cmd_t* c = draw_cmd_open( GUI_CMD_RECT_FILL, col, x, y, w, h, pad );
+        gui_cmd_ext_t* c = draw_cmd_open( GUI_CMD_RECT_FILL, col, x, y, w, h, pad );
         if ( !c )
             return;
 
@@ -58,7 +58,7 @@ draw_rect_cmd( f32 x,  f32 y,  f32 w,  f32 h,
         return;
     }
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_RECT_TEX, col, x, y, w, h, pad );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_RECT_TEX, col, x, y, w, h, pad );
     if ( !e )
         return;
 
@@ -176,7 +176,7 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 abgr )
 void
 draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
 {
-    if ( !rects || draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
+    if ( !rects || draw_emit_blocked( k_cmd_hash_len[ GUI_CMD_RECT_LIST ] ) )
         return;
 
     u32 offset = s_draw.rect_count;
@@ -197,9 +197,7 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
         return;   /* everything culled: no command slot spent */
 
     gui_cmd_t*     c    = draw_cmd_claim( GUI_CMD_RECT_LIST );
-    u32             ei  = s_draw.ext_count++;
-    c->cold.ext_idx      = ei;
-    gui_cmd_ext_t* e    = draw_cmd_ext_slot( ei );
+    gui_cmd_ext_t* e    = draw_cmd_claim_ext( c );
     e->rect_list.offset = offset;
     e->rect_list.count  = s_draw.rect_count - offset;
 
@@ -255,7 +253,7 @@ draw_push_image_xf( f32 x, f32 y, f32 w, f32 h,
     f32 ey = fabsf( hx * sn ) + fabsf( hy * cs );
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_IMAGE_XF, col,
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_IMAGE_XF, col,
                                           x + hx - ex, y + hy - ey, ex * 2.0f, ey * 2.0f, 1.0f );
     if ( !e )
         return;
@@ -311,7 +309,7 @@ draw_push_sprite( f32 x, f32 y, f32 w, f32 h, gui_sprite_id_t id,
        blending, so it drops exactly as a transparent fill does. */
     u32 col = draw_apply_alpha( abgr ? abgr : 0xFFFFFFFFu );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_SPRITE, col, x, y, w, h, 0.0f );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_SPRITE, col, x, y, w, h, 0.0f );
     if ( !e )
         return;
     e->sprite.x      = x;
@@ -341,7 +339,7 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
     u32 ca = draw_apply_alpha( col_a );
     u32 cb = draw_apply_alpha( col_b );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_RECT_GRADIENT, ca | cb, x, y, w, h, 0.0f );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_RECT_GRADIENT, ca | cb, x, y, w, h, 0.0f );
     if ( !e )
         return;
     e->gradient.x          = x;

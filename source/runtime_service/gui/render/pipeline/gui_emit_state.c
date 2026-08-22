@@ -78,6 +78,9 @@ static struct
     gui_id_t        cur_owner;                                  // stamped by item_state (STEP_SET_OWNER); 0 at window seams
     #endif
 
+    u8              cmd_pool        [ GUI_CMD_POOL_BYTES ];     // every command's payload, one forward bump arena
+                                                                 // (see draw_cmd_ext_slot(), pool_used below)
+
     gui_vec2_t      points          [ GUI_MAX_PATH_PTS ];       // point pool for CMD_POLYLINE data; indexed by pt_offset
     gui_rect_col_t  rect_pool       [ GUI_MAX_RECT_ENTRIES ];   // rect pool for CMD_RECT_LIST data; indexed by offset
 
@@ -91,7 +94,7 @@ static struct
     u32             text_pool_used;
 
     u32             cmd_count;      /* commands in the list this frame  */
-    u32             ext_count;      /* cold-pool entries claimed this frame, see draw_cmd_ext_slot() */
+    u32             pool_used;      /* bytes claimed from cmd_pool this frame, see draw_cmd_ext_slot() */
     u32             pt_count;       /* points in the pool this frame */
     u32             rect_count;     /* rect-pool entries used this frame */
 
@@ -100,14 +103,14 @@ static struct
        closes, so a cap can only be argued from what was retained here -- see backend_pool_report
        (render/gui_render_mem.c), which prints all of them against their #defines. */
 
-    u32             cmd_hwm, ext_hwm, pt_hwm, rect_hwm, text_hwm, clip_hwm, seg_hwm;
+    u32             cmd_hwm, pool_hwm, pt_hwm, rect_hwm, text_hwm, clip_hwm, seg_hwm;
 
     /* Per-type high-water mark: the most commands of each gui_cmd_type_t ever live in cmds[] at
        once.  Tallied by draw_reset scanning the closing frame's settled [0, cmd_count) range --
        not by counting draw_cmd_claim calls, because a volatile-widget patch (gui_build_volatile.c)
        or the command stepper (gui_step_capture.c) can rewind cmd_count and re-emit a range, which
-       would double-count a claim-based tally.  Sizes the hot/cold command split (which types are
-       common enough to stay inline vs which are rare enough to sidecar) from measured traffic. */
+       would double-count a claim-based tally.  Sizes GUI_CMD_POOL_BYTES from measured per-type
+       traffic once real frames have been profiled. */
     u32             cmd_type_hwm   [ GUI_CMD_COUNT ];
 
     gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */
@@ -203,43 +206,46 @@ static struct
 } s_draw;
 
 /*==============================================================================================
-    Cold command pool -- gui_cmd_ext_t payloads live in the TAIL BYTES of s_draw.cmds[] itself,
-    addressed backward from the end, so hot envelope slots (front) and cold payloads (back)
-    share one budget instead of each reserving its own worst-case capacity.  In the all-hot case
-    this is byte-identical to a plain array; a mixed frame borrows whatever the hot side isn't
-    using.  See draw_cmd_arena_full() for the shared admission gate both claim paths check.
+    Command payload pool -- every command's payload lives in s_draw.cmd_pool, a single forward
+    bump arena: draw_cmd_claim_ext() (gui_emit_cmd.c) hands out the next command's payload bytes
+    and advances pool_used.  A `tri` claims a tri's worth of bytes and an `fx_box` claims an
+    fx_box's worth; no command
+    pays for a wider type's width, and nothing is reserved up front for a type that never shows.
+    See draw_cmd_arena_full() for the shared admission gate against GUI_CMD_POOL_BYTES.
 ==============================================================================================*/
 
 static gui_cmd_ext_t*
-draw_cmd_ext_slot( u32 ext_idx )
+draw_cmd_ext_slot( u32 offset )
 {
-    u8* tail = (u8*)( s_draw.cmds + GUI_MAX_CMDS );
-    return (gui_cmd_ext_t*)( tail - ( ext_idx + 1 ) * sizeof( gui_cmd_ext_t ) );
+    return (gui_cmd_ext_t*)( s_draw.cmd_pool + offset );
 }
 
-/* True when claiming `extra_hot_bytes` more envelope space and/or `extra_ext_bytes` more cold
-   space would make the front and back cursors collide.  Exactly one argument is non-zero at
-   any call site -- a hot claim checks (sizeof(gui_cmd_t), 0), a cold claim (0, sizeof(gui_cmd_ext_t)). */
+/* 4-byte round-up: every payload member is u8/u16/u32/f32 (gui.h), so aligning each pool claim
+   to 4 bytes is sufficient -- nothing in gui_cmd_ext_t needs wider alignment. */
+static inline u32
+draw_cmd_align4( u32 n )
+{
+    return ( n + 3u ) & ~3u;
+}
+
+/* True when claiming one more envelope slot and/or `payload_bytes` more pool space would exceed
+   either fixed cap.  A claim always spends an envelope slot; payload_bytes is 0 for nothing (the
+   full-check-only call from draw_emit_blocked isn't used that way today, but the shape is kept
+   symmetric with the pool check it guards). */
 static bool
-draw_cmd_arena_full( u32 extra_hot_bytes, u32 extra_ext_bytes )
+draw_cmd_arena_full( u32 payload_bytes )
 {
-    u32 used = s_draw.cmd_count * (u32)sizeof( gui_cmd_t )
-             + s_draw.ext_count * (u32)sizeof( gui_cmd_ext_t );
-    return used + extra_hot_bytes + extra_ext_bytes > GUI_MAX_CMDS * (u32)sizeof( gui_cmd_t );
+    return s_draw.cmd_count >= GUI_MAX_CMDS
+        || s_draw.pool_used + draw_cmd_align4( payload_bytes ) > GUI_CMD_POOL_BYTES;
 }
 
-/* The payload address for any command, hot or cold -- every hash / dispatch / debug read site
-   routes through this instead of hand-rolling the hot/cold branch.  For RECT_FILL and TEXT
-   this is just &c->rect_fill / &c->text; both union members start at the same address, so
-   returning the rect_fill address for either is the same generic-base-pointer trick the hash
-   default branch already relied on. */
+/* The payload address for any command -- every hash / dispatch / debug read site routes through
+   this instead of reaching into cmd_pool directly. */
 
 static const void*
 gui_cmd_payload( const gui_cmd_t* c )
 {
-    return ( c->type == GUI_CMD_RECT_FILL || c->type == GUI_CMD_TEXT )
-         ? (const void*)&c->rect_fill
-         : (const void*)draw_cmd_ext_slot( c->cold.ext_idx );
+    return draw_cmd_ext_slot( c->offset );
 }
 
 /*==============================================================================================
@@ -319,9 +325,9 @@ fnv1a( u32 h, const void* p, u32 n )
 ==============================================================================================*/
 
 static inline bool
-draw_emit_blocked( u32 extra_ext_bytes )
+draw_emit_blocked( u32 payload_bytes )
 {
-    if ( draw_cmd_arena_full( (u32)sizeof( gui_cmd_t ), extra_ext_bytes ) )
+    if ( draw_cmd_arena_full( payload_bytes ) )
     {
         /* Say so. Every other fixed pool in the gui follows the loud-overflow rule (GUI_WARN_ONCE,
            rect/gui_rect.h): degrade gracefully, but report once so the symptom traces to its cap.
@@ -330,9 +336,10 @@ draw_emit_blocked( u32 extra_ext_bytes )
            mode: emission simply STOPS mid-frame, so the shapes that vanish are the ones with
            nothing wrong with them, and the real culprit (whatever ran earlier and spent the
            budget) is still on screen looking fine. */
-        GUI_WARN_ONCE( "draw command list full (%u) -- shapes emitted after this point are dropped "
-                       "for the rest of the frame; raise GUI_MAX_CMDS or batch dense fills through "
-                       "draw_rects\n", (u32)GUI_MAX_CMDS );
+        GUI_WARN_ONCE( "draw command list full (%u commands / %u pool bytes) -- shapes emitted "
+                       "after this point are dropped for the rest of the frame; raise GUI_MAX_CMDS "
+                       "/ GUI_CMD_POOL_BYTES or batch dense fills through draw_rects\n",
+                       (u32)GUI_MAX_CMDS, (u32)GUI_CMD_POOL_BYTES );
         return true;
     }
 
@@ -390,7 +397,7 @@ draw_reset( i32 display_w, i32 display_h )
        which is exactly the signal). */
 
     if ( s_draw.cmd_count      > s_draw.cmd_hwm  ) s_draw.cmd_hwm  = s_draw.cmd_count;
-    if ( s_draw.ext_count      > s_draw.ext_hwm  ) s_draw.ext_hwm  = s_draw.ext_count;
+    if ( s_draw.pool_used      > s_draw.pool_hwm ) s_draw.pool_hwm = s_draw.pool_used;
     if ( s_draw.pt_count       > s_draw.pt_hwm   ) s_draw.pt_hwm   = s_draw.pt_count;
     if ( s_draw.rect_count     > s_draw.rect_hwm ) s_draw.rect_hwm = s_draw.rect_count;
     if ( s_draw.text_pool_used > s_draw.text_hwm ) s_draw.text_hwm = s_draw.text_pool_used;
@@ -407,7 +414,7 @@ draw_reset( i32 display_w, i32 display_h )
     }
 
     s_draw.cmd_count       = 0;
-    s_draw.ext_count       = 0;
+    s_draw.pool_used       = 0;
     s_draw.pt_count        = 0;
     s_draw.rect_count      = 0;
     s_draw.text_pool_used  = 0;

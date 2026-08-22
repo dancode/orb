@@ -53,7 +53,7 @@ draw_text_pool_copy( const char* str, u32 len, u32* out_off )
 void
 draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 clip_x1 )
 {
-    if ( !str || draw_emit_blocked( 0 ) )
+    if ( !str || draw_emit_blocked( k_cmd_hash_len[ GUI_CMD_TEXT ] ) )
         return;
 
     /* Transparent drop (the draw_cmd_open rule): a run whose folded fill alpha is 0 lights no
@@ -83,17 +83,18 @@ draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_
     if ( !draw_text_pool_copy( str, len, &off ) )
         return;
 
-    gui_cmd_t* c    = draw_cmd_claim( GUI_CMD_TEXT );
-    c->text.x       = x;
-    c->text.y       = y;
-    c->text.off     = off;
-    c->text.len     = len;   /* always an explicit byte count; never 0xFFFFFFFF after this point */
-    c->text.clip_x0 = clip_x0;
-    c->text.clip_x1 = clip_x1;
-    c->text.abgr    = col;
-    c->text.edge_w  = s_draw.text_edge_w;
-    c->text.edge_col = s_draw.text_edge_col;
-    c->text.font    = (u16)s_draw.cur_font;
+    gui_cmd_t*     c = draw_cmd_claim( GUI_CMD_TEXT );
+    gui_cmd_ext_t* e = draw_cmd_claim_ext( c );
+    e->text.x        = x;
+    e->text.y        = y;
+    e->text.off      = off;
+    e->text.len      = len;   /* always an explicit byte count; never 0xFFFFFFFF after this point */
+    e->text.clip_x0  = clip_x0;
+    e->text.clip_x1  = clip_x1;
+    e->text.abgr     = col;
+    e->text.edge_w   = s_draw.text_edge_w;
+    e->text.edge_col = s_draw.text_edge_col;
+    e->text.font     = (u16)s_draw.cur_font;
     draw_cmd_seal();   /* text bytes are L1-hot here */
 }
 
@@ -118,7 +119,7 @@ draw_push_text( f32 x, f32 y, u32 abgr, const char* str )
 void
 draw_push_text_shadow( f32 x, f32 y, u32 abgr, u32 shadow_abgr, f32 dx, f32 dy, const char* str )
 {
-    if ( !str || draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
+    if ( !str || draw_emit_blocked( k_cmd_hash_len[ GUI_CMD_TEXT_SHADOW ] ) )
         return;
 
     u32 col        = draw_apply_alpha( abgr );
@@ -142,9 +143,7 @@ draw_push_text_shadow( f32 x, f32 y, u32 abgr, u32 shadow_abgr, f32 dx, f32 dy, 
         return;
 
     gui_cmd_t*     c   = draw_cmd_claim( GUI_CMD_TEXT_SHADOW );
-    u32             ei = s_draw.ext_count++;
-    c->cold.ext_idx     = ei;
-    gui_cmd_ext_t* e   = draw_cmd_ext_slot( ei );
+    gui_cmd_ext_t* e   = draw_cmd_claim_ext( c );
     e->text_shadow.x           = x;
     e->text_shadow.y           = y;
     e->text_shadow.off         = off;
@@ -174,7 +173,7 @@ draw_push_text_shadow( f32 x, f32 y, u32 abgr, u32 shadow_abgr, f32 dx, f32 dy, 
 void
 draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
 {
-    if ( !str || scale <= 0.0f || draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
+    if ( !str || scale <= 0.0f || draw_emit_blocked( k_cmd_hash_len[ GUI_CMD_TEXT_XF ] ) )
         return;
 
     /* Transparent drop, with the same TEXT_EDGE exception as draw_push_text_clip_n. */
@@ -190,9 +189,7 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
         return;
 
     gui_cmd_t*     c   = draw_cmd_claim( GUI_CMD_TEXT_XF );
-    u32             ei = s_draw.ext_count++;
-    c->cold.ext_idx     = ei;
-    gui_cmd_ext_t* e   = draw_cmd_ext_slot( ei );
+    gui_cmd_ext_t* e   = draw_cmd_claim_ext( c );
     e->text_xf.x     = x;
     e->text_xf.y     = y;
     e->text_xf.off   = off;

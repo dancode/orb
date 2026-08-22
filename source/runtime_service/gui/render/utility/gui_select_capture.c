@@ -95,10 +95,13 @@ select_capture_build( void )
         for ( u32 c = seg->lo; c < seg->hi; ++c )
         {
             const gui_cmd_t* cmd = &s_draw.cmds[ c ];
-            if ( cmd->type != GUI_CMD_TEXT || cmd->text.len == 0 )
+            if ( cmd->type != GUI_CMD_TEXT )
+                continue;
+            const gui_cmd_ext_t* e = draw_cmd_ext_slot( cmd->offset );
+            if ( e->text.len == 0 )
                 continue;
             if ( s_select_cap.run_count >= GUI_SELECT_MAX_RUNS
-              || s_select_cap.text_used + cmd->text.len + 1 > GUI_SELECT_TEXT_POOL )
+              || s_select_cap.text_used + e->text.len + 1 > GUI_SELECT_TEXT_POOL )
             {
                 s_select_cap.mark_count = 0;
                 return;   /* capacity: keep what fits, selection just ends here */
@@ -107,14 +110,14 @@ select_capture_build( void )
             gui_select_run_t* r = &s_select_cap.runs[ s_select_cap.run_count++ ];
             r->win  = seg->win;
             r->vp   = seg->vp;
-            r->font = (u16)cmd->text.font;   /* per COMMAND now, not per segment (gui.h) */
-            r->x    = cmd->text.x;
-            r->y    = cmd->text.y;
+            r->font = (u16)e->text.font;   /* per COMMAND now, not per segment (gui.h) */
+            r->x    = e->text.x;
+            r->y    = e->text.y;
             r->off  = s_select_cap.text_used;
-            r->len  = cmd->text.len;
+            r->len  = e->text.len;
             r->clip = s_draw.clip_table[ cmd->clip_idx ];
 
-            memcpy( s_select_cap.text + r->off, s_draw.text_pool + cmd->text.off, r->len );
+            memcpy( s_select_cap.text + r->off, s_draw.text_pool + e->text.off, r->len );
             s_select_cap.text[ r->off + r->len ] = '\0';
             s_select_cap.text_used += r->len + 1;
         }

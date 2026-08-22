@@ -281,23 +281,26 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                it into a surface -- and routing the TEXTURED case through as well is what finally
                lets a rounded quad carry an image, which the arc fan never could. */
             case GUI_CMD_RECT_FILL:
-                if ( c->rect_fill.rounding > 0.0f )
+            {
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
+                if ( e->rect_fill.rounding > 0.0f )
                 {
-                    s_tess.cur_corner_pow = c->rect_fill.corner_pow;
-                    tess_fx_box( c->rect_fill.x, c->rect_fill.y, c->rect_fill.w, c->rect_fill.h,
-                                 c->rect_fill.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f,
+                    s_tess.cur_corner_pow = e->rect_fill.corner_pow;
+                    tess_fx_box( e->rect_fill.x, e->rect_fill.y, e->rect_fill.w, e->rect_fill.h,
+                                 e->rect_fill.rounding, TESS_FX_AA, 0.0f, 0.0f, 0.0f, 0.0f,
                                  0, 0, 1, 1,
-                                 0, c->rect_fill.abgr, NULL );
+                                 0, e->rect_fill.abgr, NULL );
                 }
                 else
-                    tess_rect_filled( c->rect_fill.x, c->rect_fill.y, c->rect_fill.w, c->rect_fill.h,
+                    tess_rect_filled( e->rect_fill.x, e->rect_fill.y, e->rect_fill.w, e->rect_fill.h,
                                       0, 0, 1, 1,
-                                      0, c->rect_fill.abgr );
+                                      0, e->rect_fill.abgr );
                 break;
+            }
 
             case GUI_CMD_RECT_TEX:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 if ( e->rect_tex.rounding > 0.0f )
                 {
                     s_tess.cur_corner_pow = e->rect_tex.corner_pow;
@@ -317,7 +320,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                INSIDE band (and the closed AA stroke this replaced). */
             case GUI_CMD_RECT_OUTLINE:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 if ( e->rect_outline.rounding > 0.0f )
                 {
                     s_tess.cur_ops       |= GUI_OP_BAND;
@@ -340,7 +343,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                pair drew -- and a rounded one takes the standard AA band. */
             case GUI_CMD_FRAME:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 s_tess.cur_ops       |= GUI_OP_FRAME;
                 s_tess.cur_corner_pow = e->frame.corner_pow;
                 s_tess.cur_col_border = e->frame.col_border;   /* rides the quad, not the style */
@@ -359,7 +362,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                slot never invalidates and the breathing costs no re-tessellation. */
             case GUI_CMD_FX_BOX:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 /* All of these are the one GUI_FX_BOX mode; the variant, the rate and the swell
                    pick which ops ride the tex word.  They are INDEPENDENT flags rather than a
                    choice of one, which is what lets a cut or inset surface breathe -- as a mode
@@ -434,7 +437,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                exactly like the uniform fill it generalizes. */
             case GUI_CMD_ROUND_RECT_EX:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 s_tess.cur_corner_pow = e->round_rect.corner_pow;
                 tess_round_rect_ex( e->round_rect.x, e->round_rect.y,
                                     e->round_rect.w, e->round_rect.h,
@@ -451,7 +454,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                no longer a field of its own -- it is this same ARC under GUI_OP_DASH. */
             case GUI_CMD_ARC:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_fx_arc( e->arc.cx, e->arc.cy, e->arc.r, e->arc.thickness,
                              e->arc.a0, e->arc.a1, GUI_FX_ARC, e->arc.abgr,
                              0.0f, 0.0f,
@@ -462,7 +465,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             case GUI_CMD_PIE:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_fx_arc( e->arc.cx, e->arc.cy, e->arc.r, 0.0f,
                              e->arc.a0, e->arc.a1, GUI_FX_PIE, e->arc.abgr,
                              0.0f, 0.0f,
@@ -473,7 +476,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             case GUI_CMD_ARC_DASH:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_fx_arc( e->arc_dash.cx, e->arc_dash.cy, e->arc_dash.r,
                              e->arc_dash.thickness, e->arc_dash.a0, e->arc_dash.a1,
                              GUI_FX_ARC, e->arc_dash.abgr,
@@ -486,7 +489,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                fragment ramps on the sector's own arc-length coordinate. */
             case GUI_CMD_ARC_GRAD:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_fx_arc( e->arc_grad.cx, e->arc_grad.cy, e->arc_grad.r,
                              e->arc_grad.thickness, e->arc_grad.a0, e->arc_grad.a1,
                              GUI_FX_ARC, e->arc_grad.col_b,
@@ -498,7 +501,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                the quantized pitch + anchor phase (see tess_checker). */
             case GUI_CMD_CHECKER:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 s_tess.cur_corner_pow = e->checker.corner_pow;
                 tess_checker( e->checker.x, e->checker.y, e->checker.w, e->checker.h,
                               e->checker.cell, e->checker.rounding,
@@ -508,7 +511,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             case GUI_CMD_GRID:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 s_tess.cur_corner_pow = e->grid.corner_pow;
                 tess_grid( e->grid.x, e->grid.y, e->grid.w, e->grid.h,
                            e->grid.ox, e->grid.oy, e->grid.cell, e->grid.thickness,
@@ -521,7 +524,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                the reason every shape's is (the record's band width is sized from it). */
             case GUI_CMD_NGON:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 if ( e->ngon.thickness > 0.0f )
                     s_tess.cur_ops |= GUI_OP_BAND;
                 tess_fx_ngon( e->ngon.cx, e->ngon.cy, e->ngon.r, e->ngon.sides,
@@ -536,7 +539,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                will state, so the pattern meets itself where the walk closes. */
             case GUI_CMD_BOX_DASH:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 f32 hw  = e->box_dash.w * 0.5f, hh = e->box_dash.h * 0.5f;
                 f32 lim = ( hw < hh ) ? hw : hh;
                 f32 r   = e->box_dash.rounding;
@@ -578,7 +581,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                per-copy work. */
             case GUI_CMD_REPEAT:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_repeat_box( e->repeat.cx, e->repeat.cy, e->repeat.nx, e->repeat.ny,
                                  e->repeat.pitch_x, e->repeat.pitch_y,
                                  e->repeat.cell_w, e->repeat.cell_h,
@@ -591,7 +594,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                in the fragment -- so the command's bytes stay put while it moves. */
             case GUI_CMD_REPEAT_POLAR:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_repeat_polar( e->repeat_polar.cx, e->repeat_polar.cy,
                                    e->repeat_polar.n, e->repeat_polar.orbit,
                                    e->repeat_polar.cell_w, e->repeat_polar.cell_h,
@@ -605,7 +608,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             /* Subtraction: the box minus the second box the record states (GUI_OP_CUT_SHAPE). */
             case GUI_CMD_BOX_CUT:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_box_cut( e->box_cut.x, e->box_cut.y, e->box_cut.w, e->box_cut.h,
                               e->box_cut.rounding, e->box_cut.cut_dx, e->box_cut.cut_dy,
                               e->box_cut.cut_w, e->box_cut.cut_h,
@@ -615,7 +618,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             case GUI_CMD_IMAGE_XF:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 f32 hx = e->image_xf.w * 0.5f, hy = e->image_xf.h * 0.5f;
                 tess_quad_xf( e->image_xf.x + hx, e->image_xf.y + hy,
                               cosf( e->image_xf.rot ), sinf( e->image_xf.rot ),
@@ -627,7 +630,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             case GUI_CMD_TRIANGLE:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_triangle( e->tri.ax, e->tri.ay, e->tri.bx, e->tri.by,
                                e->tri.cx, e->tri.cy, e->tri.abgr );
                 break;
@@ -635,7 +638,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             case GUI_CMD_BEZIER:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_bezier( e->bezier.ax, e->bezier.ay, e->bezier.cx, e->bezier.cy,
                              e->bezier.bx, e->bezier.by, e->bezier.thickness, e->bezier.abgr );
                 break;
@@ -648,19 +651,22 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                is active.  Guarded on a change rather than set unconditionally because a run of
                labels in one font is the overwhelmingly common case and font_use rebuilds metrics. */
             case GUI_CMD_TEXT:
-                if ( c->text.font != cur_font )
-                    font_use( cur_font = c->text.font );
-                tess_text_edge_prim( c->text.edge_w, c->text.edge_col );
-                tess_text_n( c->text.x, c->text.y, c->text.abgr, s_draw.text_pool + c->text.off,
-                             c->text.len, c->text.clip_x0, c->text.clip_x1 );
+            {
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
+                if ( e->text.font != cur_font )
+                    font_use( cur_font = e->text.font );
+                tess_text_edge_prim( e->text.edge_w, e->text.edge_col );
+                tess_text_n( e->text.x, e->text.y, e->text.abgr, s_draw.text_pool + e->text.off,
+                             e->text.len, e->text.clip_x0, e->text.clip_x1 );
                 break;
+            }
 
             /* Shadow + main copy in one string walk -- see tess_text_shadow_n. No TEXT_EDGE field
                to prime: cur_ops was just zeroed above, which is the no-edge state every plain
                run wants, and a drop shadow is never combined with a distance-field halo. */
             case GUI_CMD_TEXT_SHADOW:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 if ( e->text_shadow.font != cur_font )
                     font_use( cur_font = e->text_shadow.font );
                 tess_text_shadow_n( e->text_shadow.x, e->text_shadow.y, e->text_shadow.abgr,
@@ -672,7 +678,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             case GUI_CMD_TEXT_XF:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 if ( e->text_xf.font != cur_font )
                     font_use( cur_font = e->text_xf.font );
                 tess_text_edge_prim( e->text_xf.edge_w, e->text_xf.edge_col );
@@ -688,7 +694,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                no joints, which is the only thing that kept the ribbon (see tess_fx_segment). */
             case GUI_CMD_LINE:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_fx_segment( e->line.x0, e->line.y0, e->line.x1, e->line.y1,
                                  e->line.thickness, e->line.border, e->line.abgr );
                 break;
@@ -696,7 +702,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             case GUI_CMD_POLYLINE:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 const gui_vec2_t* pts = &s_draw.points[ e->polyline.pt_offset ];
                 f32 center_off = stroke_center_offset( e->polyline.align, e->polyline.thickness * 0.5f );
                 tess_stroke_poly_aa( pts, e->polyline.pt_count, e->polyline.thickness,
@@ -706,7 +712,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             case GUI_CMD_DASHED_LINE:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_dashed_line( e->dash.x0, e->dash.y0, e->dash.x1, e->dash.y1,
                                   e->dash.thickness, e->dash.period, e->dash.duty, e->dash.abgr );
                 break;
@@ -714,7 +720,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             case GUI_CMD_RECT_GRADIENT:
             {
-                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 tess_rect_gradient( e->gradient.x, e->gradient.y, e->gradient.w, e->gradient.h,
                                     e->gradient.col_a, e->gradient.col_b, e->gradient.horizontal );
                 break;
@@ -724,7 +730,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             {
                 /* One quad per pooled entry; all share this command's clip/vp so they collapse
                    into the same GPU batch.  Solid color (tex 0, self-sampled), never rounded. */
-                const gui_cmd_ext_t*  e  = draw_cmd_ext_slot( c->cold.ext_idx );
+                const gui_cmd_ext_t*  e  = draw_cmd_ext_slot( c->offset );
                 const gui_rect_col_t* rl = &s_draw.rect_pool[ e->rect_list.offset ];
                 for ( u32 k = 0; k < e->rect_list.count; ++k )
                     tess_rect_filled( rl[ k ].x, rl[ k ].y, rl[ k ].w, rl[ k ].h,
@@ -735,7 +741,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
             case GUI_CMD_SPRITE:
                 /* 1, 3 or 9 quads from this one command -- the whole expansion, plus the sprite
                    lookup it needs, lives in tess_sprite. */
-                tess_sprite( draw_cmd_ext_slot( c->cold.ext_idx ) );
+                tess_sprite( draw_cmd_ext_slot( c->offset ) );
                 break;
         }
 

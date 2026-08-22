@@ -39,7 +39,7 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
     u32 col      = draw_apply_alpha( abgr );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_RECT_OUTLINE, col, x, y, w, h, pad );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_RECT_OUTLINE, col, x, y, w, h, pad );
     if ( !e )
         return;
     e->rect_outline.x        = x;
@@ -89,7 +89,7 @@ draw_push_frame( f32 x, f32 y, f32 w, f32 h, f32 t, u32 col_bg, u32 col_border )
     f32 rounding = draw_clamp_rounding( w, h );
     f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_FRAME, fill | bord, x, y, w, h, pad );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_FRAME, fill | bord, x, y, w, h, pad );
     if ( !e )
         return;
     e->frame.x          = x;
@@ -119,7 +119,7 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     f32 miny = ay < by ? ( ay < cy ? ay : cy ) : ( by < cy ? by : cy );
     f32 maxy = ay > by ? ( ay > cy ? ay : cy ) : ( by > cy ? by : cy );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_TRIANGLE, col, minx, miny,
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_TRIANGLE, col, minx, miny,
                                           maxx - minx, maxy - miny, 0.0f );
     if ( !e )
         return;
@@ -147,7 +147,7 @@ draw_push_bezier( f32 ax, f32 ay, f32 cx, f32 cy, f32 bx, f32 by, f32 thickness,
     f32 miny = ay < by ? ( ay < cy ? ay : cy ) : ( by < cy ? by : cy );
     f32 maxy = ay > by ? ( ay > cy ? ay : cy ) : ( by > cy ? by : cy );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_BEZIER, col, minx - half, miny - half,
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_BEZIER, col, minx - half, miny - half,
                                           maxx - minx + 2.0f * half, maxy - miny + 2.0f * half, 0.0f );
     if ( !e )
         return;

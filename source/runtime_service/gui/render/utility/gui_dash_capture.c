@@ -163,9 +163,9 @@ dash_capture_build( void )
             const gui_cmd_t* c = &s_draw.cmds[ ci ];
             if ( dbg )
             {
-                if ( c->type == GUI_CMD_TEXT )      sn->emit_text_dbg  += c->text.len;
-                if ( c->type == GUI_CMD_POLYLINE )  sn->emit_pts_dbg   += draw_cmd_ext_slot( c->cold.ext_idx )->polyline.pt_count;
-                if ( c->type == GUI_CMD_RECT_LIST ) sn->emit_rects_dbg += draw_cmd_ext_slot( c->cold.ext_idx )->rect_list.count;
+                if ( c->type == GUI_CMD_TEXT )      sn->emit_text_dbg  += draw_cmd_ext_slot( c->offset )->text.len;
+                if ( c->type == GUI_CMD_POLYLINE )  sn->emit_pts_dbg   += draw_cmd_ext_slot( c->offset )->polyline.pt_count;
+                if ( c->type == GUI_CMD_RECT_LIST ) sn->emit_rects_dbg += draw_cmd_ext_slot( c->offset )->rect_list.count;
             }
             clip_band[ c->clip_idx ] |= dbg ? 0x2u : 0x1u;
         }

@@ -205,12 +205,10 @@ backend_pool_report( void )
                 GUI_POOL_ROW( k_cmd_type_name[ t ], s_draw.cmd_type_hwm[ t ], GUI_MAX_CMDS );
     }
 
-    /* Cold-pool peak: how many gui_cmd_ext_t payloads (everything but RECT_FILL/TEXT) shared the
-       tail of cmds[] with the hot envelope slots above, at once, on the busiest frame -- see
-       draw_cmd_ext_slot().  No independent cap to show a percentage against; it borrows whatever
-       the hot side (semantic cmds) is not using out of the same GUI_MAX_CMDS * sizeof(gui_cmd_t)
-       budget. */
-    gui_log( GUI_LOG_INFO, "  %-22s %6u", "cold pool peak", s_draw.ext_hwm );
+    /* Payload pool peak: bytes claimed from s_draw.cmd_pool by every command's payload at once,
+       on the busiest frame -- see draw_cmd_ext_slot().  Independent of the envelope cap above:
+       this is what GUI_CMD_POOL_BYTES should be sized from. */
+    GUI_POOL_ROW( "cmd pool (B)", s_draw.pool_hwm, GUI_CMD_POOL_BYTES );
 
     GUI_POOL_ROW( "cmd segments",   s_draw.seg_hwm,         GUI_MAX_SEGS );
     GUI_POOL_ROW( "clip rects",     s_draw.clip_hwm,        GUI_MAX_CLIP_RECTS );

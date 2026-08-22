@@ -87,7 +87,8 @@ static struct
 
     /* --- the frozen frame (T0) -- written once per capture ---------------------------------- */
     gui_cmd_t      cmds      [ GUI_MAX_CMDS ];          u32 cmd_count;
-    u32            ext_count;   /* cold-pool entries in cmds[]'s tail, see step_cmd_ext_slot() */
+    u8             cmd_pool  [ GUI_CMD_POOL_BYTES ];    u32 pool_used;   /* every command's
+                                                            payload, see step_cmd_ext_slot() */
     u32            cmd_hashes[ GUI_MAX_CMDS ];          /* emit-time hashes, for the cache diff  */
     gui_id_t       cmd_owner [ GUI_MAX_CMDS ];          /* emitting widget (0 = chrome) -- T3    */
     gui_cmd_seg_t  segs      [ GUI_MAX_SEGS ];          u32 seg_count;   /* rebased [lo, hi)     */
@@ -119,22 +120,21 @@ static struct
 
 } s_step;
 
-/* Cold-pool accessor for the FROZEN copy, mirroring draw_cmd_ext_slot() over s_draw.cmds --
-   s_step.cmds shares the same front/back arena shape, so a captured ext_idx (copied verbatim,
-   never remapped) resolves the same way once the tail bytes are copied alongside it. */
+/* Payload accessor for the FROZEN copy, mirroring draw_cmd_ext_slot() over s_draw.cmd_pool --
+   a captured offset (copied verbatim, never remapped) resolves the same way once the pool
+   bytes are copied alongside it. */
 static gui_cmd_ext_t*
-step_cmd_ext_slot( u32 ext_idx )
+step_cmd_ext_slot( u32 offset )
 {
-    u8* tail = (u8*)( s_step.cmds + GUI_MAX_CMDS );
-    return (gui_cmd_ext_t*)( tail - ( ext_idx + 1 ) * sizeof( gui_cmd_ext_t ) );
+    return (gui_cmd_ext_t*)( s_step.cmd_pool + offset );
 }
 
-/* Public wrapper (gui_render.h) -- the shell's only way to reach a frozen command's cold
-   payload, since step_cmd_ext_slot itself is file-local. */
+/* Public wrapper (gui_render.h) -- the shell's only way to reach a frozen command's payload,
+   since step_cmd_ext_slot itself is file-local. */
 const gui_cmd_ext_t*
 step_cmd_ext( const gui_cmd_t* c )
 {
-    return step_cmd_ext_slot( c->cold.ext_idx );
+    return step_cmd_ext_slot( c->offset );
 }
 
 /*==============================================================================================
@@ -264,16 +264,11 @@ step_capture_build( void )
     s_step.cmd_count = w;
     s_step.seg_count = ns;
 
-    /* Cold pool whole, exactly like the side pools below: a captured envelope's cold.ext_idx is
-       copied verbatim (never remapped), so the tail bytes it points into have to land at the
-       same offset in s_step.cmds as they held in s_draw.cmds. */
-    {
-        u32 ext_bytes = s_draw.ext_count * (u32)sizeof( gui_cmd_ext_t );
-        memcpy( (u8*)( s_step.cmds + GUI_MAX_CMDS ) - ext_bytes,
-                (u8*)( s_draw.cmds  + GUI_MAX_CMDS ) - ext_bytes,
-                ext_bytes );
-        s_step.ext_count = s_draw.ext_count;
-    }
+    /* Payload pool whole, exactly like the side pools below: a captured envelope's offset is
+       copied verbatim (never remapped), so it has to land at the same byte offset in
+       s_step.cmd_pool as it held in s_draw.cmd_pool. */
+    memcpy( s_step.cmd_pool, s_draw.cmd_pool, s_draw.pool_used );
+    s_step.pool_used = s_draw.pool_used;
 
     /* Side pools whole: pool offsets baked into the commands stay valid verbatim, and the pools
        may hold debug-band content interleaved -- unreferenced entries are inert. */
@@ -330,16 +325,11 @@ step_restore_emit( void )
     }
     s_draw.cmd_count = cur;
 
-    /* Cold pool whole, so every cold.ext_idx in the restored prefix resolves; live debug-band
+    /* Payload pool whole, so every offset in the restored prefix resolves; live debug-band
        emission (the only emission active while frozen) appends past this count, exactly as it
        appends s_draw.cmd_count past `cur`. */
-    {
-        u32 ext_bytes = s_step.ext_count * (u32)sizeof( gui_cmd_ext_t );
-        memcpy( (u8*)( s_draw.cmds + GUI_MAX_CMDS ) - ext_bytes,
-                (u8*)( s_step.cmds + GUI_MAX_CMDS ) - ext_bytes,
-                ext_bytes );
-        s_draw.ext_count = s_step.ext_count;
-    }
+    memcpy( s_draw.cmd_pool, s_step.cmd_pool, s_step.pool_used );
+    s_draw.pool_used = s_step.pool_used;
 
     /* Side pools whole, so every pool offset in the prefix resolves; live debug-band emission
        appends past the frozen counts and the two never collide. */
@@ -414,33 +404,36 @@ step_cmd_bounds( const gui_cmd_t* c )
     switch ( (gui_cmd_type_t)c->type )
     {
         case GUI_CMD_RECT_FILL:
-            return ( gui_rect_t ){ c->rect_fill.x, c->rect_fill.y, c->rect_fill.w, c->rect_fill.h };
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
+            return ( gui_rect_t ){ e->rect_fill.x, e->rect_fill.y, e->rect_fill.w, e->rect_fill.h };
+        }
         case GUI_CMD_RECT_TEX:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             return ( gui_rect_t ){ e->rect_tex.x, e->rect_tex.y, e->rect_tex.w, e->rect_tex.h };
         }
         case GUI_CMD_RECT_OUTLINE:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             return ( gui_rect_t ){ e->rect_outline.x, e->rect_outline.y,
                                    e->rect_outline.w, e->rect_outline.h };
         }
         case GUI_CMD_FRAME:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             return ( gui_rect_t ){ e->frame.x, e->frame.y, e->frame.w, e->frame.h };
         }
         case GUI_CMD_RECT_GRADIENT:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             return ( gui_rect_t ){ e->gradient.x, e->gradient.y, e->gradient.w, e->gradient.h };
         }
         /* The soft skirt is real painted area, so the highlight has to cover it -- a shadow
            outlined at its box alone looks like the highlight is the thing that is wrong. */
         case GUI_CMD_FX_BOX:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             /* A swelling boundary reaches `swell` px further at full stretch. */
             f32 g = e->fx_box.feather * 0.5f + fmaxf( e->fx_box.swell, 0.0f );
             if ( e->fx_box.rot != 0.0f )
@@ -459,7 +452,7 @@ step_cmd_bounds( const gui_cmd_t* c )
         }
         case GUI_CMD_ROUND_RECT_EX:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             /* Grown by the feather like FX_BOX: the soft skirt is real painted area. */
             f32 g = e->round_rect.feather * 0.5f;
             return ( gui_rect_t ){ e->round_rect.x - g, e->round_rect.y - g,
@@ -470,49 +463,49 @@ step_cmd_bounds( const gui_cmd_t* c )
         case GUI_CMD_ARC:
         case GUI_CMD_PIE:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             f32 g = e->arc.r + e->arc.thickness * 0.5f;
             return ( gui_rect_t ){ e->arc.cx - g, e->arc.cy - g, g * 2.0f, g * 2.0f };
         }
         case GUI_CMD_ARC_DASH:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             f32 g = e->arc_dash.r + e->arc_dash.thickness * 0.5f;
             return ( gui_rect_t ){ e->arc_dash.cx - g, e->arc_dash.cy - g, g * 2.0f, g * 2.0f };
         }
         case GUI_CMD_ARC_GRAD:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             f32 g = e->arc_grad.r + e->arc_grad.thickness * 0.5f;
             return ( gui_rect_t ){ e->arc_grad.cx - g, e->arc_grad.cy - g, g * 2.0f, g * 2.0f };
         }
         /* The pattern quads paint exactly their box -- the tiling is inside it. */
         case GUI_CMD_CHECKER:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             return ( gui_rect_t ){ e->checker.x, e->checker.y, e->checker.w, e->checker.h };
         }
         case GUI_CMD_GRID:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             return ( gui_rect_t ){ e->grid.x, e->grid.y, e->grid.w, e->grid.h };
         }
         case GUI_CMD_NGON:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             f32 g = e->ngon.r;
             return ( gui_rect_t ){ e->ngon.cx - g, e->ngon.cy - g, g * 2.0f, g * 2.0f };
         }
         case GUI_CMD_BOX_DASH:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             return ( gui_rect_t ){ e->box_dash.x, e->box_dash.y, e->box_dash.w, e->box_dash.h };
         }
         /* The repeated sets span the box the push derived -- same arithmetic, so the highlight
            is the box drawn. */
         case GUI_CMD_REPEAT:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             f32 px = ( e->repeat.pitch_x > e->repeat.cell_w ) ? e->repeat.pitch_x
                                                               : e->repeat.cell_w + 1.0f;
             f32 py = ( e->repeat.pitch_y > e->repeat.cell_h ) ? e->repeat.pitch_y
@@ -523,7 +516,7 @@ step_cmd_bounds( const gui_cmd_t* c )
         }
         case GUI_CMD_REPEAT_POLAR:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             f32 hx = e->repeat_polar.orbit + e->repeat_polar.cell_w * 0.5f;
             f32 hy = e->repeat_polar.orbit + e->repeat_polar.cell_h * 0.5f;
             return ( gui_rect_t ){ e->repeat_polar.cx - hx, e->repeat_polar.cy - hy,
@@ -532,19 +525,19 @@ step_cmd_bounds( const gui_cmd_t* c )
         /* The cut only removes ink, so the fill's own box bounds the shape. */
         case GUI_CMD_BOX_CUT:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             return ( gui_rect_t ){ e->box_cut.x, e->box_cut.y, e->box_cut.w, e->box_cut.h };
         }
         /* Sprite / nine-slice paints exactly its box -- the slice expansion happens inside it. */
         case GUI_CMD_SPRITE:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             return ( gui_rect_t ){ e->sprite.x, e->sprite.y, e->sprite.w, e->sprite.h };
         }
         /* The rotated AABB, exactly as the emit-side cull computes it. */
         case GUI_CMD_IMAGE_XF:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             f32 cs = cosf( e->image_xf.rot ), sn = sinf( e->image_xf.rot );
             f32 hx = e->image_xf.w * 0.5f, hy = e->image_xf.h * 0.5f;
             f32 ex = fabsf( hx * cs ) + fabsf( hy * sn );
@@ -554,7 +547,7 @@ step_cmd_bounds( const gui_cmd_t* c )
         }
         case GUI_CMD_TRIANGLE:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             f32 x0 = e->tri.ax, x1 = e->tri.ax, y0 = e->tri.ay, y1 = e->tri.ay;
             if ( e->tri.bx < x0 ) x0 = e->tri.bx;   if ( e->tri.bx > x1 ) x1 = e->tri.bx;
             if ( e->tri.cx < x0 ) x0 = e->tri.cx;   if ( e->tri.cx > x1 ) x1 = e->tri.cx;
@@ -564,10 +557,11 @@ step_cmd_bounds( const gui_cmd_t* c )
         }
         case GUI_CMD_TEXT:
         {
-            const char* s = s_step.text_pool + c->text.off;
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
+            const char* s = s_step.text_pool + e->text.off;
             f32         w = 0.0f;
             u32         i = 0;
-            while ( i < c->text.len && s[ i ] )
+            while ( i < e->text.len && s[ i ] )
             {
                 u32 adv_b;
                 f32 u0, v0, u1, v1, ox, oy, gw, gh, adv;
@@ -577,16 +571,16 @@ step_cmd_bounds( const gui_cmd_t* c )
                 i += adv_b;
             }
             /* Fold the glyph-level hard-clip window in, when one was baked. */
-            f32 x0 = c->text.x, x1 = c->text.x + w;
-            if ( c->text.clip_x0 > x0 ) x0 = c->text.clip_x0;
-            if ( c->text.clip_x1 < x1 ) x1 = c->text.clip_x1;
-            return ( gui_rect_t ){ x0, c->text.y, x1 > x0 ? x1 - x0 : 0.0f, font_line_h() };
+            f32 x0 = e->text.x, x1 = e->text.x + w;
+            if ( e->text.clip_x0 > x0 ) x0 = e->text.clip_x0;
+            if ( e->text.clip_x1 < x1 ) x1 = e->text.clip_x1;
+            return ( gui_rect_t ){ x0, e->text.y, x1 > x0 ? x1 - x0 : 0.0f, font_line_h() };
         }
         /* Same walk, over the run text_shadow points at; the shadow's own dx/dy offset just
            pads the box so the highlight still frames the shadow copy. */
         case GUI_CMD_TEXT_SHADOW:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             const char* s = s_step.text_pool + e->text_shadow.off;
             f32         w = 0.0f;
             u32         i = 0;
@@ -613,7 +607,7 @@ step_cmd_bounds( const gui_cmd_t* c )
            one, exactly as it is for a triangle. */
         case GUI_CMD_TEXT_XF:
         {
-            const gui_cmd_ext_t* e  = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e  = step_cmd_ext_slot( c->offset );
             const char* s  = s_step.text_pool + e->text_xf.off;
             f32         w  = 0.0f;
             u32         bi = 0;
@@ -644,7 +638,7 @@ step_cmd_bounds( const gui_cmd_t* c )
         case GUI_CMD_DASHED_LINE:
         {
             /* line and dash share the same leading x0..thickness layout. */
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             f32 t  = e->line.thickness * 0.5f + 1.0f;
             f32 x0 = e->line.x0 < e->line.x1 ? e->line.x0 : e->line.x1;
             f32 x1 = e->line.x0 < e->line.x1 ? e->line.x1 : e->line.x0;
@@ -654,7 +648,7 @@ step_cmd_bounds( const gui_cmd_t* c )
         }
         case GUI_CMD_POLYLINE:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             const gui_vec2_t* p = s_step.points + e->polyline.pt_offset;
             f32 x0 = p[ 0 ].x, x1 = p[ 0 ].x, y0 = p[ 0 ].y, y1 = p[ 0 ].y;
             for ( u32 i = 1; i < e->polyline.pt_count; ++i )
@@ -667,7 +661,7 @@ step_cmd_bounds( const gui_cmd_t* c )
         }
         case GUI_CMD_RECT_LIST:
         {
-            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             const gui_rect_col_t* r = s_step.rect_pool + e->rect_list.offset;
             f32 x0 = r[ 0 ].x, y0 = r[ 0 ].y, x1 = r[ 0 ].x + r[ 0 ].w, y1 = r[ 0 ].y + r[ 0 ].h;
             for ( u32 i = 1; i < e->rect_list.count; ++i )
@@ -695,16 +689,16 @@ step_cmd_info( u32 index, step_cmd_info_t* out )
     out->cmd    = *c;
     out->bounds = step_cmd_bounds( c );
     out->clip   = s_step.clip_table[ c->clip_idx ];
-    out->text   = ( c->type == GUI_CMD_TEXT )        ? s_step.text_pool + c->text.off
-                : ( c->type == GUI_CMD_TEXT_XF )     ? s_step.text_pool + step_cmd_ext_slot( c->cold.ext_idx )->text_xf.off
-                : ( c->type == GUI_CMD_TEXT_SHADOW ) ? s_step.text_pool + step_cmd_ext_slot( c->cold.ext_idx )->text_shadow.off
+    out->text   = ( c->type == GUI_CMD_TEXT )        ? s_step.text_pool + step_cmd_ext_slot( c->offset )->text.off
+                : ( c->type == GUI_CMD_TEXT_XF )     ? s_step.text_pool + step_cmd_ext_slot( c->offset )->text_xf.off
+                : ( c->type == GUI_CMD_TEXT_SHADOW ) ? s_step.text_pool + step_cmd_ext_slot( c->offset )->text_shadow.off
                                                      : NULL;
     out->owner  = s_step.cmd_owner[ fi ];
 
     /* The font is the COMMAND's own now (gui.h), and only a glyph run has one. */
-    out->font = ( c->type == GUI_CMD_TEXT )        ? c->text.font
-              : ( c->type == GUI_CMD_TEXT_XF )     ? step_cmd_ext_slot( c->cold.ext_idx )->text_xf.font
-              : ( c->type == GUI_CMD_TEXT_SHADOW ) ? step_cmd_ext_slot( c->cold.ext_idx )->text_shadow.font
+    out->font = ( c->type == GUI_CMD_TEXT )        ? step_cmd_ext_slot( c->offset )->text.font
+              : ( c->type == GUI_CMD_TEXT_XF )     ? step_cmd_ext_slot( c->offset )->text_xf.font
+              : ( c->type == GUI_CMD_TEXT_SHADOW ) ? step_cmd_ext_slot( c->offset )->text_shadow.font
                                                    : 0u;
 
     /* Owning segment tag (display domain). */
@@ -809,7 +803,7 @@ step_pick( f32 x, f32 y, i32 vp, u32* out_index )
            frames.  The band is padded by 1px so a thin ring is still clickable. */
         if ( c->type == GUI_CMD_RECT_OUTLINE )
         {
-            f32 band = step_cmd_ext_slot( c->cold.ext_idx )->rect_outline.t + 1.0f;
+            f32 band = step_cmd_ext_slot( c->offset )->rect_outline.t + 1.0f;
             gui_rect_t hole = ( gui_rect_t ){ b.x + band, b.y + band,
                                               b.w - 2.0f * band, b.h - 2.0f * band };
             if ( hole.w > 0.0f && step_hit( hole, x, y ) )

@@ -26,17 +26,26 @@
 
 ==============================================================================================*/
 
-/* Payload byte count per command type, for the plain POD commands: one fnv1a fold of the union
-   member, nothing else.  RECT_FILL is the one hot type that falls through to this default path
-   (TEXT always takes its own case below); every other entry is a cold type and its length is
-   measured off gui_cmd_ext_t.  Only the pool-backed commands (TEXT, TEXT_XF, TEXT_SHADOW,
-   POLYLINE, RECT_LIST) need code of their own -- they hash pool CONTENT and must skip their
-   pool-offset fields, which shift whenever an earlier-emitted window changes its pool volume
-   and would falsely dirty an unrelated window. */
+/* Payload byte count per command type -- the ONE table both draw_hash_cmd's default fold and
+   draw_cmd_claim_ext's pool allocation read from.  For most types that is the whole story: one
+   fnv1a fold of the union member at hash time, and the exact bytes draw_cmd_claim_ext reserves
+   in s_draw.cmd_pool at push time.  Five entries (TEXT, TEXT_XF, TEXT_SHADOW, POLYLINE,
+   RECT_LIST) still take their own switch case in draw_hash_cmd below despite having an entry
+   here: their struct carries a pool-offset field (text.off / polyline.pt_offset /
+   rect_list.offset) into a SEPARATE content pool, which shifts whenever an earlier-emitted
+   window changes that pool's volume and would falsely dirty an unrelated window if folded raw
+   -- so hashing must skip the offset and fold the pointed-to content instead.  Their entry here
+   still names the right allocation size; only the hash needs the special case. */
 
 static const u8 k_cmd_hash_len[] = {
 
-    [GUI_CMD_RECT_FILL]     = sizeof(( (gui_cmd_t*)0 )->rect_fill ),
+    [GUI_CMD_RECT_FILL]     = sizeof(( (gui_cmd_ext_t*)0 )->rect_fill ),
+
+    [GUI_CMD_TEXT]          = sizeof(( (gui_cmd_ext_t*)0 )->text ),
+    [GUI_CMD_TEXT_XF]       = sizeof(( (gui_cmd_ext_t*)0 )->text_xf ),
+    [GUI_CMD_TEXT_SHADOW]   = sizeof(( (gui_cmd_ext_t*)0 )->text_shadow ),
+    [GUI_CMD_POLYLINE]      = sizeof(( (gui_cmd_ext_t*)0 )->polyline ),
+    [GUI_CMD_RECT_LIST]     = sizeof(( (gui_cmd_ext_t*)0 )->rect_list ),
 
     [GUI_CMD_RECT_TEX]      = sizeof(( (gui_cmd_ext_t*)0 )->rect_tex ),
     [GUI_CMD_RECT_OUTLINE]  = sizeof(( (gui_cmd_ext_t*)0 )->rect_outline ),
@@ -97,17 +106,20 @@ draw_hash_cmd( const gui_cmd_t* c )
     switch ( c->type )
     {
         case GUI_CMD_TEXT:
-            h = fnv1a( h, &c->text.x,           sizeof c->text.x );
-            h = fnv1a( h, &c->text.y,           sizeof c->text.y );
-            h = fnv1a( h, &c->text.len,         sizeof c->text.len );
-            h = fnv1a( h, &c->text.clip_x0,     sizeof c->text.clip_x0 );
-            h = fnv1a( h, &c->text.clip_x1,     sizeof c->text.clip_x1 );
-            h = fnv1a( h, &c->text.abgr,        sizeof c->text.abgr );
-            h = fnv1a( h, &c->text.edge_w,      sizeof c->text.edge_w );
-            h = fnv1a( h, &c->text.edge_col,    sizeof c->text.edge_col );
-            h = fnv1a( h, &c->text.font,        sizeof c->text.font );
-            h = fnv1a( h, s_draw.text_pool + c->text.off, c->text.len );   /* content while L1-hot */
+        {
+            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
+            h = fnv1a( h, &e->text.x,           sizeof e->text.x );
+            h = fnv1a( h, &e->text.y,           sizeof e->text.y );
+            h = fnv1a( h, &e->text.len,         sizeof e->text.len );
+            h = fnv1a( h, &e->text.clip_x0,     sizeof e->text.clip_x0 );
+            h = fnv1a( h, &e->text.clip_x1,     sizeof e->text.clip_x1 );
+            h = fnv1a( h, &e->text.abgr,        sizeof e->text.abgr );
+            h = fnv1a( h, &e->text.edge_w,      sizeof e->text.edge_w );
+            h = fnv1a( h, &e->text.edge_col,    sizeof e->text.edge_col );
+            h = fnv1a( h, &e->text.font,        sizeof e->text.font );
+            h = fnv1a( h, s_draw.text_pool + e->text.off, e->text.len );   /* content while L1-hot */
             break;
+        }
 
         /* Folds scale and rot, so a run that spins re-tessellates every frame it moves.  That is
            the honest cost and the difference from PULSE: a pulse animates in the FRAGMENT off
@@ -115,7 +127,7 @@ draw_hash_cmd( const gui_cmd_t* c )
 
         case GUI_CMD_TEXT_XF:
         {
-            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
             h = fnv1a( h, &e->text_xf.x,        sizeof e->text_xf.x );
             h = fnv1a( h, &e->text_xf.y,        sizeof e->text_xf.y );
             h = fnv1a( h, &e->text_xf.len,      sizeof e->text_xf.len );
@@ -131,7 +143,7 @@ draw_hash_cmd( const gui_cmd_t* c )
 
         case GUI_CMD_TEXT_SHADOW:
         {
-            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
             h = fnv1a( h, &e->text_shadow.x,           sizeof e->text_shadow.x );
             h = fnv1a( h, &e->text_shadow.y,           sizeof e->text_shadow.y );
             h = fnv1a( h, &e->text_shadow.len,         sizeof e->text_shadow.len );
@@ -148,7 +160,7 @@ draw_hash_cmd( const gui_cmd_t* c )
 
         case GUI_CMD_POLYLINE:
         {
-            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
             h = fnv1a( h, &e->polyline.pt_count,  sizeof e->polyline.pt_count );
             h = fnv1a( h, &e->polyline.thickness, sizeof e->polyline.thickness );
             h = fnv1a( h, &e->polyline.align,     sizeof e->polyline.align );
@@ -161,7 +173,7 @@ draw_hash_cmd( const gui_cmd_t* c )
 
         case GUI_CMD_RECT_LIST:
         {
-            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
             h = fnv1a_u32( h, e->rect_list.count );
             h = fnv1a( h, &s_draw.rect_pool[ e->rect_list.offset ],
                        e->rect_list.count * (u32)sizeof( gui_rect_col_t ) );   /* content while L1-hot */
@@ -231,30 +243,26 @@ draw_cmd_claim( u8 type )
     return c;
 }
 
-static gui_cmd_t*
-draw_cmd_open( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
+/* Claim `c`'s payload from the pool -- the shared body behind every push whose preamble can't
+   go through draw_cmd_open below (a non-axis-aligned cull, or a pool-backed push whose OWN
+   content copy -- text_pool / points / rect_pool -- must land first).  Callers already ran
+   draw_emit_blocked with this same k_cmd_hash_len[type] size, so the claim here cannot overflow. */
+static gui_cmd_ext_t*
+draw_cmd_claim_ext( gui_cmd_t* c )
 {
-    if ( draw_emit_blocked( 0 ) )
-        return NULL;
-
-    if ( ( vis_col >> 24 ) == 0u )
-        return NULL;
-
-    if ( draw_cull_box( x - pad, y - pad, w + 2.0f * pad, h + 2.0f * pad ) )
-        return NULL;
-
-    return draw_cmd_claim( type );
+    c->offset         = s_draw.pool_used;
+    s_draw.pool_used += draw_cmd_align4( k_cmd_hash_len[ c->type ] );
+    return draw_cmd_ext_slot( c->offset );
 }
 
-/* Cold-type counterpart of draw_cmd_open above: same three gates, but a cold push spends BOTH
-   an envelope slot (header + ordinal position, for segs/hash/dispatch to walk in order) and a
-   cold-pool slot (the actual payload) -- so the admission check covers both together
-   (draw_cmd_arena_full) and this claims both, returning the payload pointer the caller fills
-   in instead of the envelope draw_cmd_open returns. */
+/* The shared preamble for every plain shape push (an axis-aligned box cull): claims both the
+   envelope slot and the type's pool payload, returning the payload pointer to fill.  The four
+   pool-backed pushes (text, text_xf, polyline, rect_list) keep their own preambles instead --
+   see draw_cmd_claim_ext. */
 static gui_cmd_ext_t*
-draw_cmd_open_ext( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
+draw_cmd_open( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
 {
-    if ( draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
+    if ( draw_emit_blocked( k_cmd_hash_len[ type ] ) )
         return NULL;
 
     if ( ( vis_col >> 24 ) == 0u )
@@ -264,9 +272,7 @@ draw_cmd_open_ext( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
         return NULL;
 
     gui_cmd_t* c = draw_cmd_claim( type );
-    u32        ext_idx = s_draw.ext_count++;
-    c->cold.ext_idx     = ext_idx;
-    return draw_cmd_ext_slot( ext_idx );
+    return draw_cmd_claim_ext( c );
 }
 
 static void

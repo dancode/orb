@@ -1927,23 +1927,28 @@ gui_tex_index( u32 tex_idx )
 }
 
 /*==============================================================================================
-    Command Structure
+   Command Structure
 
-    One semantic draw command.  The 4-byte header carries the command type, the index of the 
-    active clip rect in the per-frame clip table (assigned at clip-push time -- no per-emit search), 
+   One semantic draw command is an 8-byte index record (gui_cmd_t): the command type, the index
+   of the active clip rect in the per-frame clip table (assigned at clip-push time), the target
+   viewport, and a byte offset into s_draw.cmd_pool where the command's actual payload lives.
 
-   and the target viewport.  z lives in gui_cmd_seg_t (per-segment, constant within a window) and is not
-   repeated here.  The struct's size is the 4-byte header plus the largest union member (fx_box);
-   the slack in narrower members costs nothing downstream -- a push writes only its own member and
-   the retained-cache hash folds per-type payload lengths, never the full union.
-   tex_idx == 0 in rect means solid color (white texel).
+   The payload pool holds every command at its own natural size (see gui_cmd_ext_t) -- a `tri`
+   costs what a tri costs, an `fx_box` costs what an fx_box costs, and neither pays for the
+   other's width. k_cmd_hash_len[] (gui_emit_cmd.c) is the single source of truth for each
+   type's payload size, used both to claim pool space at emit time and to fold the retained-cache
+   hash; a type missing from that table asserts rather than silently under-hashing.
+
+   * The z lives in gui_cmd_seg_t (per-segment, constant within a window).
+   * tex_idx == 0 in rect means solid color (white texel).
+
    rounding (rect / rect_outline) is the corner radius baked from the ambient draw rounding at emit
    time, already clamped to the rect; 0 tessellates as a plain square shape.  corner_pow rides
    beside it on every command a radius can reach, baked from the ambient profile the same way
    (0 = circular); it is the exponent the record carries, not the 0..1 amount a caller authors.
    text.off is a byte offset into the frame's text pool (s_draw.text_pool), not a pointer: the
    string lives in the pool until the next frame_begin, so the command is valid through flush.
-   Storing an offset instead of a const char* keeps the union at 4-byte alignment.
+   Storing an offset instead of a const char* keeps every payload shape 4-byte aligned.
 
 ==============================================================================================*/
 
@@ -1956,57 +1961,53 @@ gui_tex_index( u32 tex_idx )
 #define GUI_FX_BOX_GLOW   3u   // exponential falloff (GUI_OP_GLOW) -- light, not blur
 #define GUI_FX_BOX_RING   4u   // bent into a border band (GUI_OP_BAND) -- the ripple's ring
 
-/* Only RECT_FILL and TEXT carry their payload inline in gui_cmd_t -- every other command type
-   stores its payload in the cold pool (gui_cmd_ext_t, below) and rides here as just an index,
-   see gui_cmd_payload().  The two inline members are the high-volume path measured by a full
-   demo-library census: every solid fill and every glyph run a frame draws costs no
-   indirection to read back, at the cost of one branch for everything else. */
+/* Every command's payload lives in one pool (s_draw.cmd_pool), addressed by byte offset -- see
+   gui_cmd_payload().  No type is inlined here: the envelope is the same 8 bytes whether the
+   command is a plain fill or an fx_box, and the pool holds each payload at its own natural size
+   instead of every command paying for the widest type in the union. */
+
 typedef struct
 {
-    u8 type;        // gui_cmd_type_t, fits u8 (GUI_CMD_COUNT values)
-    u8 clip_idx;    // index into per-frame s_draw.clip_table (set at push time)
-    u8 vp;          // target viewport (GUI_MAX_VIEWPORTS = 4)
-    u8 _pad;        // unused --
+    u8  type;        // gui_cmd_type_t, fits u8 (GUI_CMD_COUNT values)
+    u8  clip_idx;    // index into per-frame s_draw.clip_table (set at push time)
+    u8  vp;          // target viewport (GUI_MAX_VIEWPORTS = 4)
+    u8  _pad;        // unused
+    u32 offset;      // byte offset into s_draw.cmd_pool, see draw_cmd_ext_slot()
 
-    union
-    {
-        struct { f32 x, y, w, h; f32 rounding, corner_pow; u32 abgr; } rect_fill;
-
-        /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
-           last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
-           sentinel (clip_x0 = -GUI_TEXT_NO_CLIP, clip_x1 = +GUI_TEXT_NO_CLIP) means unclipped
-           and takes the original whole-run fast path. */
-
-        /* edge_w / edge_col are the ambient TEXT_EDGE at emit time (width 0 = none): a second
-           colour painted outside the glyph boundary, resolved by the fragment from the SAME quad,
-           so an outlined or shadowed run costs no extra geometry, no second pass, and no batch
-           split.  They ride the command rather than being re-read at tessellation because the
-           ambient can have moved on by then -- a retained window re-tessellates long after its
-           emit. */
-
-        /* font is the registry id whose glyph metrics and atlas UVs this run resolves from -- the
-           ONLY thing the font decides.  It rides the command rather than the command SEGMENT
-           because a segment is the backend's batch-dispatch unit and the font is not a batch key:
-           every font packs into one shared atlas, so a font change moves no texture, and even
-           when it does the texture rides the vertex and cannot cut a draw call either.  Tagging a
-           batch unit with a per-command property would force a segment split just for a lookup --
-           see draw_set_font. */
-
-        struct { f32 x, y; u32 off; u32 len; f32 clip_x0, clip_x1; u32 abgr;
-                 f32 edge_w; u32 edge_col; u16 font; } text;
-
-        struct { u32 ext_idx; } cold;   // index into the cold pool, see draw_cmd_ext_slot()
-    };
 } gui_cmd_t;
 
-/* Every command type that isn't RECT_FILL or TEXT: rare enough, individually or combined
-   across a full demo-library census, that inlining it in gui_cmd_t would pay its size (up to
-   fx_box's 80B) on the hot path for nothing.  Lives in the tail bytes of s_draw.cmds[] itself
-   rather than a separately-capped array -- see draw_cmd_ext_slot() -- so the hot and cold
-   pools share one budget instead of each needing its own worst-case capacity reserved. */
+/* Every command type's payload shape, addressed by byte offset from its command's `offset`
+   field -- see draw_cmd_ext_slot().  One pool holds every type at its own natural size: a `tri`
+   costs what a tri costs, an `fx_box` costs what an fx_box costs, and neither pays for the
+   other's width. */
 
 typedef union
 {
+    struct { f32 x, y, w, h; f32 rounding, corner_pow; u32 abgr; } rect_fill;
+
+    /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
+       last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
+       sentinel (clip_x0 = -GUI_TEXT_NO_CLIP, clip_x1 = +GUI_TEXT_NO_CLIP) means unclipped
+       and takes the original whole-run fast path. */
+
+    /* edge_w / edge_col are the ambient TEXT_EDGE at emit time (width 0 = none): a second
+       colour painted outside the glyph boundary, resolved by the fragment from the SAME quad,
+       so an outlined or shadowed run costs no extra geometry, no second pass, and no batch
+       split.  They ride the command rather than being re-read at tessellation because the
+       ambient can have moved on by then -- a retained window re-tessellates long after its
+       emit. */
+
+    /* font is the registry id whose glyph metrics and atlas UVs this run resolves from -- the
+       ONLY thing the font decides.  It rides the command rather than the command SEGMENT
+       because a segment is the backend's batch-dispatch unit and the font is not a batch key:
+       every font packs into one shared atlas, so a font change moves no texture, and even
+       when it does the texture rides the vertex and cannot cut a draw call either.  Tagging a
+       batch unit with a per-command property would force a segment split just for a lookup --
+       see draw_set_font. */
+
+    struct { f32 x, y; u32 off; u32 len; f32 clip_x0, clip_x1; u32 abgr;
+             f32 edge_w; u32 edge_col; u16 font; } text;
+
     /* The textured/image case of what RECT_FILL covers for a solid fill -- an icon, a picture,
        a glyph's SDF sprite.  Split out because its uv/tex_idx fields would sit unused on every
        plain fill, the hot path every chrome widget goes through. */
@@ -2884,6 +2885,16 @@ typedef struct
 #define GUI_MAX_QUADS           ( 8192 * 2 )   // per-frame quad records (gui_quad_t)
 #define GUI_MAX_PRIMS           ( 512 * 2 )    // per-frame style records (gui_prim_t)
 #define GUI_MAX_CMDS            ( 1024 * 2 )   // per-frame semantic draw commands
+
+/* Payload byte budget for s_draw.cmd_pool, the single forward bump arena every command's
+   payload is claimed from (draw_cmd_ext_slot).  32 bytes/command is a first-pass estimate, not
+   a measured average: RECT_FILL and TEXT dominate real frames per the demo-library census
+   elsewhere in this file, and both are under 32B (see k_cmd_hash_len, gui_emit_cmd.c), so a
+   frame that is nearly all hot commands has headroom to spare; a frame heavy in wide cold
+   types (fx_box et al) draws down that headroom instead of forcing every command to reserve
+   it up front.  Retune from the per-type high-water marks in backend_pool_report once real
+   traffic has been measured. */
+#define GUI_CMD_POOL_BYTES      ( GUI_MAX_CMDS * 32 )
 #define GUI_MAX_PATH_PTS        ( 2048 )       // per-frame total polyline / path point pool
 #define GUI_MAX_RECT_ENTRIES    ( 4096 )       // per-frame total draw_rects batch pool
 #define GUI_MAX_TEXT_POOL       ( 16 * 1024 )  // per-frame flat string copy pool for text cmds

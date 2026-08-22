@@ -102,7 +102,7 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
     }
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_FX_BOX, col, bx, by, bw, bh, pad );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_FX_BOX, col, bx, by, bw, bh, pad );
     if ( !e )
         return;
 
@@ -296,7 +296,7 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
 
     u32 vis = ( ( cb >> 24 ) > ( col >> 24 ) ) ? cb : col;
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_ROUND_RECT_EX, vis, x, y, w, h, pad );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_ROUND_RECT_EX, vis, x, y, w, h, pad );
     if ( !e )
         return;
 
@@ -340,7 +340,7 @@ draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     u32 col = draw_apply_alpha( abgr );
     f32 g   = r + thickness * 0.5f;   /* the tessellator's own AA pad rides draw_cmd_open's `pad` */
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( type, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    gui_cmd_ext_t* e = draw_cmd_open( type, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
     if ( !e )
         return;
 
@@ -418,7 +418,7 @@ draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     u32 col = draw_apply_alpha( abgr );
     f32 g   = r + thickness * 0.5f;
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_ARC_DASH, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_ARC_DASH, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
     if ( !e )
         return;
     e->arc_dash.cx        = cx;
@@ -454,7 +454,7 @@ draw_push_arc_gradient( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     u32 cb = draw_apply_alpha( col_b );
     f32 g  = r + thickness * 0.5f;
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_ARC_GRAD, ca | cb,
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_ARC_GRAD, ca | cb,
                                           cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
     if ( !e )
         return;
@@ -488,7 +488,7 @@ draw_push_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
     u32 ca = draw_apply_alpha( col_a );
     u32 cb = draw_apply_alpha( col_b );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_CHECKER, ca | cb, x, y, w, h, 0.0f );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_CHECKER, ca | cb, x, y, w, h, 0.0f );
     if ( !e )
         return;
     e->checker.x     = x;
@@ -515,7 +515,7 @@ draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 angle, bool stri
 
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_GRID, col, x, y, w, h, 0.0f );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_GRID, col, x, y, w, h, 0.0f );
     if ( !e )
         return;
     e->grid.x         = x;
@@ -568,7 +568,7 @@ draw_push_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 rounding,
     u32 col = draw_apply_alpha( abgr );
     f32 g   = r + 1.0f;
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_NGON, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_NGON, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
     if ( !e )
         return;
     e->ngon.cx        = cx;
@@ -608,7 +608,7 @@ draw_push_box_dashed( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
 
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
     if ( !e )
         return;
     e->box_dash.x        = x;
@@ -679,7 +679,7 @@ draw_push_box_trace( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
 
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
     if ( !e )
         return;
     e->box_dash.x        = x;
@@ -719,7 +719,7 @@ draw_push_box_cut( f32 x, f32 y, f32 w, f32 h, f32 rounding,
 
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_BOX_CUT, col, x, y, w, h, 1.0f );
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_BOX_CUT, col, x, y, w, h, 1.0f );
     if ( !e )
         return;
     e->box_cut.x        = x;
@@ -768,7 +768,7 @@ draw_push_repeat( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
     u32 col = draw_apply_alpha( abgr );
     u32 cb  = draw_apply_alpha( col_b );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_REPEAT, col | cb,
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_REPEAT, col | cb,
                                           cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
     if ( !e )
         return;
@@ -813,7 +813,7 @@ draw_push_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h
     u32 col = draw_apply_alpha( abgr );
     u32 cb  = draw_apply_alpha( col_b );
 
-    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_REPEAT_POLAR, col | cb,
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_REPEAT_POLAR, col | cb,
                                           cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
     if ( !e )
         return;
