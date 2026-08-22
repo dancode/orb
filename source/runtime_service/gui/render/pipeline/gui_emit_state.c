@@ -111,6 +111,7 @@ static struct
        or the command stepper (gui_step_capture.c) can rewind cmd_count and re-emit a range, which
        would double-count a claim-based tally.  Sizes GUI_CMD_POOL_BYTES from measured per-type
        traffic once real frames have been profiled. */
+
     u32             cmd_type_hwm   [ GUI_CMD_COUNT ];
 
     gui_id_t        cur_win;        /* owning window id stamped onto new commands (set by begin/window_end) */

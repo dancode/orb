@@ -796,7 +796,7 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
    and no atlas ID, so the two never have to fit side by side.
 
    The tag is the top two bits.  Clip sits at the bottom of ALL layouts, in the same place, so it
-   decodes without consulting the tag at all.
+   decodes without consulting the tag at all. Each tag reinterprets the middle bits differently.
 
      tag SHAPED (0)   bits 0-3    clip entry, slot-local (GUI_WIN_CLIP_MAX = 16 per window slab)
                       bits 4-5    GUI_QUAD_RULE_* -- the expansion rule
@@ -812,8 +812,9 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
                       bits 4-5    WHICH BAND of the four (top, bottom, left, right)
                       bits 6-16   style record, as SHAPED
                       bits 17-29  fx record, as SHAPED
-                    SHAPED's layout with the rule field re-read: a band is always drawn SKIRT, so
-                    those two bits are free to name the band instead.  See gui_quad_band below.
+
+                    SHAPED's layout with the rule field re-read: a band is always drawn SKIRT, 
+                    so those two bits are free to name the band instead.  See gui_quad_band below.
 
      tag GLYPH_STYLED (3)
                       bits 0-3    clip entry, as above
@@ -821,6 +822,7 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
                       bits 5-17   glyph-table ID, as GLYPH
                       bits 18-28  style record, slot-local or palette
                       bit  29     spare
+
                     A glyph that names a STYLE: the ops ride the record (an SDF outline, a
                     gradient, a glow) while the atlas rect stays a table ID and the texture stays
                     the push block's -- so styled text keeps everything that makes plain text

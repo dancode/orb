@@ -131,9 +131,9 @@ build_stats_publish( void )
     s_stats.accum.draw_calls       = 0;
     s_stats.accum.upload_batches   = 0;
     s_stats.accum.upload_bytes     = 0;
-    s_stats.accum.volatile_patched = 0;   // per-frame event count, same reset rule as draw_calls
-    s_stats.accum.submit_ms        = 0.0f; // summed per surface flush, so same reset as draw_calls
-    s_stats.accum.gpu_ms           = 0.0f; // same summing rule; each surface adds its context's sample
+    s_stats.accum.volatile_patched = 0;     // per-frame event count, same reset rule as draw_calls
+    s_stats.accum.submit_ms        = 0.0f;  // summed per surface flush, so same reset as draw_calls
+    s_stats.accum.gpu_ms           = 0.0f;  // same summing rule; each surface adds its context's sample
 }
 
 /* Defined here (forward-declared in gui_build_volatile.c, included just above this file) because
@@ -172,9 +172,10 @@ cache_count_upload( u32 batches, u32 bytes )
 /*==============================================================================================
     Retained-skip toggle.
 
-    When enabled (default) a window whose per-command hash matches last frame keeps its geometry
-    in place instead of re-tessellating.  Disable to benchmark or verify the from-scratch path.
-    Toggled via gui()->set_retained_skip (key C in sb_vulkan).
+    When enabled (default) a window whose per-command hash matches last frame keeps its 
+    geometry in place instead of re-tessellating.  Disable to benchmark or verify the 
+    from-scratch path every frame (stable-tesselation cost displayed every frame).
+    Toggled via gui()->set_retained_skip or dashbaord overlay toggle.
 ==============================================================================================*/
 
 static bool s_retained_cache = true;

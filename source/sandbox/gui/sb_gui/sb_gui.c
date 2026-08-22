@@ -111,7 +111,7 @@ show_demo_window( bool* p_open )
         show_example_main_menu_bar();
     }
 
-    gui_win_flags_t window_flags = GUI_WIN_NOSCROLL;
+    gui_win_flags_t window_flags = 0; //GUI_WIN_NOSCROLL;
     // window_flags |= GUI_WIN_CAN_AUTOSIZE;
 
     // We demonstrate using the full window_begin() API
