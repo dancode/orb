@@ -431,12 +431,15 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
     /* The style palette's epoch check, self-gating: a frame whose theme, DPI and atlas layout have
        not moved costs one fold and does nothing.
 
-       An epoch that DROPPED the table forces a full re-place.  A cached slot's quads carry palette
-       indices learned against the old table, and the table is emptied rather than patched: entry 12
-       under one theme is a different record under the next, so a reused slot would draw the wrong
-       shape.  Costs one heavy frame on a theme or DPI change, which already re-tessellates
-       everything for its own reasons -- the geometry generation bumps with it so every in-flight
-       upload region goes stale. */
+       An epoch forces a full re-place.  A cached slot's quads carry palette indices learned against
+       the old table, and the table is emptied rather than patched: entry 12 under one theme is a
+       different record under the next, so a reused slot would draw the wrong shape.  The geometry
+       generation bumps with it so every in-flight upload region goes stale.
+
+       pal_epoch returns true TWICE per drop, on consecutive build frames: the second re-place is
+       what refills the table, since an entry is earned by a record seen in two different build
+       frames and a reused slot tessellates nothing.  Two heavy frames on a theme or DPI change,
+       which already re-tessellates everything for its own reasons. */
 
     if ( pal_epoch() )
     {

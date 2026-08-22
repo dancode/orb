@@ -516,12 +516,15 @@ ex_windows_pane( void )
     gui()->window_end();
 
     /* The raw pane, root-level (never inside a window bracket -- a pane IS a root surface).
-       Position/size are caller-owned values; a real HUD would compute them from the viewport. */
+       Position/size are caller-owned values; a real HUD would compute them from the viewport.
+       The anchor goes through ex_px / ex_top so it clears the caption band and menu bar at any
+       display scale; the body below stays in raw pixels, which is the rect-cut arithmetic this
+       demo exists to show. */
     gui_region_tier_t t = ( tier == 1 ) ? GUI_REGION_BG
                         : ( tier == 2 ) ? GUI_REGION_FG
                         :                 GUI_REGION_MID;
 
-    gui_rect_t r = { 620.0f, 240.0f, 250.0f, 180.0f };
+    gui_rect_t r = { ex_px( 620.0f ), ex_top( 170.0f ), 250.0f, 180.0f };
     gui_pane_t p = gui()->pane_begin( "ex_raw_pane", r, t, GUI_VP_MAIN,
                                       input ? GUI_WIN_NONE : GUI_WIN_NO_INPUT );
 
@@ -566,7 +569,10 @@ ex_windows_pane( void )
 static void
 ex_windows_features( void )
 {
-    static gui_rect_t rect      = { 620.0f, 300.0f, 300.0f, 220.0f };
+    /* Seeded on the first frame rather than in the initializer: the anchor reads the live
+       viewport chrome height and display scale (ex_top), which no static initializer can. */
+    static gui_rect_t rect;
+    static bool       placed    = false;
     static gui_rect_t restore;             /* feat_maximize's save slot (caller-owned too) */
     static bool       open      = true;
     static bool       folded    = false;
@@ -576,6 +582,12 @@ ex_windows_features( void )
 
     const gui_id_t feat_id = 0x0FEA0001u;  /* mechanisms key on any caller-owned id */
     const f32      title_h = 26.0f;
+
+    if ( !placed )
+    {
+        placed = true;
+        rect   = ( gui_rect_t ){ ex_px( 620.0f ), ex_top( 230.0f ), 300.0f, 220.0f };
+    }
 
     /* Control window: the open latch's re-open side + state readout. */
     if ( ex_begin( "Feature Kit", 400, 220, GUI_WIN_NONE ) )
@@ -674,11 +686,17 @@ ex_windows_features( void )
 static void
 ex_windows_region( void )
 {
+    /* Authored anchors: x in boot-font pixels, y as an offset below the viewport chrome, both
+       resolved through ex_px / ex_top each frame so the four spots hold their layout -- and stay
+       clear of the caption band and menu bar -- at any display scale. */
     static const struct { f32 x, y; } spots[] =
     {
-        {  40.0f, 340.0f }, { 500.0f, 340.0f }, { 500.0f, 520.0f }, {  40.0f, 520.0f },
+        {  40.0f, 270.0f }, { 500.0f, 270.0f }, { 500.0f, 450.0f }, {  40.0f, 450.0f },
     };
     static i32 slot = 0;
+
+    const f32 spot_x = ex_px ( spots[ slot ].x );
+    const f32 spot_y = ex_top( spots[ slot ].y );
 
     /* Control window -- the demo's primary (the registry syncs its X button through this title). */
     if ( ex_begin( "Root Region", 420, 200, GUI_WIN_NONE ) )
@@ -687,18 +705,18 @@ ex_windows_region( void )
         gui()->text_wrapped( "The box below the windows is a region: a fixed rect with a real flow "
                              "layout inside and no chrome around it.  It cannot be dragged, so its "
                              "position is whatever the app passes in this frame." );
-        gui()->textf( "region at %.0f, %.0f", spots[ slot ].x, spots[ slot ].y );
+        gui()->textf( "region at %.0f, %.0f", spot_x, spot_y );
         if ( gui()->button( "Move it" ) )
             slot = ( slot + 1 ) % ( i32 )( sizeof( spots ) / sizeof( spots[ 0 ] ) );
     }
     gui()->window_end();
 
     /* The region itself -- root level, never inside a window bracket. */
-    gui()->region_begin( "Root Region Box", spots[ slot ].x, spots[ slot ].y, 260.0f, 160.0f,
+    gui()->region_begin( "Root Region Box", spot_x, spot_y, 260.0f, 160.0f,
                          GUI_REGION_BG, GUI_VP_MAIN, GUI_WIN_NOSCROLL );
         gui()->stack();
         gui()->text( "A region: fixed rect, no window chrome." );
-        gui()->textf( "pos %.0f, %.0f", spots[ slot ].x, spots[ slot ].y );
+        gui()->textf( "pos %.0f, %.0f", spot_x, spot_y );
 
         /* The item queries read the same inside a region as they do inside a window. */
         gui()->textf( "hover:%d active:%d capture:%d",
@@ -727,7 +745,10 @@ ex_windows_region( void )
 static void
 ex_tab_member( const char* title, const char* body, f32 seed_x )
 {
-    gui()->window_set_next_pos ( seed_x, 340.0f, GUI_COND_ONCE );
+    /* Seeded rather than cascaded, so the three land side by side ready to be dragged together.
+       A seed is an absolute viewport position, so it owes the chrome clearance the cascade would
+       have given for free -- hence ex_top rather than a raw y. */
+    gui()->window_set_next_pos ( ex_px( seed_x ), ex_top( 270.0f ), GUI_COND_ONCE );
     gui()->window_set_next_size( ex_px( 260.0f ), ex_px( 170.0f ), GUI_COND_ONCE );
     if ( gui()->window_begin( title, GUI_WIN_NONE ) )
     {

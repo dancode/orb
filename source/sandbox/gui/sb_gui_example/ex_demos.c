@@ -45,6 +45,22 @@ ex_px( f32 v )
     return v * ( s > 0.0f ? s : 1.0f );
 }
 
+/* An authored ROOT-LEVEL y, as an offset below the viewport chrome.  A pane, a region or a
+   window seeded with an explicit position is placed by the app in absolute viewport coordinates,
+   and two things move there under a scaled display: the authored offset (the ex_px reason) and
+   the caption band + main menu bar it is measured down from, which are em-driven and grow with
+   the font -- 69 px at 1x, twice that at 2x.  A raw literal accounts for neither, so it drifts
+   toward the bar as the scale rises and can end up under it.  viewport_content_y is where host
+   content starts, so an offset added to it clears the chrome at every scale.
+
+   Windows opened through ex_begin need none of this: an unseeded window takes the engine's spawn
+   cascade, which already starts below the work area. */
+static f32
+ex_top( f32 v )
+{
+    return gui()->viewport_content_y( 0 ) + ex_px( v );
+}
+
 static bool
 ex_begin( const char* title, f32 w, f32 h, gui_win_flags_t extra )
 {

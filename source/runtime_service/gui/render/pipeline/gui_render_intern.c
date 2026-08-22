@@ -106,6 +106,7 @@ static struct
 
     u32        cand_count;
     u32        frame;                // build frames since start; bumped by pal_style_reset
+    u32        relearn_frame;        // build frame a drop happened in; 0 = no re-learn pending
     u32        cmd_hits;             // of hits, the share a command's parked answer served
     u32        full_drops;           // records that qualified with no room left
     bool       pub_dirty;            // interned entries not folded into the published table
@@ -178,8 +179,8 @@ pal_hash( const gui_prim_t* rec )
 
 /*  The A/B switch.  Off, pal_find answers nothing, pal_intern declines, and every style falls back
     to the per-slot memo and the arena -- the exact behaviour that existed before the palette, style
-    bloat and all.  Flipping it costs one re-tessellation in each direction, which is what makes it
-    usable for A/B'ing a suspected palette artefact against the same frame without it. */
+    bloat and all.  Flipping it costs an epoch in each direction, which is what makes it usable for
+    A/B'ing a suspected palette artefact against the same frame without it. */
 
 static bool s_pal_on = true;
 
@@ -259,8 +260,7 @@ pal_slot_insert( u32 entry, u32 hash )
 
 /* Interning A/B switch, separate from pal_enabled: off, the table stops growing and every
    style beyond what it already holds takes a per-slot record, which is what a run measures
-   the palette's coverage against.  Unlike pal_enabled there is nothing to invalidate --
-   entries already interned stay valid and keep answering. */
+   the palette's coverage against. */
 
 static bool s_pal_intern_on = true;
 
@@ -269,7 +269,17 @@ bool pal_intern_enabled( void ) { return s_pal_intern_on; }
 void
 pal_set_intern( bool on )
 {
+    if ( s_pal_intern_on == on )
+        return;
     s_pal_intern_on = on;
+
+    /* Switching interning ON only reaches records that TESSELLATE, and a settled UI tessellates
+       nothing -- so on its own the lever would look dead until the user happened to change a
+       window.  Clearing the digest runs the ordinary epoch instead: two re-places, and the table
+       learns the frame's whole working set at once.  Switching it OFF owes none of that -- entries
+       already handed out stay valid and keep answering. */
+    if ( on )
+        s_bake.digest = 0u;
 }
 
 /*  Has this record been seen in an EARLIER build frame?  Records the sighting either way, so
@@ -493,9 +503,16 @@ pal_style_set( const f32* vars, u32 count )
     s_bake.scale_key[ at ] = key;
 }
 
-/*  What the live table was built against: every noted scale, in order, plus the atlas slot.  The
-    atlas is in here because an interned record can carry a bindless slot, and a repack relocates
-    it -- dropping the table is cheaper than patching entries. */
+/*  What the live table was built against: every noted scale, in order, plus the bindless slot of
+    each atlas.  The atlases are in here because an interned record carries its slot in the `tex`
+    lane, and a repack or a lazy first creation relocates it -- dropping the table is cheaper than
+    patching entries.
+
+    ALL THREE, not just the coverage one.  Records reach `tex` from res_sdf_idx (styled glyphs,
+    SDF icons and shapes) and res_sprite_idx (the RGBA path) as well, and both of those atlases
+    are created lazily, so each moves at least once in a run that uses it.  A slot left out here
+    does not draw wrong -- the table is content-addressed, so a moved slot simply stops matching --
+    but the entries holding the old one are never reclaimed and sit against GUI_PAL_MAX. */
 
 static u32
 pal_digest( void )
@@ -505,6 +522,8 @@ pal_digest( void )
         h = ( h ^ s_bake.scale_key[ s ] ) * 16777619u;
     h = ( h ^ s_bake.scale_count ) * 16777619u;
     h = ( h ^ res_atlas_idx()     ) * 16777619u;
+    h = ( h ^ res_sdf_idx()       ) * 16777619u;
+    h = ( h ^ res_sprite_idx()    ) * 16777619u;
     return h ? h : 1u;               /* 0 is the never-built sentinel */
 }
 
@@ -520,6 +539,19 @@ pal_digest( void )
     geometry is now stale" and answers with a full re-place (gui_build_place.c).  That is what
     separates this from an intern: this invalidates indices, while pal_intern only ever appends and
     owes nothing.  Self-gating -- a frame whose inputs have not moved costs one fold.
+
+    A DROP COSTS TWO RE-PLACES, NOT ONE, and the second is what refills the table.  An entry is
+    earned by a record seen in two DIFFERENT build frames (pal_cand_qualifies), and a drop clears
+    the candidate set along with the table, so on the drop frame every record is a first sighting
+    and nothing interns.  Left there, the frame after would reuse every unchanged window from the
+    retained cache (gui_build_place.c), tessellate nothing, and the table would stay empty until
+    each window happened to change on its own -- a theme switch on a settled UI would silently
+    give up the palette for good.  So a drop arms relearn_frame and the next BUILD frame re-places
+    once more; that frame supplies the second sighting and the table refills whole.
+
+    Keyed on the build-frame counter rather than a plain flag because a single build can run the
+    placement pass twice (cache_build_frame's repack retry), and the retry must not consume the
+    arming its own drop just did.
 ==============================================================================================*/
 
 bool
@@ -527,9 +559,23 @@ pal_epoch( void )
 {
     u32 digest = pal_digest();
     if ( digest == s_bake.digest || s_bake.scale_count == 0u )
+    {
+        /* The second half of a drop: re-place once more so the drop frame's sightings meet their
+           second build frame.  Nothing is invalidated here -- the table and its candidates are
+           whatever the drop frame left -- so this only costs the re-place. */
+        if ( s_bake.relearn_frame != 0u && s_bake.relearn_frame != s_bake.frame )
+        {
+            s_bake.relearn_frame = 0u;
+            return true;
+        }
         return false;
+    }
     s_bake.digest = digest;
     s_bake.count  = 0;
+
+    /* Armed with the frame the drop lands in; pal_style_reset has already ticked the counter for
+       this frame, so it is never 0 and 0 stays free as the "nothing pending" sentinel. */
+    s_bake.relearn_frame = s_bake.frame;
 
     memset( s_bake.slot, 0, sizeof( s_bake.slot ) );
     s_bake.hits = s_bake.misses = s_bake.cmd_hits = 0;
@@ -566,17 +612,24 @@ pal_dump( void )
     u32 probes = s_bake.hits + s_bake.misses;
 
     gui_log( GUI_LOG_INFO, "" );
-    gui_log( GUI_LOG_INFO, "---- STYLE PALETTE (%u of %u entries over %u style scale(s); %u/%u "
+    gui_log( GUI_LOG_INFO, "---- STYLE PALETTE%s (%u of %u entries over %u style scale(s); %u/%u "
                            "probes hit since the epoch, %.1f%%) ----",
+             s_pal_on ? "" : " -- DISABLED",
              s_bake.count, (u32)GUI_PAL_MAX, s_bake.scale_count, s_bake.hits, probes,
              probes ? 100.0f * (f32)s_bake.hits / (f32)probes : 0.0f );
 
-    /* What is still in flight: candidates are records seen once and waiting on a second build
+    /* Both A/B switches, spelled out.  An empty table is the same readout whether the palette is
+       off or simply has not learned anything yet, so the state has to be printed rather than
+       inferred from the counts above.
+
+       What is still in flight: candidates are records seen once and waiting on a second build
        frame to earn an entry, so a large held count beside a small table is a UI drawing values
        rather than styles -- animation, drags, anything whose lanes move every frame. */
-    gui_log( GUI_LOG_INFO, "     %u candidate hashes held%s   (%s)", s_bake.cand_count,
+    gui_log( GUI_LOG_INFO, "     %u candidate hashes held%s   (palette %s, interning %s)",
+             s_bake.cand_count,
              s_bake.full_drops ? "  TABLE FULL" : "",
-             s_pal_intern_on ? "interning on" : "interning OFF" );
+             s_pal_on        ? "on" : "OFF",
+             s_pal_intern_on ? "on" : "OFF" );
 
     /* The per-command memo's share of the hits.  What it answers is how much of the lookup
        the command sites absorbed before anything had to be folded or probed at all. */

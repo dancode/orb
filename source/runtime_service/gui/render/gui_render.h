@@ -589,11 +589,13 @@ void                build_dump_geometry     ( void );
 
 void                build_style_census      ( const char* tag, bool clear );
 
-/* Empty the style palette when the landed style, DPI or atlas slot has moved, and publish the
+/* Empty the style palette when the landed style, DPI or an atlas slot has moved, and publish the
    empty table (render/pipeline/gui_render_intern.c).  Every entry was learned against the old style
    and nothing will draw those records again.  Cheap and self-gating: a frame whose inputs are
-   unchanged costs one fold.  True means the table was dropped, which invalidates every palette
-   index in cached geometry -- the caller answers with a full re-place. */
+   unchanged costs one fold.  True means the caller owes a full re-place, which it returns on TWO
+   build frames per drop -- the frame that drops (cached geometry's palette indices are stale) and
+   the one after (records earn entries on their second build frame, so the table can only refill if
+   the whole frame tessellates twice). */
 
 bool                pal_epoch               ( void );
 
@@ -640,16 +642,17 @@ void                pal_publish_pending     ( void );
 
 /* A/B switch for interning alone.  Off, the table stops growing and every style beyond what it
    already holds takes a per-slot record -- which is what a run measures the palette's coverage
-   against.  Unlike pal_set_enabled this invalidates nothing: entries already interned stay valid
-   and keep answering, so flipping it costs no re-place in either direction. */
+   against; entries already interned stay valid and keep answering, so switching off owes no
+   re-place.  Switching back ON runs an epoch, because interning only reaches records that
+   tessellate and a settled UI tessellates nothing.  Debug selector menu: "Style interning". */
 
 bool                pal_intern_enabled      ( void );
 void                pal_set_intern          ( bool on );
 
 /* A/B switch for the palette lookup.  Off, every style takes a per-slot arena record exactly as it
-   did before the palette existed -- more style bloat, identical pixels.  Flipping it re-places all
-   geometry (cached quads hold the answers the old setting gave), so it is a debug lever, not a
-   per-frame one.  Debug selector menu: "Style palette". */
+   did before the palette existed -- more style bloat, identical pixels.  Flipping it runs an epoch
+   (cached quads hold the answers the old setting gave), so it is a debug lever, not a per-frame
+   one.  Debug selector menu: "Style palette". */
 
 bool                pal_enabled             ( void );
 void                pal_set_enabled         ( bool on );

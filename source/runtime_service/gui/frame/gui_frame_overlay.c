@@ -1250,8 +1250,8 @@ debug_selector_menu( void )
 
         /* The finer half: on, a record earns a palette entry once the frame has drawn it
            again; off, the table stops growing and everything beyond it takes a per-slot
-           record.  Free to flip either way -- interning only appends, so nothing already
-           handed out changes meaning. */
+           record.  Switching back on re-places every window, since interning only reaches
+           records that tessellate and the windows on screen are cached. */
         bool intern = pal_intern_enabled();
         if ( gui_checkbox( SEL_INTERN, &intern ) )
             pal_set_intern( intern );
