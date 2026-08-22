@@ -39,17 +39,17 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
     u32 col      = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_RECT_OUTLINE, col, x, y, w, h, pad );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_RECT_OUTLINE, col, x, y, w, h, pad );
+    if ( !e )
         return;
-    c->rect_outline.x        = x;
-    c->rect_outline.y        = y;
-    c->rect_outline.w        = w;
-    c->rect_outline.h        = h;
-    c->rect_outline.t        = t;
-    c->rect_outline.abgr     = col;
-    c->rect_outline.rounding = rounding;
-    c->rect_outline.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    e->rect_outline.x        = x;
+    e->rect_outline.y        = y;
+    e->rect_outline.w        = w;
+    e->rect_outline.h        = h;
+    e->rect_outline.t        = t;
+    e->rect_outline.abgr     = col;
+    e->rect_outline.rounding = rounding;
+    e->rect_outline.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
     draw_cmd_seal();
 }
 
@@ -89,18 +89,18 @@ draw_push_frame( f32 x, f32 y, f32 w, f32 h, f32 t, u32 col_bg, u32 col_border )
     f32 rounding = draw_clamp_rounding( w, h );
     f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_FRAME, fill | bord, x, y, w, h, pad );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_FRAME, fill | bord, x, y, w, h, pad );
+    if ( !e )
         return;
-    c->frame.x          = x;
-    c->frame.y          = y;
-    c->frame.w          = w;
-    c->frame.h          = h;
-    c->frame.t          = t;
-    c->frame.rounding   = rounding;
-    c->frame.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
-    c->frame.abgr       = fill;
-    c->frame.col_border = bord;
+    e->frame.x          = x;
+    e->frame.y          = y;
+    e->frame.w          = w;
+    e->frame.h          = h;
+    e->frame.t          = t;
+    e->frame.rounding   = rounding;
+    e->frame.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    e->frame.abgr       = fill;
+    e->frame.col_border = bord;
     draw_cmd_seal();
 }
 
@@ -119,14 +119,14 @@ draw_push_triangle( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr )
     f32 miny = ay < by ? ( ay < cy ? ay : cy ) : ( by < cy ? by : cy );
     f32 maxy = ay > by ? ( ay > cy ? ay : cy ) : ( by > cy ? by : cy );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_TRIANGLE, col, minx, miny,
-                                  maxx - minx, maxy - miny, 0.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_TRIANGLE, col, minx, miny,
+                                          maxx - minx, maxy - miny, 0.0f );
+    if ( !e )
         return;
-    c->tri.ax   = ax; c->tri.ay = ay;
-    c->tri.bx   = bx; c->tri.by = by;
-    c->tri.cx   = cx; c->tri.cy = cy;
-    c->tri.abgr = col;
+    e->tri.ax   = ax; e->tri.ay = ay;
+    e->tri.bx   = bx; e->tri.by = by;
+    e->tri.cx   = cx; e->tri.cy = cy;
+    e->tri.abgr = col;
     draw_cmd_seal();
 }
 
@@ -147,15 +147,15 @@ draw_push_bezier( f32 ax, f32 ay, f32 cx, f32 cy, f32 bx, f32 by, f32 thickness,
     f32 miny = ay < by ? ( ay < cy ? ay : cy ) : ( by < cy ? by : cy );
     f32 maxy = ay > by ? ( ay > cy ? ay : cy ) : ( by > cy ? by : cy );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_BEZIER, col, minx - half, miny - half,
-                                  maxx - minx + 2.0f * half, maxy - miny + 2.0f * half, 0.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_BEZIER, col, minx - half, miny - half,
+                                          maxx - minx + 2.0f * half, maxy - miny + 2.0f * half, 0.0f );
+    if ( !e )
         return;
-    c->bezier.ax        = ax; c->bezier.ay = ay;
-    c->bezier.cx        = cx; c->bezier.cy = cy;
-    c->bezier.bx        = bx; c->bezier.by = by;
-    c->bezier.thickness = thickness;
-    c->bezier.abgr      = col;
+    e->bezier.ax        = ax; e->bezier.ay = ay;
+    e->bezier.cx        = cx; e->bezier.cy = cy;
+    e->bezier.bx        = bx; e->bezier.by = by;
+    e->bezier.thickness = thickness;
+    e->bezier.abgr      = col;
     draw_cmd_seal();
 }
 

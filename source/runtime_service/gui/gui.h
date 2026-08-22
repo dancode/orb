@@ -1811,14 +1811,19 @@ typedef void ( *gui_volatile_fn )( gui_id_t id, bool is_replay );
 
 typedef enum
 {
-    GUI_CMD_RECT_FILLED,     // filled rectangle or textured quad (glyph); rounding > 0 makes it
-                             //   an SDF surface -- a filled DISC is this command at radius ==
-                             //   half-extent (draw_push_circle_filled), not a type of its own
+    GUI_CMD_RECT_FILL,       // solid-colour filled rectangle; rounding > 0 makes it an SDF
+                             //   surface -- a filled DISC is this command at radius ==
+                             //   half-extent (draw_push_circle_filled), not a type of its own.
+                             //   HOT: inline in gui_cmd_t, the most common command in the list
+    GUI_CMD_RECT_TEX,        // textured quad: an image, an icon, a glyph's SDF sprite -- same
+                             //   shape as RECT_FILL but never solid, so its uv/tex_idx fields
+                             //   would sit unused on every plain fill.  COLD: gui_cmd_ext_t
     GUI_CMD_RECT_OUTLINE,    // hollow rectangle: four edge quads (a BOX under GUI_OP_BAND
                              //   when rounded)
     GUI_CMD_TRIANGLE,        // solid triangle
     GUI_CMD_BEZIER,          // stroked quadratic bezier, round caps: one GUI_FX_BEZIER quad
-    GUI_CMD_TEXT,            // glyph run from the font atlas
+    GUI_CMD_TEXT,            // glyph run from the font atlas.  HOT: inline in gui_cmd_t, the
+                             //   other high-volume command alongside RECT_FILL
     GUI_CMD_TEXT_XF,         // glyph run under a uniform scale + a rotation about its origin
     GUI_CMD_TEXT_SHADOW,     // glyph run plus an offset copy, both emitted from one string walk
     GUI_CMD_LINE,            // single stroke segment
@@ -1951,36 +1956,34 @@ gui_tex_index( u32 tex_idx )
 #define GUI_FX_BOX_GLOW   3u   // exponential falloff (GUI_OP_GLOW) -- light, not blur
 #define GUI_FX_BOX_RING   4u   // bent into a border band (GUI_OP_BAND) -- the ripple's ring
 
+/* Only RECT_FILL and TEXT carry their payload inline in gui_cmd_t -- every other command type
+   stores its payload in the cold pool (gui_cmd_ext_t, below) and rides here as just an index,
+   see gui_cmd_payload().  The two inline members are the high-volume path measured by a full
+   demo-library census: every solid fill and every glyph run a frame draws costs no
+   indirection to read back, at the cost of one branch for everything else. */
 typedef struct
 {
     u8 type;        // gui_cmd_type_t, fits u8 (GUI_CMD_COUNT values)
     u8 clip_idx;    // index into per-frame s_draw.clip_table (set at push time)
     u8 vp;          // target viewport (GUI_MAX_VIEWPORTS = 4)
-    u8 _pad;        // unused
+    u8 _pad;        // unused --
 
     union
     {
-        struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding, corner_pow; u32 tex_idx; u32 abgr; } rect;
-        struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;              u32 abgr; } rect_outline;
-
-        /* Widget bezel: the filled body and its border band in one command, resolved by the
-           fragment as a single quad (GUI_OP_FRAME).  `t` is the band's width, lying inside the
-           boundary -- the emit site falls back to the fill + outline pair when the ambient
-           border alignment pushes the band outward, so this member never carries an align. */
-        struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;  u32 abgr, col_border; } frame;
-        struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
-        struct { f32 ax, ay, cx, cy, bx, by, thickness;          u32 abgr; } bezier;
+        struct { f32 x, y, w, h; f32 rounding, corner_pow; u32 abgr; } rect_fill;
 
         /* clip_x0/clip_x1 are the horizontal pixel window for glyph-level clipping: the first and
            last straddling glyphs are cut and their U remapped; interior glyphs emit whole.  The
            sentinel (clip_x0 = -GUI_TEXT_NO_CLIP, clip_x1 = +GUI_TEXT_NO_CLIP) means unclipped
            and takes the original whole-run fast path. */
+
         /* edge_w / edge_col are the ambient TEXT_EDGE at emit time (width 0 = none): a second
            colour painted outside the glyph boundary, resolved by the fragment from the SAME quad,
            so an outlined or shadowed run costs no extra geometry, no second pass, and no batch
            split.  They ride the command rather than being re-read at tessellation because the
            ambient can have moved on by then -- a retained window re-tessellates long after its
            emit. */
+
         /* font is the registry id whose glyph metrics and atlas UVs this run resolves from -- the
            ONLY thing the font decides.  It rides the command rather than the command SEGMENT
            because a segment is the backend's batch-dispatch unit and the font is not a batch key:
@@ -1988,222 +1991,267 @@ typedef struct
            when it does the texture rides the vertex and cannot cut a draw call either.  Tagging a
            batch unit with a per-command property would force a segment split just for a lookup --
            see draw_set_font. */
-        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr;
+
+        struct { f32 x, y; u32 off; u32 len; f32 clip_x0, clip_x1; u32 abgr;
                  f32 edge_w; u32 edge_col; u16 font; } text;
-        /* A drop shadow rides its own command rather than a dx/dy/shadow_abgr feather on `text`,
-           for the same reason `text_xf` does: those fields would sit unused on every plain label,
-           the hot path every chrome widget goes through.  Unlike text_xf, the run stays 1:1 and
-           axis-aligned -- only the glyph loop changes, emitting the shadow copy (dx, dy offset,
-           shadow_abgr) and the main copy per glyph from one decode + one atlas lookup, instead of
-           draw_text_shadow's two full commands walking the string twice. */
-        struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr, shadow_abgr;
-                 f32 dx, dy;  u16 font; } text_shadow;
-        /* The same glyph run under a uniform SCALE and a ROTATION about (x, y) -- (x, y) is both
-           the run's top-left in its own space and the pivot, so a caller places any other pivot by
-           moving the origin.  rot is radians in screen space (the angle algebra above: 0 points
-           +x, positive turns clockwise).
-           Its own command rather than two more fields on text, for the same reason shadow is not
-           a feather on rect: text is the hot path every chrome label goes through, and it is also
-           the shape the text CONSUMERS assume -- the selection capture hit-tests axis-aligned runs
-           and the glyph clip window cuts on a screen-x boundary, neither of which survives a
-           rotation.  A separate type is what lets both of them skip a transformed run cleanly
-           instead of measuring it wrong.  No clip window: the GPU scissor is its only clip.
-           Nothing here is snapped to the pixel grid -- see tess_text_xf. */
-        struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr;
-                 f32 edge_w; u32 edge_col; u16 font; } text_xf;
-        /* A stroke segment, resolved as a CAPSULE by the fragment (round caps, exact at any
-           angle).  `border` > 0 hollows it into a tube of that width lying inside the capsule
-           boundary -- GUI_OP_BAND, the same op that turns a filled box into a rounded outline,
-           which reaches this shape for free because an op modifies whatever field arrived.
-           gui_draw_line pushes border 0 and only for diagonals; gui_draw_capsule* pushes at any
-           angle, since a snapped rect has square caps and is not the same shape. */
-        struct { f32 x0, y0, x1, y1, thickness, border;          u32 abgr; } line;
-        struct { u32 pt_offset; u32 pt_count; f32 thickness;
-                 gui_stroke_align_t align; bool closed;         u32 abgr; } polyline;
-        /* Dashed line tessellates to one oriented textured quad: U spans 0..len/period so the
-           atlas dash row tiles along the line; duty (on-fraction) picks the nearest baked row. */
-        struct { f32 x0, y0, x1, y1, thickness, period, duty;     u32 abgr; } dash;
-        /* Gradient rect: one quad, col_a -> col_b ramped in the fragment off the style record
-           (GUI_OP_GRAD).  horizontal != 0 = left->right, else top->bottom.  Always
-           square.  u32, not bool, for the same no-tail-padding rule as sprite below -- the
-           retained-cache hash folds these bytes raw. */
-        struct { f32 x, y, w, h; u32 col_a, col_b; u32 horizontal; } gradient;
-        /* Rect list: `count` solid fills from the per-frame rect pool (s_draw.rect_pool), one
-           command for the whole batch -- the dense-shape escape valve (timeline bars, graph
-           columns).  Always square, white texel, per-entry color; entries share the clip. */
-        struct { u32 offset; u32 count; } rect_list;
-        /* Sprite quad.  The sprite ID travels, not its UVs: placement in the sprite atlas can move
-           under a repack, so the tessellator resolves through the sprite source contract at flush
-           time exactly as a glyph does, and res_sprite_generation folds into the window hash to
-           force that re-resolve.  nine != 0 asks for the slice expansion (a sprite with no insets
-           draws as one stretched quad either way); it pairs with flags as a u16 rather than a bool
-           so the member carries no tail padding -- the retained-cache hash folds these bytes raw
-           and stale padding from a differently-typed command would read as a spurious change. */
-        struct { f32 x, y, w, h; f32 scale; u32 sprite; u32 abgr; u16 flags; u16 nine; } sprite;
-        /* The parameterized GUI_FX_BOX surface -- one member serving the soft shadow / glow
-           (a wide `feather`, the total width of the falloff band straddling the boundary, so the
-           geometry reaches feather/2 past the box on every side) and the pulsing box (`rate` in
-           Hz + `depth` 0..1, alpha breathing on pc.time in the FRAGMENT -- geometry never
-           changes, so the retained slot stays valid and nothing re-tessellates while it runs;
-           the frame must still be PRESENTED, see GUI_FX_TIME_WRAP).  Every one of these is the
-           same GUI_FX_BOX mode; what differs is the op the tessellator stamps.  Its own member
-           rather than
-           feather/rate/depth bolted onto rect: rect is the hot variant every fill goes through,
-           and widening it would grow the whole command pool for fields almost nothing sets.
-           `rot` (radians, screen space, about the box CENTRE) turns the whole surface: the fx
-           coordinate is box-local and affine, so rotating the four corner POSITIONS preserves the
-           field under interpolation -- a rotated card costs the same one quad.  0 for
-           every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap.
-           `variant` picks which of the five fills this is (GUI_FX_BOX_*), all sharing the one
-           geometry:
-             FILL   -- the filled surface: a glow or halo MEANT to be seen through its subject.
-             SKIRT  -- the interior cut away (GUI_OP_CUT), same outward falloff, painting
-                       nothing inside the boundary.  What a DROP shadow wants: the core of a
-                       filled one is only ever seen through whatever it sits behind, which is a
-                       translucent panel dimming itself.
-             INSET  -- the falloff turned INWARD (GUI_OP_INSET), painting from the boundary
-                       `feather` px in and nothing outside.  The inner shadow / pressed well.
-             GLOW   -- the outward falloff resolved EXPONENTIALLY (GUI_OP_GLOW): light,
-                       not blur.
-             RING   -- the field bent into a border band of `border` px (GUI_OP_BAND): the
-                       hollow ring the ripple wants, since a swelling band travels outward
-                       with nothing in its middle.
-           A non-zero `rate` adds GUI_OP_PULSE on top of whichever variant is set, so a cut or
-           inset surface can breathe as readily as a filled one.
-           A non-zero `swell` adds GUI_OP_SWELL: the boundary itself travels `swell * k` px
-           (negative shrinks), riding the same clock -- the pop, the breathing outline, and with
-           variant 4 plus a full-depth pulse the sonar ripple, all in one quad whose bytes never
-           change while it runs.
-           `cut_dx`/`cut_dy` move the SKIRT's cut off the shape it is drawn on: x,y,w,h is where
-           the shadow lies and the cut offset says where the caster sits relative to it, so the
-           falloff is measured from one outline while the hole is taken against another.  That is
-           what makes a cast DIRECTIONAL, and 0 is the even one every caller had before.  The
-           offset is in the shape's LOCAL frame -- the same as screen for the axis-aligned boxes
-           that are the only things which cast. */
-        /* `phase` offsets the pulse wave in CYCLES, so same-rate pulses can stagger instead of
-           beating in lockstep; 0 for every non-pulsing variant.  `curve`/`curve_param` shape the
-           wave (gui_curve_t), baked from the ambient at push time. */
-        /* `shape` names a baked SDF shape (register_shape) to take the place of the rounded box,
-           0 being the analytic box every caller had before.  Every variant above is unchanged by
-           it -- the ops read a distance and do not care which field produced one -- so a glow, a
-           ring or a swell reaches authored art through the same command that reaches a rect.
-           x,y,w,h is then the PADDED box, inflated at emit from the caller's ink rect so the quad
-           covers the field's margin; the ID travels rather than the UVs, since an SDF-atlas repack
-           moves the tenant under geometry the retained cache may hold for many frames. */
-        struct { f32 x, y, w, h; f32 rounding, corner_pow, feather, rate, depth, rot;
-                 u32 abgr, variant; f32 cut_dx, cut_dy; f32 phase;
-                 u32 curve; f32 curve_param; f32 swell, border; u32 shape; } fx_box;
-        /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
-           the SAME one quad a uniform rounded rect emits; the one thing that differs is
-           that each quad carries its own packed word, because the radius is the only shape
-           parameter that lives in the WORD rather than in the vertices.  A quadrant already sees
-           exactly one corner, so per-corner radii cost no extra geometry -- only the four separate
-           stamps (see tess_fx_box_core).
-           The field order IS the quadrant order the tessellator walks (top-left, top-right,
-           bottom-right, bottom-left), so the two cannot drift apart.
-           Filled and solid-colour only.  The stroked form stays a perimeter polyline:
-           GUI_OP_BAND derives its interior hole from a single radius, and generalizing that is
-           not worth it for a shape whose outline the polyline already draws correctly.
-           `feather` is the falloff band exactly as fx_box carries it -- 0 gets the standard 1 px
-           AA, wider makes the per-corner SOFT SHADOW (the tab / asymmetric-card drop shadow); the
-           quadrants agree at any feather (tess_fx_box_core's centre-line proof).
-           `col_b` makes it a GRADIENT fill: the ramp runs abgr -> col_b, shaped by `grad_kind`
-           (gui_grad_t) and oriented by `grad_ang` (radians, box-local, 0 points +x -- the axis for
-           a linear ramp, the direction a conic one peaks toward, ignored by a radial one).  A
-           linear ramp spans the box exactly and holds its end colours across the AA skirt.
-           col_b == abgr is a flat fill, which is not a special case but the honest degenerate one:
-           the op is simply left off.
-           The ramp reaches the fragment through the RECORD (GUI_OP_GRAD), which is why radial and
-           conic exist at all -- neither can be described by colours at a rectangle's corners. */
-        /* `grad_mid` is the ramp's midpoint bend, stored as the EXPONENT the record carries
-           (mapped once at push time, ln 0.5 / ln mid); 0 is the linear default. */
-        struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather, corner_pow; u32 abgr;
-                 u32 col_b; f32 grad_ang; u32 grad_kind; f32 grad_mid; } round_rect;
-        /* Circular sector -- ONE member serving GUI_CMD_ARC and GUI_CMD_PIE, which differ only in
-           the field the fragment evaluates, not in anything they carry.  Angles are radians in
-           screen space (0 points +x, positive turns clockwise, matching text_xf.rot); a1 < a0 is
-           normalized at tessellation and a sweep of a full turn routes to the exact ring / disc
-           primitives instead.  `thickness` is the stroke width for ARC and is ignored by PIE.
-           Sampled as a polyline this shape would need up to 66 points fanned or stroked -- up to
-           65 separate TRIANGLE commands for a pie, ~130 vertices for a spinner.  It costs one
-           quad instead, because a circular field needs no quadrant fold (see the effect band). */
-        /* spin_rate (turns/sec) + spin_phase (turns) put the sector under GUI_OP_SPIN: the whole
-           frame rotates on pc.time in the FRAGMENT, so a spinner's bytes are identical every
-           frame and it re-tessellates nothing -- the pulse contract for rotation.  0 = static. */
-        /* `curve`/`curve_param` shape the revolution (gui_curve_t): STAIR is the clock-hand
-           spinner that ticks between positions rather than sweeping. */
-        struct { f32 cx, cy, r, thickness, a0, a1; f32 spin_rate, spin_phase; u32 abgr;
-                 u32 curve; f32 curve_param; } arc;
-        /* The arc under an angular dash cut.  `period` is radians per dash+gap cycle -- the emit
-           side quantizes it so a WHOLE number of cycles fits the sweep, which is what keeps a
-           closed dashed ring from showing a seam where the pattern meets itself; `duty` is the
-           on-fraction.  Both reach the fragment through the record (GUI_OP_DASH). */
-        struct { f32 cx, cy, r, thickness, a0, a1; f32 period, duty; u32 abgr; } arc_dash;
-        /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1).  col_b reaches the fragment
-           through the record; GUI_OP_GRAD_ALONG lerps by the arc-length coordinate over the sweep
-           -- the one gradient a 4-corner vertex colour could never express, because it varies by
-           ANGLE, not position. */
-        struct { f32 cx, cy, r, thickness, a0, a1; u32 col_a, col_b; } arc_grad;
-        /* A textured quad under a rotation about its CENTRE -- the text_xf treatment applied to
-           one quad (tess_quad_xf).  UVs resolve at emit exactly as draw_push_icon's do: an icon
-           is a quad forever, and the atlas UV moves only on a bake, which reloads everything.
-           Centre pivot rather than the text anchor because a marker / needle / spinner glyph
-           turns about its own middle -- the one pivot every caller was computing anyway. */
-        struct { f32 x, y, w, h; f32 u0, v0, u1, v1; f32 rot; u32 tex_idx; u32 abgr; } image_xf;
-        /* The cell pattern: col_a fills even cells, col_b odd, anchored at the box origin.  The
-           fragment tiles it in framebuffer space (GUI_OP_CHECKER), so this is ONE quad at any
-           area and any cell, where a rect-pool expansion would cap at 64x64 cells.
-           `rounding` is the ambient radius, folded in like any other fill's: the pattern is an OP
-           now, so it lands inside the shape's own boundary instead of being the shape.  That is
-           what makes the transparency chequerboard behind a colour swatch the SWATCH, one quad. */
-        struct { f32 x, y, w, h; f32 cell; u32 col_a, col_b;
-                 f32 rounding, corner_pow; } checker;
-        /* The line lattice: a line every `cell` px, `thickness` px wide, in abgr over NOTHING --
-           the caller layers it on its own fill.  (ox, oy) is the lattice anchor in screen px:
-           lines land on ox + k*cell, so a panning canvas passes its content origin and the grid
-           rides along (GUI_OP_GRID).  `rounding` is the ambient radius: the lattice ends at the
-           panel's rounded boundary rather than at a rectangle over it. */
-        struct { f32 x, y, w, h; f32 cell, thickness, ox, oy; f32 angle; u32 stripes;
-                 u32 abgr; f32 rounding, corner_pow; } grid;
-        /* Regular polygon (GUI_FX_NGON): `sides` flat edges inscribed in circumradius r, rotated
-           by `rot` (radians, 0 = a vertex pointing up), corners rounded by `rounding` px.
-           thickness > 0 strokes it (GUI_OP_BAND); 0 fills.  star > 0 pulls each edge midpoint in
-           to star * r, drawing a `sides`-pointed star from the same field; 0 = regular. */
-        struct { f32 cx, cy, r, rounding, rot, thickness, star; u32 sides; u32 abgr; } ngon;
-        /* Rounded-box outline cut by a perimeter dash (GUI_OP_BAND + GUI_OP_DASH).  dash/gap are
-           arc-length px (the draw_dashed_line vocabulary); the tessellator snaps the period so
-           whole cycles fit the perimeter.  `rate` scrolls the pattern in px/sec on pc.time --
-           the marching ants -- and `phase` is a static px offset; both animate in the FRAGMENT,
-           so the ants re-tessellate nothing.  `curve`/`curve_param` shape how the pattern crosses
-           one period (gui_curve_t): STAIR is the ants that jump a dash at a time. */
-        struct { f32 x, y, w, h; f32 rounding, t; f32 dash, gap; f32 rate, phase;
-                 u32 abgr; u32 curve; f32 curve_param; f32 anim_phase; } box_dash;
-        /* A LATTICE of one rounded cell (GUI_OP_REPEAT): nx by ny copies, `pitch` apart
-           centre-to-centre, centred on (cx, cy).  The cell's size is stated rather than the set's
-           box, because the set's box is derived from the two and the fragment recovers the count
-           back out of it (gui_build_tess.c, tess_repeat_box).  ONE quad however many copies.
-           `col_b` != abgr ramps the copies toward it along the strip (GUI_OP_GRAD_CELL); `fill`
-           >= 0 lights only that fraction of them (GUI_OP_CELL_FILL) -- the segmented meter. */
-        struct { f32 cx, cy; f32 pitch_x, pitch_y; f32 cell_w, cell_h; f32 rounding;
-                 u32 nx, ny; u32 abgr; u32 col_b; f32 fill; } repeat;
-        /* A RING of one rounded cell (GUI_OP_REPEAT_POLAR): `n` copies on a circle of radius
-           `orbit` about (cx, cy).  `rate` animates on the shader clock in revolutions/sec -- and
-           because that animates in the FRAGMENT, these bytes are identical every frame and a
-           spinner re-tessellates nothing.  What the rate DRIVES depends on `col_b`: equal to
-           abgr, the whole ring turns rigidly (GUI_OP_SPIN); different, the dots stay put and a
-           colour ramp toward col_b marches around them, trailing the bright head -- the tail
-           spinner (GUI_OP_GRAD_CELL).  `curve`/`curve_param` shape either motion (gui_curve_t):
-           STAIR at `n` steps is the clock-hand tick. */
-        struct { f32 cx, cy; f32 orbit; f32 cell_w, cell_h; f32 rounding;
-                 f32 rate, phase, curve_param; u32 n, curve, abgr; u32 col_b; } repeat_polar;
-        /* A rounded box with a SECOND rounded box carved out of it (GUI_OP_CUT_SHAPE) -- the
-           subtraction no number of extra quads can paint.  The cut's centre is an OFFSET from
-           the shape's centre (the record's cut vector); `cut_aa` is the carved edge's own AA
-           band in px. */
-        struct { f32 x, y, w, h; f32 rounding; f32 cut_dx, cut_dy, cut_w, cut_h;
-                 f32 cut_r, cut_aa; u32 abgr; } box_cut;
+
+        struct { u32 ext_idx; } cold;   // index into the cold pool, see draw_cmd_ext_slot()
     };
 } gui_cmd_t;
+
+/* Every command type that isn't RECT_FILL or TEXT: rare enough, individually or combined
+   across a full demo-library census, that inlining it in gui_cmd_t would pay its size (up to
+   fx_box's 80B) on the hot path for nothing.  Lives in the tail bytes of s_draw.cmds[] itself
+   rather than a separately-capped array -- see draw_cmd_ext_slot() -- so the hot and cold
+   pools share one budget instead of each needing its own worst-case capacity reserved. */
+
+typedef union
+{
+    /* The textured/image case of what RECT_FILL covers for a solid fill -- an icon, a picture,
+       a glyph's SDF sprite.  Split out because its uv/tex_idx fields would sit unused on every
+       plain fill, the hot path every chrome widget goes through. */
+    struct { f32 x, y, w, h, u0, v0, u1, v1; f32 rounding, corner_pow; u32 tex_idx; u32 abgr; } rect_tex;
+    struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;              u32 abgr; } rect_outline;
+
+    /* Widget bezel: the filled body and its border band in one command, resolved by the
+       fragment as a single quad (GUI_OP_FRAME).  `t` is the band's width, lying inside the
+       boundary -- the emit site falls back to the fill + outline pair when the ambient
+       border alignment pushes the band outward, so this member never carries an align. */
+    struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;  u32 abgr, col_border; } frame;
+    struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
+    struct { f32 ax, ay, cx, cy, bx, by, thickness;          u32 abgr; } bezier;
+
+    /* A drop shadow rides its own command rather than a dx/dy/shadow_abgr feather on `text`,
+       for the same reason `text_xf` does: those fields would sit unused on every plain label,
+       the hot path every chrome widget goes through. Unlike text_xf, the run stays 1:1 and
+       axis-aligned -- only the glyph loop changes, emitting the shadow copy (dx, dy offset,
+       shadow_abgr) and the main copy per glyph from one decode + one atlas lookup, instead of
+       draw_text_shadow's two full commands walking the string twice. */
+    struct { f32 x, y;  u32 off; u32 len;  f32 clip_x0, clip_x1;  u32 abgr, shadow_abgr;
+             f32 dx, dy;  u16 font; } text_shadow;
+
+    /* The same glyph run under a uniform SCALE and a ROTATION about (x, y) -- (x, y) is both
+       the run's top-left in its own space and the pivot, so a caller places any other pivot by
+       moving the origin.  rot is radians in screen space (the angle algebra above: 0 points
+       +x, positive turns clockwise).
+       Its own command rather than two more fields on text, for the same reason shadow is not
+       a feather on rect: text is the hot path every chrome label goes through, and it is also
+       the shape the text CONSUMERS assume -- the selection capture hit-tests axis-aligned runs
+       and the glyph clip window cuts on a screen-x boundary, neither of which survives a
+       rotation.  A separate type is what lets both of them skip a transformed run cleanly
+       instead of measuring it wrong.  No clip window: the GPU scissor is its only clip.
+       Nothing here is snapped to the pixel grid -- see tess_text_xf. */
+    struct { f32 x, y;  u32 off; u32 len;  f32 scale, rot;        u32 abgr;
+             f32 edge_w; u32 edge_col; u16 font; } text_xf;
+
+    /* A stroke segment, resolved as a CAPSULE by the fragment (round caps, exact at any
+       angle).  `border` > 0 hollows it into a tube of that width lying inside the capsule
+       boundary -- GUI_OP_BAND, the same op that turns a filled box into a rounded outline,
+       which reaches this shape for free because an op modifies whatever field arrived.
+       gui_draw_line pushes border 0 and only for diagonals; gui_draw_capsule* pushes at any
+       angle, since a snapped rect has square caps and is not the same shape. */
+    struct { f32 x0, y0, x1, y1, thickness, border;          u32 abgr; } line;
+    struct { u32 pt_offset; u32 pt_count; f32 thickness;
+             gui_stroke_align_t align; bool closed;         u32 abgr; } polyline;
+
+    /* Dashed line tessellates to one oriented textured quad: U spans 0..len/period so the
+       atlas dash row tiles along the line; duty (on-fraction) picks the nearest baked row. */
+    struct { f32 x0, y0, x1, y1, thickness, period, duty;     u32 abgr; } dash;
+
+    /* Gradient rect: one quad, col_a -> col_b ramped in the fragment off the style record
+       (GUI_OP_GRAD).  horizontal != 0 = left->right, else top->bottom.  Always
+       square.  u32, not bool, for the same no-tail-padding rule as sprite below -- the
+       retained-cache hash folds these bytes raw. */
+    struct { f32 x, y, w, h; u32 col_a, col_b; u32 horizontal; } gradient;
+
+    /* Rect list: `count` solid fills from the per-frame rect pool (s_draw.rect_pool), one
+       command for the whole batch -- the dense-shape escape valve (timeline bars, graph
+       columns).  Always square, white texel, per-entry color; entries share the clip. */
+    struct { u32 offset; u32 count; } rect_list;
+
+    /* Sprite quad.  The sprite ID travels, not its UVs: placement in the sprite atlas can move
+       under a repack, so the tessellator resolves through the sprite source contract at flush
+       time exactly as a glyph does, and res_sprite_generation folds into the window hash to
+       force that re-resolve.  nine != 0 asks for the slice expansion (a sprite with no insets
+       draws as one stretched quad either way); it pairs with flags as a u16 rather than a bool
+       so the member carries no tail padding -- the retained-cache hash folds these bytes raw
+       and stale padding from a differently-typed command would read as a spurious change. */
+    struct { f32 x, y, w, h; f32 scale; u32 sprite; u32 abgr; u16 flags; u16 nine; } sprite;
+
+    /* The parameterized GUI_FX_BOX surface -- one member serving the soft shadow / glow
+       (a wide `feather`, the total width of the falloff band straddling the boundary, so the
+       geometry reaches feather/2 past the box on every side) and the pulsing box (`rate` in
+       Hz + `depth` 0..1, alpha breathing on pc.time in the FRAGMENT -- geometry never
+       changes, so the retained slot stays valid and nothing re-tessellates while it runs;
+       the frame must still be PRESENTED, see GUI_FX_TIME_WRAP).  Every one of these is the
+       same GUI_FX_BOX mode; what differs is the op the tessellator stamps.
+       `rot` (radians, screen space, about the box CENTRE) turns the whole surface: the fx
+       coordinate is box-local and affine, so rotating the four corner POSITIONS preserves the
+       field under interpolation -- a rotated card costs the same one quad.  0 for
+       every axis-aligned caller (shadow / pulse), and 0 keeps the grid snap.
+       `variant` picks which of the five fills this is (GUI_FX_BOX_*), all sharing the one
+       geometry:
+         FILL   -- the filled surface: a glow or halo MEANT to be seen through its subject.
+         SKIRT  -- the interior cut away (GUI_OP_CUT), same outward falloff, painting
+                   nothing inside the boundary.  What a DROP shadow wants: the core of a
+                   filled one is only ever seen through whatever it sits behind, which is a
+                   translucent panel dimming itself.
+         INSET  -- the falloff turned INWARD (GUI_OP_INSET), painting from the boundary
+                   `feather` px in and nothing outside.  The inner shadow / pressed well.
+         GLOW   -- the outward falloff resolved EXPONENTIALLY (GUI_OP_GLOW): light,
+                   not blur.
+         RING   -- the field bent into a border band of `border` px (GUI_OP_BAND): the
+                   hollow ring the ripple wants, since a swelling band travels outward
+                   with nothing in its middle.
+       A non-zero `rate` adds GUI_OP_PULSE on top of whichever variant is set, so a cut or
+       inset surface can breathe as readily as a filled one.
+       A non-zero `swell` adds GUI_OP_SWELL: the boundary itself travels `swell * k` px
+       (negative shrinks), riding the same clock -- the pop, the breathing outline, and with
+       variant 4 plus a full-depth pulse the sonar ripple, all in one quad whose bytes never
+       change while it runs.
+       `cut_dx`/`cut_dy` move the SKIRT's cut off the shape it is drawn on: x,y,w,h is where
+       the shadow lies and the cut offset says where the caster sits relative to it, so the
+       falloff is measured from one outline while the hole is taken against another.  That is
+       what makes a cast DIRECTIONAL, and 0 is the even one every caller had before.  The
+       offset is in the shape's LOCAL frame -- the same as screen for the axis-aligned boxes
+       that are the only things which cast.
+       `phase` offsets the pulse wave in CYCLES, so same-rate pulses can stagger instead of
+       beating in lockstep; 0 for every non-pulsing variant.  `curve`/`curve_param` shape the
+       wave (gui_curve_t), baked from the ambient at push time.
+       `shape` names a baked SDF shape (register_shape) to take the place of the rounded box,
+       0 being the analytic box every caller had before.  Every variant above is unchanged by
+       it -- the ops read a distance and do not care which field produced one -- so a glow, a
+       ring or a swell reaches authored art through the same command that reaches a rect.
+       x,y,w,h is then the PADDED box, inflated at emit from the caller's ink rect so the quad
+       covers the field's margin; the ID travels rather than the UVs, since an SDF-atlas repack
+       moves the tenant under geometry the retained cache may hold for many frames. */
+    struct { f32 x, y, w, h; 
+             f32 rounding, corner_pow, feather, rate, depth, rot;
+             u32 abgr, variant; f32 cut_dx, cut_dy; f32 phase;
+             u32 curve; f32 curve_param; f32 swell, border; u32 shape; } fx_box;
+
+    /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
+       the SAME one quad a uniform rounded rect emits; the one thing that differs is
+       that each quad carries its own packed word, because the radius is the only shape
+       parameter that lives in the WORD rather than in the vertices.  A quadrant already sees
+       exactly one corner, so per-corner radii cost no extra geometry -- only the four separate
+       stamps (see tess_fx_box_core).
+       The field order IS the quadrant order the tessellator walks (top-left, top-right,
+       bottom-right, bottom-left), so the two cannot drift apart.
+       Filled and solid-colour only.  The stroked form stays a perimeter polyline:
+       GUI_OP_BAND derives its interior hole from a single radius, and generalizing that is
+       not worth it for a shape whose outline the polyline already draws correctly.
+       `feather` is the falloff band exactly as fx_box carries it -- 0 gets the standard 1 px
+       AA, wider makes the per-corner SOFT SHADOW (the tab / asymmetric-card drop shadow); the
+       quadrants agree at any feather (tess_fx_box_core's centre-line proof).
+       `col_b` makes it a GRADIENT fill: the ramp runs abgr -> col_b, shaped by `grad_kind`
+       (gui_grad_t) and oriented by `grad_ang` (radians, box-local, 0 points +x -- the axis for
+       a linear ramp, the direction a conic one peaks toward, ignored by a radial one).  A
+       linear ramp spans the box exactly and holds its end colours across the AA skirt.
+       col_b == abgr is a flat fill, which is not a special case but the honest degenerate one:
+       the op is simply left off.
+       The ramp reaches the fragment through the RECORD (GUI_OP_GRAD), which is why radial and
+       conic exist at all -- neither can be described by colours at a rectangle's corners.
+       `grad_mid` is the ramp's midpoint bend, stored as the EXPONENT the record carries
+       (mapped once at push time, ln 0.5 / ln mid); 0 is the linear default. */
+    struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather, corner_pow; u32 abgr;
+             u32 col_b; f32 grad_ang; u32 grad_kind; f32 grad_mid; } round_rect;
+
+    /* Circular sector -- ONE member serving GUI_CMD_ARC and GUI_CMD_PIE, which differ only in
+       the field the fragment evaluates, not in anything they carry.  Angles are radians in
+       screen space (0 points +x, positive turns clockwise, matching text_xf.rot); a1 < a0 is
+       normalized at tessellation and a sweep of a full turn routes to the exact ring / disc
+       primitives instead.  `thickness` is the stroke width for ARC and is ignored by PIE.
+       Sampled as a polyline this shape would need up to 66 points fanned or stroked -- up to
+       65 separate TRIANGLE commands for a pie, ~130 vertices for a spinner.  It costs one
+       quad instead, because a circular field needs no quadrant fold (see the effect band).
+       spin_rate (turns/sec) + spin_phase (turns) put the sector under GUI_OP_SPIN: the whole
+       frame rotates on pc.time in the FRAGMENT, so a spinner's bytes are identical every
+       frame and it re-tessellates nothing -- the pulse contract for rotation.  0 = static.
+       `curve`/`curve_param` shape the revolution (gui_curve_t): STAIR is the clock-hand
+       spinner that ticks between positions rather than sweeping. */
+    struct { f32 cx, cy, r, thickness, a0, a1; f32 spin_rate, spin_phase; u32 abgr;
+             u32 curve; f32 curve_param; } arc;
+
+    /* The arc under an angular dash cut.  `period` is radians per dash+gap cycle -- the emit
+       side quantizes it so a WHOLE number of cycles fits the sweep, which is what keeps a
+       closed dashed ring from showing a seam where the pattern meets itself; `duty` is the
+       on-fraction.  Both reach the fragment through the record (GUI_OP_DASH). */
+    struct { f32 cx, cy, r, thickness, a0, a1; f32 period, duty; u32 abgr; } arc_dash;
+
+    /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1).  col_b reaches the fragment
+       through the record; GUI_OP_GRAD_ALONG lerps by the arc-length coordinate over the sweep
+       -- the one gradient a 4-corner vertex colour could never express, because it varies by
+       ANGLE, not position. */
+    struct { f32 cx, cy, r, thickness, a0, a1; u32 col_a, col_b; } arc_grad;
+
+    /* A textured quad under a rotation about its CENTRE -- the text_xf treatment applied to
+       one quad (tess_quad_xf).  UVs resolve at emit exactly as draw_push_icon's do: an icon
+       is a quad forever, and the atlas UV moves only on a bake, which reloads everything.
+       Centre pivot rather than the text anchor because a marker / needle / spinner glyph
+       turns about its own middle -- the one pivot every caller was computing anyway. */
+    struct { f32 x, y, w, h; f32 u0, v0, u1, v1; f32 rot; u32 tex_idx; u32 abgr; } image_xf;
+
+    /* The cell pattern: col_a fills even cells, col_b odd, anchored at the box origin.  The
+       fragment tiles it in framebuffer space (GUI_OP_CHECKER), so this is ONE quad at any
+       area and any cell, where a rect-pool expansion would cap at 64x64 cells.
+       `rounding` is the ambient radius, folded in like any other fill's: the pattern is an OP
+       now, so it lands inside the shape's own boundary instead of being the shape.  That is
+       what makes the transparency chequerboard behind a colour swatch the SWATCH, one quad. */
+    struct { f32 x, y, w, h; f32 cell; u32 col_a, col_b;
+             f32 rounding, corner_pow; } checker;
+
+    /* The line lattice: a line every `cell` px, `thickness` px wide, in abgr over NOTHING --
+       the caller layers it on its own fill.  (ox, oy) is the lattice anchor in screen px:
+       lines land on ox + k*cell, so a panning canvas passes its content origin and the grid
+       rides along (GUI_OP_GRID).  `rounding` is the ambient radius: the lattice ends at the
+       panel's rounded boundary rather than at a rectangle over it. */
+    struct { f32 x, y, w, h; f32 cell, thickness, ox, oy; f32 angle; u32 stripes;
+             u32 abgr; f32 rounding, corner_pow; } grid;
+
+    /* Regular polygon (GUI_FX_NGON): `sides` flat edges inscribed in circumradius r, rotated
+       by `rot` (radians, 0 = a vertex pointing up), corners rounded by `rounding` px.
+       thickness > 0 strokes it (GUI_OP_BAND); 0 fills.  star > 0 pulls each edge midpoint in
+       to star * r, drawing a `sides`-pointed star from the same field; 0 = regular. */
+    struct { f32 cx, cy, r, rounding, rot, thickness, star; u32 sides; u32 abgr; } ngon;
+
+    /* Rounded-box outline cut by a perimeter dash (GUI_OP_BAND + GUI_OP_DASH).  dash/gap are
+       arc-length px (the draw_dashed_line vocabulary); the tessellator snaps the period so
+       whole cycles fit the perimeter.  `rate` scrolls the pattern in px/sec on pc.time --
+       the marching ants -- and `phase` is a static px offset; both animate in the FRAGMENT,
+       so the ants re-tessellate nothing.  `curve`/`curve_param` shape how the pattern crosses
+       one period (gui_curve_t): STAIR is the ants that jump a dash at a time. */
+    struct { f32 x, y, w, h; f32 rounding, t; f32 dash, gap; f32 rate, phase;
+             u32 abgr; u32 curve; f32 curve_param; f32 anim_phase; } box_dash;
+
+    /* A LATTICE of one rounded cell (GUI_OP_REPEAT): nx by ny copies, `pitch` apart
+       centre-to-centre, centred on (cx, cy).  The cell's size is stated rather than the set's
+       box, because the set's box is derived from the two and the fragment recovers the count
+       back out of it (gui_build_tess.c, tess_repeat_box).  ONE quad however many copies.
+       `col_b` != abgr ramps the copies toward it along the strip (GUI_OP_GRAD_CELL); `fill`
+       >= 0 lights only that fraction of them (GUI_OP_CELL_FILL) -- the segmented meter. */
+    struct { f32 cx, cy; f32 pitch_x, pitch_y; f32 cell_w, cell_h; f32 rounding;
+             u32 nx, ny; u32 abgr; u32 col_b; f32 fill; } repeat;
+
+    /* A RING of one rounded cell (GUI_OP_REPEAT_POLAR): `n` copies on a circle of radius
+       `orbit` about (cx, cy).  `rate` animates on the shader clock in revolutions/sec -- and
+       because that animates in the FRAGMENT, these bytes are identical every frame and a
+       spinner re-tessellates nothing.  What the rate DRIVES depends on `col_b`: equal to
+       abgr, the whole ring turns rigidly (GUI_OP_SPIN); different, the dots stay put and a
+       colour ramp toward col_b marches around them, trailing the bright head -- the tail
+       spinner (GUI_OP_GRAD_CELL).  `curve`/`curve_param` shape either motion (gui_curve_t):
+       STAIR at `n` steps is the clock-hand tick. */
+    struct { f32 cx, cy; f32 orbit; f32 cell_w, cell_h; f32 rounding;
+             f32 rate, phase, curve_param; u32 n, curve, abgr; u32 col_b; } repeat_polar;
+
+    /* A rounded box with a SECOND rounded box carved out of it (GUI_OP_CUT_SHAPE) -- the
+       subtraction no number of extra quads can paint.  The cut's centre is an OFFSET from
+       the shape's centre (the record's cut vector); `cut_aa` is the carved edge's own AA
+       band in px. */
+    struct { f32 x, y, w, h; f32 rounding; f32 cut_dx, cut_dy, cut_w, cut_h;
+             f32 cut_r, cut_aa; u32 abgr; } box_cut;
+
+} gui_cmd_ext_t;
 
 /*==============================================================================================
     GUI_DRAW -- direction: a cardinal direction, the ImGuiDir analogue.  Passed to 

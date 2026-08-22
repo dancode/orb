@@ -231,7 +231,7 @@ cache_diff_windows( void )
                  if ( s_draw.cmds[ i ].type == GUI_CMD_SPRITE )      h = fnv1a_u32( h, res_sprite_generation() );
             else if ( s_draw.cmds[ i ].type == GUI_CMD_DASHED_LINE ) h = fnv1a_u32( h, res_atlas_generation() );
             else if ( s_draw.cmds[ i ].type == GUI_CMD_FX_BOX
-                   && s_draw.cmds[ i ].fx_box.shape != GUI_SHAPE_NONE )
+                   && draw_cmd_ext_slot( s_draw.cmds[ i ].cold.ext_idx )->fx_box.shape != GUI_SHAPE_NONE )
                                                                      h = fnv1a_u32( h, res_sdf_generation() );
         }
         s_cache.cur[ bi ].hash = h;

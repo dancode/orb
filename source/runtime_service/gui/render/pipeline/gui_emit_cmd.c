@@ -27,53 +27,56 @@
 ==============================================================================================*/
 
 /* Payload byte count per command type, for the plain POD commands: one fnv1a fold of the union
-   member, nothing else.  Only the four pool-backed commands (TEXT, TEXT_XF, POLYLINE, RECT_LIST)
-   need code of their own -- they hash pool CONTENT and must skip their pool-offset fields, which
-   shift whenever an earlier-emitted window changes its pool volume and would falsely dirty an
-   unrelated window.  Every union member starts at the same address, so the fold reads &c->rect
-   as the generic payload pointer. */
+   member, nothing else.  RECT_FILL is the one hot type that falls through to this default path
+   (TEXT always takes its own case below); every other entry is a cold type and its length is
+   measured off gui_cmd_ext_t.  Only the pool-backed commands (TEXT, TEXT_XF, TEXT_SHADOW,
+   POLYLINE, RECT_LIST) need code of their own -- they hash pool CONTENT and must skip their
+   pool-offset fields, which shift whenever an earlier-emitted window changes its pool volume
+   and would falsely dirty an unrelated window. */
 
 static const u8 k_cmd_hash_len[] = {
 
-    [GUI_CMD_RECT_FILLED]   = sizeof(( (gui_cmd_t*)0 )->rect ),
-    [GUI_CMD_RECT_OUTLINE]  = sizeof(( (gui_cmd_t*)0 )->rect_outline ),
-    [GUI_CMD_FRAME]         = sizeof(( (gui_cmd_t*)0 )->frame ),
-    [GUI_CMD_TRIANGLE]      = sizeof(( (gui_cmd_t*)0 )->tri ),
-    [GUI_CMD_BEZIER]        = sizeof(( (gui_cmd_t*)0 )->bezier ),
-    [GUI_CMD_LINE]          = sizeof(( (gui_cmd_t*)0 )->line ),
-    [GUI_CMD_DASHED_LINE]   = sizeof(( (gui_cmd_t*)0 )->dash ),
-    [GUI_CMD_RECT_GRADIENT] = sizeof(( (gui_cmd_t*)0 )->gradient ),
-    [GUI_CMD_SPRITE]        = sizeof(( (gui_cmd_t*)0 )->sprite ),
+    [GUI_CMD_RECT_FILL]     = sizeof(( (gui_cmd_t*)0 )->rect_fill ),
+
+    [GUI_CMD_RECT_TEX]      = sizeof(( (gui_cmd_ext_t*)0 )->rect_tex ),
+    [GUI_CMD_RECT_OUTLINE]  = sizeof(( (gui_cmd_ext_t*)0 )->rect_outline ),
+    [GUI_CMD_FRAME]         = sizeof(( (gui_cmd_ext_t*)0 )->frame ),
+    [GUI_CMD_TRIANGLE]      = sizeof(( (gui_cmd_ext_t*)0 )->tri ),
+    [GUI_CMD_BEZIER]        = sizeof(( (gui_cmd_ext_t*)0 )->bezier ),
+    [GUI_CMD_LINE]          = sizeof(( (gui_cmd_ext_t*)0 )->line ),
+    [GUI_CMD_DASHED_LINE]   = sizeof(( (gui_cmd_ext_t*)0 )->dash ),
+    [GUI_CMD_RECT_GRADIENT] = sizeof(( (gui_cmd_ext_t*)0 )->gradient ),
+    [GUI_CMD_SPRITE]        = sizeof(( (gui_cmd_ext_t*)0 )->sprite ),
 
     /* Folds rate whole, so a pulse hashes stable frame-to-frame (it animates in the FRAGMENT off
        pc.time -- the geometry never changes, which is the entire point of the mode). */
-    [GUI_CMD_FX_BOX]        = sizeof(( (gui_cmd_t*)0 )->fx_box ),
-    [GUI_CMD_ROUND_RECT_EX] = sizeof(( (gui_cmd_t*)0 )->round_rect ),
+    [GUI_CMD_FX_BOX]        = sizeof(( (gui_cmd_ext_t*)0 )->fx_box ),
+    [GUI_CMD_ROUND_RECT_EX] = sizeof(( (gui_cmd_ext_t*)0 )->round_rect ),
 
     /* Both sectors fold the same member.  A spinner's start angle moves every frame, so this
        dirties every frame -- honestly, since the geometry really does rotate.  (A spinner that
        wanted free animation would be a shader-clock mode like PULSE, not a re-emit.) */
 
-    [GUI_CMD_ARC]           = sizeof(( (gui_cmd_t*)0 )->arc ),
-    [GUI_CMD_PIE]           = sizeof(( (gui_cmd_t*)0 )->arc ),
-    [GUI_CMD_ARC_DASH]      = sizeof(( (gui_cmd_t*)0 )->arc_dash ),
-    [GUI_CMD_ARC_GRAD]      = sizeof(( (gui_cmd_t*)0 )->arc_grad ),
-    [GUI_CMD_IMAGE_XF]      = sizeof(( (gui_cmd_t*)0 )->image_xf ),
-    [GUI_CMD_CHECKER]       = sizeof(( (gui_cmd_t*)0 )->checker ),
-    [GUI_CMD_GRID]          = sizeof(( (gui_cmd_t*)0 )->grid ),
-    [GUI_CMD_NGON]          = sizeof(( (gui_cmd_t*)0 )->ngon ),
+    [GUI_CMD_ARC]           = sizeof(( (gui_cmd_ext_t*)0 )->arc ),
+    [GUI_CMD_PIE]           = sizeof(( (gui_cmd_ext_t*)0 )->arc ),
+    [GUI_CMD_ARC_DASH]      = sizeof(( (gui_cmd_ext_t*)0 )->arc_dash ),
+    [GUI_CMD_ARC_GRAD]      = sizeof(( (gui_cmd_ext_t*)0 )->arc_grad ),
+    [GUI_CMD_IMAGE_XF]      = sizeof(( (gui_cmd_ext_t*)0 )->image_xf ),
+    [GUI_CMD_CHECKER]       = sizeof(( (gui_cmd_ext_t*)0 )->checker ),
+    [GUI_CMD_GRID]          = sizeof(( (gui_cmd_ext_t*)0 )->grid ),
+    [GUI_CMD_NGON]          = sizeof(( (gui_cmd_ext_t*)0 )->ngon ),
 
     /* Folds rate/phase whole like FX_BOX: the ants scroll in the fragment off pc.time, so the
        command hashes stable frame-to-frame while the pattern moves. */
 
-    [GUI_CMD_BOX_DASH]      = sizeof(( (gui_cmd_t*)0 )->box_dash ),
-    [GUI_CMD_REPEAT]        = sizeof(( (gui_cmd_t*)0 )->repeat ),
+    [GUI_CMD_BOX_DASH]      = sizeof(( (gui_cmd_ext_t*)0 )->box_dash ),
+    [GUI_CMD_REPEAT]        = sizeof(( (gui_cmd_ext_t*)0 )->repeat ),
 
     /* Folds rate/phase whole like FX_BOX: the ring spins in the fragment off pc.time, so the
        command hashes stable frame-to-frame while it turns. */
 
-    [GUI_CMD_REPEAT_POLAR]  = sizeof(( (gui_cmd_t*)0 )->repeat_polar ),
-    [GUI_CMD_BOX_CUT]       = sizeof(( (gui_cmd_t*)0 )->box_cut ),
+    [GUI_CMD_REPEAT_POLAR]  = sizeof(( (gui_cmd_ext_t*)0 )->repeat_polar ),
+    [GUI_CMD_BOX_CUT]       = sizeof(( (gui_cmd_ext_t*)0 )->box_cut ),
 };
 
 static u32
@@ -111,47 +114,59 @@ draw_hash_cmd( const gui_cmd_t* c )
            pc.time and its geometry never changes, while a transform is baked into vertices. */
 
         case GUI_CMD_TEXT_XF:
-            h = fnv1a( h, &c->text_xf.x,        sizeof c->text_xf.x );
-            h = fnv1a( h, &c->text_xf.y,        sizeof c->text_xf.y );
-            h = fnv1a( h, &c->text_xf.len,      sizeof c->text_xf.len );
-            h = fnv1a( h, &c->text_xf.scale,    sizeof c->text_xf.scale );
-            h = fnv1a( h, &c->text_xf.rot,      sizeof c->text_xf.rot );
-            h = fnv1a( h, &c->text_xf.abgr,     sizeof c->text_xf.abgr );
-            h = fnv1a( h, &c->text_xf.edge_w,   sizeof c->text_xf.edge_w );
-            h = fnv1a( h, &c->text_xf.edge_col, sizeof c->text_xf.edge_col );
-            h = fnv1a( h, &c->text_xf.font,     sizeof c->text_xf.font );
-            h = fnv1a( h, s_draw.text_pool + c->text_xf.off, c->text_xf.len );
+        {
+            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+            h = fnv1a( h, &e->text_xf.x,        sizeof e->text_xf.x );
+            h = fnv1a( h, &e->text_xf.y,        sizeof e->text_xf.y );
+            h = fnv1a( h, &e->text_xf.len,      sizeof e->text_xf.len );
+            h = fnv1a( h, &e->text_xf.scale,    sizeof e->text_xf.scale );
+            h = fnv1a( h, &e->text_xf.rot,      sizeof e->text_xf.rot );
+            h = fnv1a( h, &e->text_xf.abgr,     sizeof e->text_xf.abgr );
+            h = fnv1a( h, &e->text_xf.edge_w,   sizeof e->text_xf.edge_w );
+            h = fnv1a( h, &e->text_xf.edge_col, sizeof e->text_xf.edge_col );
+            h = fnv1a( h, &e->text_xf.font,     sizeof e->text_xf.font );
+            h = fnv1a( h, s_draw.text_pool + e->text_xf.off, e->text_xf.len );
             break;
+        }
 
         case GUI_CMD_TEXT_SHADOW:
-            h = fnv1a( h, &c->text_shadow.x,           sizeof c->text_shadow.x );
-            h = fnv1a( h, &c->text_shadow.y,           sizeof c->text_shadow.y );
-            h = fnv1a( h, &c->text_shadow.len,         sizeof c->text_shadow.len );
-            h = fnv1a( h, &c->text_shadow.clip_x0,     sizeof c->text_shadow.clip_x0 );
-            h = fnv1a( h, &c->text_shadow.clip_x1,     sizeof c->text_shadow.clip_x1 );
-            h = fnv1a( h, &c->text_shadow.abgr,        sizeof c->text_shadow.abgr );
-            h = fnv1a( h, &c->text_shadow.shadow_abgr, sizeof c->text_shadow.shadow_abgr );
-            h = fnv1a( h, &c->text_shadow.dx,          sizeof c->text_shadow.dx );
-            h = fnv1a( h, &c->text_shadow.dy,          sizeof c->text_shadow.dy );
-            h = fnv1a( h, &c->text_shadow.font,        sizeof c->text_shadow.font );
-            h = fnv1a( h, s_draw.text_pool + c->text_shadow.off, c->text_shadow.len );
+        {
+            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+            h = fnv1a( h, &e->text_shadow.x,           sizeof e->text_shadow.x );
+            h = fnv1a( h, &e->text_shadow.y,           sizeof e->text_shadow.y );
+            h = fnv1a( h, &e->text_shadow.len,         sizeof e->text_shadow.len );
+            h = fnv1a( h, &e->text_shadow.clip_x0,     sizeof e->text_shadow.clip_x0 );
+            h = fnv1a( h, &e->text_shadow.clip_x1,     sizeof e->text_shadow.clip_x1 );
+            h = fnv1a( h, &e->text_shadow.abgr,        sizeof e->text_shadow.abgr );
+            h = fnv1a( h, &e->text_shadow.shadow_abgr, sizeof e->text_shadow.shadow_abgr );
+            h = fnv1a( h, &e->text_shadow.dx,          sizeof e->text_shadow.dx );
+            h = fnv1a( h, &e->text_shadow.dy,          sizeof e->text_shadow.dy );
+            h = fnv1a( h, &e->text_shadow.font,        sizeof e->text_shadow.font );
+            h = fnv1a( h, s_draw.text_pool + e->text_shadow.off, e->text_shadow.len );
             break;
+        }
 
         case GUI_CMD_POLYLINE:
-            h = fnv1a( h, &c->polyline.pt_count,  sizeof c->polyline.pt_count );
-            h = fnv1a( h, &c->polyline.thickness, sizeof c->polyline.thickness );
-            h = fnv1a( h, &c->polyline.align,     sizeof c->polyline.align );
-            h = fnv1a( h, &c->polyline.closed,    sizeof c->polyline.closed );
-            h = fnv1a( h, &c->polyline.abgr,      sizeof c->polyline.abgr );
-            h = fnv1a( h, &s_draw.points[ c->polyline.pt_offset ],
-                       c->polyline.pt_count * (u32)sizeof( gui_vec2_t ) );   /* content while L1-hot */
+        {
+            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+            h = fnv1a( h, &e->polyline.pt_count,  sizeof e->polyline.pt_count );
+            h = fnv1a( h, &e->polyline.thickness, sizeof e->polyline.thickness );
+            h = fnv1a( h, &e->polyline.align,     sizeof e->polyline.align );
+            h = fnv1a( h, &e->polyline.closed,    sizeof e->polyline.closed );
+            h = fnv1a( h, &e->polyline.abgr,      sizeof e->polyline.abgr );
+            h = fnv1a( h, &s_draw.points[ e->polyline.pt_offset ],
+                       e->polyline.pt_count * (u32)sizeof( gui_vec2_t ) );   /* content while L1-hot */
             break;
+        }
 
         case GUI_CMD_RECT_LIST:
-            h = fnv1a_u32( h, c->rect_list.count );
-            h = fnv1a( h, &s_draw.rect_pool[ c->rect_list.offset ],
-                       c->rect_list.count * (u32)sizeof( gui_rect_col_t ) );   /* content while L1-hot */
+        {
+            const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->cold.ext_idx );
+            h = fnv1a_u32( h, e->rect_list.count );
+            h = fnv1a( h, &s_draw.rect_pool[ e->rect_list.offset ],
+                       e->rect_list.count * (u32)sizeof( gui_rect_col_t ) );   /* content while L1-hot */
             break;
+        }
 
         default:
             /* Every plain POD command has a non-zero entry above; zero means a command type was
@@ -160,7 +175,7 @@ draw_hash_cmd( const gui_cmd_t* c )
             ORB_ASSERT_MSG( k_cmd_hash_len[ c->type ] != 0,
                             "gui command type missing from k_cmd_hash_len -- its payload "
                             "does not hash and the retained cache cannot see it change" );
-            h = fnv1a( h, &c->rect, k_cmd_hash_len[ c->type ] );
+            h = fnv1a( h, gui_cmd_payload( c ), k_cmd_hash_len[ c->type ] );
             break;
     }
     return h;
@@ -219,7 +234,7 @@ draw_cmd_claim( u8 type )
 static gui_cmd_t*
 draw_cmd_open( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
 {
-    if ( draw_emit_blocked() )
+    if ( draw_emit_blocked( 0 ) )
         return NULL;
 
     if ( ( vis_col >> 24 ) == 0u )
@@ -229,6 +244,29 @@ draw_cmd_open( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
         return NULL;
 
     return draw_cmd_claim( type );
+}
+
+/* Cold-type counterpart of draw_cmd_open above: same three gates, but a cold push spends BOTH
+   an envelope slot (header + ordinal position, for segs/hash/dispatch to walk in order) and a
+   cold-pool slot (the actual payload) -- so the admission check covers both together
+   (draw_cmd_arena_full) and this claims both, returning the payload pointer the caller fills
+   in instead of the envelope draw_cmd_open returns. */
+static gui_cmd_ext_t*
+draw_cmd_open_ext( u8 type, u32 vis_col, f32 x, f32 y, f32 w, f32 h, f32 pad )
+{
+    if ( draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
+        return NULL;
+
+    if ( ( vis_col >> 24 ) == 0u )
+        return NULL;
+
+    if ( draw_cull_box( x - pad, y - pad, w + 2.0f * pad, h + 2.0f * pad ) )
+        return NULL;
+
+    gui_cmd_t* c = draw_cmd_claim( type );
+    u32        ext_idx = s_draw.ext_count++;
+    c->cold.ext_idx     = ext_idx;
+    return draw_cmd_ext_slot( ext_idx );
 }
 
 static void

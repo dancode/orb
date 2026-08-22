@@ -87,7 +87,7 @@ tess_sprite_piece( f32 x, f32 y, f32 w, f32 h,
    shrunk proportionally rather than allowed to overlap, which is what keeps a frame legible when
    its window is dragged smaller than its own corners. */
 static void
-tess_sprite( const gui_cmd_t* c )
+tess_sprite( const gui_cmd_ext_t* e )
 {
     u32 tex = res_sprite_idx();
     if ( tex == 0 )
@@ -96,24 +96,24 @@ tess_sprite( const gui_cmd_t* c )
     f32       u0, v0, u1, v1;
     u32       sw = 0, sh = 0;
     gui_pad_t sl = { 0 };
-    if ( !sprite_get( c->sprite.sprite, &u0, &v0, &u1, &v1, &sw, &sh, &sl ) || sw == 0 || sh == 0 )
+    if ( !sprite_get( e->sprite.sprite, &u0, &v0, &u1, &v1, &sw, &sh, &sl ) || sw == 0 || sh == 0 )
         return;
 
     tex |= GUI_TEX_MODE( GUI_TEX_RGBA );   /* the texel IS the colour; vertex colour tints it */
 
-    const u32 flags  = c->sprite.flags;
+    const u32 flags  = e->sprite.flags;
     const bool flipx = ( flags & GUI_BRUSH_FLIP_X ) != 0;
     const bool flipy = ( flags & GUI_BRUSH_FLIP_Y ) != 0;
     const bool tile  = ( flags & GUI_BRUSH_TILE   ) != 0;
 
-    const f32 x = c->sprite.x, y = c->sprite.y, w = c->sprite.w, h = c->sprite.h;
-    const f32 s = c->sprite.scale;
-    const u32 col = c->sprite.abgr;
+    const f32 x = e->sprite.x, y = e->sprite.y, w = e->sprite.w, h = e->sprite.h;
+    const f32 s = e->sprite.scale;
+    const u32 col = e->sprite.abgr;
 
     /* Scaled slice insets.  A sprite with none (or a command that did not ask for the expansion)
        is one stretched quad -- the flip is then just a reversed UV span. */
     f32 L = sl.l * s, R = sl.r * s, T = sl.t * s, B = sl.b * s;
-    if ( !c->sprite.nine || ( L <= 0.0f && R <= 0.0f && T <= 0.0f && B <= 0.0f ) )
+    if ( !e->sprite.nine || ( L <= 0.0f && R <= 0.0f && T <= 0.0f && B <= 0.0f ) )
     {
         tess_rect_filled( x, y, w, h,
                           flipx ? u1 : u0, flipy ? v1 : v0,

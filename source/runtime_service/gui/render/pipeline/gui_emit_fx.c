@@ -102,28 +102,28 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
     }
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_FX_BOX, col, bx, by, bw, bh, pad );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_FX_BOX, col, bx, by, bw, bh, pad );
+    if ( !e )
         return;
 
-    c->fx_box.x             = x;
-    c->fx_box.y             = y;
-    c->fx_box.w             = w;
-    c->fx_box.h             = h;
-    c->fx_box.rounding      = rounding;
-    c->fx_box.corner_pow    = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
-    c->fx_box.feather       = feather;
-    c->fx_box.rate          = rate;
-    c->fx_box.depth         = depth;
-    c->fx_box.phase         = phase + s_draw.anim_phase;
-    c->fx_box.rot           = rot;
-    c->fx_box.abgr          = col;
-    c->fx_box.variant       = variant;
-    c->fx_box.cut_dx        = cut_dx;
-    c->fx_box.cut_dy        = cut_dy;
-    c->fx_box.swell         = swell;
-    c->fx_box.border        = border;
-    c->fx_box.shape         = shape;
+    e->fx_box.x             = x;
+    e->fx_box.y             = y;
+    e->fx_box.w             = w;
+    e->fx_box.h             = h;
+    e->fx_box.rounding      = rounding;
+    e->fx_box.corner_pow    = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    e->fx_box.feather       = feather;
+    e->fx_box.rate          = rate;
+    e->fx_box.depth         = depth;
+    e->fx_box.phase         = phase + s_draw.anim_phase;
+    e->fx_box.rot           = rot;
+    e->fx_box.abgr          = col;
+    e->fx_box.variant       = variant;
+    e->fx_box.cut_dx        = cut_dx;
+    e->fx_box.cut_dy        = cut_dy;
+    e->fx_box.swell         = swell;
+    e->fx_box.border        = border;
+    e->fx_box.shape         = shape;
 
     /* A pulse that names no curve breathes on the raised cosine it always has: a sawtooth would
        snap back to full every cycle, which is not what breathing is.  Resolved here, at the one
@@ -134,10 +134,10 @@ draw_fx_box_cmd( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 vari
        move for a shape whose motion nothing reads. */
 
     bool animated = ( rate > 0.0f ) || ( swell != 0.0f );
-    c->fx_box.curve       = !animated ? 0u
+    e->fx_box.curve       = !animated ? 0u
                           : ( swell == 0.0f && s_draw.anim_curve == GUI_CURVE_LINEAR )
                               ? (u32)GUI_CURVE_SINE : s_draw.anim_curve;
-    c->fx_box.curve_param = animated ? s_draw.anim_curve_param : 0.0f;
+    e->fx_box.curve_param = animated ? s_draw.anim_curve_param : 0.0f;
     draw_cmd_seal();
 }
 
@@ -296,25 +296,25 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
 
     u32 vis = ( ( cb >> 24 ) > ( col >> 24 ) ) ? cb : col;
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ROUND_RECT_EX, vis, x, y, w, h, pad );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_ROUND_RECT_EX, vis, x, y, w, h, pad );
+    if ( !e )
         return;
 
-    c->round_rect.x             = x;
-    c->round_rect.y             = y;
-    c->round_rect.w             = w;
-    c->round_rect.h             = h;
-    c->round_rect.rtl           = rtl;
-    c->round_rect.rtr           = rtr;
-    c->round_rect.rbr           = rbr;
-    c->round_rect.rbl           = rbl;
-    c->round_rect.feather       = feather;
-    c->round_rect.corner_pow    = s_draw.corner_pow;
-    c->round_rect.abgr          = col;
-    c->round_rect.col_b         = cb;
-    c->round_rect.grad_ang      = grad_ang;
-    c->round_rect.grad_kind     = grad_kind;
-    c->round_rect.grad_mid      = mid_e;
+    e->round_rect.x             = x;
+    e->round_rect.y             = y;
+    e->round_rect.w             = w;
+    e->round_rect.h             = h;
+    e->round_rect.rtl           = rtl;
+    e->round_rect.rtr           = rtr;
+    e->round_rect.rbr           = rbr;
+    e->round_rect.rbl           = rbl;
+    e->round_rect.feather       = feather;
+    e->round_rect.corner_pow    = s_draw.corner_pow;
+    e->round_rect.abgr          = col;
+    e->round_rect.col_b         = cb;
+    e->round_rect.grad_ang      = grad_ang;
+    e->round_rect.grad_kind     = grad_kind;
+    e->round_rect.grad_mid      = mid_e;
 
     draw_cmd_seal();
 }
@@ -340,21 +340,21 @@ draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     u32 col = draw_apply_alpha( abgr );
     f32 g   = r + thickness * 0.5f;   /* the tessellator's own AA pad rides draw_cmd_open's `pad` */
 
-    gui_cmd_t* c = draw_cmd_open( type, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( type, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !e )
         return;
 
-    c->arc.cx           = cx;
-    c->arc.cy           = cy;
-    c->arc.r            = r;
-    c->arc.thickness    = thickness;
-    c->arc.a0           = a0;
-    c->arc.a1           = a1;
-    c->arc.spin_rate    = spin_rate;
-    c->arc.spin_phase   = spin_phase + s_draw.anim_phase;
-    c->arc.abgr         = col;
-    c->arc.curve        = s_draw.anim_curve;
-    c->arc.curve_param  = s_draw.anim_curve_param;
+    e->arc.cx           = cx;
+    e->arc.cy           = cy;
+    e->arc.r            = r;
+    e->arc.thickness    = thickness;
+    e->arc.a0           = a0;
+    e->arc.a1           = a1;
+    e->arc.spin_rate    = spin_rate;
+    e->arc.spin_phase   = spin_phase + s_draw.anim_phase;
+    e->arc.abgr         = col;
+    e->arc.curve        = s_draw.anim_curve;
+    e->arc.curve_param  = s_draw.anim_curve_param;
 
     draw_cmd_seal();
 }
@@ -418,18 +418,18 @@ draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     u32 col = draw_apply_alpha( abgr );
     f32 g   = r + thickness * 0.5f;
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ARC_DASH, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_ARC_DASH, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !e )
         return;
-    c->arc_dash.cx        = cx;
-    c->arc_dash.cy        = cy;
-    c->arc_dash.r         = r;
-    c->arc_dash.thickness = thickness;
-    c->arc_dash.a0        = a0;
-    c->arc_dash.a1        = a1;
-    c->arc_dash.period    = period;
-    c->arc_dash.duty      = dash / ( dash + ( gap > 0.0f ? gap : dash ) );
-    c->arc_dash.abgr      = col;
+    e->arc_dash.cx        = cx;
+    e->arc_dash.cy        = cy;
+    e->arc_dash.r         = r;
+    e->arc_dash.thickness = thickness;
+    e->arc_dash.a0        = a0;
+    e->arc_dash.a1        = a1;
+    e->arc_dash.period    = period;
+    e->arc_dash.duty      = dash / ( dash + ( gap > 0.0f ? gap : dash ) );
+    e->arc_dash.abgr      = col;
     draw_cmd_seal();
 }
 
@@ -454,18 +454,18 @@ draw_push_arc_gradient( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     u32 cb = draw_apply_alpha( col_b );
     f32 g  = r + thickness * 0.5f;
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_ARC_GRAD, ca | cb,
-                                  cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_ARC_GRAD, ca | cb,
+                                          cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !e )
         return;
-    c->arc_grad.cx        = cx;
-    c->arc_grad.cy        = cy;
-    c->arc_grad.r         = r;
-    c->arc_grad.thickness = thickness;
-    c->arc_grad.a0        = a0;
-    c->arc_grad.a1        = a1;
-    c->arc_grad.col_a     = ca;
-    c->arc_grad.col_b     = cb;
+    e->arc_grad.cx        = cx;
+    e->arc_grad.cy        = cy;
+    e->arc_grad.r         = r;
+    e->arc_grad.thickness = thickness;
+    e->arc_grad.a0        = a0;
+    e->arc_grad.a1        = a1;
+    e->arc_grad.col_a     = ca;
+    e->arc_grad.col_b     = cb;
     draw_cmd_seal();
 }
 
@@ -488,18 +488,18 @@ draw_push_checker( f32 x, f32 y, f32 w, f32 h, f32 cell, u32 col_a, u32 col_b )
     u32 ca = draw_apply_alpha( col_a );
     u32 cb = draw_apply_alpha( col_b );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_CHECKER, ca | cb, x, y, w, h, 0.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_CHECKER, ca | cb, x, y, w, h, 0.0f );
+    if ( !e )
         return;
-    c->checker.x     = x;
-    c->checker.y     = y;
-    c->checker.w     = w;
-    c->checker.h     = h;
-    c->checker.cell  = cell;
-    c->checker.col_a = ca;
-    c->checker.col_b = cb;
-    c->checker.rounding   = s_draw.rounding;
-    c->checker.corner_pow = ( s_draw.rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    e->checker.x     = x;
+    e->checker.y     = y;
+    e->checker.w     = w;
+    e->checker.h     = h;
+    e->checker.cell  = cell;
+    e->checker.col_a = ca;
+    e->checker.col_b = cb;
+    e->checker.rounding   = s_draw.rounding;
+    e->checker.corner_pow = ( s_draw.rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
     draw_cmd_seal();
 }
 
@@ -515,22 +515,22 @@ draw_push_grid( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f32 angle, bool stri
 
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_GRID, col, x, y, w, h, 0.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_GRID, col, x, y, w, h, 0.0f );
+    if ( !e )
         return;
-    c->grid.x         = x;
-    c->grid.y         = y;
-    c->grid.w         = w;
-    c->grid.h         = h;
-    c->grid.cell      = cell;
-    c->grid.thickness = thickness;
-    c->grid.ox        = ox;
-    c->grid.oy        = oy;
-    c->grid.angle     = angle;
-    c->grid.stripes   = stripes ? 1u : 0u;
-    c->grid.abgr      = col;
-    c->grid.rounding   = s_draw.rounding;
-    c->grid.corner_pow = ( s_draw.rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    e->grid.x         = x;
+    e->grid.y         = y;
+    e->grid.w         = w;
+    e->grid.h         = h;
+    e->grid.cell      = cell;
+    e->grid.thickness = thickness;
+    e->grid.ox        = ox;
+    e->grid.oy        = oy;
+    e->grid.angle     = angle;
+    e->grid.stripes   = stripes ? 1u : 0u;
+    e->grid.abgr      = col;
+    e->grid.rounding   = s_draw.rounding;
+    e->grid.corner_pow = ( s_draw.rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
     draw_cmd_seal();
 }
 
@@ -568,18 +568,18 @@ draw_push_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 rounding,
     u32 col = draw_apply_alpha( abgr );
     f32 g   = r + 1.0f;
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_NGON, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_NGON, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
+    if ( !e )
         return;
-    c->ngon.cx        = cx;
-    c->ngon.cy        = cy;
-    c->ngon.r         = r;
-    c->ngon.rounding  = rounding;
-    c->ngon.rot       = rot;
-    c->ngon.thickness = thickness;
-    c->ngon.star      = star;
-    c->ngon.sides     = sides;
-    c->ngon.abgr      = col;
+    e->ngon.cx        = cx;
+    e->ngon.cy        = cy;
+    e->ngon.r         = r;
+    e->ngon.rounding  = rounding;
+    e->ngon.rot       = rot;
+    e->ngon.thickness = thickness;
+    e->ngon.star      = star;
+    e->ngon.sides     = sides;
+    e->ngon.abgr      = col;
     draw_cmd_seal();
 }
 
@@ -608,23 +608,23 @@ draw_push_box_dashed( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
 
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
+    if ( !e )
         return;
-    c->box_dash.x        = x;
-    c->box_dash.y        = y;
-    c->box_dash.w        = w;
-    c->box_dash.h        = h;
-    c->box_dash.rounding = rounding;
-    c->box_dash.t        = t;
-    c->box_dash.dash     = dash;
-    c->box_dash.gap      = gap;
-    c->box_dash.rate     = rate;
-    c->box_dash.phase    = phase;
-    c->box_dash.anim_phase = s_draw.anim_phase;
-    c->box_dash.abgr     = col;
-    c->box_dash.curve       = s_draw.anim_curve;
-    c->box_dash.curve_param = s_draw.anim_curve_param;
+    e->box_dash.x        = x;
+    e->box_dash.y        = y;
+    e->box_dash.w        = w;
+    e->box_dash.h        = h;
+    e->box_dash.rounding = rounding;
+    e->box_dash.t        = t;
+    e->box_dash.dash     = dash;
+    e->box_dash.gap      = gap;
+    e->box_dash.rate     = rate;
+    e->box_dash.phase    = phase;
+    e->box_dash.anim_phase = s_draw.anim_phase;
+    e->box_dash.abgr     = col;
+    e->box_dash.curve       = s_draw.anim_curve;
+    e->box_dash.curve_param = s_draw.anim_curve_param;
     draw_cmd_seal();
 }
 
@@ -679,25 +679,25 @@ draw_push_box_trace( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t,
 
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_BOX_DASH, col, x, y, w, h, 1.0f );
+    if ( !e )
         return;
-    c->box_dash.x        = x;
-    c->box_dash.y        = y;
-    c->box_dash.w        = w;
-    c->box_dash.h        = h;
-    c->box_dash.rounding = rounding;
-    c->box_dash.t        = t;
+    e->box_dash.x        = x;
+    e->box_dash.y        = y;
+    e->box_dash.w        = w;
+    e->box_dash.h        = h;
+    e->box_dash.rounding = rounding;
+    e->box_dash.t        = t;
     /* One cycle spans the whole border, so the snap resolves to exactly one arc and the duty --
        dash / (dash + gap) -- is `frac` however the measurement rounded. */
-    c->box_dash.dash     = frac * len;
-    c->box_dash.gap      = ( 1.0f - frac ) * len;
-    c->box_dash.rate     = laps * len;   /* px/sec, which over a one-period border is laps/sec */
-    c->box_dash.phase    = at   * len;
-    c->box_dash.anim_phase  = s_draw.anim_phase;
-    c->box_dash.abgr        = col;
-    c->box_dash.curve       = s_draw.anim_curve;
-    c->box_dash.curve_param = s_draw.anim_curve_param;
+    e->box_dash.dash     = frac * len;
+    e->box_dash.gap      = ( 1.0f - frac ) * len;
+    e->box_dash.rate     = laps * len;   /* px/sec, which over a one-period border is laps/sec */
+    e->box_dash.phase    = at   * len;
+    e->box_dash.anim_phase  = s_draw.anim_phase;
+    e->box_dash.abgr        = col;
+    e->box_dash.curve       = s_draw.anim_curve;
+    e->box_dash.curve_param = s_draw.anim_curve_param;
     draw_cmd_seal();
 }
 
@@ -719,21 +719,21 @@ draw_push_box_cut( f32 x, f32 y, f32 w, f32 h, f32 rounding,
 
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_BOX_CUT, col, x, y, w, h, 1.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_BOX_CUT, col, x, y, w, h, 1.0f );
+    if ( !e )
         return;
-    c->box_cut.x        = x;
-    c->box_cut.y        = y;
-    c->box_cut.w        = w;
-    c->box_cut.h        = h;
-    c->box_cut.rounding = rounding;
-    c->box_cut.cut_dx   = cut_cx - ( x + w * 0.5f );
-    c->box_cut.cut_dy   = cut_cy - ( y + h * 0.5f );
-    c->box_cut.cut_w    = cut_w;
-    c->box_cut.cut_h    = cut_h;
-    c->box_cut.cut_r    = cut_r;
-    c->box_cut.cut_aa   = soft;
-    c->box_cut.abgr     = col;
+    e->box_cut.x        = x;
+    e->box_cut.y        = y;
+    e->box_cut.w        = w;
+    e->box_cut.h        = h;
+    e->box_cut.rounding = rounding;
+    e->box_cut.cut_dx   = cut_cx - ( x + w * 0.5f );
+    e->box_cut.cut_dy   = cut_cy - ( y + h * 0.5f );
+    e->box_cut.cut_w    = cut_w;
+    e->box_cut.cut_h    = cut_h;
+    e->box_cut.cut_r    = cut_r;
+    e->box_cut.cut_aa   = soft;
+    e->box_cut.abgr     = col;
     draw_cmd_seal();
 }
 
@@ -768,22 +768,22 @@ draw_push_repeat( f32 cx, f32 cy, u32 nx, u32 ny, f32 pitch_x, f32 pitch_y,
     u32 col = draw_apply_alpha( abgr );
     u32 cb  = draw_apply_alpha( col_b );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_REPEAT, col | cb,
-                                  cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_REPEAT, col | cb,
+                                          cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
+    if ( !e )
         return;
-    c->repeat.cx       = cx;
-    c->repeat.cy       = cy;
-    c->repeat.pitch_x  = pitch_x;
-    c->repeat.pitch_y  = pitch_y;
-    c->repeat.cell_w   = cell_w;
-    c->repeat.cell_h   = cell_h;
-    c->repeat.rounding = rounding;
-    c->repeat.nx       = nx;
-    c->repeat.ny       = ny;
-    c->repeat.abgr     = col;
-    c->repeat.col_b    = cb;
-    c->repeat.fill     = fill;
+    e->repeat.cx       = cx;
+    e->repeat.cy       = cy;
+    e->repeat.pitch_x  = pitch_x;
+    e->repeat.pitch_y  = pitch_y;
+    e->repeat.cell_w   = cell_w;
+    e->repeat.cell_h   = cell_h;
+    e->repeat.rounding = rounding;
+    e->repeat.nx       = nx;
+    e->repeat.ny       = ny;
+    e->repeat.abgr     = col;
+    e->repeat.col_b    = cb;
+    e->repeat.fill     = fill;
     draw_cmd_seal();
 }
 
@@ -813,25 +813,25 @@ draw_push_repeat_polar( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, f32 cell_h
     u32 col = draw_apply_alpha( abgr );
     u32 cb  = draw_apply_alpha( col_b );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_REPEAT_POLAR, col | cb,
-                                  cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_REPEAT_POLAR, col | cb,
+                                          cx - hx, cy - hy, hx * 2.0f, hy * 2.0f, 1.0f );
+    if ( !e )
         return;
-    c->repeat_polar.cx       = cx;
-    c->repeat_polar.cy       = cy;
-    c->repeat_polar.orbit    = orbit;
-    c->repeat_polar.cell_w   = cell_w;
-    c->repeat_polar.cell_h   = cell_h;
-    c->repeat_polar.rounding = rounding;
-    c->repeat_polar.rate     = rate;
-    c->repeat_polar.phase    = phase + s_draw.anim_phase;
-    c->repeat_polar.n        = n;
-    c->repeat_polar.abgr     = col;
-    c->repeat_polar.col_b    = cb;
+    e->repeat_polar.cx       = cx;
+    e->repeat_polar.cy       = cy;
+    e->repeat_polar.orbit    = orbit;
+    e->repeat_polar.cell_w   = cell_w;
+    e->repeat_polar.cell_h   = cell_h;
+    e->repeat_polar.rounding = rounding;
+    e->repeat_polar.rate     = rate;
+    e->repeat_polar.phase    = phase + s_draw.anim_phase;
+    e->repeat_polar.n        = n;
+    e->repeat_polar.abgr     = col;
+    e->repeat_polar.col_b    = cb;
     /* A static ring takes no curve however the ambient is set: the command hash must not move for
        a shape whose motion nothing reads.  The same rule draw_fx_box_cmd applies to a shadow. */
-    c->repeat_polar.curve       = ( rate > 0.0f ) ? s_draw.anim_curve : 0u;
-    c->repeat_polar.curve_param = ( rate > 0.0f ) ? s_draw.anim_curve_param : 0.0f;
+    e->repeat_polar.curve       = ( rate > 0.0f ) ? s_draw.anim_curve : 0u;
+    e->repeat_polar.curve_param = ( rate > 0.0f ) ? s_draw.anim_curve_param : 0.0f;
     draw_cmd_seal();
 }
 

@@ -38,22 +38,42 @@ draw_rect_cmd( f32 x,  f32 y,  f32 w,  f32 h,
     f32 pad = ( rounding > 0.0f ) ? 1.0f : 0.0f;
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_RECT_FILLED, col, x, y, w, h, pad );
-    if ( !c )
+    /* tex_idx == 0 is the solid-fill case -- the hot RECT_FILL path, no uv/tex_idx to carry.
+       Anything else is a texture, which only the cold RECT_TEX path needs to hold. */
+    if ( tex_idx == 0u )
+    {
+        gui_cmd_t* c = draw_cmd_open( GUI_CMD_RECT_FILL, col, x, y, w, h, pad );
+        if ( !c )
+            return;
+
+        c->rect_fill.x          = x;
+        c->rect_fill.y          = y;
+        c->rect_fill.w          = w;
+        c->rect_fill.h          = h;
+        c->rect_fill.abgr       = col;
+        c->rect_fill.rounding   = rounding;
+        c->rect_fill.corner_pow = ( rounding > 0.0f ) ? corner_pow : 0.0f;
+
+        draw_cmd_seal();
+        return;
+    }
+
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_RECT_TEX, col, x, y, w, h, pad );
+    if ( !e )
         return;
 
-    c->rect.x           = x;
-    c->rect.y           = y;
-    c->rect.w           = w;
-    c->rect.h           = h;
-    c->rect.u0          = u0;
-    c->rect.v0          = v0;
-    c->rect.u1          = u1;
-    c->rect.v1          = v1;
-    c->rect.tex_idx     = tex_idx;
-    c->rect.abgr        = col;
-    c->rect.rounding    = rounding;
-    c->rect.corner_pow  = ( rounding > 0.0f ) ? corner_pow : 0.0f;
+    e->rect_tex.x           = x;
+    e->rect_tex.y           = y;
+    e->rect_tex.w           = w;
+    e->rect_tex.h           = h;
+    e->rect_tex.u0          = u0;
+    e->rect_tex.v0          = v0;
+    e->rect_tex.u1          = u1;
+    e->rect_tex.v1          = v1;
+    e->rect_tex.tex_idx     = tex_idx;
+    e->rect_tex.abgr        = col;
+    e->rect_tex.rounding    = rounding;
+    e->rect_tex.corner_pow  = ( rounding > 0.0f ) ? corner_pow : 0.0f;
 
     draw_cmd_seal();
 }
@@ -156,7 +176,7 @@ draw_push_circle_filled( f32 cx, f32 cy, f32 r, u32 abgr )
 void
 draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
 {
-    if ( !rects || draw_emit_blocked() )
+    if ( !rects || draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
         return;
 
     u32 offset = s_draw.rect_count;
@@ -176,9 +196,12 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
     if ( s_draw.rect_count == offset )
         return;   /* everything culled: no command slot spent */
 
-    gui_cmd_t* c        = draw_cmd_claim( GUI_CMD_RECT_LIST );
-    c->rect_list.offset = offset;
-    c->rect_list.count  = s_draw.rect_count - offset;
+    gui_cmd_t*     c    = draw_cmd_claim( GUI_CMD_RECT_LIST );
+    u32             ei  = s_draw.ext_count++;
+    c->cold.ext_idx      = ei;
+    gui_cmd_ext_t* e    = draw_cmd_ext_slot( ei );
+    e->rect_list.offset = offset;
+    e->rect_list.count  = s_draw.rect_count - offset;
 
     draw_cmd_seal();   /* entries are L1-hot here */
 }
@@ -232,21 +255,21 @@ draw_push_image_xf( f32 x, f32 y, f32 w, f32 h,
     f32 ey = fabsf( hx * sn ) + fabsf( hy * cs );
     u32 col = draw_apply_alpha( abgr );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_IMAGE_XF, col,
-                                  x + hx - ex, y + hy - ey, ex * 2.0f, ey * 2.0f, 1.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_IMAGE_XF, col,
+                                          x + hx - ex, y + hy - ey, ex * 2.0f, ey * 2.0f, 1.0f );
+    if ( !e )
         return;
-    c->image_xf.x       = x;
-    c->image_xf.y       = y;
-    c->image_xf.w       = w;
-    c->image_xf.h       = h;
-    c->image_xf.u0      = u0;
-    c->image_xf.v0      = v0;
-    c->image_xf.u1      = u1;
-    c->image_xf.v1      = v1;
-    c->image_xf.rot     = rot;
-    c->image_xf.tex_idx = tex_idx;
-    c->image_xf.abgr    = col;
+    e->image_xf.x       = x;
+    e->image_xf.y       = y;
+    e->image_xf.w       = w;
+    e->image_xf.h       = h;
+    e->image_xf.u0      = u0;
+    e->image_xf.v0      = v0;
+    e->image_xf.u1      = u1;
+    e->image_xf.v1      = v1;
+    e->image_xf.rot     = rot;
+    e->image_xf.tex_idx = tex_idx;
+    e->image_xf.abgr    = col;
     draw_cmd_seal();
 }
 
@@ -288,18 +311,18 @@ draw_push_sprite( f32 x, f32 y, f32 w, f32 h, gui_sprite_id_t id,
        blending, so it drops exactly as a transparent fill does. */
     u32 col = draw_apply_alpha( abgr ? abgr : 0xFFFFFFFFu );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_SPRITE, col, x, y, w, h, 0.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_SPRITE, col, x, y, w, h, 0.0f );
+    if ( !e )
         return;
-    c->sprite.x      = x;
-    c->sprite.y      = y;
-    c->sprite.w      = w;
-    c->sprite.h      = h;
-    c->sprite.scale  = ( scale > 0.0f ) ? scale : 1.0f;
-    c->sprite.sprite = id;
-    c->sprite.abgr   = col;
-    c->sprite.flags  = flags;
-    c->sprite.nine   = nine ? 1u : 0u;
+    e->sprite.x      = x;
+    e->sprite.y      = y;
+    e->sprite.w      = w;
+    e->sprite.h      = h;
+    e->sprite.scale  = ( scale > 0.0f ) ? scale : 1.0f;
+    e->sprite.sprite = id;
+    e->sprite.abgr   = col;
+    e->sprite.flags  = flags;
+    e->sprite.nine   = nine ? 1u : 0u;
     draw_cmd_seal();
 }
 
@@ -318,16 +341,16 @@ draw_push_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool 
     u32 ca = draw_apply_alpha( col_a );
     u32 cb = draw_apply_alpha( col_b );
 
-    gui_cmd_t* c = draw_cmd_open( GUI_CMD_RECT_GRADIENT, ca | cb, x, y, w, h, 0.0f );
-    if ( !c )
+    gui_cmd_ext_t* e = draw_cmd_open_ext( GUI_CMD_RECT_GRADIENT, ca | cb, x, y, w, h, 0.0f );
+    if ( !e )
         return;
-    c->gradient.x          = x;
-    c->gradient.y          = y;
-    c->gradient.w          = w;
-    c->gradient.h          = h;
-    c->gradient.col_a      = ca;
-    c->gradient.col_b      = cb;
-    c->gradient.horizontal = horizontal;
+    e->gradient.x          = x;
+    e->gradient.y          = y;
+    e->gradient.w          = w;
+    e->gradient.h          = h;
+    e->gradient.col_a      = ca;
+    e->gradient.col_b      = cb;
+    e->gradient.horizontal = horizontal;
     draw_cmd_seal();
 }
 

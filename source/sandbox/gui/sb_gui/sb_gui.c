@@ -113,8 +113,9 @@ show_demo_window( bool* p_open )
 
     gui_win_flags_t window_flags = GUI_WIN_NOSCROLL;
     // window_flags |= GUI_WIN_CAN_AUTOSIZE;
-    
+
     // We demonstrate using the full window_begin() API
+    gui()->window_set_next_pos( 16.0f, gui()->viewport_content_y( 0 ) + 16.0f, GUI_COND_ONCE );
     gui()->window_set_next_size( 640.0f, 640.0f + 220.0f, GUI_COND_ONCE );
     static bool show_another_window = false;
     if (gui()->window_begin("Basic Gui Demo", window_flags))
@@ -249,7 +250,8 @@ main( int argc, char** argv )
 
     i32 vp = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui",
-        .w         = 1280, .h = 960,
+        .x         = 64, .y = 64,
+        .w         = 1920 + 320, .h = 1080 + 180,
         .os_chrome = false,
         .font      = GUI_FONT_CASCADIA_MONO,
         .font_size = 16,

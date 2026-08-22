@@ -158,6 +158,12 @@ ex_census_finish_run( void )
             gui()->dpi_set( GUI_DPI_AUTO, 0.0f );
             printf( "[census] sweep complete -- %u runs dumped\n",
                     EX_CENSUS_DPI_COUNT * s_census_run.theme_count );
+
+            /* Semantic-cmd type HWM is a lifetime peak that never resets mid-sweep (unlike the
+               style census above), so one dump here covers every demo x theme x DPI combination
+               the whole run just drove -- the front-end command-type mix for sizing the cold
+               command sidecar pool. */
+            gui()->print_mem_stats();
             return;
         }
     }

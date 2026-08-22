@@ -164,7 +164,7 @@ static void
 draw_push_polyline_cmd( const gui_vec2_t* pts, u32 count, f32 thickness,
                         gui_stroke_align_t align, bool closed, u32 abgr )
 {
-    if ( count < 2 || draw_emit_blocked() )
+    if ( count < 2 || draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
         return;
 
     /* Transparent drop (the draw_cmd_open rule): invisible under blending, so no command slot
@@ -194,13 +194,16 @@ draw_push_polyline_cmd( const gui_vec2_t* pts, u32 count, f32 thickness,
     for ( u32 i = 0; i < count; ++i )
         s_draw.points[ s_draw.pt_count++ ] = pts[ i ];
 
-    gui_cmd_t* c          = draw_cmd_claim( GUI_CMD_POLYLINE );
-    c->polyline.pt_offset = pt_offset;
-    c->polyline.pt_count  = count;
-    c->polyline.thickness = thickness;
-    c->polyline.align     = align;
-    c->polyline.closed    = closed;
-    c->polyline.abgr      = col;
+    gui_cmd_t*     c      = draw_cmd_claim( GUI_CMD_POLYLINE );
+    u32             ei    = s_draw.ext_count++;
+    c->cold.ext_idx        = ei;
+    gui_cmd_ext_t* e      = draw_cmd_ext_slot( ei );
+    e->polyline.pt_offset = pt_offset;
+    e->polyline.pt_count  = count;
+    e->polyline.thickness = thickness;
+    e->polyline.align     = align;
+    e->polyline.closed    = closed;
+    e->polyline.abgr      = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );   /* points are L1-hot here */
 }
 
@@ -221,16 +224,19 @@ gui_draw_polyline( const gui_vec2_t* pts, u32 count, f32 thickness,
 static void
 stroke_capsule_cmd( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 col )
 {
-    if ( draw_emit_blocked() )
+    if ( draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
         return;
     if ( stroke_seg_culled( x0, y0, x1, y1, thickness ) )
         return;
-    gui_cmd_t* c      = draw_cmd_claim( GUI_CMD_LINE );
-    c->line.x0        = x0; c->line.y0 = y0;
-    c->line.x1        = x1; c->line.y1 = y1;
-    c->line.thickness = thickness;
-    c->line.border    = border;
-    c->line.abgr      = col;
+    gui_cmd_t*     c  = draw_cmd_claim( GUI_CMD_LINE );
+    u32             ei = s_draw.ext_count++;
+    c->cold.ext_idx     = ei;
+    gui_cmd_ext_t* e  = draw_cmd_ext_slot( ei );
+    e->line.x0        = x0; e->line.y0 = y0;
+    e->line.x1        = x1; e->line.y1 = y1;
+    e->line.thickness = thickness;
+    e->line.border    = border;
+    e->line.abgr      = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 
@@ -309,17 +315,20 @@ gui_draw_dashed_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thi
         return;
 
     f32 period = dash + ( gap > 0.0f ? gap : dash );
-    if ( period <= 0.0f || draw_emit_blocked() )
+    if ( period <= 0.0f || draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
         return;
     if ( stroke_seg_culled( x0, y0, x1, y1, thickness ) )
         return;
-    gui_cmd_t* c      = draw_cmd_claim( GUI_CMD_DASHED_LINE );
-    c->dash.x0        = x0; c->dash.y0 = y0;
-    c->dash.x1        = x1; c->dash.y1 = y1;
-    c->dash.thickness = thickness;
-    c->dash.period    = period;
-    c->dash.duty      = dash / period;
-    c->dash.abgr      = col;
+    gui_cmd_t*     c  = draw_cmd_claim( GUI_CMD_DASHED_LINE );
+    u32             ei = s_draw.ext_count++;
+    c->cold.ext_idx     = ei;
+    gui_cmd_ext_t* e  = draw_cmd_ext_slot( ei );
+    e->dash.x0        = x0; e->dash.y0 = y0;
+    e->dash.x1        = x1; e->dash.y1 = y1;
+    e->dash.thickness = thickness;
+    e->dash.period    = period;
+    e->dash.duty      = dash / period;
+    e->dash.abgr      = col;
     s_draw.cmd_hashes[ s_draw.cmd_count - 1 ] = draw_hash_cmd( c );
 }
 

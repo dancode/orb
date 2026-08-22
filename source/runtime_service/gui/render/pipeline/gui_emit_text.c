@@ -53,7 +53,7 @@ draw_text_pool_copy( const char* str, u32 len, u32* out_off )
 void
 draw_push_text_clip_n( f32 x, f32 y, u32 abgr, const char* str, u32 n, f32 clip_x0, f32 clip_x1 )
 {
-    if ( !str || draw_emit_blocked() )
+    if ( !str || draw_emit_blocked( 0 ) )
         return;
 
     /* Transparent drop (the draw_cmd_open rule): a run whose folded fill alpha is 0 lights no
@@ -118,7 +118,7 @@ draw_push_text( f32 x, f32 y, u32 abgr, const char* str )
 void
 draw_push_text_shadow( f32 x, f32 y, u32 abgr, u32 shadow_abgr, f32 dx, f32 dy, const char* str )
 {
-    if ( !str || draw_emit_blocked() )
+    if ( !str || draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
         return;
 
     u32 col        = draw_apply_alpha( abgr );
@@ -141,18 +141,21 @@ draw_push_text_shadow( f32 x, f32 y, u32 abgr, u32 shadow_abgr, f32 dx, f32 dy, 
     if ( !draw_text_pool_copy( str, len, &off ) )
         return;
 
-    gui_cmd_t* c               = draw_cmd_claim( GUI_CMD_TEXT_SHADOW );
-    c->text_shadow.x           = x;
-    c->text_shadow.y           = y;
-    c->text_shadow.off         = off;
-    c->text_shadow.len         = len;
-    c->text_shadow.clip_x0     = s_draw.text_clip_x0;
-    c->text_shadow.clip_x1     = s_draw.text_clip_x1;
-    c->text_shadow.abgr        = col;
-    c->text_shadow.shadow_abgr = shadow_col;
-    c->text_shadow.dx          = dx;
-    c->text_shadow.dy          = dy;
-    c->text_shadow.font        = (u16)s_draw.cur_font;
+    gui_cmd_t*     c   = draw_cmd_claim( GUI_CMD_TEXT_SHADOW );
+    u32             ei = s_draw.ext_count++;
+    c->cold.ext_idx     = ei;
+    gui_cmd_ext_t* e   = draw_cmd_ext_slot( ei );
+    e->text_shadow.x           = x;
+    e->text_shadow.y           = y;
+    e->text_shadow.off         = off;
+    e->text_shadow.len         = len;
+    e->text_shadow.clip_x0     = s_draw.text_clip_x0;
+    e->text_shadow.clip_x1     = s_draw.text_clip_x1;
+    e->text_shadow.abgr        = col;
+    e->text_shadow.shadow_abgr = shadow_col;
+    e->text_shadow.dx          = dx;
+    e->text_shadow.dy          = dy;
+    e->text_shadow.font        = (u16)s_draw.cur_font;
     draw_cmd_seal();
 }
 
@@ -171,7 +174,7 @@ draw_push_text_shadow( f32 x, f32 y, u32 abgr, u32 shadow_abgr, f32 dx, f32 dy, 
 void
 draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
 {
-    if ( !str || scale <= 0.0f || draw_emit_blocked() )
+    if ( !str || scale <= 0.0f || draw_emit_blocked( (u32)sizeof( gui_cmd_ext_t ) ) )
         return;
 
     /* Transparent drop, with the same TEXT_EDGE exception as draw_push_text_clip_n. */
@@ -186,17 +189,20 @@ draw_push_text_xf( f32 x, f32 y, u32 abgr, const char* str, f32 scale, f32 rot )
     if ( !draw_text_pool_copy( str, len, &off ) )
         return;
 
-    gui_cmd_t* c     = draw_cmd_claim( GUI_CMD_TEXT_XF );
-    c->text_xf.x     = x;
-    c->text_xf.y     = y;
-    c->text_xf.off   = off;
-    c->text_xf.len   = len;
-    c->text_xf.scale = scale;
-    c->text_xf.rot   = rot;
-    c->text_xf.abgr  = col;
-    c->text_xf.edge_w   = s_draw.text_edge_w;
-    c->text_xf.edge_col = s_draw.text_edge_col;
-    c->text_xf.font  = (u16)s_draw.cur_font;
+    gui_cmd_t*     c   = draw_cmd_claim( GUI_CMD_TEXT_XF );
+    u32             ei = s_draw.ext_count++;
+    c->cold.ext_idx     = ei;
+    gui_cmd_ext_t* e   = draw_cmd_ext_slot( ei );
+    e->text_xf.x     = x;
+    e->text_xf.y     = y;
+    e->text_xf.off   = off;
+    e->text_xf.len   = len;
+    e->text_xf.scale = scale;
+    e->text_xf.rot   = rot;
+    e->text_xf.abgr  = col;
+    e->text_xf.edge_w   = s_draw.text_edge_w;
+    e->text_xf.edge_col = s_draw.text_edge_col;
+    e->text_xf.font  = (u16)s_draw.cur_font;
     draw_cmd_seal();
 }
 

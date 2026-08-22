@@ -20,7 +20,7 @@
     tess_fx_box clamps the corner radius to half the short side, so a SQUARE box asking for a
     radius of its own half-extent degenerates exactly to a disc -- same field, same one quad,
     same fragment, antialiased at any size.  The emit side agrees (draw_push_circle_filled emits
-    GUI_CMD_RECT_FILLED with rounding = r); this helper survives for tess_fx_arc's full-turn PIE
+    GUI_CMD_RECT_FILL with rounding = r); this helper survives for tess_fx_arc's full-turn PIE
     route.
 
     NOT grid-snapped, and it does not have to ask: tess_fx_box derives it -- a square whose radius

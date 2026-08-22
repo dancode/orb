@@ -431,7 +431,7 @@ void draw_push_repeat_polar     ( f32 cx, f32 cy, u32 n, f32 orbit, f32 cell_w, 
                                   f32 rounding, f32 rate, f32 phase, u32 abgr, u32 col_b );
 
 /* A filled disc IS a rounded rect whose radius reached the half-extent -- this pushes
-   GUI_CMD_RECT_FILLED with rounding = r, not a command of its own. */
+   GUI_CMD_RECT_FILL with rounding = r, not a command of its own. */
 void draw_push_circle_filled    ( f32 cx, f32 cy, f32 r, u32 abgr );
 void draw_push_text             ( f32 x, f32 y, u32 abgr, const char* str );
 void draw_push_text_n           ( f32 x, f32 y, u32 abgr, const char* str, u32 n );
@@ -961,7 +961,9 @@ void                gui_render_set_time     ( f32 seconds );
        (TEXT only, stable until release), win/z/vp/font the owning segment's tag. */
     typedef struct
     {
-        gui_cmd_t   cmd;      /* the raw frozen command; the shell decodes the union per type */
+        gui_cmd_t   cmd;      /* the raw frozen command; the shell decodes the union per type --
+                                 RECT_FILL / TEXT read straight off it, every other type reads
+                                 through step_cmd_ext(&cmd) for its cold payload */
         gui_rect_t  bounds;   /* pixel bbox (highlight aid; TEXT/thick strokes approximate) */
         gui_rect_t  clip;     /* frozen scissor rect the command renders under */
         const char* text;     /* TEXT: frozen pool string; NULL for every other type */
@@ -986,6 +988,12 @@ void                gui_render_set_time     ( f32 seconds );
     bool step_cmd_info ( u32 index, step_cmd_info_t* out );
     u32  step_seg_count( void );
     bool step_seg_info ( u32 index, step_seg_info_t* out );
+
+    /* Resolves a frozen command's cold payload (every type but RECT_FILL / TEXT) -- the shell's
+       one way to reach a union member step_cmd_info_t.cmd no longer carries inline.  Backend-side
+       because the frozen cold pool (s_step.cmds' tail bytes) lives there; undefined for RECT_FILL
+       / TEXT, which never claim a cold slot. */
+    const gui_cmd_ext_t* step_cmd_ext( const gui_cmd_t* c );
 
     /* Pick: topmost VISIBLE frozen command whose bounds contain the point on viewport `vp` --
        "what drew this pixel".  Always resolves topmost in PAINT order (whatever the display

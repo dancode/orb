@@ -56,7 +56,7 @@ static f32  s_step_accum;
 
 /* Indexed by gui_cmd_type_t -- one name per enum value, in enum order. */
 static const char* k_step_type_name[] = {
-    "rect_filled", "rect_outline", "triangle", "bezier", "text", "text_xf", "text_shadow",
+    "rect_fill", "rect_tex", "rect_outline", "triangle", "bezier", "text", "text_xf", "text_shadow",
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
     "sprite", "fx_box", "round_rect_ex", "arc", "pie",
     "arc_dash", "arc_grad", "image_xf", "checker", "grid",
@@ -111,46 +111,55 @@ step_swatch( gui_rect_t r, f32 x, const char* label, u32 abgr )
 static void
 step_cmd_detail( const step_cmd_info_t* ci )
 {
-    const gui_cmd_t* c    = &ci->cmd;
-    const char*      row2 = NULL;   /* NULL = blank second row */
-    char             b2[ 96 ];
+    const gui_cmd_t*      c    = &ci->cmd;
+    const gui_cmd_ext_t*  e    = step_cmd_ext( c );   /* meaningless, but harmless, for RECT_FILL/TEXT */
+    const char*           row2 = NULL;   /* NULL = blank second row */
+    char                  b2[ 96 ];
 
     switch ( (gui_cmd_type_t)c->type )
     {
-        case GUI_CMD_RECT_FILLED:
+        case GUI_CMD_RECT_FILL:
             gui_textf( "rect %.0f,%.0f  %.0f x %.0f   round %.1f",
-                       c->rect.x, c->rect.y, c->rect.w, c->rect.h, c->rect.rounding );
+                       c->rect_fill.x, c->rect_fill.y, c->rect_fill.w, c->rect_fill.h,
+                       c->rect_fill.rounding );
+            fmt_snprintf( b2, sizeof( b2 ), "solid" );
+            row2 = b2;
+            break;
+        case GUI_CMD_RECT_TEX:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f   round %.1f",
+                       e->rect_tex.x, e->rect_tex.y, e->rect_tex.w, e->rect_tex.h,
+                       e->rect_tex.rounding );
             /* Naming the sampling model matters here: a glyph run that landed in the wrong one is
                invisible in the geometry and obvious in this label.  The mode field is 4 bits, so
                an unnamed value prints numerically rather than indexing off a table's end. */
             {
                 static const char* const k_tex_mode[ 3 ] = { "", "  (rgba)", "  (sdf)" };
-                u32  tmode = (u32)gui_tex_mode( c->rect.tex_idx );
+                u32  tmode = (u32)gui_tex_mode( e->rect_tex.tex_idx );
                 char msfx[ 16 ];
                 if ( tmode >= 3 )
                     fmt_snprintf( msfx, sizeof( msfx ), "  (mode %u)", tmode );
-                fmt_snprintf( b2, sizeof( b2 ), "tex %u%s", gui_tex_index( c->rect.tex_idx ),
+                fmt_snprintf( b2, sizeof( b2 ), "tex %u%s", gui_tex_index( e->rect_tex.tex_idx ),
                               tmode < 3 ? k_tex_mode[ tmode ] : msfx );
             }
             row2 = b2;
             break;
         case GUI_CMD_RECT_OUTLINE:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->rect_outline.x, c->rect_outline.y,
-                       c->rect_outline.w, c->rect_outline.h );
-            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   round %.1f", c->rect_outline.t,
-                      c->rect_outline.rounding );
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", e->rect_outline.x, e->rect_outline.y,
+                       e->rect_outline.w, e->rect_outline.h );
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   round %.1f", e->rect_outline.t,
+                      e->rect_outline.rounding );
             row2 = b2;
             break;
         case GUI_CMD_FRAME:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->frame.x, c->frame.y,
-                       c->frame.w, c->frame.h );
-            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   round %.1f", c->frame.t,
-                      c->frame.rounding );
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", e->frame.x, e->frame.y,
+                       e->frame.w, e->frame.h );
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   round %.1f", e->frame.t,
+                      e->frame.rounding );
             row2 = b2;
             break;
         case GUI_CMD_TRIANGLE:
-            gui_textf( "a %.0f,%.0f   b %.0f,%.0f", c->tri.ax, c->tri.ay, c->tri.bx, c->tri.by );
-            fmt_snprintf( b2, sizeof( b2 ), "c %.0f,%.0f", c->tri.cx, c->tri.cy );
+            gui_textf( "a %.0f,%.0f   b %.0f,%.0f", e->tri.ax, e->tri.ay, e->tri.bx, e->tri.by );
+            fmt_snprintf( b2, sizeof( b2 ), "c %.0f,%.0f", e->tri.cx, e->tri.cy );
             row2 = b2;
             break;
         case GUI_CMD_TEXT:
@@ -161,131 +170,131 @@ step_cmd_detail( const step_cmd_info_t* ci )
             break;
         case GUI_CMD_TEXT_XF:
             gui_textf( "pos %.0f,%.0f   len %u   scale %.2f   rot %.0f deg",
-                       c->text_xf.x, c->text_xf.y, c->text_xf.len, c->text_xf.scale,
-                       gui_degrees( c->text_xf.rot ) );
+                       e->text_xf.x, e->text_xf.y, e->text_xf.len, e->text_xf.scale,
+                       gui_degrees( e->text_xf.rot ) );
             fmt_snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
             row2 = b2;
             break;
         case GUI_CMD_TEXT_SHADOW:
             gui_textf( "pos %.0f,%.0f   len %u   shadow %.0f,%.0f",
-                       c->text_shadow.x, c->text_shadow.y, c->text_shadow.len,
-                       c->text_shadow.dx, c->text_shadow.dy );
+                       e->text_shadow.x, e->text_shadow.y, e->text_shadow.len,
+                       e->text_shadow.dx, e->text_shadow.dy );
             fmt_snprintf( b2, sizeof( b2 ), "\"%.60s\"", ci->text ? ci->text : "" );
             row2 = b2;
             break;
         case GUI_CMD_LINE:
-            gui_textf( "%.0f,%.0f -> %.0f,%.0f", c->line.x0, c->line.y0, c->line.x1, c->line.y1 );
-            fmt_snprintf( b2, sizeof( b2 ), "t %.1f", c->line.thickness );
+            gui_textf( "%.0f,%.0f -> %.0f,%.0f", e->line.x0, e->line.y0, e->line.x1, e->line.y1 );
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f", e->line.thickness );
             row2 = b2;
             break;
         case GUI_CMD_POLYLINE:
-            gui_textf( "%u pts   %s", c->polyline.pt_count,
-                       c->polyline.closed ? "closed" : "open" );
-            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   align %u", c->polyline.thickness,
-                      (u32)c->polyline.align );
+            gui_textf( "%u pts   %s", e->polyline.pt_count,
+                       e->polyline.closed ? "closed" : "open" );
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   align %u", e->polyline.thickness,
+                      (u32)e->polyline.align );
             row2 = b2;
             break;
         case GUI_CMD_DASHED_LINE:
-            gui_textf( "%.0f,%.0f -> %.0f,%.0f", c->dash.x0, c->dash.y0, c->dash.x1, c->dash.y1 );
-            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   period %.1f   duty %.2f", c->dash.thickness,
-                      c->dash.period, c->dash.duty );
+            gui_textf( "%.0f,%.0f -> %.0f,%.0f", e->dash.x0, e->dash.y0, e->dash.x1, e->dash.y1 );
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   period %.1f   duty %.2f", e->dash.thickness,
+                      e->dash.period, e->dash.duty );
             row2 = b2;
             break;
         case GUI_CMD_RECT_GRADIENT:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->gradient.x, c->gradient.y,
-                       c->gradient.w, c->gradient.h );
-            fmt_snprintf( b2, sizeof( b2 ), "%s", c->gradient.horizontal ? "horizontal" : "vertical" );
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", e->gradient.x, e->gradient.y,
+                       e->gradient.w, e->gradient.h );
+            fmt_snprintf( b2, sizeof( b2 ), "%s", e->gradient.horizontal ? "horizontal" : "vertical" );
             row2 = b2;
             break;
         case GUI_CMD_RECT_LIST:
-            gui_textf( "%u rects   pool offset %u", c->rect_list.count, c->rect_list.offset );
+            gui_textf( "%u rects   pool offset %u", e->rect_list.count, e->rect_list.offset );
             break;
         case GUI_CMD_FX_BOX:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->fx_box.x, c->fx_box.y,
-                       c->fx_box.w, c->fx_box.h );
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", e->fx_box.x, e->fx_box.y,
+                       e->fx_box.w, e->fx_box.h );
             fmt_snprintf( b2, sizeof( b2 ), "round %.1f   feather %.1f   rate %.2f Hz   depth %.2f   swell %.1f%s",
-                          c->fx_box.rounding, c->fx_box.feather, c->fx_box.rate, c->fx_box.depth,
-                          c->fx_box.swell,
-                          ( c->fx_box.variant == GUI_FX_BOX_SKIRT ) ? "   skirt"
-                          : ( c->fx_box.variant == GUI_FX_BOX_INSET ) ? "   inset"
-                          : ( c->fx_box.variant == GUI_FX_BOX_GLOW )  ? "   glow"
-                          : ( c->fx_box.variant == GUI_FX_BOX_RING )  ? "   ring" : "" );
+                          e->fx_box.rounding, e->fx_box.feather, e->fx_box.rate, e->fx_box.depth,
+                          e->fx_box.swell,
+                          ( e->fx_box.variant == GUI_FX_BOX_SKIRT ) ? "   skirt"
+                          : ( e->fx_box.variant == GUI_FX_BOX_INSET ) ? "   inset"
+                          : ( e->fx_box.variant == GUI_FX_BOX_GLOW )  ? "   glow"
+                          : ( e->fx_box.variant == GUI_FX_BOX_RING )  ? "   ring" : "" );
             row2 = b2;
             break;
         case GUI_CMD_ROUND_RECT_EX:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->round_rect.x, c->round_rect.y,
-                       c->round_rect.w, c->round_rect.h );
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", e->round_rect.x, e->round_rect.y,
+                       e->round_rect.w, e->round_rect.h );
             /* Listed in quadrant order, which is also the order they tessellate in. */
             fmt_snprintf( b2, sizeof( b2 ), "r tl %.1f  tr %.1f  br %.1f  bl %.1f",
-                          c->round_rect.rtl, c->round_rect.rtr,
-                          c->round_rect.rbr, c->round_rect.rbl );
+                          e->round_rect.rtl, e->round_rect.rtr,
+                          e->round_rect.rbr, e->round_rect.rbl );
             row2 = b2;
             break;
         /* Angles in degrees: the command stores radians, but nobody debugs a sweep in radians. */
         case GUI_CMD_ARC:
         case GUI_CMD_PIE:
-            gui_textf( "centre %.0f,%.0f   r %.1f", c->arc.cx, c->arc.cy, c->arc.r );
+            gui_textf( "centre %.0f,%.0f   r %.1f", e->arc.cx, e->arc.cy, e->arc.r );
             fmt_snprintf( b2, sizeof( b2 ), "%.1f -> %.1f deg   sweep %.1f   t %.1f",
-                          c->arc.a0 * 57.2957795f, c->arc.a1 * 57.2957795f,
-                          ( c->arc.a1 - c->arc.a0 ) * 57.2957795f, c->arc.thickness );
+                          e->arc.a0 * 57.2957795f, e->arc.a1 * 57.2957795f,
+                          ( e->arc.a1 - e->arc.a0 ) * 57.2957795f, e->arc.thickness );
             row2 = b2;
             break;
         case GUI_CMD_ARC_DASH:
-            gui_textf( "centre %.0f,%.0f   r %.1f   t %.1f", c->arc_dash.cx, c->arc_dash.cy,
-                       c->arc_dash.r, c->arc_dash.thickness );
+            gui_textf( "centre %.0f,%.0f   r %.1f   t %.1f", e->arc_dash.cx, e->arc_dash.cy,
+                       e->arc_dash.r, e->arc_dash.thickness );
             fmt_snprintf( b2, sizeof( b2 ), "%.1f -> %.1f deg   period %.1f deg   duty %.2f",
-                          c->arc_dash.a0 * 57.2957795f, c->arc_dash.a1 * 57.2957795f,
-                          c->arc_dash.period * 57.2957795f, c->arc_dash.duty );
+                          e->arc_dash.a0 * 57.2957795f, e->arc_dash.a1 * 57.2957795f,
+                          e->arc_dash.period * 57.2957795f, e->arc_dash.duty );
             row2 = b2;
             break;
         case GUI_CMD_ARC_GRAD:
-            gui_textf( "centre %.0f,%.0f   r %.1f   t %.1f", c->arc_grad.cx, c->arc_grad.cy,
-                       c->arc_grad.r, c->arc_grad.thickness );
+            gui_textf( "centre %.0f,%.0f   r %.1f   t %.1f", e->arc_grad.cx, e->arc_grad.cy,
+                       e->arc_grad.r, e->arc_grad.thickness );
             fmt_snprintf( b2, sizeof( b2 ), "%.1f -> %.1f deg",
-                          c->arc_grad.a0 * 57.2957795f, c->arc_grad.a1 * 57.2957795f );
+                          e->arc_grad.a0 * 57.2957795f, e->arc_grad.a1 * 57.2957795f );
             row2 = b2;
             break;
         case GUI_CMD_IMAGE_XF:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f   rot %.0f deg", c->image_xf.x, c->image_xf.y,
-                       c->image_xf.w, c->image_xf.h, gui_degrees( c->image_xf.rot ) );
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f   rot %.0f deg", e->image_xf.x, e->image_xf.y,
+                       e->image_xf.w, e->image_xf.h, gui_degrees( e->image_xf.rot ) );
             fmt_snprintf( b2, sizeof( b2 ), "tex %u (mode %u)",
-                          gui_tex_index( c->image_xf.tex_idx ),
-                          (u32)gui_tex_mode( c->image_xf.tex_idx ) );
+                          gui_tex_index( e->image_xf.tex_idx ),
+                          (u32)gui_tex_mode( e->image_xf.tex_idx ) );
             row2 = b2;
             break;
         case GUI_CMD_SPRITE:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f   scale %.2f", c->sprite.x, c->sprite.y,
-                       c->sprite.w, c->sprite.h, c->sprite.scale );
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f   scale %.2f", e->sprite.x, e->sprite.y,
+                       e->sprite.w, e->sprite.h, e->sprite.scale );
             fmt_snprintf( b2, sizeof( b2 ), "sprite %u   flags 0x%04X   nine %u",
-                          c->sprite.sprite, (u32)c->sprite.flags, (u32)c->sprite.nine );
+                          e->sprite.sprite, (u32)e->sprite.flags, (u32)e->sprite.nine );
             row2 = b2;
             break;
         case GUI_CMD_CHECKER:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->checker.x, c->checker.y,
-                       c->checker.w, c->checker.h );
-            fmt_snprintf( b2, sizeof( b2 ), "cell %.1f", c->checker.cell );
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", e->checker.x, e->checker.y,
+                       e->checker.w, e->checker.h );
+            fmt_snprintf( b2, sizeof( b2 ), "cell %.1f", e->checker.cell );
             row2 = b2;
             break;
         case GUI_CMD_GRID:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->grid.x, c->grid.y,
-                       c->grid.w, c->grid.h );
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", e->grid.x, e->grid.y,
+                       e->grid.w, e->grid.h );
             fmt_snprintf( b2, sizeof( b2 ), "cell %.1f   t %.1f   origin %.0f,%.0f",
-                          c->grid.cell, c->grid.thickness, c->grid.ox, c->grid.oy );
+                          e->grid.cell, e->grid.thickness, e->grid.ox, e->grid.oy );
             row2 = b2;
             break;
         case GUI_CMD_NGON:
-            gui_textf( "centre %.0f,%.0f   r %.1f   sides %u", c->ngon.cx, c->ngon.cy,
-                       c->ngon.r, c->ngon.sides );
+            gui_textf( "centre %.0f,%.0f   r %.1f   sides %u", e->ngon.cx, e->ngon.cy,
+                       e->ngon.r, e->ngon.sides );
             fmt_snprintf( b2, sizeof( b2 ), "round %.1f   t %.1f   rot %.0f deg   star %.2f",
-                          c->ngon.rounding, c->ngon.thickness, gui_degrees( c->ngon.rot ),
-                          c->ngon.star );
+                          e->ngon.rounding, e->ngon.thickness, gui_degrees( e->ngon.rot ),
+                          e->ngon.star );
             row2 = b2;
             break;
         case GUI_CMD_BOX_DASH:
-            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", c->box_dash.x, c->box_dash.y,
-                       c->box_dash.w, c->box_dash.h );
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", e->box_dash.x, e->box_dash.y,
+                       e->box_dash.w, e->box_dash.h );
             fmt_snprintf( b2, sizeof( b2 ), "t %.1f   dash %.1f/%.1f   rate %.0f px/s",
-                          c->box_dash.t, c->box_dash.dash, c->box_dash.gap, c->box_dash.rate );
+                          e->box_dash.t, e->box_dash.dash, e->box_dash.gap, e->box_dash.rate );
             row2 = b2;
             break;
     }
@@ -297,26 +306,26 @@ step_cmd_detail( const step_cmd_info_t* ci )
     {
         case GUI_CMD_RECT_GRADIENT:
         {
-            f32 x = step_swatch( r, r.x, "col_a", c->gradient.col_a );
-            step_swatch( r, x, "col_b", c->gradient.col_b );
+            f32 x = step_swatch( r, r.x, "col_a", e->gradient.col_a );
+            step_swatch( r, x, "col_b", e->gradient.col_b );
             break;
         }
         case GUI_CMD_ARC_GRAD:
         {
-            f32 x = step_swatch( r, r.x, "col_a", c->arc_grad.col_a );
-            step_swatch( r, x, "col_b", c->arc_grad.col_b );
+            f32 x = step_swatch( r, r.x, "col_a", e->arc_grad.col_a );
+            step_swatch( r, x, "col_b", e->arc_grad.col_b );
             break;
         }
         case GUI_CMD_CHECKER:
         {
-            f32 x = step_swatch( r, r.x, "col_a", c->checker.col_a );
-            step_swatch( r, x, "col_b", c->checker.col_b );
+            f32 x = step_swatch( r, r.x, "col_a", e->checker.col_a );
+            step_swatch( r, x, "col_b", e->checker.col_b );
             break;
         }
         case GUI_CMD_FRAME:
         {
-            f32 x = step_swatch( r, r.x, "fill", c->frame.abgr );
-            step_swatch( r, x, "border", c->frame.col_border );
+            f32 x = step_swatch( r, r.x, "fill", e->frame.abgr );
+            step_swatch( r, x, "border", e->frame.col_border );
             break;
         }
         case GUI_CMD_RECT_LIST:
@@ -327,33 +336,34 @@ step_cmd_detail( const step_cmd_info_t* ci )
                it is read through the matching member, not positionally. */
             switch ( (gui_cmd_type_t)c->type )
             {
-                case GUI_CMD_RECT_FILLED:   step_swatch( r, r.x, "color", c->rect.abgr );         break;
-                case GUI_CMD_RECT_OUTLINE:  step_swatch( r, r.x, "color", c->rect_outline.abgr ); break;
-                case GUI_CMD_TRIANGLE:      step_swatch( r, r.x, "color", c->tri.abgr );          break;
+                case GUI_CMD_RECT_FILL:     step_swatch( r, r.x, "color", c->rect_fill.abgr );    break;
+                case GUI_CMD_RECT_TEX:      step_swatch( r, r.x, "color", e->rect_tex.abgr );     break;
+                case GUI_CMD_RECT_OUTLINE:  step_swatch( r, r.x, "color", e->rect_outline.abgr ); break;
+                case GUI_CMD_TRIANGLE:      step_swatch( r, r.x, "color", e->tri.abgr );          break;
                 case GUI_CMD_TEXT:          step_swatch( r, r.x, "color", c->text.abgr );         break;
-                case GUI_CMD_TEXT_XF:       step_swatch( r, r.x, "color", c->text_xf.abgr );      break;
+                case GUI_CMD_TEXT_XF:       step_swatch( r, r.x, "color", e->text_xf.abgr );      break;
                 case GUI_CMD_TEXT_SHADOW:
                 {
-                    f32 sx = step_swatch( r, r.x, "color", c->text_shadow.abgr );
-                    step_swatch( r, sx, "shadow", c->text_shadow.shadow_abgr );
+                    f32 sx = step_swatch( r, r.x, "color", e->text_shadow.abgr );
+                    step_swatch( r, sx, "shadow", e->text_shadow.shadow_abgr );
                     break;
                 }
-                case GUI_CMD_LINE:          step_swatch( r, r.x, "color", c->line.abgr );         break;
-                case GUI_CMD_POLYLINE:      step_swatch( r, r.x, "color", c->polyline.abgr );     break;
-                case GUI_CMD_DASHED_LINE:   step_swatch( r, r.x, "color", c->dash.abgr );         break;
-                case GUI_CMD_FX_BOX:        step_swatch( r, r.x, "color", c->fx_box.abgr );       break;
+                case GUI_CMD_LINE:          step_swatch( r, r.x, "color", e->line.abgr );         break;
+                case GUI_CMD_POLYLINE:      step_swatch( r, r.x, "color", e->polyline.abgr );     break;
+                case GUI_CMD_DASHED_LINE:   step_swatch( r, r.x, "color", e->dash.abgr );         break;
+                case GUI_CMD_FX_BOX:        step_swatch( r, r.x, "color", e->fx_box.abgr );       break;
                 case GUI_CMD_ROUND_RECT_EX:
-                    step_swatch( r, r.x, "color", c->round_rect.abgr );
-                    if ( c->round_rect.col_b != c->round_rect.abgr )
-                        step_swatch( r, r.x, "col_b", c->round_rect.col_b );
+                    step_swatch( r, r.x, "color", e->round_rect.abgr );
+                    if ( e->round_rect.col_b != e->round_rect.abgr )
+                        step_swatch( r, r.x, "col_b", e->round_rect.col_b );
                     break;
                 case GUI_CMD_ARC:
-                case GUI_CMD_PIE:           step_swatch( r, r.x, "color", c->arc.abgr );          break;
-                case GUI_CMD_ARC_DASH:      step_swatch( r, r.x, "color", c->arc_dash.abgr );     break;
-                case GUI_CMD_IMAGE_XF:      step_swatch( r, r.x, "color", c->image_xf.abgr );     break;
-                case GUI_CMD_GRID:          step_swatch( r, r.x, "color", c->grid.abgr );         break;
-                case GUI_CMD_NGON:          step_swatch( r, r.x, "color", c->ngon.abgr );         break;
-                case GUI_CMD_BOX_DASH:      step_swatch( r, r.x, "color", c->box_dash.abgr );     break;
+                case GUI_CMD_PIE:           step_swatch( r, r.x, "color", e->arc.abgr );          break;
+                case GUI_CMD_ARC_DASH:      step_swatch( r, r.x, "color", e->arc_dash.abgr );     break;
+                case GUI_CMD_IMAGE_XF:      step_swatch( r, r.x, "color", e->image_xf.abgr );     break;
+                case GUI_CMD_GRID:          step_swatch( r, r.x, "color", e->grid.abgr );         break;
+                case GUI_CMD_NGON:          step_swatch( r, r.x, "color", e->ngon.abgr );         break;
+                case GUI_CMD_BOX_DASH:      step_swatch( r, r.x, "color", e->box_dash.abgr );     break;
                 default:                                                                          break;
             }
             break;

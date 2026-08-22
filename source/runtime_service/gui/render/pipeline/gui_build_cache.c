@@ -437,6 +437,7 @@ cache_slot_clips_bind( gui_id_t win )
    yet.  On idle frames both tables are last frame's, so the max is simply the true tail.
 
    !RELEASE only, matching the sole call site (that assert). */
+
 #if !RELEASE
 static void
 cache_slots_extent( u32* out_quad_end, u32* out_prim_end )

@@ -169,7 +169,8 @@ backend_pool_report( void )
        not as a breakdown that sums to the pool's peak. */
     {
         static const char* const k_cmd_type_name[ GUI_CMD_COUNT ] = {
-            [GUI_CMD_RECT_FILLED]   = "  rect_filled",
+            [GUI_CMD_RECT_FILL]     = "  rect_fill",
+            [GUI_CMD_RECT_TEX]      = "  rect_tex",
             [GUI_CMD_RECT_OUTLINE]  = "  rect_outline",
             [GUI_CMD_TRIANGLE]      = "  triangle",
             [GUI_CMD_BEZIER]        = "  bezier",
@@ -203,6 +204,13 @@ backend_pool_report( void )
             if ( s_draw.cmd_type_hwm[ t ] > 0 )
                 GUI_POOL_ROW( k_cmd_type_name[ t ], s_draw.cmd_type_hwm[ t ], GUI_MAX_CMDS );
     }
+
+    /* Cold-pool peak: how many gui_cmd_ext_t payloads (everything but RECT_FILL/TEXT) shared the
+       tail of cmds[] with the hot envelope slots above, at once, on the busiest frame -- see
+       draw_cmd_ext_slot().  No independent cap to show a percentage against; it borrows whatever
+       the hot side (semantic cmds) is not using out of the same GUI_MAX_CMDS * sizeof(gui_cmd_t)
+       budget. */
+    gui_log( GUI_LOG_INFO, "  %-22s %6u", "cold pool peak", s_draw.ext_hwm );
 
     GUI_POOL_ROW( "cmd segments",   s_draw.seg_hwm,         GUI_MAX_SEGS );
     GUI_POOL_ROW( "clip rects",     s_draw.clip_hwm,        GUI_MAX_CLIP_RECTS );

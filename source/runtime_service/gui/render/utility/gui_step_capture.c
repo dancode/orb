@@ -87,6 +87,7 @@ static struct
 
     /* --- the frozen frame (T0) -- written once per capture ---------------------------------- */
     gui_cmd_t      cmds      [ GUI_MAX_CMDS ];          u32 cmd_count;
+    u32            ext_count;   /* cold-pool entries in cmds[]'s tail, see step_cmd_ext_slot() */
     u32            cmd_hashes[ GUI_MAX_CMDS ];          /* emit-time hashes, for the cache diff  */
     gui_id_t       cmd_owner [ GUI_MAX_CMDS ];          /* emitting widget (0 = chrome) -- T3    */
     gui_cmd_seg_t  segs      [ GUI_MAX_SEGS ];          u32 seg_count;   /* rebased [lo, hi)     */
@@ -117,6 +118,24 @@ static struct
     u32            paint_seq[ GUI_MAX_CMDS ];
 
 } s_step;
+
+/* Cold-pool accessor for the FROZEN copy, mirroring draw_cmd_ext_slot() over s_draw.cmds --
+   s_step.cmds shares the same front/back arena shape, so a captured ext_idx (copied verbatim,
+   never remapped) resolves the same way once the tail bytes are copied alongside it. */
+static gui_cmd_ext_t*
+step_cmd_ext_slot( u32 ext_idx )
+{
+    u8* tail = (u8*)( s_step.cmds + GUI_MAX_CMDS );
+    return (gui_cmd_ext_t*)( tail - ( ext_idx + 1 ) * sizeof( gui_cmd_ext_t ) );
+}
+
+/* Public wrapper (gui_render.h) -- the shell's only way to reach a frozen command's cold
+   payload, since step_cmd_ext_slot itself is file-local. */
+const gui_cmd_ext_t*
+step_cmd_ext( const gui_cmd_t* c )
+{
+    return step_cmd_ext_slot( c->cold.ext_idx );
+}
 
 /*==============================================================================================
     T1 -- ordering.
@@ -245,6 +264,17 @@ step_capture_build( void )
     s_step.cmd_count = w;
     s_step.seg_count = ns;
 
+    /* Cold pool whole, exactly like the side pools below: a captured envelope's cold.ext_idx is
+       copied verbatim (never remapped), so the tail bytes it points into have to land at the
+       same offset in s_step.cmds as they held in s_draw.cmds. */
+    {
+        u32 ext_bytes = s_draw.ext_count * (u32)sizeof( gui_cmd_ext_t );
+        memcpy( (u8*)( s_step.cmds + GUI_MAX_CMDS ) - ext_bytes,
+                (u8*)( s_draw.cmds  + GUI_MAX_CMDS ) - ext_bytes,
+                ext_bytes );
+        s_step.ext_count = s_draw.ext_count;
+    }
+
     /* Side pools whole: pool offsets baked into the commands stay valid verbatim, and the pools
        may hold debug-band content interleaved -- unreferenced entries are inert. */
     memcpy( s_step.clip_table, s_draw.clip_table,      s_draw.clip_table_n * sizeof( gui_rect_t ) );
@@ -299,6 +329,17 @@ step_restore_emit( void )
         s_draw.cmd_hashes[ k ] = s_step.cmd_hashes[ fi ];
     }
     s_draw.cmd_count = cur;
+
+    /* Cold pool whole, so every cold.ext_idx in the restored prefix resolves; live debug-band
+       emission (the only emission active while frozen) appends past this count, exactly as it
+       appends s_draw.cmd_count past `cur`. */
+    {
+        u32 ext_bytes = s_step.ext_count * (u32)sizeof( gui_cmd_ext_t );
+        memcpy( (u8*)( s_draw.cmds + GUI_MAX_CMDS ) - ext_bytes,
+                (u8*)( s_step.cmds + GUI_MAX_CMDS ) - ext_bytes,
+                ext_bytes );
+        s_draw.ext_count = s_step.ext_count;
+    }
 
     /* Side pools whole, so every pool offset in the prefix resolves; live debug-band emission
        appends past the frozen counts and the two never collide. */
@@ -372,114 +413,153 @@ step_cmd_bounds( const gui_cmd_t* c )
 {
     switch ( (gui_cmd_type_t)c->type )
     {
-        case GUI_CMD_RECT_FILLED:
-            return ( gui_rect_t ){ c->rect.x, c->rect.y, c->rect.w, c->rect.h };
+        case GUI_CMD_RECT_FILL:
+            return ( gui_rect_t ){ c->rect_fill.x, c->rect_fill.y, c->rect_fill.w, c->rect_fill.h };
+        case GUI_CMD_RECT_TEX:
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            return ( gui_rect_t ){ e->rect_tex.x, e->rect_tex.y, e->rect_tex.w, e->rect_tex.h };
+        }
         case GUI_CMD_RECT_OUTLINE:
-            return ( gui_rect_t ){ c->rect_outline.x, c->rect_outline.y,
-                                   c->rect_outline.w, c->rect_outline.h };
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            return ( gui_rect_t ){ e->rect_outline.x, e->rect_outline.y,
+                                   e->rect_outline.w, e->rect_outline.h };
+        }
         case GUI_CMD_FRAME:
-            return ( gui_rect_t ){ c->frame.x, c->frame.y, c->frame.w, c->frame.h };
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            return ( gui_rect_t ){ e->frame.x, e->frame.y, e->frame.w, e->frame.h };
+        }
         case GUI_CMD_RECT_GRADIENT:
-            return ( gui_rect_t ){ c->gradient.x, c->gradient.y, c->gradient.w, c->gradient.h };
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            return ( gui_rect_t ){ e->gradient.x, e->gradient.y, e->gradient.w, e->gradient.h };
+        }
         /* The soft skirt is real painted area, so the highlight has to cover it -- a shadow
            outlined at its box alone looks like the highlight is the thing that is wrong. */
         case GUI_CMD_FX_BOX:
         {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
             /* A swelling boundary reaches `swell` px further at full stretch. */
-            f32 g = c->fx_box.feather * 0.5f + fmaxf( c->fx_box.swell, 0.0f );
-            if ( c->fx_box.rot != 0.0f )
+            f32 g = e->fx_box.feather * 0.5f + fmaxf( e->fx_box.swell, 0.0f );
+            if ( e->fx_box.rot != 0.0f )
             {
                 /* Rotated: the rotated AABB of the grown box, the emit-side cull's arithmetic. */
-                f32 cs = cosf( c->fx_box.rot ), sn = sinf( c->fx_box.rot );
-                f32 hx = c->fx_box.w * 0.5f + g, hy = c->fx_box.h * 0.5f + g;
+                f32 cs = cosf( e->fx_box.rot ), sn = sinf( e->fx_box.rot );
+                f32 hx = e->fx_box.w * 0.5f + g, hy = e->fx_box.h * 0.5f + g;
                 f32 ex = fabsf( hx * cs ) + fabsf( hy * sn );
                 f32 ey = fabsf( hx * sn ) + fabsf( hy * cs );
-                return ( gui_rect_t ){ c->fx_box.x + c->fx_box.w * 0.5f - ex,
-                                       c->fx_box.y + c->fx_box.h * 0.5f - ey,
+                return ( gui_rect_t ){ e->fx_box.x + e->fx_box.w * 0.5f - ex,
+                                       e->fx_box.y + e->fx_box.h * 0.5f - ey,
                                        ex * 2.0f, ey * 2.0f };
             }
-            return ( gui_rect_t ){ c->fx_box.x - g, c->fx_box.y - g,
-                                   c->fx_box.w + 2.0f * g, c->fx_box.h + 2.0f * g };
+            return ( gui_rect_t ){ e->fx_box.x - g, e->fx_box.y - g,
+                                   e->fx_box.w + 2.0f * g, e->fx_box.h + 2.0f * g };
         }
         case GUI_CMD_ROUND_RECT_EX:
         {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
             /* Grown by the feather like FX_BOX: the soft skirt is real painted area. */
-            f32 g = c->round_rect.feather * 0.5f;
-            return ( gui_rect_t ){ c->round_rect.x - g, c->round_rect.y - g,
-                                   c->round_rect.w + 2.0f * g, c->round_rect.h + 2.0f * g };
+            f32 g = e->round_rect.feather * 0.5f;
+            return ( gui_rect_t ){ e->round_rect.x - g, e->round_rect.y - g,
+                                   e->round_rect.w + 2.0f * g, e->round_rect.h + 2.0f * g };
         }
         /* The whole circle, not the sector: a highlight that over-covers still points at the right
            shape, and the tight extent would need the rotated local box rebuilt here. */
         case GUI_CMD_ARC:
         case GUI_CMD_PIE:
         {
-            f32 g = c->arc.r + c->arc.thickness * 0.5f;
-            return ( gui_rect_t ){ c->arc.cx - g, c->arc.cy - g, g * 2.0f, g * 2.0f };
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            f32 g = e->arc.r + e->arc.thickness * 0.5f;
+            return ( gui_rect_t ){ e->arc.cx - g, e->arc.cy - g, g * 2.0f, g * 2.0f };
         }
         case GUI_CMD_ARC_DASH:
         {
-            f32 g = c->arc_dash.r + c->arc_dash.thickness * 0.5f;
-            return ( gui_rect_t ){ c->arc_dash.cx - g, c->arc_dash.cy - g, g * 2.0f, g * 2.0f };
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            f32 g = e->arc_dash.r + e->arc_dash.thickness * 0.5f;
+            return ( gui_rect_t ){ e->arc_dash.cx - g, e->arc_dash.cy - g, g * 2.0f, g * 2.0f };
         }
         case GUI_CMD_ARC_GRAD:
         {
-            f32 g = c->arc_grad.r + c->arc_grad.thickness * 0.5f;
-            return ( gui_rect_t ){ c->arc_grad.cx - g, c->arc_grad.cy - g, g * 2.0f, g * 2.0f };
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            f32 g = e->arc_grad.r + e->arc_grad.thickness * 0.5f;
+            return ( gui_rect_t ){ e->arc_grad.cx - g, e->arc_grad.cy - g, g * 2.0f, g * 2.0f };
         }
         /* The pattern quads paint exactly their box -- the tiling is inside it. */
         case GUI_CMD_CHECKER:
-            return ( gui_rect_t ){ c->checker.x, c->checker.y, c->checker.w, c->checker.h };
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            return ( gui_rect_t ){ e->checker.x, e->checker.y, e->checker.w, e->checker.h };
+        }
         case GUI_CMD_GRID:
-            return ( gui_rect_t ){ c->grid.x, c->grid.y, c->grid.w, c->grid.h };
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            return ( gui_rect_t ){ e->grid.x, e->grid.y, e->grid.w, e->grid.h };
+        }
         case GUI_CMD_NGON:
         {
-            f32 g = c->ngon.r;
-            return ( gui_rect_t ){ c->ngon.cx - g, c->ngon.cy - g, g * 2.0f, g * 2.0f };
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            f32 g = e->ngon.r;
+            return ( gui_rect_t ){ e->ngon.cx - g, e->ngon.cy - g, g * 2.0f, g * 2.0f };
         }
         case GUI_CMD_BOX_DASH:
-            return ( gui_rect_t ){ c->box_dash.x, c->box_dash.y, c->box_dash.w, c->box_dash.h };
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            return ( gui_rect_t ){ e->box_dash.x, e->box_dash.y, e->box_dash.w, e->box_dash.h };
+        }
         /* The repeated sets span the box the push derived -- same arithmetic, so the highlight
            is the box drawn. */
         case GUI_CMD_REPEAT:
         {
-            f32 px = ( c->repeat.pitch_x > c->repeat.cell_w ) ? c->repeat.pitch_x
-                                                              : c->repeat.cell_w + 1.0f;
-            f32 py = ( c->repeat.pitch_y > c->repeat.cell_h ) ? c->repeat.pitch_y
-                                                              : c->repeat.cell_h + 1.0f;
-            f32 hx = (f32)( c->repeat.nx - 1u ) * 0.5f * px + c->repeat.cell_w * 0.5f;
-            f32 hy = (f32)( c->repeat.ny - 1u ) * 0.5f * py + c->repeat.cell_h * 0.5f;
-            return ( gui_rect_t ){ c->repeat.cx - hx, c->repeat.cy - hy, hx * 2.0f, hy * 2.0f };
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            f32 px = ( e->repeat.pitch_x > e->repeat.cell_w ) ? e->repeat.pitch_x
+                                                              : e->repeat.cell_w + 1.0f;
+            f32 py = ( e->repeat.pitch_y > e->repeat.cell_h ) ? e->repeat.pitch_y
+                                                              : e->repeat.cell_h + 1.0f;
+            f32 hx = (f32)( e->repeat.nx - 1u ) * 0.5f * px + e->repeat.cell_w * 0.5f;
+            f32 hy = (f32)( e->repeat.ny - 1u ) * 0.5f * py + e->repeat.cell_h * 0.5f;
+            return ( gui_rect_t ){ e->repeat.cx - hx, e->repeat.cy - hy, hx * 2.0f, hy * 2.0f };
         }
         case GUI_CMD_REPEAT_POLAR:
         {
-            f32 hx = c->repeat_polar.orbit + c->repeat_polar.cell_w * 0.5f;
-            f32 hy = c->repeat_polar.orbit + c->repeat_polar.cell_h * 0.5f;
-            return ( gui_rect_t ){ c->repeat_polar.cx - hx, c->repeat_polar.cy - hy,
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            f32 hx = e->repeat_polar.orbit + e->repeat_polar.cell_w * 0.5f;
+            f32 hy = e->repeat_polar.orbit + e->repeat_polar.cell_h * 0.5f;
+            return ( gui_rect_t ){ e->repeat_polar.cx - hx, e->repeat_polar.cy - hy,
                                    hx * 2.0f, hy * 2.0f };
         }
         /* The cut only removes ink, so the fill's own box bounds the shape. */
         case GUI_CMD_BOX_CUT:
-            return ( gui_rect_t ){ c->box_cut.x, c->box_cut.y, c->box_cut.w, c->box_cut.h };
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            return ( gui_rect_t ){ e->box_cut.x, e->box_cut.y, e->box_cut.w, e->box_cut.h };
+        }
         /* Sprite / nine-slice paints exactly its box -- the slice expansion happens inside it. */
         case GUI_CMD_SPRITE:
-            return ( gui_rect_t ){ c->sprite.x, c->sprite.y, c->sprite.w, c->sprite.h };
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            return ( gui_rect_t ){ e->sprite.x, e->sprite.y, e->sprite.w, e->sprite.h };
+        }
         /* The rotated AABB, exactly as the emit-side cull computes it. */
         case GUI_CMD_IMAGE_XF:
         {
-            f32 cs = cosf( c->image_xf.rot ), sn = sinf( c->image_xf.rot );
-            f32 hx = c->image_xf.w * 0.5f, hy = c->image_xf.h * 0.5f;
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            f32 cs = cosf( e->image_xf.rot ), sn = sinf( e->image_xf.rot );
+            f32 hx = e->image_xf.w * 0.5f, hy = e->image_xf.h * 0.5f;
             f32 ex = fabsf( hx * cs ) + fabsf( hy * sn );
             f32 ey = fabsf( hx * sn ) + fabsf( hy * cs );
-            return ( gui_rect_t ){ c->image_xf.x + hx - ex, c->image_xf.y + hy - ey,
+            return ( gui_rect_t ){ e->image_xf.x + hx - ex, e->image_xf.y + hy - ey,
                                    ex * 2.0f, ey * 2.0f };
         }
         case GUI_CMD_TRIANGLE:
         {
-            f32 x0 = c->tri.ax, x1 = c->tri.ax, y0 = c->tri.ay, y1 = c->tri.ay;
-            if ( c->tri.bx < x0 ) x0 = c->tri.bx;   if ( c->tri.bx > x1 ) x1 = c->tri.bx;
-            if ( c->tri.cx < x0 ) x0 = c->tri.cx;   if ( c->tri.cx > x1 ) x1 = c->tri.cx;
-            if ( c->tri.by < y0 ) y0 = c->tri.by;   if ( c->tri.by > y1 ) y1 = c->tri.by;
-            if ( c->tri.cy < y0 ) y0 = c->tri.cy;   if ( c->tri.cy > y1 ) y1 = c->tri.cy;
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            f32 x0 = e->tri.ax, x1 = e->tri.ax, y0 = e->tri.ay, y1 = e->tri.ay;
+            if ( e->tri.bx < x0 ) x0 = e->tri.bx;   if ( e->tri.bx > x1 ) x1 = e->tri.bx;
+            if ( e->tri.cx < x0 ) x0 = e->tri.cx;   if ( e->tri.cx > x1 ) x1 = e->tri.cx;
+            if ( e->tri.by < y0 ) y0 = e->tri.by;   if ( e->tri.by > y1 ) y1 = e->tri.by;
+            if ( e->tri.cy < y0 ) y0 = e->tri.cy;   if ( e->tri.cy > y1 ) y1 = e->tri.cy;
             return ( gui_rect_t ){ x0, y0, x1 - x0, y1 - y0 };
         }
         case GUI_CMD_TEXT:
@@ -506,10 +586,11 @@ step_cmd_bounds( const gui_cmd_t* c )
            pads the box so the highlight still frames the shadow copy. */
         case GUI_CMD_TEXT_SHADOW:
         {
-            const char* s = s_step.text_pool + c->text_shadow.off;
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const char* s = s_step.text_pool + e->text_shadow.off;
             f32         w = 0.0f;
             u32         i = 0;
-            while ( i < c->text_shadow.len && s[ i ] )
+            while ( i < e->text_shadow.len && s[ i ] )
             {
                 u32 adv_b;
                 f32 u0, v0, u1, v1, ox, oy, gw, gh, adv;
@@ -518,13 +599,13 @@ step_cmd_bounds( const gui_cmd_t* c )
                 w += adv;
                 i += adv_b;
             }
-            f32 dx = c->text_shadow.dx, dy = c->text_shadow.dy;
-            f32 x0 = c->text_shadow.x + ( dx < 0.0f ? dx : 0.0f );
-            f32 x1 = c->text_shadow.x + w + ( dx > 0.0f ? dx : 0.0f );
-            f32 y0 = c->text_shadow.y + ( dy < 0.0f ? dy : 0.0f );
-            f32 y1 = c->text_shadow.y + font_line_h() + ( dy > 0.0f ? dy : 0.0f );
-            if ( c->text_shadow.clip_x0 > x0 ) x0 = c->text_shadow.clip_x0;
-            if ( c->text_shadow.clip_x1 < x1 ) x1 = c->text_shadow.clip_x1;
+            f32 dx = e->text_shadow.dx, dy = e->text_shadow.dy;
+            f32 x0 = e->text_shadow.x + ( dx < 0.0f ? dx : 0.0f );
+            f32 x1 = e->text_shadow.x + w + ( dx > 0.0f ? dx : 0.0f );
+            f32 y0 = e->text_shadow.y + ( dy < 0.0f ? dy : 0.0f );
+            f32 y1 = e->text_shadow.y + font_line_h() + ( dy > 0.0f ? dy : 0.0f );
+            if ( e->text_shadow.clip_x0 > x0 ) x0 = e->text_shadow.clip_x0;
+            if ( e->text_shadow.clip_x1 < x1 ) x1 = e->text_shadow.clip_x1;
             return ( gui_rect_t ){ x0, y0, x1 > x0 ? x1 - x0 : 0.0f, y1 - y0 };
         }
         /* Transformed run: the same advance walk gives the run's own box, which is then rotated
@@ -532,10 +613,11 @@ step_cmd_bounds( const gui_cmd_t* c )
            one, exactly as it is for a triangle. */
         case GUI_CMD_TEXT_XF:
         {
-            const char* s  = s_step.text_pool + c->text_xf.off;
+            const gui_cmd_ext_t* e  = step_cmd_ext_slot( c->cold.ext_idx );
+            const char* s  = s_step.text_pool + e->text_xf.off;
             f32         w  = 0.0f;
             u32         bi = 0;
-            while ( bi < c->text_xf.len && s[ bi ] )
+            while ( bi < e->text_xf.len && s[ bi ] )
             {
                 u32 adv_b;
                 f32 u0, v0, u1, v1, ox, oy, gw, gh, adv;
@@ -544,8 +626,8 @@ step_cmd_bounds( const gui_cmd_t* c )
                 w += adv;
                 bi += adv_b;
             }
-            f32 cs = cosf( c->text_xf.rot ), sn = sinf( c->text_xf.rot );
-            f32 lw = w * c->text_xf.scale, lh = font_line_h() * c->text_xf.scale;
+            f32 cs = cosf( e->text_xf.rot ), sn = sinf( e->text_xf.rot );
+            f32 lw = w * e->text_xf.scale, lh = font_line_h() * e->text_xf.scale;
             f32 qx[ 4 ] = { 0.0f, lw, lw,   0.0f };
             f32 qy[ 4 ] = { 0.0f, 0.0f, lh, lh   };
             f32 x0 = 0.0f, x1 = 0.0f, y0 = 0.0f, y1 = 0.0f;
@@ -556,36 +638,39 @@ step_cmd_bounds( const gui_cmd_t* c )
                 if ( px < x0 ) x0 = px;   if ( px > x1 ) x1 = px;
                 if ( py < y0 ) y0 = py;   if ( py > y1 ) y1 = py;
             }
-            return ( gui_rect_t ){ c->text_xf.x + x0, c->text_xf.y + y0, x1 - x0, y1 - y0 };
+            return ( gui_rect_t ){ e->text_xf.x + x0, e->text_xf.y + y0, x1 - x0, y1 - y0 };
         }
         case GUI_CMD_LINE:
         case GUI_CMD_DASHED_LINE:
         {
             /* line and dash share the same leading x0..thickness layout. */
-            f32 t  = c->line.thickness * 0.5f + 1.0f;
-            f32 x0 = c->line.x0 < c->line.x1 ? c->line.x0 : c->line.x1;
-            f32 x1 = c->line.x0 < c->line.x1 ? c->line.x1 : c->line.x0;
-            f32 y0 = c->line.y0 < c->line.y1 ? c->line.y0 : c->line.y1;
-            f32 y1 = c->line.y0 < c->line.y1 ? c->line.y1 : c->line.y0;
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            f32 t  = e->line.thickness * 0.5f + 1.0f;
+            f32 x0 = e->line.x0 < e->line.x1 ? e->line.x0 : e->line.x1;
+            f32 x1 = e->line.x0 < e->line.x1 ? e->line.x1 : e->line.x0;
+            f32 y0 = e->line.y0 < e->line.y1 ? e->line.y0 : e->line.y1;
+            f32 y1 = e->line.y0 < e->line.y1 ? e->line.y1 : e->line.y0;
             return ( gui_rect_t ){ x0 - t, y0 - t, ( x1 - x0 ) + 2.0f * t, ( y1 - y0 ) + 2.0f * t };
         }
         case GUI_CMD_POLYLINE:
         {
-            const gui_vec2_t* p = s_step.points + c->polyline.pt_offset;
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_vec2_t* p = s_step.points + e->polyline.pt_offset;
             f32 x0 = p[ 0 ].x, x1 = p[ 0 ].x, y0 = p[ 0 ].y, y1 = p[ 0 ].y;
-            for ( u32 i = 1; i < c->polyline.pt_count; ++i )
+            for ( u32 i = 1; i < e->polyline.pt_count; ++i )
             {
                 if ( p[ i ].x < x0 ) x0 = p[ i ].x;   if ( p[ i ].x > x1 ) x1 = p[ i ].x;
                 if ( p[ i ].y < y0 ) y0 = p[ i ].y;   if ( p[ i ].y > y1 ) y1 = p[ i ].y;
             }
-            f32 t = c->polyline.thickness * 0.5f + 1.0f;
+            f32 t = e->polyline.thickness * 0.5f + 1.0f;
             return ( gui_rect_t ){ x0 - t, y0 - t, ( x1 - x0 ) + 2.0f * t, ( y1 - y0 ) + 2.0f * t };
         }
         case GUI_CMD_RECT_LIST:
         {
-            const gui_rect_col_t* r = s_step.rect_pool + c->rect_list.offset;
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->cold.ext_idx );
+            const gui_rect_col_t* r = s_step.rect_pool + e->rect_list.offset;
             f32 x0 = r[ 0 ].x, y0 = r[ 0 ].y, x1 = r[ 0 ].x + r[ 0 ].w, y1 = r[ 0 ].y + r[ 0 ].h;
-            for ( u32 i = 1; i < c->rect_list.count; ++i )
+            for ( u32 i = 1; i < e->rect_list.count; ++i )
             {
                 if ( r[ i ].x < x0 )            x0 = r[ i ].x;
                 if ( r[ i ].y < y0 )            y0 = r[ i ].y;
@@ -611,15 +696,15 @@ step_cmd_info( u32 index, step_cmd_info_t* out )
     out->bounds = step_cmd_bounds( c );
     out->clip   = s_step.clip_table[ c->clip_idx ];
     out->text   = ( c->type == GUI_CMD_TEXT )        ? s_step.text_pool + c->text.off
-                : ( c->type == GUI_CMD_TEXT_XF )     ? s_step.text_pool + c->text_xf.off
-                : ( c->type == GUI_CMD_TEXT_SHADOW ) ? s_step.text_pool + c->text_shadow.off
+                : ( c->type == GUI_CMD_TEXT_XF )     ? s_step.text_pool + step_cmd_ext_slot( c->cold.ext_idx )->text_xf.off
+                : ( c->type == GUI_CMD_TEXT_SHADOW ) ? s_step.text_pool + step_cmd_ext_slot( c->cold.ext_idx )->text_shadow.off
                                                      : NULL;
     out->owner  = s_step.cmd_owner[ fi ];
 
     /* The font is the COMMAND's own now (gui.h), and only a glyph run has one. */
     out->font = ( c->type == GUI_CMD_TEXT )        ? c->text.font
-              : ( c->type == GUI_CMD_TEXT_XF )     ? c->text_xf.font
-              : ( c->type == GUI_CMD_TEXT_SHADOW ) ? c->text_shadow.font
+              : ( c->type == GUI_CMD_TEXT_XF )     ? step_cmd_ext_slot( c->cold.ext_idx )->text_xf.font
+              : ( c->type == GUI_CMD_TEXT_SHADOW ) ? step_cmd_ext_slot( c->cold.ext_idx )->text_shadow.font
                                                    : 0u;
 
     /* Owning segment tag (display domain). */
@@ -724,7 +809,7 @@ step_pick( f32 x, f32 y, i32 vp, u32* out_index )
            frames.  The band is padded by 1px so a thin ring is still clickable. */
         if ( c->type == GUI_CMD_RECT_OUTLINE )
         {
-            f32 band = c->rect_outline.t + 1.0f;
+            f32 band = step_cmd_ext_slot( c->cold.ext_idx )->rect_outline.t + 1.0f;
             gui_rect_t hole = ( gui_rect_t ){ b.x + band, b.y + band,
                                               b.w - 2.0f * band, b.h - 2.0f * band };
             if ( hole.w > 0.0f && step_hit( hole, x, y ) )

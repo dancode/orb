@@ -91,6 +91,7 @@ static struct
     u32             text_pool_used;
 
     u32             cmd_count;      /* commands in the list this frame  */
+    u32             ext_count;      /* cold-pool entries claimed this frame, see draw_cmd_ext_slot() */
     u32             pt_count;       /* points in the pool this frame */
     u32             rect_count;     /* rect-pool entries used this frame */
 
@@ -99,7 +100,7 @@ static struct
        closes, so a cap can only be argued from what was retained here -- see backend_pool_report
        (render/gui_render_mem.c), which prints all of them against their #defines. */
 
-    u32             cmd_hwm, pt_hwm, rect_hwm, text_hwm, clip_hwm, seg_hwm;
+    u32             cmd_hwm, ext_hwm, pt_hwm, rect_hwm, text_hwm, clip_hwm, seg_hwm;
 
     /* Per-type high-water mark: the most commands of each gui_cmd_type_t ever live in cmds[] at
        once.  Tallied by draw_reset scanning the closing frame's settled [0, cmd_count) range --
@@ -202,6 +203,46 @@ static struct
 } s_draw;
 
 /*==============================================================================================
+    Cold command pool -- gui_cmd_ext_t payloads live in the TAIL BYTES of s_draw.cmds[] itself,
+    addressed backward from the end, so hot envelope slots (front) and cold payloads (back)
+    share one budget instead of each reserving its own worst-case capacity.  In the all-hot case
+    this is byte-identical to a plain array; a mixed frame borrows whatever the hot side isn't
+    using.  See draw_cmd_arena_full() for the shared admission gate both claim paths check.
+==============================================================================================*/
+
+static gui_cmd_ext_t*
+draw_cmd_ext_slot( u32 ext_idx )
+{
+    u8* tail = (u8*)( s_draw.cmds + GUI_MAX_CMDS );
+    return (gui_cmd_ext_t*)( tail - ( ext_idx + 1 ) * sizeof( gui_cmd_ext_t ) );
+}
+
+/* True when claiming `extra_hot_bytes` more envelope space and/or `extra_ext_bytes` more cold
+   space would make the front and back cursors collide.  Exactly one argument is non-zero at
+   any call site -- a hot claim checks (sizeof(gui_cmd_t), 0), a cold claim (0, sizeof(gui_cmd_ext_t)). */
+static bool
+draw_cmd_arena_full( u32 extra_hot_bytes, u32 extra_ext_bytes )
+{
+    u32 used = s_draw.cmd_count * (u32)sizeof( gui_cmd_t )
+             + s_draw.ext_count * (u32)sizeof( gui_cmd_ext_t );
+    return used + extra_hot_bytes + extra_ext_bytes > GUI_MAX_CMDS * (u32)sizeof( gui_cmd_t );
+}
+
+/* The payload address for any command, hot or cold -- every hash / dispatch / debug read site
+   routes through this instead of hand-rolling the hot/cold branch.  For RECT_FILL and TEXT
+   this is just &c->rect_fill / &c->text; both union members start at the same address, so
+   returning the rect_fill address for either is the same generic-base-pointer trick the hash
+   default branch already relied on. */
+
+static const void*
+gui_cmd_payload( const gui_cmd_t* c )
+{
+    return ( c->type == GUI_CMD_RECT_FILL || c->type == GUI_CMD_TEXT )
+         ? (const void*)&c->rect_fill
+         : (const void*)draw_cmd_ext_slot( c->cold.ext_idx );
+}
+
+/*==============================================================================================
     FNV-1a hash helpers -- defined here (before draw_reset) so clip pre-hashing can use them.
     draw_hash_cmd below also uses them; fnv1a_u32 is visible in gui_build_cache.c, and pal_hash /
     census_hash fold whole gui_prim_t records through fnv1a (all included after this file by
@@ -278,9 +319,9 @@ fnv1a( u32 h, const void* p, u32 n )
 ==============================================================================================*/
 
 static inline bool
-draw_emit_blocked( void )
+draw_emit_blocked( u32 extra_ext_bytes )
 {
-    if ( s_draw.cmd_count >= GUI_MAX_CMDS )
+    if ( draw_cmd_arena_full( (u32)sizeof( gui_cmd_t ), extra_ext_bytes ) )
     {
         /* Say so. Every other fixed pool in the gui follows the loud-overflow rule (GUI_WARN_ONCE,
            rect/gui_rect.h): degrade gracefully, but report once so the symptom traces to its cap.
@@ -349,6 +390,7 @@ draw_reset( i32 display_w, i32 display_h )
        which is exactly the signal). */
 
     if ( s_draw.cmd_count      > s_draw.cmd_hwm  ) s_draw.cmd_hwm  = s_draw.cmd_count;
+    if ( s_draw.ext_count      > s_draw.ext_hwm  ) s_draw.ext_hwm  = s_draw.ext_count;
     if ( s_draw.pt_count       > s_draw.pt_hwm   ) s_draw.pt_hwm   = s_draw.pt_count;
     if ( s_draw.rect_count     > s_draw.rect_hwm ) s_draw.rect_hwm = s_draw.rect_count;
     if ( s_draw.text_pool_used > s_draw.text_hwm ) s_draw.text_hwm = s_draw.text_pool_used;
@@ -365,6 +407,7 @@ draw_reset( i32 display_w, i32 display_h )
     }
 
     s_draw.cmd_count       = 0;
+    s_draw.ext_count       = 0;
     s_draw.pt_count        = 0;
     s_draw.rect_count      = 0;
     s_draw.text_pool_used  = 0;
