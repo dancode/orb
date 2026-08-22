@@ -99,8 +99,8 @@ window_end_titlebar( gui_window_t* win, bool native )
            flush with the surface edges.  A shelf chip is never dimmed (it parks at the bottom,
            away from the viewport chrome, and needs to read as a window handle). */
         bool maxed = win && win->maximized && !s_build.win.minimized;
-        if ( maxed )
-            draw_set_rounding( 0.0f );
+        if ( maxed || native )
+            draw_set_rounding( 0.0f );   /* flush with the surface: square, like the border ring */
         u8 title_phase = maxed ? GUI_PHASE_INERT : window_standing_phase( s_build.win.id );
         draw_face( ( gui_rect_t ){ s_build.win.x, s_build.win.y, s_build.win.w, title_h },
                    GUI_ROLE_TITLE, title_phase );
@@ -583,10 +583,15 @@ gui_window_end( void )
        caption button above may have left the ambient at the widget radius.  A maximized window is
        flush with its surface -- no border ring (it would trace a floating-window outline under
        the viewport chrome and around the screen edges) and no corner radius; the ambient still
-       resets so the focus marker below keeps a deliberate (square) shape. */
+       resets so the focus marker below keeps a deliberate (square) shape.  A window that OWNS its
+       surface (the viewport shell, a detached native window) is flush the same way: its ring
+       still draws (it is the surface's outermost frame) but square, or the corner arcs would
+       trace rounded chrome over the surface's square pixels -- visibly over a maximized window
+       beneath, since the shell's ring rides the root-region band above every normal window. */
     gui_rect_t win_r = { s_build.win.x, s_build.win.y, s_build.win.w, s_build.win.h };
     bool maxed = win && win->maximized && !s_build.win.minimized;
-    draw_set_rounding( maxed ? 0.0f : ROUND_WIN );
+    bool flush = maxed || native || frame_only;
+    draw_set_rounding( flush ? 0.0f : ROUND_WIN );
     if ( !maxed )
     {
         /* The viewport shell's border is the surface's outermost frame: lift it into the
