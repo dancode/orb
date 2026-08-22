@@ -258,6 +258,11 @@ typedef struct
                                                  //   from -- taken at tessellation and carried across
                                                  //   reuse frames, since retained geometry is never
                                                  //   re-walked (gui_build_tess_state.c, slot_text_*)
+    u32      style_refs;                         // shapes in this slot that wanted a style record --
+                                                 //   the TOTAL the fold rate divides by.  Same
+                                                 //   take-once-carry-forward rule as text_quads
+    u32      stored_mask[ ( GUI_PAL_MAX + 31u ) / 32u ];  // which palette entries those shapes named;
+                                                 //   OR'd across slots for the frame's distinct set
     u8       vp;                                 // viewport (GUI_MAX_VIEWPORTS = 4)
     u8       band;                               // arena band (0 = main UI, 1 = debug/diagnostic)
     bool     valid;                              // true once geometry has been tessellated at least once
@@ -496,6 +501,8 @@ typedef struct
 {
     u32      quad_retained, win_retained;
     u32      total_quad, total_prim, overlay_win;
+    u32      total_style_refs;                            // shapes wanting a style, drawing windows only
+    u32      stored_mask[ ( GUI_PAL_MAX + 31u ) / 32u ];  // union of those windows' named entries
     u32      reserved_quad;                 /* sum of quad_alloc over ALL placed slots */
     gui_id_t overflow_win;                  /* first window a pool spilled under (NONE = outside the loop) */
     u32      overflow_at_quad, overflow_at_cmd, overflow_at_prim;
@@ -647,7 +654,21 @@ cache_build_frame( void )
 
     /* Publish geometry and retained stats. */
     s_stats.accum.quad_count    = ps.total_quad;
-    s_stats.accum.prim_count    = ps.total_prim;
+    s_stats.accum.prim_unique   = ps.total_prim;
+    s_stats.accum.prim_total    = ps.total_style_refs;
+
+    /* Distinct stored entries this frame's windows named -- popcount of the union the place pass
+       built, taken once here rather than maintained on every set. */
+    {
+        u32 n = 0;
+        for ( u32 m = 0; m < sizeof( ps.stored_mask ) / sizeof( ps.stored_mask[ 0 ] ); ++m )
+        {
+            u32 w = ps.stored_mask[ m ];
+            while ( w ) { w &= w - 1u; ++n; }
+        }
+        s_stats.accum.prim_stored     = n;
+        s_stats.accum.prim_stored_max = pal_stored_count();
+    }
     /* Physical arena fills: what the caps are actually hit against.  The write head, not the sum of
        the slots -- it carries every slot's reservation padding and both bands. */
     s_stats.accum.quad_count_all = s_tess.quad_count;

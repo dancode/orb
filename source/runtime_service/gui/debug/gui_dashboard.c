@@ -856,7 +856,7 @@ dash_panel_stats( gui_rect_t r, const dash_snapshot_t* sn )
     dash_textf( r.x + 2.0f, r.y + lh, r.x + r.w, DASH_COL_TEXT,
                 "app: %u/%u wins ret   %u/%u quads ret   %u quads -> %u tris   %u style recs",
                 st->win_retained, st->win_total, st->quad_retained, st->quad_count,
-                st->quad_count, st->quad_count * 2u, st->prim_count );
+                st->quad_count, st->quad_count * 2u, st->prim_unique );
     dash_textf( r.x + 2.0f, r.y + 2.0f * lh, r.x + r.w,
                 fz ? DASH_COL_WARN : DASH_COL_TEXT_DIM,
                 "capture #%u%s   any_changed %u   unchanged %u   gen %u%s",

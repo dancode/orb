@@ -111,7 +111,7 @@ static struct
     u32        full_drops;           // records that qualified with no room left
     bool       pub_dirty;            // interned entries not folded into the published table
 
-} s_bake;
+} s_intern;
 
 /*  FNV-1a over the record's LIVE ROWS -- the probe key for the table below, and the hottest
     hash in the backend: it runs once per style-record memo miss in tess_prim_local.
@@ -195,9 +195,11 @@ static gui_palette_mode_t s_pal_mode = GUI_PALETTE_LEARNING;
 
 gui_palette_mode_t pal_mode( void ) { return s_pal_mode; }
 
-/* Entries the table holds right now -- the LIVE count, so a frame that just interned reads its
-   own additions.  A readout only; nothing resolves an index through it. */
-u32 pal_entry_count( void ) { return s_bake.count; }
+/* Entries the STORED pool holds right now -- the LIVE count, so a frame that just interned reads
+   its own additions.  The table's SIZE, cumulative within an epoch: how many of them a given frame
+   actually names is a separate number the build accumulates per slot (gui_build_place.c).
+   A readout only; nothing resolves an index through it. */
+u32 pal_stored_count( void ) { return s_intern.count; }
 
 void
 pal_set_mode( gui_palette_mode_t mode )
@@ -218,29 +220,29 @@ pal_set_mode( gui_palette_mode_t mode )
        Clearing the digest makes the next pal_epoch drop and republish, and the placement pass
        already reads that as "re-place everything" -- the same route a theme change takes. */
     if ( !( prev == GUI_PALETTE_LEARNING && mode == GUI_PALETTE_FROZEN ) )
-        s_bake.digest = 0u;
+        s_intern.digest = 0u;
 }
 
 u32
 pal_find( const gui_prim_t* rec )
 {
-    if ( s_bake.count == 0u || s_pal_mode == GUI_PALETTE_OFF )
+    if ( s_intern.count == 0u || s_pal_mode == GUI_PALETTE_OFF )
         return GUI_PAL_NONE;
 
     u32 i = pal_hash( rec ) & PAL_SLOT_MASK;
     for ( u32 probe = 0; probe < PAL_SLOTS; ++probe, i = ( i + 1u ) & PAL_SLOT_MASK )
     {
-        u16 e = s_bake.slot[ i ];
+        u16 e = s_intern.slot[ i ];
         if ( e == 0u )
             break;                                     /* empty slot: the record is not in here */
         if ( memcmp( &s_pal.rec[ e - 1u ], rec, sizeof( gui_prim_t ) ) == 0 )
         {
-            ++s_bake.hits;
+            ++s_intern.hits;
             return (u32)( e - 1u );
         }
     }
 
-    ++s_bake.misses;
+    ++s_intern.misses;
     return GUI_PAL_NONE;
 }
 
@@ -252,9 +254,9 @@ static void
 pal_slot_insert( u32 entry, u32 hash )
 {
     u32 i = hash & PAL_SLOT_MASK;
-    while ( s_bake.slot[ i ] != 0u )
+    while ( s_intern.slot[ i ] != 0u )
         i = ( i + 1u ) & PAL_SLOT_MASK;
-    s_bake.slot[ i ] = (u16)( entry + 1u );
+    s_intern.slot[ i ] = (u16)( entry + 1u );
 }
 
 /*==============================================================================================
@@ -290,32 +292,32 @@ pal_cand_qualifies( u32 hash )
     u32 i = hash & PAL_CAND_MASK;
     for ( u32 probe = 0; probe < PAL_CAND_SLOTS; ++probe, i = ( i + 1u ) & PAL_CAND_MASK )
     {
-        if ( s_bake.cand[ i ].frame == 0u )
+        if ( s_intern.cand[ i ].frame == 0u )
             break;
-        if ( s_bake.cand[ i ].hash == hash )
+        if ( s_intern.cand[ i ].hash == hash )
         {
-            if ( s_bake.cand[ i ].frame == s_bake.frame )
+            if ( s_intern.cand[ i ].frame == s_intern.frame )
                 return false;              /* same frame: another window, not another build */
-            s_bake.cand[ i ].frame = s_bake.frame;
+            s_intern.cand[ i ].frame = s_intern.frame;
             return true;
         }
     }
 
     /* Not held.  Wipe rather than probe forever when the set is full -- what fills it is the
        by-product of animation, and anything real re-qualifies within two frames. */
-    if ( s_bake.cand_count >= PAL_CAND_SLOTS / 2u )
+    if ( s_intern.cand_count >= PAL_CAND_SLOTS / 2u )
     {
-        memset( s_bake.cand, 0, sizeof( s_bake.cand ) );
-        s_bake.cand_count = 0;
+        memset( s_intern.cand, 0, sizeof( s_intern.cand ) );
+        s_intern.cand_count = 0;
         i = hash & PAL_CAND_MASK;
     }
 
-    while ( s_bake.cand[ i ].frame != 0u )
+    while ( s_intern.cand[ i ].frame != 0u )
         i = ( i + 1u ) & PAL_CAND_MASK;
 
-    s_bake.cand[ i ].hash  = hash;
-    s_bake.cand[ i ].frame = s_bake.frame;
-    ++s_bake.cand_count;
+    s_intern.cand[ i ].hash  = hash;
+    s_intern.cand[ i ].frame = s_intern.frame;
+    ++s_intern.cand_count;
     return false;
 }
 
@@ -365,7 +367,7 @@ pal_cmd_hint( u32 ci )
         return GUI_PAL_NONE;
 
     u32 e = (u32)s_cmd_entry[ ci ] - 1u;
-    return e < s_bake.count ? e : GUI_PAL_NONE;
+    return e < s_intern.count ? e : GUI_PAL_NONE;
 }
 
 /*  Park the answer this command just finished with.  A style that resolved into the arena
@@ -392,14 +394,14 @@ pal_cmd_learn( u32 ci, u32 style )
 const gui_prim_t*
 pal_entry( u32 entry )
 {
-    return entry < s_bake.count ? &s_pal.rec[ entry ] : NULL;
+    return entry < s_intern.count ? &s_pal.rec[ entry ] : NULL;
 }
 
 void
 pal_cmd_hit( void )
 {
-    ++s_bake.hits;
-    ++s_bake.cmd_hits;
+    ++s_intern.hits;
+    ++s_intern.cmd_hits;
 }
 
 u32
@@ -412,20 +414,20 @@ pal_intern( const gui_prim_t* rec )
     if ( !pal_cand_qualifies( hash ) )
         return GUI_PAL_NONE;
 
-    if ( s_bake.count >= (u32)GUI_PAL_MAX )
+    if ( s_intern.count >= (u32)GUI_PAL_MAX )
     {
-        ++s_bake.full_drops;
+        ++s_intern.full_drops;
         GUI_WARN_ONCE( "style palette full (%u entries) -- styles that qualify from here "
                        "take per-slot records instead; raise GUI_PAL_MAX if this UI's "
                        "working set is genuinely this wide.\n", (u32)GUI_PAL_MAX );
         return GUI_PAL_NONE;
     }
 
-    u32 entry = s_bake.count++;
+    u32 entry = s_intern.count++;
     s_pal.rec[ entry ] = *rec;   /* straight into the one table (gui_render_pal.c) */
     pal_slot_insert( entry, hash );
 
-    s_bake.pub_dirty = true;
+    s_intern.pub_dirty = true;
     return entry;
 }
 
@@ -439,10 +441,10 @@ pal_intern( const gui_prim_t* rec )
 void
 pal_publish_pending( void )
 {
-    if ( !s_bake.pub_dirty )
+    if ( !s_intern.pub_dirty )
         return;
-    s_bake.pub_dirty = false;
-    render_pal_publish( s_bake.count );
+    s_intern.pub_dirty = false;
+    render_pal_publish( s_intern.count );
 }
 
 /*  Forget every scale.  The build re-notes each one as its windows land, so this runs at the top of
@@ -453,13 +455,13 @@ pal_publish_pending( void )
 void
 pal_style_reset( void )
 {
-    s_bake.scale_count = 0;
+    s_intern.scale_count = 0;
 
     /* The BUILD FRAME counter, and this is the one call that ticks once per frame that will
        tessellate -- which is exactly the unit pal_cand_qualifies measures in.  An
        idle-skipped frame builds nothing, so it must not count: a record would otherwise
        qualify against a frame in which nothing was drawn at all. */
-    ++s_bake.frame;
+    ++s_intern.frame;
 }
 
 /*  Note a landed style as one of the scales in play.  Called once at the top of a building frame
@@ -479,25 +481,25 @@ pal_style_set( const f32* vars, u32 count )
     }
     if ( !key ) key = 1u;            /* 0 is the empty-slot sentinel */
 
-    for ( u32 s = 0; s < s_bake.scale_count; ++s )
-        if ( s_bake.scale_key[ s ] == key )
+    for ( u32 s = 0; s < s_intern.scale_count; ++s )
+        if ( s_intern.scale_key[ s ] == key )
             return;                  /* already noted -- every landing after the first */
 
     /* A third scale evicts the oldest.  Costs one extra epoch reset while three are genuinely in
        play, and nothing at all otherwise. */
-    u32 at = s_bake.scale_count;
+    u32 at = s_intern.scale_count;
     if ( at >= PAL_MAX_SCALES )
     {
-        memmove( &s_bake.scale_key[ 0 ], &s_bake.scale_key[ 1 ],
-                 ( PAL_MAX_SCALES - 1u ) * sizeof( s_bake.scale_key[ 0 ] ) );
+        memmove( &s_intern.scale_key[ 0 ], &s_intern.scale_key[ 1 ],
+                 ( PAL_MAX_SCALES - 1u ) * sizeof( s_intern.scale_key[ 0 ] ) );
         at = PAL_MAX_SCALES - 1u;
     }
     else
     {
-        s_bake.scale_count++;
+        s_intern.scale_count++;
     }
 
-    s_bake.scale_key[ at ] = key;
+    s_intern.scale_key[ at ] = key;
 }
 
 /*  What the live table was built against: every noted scale, in order, plus the bindless slot of
@@ -515,9 +517,9 @@ static u32
 pal_digest( void )
 {
     u32 h = 2166136261u;
-    for ( u32 s = 0; s < s_bake.scale_count; ++s )
-        h = ( h ^ s_bake.scale_key[ s ] ) * 16777619u;
-    h = ( h ^ s_bake.scale_count ) * 16777619u;
+    for ( u32 s = 0; s < s_intern.scale_count; ++s )
+        h = ( h ^ s_intern.scale_key[ s ] ) * 16777619u;
+    h = ( h ^ s_intern.scale_count ) * 16777619u;
     h = ( h ^ res_atlas_idx()     ) * 16777619u;
     h = ( h ^ res_sdf_idx()       ) * 16777619u;
     h = ( h ^ res_sprite_idx()    ) * 16777619u;
@@ -555,28 +557,28 @@ bool
 pal_epoch( void )
 {
     u32 digest = pal_digest();
-    if ( digest == s_bake.digest || s_bake.scale_count == 0u )
+    if ( digest == s_intern.digest || s_intern.scale_count == 0u )
     {
         /* The second half of a drop: re-place once more so the drop frame's sightings meet their
            second build frame.  Nothing is invalidated here -- the table and its candidates are
            whatever the drop frame left -- so this only costs the re-place. */
-        if ( s_bake.relearn_frame != 0u && s_bake.relearn_frame != s_bake.frame )
+        if ( s_intern.relearn_frame != 0u && s_intern.relearn_frame != s_intern.frame )
         {
-            s_bake.relearn_frame = 0u;
+            s_intern.relearn_frame = 0u;
             return true;
         }
         return false;
     }
-    s_bake.digest = digest;
-    s_bake.count  = 0;
+    s_intern.digest = digest;
+    s_intern.count  = 0;
 
     /* Armed with the frame the drop lands in; pal_style_reset has already ticked the counter for
        this frame, so it is never 0 and 0 stays free as the "nothing pending" sentinel. */
-    s_bake.relearn_frame = s_bake.frame;
+    s_intern.relearn_frame = s_intern.frame;
 
-    memset( s_bake.slot, 0, sizeof( s_bake.slot ) );
-    s_bake.hits = s_bake.misses = s_bake.cmd_hits = 0;
-    s_bake.full_drops = 0;
+    memset( s_intern.slot, 0, sizeof( s_intern.slot ) );
+    s_intern.hits = s_intern.misses = s_intern.cmd_hits = 0;
+    s_intern.full_drops = 0;
 
     /* Every parked answer names an entry of the table just dropped.  A stale one would fail its
        compare and cost nothing, but clearing keeps the reasoning to one sentence. */
@@ -584,11 +586,11 @@ pal_epoch( void )
 
     /* The candidates go with the table: they are hashes of records built at the OLD style, and a
        theme or DPI change means nothing that qualified against them will be drawn again. */
-    memset( s_bake.cand, 0, sizeof( s_bake.cand ) );
-    s_bake.cand_count = 0;
+    memset( s_intern.cand, 0, sizeof( s_intern.cand ) );
+    s_intern.cand_count = 0;
 
     render_pal_publish( 0 );
-    s_bake.pub_dirty = false;
+    s_intern.pub_dirty = false;
     return true;
 }
 
@@ -606,7 +608,7 @@ void
 pal_dump( void )
 {
 #ifdef GUI_PRIM_CENSUS
-    u32 probes = s_bake.hits + s_bake.misses;
+    u32 probes = s_intern.hits + s_intern.misses;
 
     /* The MODE is named rather than left to be inferred: an empty table reads the same whether
        the palette is off, frozen before it learned anything, or simply new. */
@@ -616,22 +618,22 @@ pal_dump( void )
     gui_log( GUI_LOG_INFO, "---- STYLE PALETTE [%s] (%u of %u entries over %u style scale(s); %u/%u "
                            "probes hit since the epoch, %.1f%%) ----",
              k_mode[ (u32)s_pal_mode % 3u ],
-             s_bake.count, (u32)GUI_PAL_MAX, s_bake.scale_count, s_bake.hits, probes,
-             probes ? 100.0f * (f32)s_bake.hits / (f32)probes : 0.0f );
+             s_intern.count, (u32)GUI_PAL_MAX, s_intern.scale_count, s_intern.hits, probes,
+             probes ? 100.0f * (f32)s_intern.hits / (f32)probes : 0.0f );
 
     /* What is still in flight: candidates are records seen once and waiting on a second build
        frame to earn an entry, so a large held count beside a small table is a UI drawing values
        rather than styles -- animation, drags, anything whose lanes move every frame. */
-    gui_log( GUI_LOG_INFO, "     %u candidate hashes held%s", s_bake.cand_count,
-             s_bake.full_drops ? "  TABLE FULL" : "" );
+    gui_log( GUI_LOG_INFO, "     %u candidate hashes held%s", s_intern.cand_count,
+             s_intern.full_drops ? "  TABLE FULL" : "" );
 
     /* The per-command memo's share of the hits.  What it answers is how much of the lookup
        the command sites absorbed before anything had to be folded or probed at all. */
     gui_log( GUI_LOG_INFO, "     %u of those hits came from a parked command answer, %.1f%%",
-             s_bake.cmd_hits,
-             s_bake.hits ? 100.0f * (f32)s_bake.cmd_hits / (f32)s_bake.hits : 0.0f );
+             s_intern.cmd_hits,
+             s_intern.hits ? 100.0f * (f32)s_intern.cmd_hits / (f32)s_intern.hits : 0.0f );
 
-    for ( u32 i = 0; i < s_bake.count; ++i )
+    for ( u32 i = 0; i < s_intern.count; ++i )
     {
         /* Through the census's own normalization, or the join it exists for cannot happen: the
            census folds the relocating atlas slot out of `tex` before hashing, and a raw entry would

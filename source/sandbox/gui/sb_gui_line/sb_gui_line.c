@@ -280,7 +280,7 @@ panel_cost( void )
 
     gui_render_stats_t rs = gui()->render_stats();
     gui()->textf( "frame: %u draw calls   %u quads   %u styles", rs.draw_calls, rs.quad_count,
-                  rs.prim_count );
+                  rs.prim_unique );
     gui()->text( "A stroke costs ONE quad record whatever its angle: the capsule field resolves "
                  "the rounded ends and the antialiased edge in the fragment.  An AXIS-ALIGNED line "
                  "still takes the grid-snapped path instead, because a horizontal edge has nothing "

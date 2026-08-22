@@ -336,7 +336,7 @@ panel_ladder( void )
        own -- and that number does NOT move when the scale, the angle or the glyph count does. */
     gui_render_stats_t rs = gui()->render_stats();
     gui()->textf( "frame: %u draw calls   %u quads   %u styles   (scale and rotation add none)",
-                  rs.draw_calls, rs.quad_count, rs.prim_count );
+                  rs.draw_calls, rs.quad_count, rs.prim_unique );
 }
 
 /*==============================================================================================

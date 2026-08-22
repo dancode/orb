@@ -358,7 +358,18 @@ overlay_perf( int mode )
             gui_new_line( 2.0f );
             gui_textf( "quads   %6u", rs.quad_count );
             gui_textf( "tris    %6u", rs.quad_count * 2u );
-            gui_textf( "styles  %6u", rs.prim_count );
+
+            /* The style accounting, three numbers over one population (gui_render_stats_t):
+               how many shapes wanted a style, how many of the frame-global STORED entries served
+               them, and how many fell through to a per-slot UNIQUE record.  The fold rate is what
+               the palette is actually worth on this frame. */
+            gui_textf( "styles  %6u", rs.prim_total );
+            gui_textf( " stored %6u / %u", rs.prim_stored, rs.prim_stored_max );
+            gui_textf( " unique %6u", rs.prim_unique );
+            gui_textf( " folded %5.1f%%",
+                       rs.prim_total ? 100.0f * (f32)( rs.prim_total - rs.prim_unique )
+                                              / (f32)rs.prim_total
+                                     : 0.0f );
             gui_textf( "batches %6u", rs.draw_calls );
             gui_textf( "cmds    %6u", rs.cmd_count  );
             gui_textf( "clips   %6u", rs.clip_count );
@@ -400,7 +411,7 @@ overlay_perf( int mode )
                    last, after every window has registered). */
                 gui_new_line( 2.0f );
                 gui_textf( "quads  %u/%u", rs.quad_count_all, (u32)GUI_MAX_QUADS      );
-                gui_textf( "styles %u/%u", rs.prim_count_all, (u32)GUI_MAX_PRIMS      );
+                gui_textf( "unique %u/%u", rs.prim_count_all, (u32)GUI_MAX_PRIMS      );
                 gui_textf( "cmds   %u/%u", rs.cmd_count_all,  (u32)GUI_MAX_CMDS       );
                 gui_textf( "segs   %u/%u", rs.seg_count,      (u32)GUI_MAX_SEGS       );
                 gui_textf( "clips  %u/%u", rs.clip_count_all, (u32)GUI_MAX_CLIP_RECTS );
@@ -1220,7 +1231,7 @@ selector_content_w( f32 label_w )
     }
     for ( int i = 0; i < DBG_PAL_MODES; ++i )
     {
-        fmt_snprintf( buf, sizeof( buf ), "palette %s -- %u entries",
+        fmt_snprintf( buf, sizeof( buf ), "palette %s -- %u stored",
                       k_pal_mode[ i ], (u32)GUI_PAL_MAX );
         f32 row = font_text_w( buf );
         if ( row > w ) w = row;
@@ -1328,8 +1339,8 @@ debug_selector_menu( void )
                       k_dpi_name[ s_dbg_dpi_step ], gui_dpi_scale() );
         gui_text_colored( s_dbg_dpi_step ? COL_MARK_IDLE : COL_TEXT_SECONDARY_IDLE, line );
 
-        fmt_snprintf( line, sizeof( line ), "palette %s -- %u entries",
-                      k_pal_mode[ pal_step ], pal_entry_count() );
+        fmt_snprintf( line, sizeof( line ), "palette %s -- %u stored",
+                      k_pal_mode[ pal_step ], pal_stored_count() );
         gui_text_colored( pal_step != (int)GUI_PALETTE_LEARNING ? COL_MARK_IDLE
                                                                 : COL_TEXT_SECONDARY_IDLE, line );
 

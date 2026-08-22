@@ -111,6 +111,21 @@ static struct
     u32         slot_text_quads;   /* glyph quads pushed into the slot under tessellation */
     u32         slot_text_runs;    /* glyph runs that produced them (glyphs/run amortisation) */
 
+    /* The style accounting for the slot under tessellation, carried onto the slot at the end of
+       its pass and reused verbatim across retained frames -- exactly like the two above, and for
+       the same reason: retained geometry is never re-walked, so a number derived at replay time
+       would read zero for every window that did not change.
+
+       style_refs is the TOTAL -- one per shape that wants a style record, which is what
+       tess_prim_local is called once for (a BAND covering resolves one style and emits four
+       quads; a plain glyph resolves none at all).  stored_mask is WHICH palette entries those
+       shapes resolved to, one bit each, so the frame's distinct stored set is the OR over slots
+       -- two windows naming entry 5 are one entry in use, which is the entire point of it being
+       stored rather than per-slot. */
+
+    u32         slot_style_refs;
+    u32         slot_stored_mask[ ( GUI_PAL_MAX + 31u ) / 32u ];
+
     /* The ambient STYLE RECORD -- filled by whichever tess_* emitter is running and appended
        (deduplicated) by tess_quad_push via tess_prim_local.  Only the fields the ambient FIELD
        actually reads are written; the rest stay zero, which is what lets consecutive flat fills

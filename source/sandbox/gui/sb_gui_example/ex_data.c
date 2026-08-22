@@ -242,8 +242,9 @@ ex_data_debug( void )
         /* Render statistics -- previous frame's totals (published at frame_begin). */
         gui()->separator_text( "render_stats (last frame)" );
         gui_render_stats_t rs = gui()->render_stats();
-        gui()->textf( "cmds %u   quads %u   styles %u   draw calls %u",
-                      rs.cmd_count, rs.quad_count, rs.prim_count, rs.draw_calls );
+        gui()->textf( "cmds %u   quads %u   styles %u (%u stored, %u unique)   draw calls %u",
+                      rs.cmd_count, rs.quad_count, rs.prim_total, rs.prim_stored,
+                      rs.prim_unique, rs.draw_calls );
         gui()->textf( "windows retained %u / %u", rs.win_retained, rs.win_total );
         gui()->textf( "quads retained %u / %u", rs.quad_retained, rs.quad_count );
         gui()->textf( "uploads: %u batches, %u bytes", rs.upload_batches, rs.upload_bytes );

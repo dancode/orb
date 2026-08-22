@@ -490,7 +490,7 @@ bench_tick( f64 emit_ms )
             s->gpu_ms         = rs.gpu_ms;
             s->draw_calls     = rs.draw_calls;
             s->quad_count     = rs.quad_count;
-            s->prim_count     = rs.prim_count;
+            s->prim_count     = rs.prim_unique;   /* the per-slot arena; the stored pool is a separate axis */
             s->upload_bytes   = rs.upload_bytes;
             s->upload_batches = rs.upload_batches;
 

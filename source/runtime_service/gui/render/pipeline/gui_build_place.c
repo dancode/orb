@@ -187,6 +187,8 @@ cache_slot_reuse( win_geo_slot_t* slot, const win_geo_slot_t* prev, u32 cache_id
     slot->cache_idx  = cache_idx;        /* id-keyed, so it matches what the quads baked */
     slot->text_quads = prev->text_quads; /* same quads, so the same glyph share */
     slot->text_runs  = prev->text_runs;
+    slot->style_refs = prev->style_refs; /* ... and the same styles, named by the same entries */
+    memcpy( slot->stored_mask, prev->stored_mask, sizeof( slot->stored_mask ) );
 
     /* The local clip table travels with the geometry it indexes: the cached quads bake
        slot-local clip entries, and these are the rects those entries mean. */
@@ -288,14 +290,20 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_tess.slot_clip_pending = &s_clip_slab_pending[ slot->cache_idx ];
     s_tess.clip_memo_ci      = 0xFF;
 
-    /* Glyph attribution accumulates over exactly this window's pass, then rides the slot. */
+    /* Glyph and style attribution accumulate over exactly this window's pass, then ride the
+       slot -- a retained frame replays the geometry without re-walking it, so these are taken
+       once here and carried forward by cache_slot_reuse. */
     s_tess.slot_text_quads = 0;
     s_tess.slot_text_runs  = 0;
+    s_tess.slot_style_refs = 0;
+    memset( s_tess.slot_stored_mask, 0, sizeof( s_tess.slot_stored_mask ) );
 
     cache_tess_window( wh );
 
     slot->text_quads = s_tess.slot_text_quads;
     slot->text_runs  = s_tess.slot_text_runs;
+    slot->style_refs = s_tess.slot_style_refs;
+    memcpy( slot->stored_mask, s_tess.slot_stored_mask, sizeof( slot->stored_mask ) );
 
     s_tess.slot_clips        = NULL;
     s_tess.slot_clip_count   = NULL;
@@ -546,6 +554,15 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
 
             st->total_quad += slot->quad_count;
             st->total_prim += slot->prim_count;
+
+            /* The style accounting, netted the same way as everything else in this branch: the
+               debug band is excluded, or the panel reporting the numbers would be inside them.
+               UNION for the stored set rather than a sum -- the whole claim a stored entry makes
+               is that N windows naming it cost one record, so adding per-slot counts would
+               report exactly the duplication the palette removed. */
+            st->total_style_refs += slot->style_refs;
+            for ( u32 m = 0; m < sizeof( st->stored_mask ) / sizeof( st->stored_mask[ 0 ] ); ++m )
+                st->stored_mask[ m ] |= slot->stored_mask[ m ];
 
             /* Band boundary: the far edge of the main band's reservations (band-major sort placed
                them first, but id-keyed slots keep historical positions, so track the max extent

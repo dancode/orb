@@ -246,7 +246,7 @@ tess_prim_answer( u32 local )
 }
 
 static u32
-tess_prim_local( void )
+tess_prim_resolve( void )
 {
     /* Census before the memo, so the count is of quads that WANT this record rather than of the
        ones the memo happened to miss; the append site below counts the arena entries. */
@@ -336,6 +336,30 @@ tess_prim_local( void )
     s_tess.prims[ hi ] = s_tess.cur_prim;
     s_tess.prim_count++;
     return tess_prim_answer( hi - s_tess.slot_prim_base );
+}
+
+/*  The counted wrapper, and the one every caller uses.  Both halves of the slot's style
+    accounting are taken here rather than at any single resolution path, because tess_prim_resolve
+    has six exits (two memos, the parked command answer, the probe, a fresh intern, the arena
+    append) plus an overflow fallback, and a tally spread across those drifts the first time one
+    is added.
+
+    One call == one SHAPE that wants a style, which is the denominator the fold rate needs. */
+
+static inline u32
+tess_prim_local( void )
+{
+    ++s_tess.slot_style_refs;
+
+    u32 local = tess_prim_resolve();
+
+    if ( gui_style_is_pal( local ) )
+    {
+        u32 e = local - GUI_PAL_FIRST;
+        if ( e < (u32)GUI_PAL_MAX )
+            s_tess.slot_stored_mask[ e >> 5 ] |= 1u << ( e & 31u );
+    }
+    return local;
 }
 
 /* Resolve the ambient turn / phase / border colour plus this quad's texture rect to an fx record,

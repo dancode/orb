@@ -655,10 +655,11 @@ void                pal_publish_pending     ( void );
 gui_palette_mode_t  pal_mode                ( void );
 void                pal_set_mode            ( gui_palette_mode_t mode );
 
-/* Entries the table holds right now, for the selector menu's readout.  A count, not a handle --
-   nothing resolves an index through it. */
+/* Entries the STORED pool holds right now -- its SIZE, for the selector menu's readout.  How many
+   a given frame NAMES is accumulated per window slot instead (gui_render_stats_t.prim_stored),
+   since retained geometry never re-resolves what it already baked.  A count, not a handle. */
 
-u32                 pal_entry_count         ( void );
+u32                 pal_stored_count        ( void );
 
 /* Note a landed style as one of the scales in play -- GUI_VAR_COUNT floats in gui_style_var_t
    order, already through the em scale.  Only their hash is kept; the palette never reads a var, it

@@ -3125,11 +3125,33 @@ typedef struct
 
     u32 quad_count;         // quad records that DRAW -- one record IS one whole shape 
                             //   (a fill, a glyph, a capsule segment); debug band excluded
-    u32 prim_count;         // style-arena records the drawing windows own: distinct styles after
-                            //   dedup, plus one page per four fx instance records.
+    /* THE STYLE ACCOUNTING -- three numbers over one population, so they reconcile.
+       A style record (gui_prim_t) lives in one of two pools, told apart by the range of the index
+       a quad names (gui.h, GUI_PAL_FIRST): the STORED pool, one frame-global table shared by every
+       window, and the UNIQUE pool, the per-window-slot arena rebuilt each frame.
 
-    u32 quad_count_all;     // physical quad arena fill, both bands, slot padding included (cap: GUI_MAX_QUADS) 
-    u32 prim_count_all;     // physical style arena fill, both bands (cap: GUI_MAX_PRIMS)
+         prim_total   every shape that wanted a style record -- one per SHAPE, not per quad (a BAND
+                      covering resolves one style and emits four; a plain glyph resolves none, so
+                      this sits well below quad_count).  The denominator.
+         prim_stored  how many stored entries those shapes named -- a UNION across windows, since
+                      two windows naming one entry is the duplication the pool exists to remove.
+         prim_unique  what fell through to a per-slot arena record: distinct styles after dedup,
+                      plus one page per four fx instance records.
+
+       So (prim_total - prim_unique) / prim_total is the fold rate, and prim_stored says how much
+       of the stored pool this frame actually leans on.  All three are taken at tessellation and
+       carried across retained frames -- replayed geometry is never re-walked. */
+
+    u32 prim_total;
+    u32 prim_stored;
+    u32 prim_unique;
+
+    u32 prim_stored_max;    // entries the stored pool HOLDS (cap: GUI_PAL_MAX) -- cumulative within
+                            //   an epoch, so prim_stored <= this and a wide gap means a learned
+                            //   vocabulary the current frame does not draw
+
+    u32 quad_count_all;     // physical quad arena fill, both bands, slot padding included (cap: GUI_MAX_QUADS)
+    u32 prim_count_all;     // physical style arena (unique pool) fill, both bands (cap: GUI_MAX_PRIMS)
 
     u32 win_total;          // windows tracked this frame
     u32 win_retained;       // windows whose geometry was reused (no re-tessellation)
