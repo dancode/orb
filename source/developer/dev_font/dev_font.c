@@ -497,8 +497,8 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
         try progressively larger square sizes and stop at the first that works.  Bitmap-less glyphs
         (whitespace) are skipped -- they carry no coverage to place.
         GLYPH_PAD adds a 1-pixel gap between neighbours to prevent bilinear filter bleed.  The atlas
-        is pure glyph coverage -- gui draws its white texel + dash rows from a shared runtime atlas,
-        so no reserved band is packed here.
+        is pure glyph coverage -- gui draws its dash rows from a shared runtime atlas, so no
+        reserved band is packed here.
     ------------------------------------------------------------------------------------------*/
 
     stbrp_rect* rects      = s_rects;

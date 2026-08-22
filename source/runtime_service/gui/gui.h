@@ -1902,7 +1902,8 @@ typedef enum
 typedef enum
 {
     GUI_TEX_COVERAGE = 0,   /* R8: the texel's R is alpha and the vertex colour supplies RGB --
-                               glyphs, icons, the drawing assists, every solid fill (white texel) */
+                               glyphs, icons, the drawing assists; a solid fill sets GUI_OP_SELF
+                               and skips the fetch entirely, so it carries no real texel here */
     GUI_TEX_RGBA     = 1,   /* RGBA: the texel IS the colour and the vertex colour tints it --
                                sprite art, and a caller's own texture via draw_texture_in        */
     GUI_TEX_SDF      = 2,   /* R8 SIGNED DISTANCE: 128 is the outline, and the fragment recovers
@@ -1933,14 +1934,17 @@ gui_tex_index( u32 tex_idx )
    of the active clip rect in the per-frame clip table (assigned at clip-push time), the target
    viewport, and a byte offset into s_draw.cmd_pool where the command's actual payload lives.
 
-   The payload pool holds every command at its own natural size (see gui_cmd_ext_t) -- a `tri`
-   costs what a tri costs, an `fx_box` costs what an fx_box costs, and neither pays for the
-   other's width. k_cmd_hash_len[] (gui_emit_cmd.c) is the single source of truth for each
-   type's payload size, used both to claim pool space at emit time and to fold the retained-cache
-   hash; a type missing from that table asserts rather than silently under-hashing.
+   The payload pool holds every command at its own natural size (see gui_cmd_ext_t).
+
+   -- a `tri` costs what a tri costs, an `fx_box` costs what an fx_box costs, and neither 
+   pays for the other's width. k_cmd_hash_len[] (gui_emit_cmd.c) is the single source of truth
+   for each type's payload size, used both to claim pool space at emit time and to fold the 
+   retained-cache hash; a type missing from that table asserts rather than silently under-hashing.
 
    * The z lives in gui_cmd_seg_t (per-segment, constant within a window).
-   * tex_idx == 0 in rect means solid color (white texel).
+   * tex_idx == 0 in rect means solid color: tessellation rewrites it to res_atlas_idx() for
+     batching and sets GUI_OP_SELF, which tells the fragment shader to skip the texture fetch
+     and fill white in code -- no atlas texel is ever sampled for this case.
 
    rounding (rect / rect_outline) is the corner radius baked from the ambient draw rounding at emit
    time, already clamped to the rect; 0 tessellates as a plain square shape.  corner_pow rides
@@ -2067,7 +2071,7 @@ typedef union
 
     /* Rect list: `count` solid fills from the per-frame rect pool (s_draw.rect_pool), one
        command for the whole batch -- the dense-shape escape valve (timeline bars, graph
-       columns).  Always square, white texel, per-entry color; entries share the clip. */
+       columns).  Always square, GUI_OP_SELF solid fill, per-entry color; entries share the clip. */
     struct { u32 offset; u32 count; } rect_list;
 
     /* Sprite quad.  The sprite ID travels, not its UVs: placement in the sprite atlas can move

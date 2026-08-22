@@ -79,7 +79,7 @@ static struct
     #endif
 
     u8              cmd_pool        [ GUI_CMD_POOL_BYTES ];     // every command's payload, one forward bump arena
-                                                                 // (see draw_cmd_ext_slot(), pool_used below)
+                                                                // (see draw_cmd_ext_slot(), pool_used below)
 
     gui_vec2_t      points          [ GUI_MAX_PATH_PTS ];       // point pool for CMD_POLYLINE data; indexed by pt_offset
     gui_rect_col_t  rect_pool       [ GUI_MAX_RECT_ENTRIES ];   // rect pool for CMD_RECT_LIST data; indexed by offset

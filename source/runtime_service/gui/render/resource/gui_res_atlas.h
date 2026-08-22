@@ -38,8 +38,8 @@
     not a tenant of either atlas -- these cover the resources gui itself owns, not every texture
     that can reach the draw list.
 
-    Layout: the coverage atlas reserves a fixed full-width assist band (white texel +
-    GUI_DASH_PATTERN_COUNT dash rows) once, at the very bottom of the texture, shared across the
+    Layout: the coverage atlas reserves a fixed full-width assist band (GUI_DASH_PATTERN_COUNT
+    dash rows) once, at the very bottom of the texture, shared across the
     whole GUI and independent of any loaded font -- not duplicated per font atlas the way a
     per-font assist band would be.  The sprite atlas has no assists and packs its full height.  The
     remaining region is an incremental stb_rect_pack area: tenants are packed as they
@@ -169,7 +169,6 @@ void res_atlas_origin        ( u32 handle, u32* ox, u32* oy );
 ==============================================================================================*/
 
 u32  res_atlas_idx           ( void );          // the single bindless texture slot (0 = not ready)
-void res_atlas_white_uv      ( f32* u, f32* v );// UV of the opaque assist texel (solid-color draws)
 f32  res_atlas_dash_v        ( f32 duty );      // center V of the assist dash row closest to `duty`
 f32  res_atlas_inv_w         ( void );          // 1 / atlas pixel width  (per-glyph/icon UV scale)
 f32  res_atlas_inv_h         ( void );          // 1 / atlas pixel height

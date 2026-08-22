@@ -30,10 +30,10 @@
 #define STB_RECT_PACK_IMPLEMENTATION
 #include "developer/dev_font/stb_rect_pack.h"
 
-/* Assist band: one white row + the dash rows, full-width, pinned to the bottom of the texture so
-   the packer (which works the top region) never touches it and its UVs never move on a repack.
-   The coverage atlas alone carries it -- the assists ARE coverage. */
-#define RES_ASSIST_ROWS   ( 1u + GUI_DASH_PATTERN_COUNT )
+/* Assist band: the dash rows, full-width, pinned to the bottom of the texture so the packer
+   (which works the top region) never touches it and its UVs never move on a repack.  The
+   coverage atlas alone carries it -- the assists ARE coverage. */
+#define RES_ASSIST_ROWS   ( GUI_DASH_PATTERN_COUNT )
 
 /* On-fraction (dash / period) of each baked dash row; a dashed line picks the nearest at tess time.
    Moved here from the font registry -- the dash rows are an atlas-level asset now, not per-font. */
@@ -82,7 +82,6 @@ typedef struct
 
     res_tenant_t   tenants[ GUI_RES_ATLAS_MAX_TENANTS ];
 
-    f32            white_u, white_v;                 // opaque assist texel (fixed; never moves)
     f32            dash_v[ GUI_DASH_PATTERN_COUNT ]; // center V of each dash row (fixed)
 
     u32            generation;                       // bumps on every UV-affecting structural change
@@ -111,9 +110,9 @@ res_pack_h( const res_atlas_t* a )
 }
 
 /*==============================================================================================
-    Assist band -- paint the white texel row + dash rows into the bottom RES_ASSIST_ROWS rows and
-    resolve their (fixed) UVs.  Called at init and after every repack (which clears the buffer).
-    A no-op on an atlas that carries no assists.
+    Assist band -- paint the dash rows into the bottom RES_ASSIST_ROWS rows and resolve their
+    (fixed) UVs.  Called at init and after every repack (which clears the buffer).  A no-op on an
+    atlas that carries no assists.
 ==============================================================================================*/
 
 static void
@@ -122,11 +121,7 @@ res_paint_assist( res_atlas_t* a )
     if ( !a->assist )
         return;
 
-    u32 white_row = a->h - RES_ASSIST_ROWS;              // first band row
-    u32 dash_row0 = white_row + 1u;                      // dash rows follow the white row
-
-    /* White texel strip: fill the white row opaque so any texel in it samples r=1.0. */
-    memset( &a->pixels[ white_row * a->w ], 0xFF, a->w );
+    u32 dash_row0 = a->h - RES_ASSIST_ROWS;              // first band row
 
     /* Each dash row encodes ONE period: the leftmost duty*W texels opaque, the rest zero.  A dashed
        line samples the row with REPEAT-U so the full-width period tiles along the line. */
@@ -140,8 +135,6 @@ res_paint_assist( res_atlas_t* a )
         memset( row, 0xFF, on );                // on-run
     }
 
-    a->white_u = 0.5f / (f32)a->w;
-    a->white_v = ( (f32)white_row + 0.5f ) / (f32)a->h;
     for ( u32 p = 0; p < GUI_DASH_PATTERN_COUNT; ++p )
         a->dash_v[ p ] = ( (f32)( dash_row0 + p ) + 0.5f ) / (f32)a->h;
 }
@@ -734,13 +727,6 @@ void res_sdf_occupancy( f32* pct, u32* tenants, u32* w, u32* h )
     res_occupancy( &s_sdf, pct, tenants );
     if ( w ) *w = s_sdf.w;
     if ( h ) *h = s_sdf.h;
-}
-
-void
-res_atlas_white_uv( f32* u, f32* v )
-{
-    *u = s_res.white_u;
-    *v = s_res.white_v;
 }
 
 /* Center V of the dash row whose baked on-fraction is closest to `duty`. */
