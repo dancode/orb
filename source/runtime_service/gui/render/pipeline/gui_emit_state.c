@@ -1,11 +1,13 @@
 /*==============================================================================================
 
-    gui/render/pipeline/gui_emit_state.c -- The draw list's state: pools, clip stack, ambient.
+    gui/render/pipeline/gui_emit_state.c -- The draw list state: pools, clip stack, ambient.
 
-    EMIT is the pipeline's first phase: widgets push semantic gui_cmd_t records (no vertices yet)
-    that BUILD later tessellates.  It spans six files, included in this order by gui_render.c:
+    EMIT is the pipeline's first phase: widgets push semantic gui_cmd_t records, that BUILD
+    later tessellates into quad/primitive arenas.
 
-        gui_emit_state.c   this file: s_draw, the frame reset, the clip stack, the ambient
+    It spans multiple files, unity included in gui_render.c:
+
+        gui_emit_state.c   the drawing state:  frame reset, clip stack, ambient values.
         gui_emit_cmd.c     the command record: claim, stamp, hash, seal
 
         types of emitted shapes, each in its own file:
@@ -16,36 +18,34 @@
         gui_emit_text.c    glyph runs
         gui_emit_path.c    the line / path stroker
 
-    This file owns s_draw -- every pool the frame fills and every ambient the pushes read -- and
-    nothing in it emits a command.  Unity visibility flows downward only, so it must come first.
+    This file owns s_draw and comes first -- every pool the frame fills and every ambient the
+    pushes read -- nothing in it emits a command.
 
-    The resolvers the shape files call -- font_glyph, icon_get, icon_atlas_idx -- are NOT in
-    this unit: fonts and icons are the draw object unit's, but the server reaches them through
-    the glyph/sprite resource contract declared in render/gui_render.h, which the draw unit
-    implements.  Nothing here depends on include order for them.
+    gui_emit_shape.c resolves icons through icon_get / icon_tex -- neither lives in this unit:
+    icons are the draw unit's (draw/gui_icon.c), reached through the sprite source contract
+    declared in render/gui_render.h.  Nothing here depends on include order for them.
 
 ==============================================================================================*/
-
 // clang-format off
 
 /*==============================================================================================
-    CPU Draw list -- the per-frame command buffer and segment table.
+    CPU Draw list + Draw Segments -- the per-frame command buffer and segment table.
 
-    Commands are pushed into cmds[] by the widget layer.  Whenever (win, z, vp, band) changes,
-    the current open span is closed and a new one is opened, so the buffer is partitioned into
-    contiguous per-(win,z,vp,band) segments.  cache_tess_window walks these segments per window
-    rather than re-scanning the full command buffer.  [lo, hi) is a half-open range; the final
-    segment's hi is closed at build time.  win=0 is the background (non-window) draw layer.
+    Commands are pushed into cmds[] by the widget layer.  Whenever (win, z, vp, band)       
+    changes, the current open span is closed and a new one is opened, so the buffer is
+    partitioned into contiguous per-(win,z,vp,band) segments.  
+    
+    cache_tess_window walks these segments per window rather than re-scanning the full 
+    command buffer.  [lo, hi) is a half-open range; the final segment's hi is closed at
+    build time.  win=0 is the background (non-window) draw layer.
 
-    The FONT used to be a fifth axis here and is not one any more.  A segment exists to partition
-    the command list for backend dispatch, so its key should be the things that decide dispatch --
-    which window owns the geometry, where it sorts, which surface it lands on, which arena band it
-    is accounted to.  A font decides none of those.  It decides where a glyph's UVs come from, which
-    is per-command information, and since every font packs into the one shared atlas a font change
-    usually moves no texture at all; even when it does (a distance-field font has its own atlas) the
-    texture rides the VERTEX and cannot cut a draw call.  So the font was cutting segments to carry
-    a lookup.  It now rides the text commands that actually use it (gui.h), which is why nothing
-    below threads a font through the permutation any more.
+    A segment's key is only what decides backend dispatch -- which window owns the geometry,
+    where it sorts, which surface it lands on, which arena band it is accounted to. 
+    FONT decides none of those: it only picks a glyph's atlas UVs, which is per-command
+    data, not a segment property.  Every font packs into the one shared atlas, so swapping
+    fonts usually moves no texture at all, and even a distance-field font with its own
+    atlas rides the VERTEX rather than cutting a draw call.  Each text command carries
+    its own font id instead (gui.h).
 ==============================================================================================*/
 
 /* Packed to 16 bytes: GUI_MAX_SEGS of these live here, and the command stepper keeps two more

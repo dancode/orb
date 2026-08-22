@@ -9,7 +9,7 @@ Standard: c++20
 
 IndentWidth: 4                              # 4-space indentation
 UseTab: Never                               # Always use spaces
-ColumnLimit: 110                            # Max line width before wrapping
+ColumnLimit: 96                             # Max line width before wrapping (comment block border width)
 SortIncludes: false                         # Keep include order as written
 MaxEmptyLinesToKeep: 2                      # Prevent excessive blank lines
 

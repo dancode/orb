@@ -64,7 +64,7 @@
      gui_dash_capture.c        -- CAPTURE: pipeline snapshot for the dashboard shell (GUI_PIPELINE_DASHBOARD)
      gui_select_capture.c      -- CAPTURE: flagged windows' text runs, for chrome's selection controller
      gui_step_capture.c        -- CAPTURE: band-0 command list + the frozen-frame reload (GUI_CMD_STEPPER)
-     gui_render_mem.c          -- MEMORY ACCOUNTING: sums every backend static's sizeof -- included last so it sees them all
+     gui_render_mem.c          -- MEMORY ACCOUNTING: sums every backend static's sizeof.
 
     --------------------------------------------------------------------------------------------
     Frame Pipeline:
@@ -227,10 +227,10 @@
 /*==============================================================================================
     Initialization
 
-    Backend lifecycle seam -- the entry point the frame orchestrator calls. Ties together whatever
-    the backend needs to stand up as a whole; today that's just the RENDER stage's GPU
-    resources, but it's the one place to add more later without a caller reaching into a
-    stage-specific name.
+    Backend lifecycle seam -- the entry point the frame orchestrator calls. Ties together 
+    whatever the backend needs to stand up as a whole; today that's just the RENDER stage's
+    GPU resources, but it's the one place to add more later without a caller reaching into
+    a stage-specific name.
 ==============================================================================================*/
 
 bool
