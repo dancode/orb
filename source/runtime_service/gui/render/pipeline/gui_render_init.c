@@ -85,8 +85,8 @@ typedef struct
     into the clip band, so uploads land at fixed offsets and can never overflow.  One region per
     frame-in-flight only, NOT per viewport: a window's cache slot is unique across the whole app
     (cache_idx comes from the single global RENDER_MAX_WIN table, gui_build_cache.c), so its slab
-    means the same thing to every surface -- unlike the quad/prim tables, which carry per-surface
-    geometry and so still need a (frame-in-flight, viewport) region each.
+    means the same thing to every surface -- unlike the prim table's per-viewport regions and the
+    quad table's per-viewport claims, which carry per-surface geometry.
 ==============================================================================================*/
 
 #define GUI_CLIP_ENTRY_FLOATS  8u
@@ -137,16 +137,58 @@ typedef struct
 #define GUI_PRIM_BUF_BYTES     ( GUI_PRIM_BUF_RECORDS * GUI_PRIM_BYTES )
 
 /*==============================================================================================
-    Quad record region sizing -- the geometry table (gui.h, gui_quad_t).
+    Quad table sizing -- the geometry table (gui.h, gui_quad_t), sized by CLAIM, not by cap.
 
-    Quads are packed per window slot exactly as the records above are, in one global buffer with
-    the same (frame-in-flight, viewport) region scheme, and the flush pushes the region origin
-    (pc.quad_base) once -- a draw's first_vertex carries the arena-absolute quad offset.
+    The tables above carve fixed regions; the quad table is the big one, and a fixed
+    (frame-in-flight, viewport) slab of GUI_MAX_QUADS each would pay the worst case for every
+    viewport whether it is open or not.  Instead each viewport holds a CLAIM -- a contiguous,
+    bucket-granular run of the table sized to what its windows actually span -- and the buffer
+    holds one copy of the claim space per frame-in-flight.
+
+    Cross-viewport safety needs no new synchronization: claims are disjoint and never move in
+    place, so a surface only ever writes its own claim (its own frame-in-flight hazard is what
+    the per-frame copies cover, exactly as fixed regions did).  Growth takes fresh space at the
+    buffer tail; the vacated run is left dead until the tail itself is spent, at which point the
+    whole buffer is REPLACED and claims compact into it (the glyph-table pattern below):
+    in-flight frames keep reading the old buffer through the bindless slot their push constants
+    captured, and rhi's deferred destroy holds it until they retire.
+
+    The arena->claim mapping is anchored per flush: the viewport's slots cover the arena range
+    [anchor, hi) (their reservations' union, interleave gaps included -- gap bytes are never
+    uploaded or referenced), and arena record a lands at claim.base + (a - anchor).
+    pc.quad_base carries the whole offset, so the shader indexes exactly as before.  A moved
+    anchor, a moved claim or a swapped buffer all mean a region's bytes no longer line up, and
+    the flush re-uploads the span whole -- the same ladder a geometry-generation bump rides.
 ==============================================================================================*/
 
-#define GUI_QUAD_REGION_MAX    GUI_MAX_QUADS
-#define GUI_QUAD_REGION_BYTES  ( GUI_QUAD_REGION_MAX * GUI_QUAD_BYTES )
-#define GUI_QUAD_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
+#define GUI_QUAD_BUCKET        256u    /* claim granularity, records: 4 KB steps absorb jitter */
+#define GUI_QUAD_GPU_BOOT_CAP  8192u   /* boot capacity, records per frame-in-flight copy */
+
+typedef struct
+{
+    u32 base;   // claim start within one frame-in-flight copy, in records (bucket-aligned)
+    u32 alloc;  // claim size in records (bucket multiple); 0 = viewport holds no claim
+} gui_quad_claim_t;
+
+/* What one (frame-in-flight, viewport) region of the table last uploaded, checked at flush: any
+   mismatch means the region's bytes cannot be patched incrementally and the span re-uploads
+   whole. */
+typedef struct
+{
+    u32 gen;      // geometry generation (s_geo_gen) the region was last uploaded with
+    u32 anchor;   // arena record index mapped to the claim's first record
+    u32 base;     // claim base the upload targeted
+    u32 buf_gen;  // buffer generation the upload landed in
+} gui_quad_region_t;
+
+static struct
+{
+    u32               capacity;  // records per frame-in-flight copy
+    u32               tail;      // first free record past every claim (bump; compacts on swap)
+    u32               buf_gen;   // bumped per buffer swap; stale regions re-upload on next flush
+    gui_quad_claim_t  claim [ GUI_MAX_VIEWPORTS ];
+    gui_quad_region_t region[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
+} s_quad_gpu;
 
 /*==============================================================================================
     Glyph UV table sizing -- the ID-indexed atlas rects (gui.h, gui_glyph_uv_t).
@@ -220,9 +262,9 @@ static struct
     rhi_buffer_t    prim_buf;           // storage buffer: all record regions
     u32             prim_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
-    /* The quad-record geometry table (GUI_QUAD_REGION_* above). */
+    /* The quad-record geometry table -- claim-sized, replaced on growth (s_quad_gpu above). */
 
-    rhi_buffer_t    quad_buf;           // storage buffer: all quad regions
+    rhi_buffer_t    quad_buf;           // storage buffer: frame-in-flight copies of the claim space
     u32             quad_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
     /* The glyph UV table: ONE buffer, replaced wholesale when its generation changes rather than
@@ -365,6 +407,111 @@ render_glyph_buf_refresh( void )
         rhi()->buffer_destroy( old_buf );
 }
 
+/*==============================================================================================
+    The quad table's buffer -- created at boot capacity, then REPLACED (never resized in place)
+    when the claims outgrow it.  See the claim scheme at the sizing block above.
+==============================================================================================*/
+
+static bool
+quad_gpu_create( u32 capacity )
+{
+    rhi_buffer_t buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+        .size       = RHI_MAX_FRAMES_IN_FLIGHT * capacity * (u32)GUI_QUAD_BYTES,
+        .usage      = RHI_BUFFER_USAGE_STORAGE,
+        .memory     = RHI_MEMORY_CPU_TO_GPU,
+        .debug_name = "gui_quad_table",
+    } );
+    if ( !rhi_handle_valid( buf ) )
+        return false;
+
+    u32 idx = rhi()->register_buffer( buf );
+    if ( idx == 0 )
+    {
+        rhi()->buffer_destroy( buf );
+        return false;
+    }
+
+    s_render.quad_buf     = buf;
+    s_render.quad_buf_idx = idx;
+    s_quad_gpu.capacity   = capacity;
+    ++s_quad_gpu.buf_gen;   /* every region's bytes are gone: re-upload on next touch */
+    return true;
+}
+
+/*  Give a viewport a claim of at least `need` records.  The common frame finds the claim already
+    big enough and returns immediately.  Growth allocates a FRESH run (geometric headroom, bucket
+    rounded) at the buffer tail -- the old run goes dead but its bytes stay valid for any frame
+    in flight.  When the tail cannot fit the run, the buffer is replaced and every claim compacts
+    into the new one; in-flight frames keep the old buffer via their captured bindless slot.
+
+    On an allocation failure the old (too small) claim is returned as-is -- the caller clamps its
+    upload span to the claim rather than writing past it, degrading to truncated geometry instead
+    of corruption. */
+
+static gui_quad_claim_t*
+quad_gpu_reserve( i32 vp, u32 need )
+{
+    gui_quad_claim_t* c = &s_quad_gpu.claim[ vp ];
+    if ( need <= c->alloc )
+        return c;
+
+    u32 alloc = need + need / 4u;
+    alloc = ( alloc + GUI_QUAD_BUCKET - 1u ) / GUI_QUAD_BUCKET * GUI_QUAD_BUCKET;
+
+    if ( s_quad_gpu.tail + alloc <= s_quad_gpu.capacity )
+    {
+        c->base           = s_quad_gpu.tail;
+        c->alloc          = alloc;
+        s_quad_gpu.tail  += alloc;
+        return c;
+    }
+
+    /* Swap: capacity at least doubles, or covers the compacted claims when they need more. */
+    u32 total = alloc;
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+        if ( (i32)v != vp )
+            total += s_quad_gpu.claim[ v ].alloc;
+
+    u32 capacity = s_quad_gpu.capacity * 2u;
+    if ( capacity < total )
+        capacity = total;
+
+    rhi_buffer_t old_buf = s_render.quad_buf;
+    u32          old_idx = s_render.quad_buf_idx;
+
+    if ( !quad_gpu_create( capacity ) )
+    {
+        s_render.quad_buf     = old_buf;
+        s_render.quad_buf_idx = old_idx;
+        GUI_WARN_ONCE( "gui quad table could not grow to %u records -- geometry may truncate\n",
+                       capacity );
+        return c;
+    }
+
+    /* Compact every claim into the fresh buffer.  Regions chase buf_gen, so each surface's next
+       flush re-uploads its span into its new position; nothing is copied here. */
+    s_quad_gpu.tail = 0;
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+    {
+        gui_quad_claim_t* cv = &s_quad_gpu.claim[ v ];
+        if ( (i32)v == vp )
+            cv->alloc = alloc;
+        if ( cv->alloc == 0 )
+            continue;
+        cv->base         = s_quad_gpu.tail;
+        s_quad_gpu.tail += cv->alloc;
+    }
+
+    gui_log( GUI_LOG_INFO, "gui quad table grew: %u records per frame copy (%u KB total)",
+             capacity, RHI_MAX_FRAMES_IN_FLIGHT * capacity * (u32)GUI_QUAD_BYTES / 1024u );
+
+    if ( old_idx )
+        rhi()->unregister_buffer( old_idx );
+    if ( rhi_handle_valid( old_buf ) )
+        rhi()->buffer_destroy( old_buf );
+    return c;
+}
+
 static bool
 render_init( void )
 {
@@ -495,16 +642,9 @@ render_init( void )
     }
 
     /* The quad-record geometry table.  REQUIRED like the two tables above: every draw pulls its
-       placement from it. */
-    s_render.quad_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = GUI_QUAD_REGION_COUNT * GUI_QUAD_REGION_BYTES,
-        .usage      = RHI_BUFFER_USAGE_STORAGE,
-        .memory     = RHI_MEMORY_CPU_TO_GPU,
-        .debug_name = "gui_quad_table",
-    } );
-    if ( rhi_handle_valid( s_render.quad_buf ) )
-        s_render.quad_buf_idx = rhi()->register_buffer( s_render.quad_buf );
-    if ( s_render.quad_buf_idx == 0 )
+       placement from it.  Created at boot capacity; viewport claims grow it on demand
+       (quad_gpu_reserve). */
+    if ( !quad_gpu_create( GUI_QUAD_GPU_BOOT_CAP ) )
     {
         gui_log( GUI_LOG_ERROR, "quad record buffer unavailable -- gui render disabled" );
         render_shutdown();
@@ -601,6 +741,7 @@ render_shutdown( void )
         rhi()->unregister_buffer( s_render.quad_buf_idx );
     if ( rhi_handle_valid( s_render.quad_buf ) )
         rhi()->buffer_destroy( s_render.quad_buf );
+    memset( &s_quad_gpu, 0, sizeof( s_quad_gpu ) );   /* claims die with the buffer */
 
     if ( s_render.glyph_buf_idx )
         rhi()->unregister_buffer( s_render.glyph_buf_idx );

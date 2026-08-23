@@ -521,10 +521,13 @@ overlay_memory( void )
         overlay_mem_row( "uploaded", det, rs.upload_bytes );
         gui_separator();
 
-        /* GPU.  cap x stride x regions for the three regioned tables; the glyph table is ONE shared
-           copy, replaced rather than rewritten, so it shows no region multiplier. */
+        /* GPU.  cap x stride x regions for the regioned tables; the quad table is claim-sized
+           (live capacity x frame-in-flight copies); the glyph table is ONE shared copy, replaced
+           rather than rewritten, so it shows no region multiplier. */
         overlay_mem_head( OVL_MEM_GPU_COL, "GPU", ms.gpu_total );
-        fmt_snprintf( det, sizeof( det ), "%u x %u reg", (u32)GUI_MAX_QUADS, ms.gpu_regions );
+        fmt_snprintf( det, sizeof( det ), "%u rec x %u fif", ms.gpu_quad_capacity,
+                      ms.gpu_quad_capacity ? ms.gpu_quad_bytes
+                          / ( ms.gpu_quad_capacity * (u32)GUI_QUAD_BYTES ) : 0u );
         overlay_mem_row( "quad tbl", det, ms.gpu_quad_bytes );
         fmt_snprintf( det, sizeof( det ), "%u x %u reg", (u32)GUI_MAX_PRIMS, ms.gpu_regions );
         overlay_mem_row( "prim tbl", det, ms.gpu_prim_bytes );

@@ -134,9 +134,10 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     u32 frame = rhi()->cmd_frame_index( cmd );
 
     /* This surface's quad upload span, taken from the slot table.  Slots tagged for this
-       viewport contribute their [quad_base, +count) ranges; the union is what we upload.  For a
-       single surface this covers the whole arena. */
-    u32 quad_lo = s_tess.quad_count, quad_hi = 0;
+       viewport contribute their [quad_base, +count) ranges; the union is what we upload.  res_hi
+       extends the union over the slots' full RESERVATIONS -- volatile patches can land anywhere
+       inside a slot's alloc, so that is the extent the claim below must cover. */
+    u32 quad_lo = s_tess.quad_count, quad_hi = 0, res_hi = 0;
 
     u32 overlay_bytes = 0;   // debug-band windows' share, excluded from the upload stats
 
@@ -150,22 +151,48 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
 
         if ( sl->quad_base                     < quad_lo ) quad_lo = sl->quad_base;
         if ( sl->quad_base + sl->quad_count    > quad_hi ) quad_hi = sl->quad_base + sl->quad_count;
+        if ( sl->quad_base + sl->quad_alloc    > res_hi  ) res_hi  = sl->quad_base + sl->quad_alloc;
     }
 
     u32 up_batches = 0;   // geometry buffer_write calls this flush issued (full spans or patch spans)
     u32 up_bytes = 0;     // total bytes those writes moved
 
-    /* Geometry-generation skip: if this (frame, viewport) region already holds the current
-       arena generation (s_geo_gen, gui_build_tess_state.c), its bytes are identical to what these
-       spans would upload -- a presented-but-unchanged frame (fx animation, reused real frame)
-       moves nothing.  Any live-byte change bumped the generation, so the first flush after it
-       re-uploads and re-stamps. */
-    static u32 s_region_geo_gen[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
+    u32 clip_region = frame * (u32)GUI_MAX_VIEWPORTS + (u32)vp_index;
 
-    u32  clip_region = frame * (u32)GUI_MAX_VIEWPORTS + (u32)vp_index;
-    bool geo_dirty   = s_region_geo_gen[ clip_region ] != s_geo_gen;
+    /* This surface's CLAIM on the quad table (gui_render_init.c): a contiguous run covering its
+       arena span [quad_lo, res_hi), anchored so arena record a lands at claim.base + (a -
+       quad_lo).  Reserving may replace the buffer; in-flight frames keep the old one through the
+       bindless slot their push constants captured. */
+    u32 gpu_org    = 0;   // the claim's origin within this frame's copy, in records
+    u32 claim_recs = 0;   // records the claim can hold from the anchor
+    u32 claim_base = 0;
+    if ( res_hi > quad_lo )
+    {
+        const gui_quad_claim_t* qc = quad_gpu_reserve( vp_index, res_hi - quad_lo );
+        claim_base = qc->base;
+        claim_recs = qc->alloc;
+        gpu_org    = frame * s_quad_gpu.capacity + qc->base;
+        if ( res_hi - quad_lo > claim_recs )
+        {
+            /* The buffer could not grow (quad_gpu_reserve warned): draw what fits the claim
+               rather than write past it. */
+            res_hi = quad_lo + claim_recs;
+            if ( quad_hi > res_hi ) quad_hi = res_hi;
+        }
+    }
+
+    /* Region skip: if this (frame, viewport) region already holds the current geometry
+       generation AND the same arena->claim mapping (anchor, claim base, buffer), its bytes are
+       identical to what these spans would upload -- a presented-but-unchanged frame (fx
+       animation, reused real frame) moves nothing.  A bumped generation, a shifted anchor, a
+       moved claim or a swapped buffer each mean the bytes no longer line up, and the span
+       re-uploads whole. */
+    gui_quad_region_t* qr = &s_quad_gpu.region[ clip_region ];
+    bool geo_dirty = qr->gen != s_geo_gen || qr->anchor != quad_lo
+                  || qr->base != claim_base || qr->buf_gen != s_quad_gpu.buf_gen;
     if ( geo_dirty )
-        s_region_geo_gen[ clip_region ] = s_geo_gen;
+        *qr = ( gui_quad_region_t ){ .gen = s_geo_gen, .anchor = quad_lo,
+                                     .base = claim_base, .buf_gen = s_quad_gpu.buf_gen };
 
     /* The clip table is window-keyed, not viewport-keyed (gui_render_init.c): a window's cache
        slot is unique across the whole app, so its slab means the same thing to every surface.
@@ -179,14 +206,14 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
        every frame but the handful that follow a font upload or a repack. */
     render_glyph_buf_refresh();
 
-    // Upload the quad span into this surface's region of the global quad table -- only if this
-    // surface actually touched geometry in that range (and the region is stale at all).
-    u32 quad_off = clip_region * (u32)GUI_QUAD_REGION_BYTES;
+    // Upload the quad span into this surface's claim -- only if this surface actually touched
+    // geometry in that range (and the region is stale at all).  quad_lo is the anchor, so the
+    // span lands at the claim's origin.
     if ( geo_dirty && quad_hi > quad_lo )
     {
         u32 bytes = ( quad_hi - quad_lo ) * (u32)sizeof( gui_quad_t );
         rhi()->buffer_write( s_render.quad_buf, &s_tess.quads[ quad_lo ], bytes,
-                             quad_off + quad_lo * (u32)sizeof( gui_quad_t ) );
+                             gpu_org * (u32)sizeof( gui_quad_t ) );
         up_batches++;
         up_bytes += bytes;
     }
@@ -206,11 +233,15 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
         if ( geo_dirty )
             continue;   // the full span above already carried these bytes
 
+        /* Patch ranges live inside this vp's slots, so they sit within [quad_lo, res_hi) by
+           construction -- the clamp only bites on the degraded truncated-claim path above. */
+        if ( pv_lo < quad_lo ) pv_lo = quad_lo;
+        if ( pv_hi > res_hi  ) pv_hi = res_hi;
         if ( pv_hi > pv_lo )
         {
             u32 bytes = ( pv_hi - pv_lo ) * (u32)sizeof( gui_quad_t );
             rhi()->buffer_write( s_render.quad_buf, &s_tess.quads[ pv_lo ], bytes,
-                                 quad_off + pv_lo * (u32)sizeof( gui_quad_t ) );
+                                 ( gpu_org + ( pv_lo - quad_lo ) ) * (u32)sizeof( gui_quad_t ) );
             up_batches++;
             up_bytes += bytes;
             if ( b != 0 ) up_overlay += bytes;
@@ -379,10 +410,12 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     render_pal_upload( frame );
     push.pal_base = render_pal_base( frame );
 
-    /* Quad plumbing, both flush-constant: the quad table's slot and this region's origin (a
-       draw's first_vertex carries the arena-absolute quad offset on top). */
+    /* Quad plumbing, both flush-constant: the quad table's slot and the anchored claim offset.
+       A draw's first_vertex carries the arena-absolute quad index; adding this lands it at
+       claim origin + (index - anchor).  Computed in u32 -- when the claim origin sits below the
+       anchor the subtraction wraps, and the shader's add wraps back (well-defined uint math). */
     push.quad_buf  = s_render.quad_buf_idx;
-    push.quad_base = clip_region * (u32)GUI_QUAD_REGION_MAX;
+    push.quad_base = claim_recs ? gpu_org - quad_lo : 0u;
 
     /* Glyph table plumbing: the slot, and nothing else.  There is one table rather than a region
        per (frame, viewport), so an ID indexes it directly and there is no base to push. */
