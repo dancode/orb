@@ -2905,6 +2905,24 @@ typedef struct
 #define GUI_MAX_CLIP_RECTS      ( 64 )         // per-frame clip table entries; u8 index caps at 256
 #define GUI_CLIP_DEPTH          ( 32 )         // push_clip / pop_clip nesting depth
 
+/* Flags for push_clip_ex: which corners a clip's shared radius rounds and which edges its shared
+   feather fades over.  No flags set with radius/feather 0 is the plain scissor-parity cut.
+   Bits 8-11 are reserved for a clip mode (e.g. inverse clip); 12+ free. */
+enum
+{
+    UI_CLIP_ROUND_TL       = 1u << 0,
+    UI_CLIP_ROUND_TR       = 1u << 1,
+    UI_CLIP_ROUND_BR       = 1u << 2,
+    UI_CLIP_ROUND_BL       = 1u << 3,
+    UI_CLIP_ROUND_ALL      = 0xFu,
+
+    UI_CLIP_FEATHER_TOP    = 1u << 4,
+    UI_CLIP_FEATHER_RIGHT  = 1u << 5,
+    UI_CLIP_FEATHER_BOTTOM = 1u << 6,
+    UI_CLIP_FEATHER_LEFT   = 1u << 7,
+    UI_CLIP_FEATHER_ALL    = 0xF0u,
+};
+
 /* Prim records are counted per STATE CHANGE, not per quad -- a glyph run is one, a run of flat
    fills sharing a texture and a clip is one, and identically-styled shapes dedup across
    placements -- so the cap sits far below the quad cap.  Measured UIs land in the dozens; 512 is

@@ -1777,6 +1777,145 @@ win_backdrops( void )
 }
 
 /*==============================================================================================
+    WINDOW: Clip FX -- per-corner rounding and per-edge feather on the clip rect itself.
+
+    push_clip cuts hard, at any angle a scissor can express.  push_clip_ex adds two more knobs
+    to the SAME clip entry, resolved in the fragment (clip_coverage, gui_fx.hlsli) rather than by
+    moving geometry: a shared radius, gated per corner by UI_CLIP_ROUND_*, and a shared feather
+    width, gated per edge by UI_CLIP_FEATHER_*.  Everything drawn inside the clip -- the checker,
+    the shapes, the text -- is unmodified; only where it gets cut changes.
+==============================================================================================*/
+
+static f32 s_clip_radius  = 26.0f;
+static f32 s_clip_feather = 18.0f;
+
+/* One busy backdrop, reused by every cell below: a checker plus a scatter of translucent shapes,
+   so a soft edge has something to visibly fade and a rounded corner has something to visibly cut.
+   Content is drawn in RECT-LOCAL space so the same call paints any cell. */
+static void
+clip_fx_content( gui_rect_t r )
+{
+    gui()->draw_checker( r, 10.0f, GUI_COLOR( 0x30, 0x2C, 0x38, 0xFF ),
+                         GUI_COLOR( 0x20, 0x1E, 0x26, 0xFF ) );
+    gui()->draw_circle( r.x + r.w * 0.28f, r.y + r.h * 0.5f, r.h * 0.34f, 0.0f,
+                        GUI_COLOR( 0xFF, 0x70, 0x50, 0xB0 ) );
+    gui()->draw_circle( r.x + r.w * 0.72f, r.y + r.h * 0.42f, r.h * 0.30f, 0.0f,
+                        GUI_COLOR( 0x4C, 0x9E, 0xFF, 0xB0 ) );
+    gui()->draw_rect( r.x, r.y + r.h - 8.0f, r.w, 8.0f, GUI_COLOR( 0x60, 0xE0, 0x80, 0x90 ) );
+}
+
+static void
+panel_clip_corners( void )
+{
+    gui()->separator_text( "1  per-corner rounding -- UI_CLIP_ROUND_* pick which corners cut" );
+    gui()->slider_float( "radius", &s_clip_radius, 0.0f, 60.0f );
+
+    gui_rect_t cell = gui()->canvas( 190.0f );
+    gui()->draw_rect( cell.x, cell.y, cell.w, cell.h, PANEL );
+
+    static const struct { const char* label; u32 flags; } k_corner[] = {
+        { "square",       0u },
+        { "all",          UI_CLIP_ROUND_ALL },
+        { "top only",     UI_CLIP_ROUND_TL | UI_CLIP_ROUND_TR },
+        { "diagonal",     UI_CLIP_ROUND_TL | UI_CLIP_ROUND_BR },
+        { "one corner",   UI_CLIP_ROUND_BR },
+    };
+    u32 n    = (u32)( sizeof( k_corner ) / sizeof( k_corner[ 0 ] ) );
+    f32 step = cell.w / (f32)n;
+    f32 w    = step - 24.0f, h = cell.h - 56.0f;
+
+    for ( u32 i = 0; i < n; ++i )
+    {
+        gui_rect_t r = { cell.x + step * (f32)i + 12.0f, cell.y + 16.0f, w, h };
+        gui()->push_clip_ex( r.x, r.y, r.w, r.h, s_clip_radius, 0.0f, k_corner[ i ].flags );
+        clip_fx_content( r );
+        gui()->pop_clip();
+        text_xf_centered( r.x + r.w * 0.5f, cell.y + cell.h - 16.0f, INK_DIM,
+                          k_corner[ i ].label, 0.85f, 0.0f );
+    }
+
+    gui()->text( "one shared radius, five flag combinations -- the geometry never changes, only "
+                 "which corners the fragment's rounded cut applies to" );
+}
+
+static void
+panel_clip_feather( void )
+{
+    gui()->separator_text( "2  per-edge feather -- UI_CLIP_FEATHER_* fade coverage from an edge" );
+    gui()->slider_float( "feather (px)", &s_clip_feather, 0.0f, 48.0f );
+
+    gui_rect_t cell = gui()->canvas( 190.0f );
+    gui()->draw_rect( cell.x, cell.y, cell.w, cell.h, PANEL );
+
+    static const struct { const char* label; u32 flags; } k_feather[] = {
+        { "hard cut",      0u },
+        { "all edges",     UI_CLIP_FEATHER_ALL },
+        { "left only",     UI_CLIP_FEATHER_LEFT },
+        { "top + bottom",  UI_CLIP_FEATHER_TOP | UI_CLIP_FEATHER_BOTTOM },
+    };
+    u32 n    = (u32)( sizeof( k_feather ) / sizeof( k_feather[ 0 ] ) );
+    f32 step = cell.w / (f32)n;
+    f32 w    = step - 24.0f, h = cell.h - 56.0f;
+
+    for ( u32 i = 0; i < n; ++i )
+    {
+        gui_rect_t r = { cell.x + step * (f32)i + 12.0f, cell.y + 16.0f, w, h };
+        gui()->push_clip_ex( r.x, r.y, r.w, r.h, 0.0f, s_clip_feather, k_feather[ i ].flags );
+        clip_fx_content( r );
+        gui()->pop_clip();
+        text_xf_centered( r.x + r.w * 0.5f, cell.y + cell.h - 16.0f, INK_DIM,
+                          k_feather[ i ].label, 0.85f, 0.0f );
+    }
+
+    gui()->text( "content still ends exactly at the rect; the feather only softens how coverage "
+                 "falls off approaching the flagged edges, like a vignette with no extra draw" );
+}
+
+static void
+panel_clip_vignette( void )
+{
+    gui()->separator_text( "3  combined -- a rounded, feathered card, the photo-frame idiom" );
+
+    gui_rect_t cell = gui()->canvas( 220.0f );
+    gui()->draw_rect( cell.x, cell.y, cell.w, cell.h, PANEL );
+
+    f32 half = cell.w * 0.5f;
+
+    /* LEFT: push_clip -- the hard scissor, for comparison. */
+    gui()->draw_text( cell.x + 16.0f, cell.y + 8.0f, INK_DIM, "push_clip (hard)" );
+    {
+        gui_rect_t r = { cell.x + 16.0f, cell.y + 32.0f, half - 32.0f, cell.h - 48.0f };
+        gui()->push_clip( r.x, r.y, r.w, r.h );
+        clip_fx_content( r );
+        gui()->pop_clip();
+    }
+
+    /* RIGHT: push_clip_ex -- every corner rounded, every edge feathered, one call. */
+    gui()->draw_text( cell.x + half + 16.0f, cell.y + 8.0f, INK_DIM, "push_clip_ex (round + fade)" );
+    {
+        gui_rect_t r = { cell.x + half + 16.0f, cell.y + 32.0f, half - 32.0f, cell.h - 48.0f };
+        gui()->push_clip_ex( r.x, r.y, r.w, r.h, s_clip_radius, s_clip_feather, UI_CLIP_ROUND_ALL | UI_CLIP_FEATHER_ALL );
+        clip_fx_content( r );
+        gui()->pop_clip();
+    }
+
+    gui()->text( "same content, same call site cost -- the card on the right is one push_clip_ex "
+                 "instead of a rounded frame quad plus a separate soft-shadow pass" );
+}
+
+static void
+win_clip_fx( void )
+{
+    gui()->stack();
+    gui()->text( "push_clip cuts hard.  push_clip_rounded and push_clip_ex move rounding and "
+                 "feathering INTO the clip entry itself -- resolved once in clip_coverage, so "
+                 "every draw inside the region inherits the same cut for free." );
+    panel_clip_corners();
+    panel_clip_feather();
+    panel_clip_vignette();
+}
+
+/*==============================================================================================
     Curves -- GUI_FX_BEZIER, the stroked quadratic field, and the cubic split that rides it.
 
     Each case draws the same curve twice: a dim 32-segment reference flatten of the EXACT cubic
@@ -2789,6 +2928,7 @@ static sdf_demo_t s_demos[] = {
     { "Dials",           "Dials",           "draggable knob / clock / compass with rotated labels",       win_dials,     1280.0f, 1024.0f, false },
     { "New Verbs",       "New Verbs",       "box_xf / icon_xf / corner shadow / dashed + gradient arcs",  win_five,      1280.0f, 1024.0f, false },
     { "Backdrops",       "Backdrops",       "checker + line grid as one-quad fragment patterns",          win_backdrops, 1280.0f, 1024.0f, false },
+    { "Clip FX",         "Clip FX",         "push_clip_ex: per-corner rounding, per-edge feather",        win_clip_fx,   1280.0f, 1024.0f, false },
     { "Curves",          "Curves",          "GUI_FX_BEZIER: exact reference vs the 2-quad approximation", win_curves,    1280.0f, 1024.0f, false },
     { "Fills",           "Fills",           "gradients (linear / radial / conic) + inset + drop shadows", win_fills,     1280.0f, 1024.0f, false },
     { "Corners & Pills", "Corners & Pills", "corner smoothing + the capsule, filled and hollow",          win_corners,   1280.0f, 1024.0f, false },

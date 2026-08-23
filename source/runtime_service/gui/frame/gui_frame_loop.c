@@ -676,6 +676,18 @@ gui_push_clip( f32 x, f32 y, f32 w, f32 h )
 }
 
 void
+gui_push_clip_rounded( f32 x, f32 y, f32 w, f32 h, f32 radius )
+{
+    draw_push_clip_rect_rounded( x, y, w, h, radius );
+}
+
+void
+gui_push_clip_ex( f32 x, f32 y, f32 w, f32 h, f32 radius, f32 feather, u32 flags )
+{
+    draw_push_clip_rect_ex( x, y, w, h, radius, feather, flags );
+}
+
+void
 gui_pop_clip( void )
 {
     draw_pop_clip_rect();

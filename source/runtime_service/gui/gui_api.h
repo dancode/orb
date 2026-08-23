@@ -1140,6 +1140,14 @@ typedef struct gui_api_s
     /* The scissor rectangle subsequent draws are cut to; pop restores the previous one. */
 
     void ( *push_clip )( f32 x, f32 y, f32 w, f32 h );
+
+    /* Same, corners rounded in the fragment (clip_coverage) -- radius clamped to the half-extent. */
+    void ( *push_clip_rounded )( f32 x, f32 y, f32 w, f32 h, f32 radius );
+
+    /* Full control: UI_CLIP_* flags (gui.h) pick which corners the radius rounds and which edges
+       the feather fades over. */
+    void ( *push_clip_ex )( f32 x, f32 y, f32 w, f32 h, f32 radius, f32 feather, u32 flags );
+
     void ( *pop_clip  )( void );
 
     /*============================================================================================================

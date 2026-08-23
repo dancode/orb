@@ -189,6 +189,8 @@ const gui_api_t g_gui_api_struct =
     .path_line_to                       = gui_path_line_to,
     .path_stroke                        = gui_path_stroke,
     .push_clip                          = gui_push_clip,
+    .push_clip_rounded                  = gui_push_clip_rounded,
+    .push_clip_ex                       = gui_push_clip_ex,
     .pop_clip                           = gui_pop_clip,
 
     /*===============================================  GUI_CORE  ================================================*/

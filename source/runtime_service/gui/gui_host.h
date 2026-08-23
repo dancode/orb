@@ -282,6 +282,8 @@ void gui_path_stroke( f32 thickness, gui_stroke_align_t align, bool closed, u32 
 
 /* clipping */
 void gui_push_clip( f32 x, f32 y, f32 w, f32 h );
+void gui_push_clip_rounded( f32 x, f32 y, f32 w, f32 h, f32 radius );
+void gui_push_clip_ex( f32 x, f32 y, f32 w, f32 h, f32 radius, f32 feather, u32 flags );
 void gui_pop_clip( void );
 
 /*===============================================  GUI_CORE  ================================================*/
