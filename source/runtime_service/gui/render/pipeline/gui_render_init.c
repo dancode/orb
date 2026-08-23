@@ -409,7 +409,13 @@ render_glyph_buf_create( void )
 
     s_render.glyph_buf_idx = rhi()->register_buffer( s_render.glyph_buf );
     if ( s_render.glyph_buf_idx == 0 )
+    {
+        /* Clean up after ourselves (the quad/prim creators' rule): the refresh path restores the
+           OLD handle over this member on failure, so an unregistered buffer left here would leak. */
+        rhi()->buffer_destroy( s_render.glyph_buf );
+        s_render.glyph_buf = ( rhi_buffer_t ){ RHI_NULL_HANDLE };
         return false;
+    }
 
     rhi()->buffer_write( s_render.glyph_buf, glyph_table_data(), bytes, 0 );
     s_render.glyph_buf_bytes = bytes;

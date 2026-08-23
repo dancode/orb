@@ -763,6 +763,7 @@ volatile_update( void )
         u32 cmd_ck  = s_draw.cmd_count;
         u32 seg_ck  = s_draw.seg_count;
         u32 pt_ck   = s_draw.pt_count;
+        u32 rect_ck = s_draw.rect_count;
         u32 text_ck = s_draw.text_pool_used;
         gui_cmd_seg_t seg_live = s_draw.segs[ seg_ck - 1 ];
 
@@ -850,6 +851,7 @@ volatile_update( void )
         s_draw.cmd_count          = cmd_ck;
         s_draw.seg_count          = seg_ck;
         s_draw.pt_count           = pt_ck;
+        s_draw.rect_count         = rect_ck;
         s_draw.text_pool_used     = text_ck;
         s_draw.segs[ seg_ck - 1 ] = seg_live;
 

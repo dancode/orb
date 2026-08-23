@@ -145,6 +145,9 @@ static struct
 
     gui_rect_t      clip_stack[ GUI_CLIP_DEPTH ];               /* intersected rects, mirrors clip_table   */
     u32             clip_depth;
+    u32             clip_dropped;   /* pushes refused at full depth; pops consume these first so an
+                                       overflowed frame stays push/pop balanced instead of popping
+                                       levels the pushes never claimed */
 
     /* Global opacity multiplier applied to every pushed shape.  1.0 normally; lowered for the
        span of a disabled item so it dims with no per-widget code; reset by item / chrome seams. */
@@ -463,6 +466,7 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.clip_idx_stack[ 0 ]  = 0;
     s_draw.cur_clip_idx         = 0;
     s_draw.clip_depth           = 1;
+    s_draw.clip_dropped         = 0;
 
     s_draw.alpha                = 1.0f;
     s_draw.rounding             = 0.0f;                 /* square until a seam sets the resolved radius */
@@ -473,6 +477,9 @@ draw_reset( i32 display_w, i32 display_h )
     s_draw.text_clip_x1         =  GUI_TEXT_NO_CLIP;
     s_draw.text_edge_w          = 0.0f;                 /* plain runs until a caller asks for an edge */
     s_draw.text_edge_col        = 0u;
+    s_draw.anim_curve           = GUI_CURVE_LINEAR;     /* unshaped motion until a caller installs a curve */
+    s_draw.anim_curve_param     = 0.0f;
+    s_draw.anim_phase           = 0.0f;                 /* no ambient cycle anchor until an event sets one */
 
 #ifdef GUI_CMD_STEPPER
     s_draw.cur_owner = 0;       /* background/chrome until the first widget stamps */
@@ -621,6 +628,14 @@ draw_push_clip_body( f32 x, f32 y, f32 w, f32 h, f32 radius, f32 feather, u32 fl
         s_draw.clip_idx_stack[ s_draw.clip_depth ] = ci;
         ++s_draw.clip_depth;
     }
+    else
+    {
+        /* Depth exhausted: the level is refused but counted, so the matching pop consumes the
+           refusal instead of popping a level an earlier push DID claim.  Commands still stamp the
+           correctly intersected entry; only draw_cull_box tests the (wider) parent, which can
+           only under-cull. */
+        ++s_draw.clip_dropped;
+    }
     s_draw.cur_clip_idx = ci;
 
     DBG_CLIP( c, s_draw.clip_depth );
@@ -647,6 +662,13 @@ draw_push_clip_rect_ex( f32 x, f32 y, f32 w, f32 h, f32 radius, f32 feather, u32
 void
 draw_pop_clip_rect( void )
 {
+    if ( s_draw.clip_dropped > 0 )
+    {
+        /* This pop matches a push the full stack refused; restore the surviving top's entry. */
+        --s_draw.clip_dropped;
+        s_draw.cur_clip_idx = s_draw.clip_idx_stack[ s_draw.clip_depth - 1 ];
+        return;
+    }
     if ( s_draw.clip_depth > 1 )
     {
         --s_draw.clip_depth;
@@ -693,8 +715,9 @@ draw_seg_retag( gui_id_t win, u32 z, i32 vp, u32 band )
         s_draw.cur_owner = 0;   /* window transition: chrome until the first widget stamps */
 #endif
 
-    /* No open segment yet -- called outside a frame (e.g. font_use during startup setup, before the
-       first draw_reset).  Just track the tag; draw_reset re-seeds segs[0] from it next frame. */
+    /* No open segment yet -- called outside a frame (e.g. font_use during startup setup, before
+       the first draw_reset).  Just track the tag; the next draw_reset opens the background
+       segment and re-seeds every cur_* field itself. */
     if ( s_draw.seg_count == 0 )
     {
         s_draw.cur_win  = win;
@@ -833,6 +856,8 @@ draw_push_clip_root( void )
         ++s_draw.clip_depth;
         s_draw.cur_clip_idx = s_draw.clip_idx_stack[ 0 ];
     }
+    else
+        ++s_draw.clip_dropped;   /* refused level; the matching pop consumes this (see above) */
 }
 
 /*==============================================================================================

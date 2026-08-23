@@ -180,7 +180,8 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
         return;
 
     u32 offset = s_draw.rect_count;
-    for ( u32 i = 0; i < count && s_draw.rect_count < GUI_MAX_RECT_ENTRIES; ++i )
+    u32 i      = 0;
+    for ( ; i < count && s_draw.rect_count < GUI_MAX_RECT_ENTRIES; ++i )
     {
         u32 col = draw_apply_alpha( rects[ i ].abgr );
         if ( ( col >> 24 ) == 0u )   /* invisible under alpha blending (draw_push_rect_filled rule) */
@@ -193,6 +194,13 @@ draw_push_rect_list( const gui_rect_col_t* rects, u32 count )
         s_draw.rect_pool[ s_draw.rect_count ].abgr = col;
         s_draw.rect_count++;
     }
+
+    /* The pool filling mid-copy truncates the list -- loud, per the overflow rule: a silent
+       truncation reads as data missing from the caller's chart, not as a cap. */
+    if ( i < count )
+        GUI_WARN_ONCE( "rect-list pool full (%u entries) -- rects past the cap are dropped this "
+                       "frame; raise GUI_MAX_RECT_ENTRIES (gui.h)\n", (u32)GUI_MAX_RECT_ENTRIES );
+
     if ( s_draw.rect_count == offset )
         return;   /* everything culled: no command slot spent */
 

@@ -314,6 +314,10 @@ static u8               s_clip_slab_pending[ RENDER_MAX_WIN ];
    tessellation -- which is the only thing that can change either the content or the base -- and
    cleared one bit per range the flush uploads. */
 
+ORB_STATIC_ASSERT( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS <= 8,
+                   "prim range pending mask is a u8 -- one bit per (frame-in-flight, viewport) "
+                   "region" );
+
 static u8               s_prim_range_pending[ RENDER_MAX_WIN ];
 
 /* Resolve a window's cache entry: existing, else a freshly claimed free slot, else ~0u (only

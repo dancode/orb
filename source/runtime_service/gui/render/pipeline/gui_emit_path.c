@@ -174,7 +174,12 @@ draw_push_polyline_cmd( const gui_vec2_t* pts, u32 count, f32 thickness,
         return;
 
     if ( s_draw.pt_count + count > GUI_MAX_PATH_PTS )
-        return;   /* point pool exhausted this frame */
+    {
+        /* Loud, per the overflow rule: a vanished plot line reads as a data bug, not a cap. */
+        GUI_WARN_ONCE( "polyline point pool full (%u points) -- strokes past the cap are dropped "
+                       "this frame; raise GUI_MAX_PATH_PTS (gui.h)\n", (u32)GUI_MAX_PATH_PTS );
+        return;
+    }
 
     /* Cull against the bounding box of the points, padded by half the stroke width so a thick line
        grazing the clip edge is never wrongly dropped. */

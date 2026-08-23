@@ -344,6 +344,11 @@ draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     if ( !e )
         return;
 
+    /* A static sector reads neither its phase nor a curve (tess_fx_arc applies both only under
+       GUI_OP_SPIN), so neither may reach its bytes: the command hash must not move when an
+       ambient nothing reads changes -- the same rule draw_fx_box_cmd applies to a shadow. */
+    bool spinning = ( spin_rate != 0.0f );
+
     e->arc.cx           = cx;
     e->arc.cy           = cy;
     e->arc.r            = r;
@@ -351,10 +356,10 @@ draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     e->arc.a0           = a0;
     e->arc.a1           = a1;
     e->arc.spin_rate    = spin_rate;
-    e->arc.spin_phase   = spin_phase + s_draw.anim_phase;
+    e->arc.spin_phase   = spinning ? spin_phase + s_draw.anim_phase : 0.0f;
     e->arc.abgr         = col;
-    e->arc.curve        = s_draw.anim_curve;
-    e->arc.curve_param  = s_draw.anim_curve_param;
+    e->arc.curve        = spinning ? s_draw.anim_curve : 0u;
+    e->arc.curve_param  = spinning ? s_draw.anim_curve_param : 0.0f;
 
     draw_cmd_seal();
 }

@@ -94,9 +94,14 @@ static struct
     gui_cmd_seg_t  segs      [ GUI_MAX_SEGS ];          u32 seg_count;   /* rebased [lo, hi)     */
 
     /* Side pools, copied whole (see the banner contract).  clip_hash mirrors s_draw's
-       clip_hash_cache so the restore can hand both back without rehashing. */
-    gui_rect_t     clip_table[ GUI_MAX_CLIP_RECTS ];
-    u32            clip_hash [ GUI_MAX_CLIP_RECTS ];    u32 clip_n;
+       clip_hash_cache so the restore can hand both back without rehashing; the four identity
+       lanes travel with the rects -- a frozen command's tess_clip_local reads them. */
+    gui_rect_t     clip_table  [ GUI_MAX_CLIP_RECTS ];
+    u32            clip_hash   [ GUI_MAX_CLIP_RECTS ];
+    f32            clip_radius [ GUI_MAX_CLIP_RECTS ];
+    f32            clip_feather[ GUI_MAX_CLIP_RECTS ];
+    u32            clip_flags  [ GUI_MAX_CLIP_RECTS ];
+    u32            clip_value  [ GUI_MAX_CLIP_RECTS ];  u32 clip_n;
     gui_vec2_t     points    [ GUI_MAX_PATH_PTS ];      u32 pt_count;
     gui_rect_col_t rect_pool [ GUI_MAX_RECT_ENTRIES ];  u32 rect_count;
     char           text_pool [ GUI_MAX_TEXT_POOL ];     u32 text_used;
@@ -272,8 +277,12 @@ step_capture_build( void )
 
     /* Side pools whole: pool offsets baked into the commands stay valid verbatim, and the pools
        may hold debug-band content interleaved -- unreferenced entries are inert. */
-    memcpy( s_step.clip_table, s_draw.clip_table,      s_draw.clip_table_n * sizeof( gui_rect_t ) );
-    memcpy( s_step.clip_hash,  s_draw.clip_hash_cache, s_draw.clip_table_n * sizeof( u32 ) );
+    memcpy( s_step.clip_table,   s_draw.clip_table,      s_draw.clip_table_n * sizeof( gui_rect_t ) );
+    memcpy( s_step.clip_hash,    s_draw.clip_hash_cache, s_draw.clip_table_n * sizeof( u32 ) );
+    memcpy( s_step.clip_radius,  s_draw.clip_radius,     s_draw.clip_table_n * sizeof( f32 ) );
+    memcpy( s_step.clip_feather, s_draw.clip_feather,    s_draw.clip_table_n * sizeof( f32 ) );
+    memcpy( s_step.clip_flags,   s_draw.clip_flags,      s_draw.clip_table_n * sizeof( u32 ) );
+    memcpy( s_step.clip_value,   s_draw.clip_value,      s_draw.clip_table_n * sizeof( u32 ) );
     s_step.clip_n = s_draw.clip_table_n;
     memcpy( s_step.points,     s_draw.points,          s_draw.pt_count * sizeof( gui_vec2_t ) );
     s_step.pt_count = s_draw.pt_count;
@@ -344,13 +353,23 @@ step_restore_emit( void )
        the display rect draw_reset just seeded, so the debug band scissors against the CURRENT
        surface size even if the window was resized while frozen. */
     u32 n = s_step.clip_n;
-    memcpy( s_draw.clip_table,      s_step.clip_table, n * sizeof( gui_rect_t ) );
-    memcpy( s_draw.clip_hash_cache, s_step.clip_hash,  n * sizeof( u32 ) );
+    memcpy( s_draw.clip_table,      s_step.clip_table,   n * sizeof( gui_rect_t ) );
+    memcpy( s_draw.clip_hash_cache, s_step.clip_hash,    n * sizeof( u32 ) );
+    memcpy( s_draw.clip_radius,     s_step.clip_radius,  n * sizeof( f32 ) );
+    memcpy( s_draw.clip_feather,    s_step.clip_feather, n * sizeof( f32 ) );
+    memcpy( s_draw.clip_flags,      s_step.clip_flags,   n * sizeof( u32 ) );
+    memcpy( s_draw.clip_value,      s_step.clip_value,   n * sizeof( u32 ) );
     if ( n < GUI_MAX_CLIP_RECTS - 1u )
     {
         gui_rect_t root             = s_draw.clip_stack[ 0 ];
         s_draw.clip_table[ n ]      = root;
-        s_draw.clip_hash_cache[ n ] = fnv1a( 2166136261u, &root, sizeof( gui_rect_t ) );
+        /* The clip_append identity recipe, so a live debug-band push of this same rect dedups
+           onto this entry instead of minting a duplicate. */
+        s_draw.clip_hash_cache[ n ] = clip_identity_hash( &root, 0.0f, 0.0f, 0u, 0u );
+        s_draw.clip_radius [ n ]    = 0.0f;
+        s_draw.clip_feather[ n ]    = 0.0f;
+        s_draw.clip_flags  [ n ]    = 0u;
+        s_draw.clip_value  [ n ]    = 0u;
         s_draw.clip_idx_stack[ 0 ]  = (u8)n;
         s_draw.cur_clip_idx         = (u8)n;
         s_draw.clip_table_n         = n + 1;

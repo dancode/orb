@@ -6,7 +6,8 @@
     may be spent at all; draw_cmd_seal bakes the retained-cache hash while the payload 
     is still L1-hot.
 
-    Between gui_emit_state.c owns the s_draw and the fnv1a helpers this folds through.
+    gui_emit_state.c (included before this file) owns s_draw and the fnv1a helpers this
+    folds through.
 
 ==============================================================================================*/
 // clang-format off
@@ -37,7 +38,7 @@
    -- so hashing must skip the offset and fold the pointed-to content instead.  Their entry here
    still names the right allocation size; only the hash needs the special case. */
 
-static const u8 k_cmd_hash_len[] = {
+static const u8 k_cmd_hash_len[ GUI_CMD_COUNT ] = {
 
     [GUI_CMD_RECT_FILL]     = sizeof(( (gui_cmd_ext_t*)0 )->rect_fill ),
 
@@ -197,21 +198,20 @@ draw_hash_cmd( const gui_cmd_t* c )
 
     draw_cmd_open / draw_cmd_seal -- the shared preamble and postamble of every shape push.
 
-    Open runs the four gates every push goes through, in the one order that is correct.
+    Open runs the four gates every push goes through, in the one order that is correct:
 
-    1. Exceeds command limit (just stops drawing commands)
-    2. Frozen by the command stepper debug tool (skips non-debug band)
-    3. A fully transparent shape contributes nothing under alpha blending.
-    4. Then a cull test, which is the only gate that can be expensive comes lat.
-    
-    The slot and stamps the header. 
-    
-    ALREADY folded (a multi-color shape pass the OR of its folded colours -- visible
-    if any end is). `pad` grows the cull box on every side for shapes whose geometry 
-    reaches past the authored rect (the SDF AA skirt, a shadow's feather).  
-    
-    Returns NULL when the shape must not spend a slot; otherwise the caller fills the 
-    payload and calls seal, which bakes the retained-cache hash while the bytes are L1-hot.
+    1. Command list / pool full (emission simply stops, loudly, once).
+    2. Frozen by the command stepper debug tool (main-band pushes suppressed).
+    3. A fully transparent shape contributes nothing under alpha blending.  `vis_col` arrives
+       with the global alpha ALREADY folded; a multi-color shape passes the OR of its folded
+       colours, so it survives if any end is visible.
+    4. The clip cull -- last, because it is the only gate that costs arithmetic.  `pad` grows
+       the cull box on every side for shapes whose geometry reaches past the authored rect
+       (the SDF AA skirt, a shadow's feather).
+
+    On pass, open claims the slot, stamps the header, and returns the payload to fill; the
+    caller then calls seal, which bakes the retained-cache hash while the bytes are L1-hot.
+    Returns NULL when the shape must not spend a slot.
 
     The four pool-backed pushes (text, text_xf, polyline via gui_emit_path.c, rect_list) 
     keep their own preambles: each has a pool copy that must succeed BEFORE a slot may be 

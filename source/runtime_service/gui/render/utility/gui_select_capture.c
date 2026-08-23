@@ -103,8 +103,14 @@ select_capture_build( void )
             if ( s_select_cap.run_count >= GUI_SELECT_MAX_RUNS
               || s_select_cap.text_used + e->text.len + 1 > GUI_SELECT_TEXT_POOL )
             {
+                /* Keep what fits; selection just ends here -- but say so once, or a selection
+                   that stops mid-window reads as a hit-test bug rather than a cap. */
+                GUI_WARN_ONCE( "text-selection capture full (%u runs / %u pool bytes) -- "
+                               "selection cannot extend past this point; raise GUI_SELECT_MAX_RUNS "
+                               "/ GUI_SELECT_TEXT_POOL (gui_render.h)\n",
+                               (u32)GUI_SELECT_MAX_RUNS, (u32)GUI_SELECT_TEXT_POOL );
                 s_select_cap.mark_count = 0;
-                return;   /* capacity: keep what fits, selection just ends here */
+                return;
             }
 
             gui_select_run_t* r = &s_select_cap.runs[ s_select_cap.run_count++ ];
