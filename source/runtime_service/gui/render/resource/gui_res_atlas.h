@@ -81,16 +81,16 @@
 
 // clang-format off
 
-/* BOOT dimensions of the coverage atlas, 1 byte / pixel.  512x512 = 256 KiB resident CPU +
-   256 KiB GPU: fits the default UI font(s) plus the editor icon set.  The atlas GROWS on demand
-   from here (doubling up to GUI_RES_ATLAS_DIM_CAP), so these only set the floor a minimal build
-   pays.  #ifndef-guarded so a stress target can shrink them (orb.targets `define`) to force the
-   growth path.  Dimensions are PER INSTANCE (see the record in the .c). */
+/* BOOT dimensions of the coverage atlas, 1 byte / pixel.  256x256 = 64 KiB resident CPU +
+   64 KiB GPU: fits the default UI font; a build that loads more faces or the editor icon set
+   GROWS on demand from here (doubling up to GUI_RES_ATLAS_DIM_CAP), so these only set the floor
+   a minimal build pays.  #ifndef-guarded so a stress target can shrink them (orb.targets
+   `define`) to force the growth path.  Dimensions are PER INSTANCE (see the record in the .c). */
 #ifndef GUI_RES_ATLAS_W
-#define GUI_RES_ATLAS_W            512u
+#define GUI_RES_ATLAS_W            256u
 #endif
 #ifndef GUI_RES_ATLAS_H
-#define GUI_RES_ATLAS_H            512u
+#define GUI_RES_ATLAS_H            256u
 #endif
 
 /* The SDF atlas is WIDER, and that is a property of the data rather than a tuning knob.  A

@@ -117,6 +117,7 @@ void font_glyph_placed( u32 cp, u32* id, f32* ox, f32* oy, f32* gw, f32* gh, f32
 const gui_glyph_uv_t* glyph_table_data      ( void );
 u32                   glyph_table_count     ( void );
 u32                   glyph_table_generation( void );
+u32                   glyph_table_used      ( void );
 
 /* Icon lookup: cached UVs (+ optional pixel size) for a registered icon id. */
 bool icon_get      ( gui_icon_id_t id,

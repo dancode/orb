@@ -43,6 +43,12 @@ static struct
     gui_glyph_uv_t uv[ GUI_GLYPH_TABLE_MAX ];   /* the table itself, ID-indexed        */
     u32            generation;                  /* bumps on every rebuild (0 = never built) */
     u32            atlas_gen, sdf_gen;          /* atlas generations the table was built against */
+    u32            used;                        /* entries through the highest resident slot's
+                                                   stride -- HIGH-WATER, never shrinks in a run:
+                                                   IDs baked into retained geometry may outlive
+                                                   the font that minted them, and must stay
+                                                   inside whatever buffer the render unit sized
+                                                   from this */
     bool           dirty;                       /* a font's tenant changed since the last build  */
 
 } s_glyph_tab;
@@ -151,8 +157,16 @@ glyph_table_sync( void )
       && s_glyph_tab.atlas_gen == ag && s_glyph_tab.sdf_gen == sg )
         return;
 
+    u32 top = 0;
     for ( u32 i = 0; i < GUI_FONT_REGISTRY_MAX; ++i )
+    {
         glyph_table_fill_slot( i );
+        const font_slot_t* slot = font_slot_ptr( i );
+        if ( slot && slot->used && slot->atlas_tenant )
+            top = i + 1;
+    }
+    if ( top * GUI_GLYPH_SLOT_STRIDE > s_glyph_tab.used )
+        s_glyph_tab.used = top * GUI_GLYPH_SLOT_STRIDE;
 
     s_glyph_tab.atlas_gen  = ag;
     s_glyph_tab.sdf_gen    = sg;
@@ -200,10 +214,17 @@ font_glyph_placed( u32 cp, u32* id, f32* ox, f32* oy, f32* gw, f32* gh, f32* adv
 
 /* The table as the render unit uploads it: a flat ID-indexed array of packed UV pairs.  The
    generation is the upload's staleness key -- it changes only on a rebuild, so a surface that
-   already holds this generation has nothing to send. */
+   already holds this generation has nothing to send.  glyph_table_used is what the render unit
+   SIZES its buffer by: the high-water extent, one stride minimum so the buffer exists before
+   the first font resolves.  It can only grow on a rebuild, so a generation match also means the
+   sized buffer still covers every ID in play. */
 const gui_glyph_uv_t* glyph_table_data      ( void ) { return s_glyph_tab.uv; }
 u32                   glyph_table_count     ( void ) { return GUI_GLYPH_TABLE_MAX; }
 u32                   glyph_table_generation( void ) { return s_glyph_tab.generation; }
+u32                   glyph_table_used      ( void )
+{
+    return s_glyph_tab.used ? s_glyph_tab.used : (u32)GUI_GLYPH_SLOT_STRIDE;
+}
 
 // clang-format on
 /*============================================================================================*/

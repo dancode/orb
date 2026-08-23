@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/pipeline/gui_render_init.c -- Shared GPU resources
+    gui/render/pipeline/gui_render_init.c -- Shared GPU resources
 
     The RENDER phase's one-time setup, shared by every surface for the life of the run: 
     The compiled pipeline (+ wireframe twin), the two bindless samplers (font/coverage + image),
@@ -73,6 +73,7 @@ typedef struct
     Derived with offsetof rather than spelled 64/24: the struct is free to be reordered pre-ship
     (CLAUDE.md), and the assert below is what makes that safe -- the split is only valid while the
     mvp is first and the tail is everything after it.  */
+
 #define GUI_PUSH_TAIL_OFF   ( (u32)offsetof( gui_push_t, samp_point ) )
 #define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, samp_point ) ) )
 
@@ -227,9 +228,12 @@ static struct
     rebuild: render_glyph_buf_refresh creates the new one and hands the old to rhi's deferred
     destroy, which already holds it until no frame in flight can be reading it.  Nothing is ever
     overwritten in place, so there is nothing for an in-flight draw to race.
-==============================================================================================*/
 
-#define GUI_GLYPH_TABLE_BYTES  ( GUI_GLYPH_TABLE_MAX * (u32)sizeof( gui_glyph_uv_t ) )
+    Sized by glyph_table_used(), not by the full ID space: IDs are (font slot x stride), so the
+    buffer only needs to reach the highest RESIDENT slot's stride -- one font costs 4 KB where
+    the full 16-slot space costs 64.  used() is a high-water that can only grow on a rebuild,
+    and a rebuild bumps the generation, so the replace path above is also the growth path.
+==============================================================================================*/
 
 ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
                    "the mvp must lead gui_push_t -- the per-draw push writes everything after it" );
@@ -296,9 +300,10 @@ static struct
        regioned per frame (see the sizing note above).  The slot index rides pc.glyph_buf; there is
        no base to push, since there is only ever one table. */
 
-    rhi_buffer_t    glyph_buf;          // storage buffer: the whole glyph table
+    rhi_buffer_t    glyph_buf;          // storage buffer: the glyph table through its used extent
     u32             glyph_buf_idx;      // bindless buffer slot (never 0 after a successful init)
     u32             glyph_buf_gen;      // table generation the buffer currently holds
+    u32             glyph_buf_bytes;    // the size it was created at (glyph_table_used then)
 
     gui_render_mode_t debug_mode;       // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
 
@@ -387,8 +392,10 @@ static void render_shutdown( void );   /* the clip-table failure path below unwi
 static bool
 render_glyph_buf_create( void )
 {
+    u32 bytes = glyph_table_used() * (u32)sizeof( gui_glyph_uv_t );
+
     s_render.glyph_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = GUI_GLYPH_TABLE_BYTES,
+        .size       = bytes,
         .usage      = RHI_BUFFER_USAGE_STORAGE,
         .memory     = RHI_MEMORY_CPU_TO_GPU,
         .debug_name = "gui_glyph_table",
@@ -400,8 +407,9 @@ render_glyph_buf_create( void )
     if ( s_render.glyph_buf_idx == 0 )
         return false;
 
-    rhi()->buffer_write( s_render.glyph_buf, glyph_table_data(), GUI_GLYPH_TABLE_BYTES, 0 );
-    s_render.glyph_buf_gen = glyph_table_generation();
+    rhi()->buffer_write( s_render.glyph_buf, glyph_table_data(), bytes, 0 );
+    s_render.glyph_buf_bytes = bytes;
+    s_render.glyph_buf_gen   = glyph_table_generation();
     return true;
 }
 

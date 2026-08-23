@@ -55,7 +55,7 @@ backend_memory( u32 live_viewports )
     if ( rhi_handle_valid( s_render.quad_buf ) )
         s.gpu_quad_bytes = (u32)( RHI_MAX_FRAMES_IN_FLIGHT * s_quad_gpu.capacity * GUI_QUAD_BYTES );
     if ( rhi_handle_valid( s_render.glyph_buf ) )
-        s.gpu_glyph_bytes = (u32)GUI_GLYPH_TABLE_BYTES;
+        s.gpu_glyph_bytes = s_render.glyph_buf_bytes;
 
     s.gpu_table_bytes = s.gpu_clip_bytes + s.gpu_prim_bytes + s.gpu_quad_bytes
                       + s.gpu_glyph_bytes;

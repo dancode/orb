@@ -2885,7 +2885,7 @@ typedef struct
    before moving a number -- and when content goes missing, the build's overflow warning names
    which of these it was. */
 
-#define GUI_MAX_QUADS           ( 8192 * 2 )   // per-frame quad records (gui_quad_t)
+#define GUI_MAX_QUADS           ( 8192 + 4096 )   // per-frame quad records (gui_quad_t)
 #define GUI_MAX_PRIMS           ( 512 * 2 )    // per-frame prim records (gui_prim_t)
 #define GUI_MAX_CMDS            ( 1024 * 2 )   // per-frame semantic draw commands
 
@@ -3059,7 +3059,7 @@ typedef struct
                                 //   plus the fixed header (palette blocks + overlay records)
     u32 gpu_prim_capacity;      // prim records per frame-in-flight copy (grows on claim pressure)
     u32 gpu_clip_bytes;         // clip entries   -- window slabs x 32 B x gpu_clip_regions
-    u32 gpu_glyph_bytes;        // glyph UV table -- GUI_GLYPH_TABLE_MAX x 8 B, ONE copy
+    u32 gpu_glyph_bytes;        // glyph UV table -- used extent x 8 B, ONE copy (grows per font slot)
     u32 gpu_clip_regions;       // frames-in-flight only -- clip is window-keyed, not viewport-keyed
     u32 gpu_debug_bytes;        // debug-overlay quad table (Debug builds; 0 when compiled out)
     u32 gpu_total;              // sum of the section above

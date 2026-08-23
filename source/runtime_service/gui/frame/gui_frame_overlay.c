@@ -535,7 +535,8 @@ overlay_memory( void )
         fmt_snprintf( det, sizeof( det ), "%u x %u reg",
                       (u32)( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX ), ms.gpu_clip_regions );
         overlay_mem_row( "clip tbl", det, ms.gpu_clip_bytes );
-        fmt_snprintf( det, sizeof( det ), "%u ids", (u32)GUI_GLYPH_TABLE_MAX );
+        fmt_snprintf( det, sizeof( det ), "%u ids",
+                      ms.gpu_glyph_bytes / (u32)sizeof( gui_glyph_uv_t ) );
         overlay_mem_row( "glyph tbl", det, ms.gpu_glyph_bytes );
 
         /* Atlas rows carry live dimensions and tenant count -- the atlases GROW under pressure, so
