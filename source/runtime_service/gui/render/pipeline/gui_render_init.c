@@ -92,17 +92,19 @@ typedef struct
 #define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, samp_point ) ) )
 
 /*==============================================================================================
-    Frame Clip Table Sizing -- the storage buffer clip_coverage reads (gui_fx.hlsli).
+    Clip Table Sizing -- the storage buffer clip_coverage reads (gui_fx.hlsli).
 
-    An ENTRY is two vec4s: (x0, y0, x1, y1) snapped pixel edges, then (radius, 0, 0, 0).
-    A REGION is an array of fixed per-window SLABS -- one per stable cache slot, 
-    GUI_WIN_CLIP_MAX entries each, at cache_idx * GUI_WIN_CLIP_MAX -- the same base the 
-    window's quads bake into the clip band, so uploads land at fixed offsets and can never
-    overflow.  One region per frame-in-flight only, NOT per viewport: a window's cache slot
-    is unique across the whole app (cache_idx comes from the single global RENDER_MAX_WIN
-    table, gui_build_cache.c), so its slab means the same thing to every surface -- unlike
-    the prim table's per-viewport regions and the quad table's per-viewport claims, 
-    which carry per-surface geometry.
+    A ENTRY is two v4: (x0, y0, x1, y1) snapped pixel edges + (radius, feather, flags, value).
+    A REGION is an array of fixed per-window SLABS -- one per stable cache slot. 
+    Each GUI_WIN_CLIP_MAX entries, located at cache_idx * GUI_WIN_CLIP_MAX (clip_base).
+    The same base the window's quads bake into the clip band, so uploads land at fixed 
+    offsets and can never overflow.  
+    
+    One region per frame-in-flight only, NOT per viewport: a window's cache slot is unique
+    across the whole app (cache_idx comes from the single global RENDER_MAX_WIN table).
+    
+    So its slab means the same thing to every surface -- unlike the prim table's per-viewport
+    regions and the quad table's per-viewport claims, which carry per-surface geometry.
 ==============================================================================================*/
 
 #define GUI_CLIP_ENTRY_FLOATS  8u
@@ -112,8 +114,9 @@ typedef struct
 #define GUI_CLIP_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT )
 
 /*==============================================================================================
-    Primitive record table sizing -- the storage buffer the fragment resolves a shape from,
-    sized by CLAIM like the quad table below, not by cap.
+    Primate Palette -- the storage buffer the fragment resolves a shape from.
+
+    Primitive record table sizing, sized by CLAIM like the quad table below, not by cap.
 
     Records are PACKED per window slot, not slabbed: a window's records sit wherever the arena
     placed them (win_geo_slot_t.prim_base), so an upload lands at a moving offset and the flush
