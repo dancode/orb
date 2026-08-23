@@ -77,17 +77,19 @@
 
     BUILD - tess: changed windows become 16-byte quad records (gui_quad_t) in one CPU
     arena, one record per shape, no vertex or index buffer. Unchanged windows keep their
-    existing records untouched, exactly where they were. Each record's clip tag is a permanent
-    address (cache slot x 16 + which clip) into that window's fixed shelf, so cached records
-    stay correct forever.
+    existing records untouched, exactly where they were. Each record's clip tag is a 
+    permanent address (cache slot x 16 + which clip) into that window's fixed shelf, so 
+    cached records stay correct forever.
 
     RENDER - flush (every presented frame): quad records -- the live arena span, copied into
-    this frame's region of the global quad table (2 GPU-rotated regions, so every region needs
-    the full set, changed or not). Clip rects -- almost never; a shelf resends only if its stale
-    flag is set (max 512 B/shelf), so a stable frame ships zero clip bytes. Push constants
-    -- one per surface (matrix, samplers, clock, shelf-table base). Then one bufferless draw
-    call per window, back to front (6*N vertices; the vertex stage expands corners via SV_VertexID,
-    the fragment stage clips by reading the shelf each quad names). Fully idle app: nothing at all.
+    this frame's region of the global quad table (2 GPU-rotated regions, so every region 
+    needs the full set, changed or not). Clip rects -- almost never; a shelf resends only if 
+    its stale flag is set (max 512 B/shelf), so a stable frame ships zero clip bytes. 
+    
+    Push constants -- one per surface (matrix, samplers, clock, shelf-table base). Then one
+    bufferless draw call per window, back to front (6*N vertices; the vertex stage expands 
+    corners via SV_VertexID, the fragment stage clips by reading the shelf each quad names).
+    Fully idle app: nothing at all.
 
 ==============================================================================================*/
 // clang-format off
@@ -116,8 +118,8 @@
     gui_atlas is the primitive: create/upload/destroy of one GPU texture, in either pixel
     format. gui_res_atlas is the policy layer on top of it -- it owns the three atlases
     (R8 coverage, RGBA sprite, SDF) as separate packers, each with its own texture and
-    bindless slot, and assigns every tenant a tex_idx into the atlas it belongs to. Since
-    tex_idx rides the vertex, draws into the same atlas batch together for free.
+    bindless slot, and assigns every tenant a tex_idx into the atlas it belongs to. 
+    Since tex_idx rides the vertex, draws into the same atlas batch together for free.
 ==============================================================================================*/
 
 #include "runtime_service/gui/render/resource/gui_atlas.h"

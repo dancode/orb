@@ -61,45 +61,48 @@ typedef struct
 
 } gui_push_t;           // total 124 bytes / 128 (just within RHI_MAX_PUSH_CONST_SIZE)
 
+/*  Push Constant Notes:
 
-/*  Info Notes:
+    - The block is per-frame state across a viewport render, with partial updates per window.
+    - The mvp is the head, per viewport for screen pixel dimensions to be deduced, set once.
+    - The texture and its sampling model USED to live here, and forced a draw call per texture.
+      They moved onto the STYLE RECORD each quad names, the fragment reads the slot from there.
+    - The record picks between the two SAMPLERS above by the model packed with it.
+    - A glyph quad names no prim record at all, so its atlas comes from tex_cov / tex_sdf above.    
+    - Custom changes are done in the tail (end of push constant)
+    - The block is written ONCE per flush, before the dispatch walk, and re-pushed from the 
+      tail by the consumers that genuinely vary below that granularity: 
 
-    - This block is per-FRAME stateacross a viewport render, partial updates per window slot.
-    - The mvp is per viewport for screen pixel dimensions to be deduced, set once.
-    - The texture and its sampling model USED to live here, forcing a draw call per texture.
-    - They moved onto the STYLE RECORD each quad names, the fragment reads the slot from there.
-    - It picks between the two SAMPLERS above by the model packed with it.  
-    - A glyph quad names no prim record at all, so its atlas comes from tex_cov / tex_sdf above.
+        prim_base and clip_base, which are per WINDOW SLOT because the record arena is 
+        packed rather than slabbed, and the BATCH debug view's tint, which is deliberately
+        different per draw call (see gui_render_flush).          
 
-    - The block is written ONCE per flush, before the dispatch walk, and re-pushed from the tail by
-    the consumers that genuinely vary below that granularity: prim_base and clip_base, which are
-    per WINDOW SLOT because the record arena is packed rather than slabbed, and the BATCH debug
-    view's tint, which is deliberately different per draw call (see gui_render_flush).  All three
-    go through the tail, and all are filtered against the last value pushed, so a normal frame
-    with one window still pushes exactly once.
+    - All three go through the tail, and all are filtered against the last value pushed, 
+      so a normal frame with one window still pushes exactly once.
+    - Vulkan leaves push constants undefined until written, and the head is written after 
+      this flush's cmd_bind_pipeline, so a scene pass that bound its own pipeline earlier
+      in the command buffer cannot leave a stale matrix behind.
+*/
+/*==============================================================================================
+    Push Constant Tail Split -- the part of the push constant that changes per window slot.
 
-    Vulkan leaves push constants undefined until written, and the head is written after this
-    flush's cmd_bind_pipeline, so a scene pass that bound its own pipeline earlier in the command
-    buffer cannot leave a stale matrix behind.
-
-    Derived with offsetof rather than spelled 64/24: the struct is free to be reordered pre-ship
-    (CLAUDE.md), and the assert below is what makes that safe -- the split is only valid while the
-    mvp is first and the tail is everything after it.  */
+==============================================================================================*/
 
 #define GUI_PUSH_TAIL_OFF   ( (u32)offsetof( gui_push_t, samp_point ) )
 #define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, samp_point ) ) )
 
 /*==============================================================================================
-    Frame clip table sizing -- the storage buffer clip_coverage reads (gui_fx.hlsli).
+    Frame Clip Table Sizing -- the storage buffer clip_coverage reads (gui_fx.hlsli).
 
-    An ENTRY is two vec4s: (x0, y0, x1, y1) snapped pixel edges, then (radius, 0, 0, 0).  A
-    REGION is an array of fixed per-window SLABS -- one per stable cache slot, GUI_WIN_CLIP_MAX
-    entries each, at cache_idx * GUI_WIN_CLIP_MAX -- the same base the window's quads bake
-    into the clip band, so uploads land at fixed offsets and can never overflow.  One region per
-    frame-in-flight only, NOT per viewport: a window's cache slot is unique across the whole app
-    (cache_idx comes from the single global RENDER_MAX_WIN table, gui_build_cache.c), so its slab
-    means the same thing to every surface -- unlike the prim table's per-viewport regions and the
-    quad table's per-viewport claims, which carry per-surface geometry.
+    An ENTRY is two vec4s: (x0, y0, x1, y1) snapped pixel edges, then (radius, 0, 0, 0).
+    A REGION is an array of fixed per-window SLABS -- one per stable cache slot, 
+    GUI_WIN_CLIP_MAX entries each, at cache_idx * GUI_WIN_CLIP_MAX -- the same base the 
+    window's quads bake into the clip band, so uploads land at fixed offsets and can never
+    overflow.  One region per frame-in-flight only, NOT per viewport: a window's cache slot
+    is unique across the whole app (cache_idx comes from the single global RENDER_MAX_WIN
+    table, gui_build_cache.c), so its slab means the same thing to every surface -- unlike
+    the prim table's per-viewport regions and the quad table's per-viewport claims, 
+    which carry per-surface geometry.
 ==============================================================================================*/
 
 #define GUI_CLIP_ENTRY_FLOATS  8u

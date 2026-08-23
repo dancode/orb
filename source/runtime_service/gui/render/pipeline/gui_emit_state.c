@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    gui/render/pipeline/gui_emit_state.c -- The draw list state: pools, clip stack, ambient.
+    gui/render/pipeline/gui_emit_state.c -- Draw list state: pools, clip stack, ambient.
 
     EMIT is the pipeline's first phase: widgets push semantic gui_cmd_t records, that BUILD
     later tessellates into quad/primitive arenas.
@@ -46,6 +46,7 @@
     fonts usually moves no texture at all, and even a distance-field font with its own
     atlas rides the VERTEX rather than cutting a draw call.  Each text command carries
     its own font id instead (gui.h).
+
 ==============================================================================================*/
 
 /* Packed to 16 bytes: GUI_MAX_SEGS of these live here, and the command stepper keeps two more
