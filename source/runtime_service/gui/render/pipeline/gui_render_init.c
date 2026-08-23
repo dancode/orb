@@ -17,9 +17,10 @@
         BUILD   gui_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
         RENDER  this file          shared GPU resources (once) -> submits per surface
 
-    The per-surface state -- a surface's own geometry buffers and the flush that uploads
-    and draws them -- lives next door in pipeline/gui_render_submit.c, which reads s_render
-    (this file's static) as a shared constant and never writes it.
+    Surfaces own no geometry buffers of their own; the per-surface flush that uploads a
+    surface's slots into these shared tables' regions and issues its draw calls lives next
+    door in pipeline/gui_render_submit.c, which reads s_render (this file's static) as a
+    shared constant and never writes it.
 
 ==============================================================================================*/
 #include "engine/sys/sys_host.h"  // sys_exe_dir -- locate the cooked .oshd shaders
@@ -65,11 +66,11 @@ typedef struct
     the redundancy filter below pushes it once and then goes quiet.  */
 
 /*  The block is written ONCE per flush, before the dispatch walk, and re-pushed from the tail by
-    the two consumers that genuinely vary below that granularity: prim_base, which is per WINDOW
-    SLOT because the record arena is packed rather than slabbed, and the BATCH debug view's tint,
-    which is deliberately different per draw call (see gui_render_flush).  Both go through the
-    tail, and both are filtered against the last value pushed, so a normal frame with one window
-    still pushes exactly once.
+    the consumers that genuinely vary below that granularity: prim_base and clip_base, which are
+    per WINDOW SLOT because the record arena is packed rather than slabbed, and the BATCH debug
+    view's tint, which is deliberately different per draw call (see gui_render_flush).  All three
+    go through the tail, and all are filtered against the last value pushed, so a normal frame
+    with one window still pushes exactly once.
 
     Vulkan leaves push constants undefined until written, and the head is written after this
     flush's cmd_bind_pipeline, so a scene pass that bound its own pipeline earlier in the command
@@ -837,9 +838,9 @@ render_shutdown( void )
 
     /* Per-draw state cost.
          pushes   -- tail writes: the full block once per flush, plus one tail per dispatched
-                     window slot (prim_base, the only per-slot constant), plus one per draw in the
-                     BATCH debug view.  Quoted against flushes, so a normal run reads roughly
-                     1 + the number of windows on the surface.
+                     window slot (prim_base and clip_base, the per-slot constants), plus one per
+                     draw in the BATCH debug view.  Quoted against flushes, so a normal run reads
+                     roughly 1 + the number of windows on the surface.
          scissors -- exactly one full-surface set per flush now: clipping is per-fragment (the
                      clip band), so scissor state never changes mid-walk. */
     if ( s_render.state_draws )
