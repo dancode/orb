@@ -182,6 +182,7 @@ main( int argc, char** argv )
         goto shutdown;
     }
 
+   
     f32 dt = 0.0f;
     while ( gui()->boot_poll( &dt ) )
     {
@@ -196,7 +197,7 @@ main( int argc, char** argv )
         gui()->boot_present_begin( NULL );
         gui()->boot_present_end();
 
-        gui()->boot_pace( 4, 16 );
+        gui()->boot_pace( 4, 16 ); // 4, 16
     }
 
     ret_code = 0;

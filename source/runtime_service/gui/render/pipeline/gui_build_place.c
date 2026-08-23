@@ -280,6 +280,16 @@ cache_slot_tessellate( win_geo_slot_t* slot, const render_win_hash_t* wh,
     s_tess.prim_dedup_floor = s_tess.prim_count;
     tess_fx_page_reset();
 
+    /* The one-deep answer memo (prim_memo_rec/base/floor, gui_build_tess_state.c) is guarded by
+       comparing base/floor NUMBERS, not by any window identity -- and a relocate-into-hole
+       placement can reclaim the previous slot's tail position, handing this slot the exact same
+       (base, floor) pair the previous window just vacated.  Left valid, the memo then answers
+       this slot's first style request with the previous window's last record without writing
+       anything into this slot's own arena range, and a later append silently overwrites the
+       position a cached quad already baked that answer's index against.  A new slot never
+       legitimately inherits the memo, so it drops here unconditionally. */
+    s_tess.prim_memo_valid = false;
+
     /* Fresh tessellation rebuilds the slot's local clip table from scratch (tess_clip_local).
        cache_idx keys the window's fixed clip slab; a window past the cache cap (~0u, dropped
        from caching anyway) borrows slab 0 rather than indexing out of the region. */

@@ -1,10 +1,10 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/resource/gui_res_atlas.h -- The GUI resource atlases.
+    gui/render/resource/gui_res_atlas.h -- The GUI resource atlases.
 
-    THREE atlases over one packer implementation, split by what a texel MEANS -- which is the only
-    axis that matters, because it is what the fragment shader branches on (gui_tex_mode_t) and what
-    decides the sampler:
+    THREE atlases over one packer implementation, split by what a texel MEANS. The only axis
+    that matters, because it is what the fragment shader branches on (gui_tex_mode_t) and
+    what decides the sampler:
 
         the COVERAGE atlas (res_atlas_*)  -- R8, always resident.  Glyphs, icons, and the
             solid / dash drawing assists.  The texel's R channel is alpha, the vertex colour is
