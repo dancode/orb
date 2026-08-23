@@ -3,8 +3,12 @@
     gui/render/pipeline/gui_render_init.c -- Shared GPU resources
 
     The RENDER phase's one-time setup, shared by every surface for the life of the run: 
-    The compiled pipeline (+ wireframe twin), the two bindless samplers (font/coverage + image),
-    and the push-constant layout they're built against.  
+    The compiled pipeline (+ wireframe twin), the two bindless samplers:
+    
+            1. font/coverage 
+            2. image
+
+    Plus the push-constant layout they're built against.
     
     render_init creates them; render_shutdown tears them down and logs the run's peak pool fills,
     draw-call count and per-draw state cost.
@@ -13,9 +17,9 @@
         BUILD   gui_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
         RENDER  this file          shared GPU resources (once) -> submits per surface
 
-    Per-surface state -- a surface's own geometry buffers and the flush that uploads and draws
-    them -- lives next door in pipeline/gui_render_submit.c, which reads s_render (this file's static)
-    as a shared constant and never writes it.
+    The per-surface state -- a surface's own geometry buffers and the flush that uploads
+    and draws them -- lives next door in pipeline/gui_render_submit.c, which reads s_render
+    (this file's static) as a shared constant and never writes it.
 
 ==============================================================================================*/
 #include "engine/sys/sys_host.h"  // sys_exe_dir -- locate the cooked .oshd shaders

@@ -469,13 +469,24 @@ overlay_perf( int mode )
 #define OVL_MEM_HEAP_COL   GUI_COLOR( 0xC8, 0x8A, 0xE8, 0xFF )   /* purple -- malloc     */
 #define OVL_MEM_TOTAL_COL  GUI_COLOR( 0xF0, 0xF0, 0xF0, 0xFF )   /* white  -- the sum    */
 
+/* Row column layout, named so the row and heading formatters can't drift apart.  Field widths
+   pad past the longest string either column ever holds, so the gap between columns is always a
+   few spaces, never a bare one-character seam.  OVL_MEM_VALUE_COL is the row's indent + both
+   field widths + their gaps -- the character column the size figure always lands on -- and is
+   the second spacer overlay_mem_head pads the section name out to, so a heading's subtotal lines
+   up with the detail rows' sizes above it instead of sitting one field short. */
+#define OVL_MEM_LABEL_W    12
+#define OVL_MEM_DETAIL_W   16
+#define OVL_MEM_VALUE_COL  ( 2 + OVL_MEM_LABEL_W + 2 + OVL_MEM_DETAIL_W + 2 )
+
 /* A section heading: "NAME .......... size" in the section's colour.  The size on the heading is
-   that section's subtotal, so the four headings alone read as the whole breakdown. */
+   that section's subtotal, so the four headings alone read as the whole breakdown.  Padded to
+   OVL_MEM_VALUE_COL so its size lines up with the detail rows' size column below it. */
 static void
 overlay_mem_head( u32 col, const char* name, u32 bytes )
 {
     char line[ 48 ];
-    fmt_snprintf( line, sizeof( line ), "%-11s %s", name, overlay_bytes( bytes ) );
+    fmt_snprintf( line, sizeof( line ), "%-*s%s", OVL_MEM_VALUE_COL, name, overlay_bytes( bytes ) );
     gui_text_colored( col, line );
 }
 
@@ -484,7 +495,8 @@ overlay_mem_head( u32 col, const char* name, u32 bytes )
 static void
 overlay_mem_row( const char* label, const char* detail, u32 bytes )
 {
-    gui_textf( "  %-9s %-12s %s", label, detail, overlay_bytes( bytes ) );
+    gui_textf( "  %-*s  %-*s  %s", OVL_MEM_LABEL_W, label, OVL_MEM_DETAIL_W, detail,
+               overlay_bytes( bytes ) );
 }
 
 static void
@@ -526,18 +538,16 @@ overlay_memory( void )
            regions; the glyph table is ONE shared copy, replaced rather than rewritten, so it
            shows no region multiplier.  gpu_clip_regions doubles as the frame-in-flight count. */
         overlay_mem_head( OVL_MEM_GPU_COL, "GPU", ms.gpu_total );
-        fmt_snprintf( det, sizeof( det ), "%u rec x %u fif", ms.gpu_quad_capacity,
-                      ms.gpu_clip_regions );
-        overlay_mem_row( "quad tbl", det, ms.gpu_quad_bytes );
-        fmt_snprintf( det, sizeof( det ), "%u rec x %u fif", ms.gpu_prim_capacity,
-                      ms.gpu_clip_regions );
-        overlay_mem_row( "prim tbl", det, ms.gpu_prim_bytes );
-        fmt_snprintf( det, sizeof( det ), "%u x %u reg",
+        fmt_snprintf( det, sizeof( det ), "%u x %u", ms.gpu_quad_capacity, ms.gpu_clip_regions );
+        overlay_mem_row( "quad", det, ms.gpu_quad_bytes );
+        fmt_snprintf( det, sizeof( det ), "%u x %u", ms.gpu_prim_capacity, ms.gpu_clip_regions );
+        overlay_mem_row( "prim", det, ms.gpu_prim_bytes );
+        fmt_snprintf( det, sizeof( det ), "%u x %u",
                       (u32)( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX ), ms.gpu_clip_regions );
-        overlay_mem_row( "clip tbl", det, ms.gpu_clip_bytes );
+        overlay_mem_row( "clip", det, ms.gpu_clip_bytes );
         fmt_snprintf( det, sizeof( det ), "%u ids",
                       ms.gpu_glyph_bytes / (u32)sizeof( gui_glyph_uv_t ) );
-        overlay_mem_row( "glyph tbl", det, ms.gpu_glyph_bytes );
+        overlay_mem_row( "glyph", det, ms.gpu_glyph_bytes );
 
         /* Atlas rows carry live dimensions and tenant count -- the atlases GROW under pressure, so
            the size is a measurement, not a constant.  A never-created atlas reports zero dims. */
@@ -572,7 +582,10 @@ overlay_memory( void )
         overlay_mem_row( "draw list",  "", ms.cpu_drawlist_bytes );
         overlay_mem_row( "arenas",     "", ms.cpu_tess_bytes     );
         overlay_mem_row( "cache",      "", ms.cpu_cache_bytes    );
+        overlay_mem_row( "icons",      "", ms.cpu_draw_bytes     );
+        overlay_mem_row( "atlas rec",  "", ms.cpu_res_bytes      );
         overlay_mem_row( "render",     "", ms.cpu_render_bytes   );
+        overlay_mem_row( "select",     "", ms.cpu_select_bytes   );
         overlay_mem_row( "frontend",   "", ms.cpu_frontend_bytes );
         if ( ms.cpu_debug_bytes )
             overlay_mem_row( "debug", "", ms.cpu_debug_bytes );
@@ -585,6 +598,13 @@ overlay_memory( void )
         gui_separator();
 
         overlay_mem_head( OVL_MEM_TOTAL_COL, "TOTAL", ms.total_bytes );
+
+        /* Debug tooling (gpu_debug_bytes + cpu_debug_bytes) compiles out entirely in Release --
+           it is not merely zero there, the buckets don't exist. Subtracting it here answers "what
+           would Release measure" without leaving this HUD to go build one to find out. */
+        u32 dbg_bytes = ms.gpu_debug_bytes + ms.cpu_debug_bytes;
+        if ( dbg_bytes )
+            overlay_mem_row( "no debug", "", ms.total_bytes - dbg_bytes );
 
         gui_scale_pop();
     }
@@ -845,13 +865,26 @@ static bool s_dbg_mem_open;      /* memory overlay, selector menu checkbox toggl
 static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */
 static bool s_dbg_step_open;     /* command stepper window, F8 opens (X button hides)       */
 static bool s_idle_skip;         /* boot_pace: block on OS input when idle, selector menu toggles */
-static bool s_dbg_hotkeys_armed; /* master arm: every hotkey below is inert until NP_DOT arms it */
+
+/* Master arm state: off -> on -> minimized -> off, cycled by NP_DOT / '.'.  Hotkeys (NP1-7, F9,
+   F10, NP+/-) are live in BOTH on and minimized -- minimized only shrinks the selector menu down
+   to its hint row, so the viewport gets its room back while staying visibly armed. */
+typedef enum
+{
+    GUI_DBG_ARM_OFF = 0,
+    GUI_DBG_ARM_ON,
+    GUI_DBG_ARM_MIN,
+    GUI_DBG_ARM_COUNT
+
+} gui_dbg_arm_t;
+
+static gui_dbg_arm_t s_dbg_arm_state;
 
 /* For hosts that own a debug lever themselves (e.g. sb_gui_editor's set_force_redraw write for
-   its scene pass): while armed, the selector menu's checkboxes are the sole owner of force
-   redraw / retained skip / idle skip. A host's own per-frame write should stand down and let the
-   menu's value stick, rather than fighting it every frame. */
-bool gui_debug_hotkeys_armed( void ) { return s_dbg_hotkeys_armed; }
+   its scene pass): while armed (on or minimized), the selector menu's checkboxes are the sole
+   owner of force redraw / retained skip / idle skip. A host's own per-frame write should stand
+   down and let the menu's value stick, rather than fighting it every frame. */
+bool gui_debug_hotkeys_armed( void ) { return s_dbg_arm_state != GUI_DBG_ARM_OFF; }
 
 /* Remembered selector-menu lever values.
    - debug_reset() snapshots these when the arm goes off, so disarming can still force the live
@@ -978,14 +1011,17 @@ static void
 debug_hotkeys( void )
 {
     /* Master arm: numpad '.' is the one always-live debug key. It gates every other hotkey below,
-       so function keys stay inert during normal use until this explicit opt-in. Disarming resets
-       every debug mode to normal (debug_reset), returning the view to a clean state in one press.
+       so function keys stay inert during normal use until this explicit opt-in. It cycles three
+       states -- off -> on -> minimized -> off -- rather than a plain toggle: ON is the full
+       selector menu, MINIMIZED keeps every hotkey live (NP1-7, F9, F10, NP+/-) but shrinks the
+       selector menu down to its hint row, and only the OFF wrap resets every debug mode to normal
+       (debug_reset), returning the view to a clean state in one more press.
        Fenced by want_capture_keyboard, like the letter keys (numpad '.' is text input with Num
        Lock on) -- never fires while a text field is focused. Chosen because it's rarely bound
        elsewhere.
 
        Main-row '.' arms too (laptop keyboards have no numpad), except during a stepper freeze,
-       where '.' is the scrub-forward key below and owns the row -- NP_DOT still disarms then. */
+       where '.' is the scrub-forward key below and owns the row -- NP_DOT still cycles then. */
 
     bool arm_toggle = gui_is_key_pressed( APP_KEY_NP_DOT );
 #ifdef GUI_CMD_STEPPER
@@ -994,15 +1030,19 @@ debug_hotkeys( void )
         arm_toggle = arm_toggle || gui_is_key_pressed( APP_KEY_PERIOD );
     if ( !gui_want_capture_keyboard() && arm_toggle )
     {
-        s_dbg_hotkeys_armed = !s_dbg_hotkeys_armed;
-        gui_log( GUI_LOG_INFO, "debug hotkeys: %s", s_dbg_hotkeys_armed ? "ARMED" : "off" );
-        if ( s_dbg_hotkeys_armed )
-            debug_restore();
-        else
-            debug_reset();
+        gui_dbg_arm_t prev = s_dbg_arm_state;
+        s_dbg_arm_state    = (gui_dbg_arm_t)( ( prev + 1 ) % GUI_DBG_ARM_COUNT );
+
+        static const char* const k_arm_name[] = { "off", "ARMED", "ARMED (minimized)" };
+        gui_log( GUI_LOG_INFO, "debug hotkeys: %s", k_arm_name[ s_dbg_arm_state ] );
+
+        if ( prev == GUI_DBG_ARM_OFF )
+            debug_restore();                        /* off -> on: reapply saved levers    */
+        else if ( s_dbg_arm_state == GUI_DBG_ARM_OFF )
+            debug_reset();                           /* minimized -> off: back to normal   */
         redraw_request();
     }
-    if ( !s_dbg_hotkeys_armed )
+    if ( s_dbg_arm_state == GUI_DBG_ARM_OFF )
         return;
 
     /* Function keys are never text input -- no keyboard fence needed. */
@@ -1128,8 +1168,9 @@ debug_hotkeys( void )
     Whole panel at GUI_SCALE_DENSE (HUD row pitch, like the two overlays), so the legend costs
     less height than the old five rows did.
 
-    Shown exactly while the master arm is on (NP_DOT) -- press it again and debug_reset() clears
-    the levers back to default the same frame this panel disappears.
+    Shown while the master arm is on or minimized (NP_DOT); pressing '.' again cycles on ->
+    minimized (shrinks to just the hint row, hotkeys stay live) -> off, where debug_reset() clears
+    the levers back to default the same frame the panel disappears.
 
     GUI_WIN_DEBUG_BAND, not GUI_WIN_NO_INPUT (unlike the read-only overlays above): this panel
     must be clickable, but its own geometry still has to stay out of the stats/counts it's used
@@ -1139,7 +1180,7 @@ debug_hotkeys( void )
    A measure of text the panel doesn't actually print is how a "fits" panel quietly stops
    fitting. */
 
-#define SEL_HINT    "debug -- '.' to close"
+#define SEL_HINT    "debug -- '.' cycles on/min/off"
 #define SEL_FORCE   "Force redraw"
 #define SEL_TESS    "Tess cache"
 #define SEL_IDLE    "Idle skip"
@@ -1270,8 +1311,15 @@ debug_selector_menu( void )
         if ( lw > label_w ) label_w = lw;
     }
     label_w += WIDGET_PAD;
-    f32 w       = selector_content_w( label_w ) + 2.0f * WIDGET_PAD;
-    f32 x       = (f32)s_io.display_w - w - 8.0f;
+
+    /* Minimized (NP_DOT cycled past ON): just the hint row's own width, so shrinking the panel
+       actually gives the viewport back the room the full lever list took, rather than the
+       full-content width with everything below simply hidden. */
+    bool minimized  = ( s_dbg_arm_state == GUI_DBG_ARM_MIN );
+    f32  hint_row_w = font_text_w( SEL_HINT );
+    f32  w          = ( minimized ? hint_row_w : selector_content_w( label_w ) )
+                     + 2.0f * WIDGET_PAD;
+    f32  x          = (f32)s_io.display_w - w - 8.0f;
 
     gui_region_begin( "debug_selector", x, top_y, w, 0.0f, GUI_REGION_FG, GUI_VP_MAIN,
                       GUI_WIN_NOSCROLL | GUI_WIN_DEBUG_BAND );
@@ -1286,6 +1334,16 @@ debug_selector_menu( void )
         gui_field_set( NULL );                  /* default: box on the left, label trailing */
 
         gui_text_colored( COL_TEXT_SECONDARY_IDLE, SEL_HINT );
+
+        /* Minimized: the hint row is the whole panel -- it names the key and confirms the arm is
+           live, then stops. Hotkeys keep working; only the levers/legend below are skipped. */
+        if ( minimized )
+        {
+            gui_field_set( &saved_field );
+            gui_region_end();
+            gui_scale_pop();
+            return;
+        }
 
         bool force = gui_force_redraw();
         if ( gui_checkbox( SEL_FORCE, &force ) )
@@ -1378,19 +1436,21 @@ debug_selector_menu( void )
 static void
 debug_overlays_emit( void )
 {
+    bool armed = ( s_dbg_arm_state != GUI_DBG_ARM_OFF );
+
     dash_window( &s_dbg_dash_open );
     step_window( &s_dbg_step_open );
-    if ( s_dbg_hotkeys_armed )
+    if ( armed )
         debug_selector_menu();
 
     /* Tier state is no longer zeroed on disarm (debug_reset) so the selector menu can remember
        it -- gate visibility on the arm here instead, the same net effect (hidden while off). */
 
-    overlay_perf  ( s_dbg_hotkeys_armed ? s_dbg_perf_mode  : 0 );
-    overlay_state ( s_dbg_hotkeys_armed ? s_dbg_state_mode : 0 );
-    if ( s_dbg_hotkeys_armed && s_dbg_mem_open )
+    overlay_perf  ( armed ? s_dbg_perf_mode  : 0 );
+    overlay_state ( armed ? s_dbg_state_mode : 0 );
+    if ( armed && s_dbg_mem_open )
         overlay_memory();
-    if ( s_dbg_hotkeys_armed && s_dbg_font_open )
+    if ( armed && s_dbg_font_open )
         overlay_fonts();
 }
 
