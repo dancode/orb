@@ -465,6 +465,22 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
         allow_reuse = false;
     }
 
+    /* A landed DPI/scale change moves every layout metric at once -- em, widget sizing, the grid
+       quantum -- so a window whose content hash happens to still match is not actually unchanged,
+       it is stale at the new scale.  Rather than rely on every metric folding into the hash (and
+       every volatile row's footprint/patch machinery reconciling old- and new-scale geometry
+       mid-pipeline), force the same full re-place an epoch gets: reuse off, geometry generation
+       bumped, so the whole frame tessellates clean at the new scale.  Scale changes are
+       interactive-rate (a drag, a monitor move), never sustained, so this trades the retained-cache
+       win for exactly one frame -- worth it for not having to prove the incremental path safe
+       across a boundary this disruptive. */
+
+    if ( gui_dpi_frame_changed() )
+    {
+        ++s_geo_gen;
+        allow_reuse = false;
+    }
+
     s_tess_stats.band0_quad_end = 0;   /* re-derived below as main-band slots place; 0 when none exist */
 
     /* Re-derived the same way: summed over the slots this pass places, so the repack retry (which
@@ -584,6 +600,21 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
         }
 
         s_dispatch[ s_dispatch_count++ ] = slot;
+    }
+
+    /* A full re-place (repack retry, or reuse forced off by pal_epoch / gui_dpi_frame_changed
+       above) settles s_slots at a layout that has nothing to do with what s_slots_prev describes --
+       a compacted arena is typically smaller, an epoch dropped the table everything was keyed
+       against.  cache_slots_extent's "on idle frames both tables are last frame's" guarantee
+       (gui_build_cache.c) depends on prev tracking whatever s_slots last settled at; left stale, an
+       idle frame right after this one takes its live-geometry bound from a layout that no longer
+       exists and can be LARGER than the live tail, which trips the volatile-patch assert on
+       geometry that is actually clean.  Resync here, once, for every reason allow_reuse can end up
+       false, rather than at each call site that might force it. */
+    if ( !allow_reuse )
+    {
+        memcpy( s_slots_prev, s_slots, s_slot_count * sizeof( win_geo_slot_t ) );
+        s_slot_prev_count = s_slot_count;
     }
 }
 

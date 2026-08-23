@@ -57,6 +57,9 @@ static struct
 
 } s_dpi = { .mode = GUI_DPI_AUTO, .manual = 1.0f };
 
+/* Latched by gui_dpi_poll, consumed once by cache_place_slots -- see gui_dpi_frame_changed. */
+static bool s_dpi_changed_frame;
+
 /*==============================================================================================
 
     Scale a landed size represents: its px over the init() base size.  1.0 while unmanaged.
@@ -287,7 +290,18 @@ gui_dpi_poll( void )
         }
         changed = true;
     }
+    s_dpi_changed_frame = changed;
     return changed;
+}
+
+/* See gui.h.  Read once by cache_place_slots, which forces a full re-place (reuse off, geometry
+   generation bumped) exactly the way a palette epoch does -- a scale change is rare enough that
+   trading the retained-cache win for a guaranteed-clean rebuild is free, and correctness across a
+   move that touches every layout metric at once matters far more than one saved tessellation. */
+bool
+gui_dpi_frame_changed( void )
+{
+    return s_dpi_changed_frame;
 }
 
 // clang-format on

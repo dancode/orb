@@ -628,7 +628,9 @@ cache_build_frame( void )
         ++s_geo_gen;
         t_tess = zone_begin();
         cache_place_slots( false, &ps );
-        zone_end( &s_stats.accum.tess_ms, t_tess );   /* the retry is real cost this frame paid */
+        zone_end( &s_stats.accum.tess_ms, t_tess );   /* the retry is real cost this frame paid --
+           cache_place_slots itself resyncs s_slots_prev to the repacked layout (allow_reuse false
+           on this call), see the comment at its own tail */
     }
 
     /* Deferred volatile patches for reused windows: every slot is now placed and s_tess.quad_count

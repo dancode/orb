@@ -1045,6 +1045,16 @@ void         gui_style_apply( void );
 
 void         gui_dpi_land( i32 viewport );
 
+/* gui_dpi_frame_changed() -- true when this frame's gui_dpi_poll (frame/gui_frame_dpi.c) landed
+   a scale change on any viewport.  Latched at frame-begin, read once by cache_place_slots
+   (render/pipeline/gui_build_place.c) to force a full re-place: a scale change moves every
+   layout metric at once, so patching/reusing geometry across it would have to reconcile
+   old-scale and new-scale content mid-pipeline for no real benefit -- DPI/scale changes are
+   interactive-rate, not sustained, so trading the retained-cache win for one guaranteed-clean
+   frame is the trivial cost. */
+
+bool         gui_dpi_frame_changed( void );
+
 /* The TYPE RAMP roles -- the official size variations UI is authored against, the type
    analogue of the scale ramp's density steps.  Each role's size is authored in the style
    (GUI_VAR_TYPE_SMALL / _LARGE, absolute px at em=12) and is its OWN opt-in: 0 leaves that
