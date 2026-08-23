@@ -31,23 +31,24 @@
 
 typedef struct
 {
-    f32 mvp[ 16 ];      // column-major ortho matrix       64 bytes
-    u32 samp_point;     // bindless sampler: NEAREST        4 bytes
-    u32 samp_image;     // bindless sampler: LINEAR         4 bytes
-    u32 dbg_flat;       // debug: 1 = flat color (no atlas) 4 bytes
-    u32 dbg_tint;       // debug: packed RGBA8 batch tint   4 bytes
-    f32 time;           // frame clock, wrapped seconds     4 bytes
-    u32 clip_buf;       // bindless slot: frame clip table  4 bytes (0 = no table, no clipping)
-    u32 clip_base;      // draw's first clip-table entry    4 bytes
-    u32 prim_buf;       // bindless slot: prim records     4 bytes (0 = no records bound)
-    u32 prim_base;      // the SLOT's first record          4 bytes
-    u32 pal_base;       // this frame's palette block       4 bytes
-    u32 quad_buf;       // bindless slot: quad-record table 4 bytes
-    u32 quad_base;      // flush's region origin            4 bytes (quads, not float4s)
-    u32 glyph_buf;      // bindless slot: glyph UV table    4 bytes (0 = no table bound)
-                        //   no base: the table is not regioned, so an ID indexes it directly
-    u32 tex_cov;        // bindless slot: coverage atlas    4 bytes
-    u32 tex_sdf;        // bindless slot: SDF atlas         4 bytes
+    f32 mvp[ 16 ];      // column-major ortho matrix          64 bytes
+    u32 samp_point;     // bindless sampler: NEAREST            4 bytes
+    u32 samp_image;     // bindless sampler: LINEAR             4 bytes
+    u32 dbg_flat;       // debug: 1 = flat color (no atlas)     4 bytes
+    u32 dbg_tint;       // debug: packed RGBA8 batch tint       4 bytes
+    f32 time;           // frame clock, wrapped seconds         4 bytes
+    u32 clip_buf;       // bindless slot: frame clip table      4 bytes (0 = no table, no clipping)
+    u32 clip_base;      // draw's first clip-table entry        4 bytes
+    u32 prim_buf;       // bindless slot: prim records          4 bytes (0 = no records bound)
+    u32 prim_base;      // the SLOT's first record              4 bytes
+    u32 pal_base;       // this frame's palette block           4 bytes
+    u32 quad_buf;       // bindless slot: quad-record table     4 bytes
+    u32 quad_base;      // flush's region origin                4 bytes (quads, not float4s)
+    u32 glyph_buf;      // bindless slot: glyph UV table        4 bytes (0 = no table bound)
+                        // no base: the table is not regioned, 
+                        // so an ID indexes it directly
+    u32 tex_cov;        // bindless slot: coverage atlas        4 bytes
+    u32 tex_sdf;        // bindless slot: SDF atlas             4 bytes
 
 } gui_push_t;           // total 124 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
 
@@ -126,10 +127,10 @@ typedef struct
     All bases index in RECORDS, not float4s.
 ==============================================================================================*/
 
-#define GUI_PAL_REGION_COUNT   RHI_MAX_FRAMES_IN_FLIGHT
-#define GUI_PAL_REGION_BYTES   ( GUI_PAL_MAX * GUI_PRIM_BYTES )
+#define GUI_PAL_REGION_COUNT       RHI_MAX_FRAMES_IN_FLIGHT
+#define GUI_PAL_REGION_BYTES     ( GUI_PAL_MAX * GUI_PRIM_BYTES )
 
-#define GUI_PRIM_OVERLAY_ORIGIN  ( GUI_PAL_REGION_COUNT * GUI_PAL_MAX )        /* in records */
+#define GUI_PRIM_OVERLAY_ORIGIN  ( GUI_PAL_REGION_COUNT * GUI_PAL_MAX )     /* in records */
 #define GUI_PRIM_HDR_RECORDS     ( GUI_PRIM_OVERLAY_ORIGIN \
                                  + RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
 
@@ -140,6 +141,7 @@ typedef struct
 {
     u32 base;   // claim start within one frame-in-flight copy, in records (bucket-aligned)
     u32 alloc;  // claim size in records (bucket multiple); 0 = viewport holds no claim
+
 } gui_prim_claim_t;
 
 /* What one (frame-in-flight, viewport) slice of the claim space last uploaded, checked at
@@ -151,6 +153,7 @@ typedef struct
     u32 anchor;   // arena record index mapped to the claim's first record
     u32 base;     // claim base the uploads targeted
     u32 buf_gen;  // buffer generation the uploads landed in
+
 } gui_prim_region_t;
 
 static struct
@@ -158,6 +161,7 @@ static struct
     u32               capacity;  // records per frame-in-flight copy (header excluded)
     u32               tail;      // first free record past every claim (bump; compacts on swap)
     u32               buf_gen;   // bumped per buffer swap; stale regions re-upload on next flush
+
     gui_prim_claim_t  claim [ GUI_MAX_VIEWPORTS ];
     gui_prim_region_t region[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
 } s_prim_gpu;
