@@ -50,13 +50,13 @@ backend_memory( u32 live_viewports )
     if ( rhi_handle_valid( s_render.clip_buf ) )
         s.gpu_clip_bytes  = (u32)( GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES );
     if ( rhi_handle_valid( s_render.prim_buf ) )
-        s.gpu_style_bytes = (u32)GUI_PRIM_BUF_BYTES;   /* arena regions + the palette blocks */
+        s.gpu_prim_bytes = (u32)GUI_PRIM_BUF_BYTES;   /* arena regions + the palette blocks */
     if ( rhi_handle_valid( s_render.quad_buf ) )
         s.gpu_quad_bytes  = (u32)( GUI_QUAD_REGION_COUNT * GUI_QUAD_REGION_BYTES );
     if ( rhi_handle_valid( s_render.glyph_buf ) )
         s.gpu_glyph_bytes = (u32)GUI_GLYPH_TABLE_BYTES;
 
-    s.gpu_table_bytes = s.gpu_clip_bytes + s.gpu_style_bytes + s.gpu_quad_bytes
+    s.gpu_table_bytes = s.gpu_clip_bytes + s.gpu_prim_bytes + s.gpu_quad_bytes
                       + s.gpu_glyph_bytes;
 
 #ifdef GUI_DEBUG_OVERLAY
@@ -105,7 +105,7 @@ backend_memory( u32 live_viewports )
        A dynamic bucket -- it exists only once an atlas / tenant does. */
     s.cpu_atlas_bytes = res_atlas_cpu_bytes();
 
-    /* RENDER: pipeline / sampler / push state, the published style palette the flush uploads from,
+    /* RENDER: pipeline / sampler / push state, the published prim palette the flush uploads from,
        and the palette's own working set -- the live table, its content-hash lookup, the candidate
        hashes waiting on a second sighting, and the per-command parked answers.  The shaders are
        loaded from bin/shaders and never sit in the exe's .rdata. */
@@ -161,7 +161,7 @@ backend_pool_report( void )
 
     gui_log( GUI_LOG_INFO, "  -- pool peaks (lifetime high-water) --------------------" );
     GUI_POOL_ROW( "quad records",   s_tess_stats.quad_hwm,  GUI_MAX_QUADS );
-    GUI_POOL_ROW( "style records",  s_tess_stats.prim_hwm,  GUI_MAX_PRIMS );
+    GUI_POOL_ROW( "prim records",   s_tess_stats.prim_hwm,  GUI_MAX_PRIMS );
     GUI_POOL_ROW( "gpu draw cmds",  s_tess_stats.cmd_hwm,   GUI_MAX_CMDS );
     GUI_POOL_ROW( "semantic cmds",  s_draw.cmd_hwm,         GUI_MAX_CMDS );
 

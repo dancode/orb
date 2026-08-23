@@ -121,7 +121,7 @@ main( int argc, char** argv )
 
     if ( nopal )
     {
-        gui()->debug_set_style_palette( GUI_PALETTE_OFF );
+        gui()->debug_set_prim_palette( GUI_PALETTE_OFF );
         printf( "[sb_gui_example] style palette OFF -- every window mints its own style records\n" );
     }
 

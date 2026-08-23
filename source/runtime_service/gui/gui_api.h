@@ -1035,7 +1035,7 @@ typedef struct gui_api_s
     /*=================================  sets + meters -- one quad, many copies  =================================*/
 
     /* Repeated copies of one cell, folded in the FRAGMENT: however many copies, each set is ONE
-       quad and ONE style record, so a 3x3 dot field and a 40-tick ruler cost the same.  Cells
+       quad and ONE prim record, so a 3x3 dot field and a 40-tick ruler cost the same.  Cells
        honor the ambient rounding (dots, squares or pills). */
 
     /* nx by ny copies `pitch` apart centre-to-centre, centred in `at`; `size` is the cell's
@@ -3153,9 +3153,9 @@ typedef struct gui_api_s
        Debug builds only (GUI_PRIM_CENSUS).  The slot exists in every build; Release warns once
        and does nothing. */
 
-    void                ( *debug_style_census )( const char* tag, bool clear );
+    void                ( *debug_prim_census )( const char* tag, bool clear );
 
-    /* Style palette mode -- the A/B lever behind the debug selector menu's "style pal" slider,
+    /* Prim palette mode -- the A/B lever behind the debug selector menu's "style pal" slider,
        one axis of three (gui_palette_mode_t, gui.h):
 
          GUI_PALETTE_LEARNING  (default) a style the frame-global palette holds costs the emitting
@@ -3167,7 +3167,7 @@ typedef struct gui_api_s
                                a per-slot record.  Measures the learned set's coverage -- and only
                                says anything once a session HAS learned something.
          GUI_PALETTE_OFF       every window mints its own copy exactly as it did before the palette
-                               existed: more style records, the same pixels.
+                               existed: more prim records, the same pixels.
 
        ANY visible difference between the modes is a palette bug, which is what the lever is for.
 
@@ -3175,8 +3175,8 @@ typedef struct gui_api_s
        but LEARNING -> FROZEN re-places every window's geometry.  A debug lever, not a per-frame
        one.  Scripted so a driver can census the same workload each way and diff the dumps. */
 
-    void                ( *debug_set_style_palette )( gui_palette_mode_t mode );
-    gui_palette_mode_t  ( *debug_style_palette     )( void );
+    void                ( *debug_set_prim_palette )( gui_palette_mode_t mode );
+    gui_palette_mode_t  ( *debug_prim_palette     )( void );
 
     /* Retained-skip: when on (default), an unchanged frame skips tessellation.  Toggle to benchmark
        or confirm that the hash-upfront path produces identical output to the reference. */

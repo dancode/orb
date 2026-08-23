@@ -1686,7 +1686,7 @@ typedef enum
     GUI_DRAW -- the record layer (gui_prim.h)
 
     The types the renderer moves across the CPU/GPU boundary -- the effect-band field enum
-    (gui_fx_mode_t), the GUI_OP_* modifier bits, the style record (gui_prim_t), the quad and
+    (gui_fx_mode_t), the GUI_OP_* modifier bits, the prim record (gui_prim_t), the quad and
     instance records (gui_quad_t, gui_fx_t) and their packing helpers -- live in gui_prim.h.
     They are the contract between the tessellator and the shaders, not drawing API: callers
     draw through gui_api.h's draw_* verbs and never build a record.
@@ -2066,7 +2066,7 @@ typedef union
        atlas dash row tiles along the line; duty (on-fraction) picks the nearest baked row. */
     struct { f32 x0, y0, x1, y1, thickness, period, duty;     u32 abgr; } dash;
 
-    /* Gradient rect: one quad, col_a -> col_b ramped in the fragment off the style record
+    /* Gradient rect: one quad, col_a -> col_b ramped in the fragment off the prim record
        (GUI_OP_GRAD).  horizontal != 0 = left->right, else top->bottom.  Always
        square.  u32, not bool, for the same no-tail-padding rule as sprite below -- the
        retained-cache hash folds these bytes raw. */
@@ -2886,7 +2886,7 @@ typedef struct
    which of these it was. */
 
 #define GUI_MAX_QUADS           ( 8192 * 2 )   // per-frame quad records (gui_quad_t)
-#define GUI_MAX_PRIMS           ( 512 * 2 )    // per-frame style records (gui_prim_t)
+#define GUI_MAX_PRIMS           ( 512 * 2 )    // per-frame prim records (gui_prim_t)
 #define GUI_MAX_CMDS            ( 1024 * 2 )   // per-frame semantic draw commands
 
 /* Payload byte budget for s_draw.cmd_pool, the single forward bump arena every command's
@@ -2905,7 +2905,7 @@ typedef struct
 #define GUI_MAX_CLIP_RECTS      ( 64 )         // per-frame clip table entries; u8 index caps at 256
 #define GUI_CLIP_DEPTH          ( 32 )         // push_clip / pop_clip nesting depth
 
-/* Style records are counted per STATE CHANGE, not per quad -- a glyph run is one, a run of flat
+/* Prim records are counted per STATE CHANGE, not per quad -- a glyph run is one, a run of flat
    fills sharing a texture and a clip is one, and identically-styled shapes dedup across
    placements -- so the cap sits far below the quad cap.  Measured UIs land in the dozens; 512 is
    the next power of two above anything sb_gui's full demo set reaches with the dashboard open.
@@ -2919,7 +2919,7 @@ typedef struct
    index outgrows the field first (the GLYPH layout at 512, the SHAPED one at 1024), and a spill
    there is a wall no amount of arena is a fix for.  Going back up is a step at a time: 1024 costs
    the glyph tag its guarantee (a rotated character in a record-heavy window falls back to the
-   SHAPED path, which is correct but spends a style record), and 2048 needs the union re-planned. */
+   SHAPED path, which is correct but spends a prim record), and 2048 needs the union re-planned. */
 
 /* The arena's LAST addressable fx row -- the final row of a page opened at the last record a slot
    could reach -- against the two quad layouts that carry one (gui_quad_t).  Trips at compile time
@@ -2930,23 +2930,23 @@ typedef struct
 
 ORB_STATIC_ASSERT( GUI_PRIM_FX_ROW_MAX <= GUI_QUAD_FX_MASK,
                    "GUI_MAX_PRIMS outgrew the quad's fx field -- re-plan the idx union (gui_quad_t)" );
-ORB_STATIC_ASSERT( GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK,
-                   "GUI_MAX_PRIMS outgrew the quad's style field -- re-plan the idx union" );
+ORB_STATIC_ASSERT( GUI_MAX_PRIMS - 1u <= GUI_QUAD_PRIM_MASK,
+                   "GUI_MAX_PRIMS outgrew the quad's prim field -- re-plan the idx union" );
 
 /*==============================================================================================
 
-    THE STYLE PALETTE -- shared records the whole frame addresses, in the style field's dead half.
+    THE PRIM PALETTE -- shared records the whole frame addresses, in the prim field's dead half.
 
     A slot-local style index names a record inside the emitting window's own arena run, so two
     windows drawing the same button hold two copies of one record and no dedup walk can reach
     across the boundary between them.  A PALETTE entry is that record placed once, outside every
-    region, named by an index the arena can never produce: the style field is 11 bits and the arena
+    region, named by an index the arena can never produce: the prim field is 11 bits and the arena
     caps at GUI_MAX_PRIMS, so GUI_PAL_FIRST .. GUI_PAL_FIRST + GUI_PAL_MAX - 1 is index space
     nothing else can occupy.
 
     Which base an index resolves against is therefore the index itself -- at or above GUI_PAL_FIRST
     it resolves absolutely against pc.pal_base, below it slot-locally against pc.prim_base exactly
-    as before (shaders: style_row, gui_common.hlsli).  Reserving LOW indices instead would have
+    as before (shaders: prim_row, gui_common.hlsli).  Reserving LOW indices instead would have
     rebased every slot-local index, every win_geo_slot_t.prim_base and the asserts above.
 
     fx rows are NOT palettized: they stay slot-local against prim_base, so a palette style still
@@ -2974,12 +2974,12 @@ ORB_STATIC_ASSERT( GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK,
 #define GUI_PAL_MAX     256u   /* palette entries, ACROSS every live style scale       */
 
 ORB_STATIC_ASSERT( GUI_MAX_PRIMS <= GUI_PAL_FIRST,
-                   "the style arena grew into the palette's index range -- raise GUI_PAL_FIRST" );
-ORB_STATIC_ASSERT( GUI_PAL_FIRST + GUI_PAL_MAX - 1u <= GUI_QUAD_STYLE_MASK,
-                   "the palette outgrew the quad's style field -- re-plan the idx union" );
+                   "the prim arena grew into the palette's index range -- raise GUI_PAL_FIRST" );
+ORB_STATIC_ASSERT( GUI_PAL_FIRST + GUI_PAL_MAX - 1u <= GUI_QUAD_PRIM_MASK,
+                   "the palette outgrew the quad's prim field -- re-plan the idx union" );
 
-static inline bool gui_style_is_pal( u32 style ) { return style >= GUI_PAL_FIRST; }
-static inline u32  gui_style_pal   ( u32 entry ) { return GUI_PAL_FIRST + entry;  }
+static inline bool gui_prim_is_pal( u32 style ) { return style >= GUI_PAL_FIRST; }
+static inline u32  gui_prim_pal   ( u32 entry ) { return GUI_PAL_FIRST + entry;  }
 
 /* "No entry" from a palette lookup.  Past GUI_PAL_MAX rather than a signed -1, so the one test a
    caller writes is `< GUI_PAL_MAX` and a miss can never index the table. */
@@ -3052,7 +3052,7 @@ typedef struct
        The glyph table is one shared copy, replaced rather than rewritten, so it pays no multiplier. */
 
     u32 gpu_quad_bytes;         // quad records   -- GUI_MAX_QUADS x 16 B x gpu_regions
-    u32 gpu_style_bytes;        // style records  -- (GUI_MAX_PRIMS + 1) x 128 B x gpu_regions,
+    u32 gpu_prim_bytes;        // prim records  -- (GUI_MAX_PRIMS + 1) x 128 B x gpu_regions,
                                 //   plus GUI_PAL_MAX x 128 B per frame-in-flight (the palette)
     u32 gpu_clip_bytes;         // clip entries   -- window slabs x 32 B x gpu_clip_regions
     u32 gpu_glyph_bytes;        // glyph UV table -- GUI_GLYPH_TABLE_MAX x 8 B, ONE copy
@@ -3126,11 +3126,11 @@ typedef struct
     u32 quad_count;         // quad records that DRAW -- one record IS one whole shape 
                             //   (a fill, a glyph, a capsule segment); debug band excluded
     /* THE STYLE ACCOUNTING -- three numbers over one population, so they reconcile.
-       A style record (gui_prim_t) lives in one of two pools, told apart by the range of the index
+       A prim record (gui_prim_t) lives in one of two pools, told apart by the range of the index
        a quad names (gui.h, GUI_PAL_FIRST): the STORED pool, one frame-global table shared by every
        window, and the UNIQUE pool, the per-window-slot arena rebuilt each frame.
 
-         prim_total   every shape that wanted a style record -- one per SHAPE, not per quad (a BAND
+         prim_total   every shape that wanted a prim record -- one per SHAPE, not per quad (a BAND
                       covering resolves one style and emits four; a plain glyph resolves none, so
                       this sits well below quad_count).  The denominator.
          prim_stored  how many stored entries those shapes named -- a UNION across windows, since
@@ -3151,7 +3151,7 @@ typedef struct
                             //   vocabulary the current frame does not draw
 
     u32 quad_count_all;     // physical quad arena fill, both bands, slot padding included (cap: GUI_MAX_QUADS)
-    u32 prim_count_all;     // physical style arena (unique pool) fill, both bands (cap: GUI_MAX_PRIMS)
+    u32 prim_count_all;     // physical prim arena (unique pool) fill, both bands (cap: GUI_MAX_PRIMS)
 
     u32 win_total;          // windows tracked this frame
     u32 win_retained;       // windows whose geometry was reused (no re-tessellation)

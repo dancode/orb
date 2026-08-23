@@ -146,7 +146,7 @@ ex_census_begin( void )
 static void
 ex_census_finish_run( void )
 {
-    gui()->debug_style_census( s_census_run.tag, true );
+    gui()->debug_prim_census( s_census_run.tag, true );
 
     if ( ++s_census_run.theme >= s_census_run.theme_count )
     {
@@ -200,7 +200,7 @@ ex_census_step( void )
 
         /* Discard everything the transition emitted -- the old scale's chrome, the font re-bake,
            the closing windows -- so the run counts only what it opened itself. */
-        gui()->debug_style_census( NULL, true );
+        gui()->debug_prim_census( NULL, true );
         ex_set_open( &s_demos[ 0 ], true );
         s_census_run.phase  = EX_CENSUS_HOLD;
         s_census_run.frames = 0;

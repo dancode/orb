@@ -251,14 +251,14 @@ typedef struct
     gui_id_t win;
     u32      z;
     u32      quad_base, quad_count, quad_alloc;  // quads: absolute position, actual count, padded reservation
-    u32      prim_base, prim_count, prim_alloc;  // style records: same three, in their own arena
+    u32      prim_base, prim_count, prim_alloc;  // prim records: same three, in their own arena
     u32      cmd_base,  cmd_count;               // range into s_tess.gpu_cmds[] for this window
     u32      tess_gen;                           // generation of the tess pass that produced the geometry
     u32      text_quads, text_runs;              // of quad_count, the glyph share and the runs it came
                                                  //   from -- taken at tessellation and carried across
                                                  //   reuse frames, since retained geometry is never
                                                  //   re-walked (gui_build_tess_state.c, slot_text_*)
-    u32      style_refs;                         // shapes in this slot that wanted a style record --
+    u32      style_refs;                         // shapes in this slot that wanted a prim record --
                                                  //   the TOTAL the fold rate divides by.  Same
                                                  //   take-once-carry-forward rule as text_quads
     u32      stored_mask[ ( GUI_PAL_MAX + 31u ) / 32u ];  // which palette entries those shapes named;

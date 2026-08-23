@@ -112,7 +112,7 @@ u32  debug_unit_mem_bytes ( void );         /* debug unit: its fixed statics, fo
     STYLE RECORD CENSUS seam (render/gui_prim_census.c) -- what the tessellator emits, counted
     across a session.
 
-    Style records dedup only within a window cache slot, so every window mints its own copy of a
+    Prim records dedup only within a window cache slot, so every window mints its own copy of a
     style every other window also draws.  The census counts the distinct records and, per record,
     how many arena entries it consumed -- the figure a frame-global palette entry would reclaim.
     The tessellator stamps the hooks; the frame unit's F7 hotkey dumps the histogram to the log.

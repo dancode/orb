@@ -1,8 +1,8 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/pipeline/gui_render_pal.c -- the style palette.
+    runtime_service/gui/render/pipeline/gui_render_pal.c -- the prim palette.
 
-    The style arena is carved per window slot, so a style index a quad bakes is meaningful only
+    The prim arena is carved per window slot, so a style index a quad bakes is meaningful only
     against the slot that emitted it (gui_build_tess_state.c, slot_prim_base).  That is what makes the
     dedup memo slot-scoped: fifty windows drawing the same panel background hold fifty copies of
     one record, and no walk can reach past the boundary to find the others.

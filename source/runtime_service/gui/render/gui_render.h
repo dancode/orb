@@ -416,7 +416,7 @@ void draw_push_box_cut          ( f32 x, f32 y, f32 w, f32 h, f32 rounding,
                                   f32 cut_r, f32 soft, u32 abgr );
 
 /* A LATTICE of one rounded cell (GUI_OP_REPEAT): nx by ny copies `pitch` apart, centred on
-   (cx, cy).  ONE quad and one style record however many copies -- the fragment folds its
+   (cx, cy).  ONE quad and one prim record however many copies -- the fragment folds its
    coordinate into a cell.  The set's box is derived from the count, pitch and cell, here and at
    tessellation, because the fragment recovers the count back out of it.
    `col_b` != abgr ramps the copies toward it along the strip (GUI_OP_GRAD_CELL); `fill` >= 0
@@ -587,9 +587,9 @@ void                build_dump_geometry     ( void );
    is what makes two runs comparable; NULL dumps nothing, so passing (NULL, true) is a bare clear.
    Always callable -- a build without GUI_PRIM_CENSUS says so and does nothing. */
 
-void                build_style_census      ( const char* tag, bool clear );
+void                build_prim_census      ( const char* tag, bool clear );
 
-/* Empty the style palette when the landed style, DPI or an atlas slot has moved, and publish the
+/* Empty the prim palette when the landed style, DPI or an atlas slot has moved, and publish the
    empty table (render/pipeline/gui_render_intern.c).  Every entry was learned against the old style
    and nothing will draw those records again.  Cheap and self-gating: a frame whose inputs are
    unchanged costs one fold.  True means the caller owes a full re-place, which it returns on TWO
@@ -703,7 +703,7 @@ void                pal_dump                ( void );
     CONFINES it to the cell the block just measured (see there -- the clip the block should always
     have had, and the reason its geometry can batch apart from the rest of the window).
     tess_dispatch (gui_build_tess.c) then reserves the block a padded region of its window's slot
-    (quads, style records, and its own GPU commands, each with headroom past the live geometry).
+    (quads, prim records, and its own GPU commands, each with headroom past the live geometry).
     volatile_update is called internally by gui_frame_end on frames where
     frame_dirty() is false: it re-invokes each row's callback standalone, re-tessellates the
     result, and patches it into the reserved region -- any output that FITS the reservation is

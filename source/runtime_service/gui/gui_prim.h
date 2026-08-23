@@ -350,7 +350,7 @@ typedef struct
 
        At rate 0 the clock STANDS STILL at the instance's phase -- phi IS the phase, so
        k = curve( phase ) -- and the phase lane becomes a per-instance 0..1 VALUE PORT: a static
-       level, angle or depth reaching the fragment through the fx record, with no style record
+       level, angle or depth reaching the fragment through the fx record, with no prim record
        per value and no re-tessellation when it changes.  A meter's fill (GUI_OP_CELL_FILL), a
        fixed spin angle, a per-element pulse depth are all this one lane; any op that reads k
        serves either way, so an op needs no separate "static" form.
@@ -536,7 +536,7 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
 #define GUI_OP_FRAME    ( 1u << 13 )  /* composite a border band of `border` px OVER the fill --
                                          body + border in ONE quad.  The band's colour rides the
                                          INSTANCE record (gui_fx_t.col_border), not the style -- an
-                                         animated border never adds a style record              */
+                                         animated border never adds a prim record              */
 
 /* PATTERN OPS -- what a shape is FILLED or CUT with, as opposed to what shape it is.  Each was
    a field until it became clear that occupying the field slot is what stopped a checkerboard
@@ -694,7 +694,7 @@ gui_quad_ext_pack( f32 px )
    index instead of costing bytes on every glyph that will never read them.
 
    All of them are per-INSTANCE, not per-shape: a rotation, a stagger, a border colour and a
-   texture rect each vary while the shape stays the same, so putting them on the style record would
+   texture rect each vary while the shape stays the same, so putting them on the prim record would
    mint one style per angle, per stagger, per animated frame, per icon.  They are also rare
    TOGETHER -- text carries none of them -- which is what makes a side record cheaper than a lane.
    Consecutive quads that want the same values share one record (tess_fx_local), so a run of
@@ -722,7 +722,7 @@ typedef struct
     //   the style -- every spinner in a set turns at the same speed, and staggering the set is the
     //   only thing phase is for.  0 = in step with the clock.  When the style's rate is 0 the
     //   clock stands still HERE: this lane is then a per-instance 0..1 value port (a meter level,
-    //   a fixed angle -- see the row 5 doc), updated without touching any style record.
+    //   a fixed angle -- see the row 5 doc), updated without touching any prim record.
     u32 phase;
 
     // col_border: GUI_OP_FRAME's border band colour, and nothing else.  Named for the one thing it
@@ -731,12 +731,12 @@ typedef struct
     //   the SHAPE -- GRAD's far end, CHECKER's alternate, TEXT_EDGE's outline -- lives on the
     //   style and deduplicates with it.  A border colour does not belong to
     //   the shape, so it rides the instance: an animated border -- or an animated fill, which
-    //   rides the quad in `abgr` -- would otherwise mint a style record per frame.
+    //   rides the quad in `abgr` -- would otherwise mint a prim record per frame.
     u32 col_border;
 
     // swell: GUI_OP_SWELL's amplitude, px -- how far the boundary travels at the clock's k = 1
     //   (negative shrinks).  Per-instance for the same reason the turn is: a set of elements
-    //   swelling by their own ranges shares one style record.  BOTH stages read it -- the vertex
+    //   swelling by their own ranges shares one prim record.  BOTH stages read it -- the vertex
     //   stage grows the SKIRT covering by its positive part off the row it already fetches, the
     //   fragment biases the field's distance -- so the reach costs no extra load anywhere.
     //   0.0f when unused, which is also all-zero bits, so the "no record" default still holds.
@@ -744,7 +744,7 @@ typedef struct
 
     /* Row B -- the TEXTURE RECT, the min and max corners of the atlas span this instance samples,
        each two unorm16 over [0,1] (gui_uv_pack).  It sits here for the same reason the three lanes
-       above do: a sprite's rect is per-instance, so on the style record it would mint one style per
+       above do: a sprite's rect is per-instance, so on the prim record it would mint one style per
        icon, and on the quad it would cost eight bytes on every glyph and every flat fill that will
        never sample a texel.
 
@@ -769,7 +769,7 @@ ORB_STATIC_ASSERT( sizeof( gui_fx_t ) == GUI_FX_BYTES,
                    "gui_fx_t must stay whole 16-byte rows -- it is addressed by row index" );
 
 ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
-                   "fx records tile a style record exactly -- a page holds GUI_PRIM_ROWS/GUI_FX_ROWS" );
+                   "fx records tile a prim record exactly -- a page holds GUI_PRIM_ROWS/GUI_FX_ROWS" );
 
 /*==============================================================================================
 
@@ -792,7 +792,7 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
                                     // fragment takes the turn instead).
 
 /* The `idx` word is a TAGGED UNION, not one fixed layout.  That is what makes the budget close:
-   a whole glyph needs an atlas ID and no style record, and every other shape needs a style record
+   a whole glyph needs an atlas ID and no prim record, and every other shape needs a prim record
    and no atlas ID, so the two never have to fit side by side.
 
    The tag is the top two bits.  Clip sits at the bottom of ALL layouts, in the same place, so it
@@ -800,8 +800,8 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
 
      tag SHAPED (0)   bits 0-3    clip entry, slot-local (GUI_WIN_CLIP_MAX = 16 per window slab)
                       bits 4-5    GUI_QUAD_RULE_* -- the expansion rule
-                      bits 6-16   style record, slot-local
-                      bits 17-29  fx record, slot-local ROW index into the style arena
+                      bits 6-16   prim record, slot-local
+                      bits 17-29  fx record, slot-local ROW index into the prim arena
 
      tag GLYPH  (1)   bits 0-3    clip entry, as above
                       bit  4      the SDF atlas rather than the coverage one
@@ -810,7 +810,7 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
 
      tag BAND   (2)   bits 0-3    clip entry, as above
                       bits 4-5    WHICH BAND of the four (top, bottom, left, right)
-                      bits 6-16   style record, as SHAPED
+                      bits 6-16   prim record, as SHAPED
                       bits 17-29  fx record, as SHAPED
 
                     SHAPED's layout with the rule field re-read: a band is always drawn SKIRT, 
@@ -820,7 +820,7 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
                       bits 0-3    clip entry, as above
                       bit  4      the SDF atlas bit, as GLYPH
                       bits 5-17   glyph-table ID, as GLYPH
-                      bits 18-28  style record, slot-local or palette
+                      bits 18-28  prim record, slot-local or palette
                       bit  29     spare
 
                     A glyph that names a STYLE: the ops ride the record (an SDF outline, a
@@ -853,8 +853,8 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
 #define GUI_QUAD_CLIP_MASK     0xFu
 #define GUI_QUAD_RULE_SHIFT    4u
 #define GUI_QUAD_BAND_SHIFT    4u   // the rule field, re-read under the BAND tag
-#define GUI_QUAD_STYLE_SHIFT   6u
-#define GUI_QUAD_STYLE_MASK    0x7FFu
+#define GUI_QUAD_PRIM_SHIFT   6u
+#define GUI_QUAD_PRIM_MASK    0x7FFu
 #define GUI_QUAD_FX_SHIFT      17u
 #define GUI_QUAD_FX_MASK       0x1FFFu
 
@@ -894,8 +894,8 @@ ORB_STATIC_ASSERT( GUI_PRIM_ROWS % GUI_FX_ROWS == 0,
 #define GUI_QUAD_GLYPH_MASK    0x1FFFu
 #define GUI_QUAD_GFX_SHIFT     18u
 #define GUI_QUAD_GFX_MASK      0xFFFu
-#define GUI_QUAD_GSTYLE_SHIFT  18u   // GLYPH_STYLED: the style record, where GLYPH keeps fx bits
-#define GUI_QUAD_GSTYLE_MASK   0x7FFu
+#define GUI_QUAD_GPRIM_SHIFT  18u   // GLYPH_STYLED: the prim record, where GLYPH keeps fx bits
+#define GUI_QUAD_GPRIM_MASK   0x7FFu
 
 /* Pack a SHAPED index word.  Each field is masked rather than trusted: an index past its own
    width would otherwise silently corrupt the field above it, where a clamped one draws with the
@@ -905,12 +905,12 @@ static inline u32
 gui_quad_idx( u32 rule, u32 clip, u32 style, u32 fx_row )
 {
     ORB_ASSERT( clip   <= GUI_QUAD_CLIP_MASK &&
-                style  <= GUI_QUAD_STYLE_MASK && 
+                style  <= GUI_QUAD_PRIM_MASK && 
                 fx_row <= GUI_QUAD_FX_MASK );
 
     return ( ( clip   & GUI_QUAD_CLIP_MASK  ) << GUI_QUAD_CLIP_SHIFT  )
          | ( ( rule   & 0x3u                ) << GUI_QUAD_RULE_SHIFT  )
-         | ( ( style  & GUI_QUAD_STYLE_MASK ) << GUI_QUAD_STYLE_SHIFT )
+         | ( ( style  & GUI_QUAD_PRIM_MASK ) << GUI_QUAD_PRIM_SHIFT )
          | ( ( fx_row & GUI_QUAD_FX_MASK    ) << GUI_QUAD_FX_SHIFT    )
          | ( GUI_QUAD_TAG_SHAPED << GUI_QUAD_TAG_SHIFT );
 }
@@ -924,18 +924,18 @@ gui_quad_idx_band( u32 band, u32 clip, u32 style, u32 fx_row )
 {
     ORB_ASSERT( band   <  GUI_QUAD_BAND_COUNT &&
                 clip   <= GUI_QUAD_CLIP_MASK  &&
-                style  <= GUI_QUAD_STYLE_MASK &&
+                style  <= GUI_QUAD_PRIM_MASK &&
                 fx_row <= GUI_QUAD_FX_MASK );
 
     return ( ( clip   & GUI_QUAD_CLIP_MASK  ) << GUI_QUAD_CLIP_SHIFT  )
          | ( ( band   & 0x3u                ) << GUI_QUAD_BAND_SHIFT  )
-         | ( ( style  & GUI_QUAD_STYLE_MASK ) << GUI_QUAD_STYLE_SHIFT )
+         | ( ( style  & GUI_QUAD_PRIM_MASK ) << GUI_QUAD_PRIM_SHIFT )
          | ( ( fx_row & GUI_QUAD_FX_MASK    ) << GUI_QUAD_FX_SHIFT    )
          | ( GUI_QUAD_TAG_BAND << GUI_QUAD_TAG_SHIFT );
 }
 
 /* Pack a GLYPH index word.  `sdf` picks which of the two text atlases the fragment samples; the
-   slot itself comes from the push block, so a glyph names no style record at all. */
+   slot itself comes from the push block, so a glyph names no prim record at all. */
 
 static inline u32
 gui_quad_idx_glyph( u32 clip, u32 glyph_id, bool sdf, u32 fx_row )
@@ -960,12 +960,12 @@ gui_quad_idx_glyph_styled( u32 clip, u32 glyph_id, bool sdf, u32 style )
 {
     ORB_ASSERT( clip     <= GUI_QUAD_CLIP_MASK &&
                 glyph_id <= GUI_QUAD_GLYPH_MASK &&
-                style    <= GUI_QUAD_GSTYLE_MASK );
+                style    <= GUI_QUAD_GPRIM_MASK );
 
     return ( ( clip     & GUI_QUAD_CLIP_MASK   ) << GUI_QUAD_CLIP_SHIFT   )
          | ( sdf ? GUI_QUAD_SDF_BIT : 0u )
          | ( ( glyph_id & GUI_QUAD_GLYPH_MASK  ) << GUI_QUAD_GLYPH_SHIFT  )
-         | ( ( style    & GUI_QUAD_GSTYLE_MASK ) << GUI_QUAD_GSTYLE_SHIFT )
+         | ( ( style    & GUI_QUAD_GPRIM_MASK ) << GUI_QUAD_GPRIM_SHIFT )
          | ( GUI_QUAD_TAG_GLYPH_STYLED << GUI_QUAD_TAG_SHIFT );
 }
 
@@ -973,7 +973,7 @@ static inline u32 gui_quad_tag  ( u32 idx ) { return ( idx >> GUI_QUAD_TAG_SHIFT
 static inline u32 gui_quad_clip ( u32 idx ) { return ( idx >> GUI_QUAD_CLIP_SHIFT  ) & GUI_QUAD_CLIP_MASK;  }
 static inline u32 gui_quad_rule ( u32 idx ) { return ( idx >> GUI_QUAD_RULE_SHIFT  ) & 0x3u;                }
 static inline u32 gui_quad_band ( u32 idx ) { return ( idx >> GUI_QUAD_BAND_SHIFT  ) & 0x3u;                }
-static inline u32 gui_quad_style( u32 idx ) { return ( idx >> GUI_QUAD_STYLE_SHIFT ) & GUI_QUAD_STYLE_MASK; }
+static inline u32 gui_quad_prim( u32 idx ) { return ( idx >> GUI_QUAD_PRIM_SHIFT ) & GUI_QUAD_PRIM_MASK; }
 static inline u32 gui_quad_fx   ( u32 idx ) { return ( idx >> GUI_QUAD_FX_SHIFT    ) & GUI_QUAD_FX_MASK;    }
 static inline u32 gui_quad_glyph( u32 idx ) { return ( idx >> GUI_QUAD_GLYPH_SHIFT ) & GUI_QUAD_GLYPH_MASK; }
 

@@ -223,7 +223,7 @@ static bool s_frame_dirty = true;   /* start true: forces a full first-frame bui
    skip so the UI rebuilds and re-renders unconditionally.  Toggled via gui()->set_force_redraw. */
 static bool s_force_redraw = false;
 
-/*  Hand the style the render server cannot read down to the style palette (pal_style_set,
+/*  Hand the style the render server cannot read down to the prim palette (pal_style_set,
     render/gui_render.h).  The whole var block, so anything that moves a lane value trips the
     palette's epoch and the table is re-learned rather than left holding dead records.
 

@@ -185,7 +185,7 @@ expand_vb( u32 count )
     for ( u32 i = 0; i < count; ++i )
     {
         const gui_quad_t* q     = &s_quads[ i ];
-        u32               style = gui_quad_style( q->idx );
+        u32               style = gui_quad_prim( q->idx );
         f32               pad   = k_style_feather[ style ] + 1.0f;
         f32               cx  = (f32)q->cx * 0.25f, cy = (f32)q->cy * 0.25f;
         f32               hw  = (f32)q->hw * 0.25f, hh = (f32)q->hh * 0.25f;

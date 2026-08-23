@@ -600,9 +600,9 @@ const gui_api_t g_gui_api_struct =
     .debug_set_render_mode              = gui_render_set_mode,
     .debug_get_render_mode              = gui_render_get_mode,
     .debug_dump_geometry                = build_dump_geometry,
-    .debug_style_census                 = build_style_census,
-    .debug_set_style_palette            = pal_set_mode,
-    .debug_style_palette                = pal_mode,
+    .debug_prim_census                 = build_prim_census,
+    .debug_set_prim_palette            = pal_set_mode,
+    .debug_prim_palette                = pal_mode,
     .set_retained_skip                  = build_set_retained_skip,
     .retained_skip                      = build_retained_skip,
 

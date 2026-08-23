@@ -83,7 +83,7 @@ tess_reset( void )
 
 /* Name the texture the next quad's style will CARRY (tess_quad_push folds it into the record).
    Deliberately NOT part of opening a batch, and separated from it so that reads: the texture
-   rides the style record, so a texture change costs nothing and must not open a command. */
+   rides the prim record, so a texture change costs nothing and must not open a command. */
 
 static void
 tess_set_tex( u32 tex_idx )
@@ -241,7 +241,7 @@ tess_prim_answer( u32 local )
     s_tess.prim_memo_base  = s_tess.slot_prim_base;
     s_tess.prim_memo_floor = s_tess.prim_dedup_floor;
     s_tess.prim_memo_valid = true;
-    s_tess.cmd_style_out   = local;
+    s_tess.cmd_prim_out   = local;
     return s_tess.cur_prim_local = local;
 }
 
@@ -263,7 +263,7 @@ tess_prim_resolve( void )
       && s_tess.prim_memo_base  == s_tess.slot_prim_base
       && s_tess.prim_memo_floor == s_tess.prim_dedup_floor
       && memcmp( &s_tess.prim_memo_rec, &s_tess.cur_prim, sizeof( gui_prim_t ) ) == 0 )
-        return s_tess.cmd_style_out = s_tess.cur_prim_local;
+        return s_tess.cmd_prim_out = s_tess.cur_prim_local;
 
     /* Then the answer this COMMAND gave the last time it tessellated (gui_build_tess_state.c,
        cmd_hint).  Confirmed against the entry's own bytes, so an epoch reset, a shifted command
@@ -278,7 +278,7 @@ tess_prim_resolve( void )
         if ( e && memcmp( e, &s_tess.cur_prim, sizeof( gui_prim_t ) ) == 0 )
         {
             pal_cmd_hit();
-            return tess_prim_answer( gui_style_pal( s_tess.cmd_hint ) );
+            return tess_prim_answer( gui_prim_pal( s_tess.cmd_hint ) );
         }
     }
 
@@ -305,7 +305,7 @@ tess_prim_resolve( void )
 
     u32 entry = pal_find( &s_tess.cur_prim );
     if ( entry < (u32)GUI_PAL_MAX )
-        return tess_prim_answer( gui_style_pal( entry ) );
+        return tess_prim_answer( gui_prim_pal( entry ) );
 
     for ( u32 k = 2; k <= n; ++k ) {
         if ( memcmp( &s_tess.prims[ hi - k ], &s_tess.cur_prim, sizeof( gui_prim_t )) == 0 ) {
@@ -321,7 +321,7 @@ tess_prim_resolve( void )
 
     u32 in = pal_intern( &s_tess.cur_prim );
     if ( in < (u32)GUI_PAL_MAX )
-        return tess_prim_answer( gui_style_pal( in ) );
+        return tess_prim_answer( gui_prim_pal( in ) );
 
     if ( hi >= GUI_MAX_PRIMS )
     {
@@ -353,7 +353,7 @@ tess_prim_local( void )
 
     u32 local = tess_prim_resolve();
 
-    if ( gui_style_is_pal( local ) )
+    if ( gui_prim_is_pal( local ) )
     {
         u32 e = local - GUI_PAL_FIRST;
         if ( e < (u32)GUI_PAL_MAX )
@@ -363,17 +363,17 @@ tess_prim_local( void )
 }
 
 /* Resolve the ambient turn / phase / border colour plus this quad's texture rect to an fx record,
-   returning its SLOT-LOCAL row index in the style arena (0 = the quad needs none, which the shader
+   returning its SLOT-LOCAL row index in the prim arena (0 = the quad needs none, which the shader
    reads as identity turn, zero phase, no border and no texture rect).
 
-   Records pack four to a style-arena slot, so a page costs one gui_prim_t and serves four
+   Records pack four to a prim-arena slot, so a page costs one gui_prim_t and serves four
    instances.  The memo is one deep and that is enough: the instance lanes are ambient over a
    semantic command, so the quads that share them arrive consecutively -- a framed row, a polyline
    of one direction, a set of glyph quads wanting nothing at all.  A uv rect breaks the memo by
    nature (consecutive icons sample different cells), which is the honest cost of the sprite path
    and still one QUARTER of a record each. */
 
-#define TESS_FX_PER_PAGE   ( GUI_PRIM_ROWS / GUI_FX_ROWS )   /* a style record is four fx records */
+#define TESS_FX_PER_PAGE   ( GUI_PRIM_ROWS / GUI_FX_ROWS )   /* a prim record is four fx records */
 
 /* True when the ambient instance extras pack to the all-default fx record -- exactly the case
    tess_fx_local( 0, 0 ) answers 0 for.  A caller that only needs the ANSWER must test this
@@ -403,7 +403,7 @@ tess_fx_local( u32 uv0, u32 uv1 )
       && fx.uv0 == 0u && fx.uv1 == 0u )
         return 0u;      /* the whole record is the default -- the majority of quads, text included */
 
-    /* The page is a style-arena record read as rows; the rows are addressed as bytes rather than
+    /* The page is a prim-arena record read as rows; the rows are addressed as bytes rather than
        through a second struct pointer, so the two record types never alias one another. */
     u8* page_p = (u8*)&s_tess.prims[ s_tess.slot_prim_base + s_tess.fx_page ];
     if ( s_tess.fx_memo_row
@@ -485,10 +485,10 @@ tess_glyph_uv( u32 glyph_id, u32* uv0, u32* uv1 )
     quad has no lane for one.
 
     `glyph_id` past GUI_GLYPH_ID_NONE asks for the GLYPH tag: the quad names a glyph-table entry
-    instead of carrying an atlas rect, and names no style record at all -- the fragment resolves
+    instead of carrying an atlas rect, and names no prim record at all -- the fragment resolves
     the text atlas from the push block.  That holds while the ambient style says nothing but
     "sample the font atlas".  A glyph under OPS alone (an SDF outline, a gradient) takes the
-    GLYPH_STYLED tag -- table ID plus the one style record the run dedups onto -- and only a
+    GLYPH_STYLED tag -- table ID plus the one prim record the run dedups onto -- and only a
     glyph under a FIELD or with instance extras falls back to the SHAPED tag with the table's
     rect baked in, exactly like a straddling glyph.
 ==============================================================================================*/
@@ -597,7 +597,7 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
     /* A glyph keeps the tag only while the style would have said nothing: no ops, no field, and an
        fx row inside the narrower field the GLYPH layout has room for.  Anything else -- an SDF
        outline, a pattern, a rotation past the twelfth bit -- takes the table's rect and rejoins
-       the SHAPED path, which has a style record to carry the difference. */
+       the SHAPED path, which has a prim record to carry the difference. */
     if ( glyph_id != GUI_GLYPH_ID_NONE
       && s_tess.cur_ops == 0u && s_tess.cur_prim.field == 0u )
     {
@@ -628,7 +628,7 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
     }
     /* STYLED GLYPH -- ops but no field: the SDF outline, a gradient or a glow on text.  The tag
        keeps everything that makes plain text cheap -- the table ID (repack-stable, no per-char
-       fx record) and the push-block texture -- and adds the ONE style record the whole run
+       fx record) and the push-block texture -- and adds the ONE prim record the whole run
        dedups onto.  Only while the instance extras are empty: the layout spent its fx bits on
        the style, so a rotated styled run falls through to SHAPED, which has room for both.
        The emptiness test must be the side-effect-free one -- tess_fx_local ALLOCATES a row
@@ -644,7 +644,7 @@ tess_quad_push( f32 qcx, f32 qcy, f32 qhw, f32 qhh, u32 rule,
         s_tess.cur_prim.ops = s_tess.cur_ops;
 
         u32 style = tess_prim_local();
-        if ( style <= GUI_QUAD_GSTYLE_MASK )
+        if ( style <= GUI_QUAD_GPRIM_MASK )
         {
             s_tess.quads[ s_tess.quad_count++ ] = ( gui_quad_t ){
                 .cx   = pcx,

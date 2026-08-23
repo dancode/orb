@@ -379,7 +379,7 @@ pal_cmd_learn( u32 ci, u32 style )
     if ( ci >= (u32)GUI_MAX_CMDS )
         return;
 
-    if ( !gui_style_is_pal( style ) )
+    if ( !gui_prim_is_pal( style ) )
     {
         s_cmd_entry[ ci ] = 0u;
         return;
@@ -417,7 +417,7 @@ pal_intern( const gui_prim_t* rec )
     if ( s_intern.count >= (u32)GUI_PAL_MAX )
     {
         ++s_intern.full_drops;
-        GUI_WARN_ONCE( "style palette full (%u entries) -- styles that qualify from here "
+        GUI_WARN_ONCE( "prim palette full (%u entries) -- prims that qualify from here "
                        "take per-slot records instead; raise GUI_PAL_MAX if this UI's "
                        "working set is genuinely this wide.\n", (u32)GUI_PAL_MAX );
         return GUI_PAL_NONE;
@@ -615,7 +615,7 @@ pal_dump( void )
     static const char* const k_mode[] = { "OFF", "FROZEN", "learning" };
 
     gui_log( GUI_LOG_INFO, "" );
-    gui_log( GUI_LOG_INFO, "---- STYLE PALETTE [%s] (%u of %u entries over %u style scale(s); %u/%u "
+    gui_log( GUI_LOG_INFO, "---- PRIM PALETTE [%s] (%u of %u entries over %u style scale(s); %u/%u "
                            "probes hit since the epoch, %.1f%%) ----",
              k_mode[ (u32)s_pal_mode % 3u ],
              s_intern.count, (u32)GUI_PAL_MAX, s_intern.scale_count, s_intern.hits, probes,

@@ -44,7 +44,7 @@ typedef struct
 
     /* The texture of the command's FIRST primitive, kept for diagnostics only (the dashboard
        tooltip).  Not a batch key and not a description of the whole command: the texture rides
-       the style record (gui_prim_t), so one command can span several. */
+       the prim record (gui_prim_t), so one command can span several. */
 
     u32 tex_idx;
 
@@ -56,7 +56,7 @@ typedef struct
 ORB_STATIC_ASSERT( GUI_MAX_QUADS <= 0xFFFF, "tess_gpu_cmd_t.qbase is u16" );
 
 /*==============================================================================================
-    Tessellation state -- the quad and style arenas populated from the semantic command list.
+    Tessellation state -- the quad and prim arenas populated from the semantic command list.
 
     cache_build_frame tessellates the frame's gui_cmd_t list into s_tess (per window, via
     tess_dispatch), then gui_render_flush uploads s_tess.quads/prims to the GPU.  s_tess is
@@ -71,7 +71,7 @@ ORB_STATIC_ASSERT( GUI_MAX_QUADS <= 0xFFFF, "tess_gpu_cmd_t.qbase is u16" );
 static struct
 {
     gui_quad_t      quads    [ GUI_MAX_QUADS ];    // quad records -- the geometry arena (gui.h)
-    gui_prim_t      prims    [ GUI_MAX_PRIMS ];    // style records -- the second arena
+    gui_prim_t      prims    [ GUI_MAX_PRIMS ];    // prim records -- the second arena
     tess_gpu_cmd_t  gpu_cmds [ GUI_MAX_CMDS  ];    // gpu draw commands (AOS: cmd + vp/qbase)
 
     /* Write head cursors.  A QUAD RECORD is the geometry element everywhere past this file --
@@ -84,12 +84,12 @@ static struct
                                    -- what every quad's clip field carries.  The window's slab base
                                    is added at the flush, through pc.clip_base                     */
     i32         cur_vp;     /* viewport baked from the current semantic command                    */
-    u32         cur_tex;    /* GUI_TEX_MODE | bindless slot the style record carries -- set by
+    u32         cur_tex;    /* GUI_TEX_MODE | bindless slot the prim record carries -- set by
                                tess_set_tex, folded by tess_quad_push.  NOT a batch key           */
     u32         cur_ops;    /* GUI_OP_* -- the per-primitive modifiers (gui.h).  Cleared per
                                semantic command alongside the record: leaking a self flag would
                                blank a textured quad, and leaking an op would reshape the next
-                               fill.  tess_quad_push folds these into the style record. */
+                               fill.  tess_quad_push folds these into the prim record. */
     f32         cur_corner_pow; /* corner profile exponent for the box family, ambient over one
                                command for the same reason cur_ops is: it reaches all four corners
                                of a shape without threading a parameter through every fill in the
@@ -116,7 +116,7 @@ static struct
        the same reason: retained geometry is never re-walked, so a number derived at replay time
        would read zero for every window that did not change.
 
-       style_refs is the TOTAL -- one per shape that wants a style record, which is what
+       style_refs is the TOTAL -- one per shape that wants a prim record, which is what
        tess_prim_local is called once for (a BAND covering resolves one style and emits four
        quads; a plain glyph resolves none at all).  stored_mask is WHICH palette entries those
        shapes resolved to, one bit each, so the frame's distinct stored set is the OR over slots
@@ -190,9 +190,9 @@ static struct
        it straight back -- while this has to read "nothing yet" at each command's start, which
        it does by being an ARENA index (0) that pal_cmd_learn declines to park. */
 
-    u32         cmd_style_out;
+    u32         cmd_prim_out;
 
-    /* The open FX PAGE -- a style-arena record carrying four gui_fx_t records (gui.h).  fx_page is
+    /* The open FX PAGE -- a prim-arena record carrying four gui_fx_t records (gui.h).  fx_page is
        the record's slot-local index and fx_page_used how many of its four entries are spent; a
        fifth takes a new page.  fx_memo_row is the last row committed, so a run of quads wanting
        the same turn / phase / border shares one record -- the common case, since those lanes
@@ -210,7 +210,7 @@ static struct
     u32         fx_page_count;
 
     /* The ambient PER-INSTANCE lanes -- all three ride the QUAD, never the style, so an animated
-       border, a turning shape and a staggered pulse never add style records: cur_prim states only
+       border, a turning shape and a staggered pulse never add prim records: cur_prim states only
        what is shared (shape, widths, rates).  Each is an ambient the command sets before its
        tess_quad_push, which folds it into the quad unread by the style.  Cleared per command.
          cur_col_border  GUI_OP_FRAME's border band colour (0 = unused)
@@ -239,7 +239,7 @@ static struct
     u32 slot_tess_gen;
 
     /* Style-record base of the window slot being tessellated -- the counterpart of
-       slot_quad_base for the style arena.  Quads bake SLOT-LOCAL style indices
+       slot_quad_base for the prim arena.  Quads bake SLOT-LOCAL style indices
        (prim_count - slot_prim_base) and the flush adds this base back through pc.prim_base, so
        a repack that moves the slot's records leaves every cached quad's index correct. */
     u32 slot_prim_base;
@@ -276,7 +276,7 @@ static struct
    of the vertex/index pair the pre-quad backend had.  They are genuinely different problems:
    QUADS and CMDS scale with how much is on screen, PRIMS with how many distinct STYLES are,
    WINDOWS with how many are open, and FX_FIELD is not a pool at all -- it is the ceiling on how
-   far into a window's own style arena a quad's fx field can reach.
+   far into a window's own prim arena a quad's fx field can reach.
 
    Every bit here means DROPPED CONTENT: something the frame asked for is not on screen.  The
    retained cache's per-window command cap (WIN_SLOT_CMD_MAX) is deliberately NOT one of them --
@@ -284,7 +284,7 @@ static struct
 
 #define TESS_OVF_QUADS      ( 1u << 0 )   /* quad arena full              -- GUI_MAX_QUADS    */
 #define TESS_OVF_CMDS       ( 1u << 1 )   /* gpu command table full       -- GUI_MAX_CMDS     */
-#define TESS_OVF_PRIMS      ( 1u << 2 )   /* style record arena full      -- GUI_MAX_PRIMS    */
+#define TESS_OVF_PRIMS      ( 1u << 2 )   /* prim record arena full      -- GUI_MAX_PRIMS    */
 #define TESS_OVF_FX_FIELD   ( 1u << 3 )   /* fx row past the quad's field -- GUI_QUAD_FX_MASK */
 #define TESS_OVF_WIN_CLIPS  ( 1u << 4 )   /* window's clip slab full      -- GUI_WIN_CLIP_MAX */
 #define TESS_OVF_WINDOWS    ( 1u << 5 )   /* windows this frame           -- RENDER_MAX_WIN   */

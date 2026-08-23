@@ -1,9 +1,9 @@
 /*==============================================================================================
 
-    runtime_service/gui/render/gui_prim_census.c -- STYLE RECORD CENSUS: what the tessellator
+    runtime_service/gui/render/gui_prim_census.c -- PRIM RECORD CENSUS: what the tessellator
     actually emits, counted across a whole session.
 
-    Style records dedup only within a window cache slot (tess_prim_local's memo cannot reach past
+    Prim records dedup only within a window cache slot (tess_prim_local's memo cannot reach past
     slot_prim_base), so every window that draws a rounded button mints its own copy of that
     button's record.  This counts those copies: which distinct records exist, how many quads
     resolve to each, and -- the number that matters -- how many arena entries each one CONSUMED
@@ -293,7 +293,7 @@ census_cat( char* buf, u32 cap, u32 w, const char* fmt, ... )
 }
 
 /*  One record as "<n> <hash> lane=value ..." -- every non-zero lane, named, and nothing else.  The
-    shared spelling of a style record: the census prints its candidates through it and the palette
+    shared spelling of a prim record: the census prints its candidates through it and the palette
     prints its table through it (pal_dump, pipeline/gui_render_intern.c), so an entry and the census
     row it covers are the same line of text when they match. */
 
@@ -420,7 +420,7 @@ prim_census_dump( const char* tag )
     }
 
     gui_log( GUI_LOG_INFO, "" );
-    gui_log( GUI_LOG_INFO, "==== STYLE RECORD CENSUS [%s] =========================================",
+    gui_log( GUI_LOG_INFO, "==== PRIM RECORD CENSUS [%s] ==========================================",
              tag ? tag : "-" );
     gui_log( GUI_LOG_INFO, "%u distinct records   %u arena entries consumed   %u quads resolved",
              s_census.count, tot_app, tot_quad );
@@ -517,7 +517,7 @@ prim_census_dump( const char* tag )
 #endif    // GUI_PRIM_CENSUS
 
 /*==============================================================================================
-    build_style_census -- the host entry point behind gui()->debug_style_census.
+    build_prim_census -- the host entry point behind gui()->debug_prim_census.
 
     Defined in EVERY build so the vtable slot is unconditional, and so a driver that scripts a
     census run (sb_gui_example's -census mode) needs no build-configuration knowledge: a build
@@ -529,7 +529,7 @@ prim_census_dump( const char* tag )
 ==============================================================================================*/
 
 void
-build_style_census( const char* tag, bool clear )
+build_prim_census( const char* tag, bool clear )
 {
 #ifdef GUI_PRIM_CENSUS
     if ( tag )
@@ -542,7 +542,7 @@ build_style_census( const char* tag, bool clear )
 #else
     UNUSED( tag );
     UNUSED( clear );
-    GUI_WARN_ONCE( "style census requested, but this build has GUI_PRIM_CENSUS compiled out.\n" );
+    GUI_WARN_ONCE( "prim census requested, but this build has GUI_PRIM_CENSUS compiled out.\n" );
 #endif
 }
 

@@ -262,7 +262,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     }
 
     /* GUI_OP_FRAME's border colour does NOT land here -- it rides the quad (cur_col_border, set by
-       the dispatcher before this call), so an animated border never adds a style record.  This
+       the dispatcher before this call), so an animated border never adds a prim record.  This
        record's own col_b is the SHAPE's second colour (GRAD, CHECKER, TEXT_EDGE); the
        two are different lanes on purpose.  See gui_fx_t.col_border (gui.h) and the dispatch of
        GUI_CMD_FRAME below. */

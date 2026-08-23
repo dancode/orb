@@ -436,7 +436,7 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
 
     tess_reset();
 
-    /* The style palette's epoch check, self-gating: a frame whose theme, DPI and atlas layout have
+    /* The prim palette's epoch check, self-gating: a frame whose theme, DPI and atlas layout have
        not moved costs one fold and does nothing.
 
        An epoch forces a full re-place.  A cached slot's quads carry palette indices learned against

@@ -638,7 +638,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
         { "EMIT: distinct clip rects this frame", "(GUI_MAX_CLIP_RECTS)", NULL },
         { "BUILD: quad records, 16 B each -- one per SHAPE,",
           "plus each slot's reservation padding  (GUI_MAX_QUADS)", NULL },
-        { "BUILD: the style arena, 128 B a record  (GUI_MAX_PRIMS).",
+        { "BUILD: the prim arena, 128 B a record  (GUI_MAX_PRIMS).",
           "STYLES: one per distinct look, deduped hard.",
           "FX PAGES (inner bar): four per-instance records each --"
           " turn, phase, border colour, uv rect." },
@@ -650,7 +650,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
        debug band's own footprint is always spelled out on the summary line below. */
     const bool inc = s_show_second_band;
     /* `sub` is an inner segment drawn over the fill: the share of this pool that is a DIFFERENT
-       kind of occupant than its label suggests.  Only the style arena has one today. */
+       kind of occupant than its label suggests.  Only the prim arena has one today. */
     struct { const char* name; u32 used, cap, hwm, sub; } rows[] = {
         { "emit cmd", inc ? sn->emit_cmds  : sn->emit_cmds  - sn->emit_cmds_dbg,  GUI_MAX_CMDS,       inc ? sn->emit_cmds_hwm : 0, 0 },
         { "segs",     inc ? sn->emit_segs  : sn->emit_segs  - sn->emit_segs_dbg,  GUI_MAX_SEGS,       0, 0 },
@@ -659,7 +659,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
         { "text",     inc ? sn->emit_text  : sn->emit_text  - sn->emit_text_dbg,  GUI_MAX_TEXT_POOL,  0, 0 },
         { "clips",    inc ? sn->emit_clips : sn->emit_clips - sn->emit_clips_dbg, GUI_MAX_CLIP_RECTS, 0, 0 },
         { "quads",    inc ? sn->tess_quads : sn->band0_quad_end, GUI_MAX_QUADS,   inc ? sn->quad_hwm : sn->band0_quad_hwm, 0 },
-        { "styles",   sn->tess_prims,                            GUI_MAX_PRIMS,   sn->prim_hwm, sn->tess_fx_pages },
+        { "prims",    sn->tess_prims,                            GUI_MAX_PRIMS,   sn->prim_hwm, sn->tess_fx_pages },
         { "gpu cmd",  inc ? sn->tess_cmds  : sn->tess_cmds - sn->tess_cmds_dbg,   GUI_MAX_CMDS,       0, 0 },
     };
     const u32 n     = sizeof( rows ) / sizeof( rows[ 0 ] );

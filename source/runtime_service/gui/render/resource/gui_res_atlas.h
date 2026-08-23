@@ -20,7 +20,7 @@
             stay NEAREST or bitmap glyphs stop being crisp.  Scalable text lives here.
 
     No two can share a texture -- a pixel format apart, or a sampler apart -- but they DO share a
-    draw call: the bindless slot and its sampling model ride the style record (gui.h,
+    draw call: the bindless slot and its sampling model ride the prim record (gui.h,
     gui_prim_t), so a window's nine-slice frame, its bitmap labels and an SDF heading go out
     together and only a clip change cuts the batch.  Each is still internally ONE texture with ONE
     bindless slot, which is what keeps the vertex word constant across a whole kind.  They share

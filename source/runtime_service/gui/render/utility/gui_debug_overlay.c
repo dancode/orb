@@ -419,7 +419,7 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     push.quad_buf   = s_dbg.quads_idx;    /* the overlay's OWN quad table, this flush's region */
     push.quad_base  = region * (u32)GUI_DBG_FLUSH_MAX_QUADS;
 
-    /* The overlay's single style record, refreshed every flush because the one thing in it that
+    /* The overlay's single prim record, refreshed every flush because the one thing in it that
        is not a constant -- the atlas bindless slot -- can move when the atlas is rebuilt.  Every
        overlay quad carries style 0 against this base, so one entry serves the whole surface.
        OP_SELF: solid colour, the texel is never consulted.  It sits past the arena in each

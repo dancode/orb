@@ -388,7 +388,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
        per (frame, viewport), so an ID indexes it directly and there is no base to push. */
     push.glyph_buf = s_render.glyph_buf_idx;
 
-    /* The two TEXT atlases.  A quad tagged GLYPH names no style record, so the texture it samples
+    /* The two TEXT atlases.  A quad tagged GLYPH names no prim record, so the texture it samples
        cannot come off one -- it comes from here, picked by the tag's SDF bit.  Resolving them at
        flush rather than at tessellation also means a re-registered atlas cannot leave cached text
        naming a bindless slot that has since moved. */
@@ -396,7 +396,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     push.tex_sdf = res_sdf_idx();
 
     /* Push the whole struct once, before the walk.  The texture and its sampling model live on the
-       style record a quad names (or, for a glyph, in tex_cov / tex_sdf above), not in a per-draw
+       prim record a quad names (or, for a glyph, in tex_cov / tex_sdf above), not in a per-draw
        constant, so everything left here -- both sampler slots, dbg_flat, the frame clock, the
        table slots and their region origins -- is constant for the entire flush.
 

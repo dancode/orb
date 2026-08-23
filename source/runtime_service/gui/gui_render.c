@@ -53,7 +53,7 @@
      gui_build_diff.c          -- BUILD: change detection -- hashes each window's commands vs last frame
      gui_build_place.c         -- BUILD: per-window placement -- reuse cached geometry or retessellate
      gui_render_init.c         -- RENDER: shared GPU resources, created once -- pipeline, samplers, push-constants
-     gui_render_pal.c          -- RENDER: the style palette -- frame-global style records past every arena region
+     gui_render_pal.c          -- RENDER: the prim palette -- frame-global prim records past every arena region
      gui_render_intern.c       -- RENDER: what enters the palette -- lookup, interning, per-command memo, style epoch
      gui_render_submit.c       -- RENDER: per-surface GPU submit -- gui_render_flush, debug-mode/time setters
 
@@ -196,7 +196,7 @@
 /* shared GPU resources (pipeline, samplers), created once */
 #include "runtime_service/gui/render/pipeline/gui_render_init.c"
 
-/* the style palette -- shared style records past every arena region. */
+/* the prim palette -- shared prim records past every arena region. */
 #include "runtime_service/gui/render/pipeline/gui_render_pal.c"
 
 /* what goes IN the palette -- the lookup, interning, the per-command memo and the style epoch */

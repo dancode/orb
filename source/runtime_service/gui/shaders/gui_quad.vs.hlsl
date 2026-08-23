@@ -55,7 +55,7 @@ static const float2 k_corner[ 6 ] = {
 // record holds.  The tessellator decides only whether four quads beat one.
 float2 band_local( float2 corner, uint band, float2 he0, float pad, uint style )
 {
-    uint   base = style_row( style );
+    uint   base = prim_base_row( style );
     uint   ops  = asuint( u_buffers[ pc.prim_buf ][ base ].y );
     float4 rad  = u_buffers[ pc.prim_buf ][ base + 1u ];
     float4 edge = u_buffers[ pc.prim_buf ][ base + 2u ];
@@ -97,7 +97,7 @@ struct vs_out_t
     float4                 sv_pos : SV_Position;
     float4                 color  : COLOR0;
     float2                 uv     : TEXCOORD0;
-    nointerpolation uint   prim   : TEXCOORD1;   // style record index, slot-local
+    nointerpolation uint   prim   : TEXCOORD1;   // prim record index, slot-local
     nointerpolation float4 rect   : TEXCOORD2;   // shape placement: centre + stored half-extents
     nointerpolation uint   clip   : TEXCOORD3;   // clip-table entry index, slot-local
     nointerpolation float4 border : TEXCOORD4;   // GUI_OP_FRAME: the border band's colour --
@@ -106,7 +106,7 @@ struct vs_out_t
                                                   //   xy = the turn (cos, sin), z = animation
                                                   //   phase in cycles, w = swell amplitude px
     nointerpolation uint   tag    : TEXCOORD6;   // GUI_QUAD_TAG_* in bits 0-1, "the SDF atlas"
-                                                  //   in bit 2.  A GLYPH names no style record,
+                                                  //   in bit 2.  A GLYPH names no prim record,
                                                   //   so the fragment takes its texture from the
                                                   //   push block instead of fetching one
 };
@@ -126,7 +126,7 @@ vs_out_t main( uint vid : SV_VertexID )
     float4 q0 = float4( float2( ci ), float2( ew & 0xFFFFu, ew >> 16u ) ) * 0.25;
 
     // The index word is a tagged union (gui.h): a whole GLYPH carries an atlas ID where every
-    // other quad carries a style record; a STYLED glyph carries both -- the ID where GLYPH keeps
+    // other quad carries a prim record; a STYLED glyph carries both -- the ID where GLYPH keeps
     // it and a style where GLYPH keeps fx bits, so its ops ride a record while its rect stays
     // repack-stable.
     uint idx      = asuint( q.w );
@@ -137,8 +137,8 @@ vs_out_t main( uint vid : SV_VertexID )
     bool anyglyph = isglyph || isstyled;
 
     uint style = isglyph  ? 0u
-               : isstyled ? ( ( idx >> GUI_QUAD_GSTYLE_SHIFT ) & GUI_QUAD_GSTYLE_MASK )
-                          : ( ( idx >> GUI_QUAD_STYLE_SHIFT  ) & GUI_QUAD_STYLE_MASK  );
+               : isstyled ? ( ( idx >> GUI_QUAD_GPRIM_SHIFT ) & GUI_QUAD_GPRIM_MASK )
+                          : ( ( idx >> GUI_QUAD_PRIM_SHIFT  ) & GUI_QUAD_PRIM_MASK  );
 
     // A glyph is EXACT, styled or not; a band is always SKIRT, which is what frees its rule bits
     // to name the band.
@@ -171,7 +171,7 @@ vs_out_t main( uint vid : SV_VertexID )
     // and a shrink (negative) needs no room.
     float pad = 0.0;
     if ( rule == 1u || rule == 2u )
-        pad = u_buffers[ pc.prim_buf ][ style_row( style ) + 2u ].x * 0.5 + 1.0
+        pad = u_buffers[ pc.prim_buf ][ prim_base_row( style ) + 2u ].x * 0.5 + 1.0
             + max( fxr.w, 0.0 );
 
     float2 he = q0.zw;

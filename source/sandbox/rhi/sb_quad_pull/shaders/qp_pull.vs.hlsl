@@ -64,7 +64,7 @@ vs_out_t main( uint vid : SV_VertexID )
     // The expansion pad comes from the STYLE, not the quad: feather (style row 2 leads with it)
     // plus a one-pixel AA guard.  This dependent fetch is the cost under measurement -- the
     // real replay backend pays exactly this to keep pre-inflated extents out of the record.
-    uint   style   = ( asuint( r0.w ) >> 6u ) & 0x7FFu;   // gui.h GUI_QUAD_STYLE_SHIFT/MASK
+    uint   style   = ( asuint( r0.w ) >> 6u ) & 0x7FFu;   // gui.h GUI_QUAD_PRIM_SHIFT/MASK
     float4 srow    = u_buffers[ pc.style_buf ][ ( pc.style_base + style ) * STYLE_ROWS + 2u ];
     float  pad     = srow.x + 1.0;
 

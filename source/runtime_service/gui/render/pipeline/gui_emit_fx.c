@@ -2,7 +2,7 @@
 
     gui/render/pipeline/gui_emit_fx.c -- The SDF surface family.
 
-    The pushes whose shape is resolved by the FRAGMENT off a style record rather than geometry:
+    The pushes whose shape is resolved by the FRAGMENT off a prim record rather than geometry:
     the fx_box faces (shadow, skirt, glow, inset, pulse, rotated box), the per-corner rounded
     rect, the circular sectors and their dashed / gradient forms, the cell and lattice patterns,
     the regular polygon, the dashed and traced box outlines, and the two repeat lattices.
@@ -742,7 +742,7 @@ draw_push_box_cut( f32 x, f32 y, f32 w, f32 h, f32 rounding,
 
     nx by ny copies, `pitch` apart centre-to-centre, centred on (cx, cy).  The fragment folds its
     coordinate into a cell (GUI_OP_REPEAT), so a 3x3 grip and a 40-tick ruler cost the same one
-    quad and the same one style record -- which is the point: a lattice was affordable before only
+    quad and the same one prim record -- which is the point: a lattice was affordable before only
     while the count stayed small, and the counts a ruler or a segmented bar actually wants did not.
 
     The SET's box is derived rather than taken, here and in the tessellator, because the fragment

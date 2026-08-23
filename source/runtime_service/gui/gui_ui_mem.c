@@ -151,7 +151,7 @@ gui_print_mem_stats( void )
        viewport), clip carries a full set per frame-in-flight only (window-keyed, not viewport-
        keyed) -- these are the rows where a raised GUI_MAX_* cap actually lands. */
     GUI_MEM_ROW( "  quad records",   s.gpu_quad_bytes  );
-    GUI_MEM_ROW( "  style records",  s.gpu_style_bytes );
+    GUI_MEM_ROW( "  prim records",   s.gpu_prim_bytes );
     GUI_MEM_ROW( "  clip entries",   s.gpu_clip_bytes  );
     GUI_MEM_ROW( "  glyph uv table", s.gpu_glyph_bytes );
     if ( s.gpu_debug_bytes )
@@ -160,7 +160,7 @@ gui_print_mem_stats( void )
 
     gui_log( GUI_LOG_INFO, "  -- CPU static (fixed backend buffers) ------------------" );
     GUI_MEM_ROW( "draw command list",  s.cpu_drawlist_bytes );
-    GUI_MEM_ROW( "quad + style arenas", s.cpu_tess_bytes    );
+    GUI_MEM_ROW( "quad + prim arenas", s.cpu_tess_bytes    );
     GUI_MEM_ROW( "retained cache",     s.cpu_cache_bytes    );
     GUI_MEM_ROW( "icon + sprite tables", s.cpu_draw_bytes   );
     GUI_MEM_ROW( "atlas records",      s.cpu_res_bytes      );

@@ -166,7 +166,7 @@ tess_fx_segment( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 
 
 /* Volatile-widget seam (render/pipeline/gui_build_volatile.c, included right after this file in
    the gui_render.c unity build).  tess_dispatch calls volatile_range_close once a tagged command
-   RANGE's quads / style records / GPU commands are fully written; it records the block's slot-relative
+   RANGE's quads / prim records / GPU commands are fully written; it records the block's slot-relative
    position, reserves padded headroom past the live geometry (advancing this file's write heads),
    and stamps the slot tessellation generation.  s_volatile_patching is declared up with s_tess
    (tess_quad_push reads it to keep a patch out of the glyph counters) and set by volatile_patch around its scratch re-tessellation so the range tracking below
@@ -188,7 +188,7 @@ static void volatile_range_close( gui_id_t id, u32 vb_open, u32 pb_open, u32 cmd
    Neither was needed: a fill, a line and a sprite never call font_glyph, and the font is per-command
    data now (gui.h).  Activating it changes which atlas the glyph lookups resolve from and nothing
    else; it does NOT split the GPU batch, since it only alters the texture tess_set_tex stamps onto
-   the following quads' style records.  A bitmap label, an SDF heading and the fill behind them still go out as one
+   the following quads' prim records.  A bitmap label, an SDF heading and the fill behind them still go out as one
    draw call.  The active font is saved and restored so the BUILD phase leaves the global font state
    (used by the next frame's layout) untouched. */
 static void
@@ -253,7 +253,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
            phase already folded; tess_prim_local confirms whatever comes back before using it.
            */
         s_tess.cmd_hint       = pal_cmd_hint( ci );
-        s_tess.cmd_style_out  = 0u;    /* an arena index: "nothing resolved yet" */
+        s_tess.cmd_prim_out  = 0u;    /* an arena index: "nothing resolved yet" */
 
         /* The op word is ambient over ONE command and cleared here, so a case that sets it
            cannot leak the effect onto the next primitive.  That containment is the whole reason
@@ -576,7 +576,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
 
             /* One textured quad about its centre -- the glyph-run transform (tess_quad_xf)
                with the pivot every icon caller wants.  No snap, by the transformed-quad rule. */
-            /* The lattice: one quad, one style record, however many copies -- the count reaches
+            /* The lattice: one quad, one prim record, however many copies -- the count reaches
                the fragment as the set's extent against the pitch, so it costs no lane and no
                per-copy work. */
             case GUI_CMD_REPEAT:
@@ -748,7 +748,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
         /* Park what this command resolved, for the next pass over it.  A command that commits
            several styles parks the LAST -- as much as one hint can hold -- and one that
            commits none (a plain glyph run resolves no style at all) parks nothing. */
-        pal_cmd_learn( ci, s_tess.cmd_style_out );
+        pal_cmd_learn( ci, s_tess.cmd_prim_out );
     }
 
     if ( open_vid != GUI_ID_NONE )

@@ -39,7 +39,7 @@ typedef struct
     f32 time;           // frame clock, wrapped seconds     4 bytes
     u32 clip_buf;       // bindless slot: frame clip table  4 bytes (0 = no table, no clipping)
     u32 clip_base;      // draw's first clip-table entry    4 bytes
-    u32 prim_buf;       // bindless slot: style records     4 bytes (0 = no records bound)
+    u32 prim_buf;       // bindless slot: prim records     4 bytes (0 = no records bound)
     u32 prim_base;      // the SLOT's first record          4 bytes
     u32 pal_base;       // this frame's palette block       4 bytes
     u32 quad_buf;       // bindless slot: quad-record table 4 bytes
@@ -54,7 +54,7 @@ typedef struct
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved onto the STYLE RECORD each quad names
     (gui.h, gui_prim_t.tex); the fragment reads the slot from there and picks between the two
-    SAMPLERS below by the model packed with it.  A glyph quad names no style record at all, so its
+    SAMPLERS below by the model packed with it.  A glyph quad names no prim record at all, so its
     atlas comes from tex_cov / tex_sdf above -- also flush-constant.  What remains in this block is
     per-FRAME state only: in normal rendering nothing in the tail changes across a whole flush, and
     the redundancy filter below pushes it once and then goes quiet.  */
@@ -213,7 +213,7 @@ static struct
     rhi_buffer_t    clip_buf;           // storage buffer: all clip regions
     u32             clip_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
-    /* The style record table (gui.h, gui_prim_t) -- one region per (frame-in-flight,
+    /* The prim record table (gui.h, gui_prim_t) -- one region per (frame-in-flight,
        viewport), written per window slot by the flush.  Registered bindless once; the slot index
        rides pc.prim_buf and the window's own record base rides pc.prim_base. */
 

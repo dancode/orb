@@ -146,7 +146,7 @@ test_quad_layout( void )
        asserts beside GUI_MAX_PRIMS. */
     test_equal( 0xFFFFFFFFu, ( GUI_QUAD_CLIP_MASK  << GUI_QUAD_CLIP_SHIFT  )
                            | ( 3u                  << GUI_QUAD_RULE_SHIFT  )
-                           | ( GUI_QUAD_STYLE_MASK << GUI_QUAD_STYLE_SHIFT )
+                           | ( GUI_QUAD_PRIM_MASK << GUI_QUAD_PRIM_SHIFT )
                            | ( GUI_QUAD_FX_MASK    << GUI_QUAD_FX_SHIFT    )
                            | ( GUI_QUAD_TAG_MASK   << GUI_QUAD_TAG_SHIFT   ) );
     test_equal( 0xFFFFFFFFu, ( GUI_QUAD_CLIP_MASK  << GUI_QUAD_CLIP_SHIFT  )
@@ -158,7 +158,7 @@ test_quad_layout( void )
        the band index must fit exactly the two bits the rule vacated. */
     test_equal( 0xFFFFFFFFu, ( GUI_QUAD_CLIP_MASK  << GUI_QUAD_CLIP_SHIFT  )
                            | ( 3u                  << GUI_QUAD_BAND_SHIFT  )
-                           | ( GUI_QUAD_STYLE_MASK << GUI_QUAD_STYLE_SHIFT )
+                           | ( GUI_QUAD_PRIM_MASK << GUI_QUAD_PRIM_SHIFT )
                            | ( GUI_QUAD_FX_MASK    << GUI_QUAD_FX_SHIFT    )
                            | ( GUI_QUAD_TAG_MASK   << GUI_QUAD_TAG_SHIFT   ) );
     test_equal( GUI_QUAD_RULE_SHIFT, GUI_QUAD_BAND_SHIFT );
@@ -166,17 +166,17 @@ test_quad_layout( void )
 
     test_equal( 15u, GUI_QUAD_CLIP_MASK );   /* GUI_WIN_CLIP_MAX - 1, a backend-private cap */
     test_equal( GUI_GLYPH_TABLE_MAX - 1u, GUI_QUAD_GLYPH_MASK );
-    test_true ( (u32)GUI_MAX_PRIMS - 1u <= GUI_QUAD_STYLE_MASK );
+    test_true ( (u32)GUI_MAX_PRIMS - 1u <= GUI_QUAD_PRIM_MASK );
 
     /* The style field's two halves must not meet: below GUI_PAL_FIRST an index is slot-local
        against the arena, at or above it a shared palette entry, and the shader picks the base off
-       the index alone (gui_common.hlsli, style_row).  An overlap would silently resolve a window's
+       the index alone (gui_common.hlsli, prim_row).  An overlap would silently resolve a window's
        record against the palette block. */
     test_true ( (u32)GUI_MAX_PRIMS <= GUI_PAL_FIRST );
-    test_true ( GUI_PAL_FIRST + GUI_PAL_MAX - 1u <= GUI_QUAD_STYLE_MASK );
-    test_true ( gui_style_is_pal( gui_style_pal( 0u ) ) );
-    test_true ( gui_style_is_pal( gui_style_pal( GUI_PAL_MAX - 1u ) ) );
-    test_true ( !gui_style_is_pal( (u32)GUI_MAX_PRIMS - 1u ) );
+    test_true ( GUI_PAL_FIRST + GUI_PAL_MAX - 1u <= GUI_QUAD_PRIM_MASK );
+    test_true ( gui_prim_is_pal( gui_prim_pal( 0u ) ) );
+    test_true ( gui_prim_is_pal( gui_prim_pal( GUI_PAL_MAX - 1u ) ) );
+    test_true ( !gui_prim_is_pal( (u32)GUI_MAX_PRIMS - 1u ) );
 
     /* The fx field names a row in the style arena, and the tag took the two bits that would have
        let it reach every one: 8191 rows is 1024 fx pages per window slot, past which the
@@ -193,7 +193,7 @@ test_quad_layout( void )
     test_equal( GUI_QUAD_TAG_SHAPED,   gui_quad_tag  ( idx ) );
     test_equal( GUI_QUAD_RULE_CAPSULE, gui_quad_rule ( idx ) );
     test_equal(  9u,    gui_quad_clip ( idx ) );
-    test_equal( 1337u,  gui_quad_style( idx ) );
+    test_equal( 1337u,  gui_quad_prim( idx ) );
     test_equal( 4321u,  gui_quad_fx   ( idx ) );
 
     /* The four band quads of one shape differ in the band field and in NOTHING else -- that is what
@@ -205,7 +205,7 @@ test_quad_layout( void )
         test_equal( GUI_QUAD_TAG_BAND, gui_quad_tag  ( bidx ) );
         test_equal( b,                 gui_quad_band ( bidx ) );
         test_equal(  9u,               gui_quad_clip ( bidx ) );
-        test_equal( 1337u,             gui_quad_style( bidx ) );
+        test_equal( 1337u,             gui_quad_prim( bidx ) );
         test_equal( 4321u,             gui_quad_fx   ( bidx ) );
         test_equal( idx & ~( 3u << GUI_QUAD_BAND_SHIFT | GUI_QUAD_TAG_MASK << GUI_QUAD_TAG_SHIFT ),
                     bidx & ~( 3u << GUI_QUAD_BAND_SHIFT | GUI_QUAD_TAG_MASK << GUI_QUAD_TAG_SHIFT ) );
@@ -222,13 +222,13 @@ test_quad_layout( void )
     /* GLYPH_STYLED: the glyph arm with a STYLE where the fx bits were.  Its style field must
        reach the whole style space -- slot-local AND palette -- since a styled run dedups onto
        either.  One spare bit (29) is the arm's only slack. */
-    test_equal( GUI_QUAD_GSTYLE_MASK, GUI_QUAD_STYLE_MASK );
-    test_true ( GUI_PAL_FIRST + GUI_PAL_MAX - 1u <= GUI_QUAD_GSTYLE_MASK );
+    test_equal( GUI_QUAD_GPRIM_MASK, GUI_QUAD_PRIM_MASK );
+    test_true ( GUI_PAL_FIRST + GUI_PAL_MAX - 1u <= GUI_QUAD_GPRIM_MASK );
     u32 sidx = gui_quad_idx_glyph_styled( 11u, 7000u, true, 1337u );
     test_equal( GUI_QUAD_TAG_GLYPH_STYLED, gui_quad_tag  ( sidx ) );
     test_equal( 11u,                       gui_quad_clip ( sidx ) );
     test_equal( 7000u,                     gui_quad_glyph( sidx ) );
-    test_equal( 1337u, ( sidx >> GUI_QUAD_GSTYLE_SHIFT ) & GUI_QUAD_GSTYLE_MASK );
+    test_equal( 1337u, ( sidx >> GUI_QUAD_GPRIM_SHIFT ) & GUI_QUAD_GPRIM_MASK );
     test_equal( GUI_QUAD_SDF_BIT, sidx & GUI_QUAD_SDF_BIT );
 
     /* Two glyph table entries per float4 row is what the vertex stage's ID -> row split assumes,

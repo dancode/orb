@@ -15,7 +15,7 @@
     polyline strokes it; arcs are sampled from cos / sin once per call.
 
     Most commands carry one abgr, but GUI_CMD_RECT_GRADIENT carries two and hands the ramp to the
-    FRAGMENT through the style record (GUI_OP_GRAD), so draw_gradient is an exact one-quad blend
+    FRAGMENT through the prim record (GUI_OP_GRAD), so draw_gradient is an exact one-quad blend
     (not banded).  draw_shadow and draw_round_rect hand their shape to the FRAGMENT (GUI_CMD_FX_BOX / a
     rounded rect command, both SDF surfaces -- see the effect band in gui.h): exact edges at any
     radius and softness, ONE quad, no batch split.  Only a STROKED per-corner outline still walks a
@@ -832,7 +832,7 @@ draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col )
 }
 
 /* Gradient fill of `box`, col_a -> col_b, vertical (default) or horizontal.  One quad whose
-   style record carries the ramp (GUI_OP_GRAD), resolved per pixel in the fragment
+   prim record carries the ramp (GUI_OP_GRAD), resolved per pixel in the fragment
    (draw_push_rect_gradient).  Square and axis-aligned -- draw_round_rect_gradient
    below is the general form. */
 void
@@ -1125,7 +1125,7 @@ draw_rect_cut( gui_rect_t box, f32 rounding, gui_rect_t cut, f32 cut_rounding, f
 }
 
 /* A ring of `n` dots fitted to `box`, animating at `rate` revolutions/sec on the SHADER CLOCK.
-   One quad and one style record for the whole ring, and the command's bytes are identical every
+   One quad and one prim record for the whole ring, and the command's bytes are identical every
    frame while it moves -- so unlike a hand-rotated ring of circles it re-tessellates nothing.
    rate 0 is a static ring; the caller presents frames with gui()->request_redraw() while it
    spins, the draw_pulse contract.

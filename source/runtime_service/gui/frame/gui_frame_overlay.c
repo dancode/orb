@@ -363,7 +363,7 @@ overlay_perf( int mode )
                how many shapes wanted a style, how many of the frame-global STORED entries served
                them, and how many fell through to a per-slot UNIQUE record.  The fold rate is what
                the palette is actually worth on this frame. */
-            gui_textf( "styles  %6u", rs.prim_total );
+            gui_textf( "prims   %6u", rs.prim_total );
             gui_textf( " stored %6u / %u", rs.prim_stored, rs.prim_stored_max );
             gui_textf( " unique %6u", rs.prim_unique );
             gui_textf( " folded %5.1f%%",
@@ -515,7 +515,7 @@ overlay_memory( void )
         fmt_snprintf( det, sizeof( det ), "%u x %u B", rs.quad_count_all, (u32)GUI_QUAD_BYTES );
         overlay_mem_row( "quads", det, quad_b );
         fmt_snprintf( det, sizeof( det ), "%u x %u B", rs.prim_count_all, (u32)GUI_PRIM_BYTES );
-        overlay_mem_row( "styles", det, prim_b );
+        overlay_mem_row( "prims", det, prim_b );
         overlay_mem_row( "text", "", rs.text_pool_used );
         fmt_snprintf( det, sizeof( det ), "%u writes", rs.upload_batches );
         overlay_mem_row( "uploaded", det, rs.upload_bytes );
@@ -527,7 +527,7 @@ overlay_memory( void )
         fmt_snprintf( det, sizeof( det ), "%u x %u reg", (u32)GUI_MAX_QUADS, ms.gpu_regions );
         overlay_mem_row( "quad tbl", det, ms.gpu_quad_bytes );
         fmt_snprintf( det, sizeof( det ), "%u x %u reg", (u32)GUI_MAX_PRIMS, ms.gpu_regions );
-        overlay_mem_row( "style tbl", det, ms.gpu_style_bytes );
+        overlay_mem_row( "prim tbl", det, ms.gpu_prim_bytes );
         fmt_snprintf( det, sizeof( det ), "%u x %u reg",
                       (u32)( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX ), ms.gpu_clip_regions );
         overlay_mem_row( "clip tbl", det, ms.gpu_clip_bytes );
@@ -908,7 +908,7 @@ static const char* const k_render_mode [] = { "normal", "wireframe", "batch" };
 static const f32         k_dpi_scale [] = { 0.0f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f };
 static const char* const k_dpi_name  [] = { "auto", "0.75x", "1x", "1.25x", "1.5x", "2x", "3x" };
 
-/* The style palette's three modes, in gui_palette_mode_t order -- what its slider's number means. */
+/* The prim palette's three modes, in gui_palette_mode_t order -- what its slider's number means. */
 static const char* const k_pal_mode  [] = { "off", "frozen", "learning" };
 
 #define DBG_LAYER_COUNT  ( (u32)( sizeof( k_dbg_layer   ) / sizeof( k_dbg_layer  [ 0 ] ) ) )
@@ -1010,7 +1010,7 @@ debug_hotkeys( void )
         if ( gui_is_key_down( APP_KEY_LSHIFT ) || gui_is_key_down( APP_KEY_RSHIFT ) )
         {
             prim_census_reset();
-            gui_log( GUI_LOG_INFO, "style census: cleared" );
+            gui_log( GUI_LOG_INFO, "prim census: cleared" );
         }
         else
         {
@@ -1143,7 +1143,7 @@ debug_hotkeys( void )
 #define SEL_PERF    "NP+ perf"
 #define SEL_STATE   "NP- state"
 #define SEL_DPI     "ui scale"
-#define SEL_PAL     "style pal"
+#define SEL_PAL     "prim pal"
 
    /*============================================================================================*/
 /* One legend line: "<key> <name>" plus its value where it has one (a tier/mode; NULL for the
@@ -1317,7 +1317,7 @@ debug_selector_menu( void )
             gui_dpi_set( s_dbg_dpi_step == 0 ? GUI_DPI_AUTO : GUI_DPI_MANUAL,
                          k_dpi_scale[ s_dbg_dpi_step ] );
 
-        /* The style palette, as ONE axis: off / frozen / learning (gui_palette_mode_t, gui.h).
+        /* The prim palette, as ONE axis: off / frozen / learning (gui_palette_mode_t, gui.h).
            A lookup switch beside a learning switch read as independent and are not -- interning
            is the only route into the table, so "no learning" from a cold start leaves the lookup
            nothing to answer with and is OFF wearing a different label.  Three states is the whole
