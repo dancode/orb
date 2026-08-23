@@ -190,7 +190,7 @@ bool build_retained_skip    ( void )    { return s_retained_cache; }
    would keep the whole app rebuilding every frame regardless of anything else being idle.
    Debug-band windows still hash, diff, and retessellate normally -- they render; only the
    metrics ignore them, and the slot packer places them after every main-band slot (see the
-   band-major sort in cache_diff_windows). */
+   (band, vp, win) sort in cache_diff_windows). */
 
 /*==============================================================================================
     Window geometry slots -- the retained geometry store.

@@ -496,7 +496,7 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
         slot->win   = wh->win;
         slot->z     = wh->z;    // max segment z, pre-computed in cache_diff_windows
         slot->vp    = wh->vp;   // last segment vp, pre-computed in cache_diff_windows
-        slot->band  = wh->band; // arena band; band-major sort already placed debug slots last
+        slot->band  = wh->band; // arena band; the (band, vp, win) sort placed debug slots last
         slot->valid = false;
 
         /* prev->cmd_cached: a window whose command run overflowed the stable cache last frame has
@@ -564,10 +564,11 @@ cache_place_slots( bool allow_reuse, cache_place_stats_t* st )
             for ( u32 m = 0; m < sizeof( st->stored_mask ) / sizeof( st->stored_mask[ 0 ] ); ++m )
                 st->stored_mask[ m ] |= slot->stored_mask[ m ];
 
-            /* Band boundary: the far edge of the main band's reservations (band-major sort placed
-               them first, but id-keyed slots keep historical positions, so track the max extent
-               rather than the loop's write head).  The dashboard's memory map draws "main arena
-               ends here" at this mark; everything past it is the debug band's own footprint. */
+            /* Band boundary: the far edge of the main band's reservations (the (band, vp, win)
+               sort placed them first, but id-keyed slots keep historical positions, so track the
+               max extent rather than the loop's write head).  The dashboard's memory map draws
+               "main arena ends here" at this mark; everything past it is the debug band's own
+               footprint. */
             u32 ve = slot->quad_base + slot->quad_alloc;
             if ( ve > s_tess_stats.band0_quad_end ) s_tess_stats.band0_quad_end = ve;
         }

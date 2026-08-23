@@ -44,18 +44,25 @@ typedef struct
 #define SEG_CHAIN_END 0xFFFFu
 static u16 s_seg_next[ GUI_MAX_SEGS ];
 
-/* Band-major, win-minor record ordering.  Debug-band records place after every main-band record,
-   so within any one placement pass their FRESH allocations land past the main band's -- the debug
-   UI's per-frame churn stays out of the main band's way.  (Slots are id-keyed and keep their
+/* Band-major, viewport-middle, win-minor record ordering.  Debug-band records place after every
+   main-band record, so within any one placement pass their FRESH allocations land past the main
+   band's -- the debug UI's per-frame churn stays out of the main band's way.  Within a band,
+   records group by VIEWPORT: each surface's windows pack contiguously, so its flush upload span
+   (the union of its slots' live ranges, gui_render_submit.c) covers its own bytes rather than
+   whatever other surfaces interleaved between them.  (Slots are id-keyed and keep their
    historical positions across frames, so this is a per-pass allocation-order property, not a
-   byte-layout guarantee; the repack pass restores strict band-major packing.)  Both cur[] and
-   prev[] sort with this same rule every frame so the diff below stays one linear scan. */
+   byte-layout guarantee; the repack pass restores strict band/viewport-major packing.)  Both
+   cur[] and prev[] sort with this same rule every frame so the diff below stays one linear scan.
+   A window that migrates viewports sorts to a new position and diffs as vanished + appeared --
+   the retessellation that forces is already owed, since its coordinates moved surfaces. */
 
 static inline bool
 cache_rec_before( const render_win_hash_t* a, const render_win_hash_t* b )
 {
     if ( a->band != b->band )
         return a->band < b->band;
+    if ( a->vp != b->vp )
+        return a->vp < b->vp;
     return a->win < b->win;
 }
 
@@ -245,10 +252,11 @@ cache_diff_windows( void )
              s_cache.cur[ bi ].band = 1;   /* sticky: any debug seg tags the window */
     }
 
-    /* Sort cur[] band-major, win-minor (cache_rec_before) -- debug-band windows pack after every
-       main-band window.  Insertion sort over RENDER_MAX_WIN = 32 elements: O(n) when the window
-       set is stable (the common case, already sorted from last frame), O(n^2) at worst.
-       prev[] is kept in the same order via the memcpy below, so the diff is a single linear scan. */
+    /* Sort cur[] by (band, vp, win) (cache_rec_before) -- debug-band windows pack after every
+       main-band window, and within a band each viewport's windows pack together.  Insertion sort
+       over RENDER_MAX_WIN = 32 elements: O(n) when the window set is stable (the common case,
+       already sorted from last frame), O(n^2) at worst.  prev[] is kept in the same order via
+       the memcpy below, so the diff is a single linear scan. */
 
     for ( u32 a = 1; a < s_cache.cur_n; ++a )
     {
@@ -261,7 +269,7 @@ cache_diff_windows( void )
         s_cache.cur[ b ] = key;
     }
 
-    /* Pass 2: diff against last frame.  Both arrays share the (band, win) sort order, so one
+    /* Pass 2: diff against last frame.  Both arrays share the (band, vp, win) sort order, so one
        linear scan suffices -- O(cur_n + prev_n) instead of the O(n^2) nested scan. */
 
     s_cache.unchanged   = 0;
