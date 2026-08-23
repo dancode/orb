@@ -103,6 +103,22 @@ dash_slot_color( u32 slot_index )
     return s_dash_palette[ slot_index % DASH_PALETTE_N ];
 }
 
+/* Viewport palette for the ownership band -- keyed by viewport index, so a surface keeps its
+   color for the whole run (unlike slot colors, which shift with the window set).  Four entries
+   because GUI_MAX_VIEWPORTS is 4; the modulo below keeps a raised cap from reading out of
+   bounds until this table grows with it. */
+static const u32 s_dash_vp_palette[] = {
+    GUI_COLOR( 0x58, 0xA8, 0xE8, 0xE0 ),  GUI_COLOR( 0xE8, 0xA0, 0x48, 0xE0 ),
+    GUI_COLOR( 0x68, 0xD0, 0x78, 0xE0 ),  GUI_COLOR( 0xD8, 0x68, 0xD8, 0xE0 ),
+};
+#define DASH_VP_PALETTE_N ( sizeof( s_dash_vp_palette ) / sizeof( s_dash_vp_palette[ 0 ] ) )
+
+static u32
+dash_vp_color( i32 vp )
+{
+    return s_dash_vp_palette[ (u32)vp % DASH_VP_PALETTE_N ];
+}
+
 /*==============================================================================================
     Painter helpers -- thin wrappers over the standard draw API so the panel code reads like
     the diagram it draws.  All coordinates are absolute (gui_canvas rects).
@@ -288,7 +304,12 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
                     "%u / %u quads  (%s / %s)   hwm %u   slot pad %u   (band 0)",
                     used, cap, ub, cb, hwm, pad );
 
-    gui_rect_t bar = { r.x, r.y + lh + 2.0f, r.w, r.h - lh - 4.0f };
+    /* The bottom of the rect is reserved for the viewport OWNERSHIP band (painted at the end of
+       this function); the slot map proper gets what remains. */
+    const f32 own_h   = lh;
+    const f32 own_gap = 3.0f;
+
+    gui_rect_t bar = { r.x, r.y + lh + 2.0f, r.w, r.h - lh - 4.0f - own_h - own_gap };
     if ( bar.h < 12.0f ) return;
 
     gui_draw_rect( bar.x, bar.y, bar.w, bar.h, DASH_COL_BG );   /* free space: flat backdrop */
@@ -426,6 +447,93 @@ dash_panel_memmap( gui_rect_t r, const dash_snapshot_t* sn )
     dash_vline( bar.x + (f32)hwm * px_per, bar.y, bar.y + bar.h, DASH_COL_HWM );
     if ( sn->overflow_ever )
         gui_draw_rect( bar.x + bar.w - 8.0f, bar.y, 8.0f, 8.0f, DASH_COL_OVERFLOW );
+
+    /* Viewport OWNERSHIP band -- the same arena at the same scale, re-painted by the SURFACE
+       that uploads each region rather than by window, so a column of pixels lines up with the
+       slot map above.  Fills cover each slot's whole reservation in its viewport's color.  The
+       outline over each viewport brackets the [lo .. hi) union of its slots' reservations --
+       the flush's upload span is the same union over live counts (gui_render_submit.c), so a
+       foreign color inside a bracket is a byte that surface re-uploads without owning, the
+       cost of placement interleaving windows from different viewports. */
+    gui_rect_t own = { r.x, bar.y + bar.h + own_gap, r.w, own_h };
+
+    gui_draw_rect( own.x, own.y, own.w, own.h, DASH_COL_BG );
+
+    typedef struct { u32 lo, hi, live, alloc, slot_n; } dash_vp_agg_t;
+    dash_vp_agg_t     agg[ GUI_MAX_VIEWPORTS ];
+    dash_rect_batch_t ob = { 0 };
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+        agg[ v ] = ( dash_vp_agg_t ){ .lo = 0xFFFFFFFFu };
+
+    for ( u32 i = 0; i < sn->slot_count; ++i )
+    {
+        const dash_slot_t* sl = &sn->slots[ i ];
+        if ( !sl->valid ) continue;
+        if ( sl->band != 0 && !s_show_second_band ) continue;
+
+        f32  x0     = own.x + (f32)sl->quad_base * px_per;
+        f32  xa     = own.x + (f32)( sl->quad_base + sl->quad_alloc ) * px_per;
+        bool vp_ok  = sl->vp >= 0 && sl->vp < (i32)GUI_MAX_VIEWPORTS;
+        u32  col    = vp_ok ? dash_vp_color( sl->vp ) : DASH_COL_FIF_IDLE;
+        if ( sl->band != 0 )
+            col = ( col & 0x00FFFFFFu ) | 0x60000000u;   /* debug band dimmed, as in the map above */
+        dash_rb_push( &ob, x0, own.y, xa - x0, own.h, col );
+
+        if ( !vp_ok ) continue;
+        dash_vp_agg_t* a = &agg[ sl->vp ];
+        a->slot_n += 1;
+        a->live   += sl->quad_count;
+        a->alloc  += sl->quad_alloc;
+        /* Bracket over the RESERVATION extent (alloc, not live count) so it closes flush with
+           the fills below it -- a live-count bracket stops short of the last slot's pad and
+           reads as a gap unless "Show pad" explains it. */
+        if ( sl->quad_base                  < a->lo ) a->lo = sl->quad_base;
+        if ( sl->quad_base + sl->quad_alloc > a->hi ) a->hi = sl->quad_base + sl->quad_alloc;
+    }
+    dash_rb_flush( &ob );
+
+    for ( i32 vp = 0; vp < (i32)GUI_MAX_VIEWPORTS; ++vp )
+    {
+        const dash_vp_agg_t* a = &agg[ vp ];
+        if ( a->slot_n == 0 || a->hi <= a->lo ) continue;
+
+        gui_rect_t br = { own.x + (f32)a->lo * px_per, own.y,
+                          (f32)( a->hi - a->lo ) * px_per, own.h };
+        dash_outline( br, DASH_COL_CHANGED );
+
+        if ( br.w >= 34.0f )
+        {
+            char vb[ 8 ];
+            fmt_snprintf( vb, sizeof( vb ), "vp%d", vp );
+            gui_draw_text_clipped( ( gui_rect_t ){ br.x + 3.0f, br.y, br.w - 5.0f, br.h },
+                                   GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, DASH_COL_TEXT, vb );
+        }
+
+        if ( dash_tip_at( br ) )
+        {
+            if ( gui_tooltip_begin() )
+            {
+                gui_stack();
+                char sb[ 16 ];
+                u32  span = a->hi - a->lo;
+                gui_textf( "viewport %d  --  %u slots, %u live quads (%u reserved)",
+                           vp, a->slot_n, a->live, a->alloc );
+                gui_textf( "span [%u .. %u)  =  %u quads (%s)", a->lo, a->hi, span,
+                           dash_bytes( span * (u32)GUI_QUAD_BYTES, sb, sizeof( sb ) ) );
+                if ( span > a->alloc )
+                    gui_textf( "%u quads inside the span belong to other surfaces",
+                               span - a->alloc );
+                if ( sn->surf[ vp ].live )
+                {
+                    const dash_surf_t* sf = &sn->surf[ vp ];
+                    gui_textf( "last flush: %s in %u writes  %u draw calls",
+                               dash_bytes( sf->up_bytes, sb, sizeof( sb ) ),
+                               sf->up_batches, sf->draw_calls );
+                }
+            }
+            gui_tooltip_end();
+        }
+    }
 }
 
 /* Frames-in-flight: per live surface, one box per in-flight region; the region written last is
@@ -916,7 +1024,8 @@ dash_window( bool* open )
         /* Panel heights derive from the live line height so text rows never clip mid-glyph. */
         f32 lh = font_line_h();
 
-        dash_shell_panel( "Quad arena -- slot memory map",  lh + 58.0f,                  dash_panel_memmap   );
+        /* Memmap height = header line + slot bar + the viewport ownership band it carves off. */
+        dash_shell_panel( "Quad arena -- slot memory map",  2.0f * lh + 61.0f,           dash_panel_memmap   );
         dash_shell_panel( "Frames in flight / uploads",     96.0f,                       dash_panel_fif      );
         dash_shell_panel( "Draw batches (dispatch order)",  8.0f * ( lh + 3.0f ) + 6.0f, dash_panel_batch    );
         /* Nine bars plus four summary lines -- sized from the row count so adding a pool does not
