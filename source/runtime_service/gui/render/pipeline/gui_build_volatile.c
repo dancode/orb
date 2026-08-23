@@ -761,6 +761,11 @@ volatile_update( void )
         /* Checkpoint s_draw's transient emit state -- everything the callback appends this call
            is throwaway; nothing about it should outlive this function. */
         u32 cmd_ck  = s_draw.cmd_count;
+        u32 pool_ck = s_draw.pool_used;   /* the payload bump arena leaks per replay without this:
+                                             draw_reset never runs on idle frames, so ~70 bytes per
+                                             replay exhausts GUI_CMD_POOL_BYTES after a few seconds
+                                             of idle and every later push is refused -- the block
+                                             visibly vanishes until an input frame resets the pool */
         u32 seg_ck  = s_draw.seg_count;
         u32 pt_ck   = s_draw.pt_count;
         u32 rect_ck = s_draw.rect_count;
@@ -849,6 +854,7 @@ volatile_update( void )
         /* Roll s_draw back -- nothing the callback emitted this call belongs in the real frame's
            persistent state, match or not. */
         s_draw.cmd_count          = cmd_ck;
+        s_draw.pool_used          = pool_ck;
         s_draw.seg_count          = seg_ck;
         s_draw.pt_count           = pt_ck;
         s_draw.rect_count         = rect_ck;
