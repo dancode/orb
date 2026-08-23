@@ -8,8 +8,9 @@
     one record, and no walk can reach past the boundary to find the others.
 
     The palette is the other half of the address space.  It holds records that belong to no window
-    -- the theme's own vocabulary, the shapes every widget draws -- once, in a block past every
-    region, named by a style index in the range the arena can never produce (gui.h, GUI_PAL_FIRST).
+    -- the theme's own vocabulary, the shapes every widget draws -- once, in a block at the head
+    of the prim table's buffer (gui_render_init.c, the fixed header before the claim space),
+    named by a style index in the range the arena can never produce (gui.h, GUI_PAL_FIRST).
     A quad naming one resolves it against pc.pal_base instead of pc.prim_base, and gets a record
     that cost the arena nothing.
 
@@ -71,7 +72,17 @@ render_pal_publish( u32 count )
 static u32
 render_pal_base( u32 frame )
 {
-    return (u32)GUI_PAL_ORIGIN + frame * (u32)GUI_PAL_MAX;
+    return frame * (u32)GUI_PAL_MAX;   // the blocks lead the buffer, before the claim space
+}
+
+/*  Forget what the blocks hold -- called when the prim table's buffer is replaced (growth), so
+    each frame's next flush re-uploads its block into the fresh buffer.  The CPU-side table is
+    untouched: rec[0, count) is still the addressable set, only the uploaded bytes are gone. */
+
+static void
+render_pal_invalidate( void )
+{
+    ++s_pal.gen;
 }
 
 /*  Bring this frame's block up to date.  Called at the top of every flush; uploads only when the

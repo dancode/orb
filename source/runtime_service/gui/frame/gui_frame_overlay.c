@@ -521,15 +521,16 @@ overlay_memory( void )
         overlay_mem_row( "uploaded", det, rs.upload_bytes );
         gui_separator();
 
-        /* GPU.  cap x stride x regions for the regioned tables; the quad table is claim-sized
-           (live capacity x frame-in-flight copies); the glyph table is ONE shared copy, replaced
-           rather than rewritten, so it shows no region multiplier. */
+        /* GPU.  The quad and prim tables are claim-sized (live capacity x frame-in-flight
+           copies, the prim row's bytes include its fixed header); clip is cap x stride x
+           regions; the glyph table is ONE shared copy, replaced rather than rewritten, so it
+           shows no region multiplier.  gpu_clip_regions doubles as the frame-in-flight count. */
         overlay_mem_head( OVL_MEM_GPU_COL, "GPU", ms.gpu_total );
         fmt_snprintf( det, sizeof( det ), "%u rec x %u fif", ms.gpu_quad_capacity,
-                      ms.gpu_quad_capacity ? ms.gpu_quad_bytes
-                          / ( ms.gpu_quad_capacity * (u32)GUI_QUAD_BYTES ) : 0u );
+                      ms.gpu_clip_regions );
         overlay_mem_row( "quad tbl", det, ms.gpu_quad_bytes );
-        fmt_snprintf( det, sizeof( det ), "%u x %u reg", (u32)GUI_MAX_PRIMS, ms.gpu_regions );
+        fmt_snprintf( det, sizeof( det ), "%u rec x %u fif", ms.gpu_prim_capacity,
+                      ms.gpu_clip_regions );
         overlay_mem_row( "prim tbl", det, ms.gpu_prim_bytes );
         fmt_snprintf( det, sizeof( det ), "%u x %u reg",
                       (u32)( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX ), ms.gpu_clip_regions );

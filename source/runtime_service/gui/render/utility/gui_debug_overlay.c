@@ -422,9 +422,9 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
     /* The overlay's single prim record, refreshed every flush because the one thing in it that
        is not a constant -- the atlas bindless slot -- can move when the atlas is rebuilt.  Every
        overlay quad carries style 0 against this base, so one entry serves the whole surface.
-       OP_SELF: solid colour, the texel is never consulted.  It sits past the arena in each
-       region (GUI_PRIM_OVERLAY_ENTRY) and therefore cannot collide with a window's records
-       however full the arena is. */
+       OP_SELF: solid colour, the texel is never consulted.  It sits in the prim table's fixed
+       header (GUI_PRIM_OVERLAY_ORIGIN, one record per (frame, viewport)) and therefore cannot
+       collide with a window's records or move when the claim space grows. */
     u32        prim_region = region;
     gui_prim_t overlay_rec = {
         .field = (u32)GUI_FX_NONE,
@@ -432,11 +432,10 @@ dbg_flush( i32 vp, rhi_cmd_t cmd, i32 win_w, i32 win_h )
         .tex   = res_atlas_idx() | GUI_TEX_MODE( GUI_TEX_COVERAGE ),
     };
     rhi()->buffer_write( s_render.prim_buf, &overlay_rec, (u32)GUI_PRIM_BYTES,
-                         prim_region * (u32)GUI_PRIM_REGION_BYTES
-                             + GUI_PRIM_OVERLAY_ENTRY * (u32)GUI_PRIM_BYTES );
+                         ( (u32)GUI_PRIM_OVERLAY_ORIGIN + prim_region ) * (u32)GUI_PRIM_BYTES );
 
     push.prim_buf  = s_render.prim_buf_idx;
-    push.prim_base = prim_region * (u32)GUI_PRIM_REGION_MAX + GUI_PRIM_OVERLAY_ENTRY;
+    push.prim_base = (u32)GUI_PRIM_OVERLAY_ORIGIN + prim_region;
 
     /* The overlay builds its own quads and never names a palette entry, but the block must be
        fully initialized -- Vulkan leaves an unwritten push constant undefined. */

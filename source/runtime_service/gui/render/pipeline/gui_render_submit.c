@@ -136,8 +136,11 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     /* This surface's quad upload span, taken from the slot table.  Slots tagged for this
        viewport contribute their [quad_base, +count) ranges; the union is what we upload.  res_hi
        extends the union over the slots' full RESERVATIONS -- volatile patches can land anywhere
-       inside a slot's alloc, so that is the extent the claim below must cover. */
+       inside a slot's alloc, so that is the extent the claim below must cover.  The prim record
+       arena gets the same reservation union for its own claim; its uploads are per slot, so no
+       live-count union is needed. */
     u32 quad_lo = s_tess.quad_count, quad_hi = 0, res_hi = 0;
+    u32 prim_lo = s_tess.prim_count, prim_hi = 0;
 
     u32 overlay_bytes = 0;   // debug-band windows' share, excluded from the upload stats
 
@@ -152,6 +155,12 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
         if ( sl->quad_base                     < quad_lo ) quad_lo = sl->quad_base;
         if ( sl->quad_base + sl->quad_count    > quad_hi ) quad_hi = sl->quad_base + sl->quad_count;
         if ( sl->quad_base + sl->quad_alloc    > res_hi  ) res_hi  = sl->quad_base + sl->quad_alloc;
+
+        if ( sl->prim_alloc )
+        {
+            if ( sl->prim_base                  < prim_lo ) prim_lo = sl->prim_base;
+            if ( sl->prim_base + sl->prim_alloc > prim_hi ) prim_hi = sl->prim_base + sl->prim_alloc;
+        }
     }
 
     u32 up_batches = 0;   // geometry buffer_write calls this flush issued (full spans or patch spans)
@@ -193,6 +202,33 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     if ( geo_dirty )
         *qr = ( gui_quad_region_t ){ .gen = s_geo_gen, .anchor = quad_lo,
                                      .base = claim_base, .buf_gen = s_quad_gpu.buf_gen };
+
+    /* This surface's claim on the PRIM table, the quad claim's twin: anchored at prim_lo over
+       the reservation union [prim_lo, prim_hi).  A moved anchor, a moved claim or a swapped
+       buffer means every slot's records sit at new offsets, so the per-slot upload below runs
+       regardless of its pending bits. */
+    u32 prim_gpu_org  = 0;   // the claim's origin within this frame's copy, header included
+    u32 prim_claim_recs = 0;
+    if ( prim_hi > prim_lo )
+    {
+        const gui_prim_claim_t* pc = prim_gpu_reserve( vp_index, prim_hi - prim_lo );
+        prim_claim_recs = pc->alloc;
+        prim_gpu_org    = (u32)GUI_PRIM_HDR_RECORDS + frame * s_prim_gpu.capacity + pc->base;
+        if ( prim_hi - prim_lo > prim_claim_recs )
+            prim_hi = prim_lo + prim_claim_recs;   /* could not grow: clamp, records truncate */
+
+        gui_prim_region_t* pr = &s_prim_gpu.region[ clip_region ];
+        if ( pr->anchor != prim_lo || pr->base != pc->base
+             || pr->buf_gen != s_prim_gpu.buf_gen )
+        {
+            *pr = ( gui_prim_region_t ){ .anchor = prim_lo, .base = pc->base,
+                                         .buf_gen = s_prim_gpu.buf_gen };
+            for ( u32 d = 0; d < s_dispatch_count; ++d )   /* every slot's offset moved */
+                if ( s_dispatch[ d ]->vp == vp_index )
+                    s_prim_range_pending[ s_dispatch[ d ]->cache_idx ] |=
+                        (u8)( 1u << clip_region );
+        }
+    }
 
     /* The clip table is window-keyed, not viewport-keyed (gui_render_init.c): a window's cache
        slot is unique across the whole app, so its slab means the same thing to every surface.
@@ -306,11 +342,13 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
 
     /* Primitive record upload.  The records are already in their final form on the CPU (gui.h,
        gui_prim_t is what the shader reads), so unlike the clip entries there is no staging step --
-       a slot's run copies straight out of the arena.
+       a slot's run copies straight out of the arena, into the claim through the anchored mapping
+       (arena record a -> prim_gpu_org + (a - prim_lo)).
        Where this genuinely differs from the clip slabs above: a record range is PACKED, so its
        offset moves whenever the arena repacks or the window relocates.  s_prim_range_pending is
        therefore set by every fresh tessellation (which is the only thing that can move a base or
-       change a record) rather than only on content change. */
+       change a record) rather than only on content change -- and by the claim staleness check
+       above, when the mapping itself moved under unchanged slots. */
     for ( u32 d = 0; d < s_dispatch_count; ++d )
     {
         const win_geo_slot_t* sl = s_dispatch[ d ];
@@ -320,10 +358,17 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
             continue;
         s_prim_range_pending[ sl->cache_idx ] &= (u8)~region_bit;
 
+        /* The clamp only bites on the degraded truncated-claim path above. */
+        u32 pn = sl->prim_count;
+        if ( sl->prim_base >= prim_hi )
+            continue;
+        if ( sl->prim_base + pn > prim_hi )
+            pn = prim_hi - sl->prim_base;
+
         rhi()->buffer_write( s_render.prim_buf, &s_tess.prims[ sl->prim_base ],
-                             sl->prim_count * (u32)GUI_PRIM_BYTES,
-                             clip_region * (u32)GUI_PRIM_REGION_BYTES
-                                 + sl->prim_base * (u32)GUI_PRIM_BYTES );
+                             pn * (u32)GUI_PRIM_BYTES,
+                             ( prim_gpu_org + ( sl->prim_base - prim_lo ) )
+                                 * (u32)GUI_PRIM_BYTES );
     }
 
     /* Open a LOAD pass on the swapchain color target (no depth).  LOAD preserves the scene content
@@ -392,13 +437,13 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
 
     /* Record plumbing.  The buffer slot is flush-constant like the clip one; prim_base is NOT --
        records are packed per window slot, so it is re-pushed from the tail as the walk crosses a
-       slot boundary (below).  Seeded to the region ORIGIN rather than to a sentinel: the walk
+       slot boundary (below).  Seeded to the claim ORIGIN rather than to a sentinel: the walk
        pushes before any draw of a slot so this value is never read, and an in-bounds seed keeps
        that a rendering question rather than an out-of-range storage-buffer read. */
     push.prim_buf  = s_render.prim_buf_idx;
-    push.prim_base = clip_region * (u32)GUI_PRIM_REGION_MAX;
+    push.prim_base = prim_gpu_org;
 
-    /* The palette's block for this frame-in-flight, in the same buffer past every region (gui.h,
+    /* The palette's block for this frame-in-flight, in the same buffer's fixed header (gui.h,
        GUI_PAL_FIRST).  Flush-constant where prim_base is not: a palette index means the same
        record to every window slot, which is the whole reason it exists.  Brought up to date first
        -- the upload is a no-op unless the bake published since this frame last ran.
@@ -459,7 +504,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
            Quads bake slot-local indices for both so they survive a repack, and these are the bases
            that put them back.  Filtered against the last values pushed -- a surface showing one
            window pushes once, and consecutive slots that happen to share both bases push nothing. */
-        u32 slot_prim_base = clip_region * (u32)GUI_PRIM_REGION_MAX + slot->prim_base;
+        u32 slot_prim_base = prim_gpu_org + ( slot->prim_base - prim_lo );
         u32 slot_clip_base = clip_frame_region * (u32)GUI_CLIP_REGION_MAX
                            + slot->cache_idx * (u32)GUI_WIN_CLIP_MAX;
         if ( push.prim_base != slot_prim_base || push.clip_base != slot_clip_base )

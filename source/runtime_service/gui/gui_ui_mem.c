@@ -144,12 +144,12 @@ gui_print_mem_stats( void )
 
     gui_log( GUI_LOG_INFO, "memory usage -- full breakdown:" );
 
-    gui_log( GUI_LOG_INFO, "  -- GPU device (%u live surface%s, %u table regions) --------",
-             s.viewport_count, s.viewport_count == 1u ? "" : "s", s.gpu_regions );
+    gui_log( GUI_LOG_INFO, "  -- GPU device (%u live surface%s) --------",
+             s.viewport_count, s.viewport_count == 1u ? "" : "s" );
     GUI_MEM_ROW( "atlas textures",   s.gpu_texture_bytes );
-    /* The regioned tables broken out: quad/style carry a full set of entries per (frame-in-flight,
-       viewport), clip carries a full set per frame-in-flight only (window-keyed, not viewport-
-       keyed) -- these are the rows where a raised GUI_MAX_* cap actually lands. */
+    /* The tables broken out: quad/prim are claim-sized (live capacity x frame-in-flight copies,
+       grown on demand), clip carries a full set of window slabs per frame-in-flight
+       (window-keyed, not viewport-keyed). */
     GUI_MEM_ROW( "  quad records",   s.gpu_quad_bytes  );
     GUI_MEM_ROW( "  prim records",   s.gpu_prim_bytes );
     GUI_MEM_ROW( "  clip entries",   s.gpu_clip_bytes  );

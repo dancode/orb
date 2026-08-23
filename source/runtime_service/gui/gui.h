@@ -3045,23 +3045,21 @@ typedef struct
     u32 gpu_table_bytes;        // the storage-buffer tables the shader resolves through, summed --
                                 //   sized by the pool caps, not by how many surfaces are open
 
-    /* The table total, split by which table.  Prim and clip are REGIONED, so a raised cap costs
-       a region multiplier: the prim table holds a full set of entries per (frame-in-flight,
-       viewport) since it carries per-surface records (gpu_regions); clip holds a full set per
-       frame-in-flight only, since a window's clip slab is the same for every viewport
-       (gpu_clip_regions).  The quad table is CLAIMED instead of regioned: each live viewport
-       holds a contiguous claim sized to what its windows actually span, in a buffer of
-       gpu_quad_capacity records per frame-in-flight copy that grows on demand
-       (gui_render_init.c).  The glyph table is one shared copy, replaced rather than rewritten,
-       so it pays no multiplier. */
+    /* The table total, split by which table.  The quad and prim tables are CLAIMED, not
+       regioned: each live viewport holds a contiguous claim sized to what its windows actually
+       span, in a buffer of gpu_*_capacity records per frame-in-flight copy that grows on demand
+       (gui_render_init.c) -- the prim buffer additionally leads with a fixed header (palette
+       blocks + overlay records).  Clip is REGIONED, holding a full set of window slabs per
+       frame-in-flight (gpu_clip_regions).  The glyph table is one shared copy, replaced rather
+       than rewritten, so it pays no multiplier. */
 
     u32 gpu_quad_bytes;         // quad records   -- gpu_quad_capacity x 16 B x frames-in-flight
     u32 gpu_quad_capacity;      // quad records per frame-in-flight copy (grows on claim pressure)
-    u32 gpu_prim_bytes;        // prim records  -- (GUI_MAX_PRIMS + 1) x 128 B x gpu_regions,
-                                //   plus GUI_PAL_MAX x 128 B per frame-in-flight (the palette)
+    u32 gpu_prim_bytes;         // prim records   -- gpu_prim_capacity x 128 B x frames-in-flight,
+                                //   plus the fixed header (palette blocks + overlay records)
+    u32 gpu_prim_capacity;      // prim records per frame-in-flight copy (grows on claim pressure)
     u32 gpu_clip_bytes;         // clip entries   -- window slabs x 32 B x gpu_clip_regions
     u32 gpu_glyph_bytes;        // glyph UV table -- GUI_GLYPH_TABLE_MAX x 8 B, ONE copy
-    u32 gpu_regions;            // frames-in-flight x viewport slots the prim table carries
     u32 gpu_clip_regions;       // frames-in-flight only -- clip is window-keyed, not viewport-keyed
     u32 gpu_debug_bytes;        // debug-overlay quad table (Debug builds; 0 when compiled out)
     u32 gpu_total;              // sum of the section above

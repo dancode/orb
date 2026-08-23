@@ -96,45 +96,70 @@ typedef struct
 #define GUI_CLIP_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT )
 
 /*==============================================================================================
-    Primitive record region sizing -- the storage buffer the fragment resolves a shape from.
+    Primitive record table sizing -- the storage buffer the fragment resolves a shape from,
+    sized by CLAIM like the quad table below, not by cap.
 
-    Same region scheme as the clip table above and for the same in-flight reason, but the layout
-    inside a region differs in the one way that matters: records are PACKED, not slabbed.  A
-    window's records sit wherever the arena placed them (win_geo_slot_t.prim_base), so an upload
-    lands at a moving offset and the flush pushes that offset per slot -- where a clip slab sits at
-    a fixed multiple and needs no per-slot constant at all.
+    Records are PACKED per window slot, not slabbed: a window's records sit wherever the arena
+    placed them (win_geo_slot_t.prim_base), so an upload lands at a moving offset and the flush
+    pushes that offset per slot -- where a clip slab sits at a fixed multiple and needs no
+    per-slot constant at all.
+
+    The buffer leads with a FIXED HEADER whose origins never move as the claim space grows:
+
+        [ palette blocks x FIF | overlay records x (FIF x viewports) | claim copies x FIF ]
+
+    The STYLE PALETTE (gui.h, GUI_PAL_FIRST): one copy of a record every window on every surface
+    can name, where a claim's records are reachable only from the window slot that wrote them.
+    Regioned per FRAME-IN-FLIGHT and nothing else -- content is identical across surfaces, but a
+    style re-bake rewrites the table while earlier frames may still be reading it, and one block
+    per in-flight frame is what makes that write land somewhere no draw is looking.  A buffer
+    swap drops the uploaded bytes; render_pal_invalidate (gui_render_pal.c) makes each frame's
+    next flush re-upload its block from the CPU-side table.
+
+    The OVERLAY RECORDS: the DEBUG OVERLAY needs one record per (frame-in-flight, viewport) and
+    has no window slot to get one from.  It builds its quads outside the tessellator entirely,
+    yet it still has to name a texture -- the atlas slot, which is only known at flush time -- so
+    "carry style 0 and inherit" was never available to it.  dbg_flush rewrites the record every
+    flush, so a buffer swap needs no help here.
+
+    All bases index in RECORDS, not float4s.
 ==============================================================================================*/
-
-/* One past the arena, because the DEBUG OVERLAY needs a record of its own and has no window slot
-   to get one from.  It builds its quads outside the tessellator entirely, yet it still has to
-   name a texture -- the atlas slot, which is only known at flush time -- so "carry style 0 and
-   inherit" was never available to it.  One entry at the top of every region, written by
-   dbg_flush, is the whole cost. */
-#define GUI_PRIM_OVERLAY_ENTRY   GUI_MAX_PRIMS
-#define GUI_PRIM_REGION_MAX    ( GUI_MAX_PRIMS + 1u )                    /* records per region */
-#define GUI_PRIM_REGION_BYTES  ( GUI_PRIM_REGION_MAX * GUI_PRIM_BYTES )
-#define GUI_PRIM_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
-
-/*  The STYLE PALETTE (gui.h, GUI_PAL_FIRST) sits past every region, in the same buffer.  It is
-    not regioned per viewport, because that is what it is FOR: one copy of a record every window
-    on every surface can name, where a region's records are reachable only from the window slot
-    that wrote them.
-
-    It is regioned per FRAME-IN-FLIGHT and nothing else.  Content is identical across surfaces, so
-    a viewport multiplier would buy nothing -- but a style re-bake rewrites the table while earlier
-    frames may still be reading it, and one copy per in-flight frame is what makes that write land
-    somewhere no draw is looking.  The glyph table answers the same question by replacing its
-    buffer wholesale; the palette is small enough that copies are cheaper than a rebuild.
-
-    So the buffer is [ region 0 .. region N-1 | palette 0 .. palette F-1 ], and pc.pal_base names
-    this frame's block.  Both bases index in RECORDS, not float4s. */
 
 #define GUI_PAL_REGION_COUNT   RHI_MAX_FRAMES_IN_FLIGHT
 #define GUI_PAL_REGION_BYTES   ( GUI_PAL_MAX * GUI_PRIM_BYTES )
-#define GUI_PAL_ORIGIN         ( GUI_PRIM_REGION_COUNT * GUI_PRIM_REGION_MAX )  /* in records */
 
-#define GUI_PRIM_BUF_RECORDS   ( GUI_PAL_ORIGIN + GUI_PAL_REGION_COUNT * GUI_PAL_MAX )
-#define GUI_PRIM_BUF_BYTES     ( GUI_PRIM_BUF_RECORDS * GUI_PRIM_BYTES )
+#define GUI_PRIM_OVERLAY_ORIGIN  ( GUI_PAL_REGION_COUNT * GUI_PAL_MAX )        /* in records */
+#define GUI_PRIM_HDR_RECORDS     ( GUI_PRIM_OVERLAY_ORIGIN \
+                                 + RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
+
+#define GUI_PRIM_BUCKET        32u    /* claim granularity, records: 4 KB steps absorb jitter */
+#define GUI_PRIM_GPU_BOOT_CAP  512u   /* boot capacity, records per frame-in-flight copy */
+
+typedef struct
+{
+    u32 base;   // claim start within one frame-in-flight copy, in records (bucket-aligned)
+    u32 alloc;  // claim size in records (bucket multiple); 0 = viewport holds no claim
+} gui_prim_claim_t;
+
+/* What one (frame-in-flight, viewport) slice of the claim space last uploaded, checked at
+   flush.  No geometry generation here, unlike the quad regions: content changes ride the
+   per-slot pending bits (s_prim_range_pending), so this only carries mapping moves -- any
+   mismatch re-uploads every slot of the surface. */
+typedef struct
+{
+    u32 anchor;   // arena record index mapped to the claim's first record
+    u32 base;     // claim base the uploads targeted
+    u32 buf_gen;  // buffer generation the uploads landed in
+} gui_prim_region_t;
+
+static struct
+{
+    u32               capacity;  // records per frame-in-flight copy (header excluded)
+    u32               tail;      // first free record past every claim (bump; compacts on swap)
+    u32               buf_gen;   // bumped per buffer swap; stale regions re-upload on next flush
+    gui_prim_claim_t  claim [ GUI_MAX_VIEWPORTS ];
+    gui_prim_region_t region[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
+} s_prim_gpu;
 
 /*==============================================================================================
     Quad table sizing -- the geometry table (gui.h, gui_quad_t), sized by CLAIM, not by cap.
@@ -255,11 +280,11 @@ static struct
     rhi_buffer_t    clip_buf;           // storage buffer: all clip regions
     u32             clip_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
-    /* The prim record table (gui.h, gui_prim_t) -- one region per (frame-in-flight,
-       viewport), written per window slot by the flush.  Registered bindless once; the slot index
-       rides pc.prim_buf and the window's own record base rides pc.prim_base. */
+    /* The prim record table (gui.h, gui_prim_t) -- claim-sized, replaced on growth (s_prim_gpu
+       above), written per window slot by the flush.  The bindless slot index rides pc.prim_buf
+       and the window's own record base rides pc.prim_base. */
 
-    rhi_buffer_t    prim_buf;           // storage buffer: all record regions
+    rhi_buffer_t    prim_buf;           // storage buffer: header + frame-in-flight claim copies
     u32             prim_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
     /* The quad-record geometry table -- claim-sized, replaced on growth (s_quad_gpu above). */
@@ -512,6 +537,107 @@ quad_gpu_reserve( i32 vp, u32 need )
     return c;
 }
 
+/*==============================================================================================
+    The prim table's buffer -- the same replace-on-growth scheme as the quad table above, plus
+    the fixed header (palette blocks + overlay records) leading the claim space.
+==============================================================================================*/
+
+static void render_pal_invalidate( void );   /* gui_render_pal.c, included after this unit */
+
+static bool
+prim_gpu_create( u32 capacity )
+{
+    rhi_buffer_t buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
+        .size       = ( (u32)GUI_PRIM_HDR_RECORDS + RHI_MAX_FRAMES_IN_FLIGHT * capacity )
+                          * (u32)GUI_PRIM_BYTES,
+        .usage      = RHI_BUFFER_USAGE_STORAGE,
+        .memory     = RHI_MEMORY_CPU_TO_GPU,
+        .debug_name = "gui_prim_table",
+    } );
+    if ( !rhi_handle_valid( buf ) )
+        return false;
+
+    u32 idx = rhi()->register_buffer( buf );
+    if ( idx == 0 )
+    {
+        rhi()->buffer_destroy( buf );
+        return false;
+    }
+
+    s_render.prim_buf     = buf;
+    s_render.prim_buf_idx = idx;
+    s_prim_gpu.capacity   = capacity;
+    ++s_prim_gpu.buf_gen;      /* every region's bytes are gone: re-upload on next touch */
+    render_pal_invalidate();   /* the palette blocks are gone with them */
+    return true;
+}
+
+/*  Give a viewport a claim of at least `need` records -- quad_gpu_reserve's twin; see it for the
+    growth and failure story. */
+
+static gui_prim_claim_t*
+prim_gpu_reserve( i32 vp, u32 need )
+{
+    gui_prim_claim_t* c = &s_prim_gpu.claim[ vp ];
+    if ( need <= c->alloc )
+        return c;
+
+    u32 alloc = need + need / 4u;
+    alloc = ( alloc + GUI_PRIM_BUCKET - 1u ) / GUI_PRIM_BUCKET * GUI_PRIM_BUCKET;
+
+    if ( s_prim_gpu.tail + alloc <= s_prim_gpu.capacity )
+    {
+        c->base           = s_prim_gpu.tail;
+        c->alloc          = alloc;
+        s_prim_gpu.tail  += alloc;
+        return c;
+    }
+
+    /* Swap: capacity at least doubles, or covers the compacted claims when they need more. */
+    u32 total = alloc;
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+        if ( (i32)v != vp )
+            total += s_prim_gpu.claim[ v ].alloc;
+
+    u32 capacity = s_prim_gpu.capacity * 2u;
+    if ( capacity < total )
+        capacity = total;
+
+    rhi_buffer_t old_buf = s_render.prim_buf;
+    u32          old_idx = s_render.prim_buf_idx;
+
+    if ( !prim_gpu_create( capacity ) )
+    {
+        s_render.prim_buf     = old_buf;
+        s_render.prim_buf_idx = old_idx;
+        GUI_WARN_ONCE( "gui prim table could not grow to %u records -- styling may degrade\n",
+                       capacity );
+        return c;
+    }
+
+    s_prim_gpu.tail = 0;
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+    {
+        gui_prim_claim_t* cv = &s_prim_gpu.claim[ v ];
+        if ( (i32)v == vp )
+            cv->alloc = alloc;
+        if ( cv->alloc == 0 )
+            continue;
+        cv->base         = s_prim_gpu.tail;
+        s_prim_gpu.tail += cv->alloc;
+    }
+
+    gui_log( GUI_LOG_INFO, "gui prim table grew: %u records per frame copy (%u KB total)",
+             capacity, ( (u32)GUI_PRIM_HDR_RECORDS + RHI_MAX_FRAMES_IN_FLIGHT * capacity )
+                           * (u32)GUI_PRIM_BYTES / 1024u );
+
+    if ( old_idx )
+        rhi()->unregister_buffer( old_idx );
+    if ( rhi_handle_valid( old_buf ) )
+        rhi()->buffer_destroy( old_buf );
+    return c;
+}
+
 static bool
 render_init( void )
 {
@@ -624,17 +750,10 @@ render_init( void )
     }
 
     /* The primitive record table.  REQUIRED for the same reason the clip table is: once the
-       fragment resolves its shape from a record, a frame without one has nothing to draw.  Holds
-       the per-(frame, viewport) arena regions AND the palette blocks behind them. */
-    s_render.prim_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
-        .size       = GUI_PRIM_BUF_BYTES,
-        .usage      = RHI_BUFFER_USAGE_STORAGE,
-        .memory     = RHI_MEMORY_CPU_TO_GPU,
-        .debug_name = "gui_prim_table",
-    } );
-    if ( rhi_handle_valid( s_render.prim_buf ) )
-        s_render.prim_buf_idx = rhi()->register_buffer( s_render.prim_buf );
-    if ( s_render.prim_buf_idx == 0 )
+       fragment resolves its shape from a record, a frame without one has nothing to draw.  Boot
+       capacity claim space behind the fixed header (palette blocks + overlay records); grows on
+       claim pressure (prim_gpu_reserve). */
+    if ( !prim_gpu_create( GUI_PRIM_GPU_BOOT_CAP ) )
     {
         gui_log( GUI_LOG_ERROR, "primitive record buffer unavailable -- gui render disabled" );
         render_shutdown();
@@ -736,6 +855,7 @@ render_shutdown( void )
         rhi()->unregister_buffer( s_render.prim_buf_idx );
     if ( rhi_handle_valid( s_render.prim_buf ) )
         rhi()->buffer_destroy( s_render.prim_buf );
+    memset( &s_prim_gpu, 0, sizeof( s_prim_gpu ) );   /* claims die with the buffer */
 
     if ( s_render.quad_buf_idx )
         rhi()->unregister_buffer( s_render.quad_buf_idx );

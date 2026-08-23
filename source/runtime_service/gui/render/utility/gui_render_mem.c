@@ -34,26 +34,23 @@ backend_memory( u32 live_viewports )
     /* Sprite and SDF atlases report 0 until something creates them. */
     s.gpu_texture_bytes = res_atlas_bytes() + res_sprite_bytes() + res_sdf_bytes();
 
-    /* The storage-buffer tables the pipeline resolves through.  The first three are REGIONED,
-       because they are rewritten every frame and an in-flight draw must not read a region another
-       surface is filling -- so their sizes already carry that multiplier and none of them scales
-       with live_viewports.  The style table carries one copy per (frame-in-flight, viewport),
-       since it holds per-surface records; clip carries one copy per frame-in-flight only, since a
-       window's clip slab means the same thing to every viewport (gui_render_init.c).  The quad
-       table is claim-sized: per-viewport claims over a frame-in-flight-copied buffer that grows
-       on demand, so its bytes track what surfaces actually use.  The glyph table changes only
-       when a font enters the atlas or a repack moves a page, so ONE buffer serves every surface
-       and is replaced wholesale on the rare rebuild.
-
-       The style bucket carries a second thing: the palette blocks behind the arena regions, which
-       are per frame-in-flight only (gui_render_pal.c) since their content is surface-independent. */
-    s.gpu_regions      = (u32)GUI_PRIM_REGION_COUNT;
+    /* The storage-buffer tables the pipeline resolves through.  Clip is REGIONED: rewritten
+       every frame, so each frame-in-flight needs a full set of window slabs to land in (one copy
+       per frame only -- a window's clip slab means the same thing to every viewport,
+       gui_render_init.c).  The quad and prim tables are CLAIM-sized: per-viewport claims over a
+       frame-in-flight-copied buffer that grows on demand, so their bytes are live measurements,
+       not constants -- the prim buffer additionally leads with the fixed header (the palette
+       blocks + the overlay records, gui_render_pal.c).  The glyph table changes only when a font
+       enters the atlas or a repack moves a page, so ONE buffer serves every surface and is
+       replaced wholesale on the rare rebuild. */
     s.gpu_clip_regions = (u32)GUI_CLIP_REGION_COUNT;
     if ( rhi_handle_valid( s_render.clip_buf ) )
         s.gpu_clip_bytes  = (u32)( GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES );
+    s.gpu_prim_capacity = s_prim_gpu.capacity;
     if ( rhi_handle_valid( s_render.prim_buf ) )
-        s.gpu_prim_bytes = (u32)GUI_PRIM_BUF_BYTES;   /* arena regions + the palette blocks */
-    /* The quad table is CLAIM-sized (gui_render_init.c): a live measurement, not a constant. */
+        s.gpu_prim_bytes = (u32)( ( GUI_PRIM_HDR_RECORDS
+                                    + RHI_MAX_FRAMES_IN_FLIGHT * s_prim_gpu.capacity )
+                                  * GUI_PRIM_BYTES );
     s.gpu_quad_capacity = s_quad_gpu.capacity;
     if ( rhi_handle_valid( s_render.quad_buf ) )
         s.gpu_quad_bytes = (u32)( RHI_MAX_FRAMES_IN_FLIGHT * s_quad_gpu.capacity * GUI_QUAD_BYTES );
