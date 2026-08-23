@@ -164,6 +164,18 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
     }
 }
 
+/* Track rect at the press that started the active slider drag -- single-slot like s_drag_anchor_x,
+   since only one widget owns active_id at a time.  Shared by slider_float_step and slider_int.
+
+   The fraction has to map against THIS, not the live per-frame track_r: a slider can sit in a
+   panel whose own layout responds to the value the slider writes (e.g. a UI-scale lever resizing
+   its own host panel).  Reading live geometry mid-drag turns that into a feedback loop -- the
+   panel reflows under a stationary cursor, the reflowed track maps the same cursor x to a
+   different value, and the two states alternate every frame.  Anchoring the mapping to the
+   geometry at press time keeps the value a pure function of cursor displacement, so it converges
+   instead of oscillating no matter what the drag itself causes to move. */
+static gui_rect_t s_slider_anchor_track;
+
 /* slider_float_step -- slider_float quantized to `step` (e.g. 0.25 lands the value on 1/4 marks);
    step <= 0 leaves it continuous, so plain slider_float just forwards with step 0. */
 bool
@@ -179,11 +191,15 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
     gui_rect_t track_r = cell_next( WIDGET_H );
     gui_item_state_t st = item_state( id, track_r, ITEM_DRAG );
 
+    if ( st.pressed )
+        s_slider_anchor_track = track_r;
+
     /* Drag: map the cursor's track fraction to a value, snapping to the step grid when asked. */
     bool changed = false;
     if ( st.active )
     {
-        f32 t  = saturate( ( s_io.mouse_x - track_r.x ) / track_r.w );
+        gui_rect_t at = s_slider_anchor_track;
+        f32 t  = saturate( ( s_io.mouse_x - at.x ) / at.w );
         f32 nv = lo + t * ( hi - lo );
         if ( step > 0.0f )
             nv = lo + floorf( ( nv - lo ) / step + 0.5f ) * step;   /* nearest step from lo */
@@ -236,10 +252,14 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     gui_rect_t track_r = cell_next( WIDGET_H );
     gui_item_state_t st = item_state( id, track_r, ITEM_DRAG );
 
+    if ( st.pressed )
+        s_slider_anchor_track = track_r;
+
     bool changed = false;
     if ( st.active )
     {
-        f32 t  = saturate( ( s_io.mouse_x - track_r.x ) / track_r.w );
+        gui_rect_t at = s_slider_anchor_track;
+        f32 t  = saturate( ( s_io.mouse_x - at.x ) / at.w );
         i32 nv = lo + (i32)floorf( t * (f32)( hi - lo ) + 0.5f );    /* nearest whole step */
         if ( nv < lo ) nv = lo;
         if ( nv > hi ) nv = hi;
