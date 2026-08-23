@@ -2308,6 +2308,7 @@ win_corners( void )
 ==============================================================================================*/
 
 static f32  s_fill_ang    = 90.0f;    /* gradient angle, degrees (90 = top to bottom) */
+static f32  s_fill_mid    = 0.5f;     /* gradient midpoint, 0..1 (0.5 = linear) */
 static f32  s_fill_round  = 10.0f;
 static f32  s_fill_depth  = 14.0f;    /* inset falloff depth, px */
 static bool s_fill_spin;
@@ -2320,8 +2321,9 @@ win_fills( void )
     gui()->stack();
 
     gui()->field_label_right( 240.0f );
-    gui()->slider_float( "angle (deg)", &s_fill_ang,   0.0f, 360.0f );
-    gui()->slider_float( "rounding",    &s_fill_round, 0.0f, 40.0f  );
+    gui()->slider_float( "angle (deg)",  &s_fill_ang,   0.0f, 360.0f );
+    gui()->slider_float( "midpoint",     &s_fill_mid,   0.05f, 0.95f );
+    gui()->slider_float( "rounding",     &s_fill_round, 0.0f, 40.0f  );
     gui()->checkbox( "spin the angle", &s_fill_spin );
     if ( s_fill_spin )
     {
@@ -2340,21 +2342,27 @@ win_fills( void )
            sweep -- which is why all three read from the record instead. */
         f32 w = ( r.w - 40.0f ) / 3.0f, h = r.h - 24.0f;
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 10.0f, r.y + 12.0f, w, h },
-                                         s_fill_round, TEAL, PANEL, GUI_GRAD_LINEAR, ang, 0.0f );
-        /* Alpha ramps too, and it stays LINEAR -- alpha is coverage, never gamma encoded, so a
-           fade to transparent is even rather than crowded at one end. */
+                                         s_fill_round, TEAL, PANEL, GUI_GRAD_LINEAR, ang, s_fill_mid );
+        /* Alpha ramps too -- coverage is never gamma encoded, so a fade to transparent bends
+           exactly as the colour ramp beside it does. */
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 20.0f + w, r.y + 12.0f, w, h },
                                          s_fill_round,
                                          GUI_COLOR( 0xFF, 0x70, 0x50, 0xFF ),
                                          GUI_COLOR( 0xFF, 0x70, 0x50, 0x00 ),
-                                         GUI_GRAD_RADIAL, ang, 0.0f );
+                                         GUI_GRAD_RADIAL, ang, s_fill_mid );
         gui()->draw_round_rect_gradient( ( gui_rect_t ){ r.x + 30.0f + w * 2.0f, r.y + 12.0f, w, h },
                                          s_fill_round, TEAL, GUI_COLOR( 0x30, 0x20, 0x60, 0xFF ),
-                                         GUI_GRAD_CONIC, ang, 0.0f );
+                                         GUI_GRAD_CONIC, ang, s_fill_mid );
     }
     gui()->text_wrapped( "left: linear, on the angle slider.  middle: radial, fading to "
                          "transparent at the rim.  right: conic -- an angular sheen, mirrored "
                          "about the angle so it has no seam to meet itself at." );
+    gui()->text_wrapped( "drag the midpoint past ~0.6 and watch the RADIAL swatch: the ramp "
+                         "gets a hard, bright point dead centre instead of a soft core.  that is "
+                         "not a bug -- pow(t, e) with e < 1 has infinite slope at t = 0, and a "
+                         "radial ramp's t = 0 is a single pixel every direction converges on.  a "
+                         "linear ramp bends the same way and never shows it, because it has no "
+                         "point where all directions meet." );
 
     gui()->separator_text( "the midpoint test -- rounded vs square, same two endpoints" );
     {

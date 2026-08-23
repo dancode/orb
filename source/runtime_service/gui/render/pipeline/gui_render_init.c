@@ -62,15 +62,16 @@ typedef struct
 } gui_push_t;           // total 124 bytes / 128 (just within RHI_MAX_PUSH_CONST_SIZE)
 
 
-/*  The texture and its sampling model USED to live here, one pair per draw call, and that is
-    exactly what forced a draw call per texture.  They moved onto the STYLE RECORD each quad names
-    (gui.h, gui_prim_t.tex); the fragment reads the slot from there and picks between the two
-    SAMPLERS below by the model packed with it.  A glyph quad names no prim record at all, so its
-    atlas comes from tex_cov / tex_sdf above -- also flush-constant.  What remains in this block is
-    per-FRAME state only: in normal rendering nothing in the tail changes across a whole flush, and
-    the redundancy filter below pushes it once and then goes quiet.  */
+/*  Info Notes:
 
-/*  The block is written ONCE per flush, before the dispatch walk, and re-pushed from the tail by
+    - This block is per-FRAME stateacross a viewport render, partial updates per window slot.
+    - The mvp is per viewport for screen pixel dimensions to be deduced, set once.
+    - The texture and its sampling model USED to live here, forcing a draw call per texture.
+    - They moved onto the STYLE RECORD each quad names, the fragment reads the slot from there.
+    - It picks between the two SAMPLERS above by the model packed with it.  
+    - A glyph quad names no prim record at all, so its atlas comes from tex_cov / tex_sdf above.
+
+    - The block is written ONCE per flush, before the dispatch walk, and re-pushed from the tail by
     the consumers that genuinely vary below that granularity: prim_base and clip_base, which are
     per WINDOW SLOT because the record arena is packed rather than slabbed, and the BATCH debug
     view's tint, which is deliberately different per draw call (see gui_render_flush).  All three
