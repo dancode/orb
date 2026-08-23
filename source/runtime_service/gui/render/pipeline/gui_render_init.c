@@ -23,20 +23,24 @@
     shared constant and never writes it.
 
 ==============================================================================================*/
+
 #include "engine/sys/sys_host.h"  // sys_exe_dir -- locate the cooked .oshd shaders
-                                  // (gui is a static lib: sys is always in the host)
 
 // clang-format off
 /*==============================================================================================
     Push constant layout -- must match gui_pc_t in shaders/gui_common.hlsli.
 
-    The cooked container reflects the block's SIZE, and pipeline_create checks this struct
-    against it; field ORDER is on the two comment blocks to keep in step.
+    The cooked container reflects the block's SIZE, and pipeline_create checks this 
+    struct against it; field ORDER is on the two comment blocks to keep in step.
 ==============================================================================================*/
+
+/* Note: in the future we may want to compress some values to make space to 16 bit values.
+   (samp_point, samp_image, clip_buf, prim_buf, quad_buf, glyph_buf, tex_cov, tex_sdf)
+   are good candidates */
 
 typedef struct
 {
-    f32 mvp[ 16 ];      // column-major ortho matrix          64 bytes
+    f32 mvp[ 16 ];      // column-major ortho matrix           64 bytes
     u32 samp_point;     // bindless sampler: NEAREST            4 bytes
     u32 samp_image;     // bindless sampler: LINEAR             4 bytes
     u32 dbg_flat;       // debug: 1 = flat color (no atlas)     4 bytes
@@ -55,7 +59,8 @@ typedef struct
     u32 tex_cov;        // bindless slot: coverage atlas        4 bytes
     u32 tex_sdf;        // bindless slot: SDF atlas             4 bytes
 
-} gui_push_t;           // total 124 bytes -- well within RHI_MAX_PUSH_CONST_SIZE
+} gui_push_t;           // total 124 bytes / 128 (just within RHI_MAX_PUSH_CONST_SIZE)
+
 
 /*  The texture and its sampling model USED to live here, one pair per draw call, and that is
     exactly what forced a draw call per texture.  They moved onto the STYLE RECORD each quad names
