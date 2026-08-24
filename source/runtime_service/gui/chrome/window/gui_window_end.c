@@ -25,7 +25,7 @@
    GUI_EXT_SHADOW theme color the elevation shadow uses so a theme that opts out of shadows
    (alpha 0) opts out of this too.  Deliberately a raw constant, not a style var yet: prove it
    reads well here and on the scrollbar track before promoting it to a toggle. */
-#define TITLE_EDGE_SHADOW_SIZE   8.0f
+#define TITLE_EDGE_SHADOW_SIZE   12.0f
 
 /* Minimized shelf chip: the title bar alone, parked on the surface's bottom shelf by
    window_begin_ex.  A restore button (the two-box restore glyph) sits at the right edge, with
@@ -117,11 +117,14 @@ window_end_titlebar( gui_window_t* win, bool native )
         draw_face( ( gui_rect_t ){ s_build.win.x, s_build.win.y, s_build.win.w, title_h },
                    GUI_ROLE_TITLE, title_phase );
 
-        u32 shadow_col_old = style_ext( GUI_EXT_SHADOW ); UNUSED( shadow_col_old );
-        u32 shadow_col = GUI_COLOR( 0, 0, 0, 96 );
-        if ( ( shadow_col >> 24 ) != 0u )
+        u32 theme_shadow = style_ext( GUI_EXT_SHADOW );
+        if (( theme_shadow >> 24 ) != 0u )
+        {
+            f32 shadow_amt  = ( (f32)( theme_shadow >> 24 ) / 255.0f ) * 0.15f;
+            u32 soft_shadow = ( theme_shadow & 0x00FFFFFFu ) | ( (u32)( shadow_amt * 255.0f ) << 24 );
             draw_edge_shadow( ( gui_rect_t ){ s_build.win.x, s_build.win.y, s_build.win.w, title_h },
-                              GUI_EDGE_BOTTOM, TITLE_EDGE_SHADOW_SIZE, shadow_col );
+                              GUI_EDGE_BOTTOM, TITLE_EDGE_SHADOW_SIZE, soft_shadow );
+        }
 
         /* Shelf chip: its own reduced chrome (restore + close), nothing else on the bar. */
         if ( s_build.win.minimized )
