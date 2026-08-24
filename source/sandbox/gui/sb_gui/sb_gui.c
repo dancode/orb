@@ -152,7 +152,7 @@ show_demo_window( bool* p_open )
 
         static bool child_disabled = false;
         gui()->disabled_begin( child_disabled );
-        if ( gui()->child_begin( "child_demo", 0, gui()->sz_child_rows_h( 4 ), GUI_WIN_NONE | GUI_WIN_NO_CLIP ) )
+        if ( gui()->child_begin( "child_demo", 0, gui()->sz_child_rows_h( 4 ), GUI_WIN_NONE | GUI_WIN_ALWAYS_AUTOSIZE |  GUI_WIN_NO_CLIP ) )
         {
             gui()->stack();
             gui()->text( "This text lives inside a child window." );
@@ -256,7 +256,7 @@ main( int argc, char** argv )
         .font      = GUI_FONT_CASCADIA_MONO,
         .font_size = 16,
         .clock     = sys_tick_seconds,
-     // .sleep     = sys_sleep_milliseconds,
+        .sleep     = sys_sleep_milliseconds,
      // .wait      = sys_wait_for_os_events_ms,
      // .clear     = { 0.4f, 0.4f, 0.4f, 1.00f },
         .clear     = { 0.0f, 0.0f, 0.0f, 1.00f },

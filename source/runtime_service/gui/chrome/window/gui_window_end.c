@@ -95,12 +95,18 @@ window_end_titlebar( gui_window_t* win, bool native )
         /* Maximized: the bar sits directly below the viewport chrome (native shell caption /
            main menu bar), so a second full-strength caption there reads as duplicated chrome.
            Dim it toward the window background -- it stays a grab-and-button strip without
-           competing with the surface's own caption -- and drop the corner radius so the bar is
-           flush with the surface edges.  A shelf chip is never dimmed (it parks at the bottom,
-           away from the viewport chrome, and needs to read as a window handle). */
+           competing with the surface's own caption.  A shelf chip is never dimmed (it parks at
+           the bottom, away from the viewport chrome, and needs to read as a window handle).
+
+           The fill itself always draws SQUARE: the window's outer clip (window_open_body) is
+           the one shape that carries the panel's corner radius on all four corners, so it cuts
+           the bar's top-left/top-right the same way it cuts everything else in the window --
+           the bar never needs to compute a matching round.  Rounding the bar's OWN rect instead
+           would also round its bottom-left/right (the same radius applied to every corner of
+           whatever rect draw_face gets), carving a notch at the body seam that let scrolled
+           body content underneath show through instead of being covered. */
         bool maxed = win && win->maximized && !s_build.win.minimized;
-        if ( maxed || native )
-            draw_set_rounding( 0.0f );   /* flush with the surface: square, like the border ring */
+        draw_set_rounding( 0.0f );
         u8 title_phase = maxed ? GUI_PHASE_INERT : window_standing_phase( s_build.win.id );
         draw_face( ( gui_rect_t ){ s_build.win.x, s_build.win.y, s_build.win.w, title_h },
                    GUI_ROLE_TITLE, title_phase );

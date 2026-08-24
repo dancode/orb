@@ -94,10 +94,17 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
         knob_off = track_org + t_cur * travel;
     }
 
-    /* Track keeps the control-frame radius; the grab uses the grab radius (so a pill grab is one
-       style var away).  Saved/restored because the scrollbar draws in the chrome context. */
+    /* Track fill draws SQUARE, same reasoning as the title bar (gui_window_end.c): the track
+       spans the full gutter and must fully cover anything that scrolled under it (a long
+       unwrapped line can paint past the content column into the gutter), and the window's outer
+       clip already carries the panel's corner radius where the gutter meets the panel's rounded
+       corner.  Rounding the track's own rect here would round BOTH its ends -- including the
+       near end at the body seam, away from any window corner -- opening the same coverage gap
+       the title bar's own rounding used to.  The grab keeps its radius (a pill knob is a widget
+       style choice, not a coverage requirement).  Saved/restored because the scrollbar draws in
+       the chrome context. */
     f32 save_round = draw_rounding();
-    draw_set_rounding( ROUND_WIDGET );
+    draw_set_rounding( 0.0f );
     draw_face( track, GUI_ROLE_ACCENT, GUI_PHASE_INERT );
     draw_set_rounding( ROUND_WIDGET );
     if ( vertical )
