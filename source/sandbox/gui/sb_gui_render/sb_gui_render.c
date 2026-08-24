@@ -226,12 +226,17 @@ page_fills( void )
     r = cell( 6, 6, "round rect" );
     gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 0.0f, TEAL );
 
-    r = cell( 7, 6, "round rect border" );
+    r = cell( 7, 6, "round rect (border)" );
     gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 2.0f, TEAL );
     
     r = cell( 8, 6, "round rect (circle)" );
-    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 0.0f, PLUM ); }
+    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 0.0f, TEAL ); }
     
+    r = cell( 9, 6, "round rect (border)" );
+    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 2.0f, TEAL ); }
+
+
+
     r = cell( 12, 6, "gradient v" );
     gui()->draw_gradient( r, AMBER, PLUM, true );
        

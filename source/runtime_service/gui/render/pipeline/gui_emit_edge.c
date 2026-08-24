@@ -92,6 +92,7 @@ draw_push_frame( f32 x, f32 y, f32 w, f32 h, f32 t, u32 col_bg, u32 col_border )
     gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_FRAME, fill | bord, x, y, w, h, pad );
     if ( !e )
         return;
+
     e->frame.x          = x;
     e->frame.y          = y;
     e->frame.w          = w;

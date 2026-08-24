@@ -338,18 +338,17 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 break;
             }
 
-            /* Body + border in one surface.  A square frame runs the field with feather 0 -- a
-               hard cut on the snapped boundary, matching the crisp edges the fill + four-rail
-               pair drew -- and a rounded one takes the standard AA band. */
+            /* Body + border in one surface.  A square frame runs the field with feather 0 
+               -- a hard cut on the snapped boundary, matching the crisp edges the 
+               fill + four-rail pair drew -- and a rounded one takes the standard AA band. */
             case GUI_CMD_FRAME:
             {
                 const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
                 s_tess.cur_ops       |= GUI_OP_FRAME;
                 s_tess.cur_corner_pow = e->frame.corner_pow;
                 s_tess.cur_col_border = e->frame.col_border;   /* rides the quad, not the style */
-                tess_fx_box( e->frame.x, e->frame.y, e->frame.w, e->frame.h,
-                             e->frame.rounding,
-                             ( e->frame.rounding > 0.0f ) ? TESS_FX_AA : 0.0f,
+                tess_fx_box( e->frame.x, e->frame.y, e->frame.w, e->frame.h, e->frame.rounding,
+                           ( e->frame.rounding > 0.0f ) ? TESS_FX_AA : 0.0f,
                              e->frame.t, 0.0f, 0.0f, 0.0f,
                              0, 0, 1, 1, 0, e->frame.abgr, NULL );
                 break;
