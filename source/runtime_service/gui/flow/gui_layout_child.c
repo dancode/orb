@@ -5,7 +5,11 @@
     child_begin / child_end open a nested scrollable region inside the current layout: they
     carve a box from the parent pen, draw its frame, and hand off to layout_push/pop_region.
     CHILD_RESIZE_X / _Y add a draggable grip on the right / bottom edge so the box is
-    user-resizable; the size is persisted in the region pool across frames.
+    user-resizable; the size is persisted in the region pool across frames.  GUI_WIN_ALWAYS_AUTOSIZE
+    hugs both axes to the content measured last frame instead, mutually exclusive with the resize
+    flags -- the box never shrinks under its own content even if the parent panel narrows past it;
+    combine with GUI_WIN_NO_CLIP so an oversized box simply draws under whatever clip the parent
+    already has, instead of being scissored to a box too small for its content.
 
     window_set_next_size_constraints latches a one-shot [min,max] box consumed by the next
     child_begin: an auto-sized box grows with its content only up to max_h, and a resize drag
@@ -115,6 +119,15 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     bool resize_x = ( flags & GUI_WIN_CHILD_RESIZE_X ) && parent->tmpl.nrows == 0;
     bool resize_y = ( flags & GUI_WIN_CHILD_RESIZE_Y ) && parent->tmpl.nrows == 0;
 
+    /* ALWAYS_AUTOSIZE hugs both axes to content every frame, like the flag already does for a
+       window -- a resize grip and a fixed-to-content size fight over the same axis, and a grid
+       cell sizes its own child regardless of what this child asks for. */
+    bool child_autosize = ( flags & GUI_WIN_ALWAYS_AUTOSIZE ) != 0;
+    ORB_ASSERT_MSG( !( child_autosize && ( flags & ( GUI_WIN_CHILD_RESIZE_X | GUI_WIN_CHILD_RESIZE_Y ) ) ),
+                    "ALWAYS_AUTOSIZE and CHILD_RESIZE_X/_Y are mutually exclusive on a child" );
+    ORB_ASSERT_MSG( !( child_autosize && parent->tmpl.nrows > 0 ),
+                    "ALWAYS_AUTOSIZE has no effect inside a grid-cell parent" );
+
     /* Consume any next-child size constraints up front (cleared so they bind only this child).  A
        grid cell sizes its own child, so the bounds, like the resize flags, are inert there; in flow
        they clamp the resolved size below and the resize-drag apply that follows. */
@@ -140,7 +153,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
     else
     {
         layout_row_break( parent );       /* a flow child starts on its own line */
-        if ( w <= 0.0f )
+        if ( w <= 0.0f && !child_autosize )
         {
             /* Default: fill the content width -- clamped to the visible track.  The content
                column can run wider than the view (an overflowing sibling widened it), and a
@@ -154,7 +167,7 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
 
         /* Latched before the size resolution below overwrites h: the auto-height case owes the
            gutter add-back after the constraint clamps. */
-        bool auto_h = !resize_y && ( h <= 0.0f );
+        bool auto_h = !resize_y && ( h <= 0.0f || child_autosize );
 
         /* A resizeable axis takes its size from the persisted user value, seeded once from the
            incoming w/h (a sensible 8-row default when h <= 0 -- RESIZE_Y supersedes auto-size). */
@@ -163,6 +176,18 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
             if ( rg->user_w <= 0.0f ) rg->user_w = w;
             w = size_animate( rg->user_w, GUI_ID_NONE, 0.0f );
         }
+        /* ALWAYS_AUTOSIZE: hug width to the content measured last frame too, the child-window
+           analogue of an ALWAYS_AUTOSIZE window's horizontal hug -- the box never shrinks
+           narrower than its own content when the parent panel narrows; an oversized box past
+           the visible track is left for the parent's own clip / scrollbar to resolve rather
+           than shrinking the child under its content (see GUI_WIN_NO_CLIP on the child, or a
+           dynamic HSCROLL on the parent).  +2*WIN_BORDER undoes exactly what
+           layout_push_region's view_w subtracts (view.w = outer.w - 2*WIN_BORDER), landing the
+           view on content_w exactly -- the same "hug is exact, no gutter" invariant the auto_h
+           path below already keeps on the vertical axis. */
+        else if ( child_autosize )
+            w = size_animate( ( rg->scroll.content_w > 0.0f ) ? rg->scroll.content_w + 2.0f * WIN_BORDER : CHILD_MIN_W,
+                              GUI_ID_NONE, 0.0f );
         if ( resize_y )
         {
             if ( rg->user_h <= 0.0f ) rg->user_h = ( h > 0.0f ) ? h : WIDGET_H * 8.0f;
@@ -187,8 +212,11 @@ gui_child_begin( const char* id_str, f32 w, f32 h, gui_win_flags_t flags )
            rule -- region_gutters, flow/gui_scroll.c), re-clamped, so a box already at max_h just
            scrolls instead.  The vertical gutter is deliberately NOT added back: the width here is
            the caller's or the parent's visible track, not a fit to content, so growing it would
-           push the box past the column it was told to fill. */
-        if ( auto_h )
+           push the box past the column it was told to fill.  Under ALWAYS_AUTOSIZE, width is
+           ALSO hugged exactly to its content above, so there is no fill column to overflow a
+           horizontal bar into -- skip the add-back, the same way an ALWAYS_AUTOSIZE window
+           shows no bars at all. */
+        if ( auto_h && !child_autosize )
         {
             f32 sb_w, sb_h;
             region_gutters( flags, rg->scroll.content_w, rg->scroll.content_h,

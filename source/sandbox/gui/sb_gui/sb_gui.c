@@ -152,7 +152,7 @@ show_demo_window( bool* p_open )
 
         static bool child_disabled = false;
         gui()->disabled_begin( child_disabled );
-        if ( gui()->child_begin( "child_demo", 0, gui()->sz_child_rows_h( 4 ), GUI_WIN_NONE | GUI_WIN_ALWAYS_AUTOSIZE |  GUI_WIN_NO_CLIP ) )
+        if ( gui()->child_begin( "child_demo", 0, gui()->sz_child_rows_h( 4 ), GUI_WIN_ALWAYS_AUTOSIZE | GUI_WIN_NO_CLIP ) )
         {
             gui()->stack();
             gui()->text( "This text lives inside a child window." );
@@ -176,7 +176,7 @@ show_demo_window( bool* p_open )
            true forever and defeat the idle-skip entirely (the exact problem volatile widgets exist
            to route around; see demo_volatile_pulse_cb above for the widget that keeps animating anyway). */
         
-        bool emit_volatile = true;
+        bool emit_volatile = false;
         if ( emit_volatile )
         {
             gui()->volatile_cb( "volatile_pulse_demo", demo_volatile_pulse_cb );
@@ -331,6 +331,8 @@ main( int argc, char** argv )
         style->var[GUI_VAR_PANEL_ROUND] = 12;    // Square windows
         style->var[GUI_VAR_ROUND]       = 4;    // No bevel on buttons
         // style->var[GUI_VAR_GAP]         = 12;   // More breathing room
+
+        style->var[ GUI_VAR_GUTTER ] = 4;    // More breathing room between widgets
 
         // Re-scale and apply the changes across the UI
         // gui()->style_apply();

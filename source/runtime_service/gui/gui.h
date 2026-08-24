@@ -1754,6 +1754,16 @@ typedef enum
 
 } gui_grad_t;
 
+/* Which edge of a rect a directional shadow falls from -- draw_edge_shadow's caster side.  The
+   band paints OUTSIDE the caster, against the edge named here. */
+typedef enum
+{
+    GUI_EDGE_TOP = 0,   // falls upward off the caster's top edge
+    GUI_EDGE_BOTTOM,    // falls downward off the caster's bottom edge
+    GUI_EDGE_LEFT,      // falls leftward off the caster's left edge
+    GUI_EDGE_RIGHT,     // falls rightward off the caster's right edge
+} gui_edge_t;
+
 /*==============================================================================================
     GUI_DRAW -- volatile widget callback
 
@@ -2397,10 +2407,13 @@ typedef enum
 
     GUI_WIN_NO_BOUNDARY_CLAMP = 1 << 5,    /* placement is externally managed; skip both clamps */
 
-    /* Auto-resize -- size the window to its content instead of a fixed w/h.  Window-only: a
-       region already autosizes per-axis on w/h <= 0 without this bit (see GUI_WIN_CHILD_RESIZE_X/_Y
-       below for how a region mixes autosize and resize across its two axes); gui_region_begin
-       does not read it. */
+    /* Auto-resize -- size the window (or child_begin box) to its content instead of a fixed w/h.
+       A region already autosizes its height per-axis on h <= 0 without this bit (see
+       GUI_WIN_CHILD_RESIZE_X/_Y below for how a region mixes autosize and resize across its two
+       axes); this bit additionally hugs a child_begin box's WIDTH to its content every frame --
+       useful when the box must never shrink under its content even as the parent panel narrows,
+       leaving any overflow for the parent's own clip / scrollbar.  Mutually exclusive with
+       CHILD_RESIZE_X/_Y on a child.  gui_region_begin does not read it. */
 
     GUI_WIN_ALWAYS_AUTOSIZE   = 1 << 6,    /* hug content every frame: no user resize, no scrollbars */
     GUI_WIN_CAN_AUTOSIZE      = 1 << 7,    /* show a corner size-grip; double-click it to fit content */

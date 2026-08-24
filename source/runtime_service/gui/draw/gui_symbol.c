@@ -912,6 +912,38 @@ draw_inset_shadow( gui_rect_t box, f32 depth, u32 col )
     draw_push_inset( box.x, box.y, box.w, box.h, draw_rounding(), depth, col );
 }
 
+/* One-sided shadow band along `edge` of `box`, falling off to fully transparent over `size` px --
+   the cheap directional cousin of draw_shadow.  Where that one is an SDF surface (rounded field,
+   feather, cut), this is a single flat quad with the ramp resolved as a plain per-pixel lerp
+   (draw_gradient), so it costs one ordinary quad in whatever batch is already open rather than a
+   skirt's band of them.  Meant for chrome that only wants a lift on one side -- the seam under a
+   titlebar, the inner edge of a scrollbar track -- not the full ambient wrap a floating panel
+   needs.  The band paints OUTSIDE `box`, against the named edge; `col` is full strength at that
+   edge and fades to its own colour at zero alpha, not to black, so it reads on any background. */
+void
+draw_edge_shadow( gui_rect_t box, gui_edge_t edge, f32 size, u32 col )
+{
+    if ( size <= 0.0f )
+        return;
+
+    u32 clear = col & 0x00FFFFFFu;
+    switch ( edge )
+    {
+    case GUI_EDGE_TOP:
+        draw_gradient( ( gui_rect_t ){ box.x, box.y - size, box.w, size }, clear, col, false );
+        break;
+    case GUI_EDGE_BOTTOM:
+        draw_gradient( ( gui_rect_t ){ box.x, box.y + box.h, box.w, size }, col, clear, false );
+        break;
+    case GUI_EDGE_LEFT:
+        draw_gradient( ( gui_rect_t ){ box.x - size, box.y, size, box.h }, clear, col, true );
+        break;
+    case GUI_EDGE_RIGHT:
+        draw_gradient( ( gui_rect_t ){ box.x + box.w, box.y, size, box.h }, col, clear, true );
+        break;
+    }
+}
+
 /* Soft drop shadow / glow behind `box`, alpha falling off over `spread` px (popups, floating
    panels).  ONE SDF surface: the fragment shader resolves the falloff exactly, so this is no
    longer the six stacked rects that used to stand in for a gaussian -- and it costs one quad
@@ -1312,6 +1344,7 @@ void gui_draw_border_tracer( gui_rect_t box, f32 rounding, f32 thickness, f32 fr
 void gui_draw_border_progress( gui_rect_t box, f32 rounding, f32 thickness, f32 frac, f32 t, u32 col )
                                                                                { draw_border_progress( box, rounding, thickness, frac, t, col ); }
 void gui_draw_inset_shadow( gui_rect_t box, f32 depth, u32 col ) { draw_inset_shadow( box, depth, col ); }
+void gui_draw_edge_shadow( gui_rect_t box, gui_edge_t edge, f32 size, u32 col ) { draw_edge_shadow( box, edge, size, col ); }
 void gui_draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col ) { draw_stripes( box, spacing, thickness, angle, col ); }
 void gui_draw_shadow  ( gui_rect_t box, f32 spread, u32 col )             { draw_shadow( box, spread, col ); }
 void gui_draw_glow    ( gui_rect_t box, f32 spread, u32 col )             { draw_glow( box, spread, col ); }

@@ -62,6 +62,7 @@ void draw_border_tracer( gui_rect_t box, f32 rounding, f32 thickness,
 void draw_border_progress( gui_rect_t box, f32 rounding, f32 thickness,
                            f32 frac, f32 t, u32 col );
 void draw_inset_shadow( gui_rect_t box, f32 depth, u32 col );
+void draw_edge_shadow( gui_rect_t box, gui_edge_t edge, f32 size, u32 col );
 void draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col );
 void draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
                          f32 thickness, u32 col );

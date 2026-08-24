@@ -28,6 +28,10 @@
 #define GUI_SCROLLBAR_SALT  0x5C011B01u
 #define GUI_HSCROLLBAR_SALT 0x5C011B02u
 
+/* Trial trace shadow on the track's content-facing edge -- draw_edge_shadow's second fitting,
+   same raw-constant-not-style-var reasoning as the title bar (gui_window_end.c). */
+#define SCROLLBAR_EDGE_SHADOW_SIZE   8.0f
+
 /* Grab offset within the knob at the moment of press.  Single-slot: only one scrollbar can be
    active (own active_id) at a time, so this covers every bar on every region. */
 static f32 s_sb_grab_off = 0.0f;
@@ -106,6 +110,15 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
     f32 save_round = draw_rounding();
     draw_set_rounding( 0.0f );
     draw_face( track, GUI_ROLE_ACCENT, GUI_PHASE_INERT );
+
+    /* Trace shadow on the edge facing the content -- the track sits on the view's right (vertical)
+       or bottom (horizontal) edge, so the content-facing side is the track's left or top. */
+    u32 shadow_col_old = style_ext( GUI_EXT_SHADOW ); UNUSED( shadow_col_old );
+    u32 shadow_col = GUI_COLOR( 0, 0, 0, 64 );
+    if ( ( shadow_col >> 24 ) != 0u )
+        draw_edge_shadow( track, vertical ? GUI_EDGE_LEFT : GUI_EDGE_TOP,
+                          SCROLLBAR_EDGE_SHADOW_SIZE, shadow_col );
+
     draw_set_rounding( ROUND_WIDGET );
     if ( vertical )
         draw_face_grab( ( gui_rect_t ){ track.x, knob_off, track.w, knob_len }, id, st, 0u, 0.0f );

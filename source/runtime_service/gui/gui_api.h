@@ -1016,7 +1016,10 @@ typedef struct gui_api_s
                                  asymmetric card, which one-radius draw_shadow cannot shape
 
        All honor the ambient rounding except draw_round_rect_shadow, which states its own.
-       `spread` / `feather` / `depth` is how far the falloff reaches, in px. */
+       `spread` / `feather` / `depth` is how far the falloff reaches, in px.
+
+       draw_edge_shadow sits next to these but is not one of them: a plain gradient quad, not an
+       SDF field, for a one-sided lift where the full ambient wrap is more than the chrome needs. */
 
     void ( *draw_shadow            )( gui_rect_t box, f32 spread, u32 col );
     /* Nothing paints inside `box`: the falloff is measured from the shadow's outline while the
@@ -1024,6 +1027,11 @@ typedef struct gui_api_s
        a direction.  (0, 0) is the even cast on all four sides. */
     void ( *draw_drop_shadow       )( gui_rect_t box, f32 spread, f32 off_x, f32 off_y, u32 col );
     void ( *draw_inset_shadow      )( gui_rect_t box, f32 depth, u32 col );
+    /* The cheap one-sided cousin of the above: a plain gradient quad fading from `col` at `edge`
+       to transparent `size` px outside `box`, no SDF field at all.  For chrome that only wants a
+       lift on one side -- a titlebar's bottom seam, a scrollbar track's inner edge -- rather than
+       the full ambient wrap. */
+    void ( *draw_edge_shadow       )( gui_rect_t box, gui_edge_t edge, f32 size, u32 col );
     /* Light falls off by a constant fraction per pixel, so the exponential halo reads as
        emission where the linear one reads as blur.  The core is filled, so it shows through a
        translucent subject.  Focus rings, validation states, drag targets, recording indicators;

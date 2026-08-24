@@ -249,6 +249,7 @@ void gui_draw_border_tracer( gui_rect_t box, f32 rounding, f32 thickness,
 void gui_draw_border_progress( gui_rect_t box, f32 rounding, f32 thickness,
                                f32 frac, f32 t, u32 col );
 void gui_draw_inset_shadow( gui_rect_t box, f32 depth, u32 col );
+void gui_draw_edge_shadow( gui_rect_t box, gui_edge_t edge, f32 size, u32 col );
 void gui_draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col );
 void gui_draw_shadow( gui_rect_t box, f32 spread, u32 col );
 void gui_draw_glow( gui_rect_t box, f32 spread, u32 col );

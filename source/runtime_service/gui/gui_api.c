@@ -162,6 +162,7 @@ const gui_api_t g_gui_api_struct =
     .draw_border_tracer                 = gui_draw_border_tracer,
     .draw_border_progress               = gui_draw_border_progress,
     .draw_inset_shadow                  = gui_draw_inset_shadow,
+    .draw_edge_shadow                   = gui_draw_edge_shadow,
     .draw_stripes                       = gui_draw_stripes,
     .draw_shadow                        = gui_draw_shadow,
     .draw_glow                          = gui_draw_glow,
