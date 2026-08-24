@@ -211,10 +211,10 @@ static struct
 
     The tables above carve out fixed-size regions, but the quad table is the big one: giving
     every (frame-in-flight, viewport) pair a fixed slab of GUI_MAX_QUADS would mean paying the
-    worst-case size for every viewport, even ones that are closed or nearly empty. Instead, each
-    viewport holds a CLAIM -- a contiguous run of the table, rounded to bucket-sized chunks,
-    sized to whatever its own windows actually need. The buffer holds one copy of this whole
-    claim space per frame-in-flight.
+    worst-case size for every viewport, even ones that are closed or nearly empty. Instead, 
+    each viewport holds a CLAIM -- a contiguous run of the table, rounded to bucket-sized 
+    chunks, sized to whatever its own windows actually need. The buffer holds one copy of 
+    this whole claim space per frame-in-flight.
 
     Different viewports never need extra synchronization to write safely alongside each other:
     claims never overlap and never move while in use, so each surface only ever touches its own
@@ -267,6 +267,7 @@ static struct
     u32               buf_gen;   // bumped per buffer swap; stale regions re-upload on next flush
     gui_quad_claim_t  claim [ GUI_MAX_VIEWPORTS ];
     gui_quad_region_t region[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
+
 } s_quad_gpu;
 
 /*==============================================================================================

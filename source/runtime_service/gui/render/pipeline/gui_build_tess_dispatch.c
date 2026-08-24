@@ -348,9 +348,9 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 s_tess.cur_corner_pow = e->frame.corner_pow;
                 s_tess.cur_col_border = e->frame.col_border;   /* rides the quad, not the style */
                 tess_fx_box( e->frame.x, e->frame.y, e->frame.w, e->frame.h, e->frame.rounding,
-                           ( e->frame.rounding > 0.0f ) ? TESS_FX_AA : 0.0f,
+                           ( e->frame.rounding > 0.0f ) ? TESS_FX_AA : 0.0f, 
                              e->frame.t, 0.0f, 0.0f, 0.0f,
-                             0, 0, 1, 1, 0, e->frame.abgr, NULL );
+                             0, 0, 1, 1, /* tex id */ 0, e->frame.abgr, NULL );
                 break;
             }
 

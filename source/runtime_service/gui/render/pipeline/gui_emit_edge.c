@@ -47,7 +47,7 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     e->rect_outline.w        = w;
     e->rect_outline.h        = h;
     e->rect_outline.t        = t;
-    e->rect_outline.abgr     = col;
+    e->rect_outline.abgr     = col; /* stored in the quad's color field */
     e->rect_outline.rounding = rounding;
     e->rect_outline.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
     draw_cmd_seal();
@@ -100,8 +100,8 @@ draw_push_frame( f32 x, f32 y, f32 w, f32 h, f32 t, u32 col_bg, u32 col_border )
     e->frame.t          = t;
     e->frame.rounding   = rounding;
     e->frame.corner_pow = ( rounding > 0.0f ) ? s_draw.corner_pow : 0.0f;
-    e->frame.abgr       = fill;
-    e->frame.col_border = bord;
+    e->frame.abgr       = fill; /* stored in the tess_fx_box color body field */
+    e->frame.col_border = bord; /* stored in the quad's color field */
     draw_cmd_seal();
 }
 

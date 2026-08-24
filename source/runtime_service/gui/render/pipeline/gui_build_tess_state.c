@@ -223,6 +223,7 @@ static struct
          cur_rot_c       the turn, as a unit pair; (1, 0) is the identity a plain shape leaves
          cur_phase       animation phase in cycles (0 = in step with the clock)
          cur_swell       GUI_OP_SWELL's amplitude in px (0 = unused; negative shrinks) */
+
     u32         cur_col_border;
     f32         cur_rot_c, cur_rot_s;
     f32         cur_phase;
