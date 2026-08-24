@@ -32,15 +32,19 @@
    the same colour window_draw_elevation casts) -- not an independent colour.  A theme's shadow
    hue or strength change reaches the gutter for free this way, the same reasoning WIN_SHADOW_
    FLOAT_ALPHA in gui_window_free.c already rides for the elevation shadow's window-band cut.
-   Half-strength (0.5) reads as a hint, not a duplicate of the full elevation shadow.  Tried a
-   hover-revealed gutter first (gui_anim_f32 on a fast damper) -- it read fine on a wide VS-sized
-   window where the cursor rarely crosses the gutter, but a small floating window's gutter sits
-   right where the cursor travels, so it kept popping in and out on every pass: distracting in a
-   way none of this file's other widgets are, because they react to being TARGETED, not merely
-   overflown.  A static gradient removes the transition entirely -- the gutter always reads the
-   same shadowed edge, the same way a window's own INERT recess never blinks either; the thumb
-   below carries the widget's one remaining hover reaction. */
-#define SCROLLBAR_GUTTER_SHADOW_STRENGTH  0.15f
+   Two levels, damped between them: REST (0.15) is the quiet default so an unhovered gutter reads
+   as a soft hint next to the panel, HOVER (0.35) deepens it while the cursor sits anywhere in the
+   track -- a legible "you are over the gutter" cue that costs no extra draw call, just a stronger
+   mix of the same two colours already blended for the fill.  A first pass hover-REVEALED the
+   whole gutter this way (0 alpha to full) and that read fine on a wide VS-sized window where the
+   cursor rarely crosses the gutter, but a small floating window's gutter sits right where the
+   cursor travels, so it kept popping in and out on every pass -- distracting in a way none of
+   this file's other widgets are, because they react to being TARGETED, not merely overflown.
+   Darkening an already-opaque, always-present fill sidesteps that: the gutter never disappears or
+   reappears, it only deepens, so there is no coverage flicker to chase. */
+#define SCROLLBAR_GUTTER_SHADOW_REST   0.15f
+#define SCROLLBAR_GUTTER_SHADOW_HOVER  0.35f
+#define SCROLLBAR_GUTTER_SHADOW_RATE   15.0f   /* Hz-like damper speed, gui_anim_f32 */
 
 /* Grab offset within the knob at the moment of press.  Single-slot: only one scrollbar can be
    active (own active_id) at a time, so this covers every bar on every region. */
@@ -122,32 +126,35 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
     f32 save_round = draw_rounding();
     draw_set_rounding( 0.0f );
 
-    /* Soft, non-reactive gutter: a gradient from the backdrop washed toward the THEME's own
-       shadow colour (GUI_EXT_SHADOW, at SCROLLBAR_GUTTER_SHADOW_STRENGTH of its authored alpha)
-       at the content-facing edge, back to the plain backdrop colour at the outer edge -- the
-       shadow IS the gutter fill now, not a separate layer over a flat one, and it inherits
-       whatever hue or strength a theme gives its shadow instead of carrying its own fixed tint.
-       Both ends otherwise read off the same backdrop -- the window body's PANEL cell, or a
-       nested child's PANEL_CHILD ground when `nested` (the region engine hands us its own
-       pushed_clip, the same signal that already tells it whether it owns a clip of its own) --
-       at `backdrop_phase`, the SAME phase that backdrop's own fill painted this frame
-       (layout_frame_t.backdrop_phase, flow/gui_flow.h), so a focused window's lift matches
-       exactly instead of guessing IDLE.  No hover reaction (see SCROLLBAR_GUTTER_SHADOW_STRENGTH's
-       comment) -- and BOTH gradient stops MUST stay fully opaque: this track spans the full
-       gutter over content that can scroll under it (a long unwrapped line can paint past the
-       content column into the gutter), so any transparent stop would let it show through instead
-       of being clipped by the fill, the same coverage rule the square (non-rounded) track shape
-       below exists for -- col_lerp keeps both stops opaque here since backdrop_col and
-       theme_shadow are each already opaque going in, regardless of the mix weight.
-       draw_gradient's `horizontal` flag rides `vertical` directly: a vertical bar's shadow ramps
-       across its WIDTH (the x axis, i.e. horizontal=true), a horizontal bar's ramps across its
-       HEIGHT (the y axis) -- track.x/y is already the content-facing edge either way
-       (gui_scroll.c seats the gutter flush past the view), so col_a (the dim end) belongs at the
-       box origin and col_b (backdrop) at the far end regardless of axis. */
+    /* Soft gutter: a gradient from the backdrop washed toward the THEME's own shadow colour
+       (GUI_EXT_SHADOW, at some fraction of its authored alpha) at the content-facing edge, back
+       to the plain backdrop colour at the outer edge -- the shadow IS the gutter fill now, not a
+       separate layer over a flat one, and it inherits whatever hue or strength a theme gives its
+       shadow instead of carrying its own fixed tint.  Both ends otherwise read off the same
+       backdrop -- the window body's PANEL cell, or a nested child's PANEL_CHILD ground when
+       `nested` (the region engine hands us its own pushed_clip, the same signal that already
+       tells it whether it owns a clip of its own) -- at `backdrop_phase`, the SAME phase that
+       backdrop's own fill painted this frame (layout_frame_t.backdrop_phase, flow/gui_flow.h), so
+       a focused window's lift matches exactly instead of guessing IDLE.  The fraction itself
+       damps between SCROLLBAR_GUTTER_SHADOW_REST and _HOVER off st.hover (see that constant's
+       comment for why the fill deepens rather than reveals) -- BOTH gradient stops MUST stay
+       fully opaque regardless of that weight: this track spans the full gutter over content that
+       can scroll under it (a long unwrapped line can paint past the content column into the
+       gutter), so any transparent stop would let it show through instead of being clipped by the
+       fill, the same coverage rule the square (non-rounded) track shape below exists for --
+       col_lerp keeps both stops opaque here since backdrop_col and theme_shadow are each already
+       opaque going in, regardless of the mix weight.  draw_gradient's `horizontal` flag rides
+       `vertical` directly: a vertical bar's shadow ramps across its WIDTH (the x axis, i.e.
+       horizontal=true), a horizontal bar's ramps across its HEIGHT (the y axis) -- track.x/y is
+       already the content-facing edge either way (gui_scroll.c seats the gutter flush past the
+       view), so col_a (the dim end) belongs at the box origin and col_b (backdrop) at the far end
+       regardless of axis. */
+    f32 shadow_strength = gui_anim_f32( id_combine( id, 1u ),
+        st.hover ? SCROLLBAR_GUTTER_SHADOW_HOVER : SCROLLBAR_GUTTER_SHADOW_REST, SCROLLBAR_GUTTER_SHADOW_RATE );
+
     u32 backdrop_col = style_col( nested ? GUI_ROLE_PANEL_CHILD : GUI_ROLE_PANEL, backdrop_phase );
     u32 theme_shadow = style_ext( GUI_EXT_SHADOW ) | 0xFF000000u;
-    f32 shadow_amt   = ( (f32)( style_ext( GUI_EXT_SHADOW ) >> 24 ) / 255.0f )
-                     * SCROLLBAR_GUTTER_SHADOW_STRENGTH;
+    f32 shadow_amt   = ( (f32)( style_ext( GUI_EXT_SHADOW ) >> 24 ) / 255.0f ) * shadow_strength;
     u32 dim_col      = col_lerp( backdrop_col, theme_shadow, shadow_amt );
     draw_gradient( track, dim_col, backdrop_col, vertical );
 
