@@ -1109,7 +1109,7 @@ win_depth( void )
        two show the same eight curves driving something other than a pulse -- a rotation and a
        dash offset -- which is the whole reason the stage sits between the clock and the effect
        rather than inside any one op. */
-    gui()->separator_text( "draw_set_anim_curve -- one clock, eight shapes of motion" );
+    gui()->separator_text( "draw_set_anim_curve -- one clock, nine shapes of motion" );
     {
         static const struct { u32 curve; f32 param; const char* label; } k_curves[] = {
             { GUI_CURVE_SINE,     0.0f, "sine"   },
@@ -1119,6 +1119,7 @@ win_depth( void )
             { GUI_CURVE_STAIR,    4.0f, "stair4" },
             { GUI_CURVE_SQUARE,   0.7f, "blink"  },
             { GUI_CURVE_DECAY,    5.0f, "decay"  },
+            { GUI_CURVE_SPRING,   0.0f, "spring" },
         };
 
         gui_rect_t cell = gui()->canvas( 132.0f );

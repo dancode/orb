@@ -189,13 +189,14 @@ page_fills( void )
 {
     gui_rect_t r;
 
+    //------------------------------------------------------------------------------------------
     /* row 0 -- the fast path: draw_rect emits ONE quad with no SDF field at all (the "0 emits
        square shapes" branch every other verb on this page costs strictly more than). */
 
     r = cell( 0, 6, "draw_rect (fast path)" );
     gui()->draw_rect( r.x, r.y, r.w, r.h, AMBER );
 
-    /* rest of row 0 -- the batched fast path: draw_rects() emits the same quad-per-rect as
+    /* row 0 -- batched fast path: draw_rects() emits the same quad-per-rect as
        draw_rect above, just N of them in ONE command.  A checker mosaic rather than the
        histogram look of the bar strip below, so the two draw_rects() demos on this page read
        as distinct examples, not repeats of each other. */
@@ -218,64 +219,47 @@ page_fills( void )
         gui()->draw_rects( tiles, TILE_COUNT );
     }
 
-    /* row 2 -- the batch form: N bars, ONE draw_rects() call.  A custom widget doing dense
-       per-frame fills (timeline bars, graph columns) reaches for this instead of N draw_rect
-       calls, which would otherwise exhaust the frame's command budget one quad at a time. */
-
-    r = row_wide( 2, 0, 6, "draw_rects() -- 48 bars / 1 call" );
-    {
-        enum { BAR_COUNT = 48 };
-        gui_rect_col_t bars[ BAR_COUNT ];
-        f32 bar_w = r.w / ( f32 )BAR_COUNT;
-        for ( i32 i = 0; i < BAR_COUNT; ++i )
-        {
-            f32 t = ( f32 )i / ( f32 )( BAR_COUNT - 1 );
-            f32 h = r.h * ( 0.25f + 0.75f * fabsf( sinf( ( f32 )i * 0.35f ) ) );
-            bars[ i ] = ( gui_rect_col_t ){
-                r.x + ( f32 )i * bar_w + 1.0f, r.y + r.h - h, bar_w - 2.0f, h,
-                lerp_col( AMBER, TEAL, t ),
-            };
-        }
-        gui()->draw_rects( bars, BAR_COUNT );
-    }
-
-    /* rows 0-1 continue -- the general box catalogue: rounding, border, gradient and circle all
-       resolve through the same SDF quad, just with more of the record populated. */
+    //------------------------------------------------------------------------------------------
+    /* rows 1 - basic shape rects -- the general box catalogue: rounding, border, gradient and 
+       circle all resolve through the same SDF quad, just with more of the record populated. */
 
     r = cell( 6, 6, "round rect" );
     gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 0.0f, TEAL );
 
-    // r = cell( 2, 6, "round rect border" );
-    // gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 2.0f, TEAL );
-    // 
-    // r = cell( 3, 6, "gradient v" );
-    // gui()->draw_gradient( r, AMBER, PLUM, true );
-    // 
-    // r = cell( 4, 6, "gradient h" );
-    // gui()->draw_gradient( r, AMBER, PLUM, false );
-    // 
-    // r = cell( 5, 6, "circle" );
-    // { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 0.0f, PLUM ); }
-    // 
-    // r = cell( 6, 6, "round rect gradient (linear)" );
-    // gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_LINEAR, 0.0f, 0.5f );
-    // 
-    // r = cell( 7, 6, "round rect gradient (radial)" );
-    // gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_RADIAL, 0.0f, 0.5f );
-    // 
-    // r = cell( 8, 6, "round rect gradient (conic)" );
-    // gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_CONIC, gui_radians( 45.0f ), 0.5f );
-    // 
-    // r = cell( 9, 6, "frame (bg + border)" );
-    // gui()->draw_frame( r, INK_FAINT, TEAL, 2.0f );
-    // 
-    // r = cell( 10, 6, "rect_cut (subtract)" );
+    r = cell( 7, 6, "round rect border" );
+    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 2.0f, TEAL );
+    
+    r = cell( 8, 6, "round rect (circle)" );
+    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 0.0f, PLUM ); }
+    
+    r = cell( 12, 6, "gradient v" );
+    gui()->draw_gradient( r, AMBER, PLUM, true );
+       
+    r = cell( 13, 6, "gradient h" );
+    gui()->draw_gradient( r, AMBER, PLUM, false );
+
+    //------------------------------------------------------------------------------------------
+    /* rows 2 - gradients */
+
+    r = cell( 14, 6, "round rect gradient (linear)" );
+    gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_LINEAR, 0.0f, 0.5f );
+     
+    r = cell( 15, 6, "rr gradient (radial)" );
+    gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_RADIAL, 0.0f, 0.5f );
+    
+    r = cell( 16, 6, "rr gradient (conic)" );
+    gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_CONIC, gui_radians( 45.0f ), 0.5f );
+    
+    r = cell( 18, 6, "frame (bg + border)" );
+    gui()->draw_frame( r, INK_FAINT, TEAL, 2.0f );
+    
+    // r = cell( 17, 6, "rect_cut (subtract)" );
     // {
     //     gui_rect_t cut = { r.x + r.w * 0.55f, r.y - 10.0f, r.w * 0.55f, r.h * 0.7f };
     //     gui()->draw_rect_cut( r, 10.0f, cut, 6.0f, 1.0f, PLUM );
     // }
     // 
-    // r = cell( 11, 6, "box_xf (rotated)" );
+    // r = cell( 18, 6, "box_xf (rotated)" );
     // gui()->draw_box_xf( r, 10.0f, 0.0f, gui_radians( 12.0f ), AMBER );
     
 }
@@ -814,7 +798,7 @@ main( int argc, char** argv )
 
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "ORB -- gui render matrix",
-        .w         = 1280 + 320, .h = 720,
+        .w         = 1280 + 320, .h = 720 + 320,
         .os_chrome = true,
         .font      = GUI_FONT_CASCADIA_MONO,
         .clock = sys_tick_seconds,

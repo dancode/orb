@@ -715,7 +715,6 @@ typedef struct gui_api_s
     void           ( *draw_set_shape )( gui_shape_id_t id );   // GUI_SHAPE_NONE restores the box
     void           ( *draw_shape_in  )( gui_rect_t r, gui_shape_id_t id, u32 col );
 
-
     /* RGBA textures -- display an arbitrary bindless texture (a scene render target, a loaded
        image) as a full-color quad; the texel is the color, tint_abgr multiplies (0 = untinted).
        image_texture flows in the layout like image(); draw_texture_in fills a rect the caller
@@ -888,12 +887,13 @@ typedef struct gui_api_s
        stroked per the convention above; every one is a single SDF quad. */
 
     void ( *draw_frame             )( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
-    void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
-                                        f32 thickness, u32 col );
+    void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 thickness, u32 col );
+
     /* The SDF box under a rotation about its centre (radians, screen space) -- rotated cards,
        tilted badges, the plate behind rotated text.  feather 0 = crisp 1 px AA; wider = a rotated
        soft shadow.  Same single quad as the upright box. */
     void ( *draw_box_xf            )( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col );
+
     /* A rounded rect minus a second rounded rect -- true subtraction, which no number of extra
        quads can paint: blending only adds ink.  The notched avatar behind a status dot, the
        ticket silhouette.  `cut` shares `box`'s absolute space and may straddle its edge; `soft`
@@ -901,6 +901,7 @@ typedef struct gui_api_s
        patterns and the border frame compose over it like any other fill. */
     void ( *draw_rect_cut          )( gui_rect_t box, f32 rounding, gui_rect_t cut,
                                       f32 cut_rounding, f32 soft, u32 col );
+
     void ( *draw_circle            )( f32 cx, f32 cy, f32 r, f32 thickness, u32 col );
     void ( *draw_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col );
     /* The n-pointed star: draw_ngon with each edge midpoint pulled in to ratio * r.  ratio <= 0

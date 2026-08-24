@@ -34,6 +34,7 @@
 #define CURVE_STAIR     5u
 #define CURVE_SQUARE    6u
 #define CURVE_DECAY     7u
+#define CURVE_SPRING    8u
 
 #define TEX_MODE_SHIFT  28u
 #define TEX_INDEX_MASK  0x0FFFFFFFu
@@ -156,6 +157,11 @@ float fx_curve( float phi, uint kind, float p )
         case CURVE_STAIR:  { float n = max( p, 2.0 ); return floor( phi * n ) / ( n - 1.0 ); }
         case CURVE_SQUARE:   return ( phi < p ) ? 0.0 : 1.0;
         case CURVE_DECAY:    return exp( -max( p, 0.0 ) * phi );
+        // Back-ease: overshoots past 1 once on the way in, then settles -- reads as physical
+        // rather than mechanical.  p is the overshoot magnitude; 0 falls back to a mild default.
+        case CURVE_SPRING:  { float k = ( p > 0.0 ) ? p : 1.70158;
+                               float t = phi - 1.0;
+                               return 1.0 + t * t * ( ( k + 1.0 ) * t + k ); }
         default:             return phi;                                  // CURVE_LINEAR
     }
 }

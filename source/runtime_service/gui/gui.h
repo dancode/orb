@@ -1738,6 +1738,9 @@ typedef enum
                             //   Under PULSE, which SUBTRACTS k from coverage, that reads as
                             //   fading IN; pair it with a target k drives upward, or use EASE
                             //   with param < 1 for a pulse that flashes and settles.
+    GUI_CURVE_SPRING,       // back-ease: overshoots past 1 once, then settles -- physical rather
+                            //   than mechanical.  param is the overshoot magnitude, 0 = a mild
+                            //   default (~1.7).
 } gui_curve_t;
 
 /* Which way a ramp runs, as a draw parameter.  The record carries it as GUI_OP_GRAD_* bits
