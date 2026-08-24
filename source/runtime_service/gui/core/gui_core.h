@@ -136,6 +136,14 @@ typedef struct
     gui_id_t  next_hover_win;   // front-most window nominee gathered this frame
     u32       next_hover_win_z;
 
+    gui_id_t  wheel_sticky_id;  // region id that last consumed the mouse wheel -- 0 = none yet.
+    f32       wheel_sticky_x;   // cursor position stamped when wheel_sticky_id was (re)claimed.
+    f32       wheel_sticky_y;   //   io_frame_begin clears the id, every app frame, once the CURRENT
+                                 //   cursor position drifts past WHEEL_STICKY_MOVE_TOL_PX from this
+                                 //   anchor -- total displacement, not a per-frame delta, so a slow
+                                 //   drag that crosses the tolerance over many small frame-to-frame
+                                 //   steps still releases it (flow/gui_scroll.c)
+
     app_cursor_t mouse_cursor;  // hardware-cursor nominee; last writer wins, flushed next frame
 
     gui_id_t  focused_id_at_frame_start;   // focus-departure tracking for

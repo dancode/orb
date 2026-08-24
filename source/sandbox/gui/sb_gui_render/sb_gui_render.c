@@ -201,8 +201,6 @@ static i32 s_tweak_tile_count = 60;
 static void
 page_fills( void )
 {
-    gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX );
-
     gui_rect_t r;
 
     //------------------------------------------------------------------------------------------
@@ -217,6 +215,7 @@ page_fills( void )
        histogram look of the bar strip below, so the two draw_rects() demos on this page read
        as distinct examples, not repeats of each other. */
 
+    gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX );
     r = row_wide( 0, 1, GRID_COLS - 1, "draw_rects() -- checker / 1 call (tweak panel sets count)" );
     {
         enum { CHECK_COLS = 12, CHECK_ROWS_MAX = TWEAK_TILE_MAX / CHECK_COLS };
@@ -777,7 +776,7 @@ build_frame( void )
                 s_page = k;
         }
 
-        if ( gui()->is_key_pressed( APP_KEY_RIGHT ) ) s_page = (s s_page + 1 ) % PAGE_COUNT;
+        if ( gui()->is_key_pressed( APP_KEY_RIGHT ) ) s_page = ( s_page + 1 ) % PAGE_COUNT;
         if ( gui()->is_key_pressed( APP_KEY_LEFT  ) ) s_page = ( s_page - 1 + PAGE_COUNT ) % PAGE_COUNT;
     }
 
@@ -791,7 +790,6 @@ build_frame( void )
        page calls in between appends as the next row in that column.  Placed as one more grid
        column past the last one, so it tracks GRID_X/CELL_W/CELL_GAP/GRID_COLS instead of a
        number pinned to today's window size. */
-
     f32 panel_x = GRID_X + ( f32 )GRID_COLS * ( CELL_W + CELL_GAP );
     gui()->region_begin( "tweak_panel", panel_x, GRID_Y, TWEAK_PANEL_W, 0.0f, GUI_REGION_FG,
                          GUI_VP_MAIN, GUI_WIN_NOSCROLL | GUI_WIN_NO_CLIP );

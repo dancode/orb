@@ -78,6 +78,15 @@ static bool s_pending_mouse_win_set;
 static f32 s_click_elapsed[ 3 ] = { 1.0e9f, 1.0e9f, 1.0e9f };   /* start "long ago" */
 static f32 s_click_x[ 3 ], s_click_y[ 3 ];
 
+/* A physical scroll-wheel notch can shear a high-sensitivity mouse a pixel or two -- that must
+   not read as the user deliberately moving off the scroll target (flow/gui_scroll.c's wheel
+   stickiness).  The cursor has to drift this many pixels from the anchor stamped when the sticky
+   region was claimed (s_interaction.wheel_sticky_x/y) before it counts as a real move for that
+   purpose -- total displacement from the anchor, not a per-frame delta, so a slow drag that
+   crosses the tolerance gradually still releases it.  Every other consumer of cursor movement
+   (dirty flag, double-click, hover) still uses the exact mx/my change. */
+#define WHEEL_STICKY_MOVE_TOL_PX  4.0f
+
 /*==============================================================================================
     Snapshot readers -- the queries later tiers ask of s_io, named once.
 ==============================================================================================*/
@@ -303,6 +312,18 @@ io_frame_begin( i32 win_w, i32 win_h, f32 dt )
         mouse_moved   = ( mx != (i32)s_io.mouse_x || my != (i32)s_io.mouse_y );
         s_io.mouse_x  = (f32)mx;
         s_io.mouse_y  = (f32)my;
+
+        /* Cursor drift past the shear tolerance, measured from the anchor stamped when the wheel's
+           sticky region was claimed, releases it (flow/gui_scroll.c) so the next notch free-picks
+           its target.  Checked every app frame, not just wheel frames, so movement between notches
+           still counts -- the two are almost never the same frame. */
+        if ( s_interaction.wheel_sticky_id != GUI_ID_NONE )
+        {
+            f32 dx = s_io.mouse_x - s_interaction.wheel_sticky_x;
+            f32 dy = s_io.mouse_y - s_interaction.wheel_sticky_y;
+            if ( dx * dx + dy * dy > WHEEL_STICKY_MOVE_TOL_PX * WHEEL_STICKY_MOVE_TOL_PX )
+                s_interaction.wheel_sticky_id = GUI_ID_NONE;
+        }
     }
 
     /* Resolve the surface the cursor is in from the most recent mouse event's win_id.  Only when a

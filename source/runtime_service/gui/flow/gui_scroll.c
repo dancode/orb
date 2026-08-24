@@ -343,8 +343,17 @@ layout_pop_region( void )
        being silently swallowed here.  Same overflow test as scroll_clamp, so "can scroll" and
        "the clamp would allow it" never disagree.  Gated by the owning window (hover_win),
        unclaimed-this-frame, no in-flight drag, and the cursor inside this region's box. */
-    bool wheel_free  = !s_build.wheel_used && !( f->flags & GUI_WIN_NOMOUSESCROLL );
-    bool over_region = ( s_interaction.hover_win == s_build.win.id ) && rect_hit( f->outer );
+    bool wheel_free = !s_build.wheel_used && !( f->flags & GUI_WIN_NOMOUSESCROLL );
+    bool hit        = ( s_interaction.hover_win == s_build.win.id ) && rect_hit( f->outer );
+    bool is_sticky  = ( s_interaction.wheel_sticky_id == f->region_id );
+
+    /* Sticky wheel target: once a region claims a notch, it keeps every notch that follows until
+       the cursor actually moves (cleared in io_frame_begin, every app frame, independent of wheel
+       activity) -- so a region that slides into the cursor's spot as content scrolls cannot steal
+       the wheel out from under a still cursor mid-scroll.  With no sticky region claimed, or once
+       the cursor has moved and released it, hit-testing picks freely again. */
+    bool over_region = hit && ( s_interaction.wheel_sticky_id == GUI_ID_NONE || is_sticky );
+
     if ( wheel_free && over_region && interact_idle() && s_io.mouse_wheel != 0.0f )
     {
         bool shift = io_shift();
@@ -372,6 +381,24 @@ layout_pop_region( void )
             redraw_request();
 
             s_build.wheel_used = true;
+
+            /* Stamp the drift anchor only on a FRESH claim (was unclaimed, or owned by a
+               different region) -- re-stamping it on every notch this same region keeps
+               consuming would let the tolerance in io_frame_begin re-arm each notch and never
+               catch a slow drag that crosses it gradually over many notches. */
+            if ( !is_sticky )
+            {
+                s_interaction.wheel_sticky_x = s_io.mouse_x;
+                s_interaction.wheel_sticky_y = s_io.mouse_y;
+            }
+            s_interaction.wheel_sticky_id = f->region_id;
+        }
+        else if ( is_sticky )
+        {
+            /* The sticky target can no longer scroll (its content changed shape under a still
+               cursor) -- release it so a fresh hit test can pick a new target, next frame at the
+               latest, instead of stranding the wheel on a region that will never claim it again. */
+            s_interaction.wheel_sticky_id = GUI_ID_NONE;
         }
     }
 
