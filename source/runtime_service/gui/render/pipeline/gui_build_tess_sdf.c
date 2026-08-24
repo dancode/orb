@@ -144,7 +144,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
     if ( depth   < 0.0f ) depth = 0.0f;
     if ( depth   > 1.0f ) depth = 1.0f;   /* a fraction, not a pixel count -- a real upper bound */
 
-    /* Grid-snap the origin like tess_rect_filled -- UNLESS the shape is a circle.
+    /* Grid-snap the whole rect like tess_rect_filled -- UNLESS the shape is a circle.
        Snapping exists to keep STRAIGHT edges crisp, and it is derived rather than passed in
        because the condition is a property of the shape, not of the caller: a shape has no straight
        edge in either axis exactly when it is square and its radius reached the half-extent.  That
@@ -158,11 +158,16 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        two straight edges.  With per-corner radii the test reads rMIN: a shape is a disc only when
        EVERY corner reached the limit, and one square corner is a straight edge worth snapping.
        A ROTATED box never snaps: it has no axis-aligned edge to keep crisp, and quantizing its
-       centre is the animated-dot mistake again (tess_quad_xf's rule). */
+       centre is the animated-dot mistake again (tess_quad_xf's rule).
+       Both edges snap, not just the origin -- snapping only (x, y) leaves the far edge sub-pixel
+       whenever w/h is fractional, which reads as one crisp side and one blurred side on the same
+       box.  hx/hy are recomputed from the snapped size so the centre and corner-radius clamp
+       above stay consistent with what actually gets pushed. */
     if ( rot == 0.0f && !( hx == hy && rmin >= lim ) )
     {
-        x = tess_snap_px( x );
-        y = tess_snap_px( y );
+        tess_snap_rect_px( &x, &y, &w, &h );
+        hx = w * 0.5f;
+        hy = h * 0.5f;
     }
 
     /* tex_idx 0 = solid-color convention, same as tess_rect_filled: GUI_OP_SELF, no texel

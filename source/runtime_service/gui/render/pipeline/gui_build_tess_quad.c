@@ -18,9 +18,11 @@
 /*==============================================================================================
     Quantizers -- the two grids geometry lands on.
 
-    Every axis-aligned fill snaps its ORIGIN to the pixel grid so its edges stay crisp; a shape
-    with no straight edge (a disc, a rotated box) deliberately does not, since quantizing its
-    centre makes an animated dot stutter.  A pattern's cell rides a quarter-pixel grid instead:
+    Every axis-aligned fill snaps BOTH its edges to the pixel grid so every side stays crisp --
+    snapping only the origin leaves the far edge sub-pixel, which blurs across two pixels while
+    the near edge stays sharp.  A shape with no straight edge (a disc, a rotated box) deliberately
+    does not snap at all, since quantizing its centre makes an animated dot stutter.  A pattern's
+    cell rides a quarter-pixel grid instead:
     fine enough that a scaled lattice does not visibly step, coarse enough that the fragment's
     packed cell field can carry it.
 ==============================================================================================*/
@@ -31,6 +33,25 @@ static f32
 tess_snap_px( f32 v )
 {
     return floorf( v + 0.5f );
+}
+
+/* Snap a whole axis-aligned rect to the pixel grid -- BOTH edges, not just the origin.  Snapping
+   only (x, y) leaves the far edge (x + w, y + h) wherever the unsnapped size happens to put it;
+   the near edge then rasterizes crisp while the far one straddles a pixel and spreads its AA
+   over two pixels instead of one, which is the lopsided-border look.  Snapping x1/y1 too and
+   deriving w/h from the snapped pair keeps every edge integer, at the cost of the size rounding
+   by up to half a pixel -- the same trade the old pixel-perfect rects made. */
+static void
+tess_snap_rect_px( f32* x, f32* y, f32* w, f32* h )
+{
+    f32 x0 = tess_snap_px( *x );
+    f32 y0 = tess_snap_px( *y );
+    f32 x1 = tess_snap_px( *x + *w );
+    f32 y1 = tess_snap_px( *y + *h );
+    *x = x0;
+    *y = y0;
+    *w = x1 - x0;
+    *h = y1 - y0;
 }
 
 /* A pattern cell floored at one pixel.  The quarter-pixel quantize and the upper bound that used
@@ -711,8 +732,7 @@ tess_rect_filled( f32 x, f32 y, f32 w, f32 h,
         s_tess.cur_ops |= GUI_OP_SELF;
         u0 = v0 = u1 = v1 = 0.0f;
     }
-    x = tess_snap_px( x );
-    y = tess_snap_px( y );
+    tess_snap_rect_px( &x, &y, &w, &h );
     tess_quad_push( x + w * 0.5f, y + h * 0.5f, w * 0.5f, h * 0.5f, GUI_QUAD_RULE_EXACT,
                     gui_uv_pack( u0, v0 ), gui_uv_pack( u1, v1 ), tex_idx, abgr,
                     GUI_GLYPH_ID_NONE );
@@ -735,7 +755,7 @@ tess_rect_glyph( f32 x, f32 y, f32 w, f32 h, u32 glyph_id, u32 tex_idx, u32 abgr
 /* Tessellate a two-color gradient quad: a GRAD style -- a quad record carries ONE colour, and
    the fragment's linear ramp is the same photometric blend the old per-vertex corner
    interpolation produced.  The axis is stored pre-divided by the extent (the tess_fx_box_core
-   convention), so the style dedups across same-size ramps.  Origin grid-snapped like
+   convention), so the style dedups across same-size ramps.  Rect grid-snapped like
    tess_rect_filled.  rot_cos is written explicitly: the ramp is evaluated in the shape-local
    frame, and a zeroed rot pair would collapse it to a flat 50/50 blend. */
 static void
@@ -743,8 +763,7 @@ tess_rect_gradient( f32 x, f32 y, f32 w, f32 h, u32 col_a, u32 col_b, bool horiz
 {
     if ( w <= 0.0f || h <= 0.0f )
         return;
-    x = tess_snap_px( x );
-    y = tess_snap_px( y );
+    tess_snap_rect_px( &x, &y, &w, &h );
 
     s_tess.cur_ops |= GUI_OP_SELF | GUI_OP_GRAD | GUI_OP_DITHER;
     s_tess.cur_prim.col_b   = col_b;
