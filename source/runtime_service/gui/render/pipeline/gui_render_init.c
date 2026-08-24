@@ -114,9 +114,9 @@ typedef struct
 #define GUI_CLIP_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT )
 
 /*==============================================================================================
-    Primate Palette -- the storage buffer the fragment resolves a shape from.
+    Primative Palette -- the storage buffer the fragment resolves a shape from.
 
-    Primitive record table sizing, sized by CLAIM like the quad table below, not by cap.
+    Record table is sized by CLAIM like the quad table below, not by cap.
 
     Records are PACKED per window slot, not slabbed: a window's records sit wherever the arena
     placed them (win_geo_slot_t.prim_base), so an upload lands at a moving offset and the flush

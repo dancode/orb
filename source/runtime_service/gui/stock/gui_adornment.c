@@ -304,16 +304,52 @@ draw_child_border( gui_rect_t r, u8 phase, bool drag_candidate )
 
 /* Paint a bold line over each hot edge of an outline so it is obvious that the border is
    grabbable and which side will move.  Drawn just inside the rect, over the thin border.
-   `edges` is the GUI_RESIZE_* mask from the edge-resize service (interact/gui_resize.c). */
+   `edges` is the GUI_RESIZE_* mask from the edge-resize service (interact/gui_resize.c).
+
+   A single-edge drag (L, R, T, or B alone) highlights only the STRAIGHT run of that side, inset
+   `radius` from each end so it never enters a corner arc it has no business curving through.  A
+   corner drag holds two adjacent edges at once (e.g. L+T for the top-left grip); there the two
+   straight runs stop short at the same inset, and the gap between them is bridged by the corner
+   arc itself, so the highlight reads as one continuous line sweeping around the grabbed corner
+   instead of two separate strips pointing at it.
+
+   The bridge reuses the border ring's own shape (draw_push_rect_outline, same ambient radius as
+   the window) rather than drawing an arc by hand: clipped down to just that corner's radius x
+   radius box, the only part of the ring inside the box IS the corner's quarter-circle, so the
+   clip picks it out precisely -- no separate curve math to keep in sync with the border's. */
 void
 draw_resize_highlight( gui_rect_t r, u8 edges )
 {
-    const f32 t = WIN_BORDER * 2.0f + 1.0f;   /* bold relative to the 1px frame */
+#if !GUI_RESIZE_HIGHLIGHT
 
-    if ( edges & GUI_RESIZE_L ) draw_push_rect_filled( r.x,             r.y,             t,   r.h, 0,0,1,1, 0, COL_BORDER_HOT );
-    if ( edges & GUI_RESIZE_R ) draw_push_rect_filled( r.x + r.w - t,   r.y,             t,   r.h, 0,0,1,1, 0, COL_BORDER_HOT );
-    if ( edges & GUI_RESIZE_T ) draw_push_rect_filled( r.x,             r.y,             r.w, t,   0,0,1,1, 0, COL_BORDER_HOT );
-    if ( edges & GUI_RESIZE_B ) draw_push_rect_filled( r.x,             r.y + r.h - t,   r.w, t,   0,0,1,1, 0, COL_BORDER_HOT );
+    (void)r; (void)edges;
+
+#else
+
+    const f32 t      = WIN_BORDER * 2.0f + 1.0f;   /* bold relative to the 1px frame */
+    const f32 radius = draw_rounding();
+    const f32 inset  = ( 2.0f * radius < r.w && 2.0f * radius < r.h ) ? radius : 0.0f;
+
+    bool l = ( edges & GUI_RESIZE_L ) != 0, rt = ( edges & GUI_RESIZE_R ) != 0;
+    bool tp = ( edges & GUI_RESIZE_T ) != 0, b = ( edges & GUI_RESIZE_B ) != 0;
+
+    /* Straight runs: strictly between the two corner insets, so they never invade an arc. */
+    if (  l ) draw_push_rect_filled( r.x,           r.y + inset,   t,           r.h - 2.0f * inset, 0,0,1,1, 0, COL_BORDER_HOT );
+    if ( rt ) draw_push_rect_filled( r.x + r.w - t, r.y + inset,   t,           r.h - 2.0f * inset, 0,0,1,1, 0, COL_BORDER_HOT );
+    if ( tp ) draw_push_rect_filled( r.x + inset,   r.y,           r.w - 2.0f * inset, t,           0,0,1,1, 0, COL_BORDER_HOT );
+    if (  b ) draw_push_rect_filled( r.x + inset,    r.y + r.h - t, r.w - 2.0f * inset, t,           0,0,1,1, 0, COL_BORDER_HOT );
+
+    /* Corner bridges: only where both adjoining edges are hot, and only when there is an arc
+       to trace (a flush window's inset collapses to 0, leaving the straight runs meet square). */
+    if ( inset > 0.0f )
+    {
+        if ( l  && tp ) { draw_push_clip_rect( r.x,             r.y,             radius, radius ); draw_push_rect_outline( r.x, r.y, r.w, r.h, t, COL_BORDER_HOT ); draw_pop_clip_rect(); }
+        if ( rt && tp ) { draw_push_clip_rect( r.x + r.w - radius, r.y,             radius, radius ); draw_push_rect_outline( r.x, r.y, r.w, r.h, t, COL_BORDER_HOT ); draw_pop_clip_rect(); }
+        if ( l  &&  b ) { draw_push_clip_rect( r.x,             r.y + r.h - radius, radius, radius ); draw_push_rect_outline( r.x, r.y, r.w, r.h, t, COL_BORDER_HOT ); draw_pop_clip_rect(); }
+        if ( rt &&  b ) { draw_push_clip_rect( r.x + r.w - radius, r.y + r.h - radius, radius, radius ); draw_push_rect_outline( r.x, r.y, r.w, r.h, t, COL_BORDER_HOT ); draw_pop_clip_rect(); }
+    }
+
+#endif
 }
 
 // clang-format on

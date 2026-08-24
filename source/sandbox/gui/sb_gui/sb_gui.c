@@ -256,9 +256,10 @@ main( int argc, char** argv )
         .font      = GUI_FONT_CASCADIA_MONO,
         .font_size = 16,
         .clock     = sys_tick_seconds,
-        .sleep     = sys_sleep_milliseconds,
-        // .wait      = sys_wait_for_os_events_ms,
-        .clear     = { 0.4f, 0.4f, 0.4f, 1.00f },
+     // .sleep     = sys_sleep_milliseconds,
+     // .wait      = sys_wait_for_os_events_ms,
+     // .clear     = { 0.4f, 0.4f, 0.4f, 1.00f },
+        .clear     = { 0.0f, 0.0f, 0.0f, 1.00f },
         .debug     = true,
     } );
     if ( vp == GUI_VP_INVALID )

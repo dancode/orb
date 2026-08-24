@@ -103,6 +103,12 @@ f32 style_scale( gui_scale_t s, u32 field );
 #define WIN_SHADOW    style_var( GUI_VAR_SHADOW      )   /* elevation feather; 0 = flat  */
 #define FOCUS_RING    style_var( GUI_VAR_FOCUS_RING  )   /* keyboard ring stroke; 0 = off */
 
+/* Compile-time switch for the bold line draw_resize_highlight paints on a hot edge-resize
+   handle (stock/gui_adornment.c).  The resize cursor already signals the drag on its own; set
+   to 0 to drop the line and rely on the cursor alone.  Not a style_var: nothing needs it to
+   change at runtime, so it costs kits nothing to keep the schema slot unused. */
+#define GUI_RESIZE_HIGHLIGHT 0
+
 /* The disabled dim, as a style value like any other -- so a kit can soften or disable it, and
    push_style_var can scope it.  Living in the schema keeps the one number every disabled widget
    reads inside the vocabulary, rather than off in a private #define no push can reach. */
