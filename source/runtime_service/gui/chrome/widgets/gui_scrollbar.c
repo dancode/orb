@@ -28,9 +28,19 @@
 #define GUI_SCROLLBAR_SALT  0x5C011B01u
 #define GUI_HSCROLLBAR_SALT 0x5C011B02u
 
-/* Trial trace shadow on the track's content-facing edge -- draw_edge_shadow's second fitting,
-   same raw-constant-not-style-var reasoning as the title bar (gui_window_end.c). */
-#define SCROLLBAR_EDGE_SHADOW_SIZE   8.0f
+/* Strength of the gutter's dim end, as a fraction of the THEME's own shadow alpha (GUI_EXT_SHADOW,
+   the same colour window_draw_elevation casts) -- not an independent colour.  A theme's shadow
+   hue or strength change reaches the gutter for free this way, the same reasoning WIN_SHADOW_
+   FLOAT_ALPHA in gui_window_free.c already rides for the elevation shadow's window-band cut.
+   Half-strength (0.5) reads as a hint, not a duplicate of the full elevation shadow.  Tried a
+   hover-revealed gutter first (gui_anim_f32 on a fast damper) -- it read fine on a wide VS-sized
+   window where the cursor rarely crosses the gutter, but a small floating window's gutter sits
+   right where the cursor travels, so it kept popping in and out on every pass: distracting in a
+   way none of this file's other widgets are, because they react to being TARGETED, not merely
+   overflown.  A static gradient removes the transition entirely -- the gutter always reads the
+   same shadowed edge, the same way a window's own INERT recess never blinks either; the thumb
+   below carries the widget's one remaining hover reaction. */
+#define SCROLLBAR_GUTTER_SHADOW_STRENGTH  0.15f
 
 /* Grab offset within the knob at the moment of press.  Single-slot: only one scrollbar can be
    active (own active_id) at a time, so this covers every bar on every region. */
@@ -47,7 +57,7 @@ static f32 s_sb_grab_off = 0.0f;
 
 void
 scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
-                  f32 content, f32 view, f32* scroll )
+                  f32 content, f32 view, f32* scroll, bool nested, u8 backdrop_phase )
 {
     gui_id_t id          = id_combine( region_id, vertical ? GUI_SCROLLBAR_SALT
                                                              : GUI_HSCROLLBAR_SALT );
@@ -62,9 +72,11 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
     /* Knob length is the visible fraction of the track, clamped to a grabbable minimum
        and never longer than the track itself (content <= view => full-length knob).  The
        min-then-cap order matters: a track shorter than the minimum collapses to track_len,
-       so it is not folded into one clampf (whose bounds would invert). */
+       so it is not folded into one clampf (whose bounds would invert).  Floored at the thumb's
+       own thickness (SCROLLBAR_KNOB_W), not the slider's knob width -- a scrollbar is its own
+       widget now, not a slider wearing a track. */
     f32 knob_len = ( content > 0.0f ) ? track_len * ( view / content ) : track_len;
-    f32 min_len  = SLIDER_KNOB_W;
+    f32 min_len  = SCROLLBAR_KNOB_W;
     if ( knob_len < min_len )   knob_len = min_len;
     if ( knob_len > track_len ) knob_len = track_len;
     f32 travel = track_len - knob_len;
@@ -109,21 +121,55 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
        the chrome context. */
     f32 save_round = draw_rounding();
     draw_set_rounding( 0.0f );
-    draw_face( track, GUI_ROLE_ACCENT, GUI_PHASE_INERT );
 
-    /* Trace shadow on the edge facing the content -- the track sits on the view's right (vertical)
-       or bottom (horizontal) edge, so the content-facing side is the track's left or top. */
-    u32 shadow_col_old = style_ext( GUI_EXT_SHADOW ); UNUSED( shadow_col_old );
-    u32 shadow_col = GUI_COLOR( 0, 0, 0, 64 );
-    if ( ( shadow_col >> 24 ) != 0u )
-        draw_edge_shadow( track, vertical ? GUI_EDGE_LEFT : GUI_EDGE_TOP,
-                          SCROLLBAR_EDGE_SHADOW_SIZE, shadow_col );
+    /* Soft, non-reactive gutter: a gradient from the backdrop washed toward the THEME's own
+       shadow colour (GUI_EXT_SHADOW, at SCROLLBAR_GUTTER_SHADOW_STRENGTH of its authored alpha)
+       at the content-facing edge, back to the plain backdrop colour at the outer edge -- the
+       shadow IS the gutter fill now, not a separate layer over a flat one, and it inherits
+       whatever hue or strength a theme gives its shadow instead of carrying its own fixed tint.
+       Both ends otherwise read off the same backdrop -- the window body's PANEL cell, or a
+       nested child's PANEL_CHILD ground when `nested` (the region engine hands us its own
+       pushed_clip, the same signal that already tells it whether it owns a clip of its own) --
+       at `backdrop_phase`, the SAME phase that backdrop's own fill painted this frame
+       (layout_frame_t.backdrop_phase, flow/gui_flow.h), so a focused window's lift matches
+       exactly instead of guessing IDLE.  No hover reaction (see SCROLLBAR_GUTTER_SHADOW_STRENGTH's
+       comment) -- and BOTH gradient stops MUST stay fully opaque: this track spans the full
+       gutter over content that can scroll under it (a long unwrapped line can paint past the
+       content column into the gutter), so any transparent stop would let it show through instead
+       of being clipped by the fill, the same coverage rule the square (non-rounded) track shape
+       below exists for -- col_lerp keeps both stops opaque here since backdrop_col and
+       theme_shadow are each already opaque going in, regardless of the mix weight.
+       draw_gradient's `horizontal` flag rides `vertical` directly: a vertical bar's shadow ramps
+       across its WIDTH (the x axis, i.e. horizontal=true), a horizontal bar's ramps across its
+       HEIGHT (the y axis) -- track.x/y is already the content-facing edge either way
+       (gui_scroll.c seats the gutter flush past the view), so col_a (the dim end) belongs at the
+       box origin and col_b (backdrop) at the far end regardless of axis. */
+    u32 backdrop_col = style_col( nested ? GUI_ROLE_PANEL_CHILD : GUI_ROLE_PANEL, backdrop_phase );
+    u32 theme_shadow = style_ext( GUI_EXT_SHADOW ) | 0xFF000000u;
+    f32 shadow_amt   = ( (f32)( style_ext( GUI_EXT_SHADOW ) >> 24 ) / 255.0f )
+                     * SCROLLBAR_GUTTER_SHADOW_STRENGTH;
+    u32 dim_col      = col_lerp( backdrop_col, theme_shadow, shadow_amt );
+    draw_gradient( track, dim_col, backdrop_col, vertical );
 
+    /* The thumb's cross-axis thickness is its own var, independent of the gutter it sits in
+       (SCROLLBAR_KNOB_W vs SLIDER_KNOB_W/GUI_VAR_GUTTER), and centered in the gutter's thickness
+       -- a thin pill riding a wider hit region, rather than a knob that fills the whole track. */
+    f32 track_th = vertical ? track.w : track.h;
+    f32 knob_th  = SCROLLBAR_KNOB_W;
+    if ( knob_th > track_th ) knob_th = track_th;
+    f32 knob_cross = ( vertical ? track.x : track.y ) + ( track_th - knob_th ) * 0.5f;
+
+    /* The thumb is the ONE reactive part of the widget now: the gutter fill above is flat/shadow
+       and never changes, so hovering anywhere in the gutter (the whole track is the hit region,
+       item_state above) has to read on the thumb instead, or the control gives no feedback at
+       all.  draw_face_grab reads its own mix off (id, st) -- the same probe the drag/press logic
+       already computed -- so the thumb lifts through the ordinary GUI_ROLE_GRAB HOT/ACTIVE cells,
+       just like a slider knob does. */
     draw_set_rounding( ROUND_WIDGET );
     if ( vertical )
-        draw_face_grab( ( gui_rect_t ){ track.x, knob_off, track.w, knob_len }, id, st, 0u, 0.0f );
+        draw_face_grab( ( gui_rect_t ){ knob_cross, knob_off, knob_th, knob_len }, id, st, 0u, 0.0f );
     else
-        draw_face_grab( ( gui_rect_t ){ knob_off, track.y, knob_len, track.h }, id, st, 0u, 0.0f );
+        draw_face_grab( ( gui_rect_t ){ knob_off, knob_cross, knob_len, knob_th }, id, st, 0u, 0.0f );
     draw_set_rounding( save_round );
 }
 

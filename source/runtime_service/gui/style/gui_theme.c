@@ -68,7 +68,9 @@ static const style_var_info_t k_var[ GUI_VAR_COUNT ] =
     [ GUI_VAR_PAD             ] = { "Padding",         GUI_CLASS_METRIC, 24 },
     [ GUI_VAR_GAP             ] = { "Gap",             GUI_CLASS_METRIC, 16 },
     [ GUI_VAR_INDICATOR       ] = { "Indicator Size",  GUI_CLASS_METRIC, 32 },
-    [ GUI_VAR_GUTTER          ] = { "Knob / Gutter",   GUI_CLASS_METRIC, 32 },
+    [ GUI_VAR_GUTTER          ] = { "Scrollbar Gutter",GUI_CLASS_METRIC, 32 },
+    [ GUI_VAR_SLIDER_KNOB     ] = { "Slider Knob",     GUI_CLASS_METRIC, 32 },
+    [ GUI_VAR_SCROLLBAR_KNOB  ] = { "Scrollbar Knob",  GUI_CLASS_METRIC, 32 },
     [ GUI_VAR_MIN_CELL        ] = { "Min Cell Width",  GUI_CLASS_METRIC, 96 },
     [ GUI_VAR_TITLE_H         ] = { "Title Height",    GUI_CLASS_METRIC, 48 },
 
@@ -282,6 +284,8 @@ var_is_pixels( u8 cls )
         [ GUI_VAR_BORDER          ] = 1, \
         [ GUI_VAR_INDICATOR       ] = 16, \
         [ GUI_VAR_GUTTER          ] = 12, \
+        [ GUI_VAR_SLIDER_KNOB     ] = 12, \
+        [ GUI_VAR_SCROLLBAR_KNOB  ] = 8, \
         [ GUI_VAR_MIN_CELL        ] = 40, \
         [ GUI_VAR_TITLE_H         ] = 24, \
         /* 2. SKIN */ \

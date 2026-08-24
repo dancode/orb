@@ -339,7 +339,7 @@ bake_plane( u32 ( *col )[ GUI_PHASE_COUNT ], const gui_palette_t* p,
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_HOT    ] = bake_lift( accent, step,        pole );
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_ACTIVE ] = bake_lift( accent, step * 2.0f, pole );
     col[ GUI_ROLE_ACCENT ][ GUI_PHASE_INERT  ] = bake_recess( control, recess );
-
+    
     /* MARK -- the indicator a control shows.  IDLE and ACTIVE are the same colour: a check does
        not change colour when pressed.  HOT is the nav ring, which is accent business, not the
        mark's.  Nothing ever asks for an inert mark -- a disabled checkbox's tick just gets the

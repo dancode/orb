@@ -80,14 +80,15 @@ f32 style_scale( gui_scale_t s, u32 field );
     1. METRICS -- can move a rect
 ==============================================================================================*/
 
-#define WIDGET_H      style_var( GUI_VAR_ROW       )
-#define WIDGET_PAD    style_var( GUI_VAR_PAD       )
-#define WIDGET_GAP    style_var( GUI_VAR_GAP       )
-#define WIN_BORDER    style_var( GUI_VAR_BORDER    )
-#define CHECKBOX_SZ   style_var( GUI_VAR_INDICATOR )
-#define SLIDER_KNOB_W style_var( GUI_VAR_GUTTER    )
-#define WIDGET_MIN_W  style_var( GUI_VAR_MIN_CELL  )
-#define WIN_TITLE_H   style_var( GUI_VAR_TITLE_H   )
+#define WIDGET_H          style_var( GUI_VAR_ROW            )
+#define WIDGET_PAD        style_var( GUI_VAR_PAD            )
+#define WIDGET_GAP        style_var( GUI_VAR_GAP            )
+#define WIN_BORDER        style_var( GUI_VAR_BORDER         )
+#define CHECKBOX_SZ       style_var( GUI_VAR_INDICATOR      )
+#define SLIDER_KNOB_W     style_var( GUI_VAR_SLIDER_KNOB    )
+#define SCROLLBAR_KNOB_W  style_var( GUI_VAR_SCROLLBAR_KNOB )
+#define WIDGET_MIN_W      style_var( GUI_VAR_MIN_CELL       )
+#define WIN_TITLE_H       style_var( GUI_VAR_TITLE_H        )
 
 /* The lattice pitch, as the u32 the lat_* rounders take.  A style value like any other, so a
    kit can carry its own grid; 0 / 1 means the lattice is off. */

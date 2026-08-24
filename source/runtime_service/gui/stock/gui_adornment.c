@@ -284,7 +284,7 @@ draw_drop_hint( gui_rect_t r )
 void draw_child_bg( gui_rect_t r, u8 phase ) { draw_face( r, GUI_ROLE_PANEL_CHILD, phase ); }
 
 /* The child's own border, one of three reads (child_end passes back the SAME phase child_begin's
-   body fill used, plus whether GUI_WIN_DRAG_TARGET was set -- see child_body_phase,
+   body fill used, plus whether GUI_WIN_DRAG_TARGET was set -- see backdrop_phase,
    flow/gui_flow.h): phase HOT bolds it into the drop-accepted ring (draw_drop_ring's geometry, but
    the GUI_EXT_DROP hue instead of MARK -- this is the same "you can drop here" signal PANEL_CHILD's
    own HOT wash is already carrying on the fill, not the widget-level accept ring's family); not

@@ -220,12 +220,16 @@ typedef struct
     u8              child_resize_edge;       // hot/armed resize edges for this child (0 = none)
     u8              child_resize_saved_hot;  // s_scope.resize_hot to restore at child_end
 
-    /* Child drag-target border (child_begin GUI_WIN_DRAG_TARGET): child_begin computes
-       child_standing_phase once (before the child's own content can move the drag state) and
-       stashes it here so child_end's deferred border draw reads the SAME phase the body fill
-       used, rather than recomputing it against whatever the drag looks like by the time the
-       child's content has finished emitting. */
-    u8              child_body_phase;        // this child's PANEL_CHILD phase this frame
+    /* This region's backdrop phase this frame -- PANEL's for a window body, PANEL_CHILD's for a
+       nested child, stamped by the caller right after layout_push_region with the SAME phase its
+       own body fill just used (window_standing_phase / child_standing_phase).  Two readers: a
+       child's deferred border at child_end (see child_drag_target below) wants the phase its body
+       fill painted, not one recomputed against whatever the drag looks like once its content has
+       finished emitting; the scrollbar gutter (gui_scrollbar.c) wants it so the auto-hide fill
+       matches the exact colour already painted behind it, INCLUDING a focused window's lift --
+       not just a flat idle guess.  Defaults to GUI_PHASE_IDLE at push for a caller (table, menu
+       strip) that never stamps its own. */
+    u8              backdrop_phase;          // this region's PANEL/PANEL_CHILD phase this frame
     bool            child_drag_target;       // GUI_WIN_DRAG_TARGET was set at child_begin
 
 } layout_frame_t;
@@ -408,7 +412,7 @@ gui_span_t table_rows_span( i32 count, f32 h, f32 top );
 ==============================================================================================*/
 
 void scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
-                       f32 content, f32 view, f32* scroll );
+                       f32 content, f32 view, f32* scroll, bool nested, u8 backdrop_phase );
 
 void draw_child_bg        ( gui_rect_t r, u8 phase );
 void draw_child_border    ( gui_rect_t r, u8 phase, bool drag_candidate );

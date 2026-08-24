@@ -149,6 +149,12 @@ layout_push_region( gui_id_t id, gui_rect_t outer, gui_pad_t region_pad, gui_win
     f->scroll      = scroll;
     f->parent_clip = s_scope.clip;
 
+    /* Default backdrop phase for a caller that never stamps its own (table, menu strip) -- a
+       stale reused slot must not leak a prior region's phase into this one's scrollbar gutter.
+       A window body / child_begin overwrites this right after the call with the phase its own
+       fill just painted (window_standing_phase / child_standing_phase). */
+    f->backdrop_phase = GUI_PHASE_IDLE;
+
     /* Seed the id scope with this region's id, so leaf widgets combine their label against it
        (identical labels in different regions never collide).  id_restore unwinds the scope -- and
        any push_id the caller left unbalanced -- at pop, so a leak cannot corrupt the parent. */
@@ -318,12 +324,14 @@ layout_pop_region( void )
     if ( f->show_v )
     {
         gui_rect_t track = { f->view.x + f->view.w, f->view.y, f->sb_w, f->view.h };
-        scrollbar_widget( f->region_id, track, true, content_h, f->view.h, &f->scroll->scroll_y );
+        scrollbar_widget( f->region_id, track, true, content_h, f->view.h, &f->scroll->scroll_y,
+                          f->pushed_clip, f->backdrop_phase );
     }
     if ( f->show_h )
     {
         gui_rect_t track = { f->view.x, f->view.y + f->view.h, f->view.w, f->sb_h };
-        scrollbar_widget( f->region_id, track, false, content_w, f->view.w, &f->scroll->scroll_x );
+        scrollbar_widget( f->region_id, track, false, content_w, f->view.w, &f->scroll->scroll_x,
+                          f->pushed_clip, f->backdrop_phase );
     }
 
     /* Wheel: the hovered region consumes it (vertical by default, horizontal with Shift).

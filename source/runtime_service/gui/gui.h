@@ -762,7 +762,11 @@ typedef enum
 
     GUI_VAR_BORDER,         // frame line width -- consumes space: child heights, bar tracks, resize zones
     GUI_VAR_INDICATOR,      // square indicator side (checkbox / radio) -- feeds the natural width
-    GUI_VAR_GUTTER,         // slider knob width AND the scrollbar gutter thickness
+    GUI_VAR_GUTTER,         // scrollbar gutter's reserved thickness (space carved from the view)
+    GUI_VAR_SLIDER_KNOB,    // slider knob width -- its own value, not the scrollbar's gutter
+    GUI_VAR_SCROLLBAR_KNOB, // scrollbar thumb thickness -- centered inside the gutter above,
+                            //   independent so the thumb can read thinner than its hit region.
+                            //   A scrollbar is a slider special case and may look nothing like one.
     GUI_VAR_MIN_CELL,       // floor a flex/fraction track shrinks to before overflow
     GUI_VAR_TITLE_H,        // window title bar height -- the body starts below it
     GUI_VAR_GRID_Q,         // px lattice the metrics above snap onto (0/1 = off)

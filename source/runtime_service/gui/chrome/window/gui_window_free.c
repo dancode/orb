@@ -753,13 +753,14 @@ window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 tit
         /* Window body background.  Skipped for a frame-only shell: its body stays empty so the
            borderless viewport shows the cleared surface (and the windows inside it) through it.
            A maximized body fills flush to the surface edges: square corners, or the radius would
-           open gaps at the surface's bottom corners. */
+           open gaps at the surface's bottom corners.  Computed even when skipped: the body region
+           opened below stashes it as its backdrop_phase regardless, for the scrollbar gutter. */
+        u8 body_phase = window_standing_phase( id );
         if ( !frame_only )
         {
             f32 save_round = draw_rounding();
             if ( flush )
                 draw_set_rounding( 0.0f );
-            u8 body_phase = window_standing_phase( id );
             draw_face( ( gui_rect_t ){ win->x, win->y, win->w, win->h }, GUI_ROLE_PANEL, body_phase );
             draw_set_rounding( save_round );
         }
@@ -779,6 +780,7 @@ window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 tit
         gui_rect_t body = { win->x, win->y + title_h + mb_h, win->w, win->h - title_h - mb_h };
         layout_push_region( id, body, REGION_PAD_DEFAULT, body_flags, &win->scroll,
                             /* own_clip */ false );
+        lf()->backdrop_phase = body_phase;   /* scrollbar gutter matches the fill just painted */
 
         /* Text selection (GUI_WIN_TEXT_SELECT): paint the selection bands UNDER the content
            about to emit (opaque, editor-style, from last frame's captured runs); interaction

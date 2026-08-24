@@ -259,7 +259,7 @@ main( int argc, char** argv )
         .sleep     = sys_sleep_milliseconds,
      // .wait      = sys_wait_for_os_events_ms,
      // .clear     = { 0.4f, 0.4f, 0.4f, 1.00f },
-        .clear     = { 0.0f, 0.0f, 0.0f, 1.00f },
+        .clear     = { 0.1f, 0.1f, 0.1f, 1.00f },
         .debug     = true,
     } );
     if ( vp == GUI_VP_INVALID )
@@ -320,7 +320,7 @@ main( int argc, char** argv )
         // style->palette.ramp[GUI_RAMP_NEST]      = 0.25f;   // signed: negative LIFTS nested regions
         // style->palette.ramp[GUI_RAMP_STEP]      = 0.25f;
         // style->palette.ramp[GUI_RAMP_SELECT]    = 0.25f;
-    
+        
         gui()->style_bake( style );
 
         // ...then disagree with the ramp on individual cells, if you want to. Order matters:
@@ -328,11 +328,12 @@ main( int argc, char** argv )
         // style->col[GUI_ROLE_MARK][GUI_PHASE_IDLE] = GUI_COLOR( 0xFF, 0x40, 0x40, 0xFF );
         // Modify any skin (STYLE) knob -- metrics are authored for a baseline em=12
 
-        style->var[GUI_VAR_PANEL_ROUND] = 12;    // Square windows
-        style->var[GUI_VAR_ROUND]       = 4;    // No bevel on buttons
-        // style->var[GUI_VAR_GAP]         = 12;   // More breathing room
-
-        style->var[ GUI_VAR_GUTTER ] = 4;    // More breathing room between widgets
+        style->var[GUI_VAR_PANEL_ROUND] = 12;
+        style->var[GUI_VAR_ROUND]       = 4;
+     // style->var[GUI_VAR_GAP]         = 12;   // More breathing room
+        
+        style->var[ GUI_VAR_GUTTER ] = 8;
+        style->var[ GUI_VAR_SCROLLBAR_KNOB ] = 8;
 
         // Re-scale and apply the changes across the UI
         // gui()->style_apply();
