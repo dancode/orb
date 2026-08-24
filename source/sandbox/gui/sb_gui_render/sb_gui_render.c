@@ -180,6 +180,26 @@ load_catalogue_assets( void )
 }
 
 /*==============================================================================================
+    Live tweak panel -- a fixed-position region (no window chrome, no drag, no dock) pinned at a
+    caller-chosen screen rect, to see how a HUD-style control reads next to the catalogue grid.
+    Drawn once per frame regardless of page so the value persists across page switches.
+==============================================================================================*/
+
+#define TWEAK_TILE_MAX 120   // draw_rects() checker cap: CHECK_COLS * CHECK_ROWS_MAX below
+
+static i32 s_tweak_tile_count = 60;
+
+static void
+draw_tweak_panel( void )
+{
+    gui()->region_begin( "tweak_panel", 1600.0f - 260.0f, 8.0f, 240.0f, 0.0f, GUI_REGION_FG,
+                         GUI_VP_MAIN, GUI_WIN_NOSCROLL | GUI_WIN_NO_CLIP);
+    gui()->stack();
+    gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX );
+    gui()->region_end();
+}
+
+/*==============================================================================================
     Page 1 -- fills: the fast path a plain draw_rect takes, the general SDF box catalogue built
     on top of it, and the batched form for drawing many rects in one command.
 ==============================================================================================*/
@@ -187,6 +207,8 @@ load_catalogue_assets( void )
 static void
 page_fills( void )
 {
+    draw_tweak_panel();
+
     gui_rect_t r;
 
     //------------------------------------------------------------------------------------------
@@ -201,22 +223,21 @@ page_fills( void )
        histogram look of the bar strip below, so the two draw_rects() demos on this page read
        as distinct examples, not repeats of each other. */
 
-    r = row_wide( 0, 1, 5, "draw_rects() -- 60 tile checker / 1 call" );
+    r = row_wide( 0, 1, 5, "draw_rects() -- checker / 1 call (tweak panel sets count)" );
     {
-        enum { CHECK_COLS = 12, CHECK_ROWS = 5, TILE_COUNT = CHECK_COLS * CHECK_ROWS };
-        gui_rect_col_t tiles[ TILE_COUNT ];
-        f32 tw = r.w / ( f32 )CHECK_COLS, th = r.h / ( f32 )CHECK_ROWS;
-        i32 n = 0;
-        for ( i32 y = 0; y < CHECK_ROWS; ++y )
-            for ( i32 x = 0; x < CHECK_COLS; ++x )
-            {
-                bool  light = ( x + y ) % 2 == 0;
-                tiles[ n++ ] = ( gui_rect_col_t ){
-                    r.x + ( f32 )x * tw + 1.0f, r.y + ( f32 )y * th + 1.0f, tw - 2.0f, th - 2.0f,
-                    light ? AMBER : TEAL,
-                };
-            }
-        gui()->draw_rects( tiles, TILE_COUNT );
+        enum { CHECK_COLS = 12, CHECK_ROWS_MAX = TWEAK_TILE_MAX / CHECK_COLS };
+        gui_rect_col_t tiles[ TWEAK_TILE_MAX ];
+        f32 tw = r.w / ( f32 )CHECK_COLS, th = r.h / ( f32 )CHECK_ROWS_MAX;
+        for ( i32 i = 0; i < s_tweak_tile_count; ++i )
+        {
+            i32   x = i % CHECK_COLS, y = i / CHECK_COLS;
+            bool  light = ( x + y ) % 2 == 0;
+            tiles[ i ] = ( gui_rect_col_t ){
+                r.x + ( f32 )x * tw + 1.0f, r.y + ( f32 )y * th + 1.0f, tw - 2.0f, th - 2.0f,
+                light ? AMBER : TEAL,
+            };
+        }
+        gui()->draw_rects( tiles, s_tweak_tile_count );
     }
 
     //------------------------------------------------------------------------------------------
@@ -258,6 +279,9 @@ page_fills( void )
     r = cell( 18, 6, "frame (bg + border)" );
     gui()->draw_frame( r, INK_FAINT, TEAL, 2.0f );
     
+    //------------------------------------------------------------------------------------------
+    /* rows 2 - gradients */
+
     // r = cell( 17, 6, "rect_cut (subtract)" );
     // {
     //     gui_rect_t cut = { r.x + r.w * 0.55f, r.y - 10.0f, r.w * 0.55f, r.h * 0.7f };
@@ -765,7 +789,7 @@ build_frame( void )
     char hint[ 128 ];
     snprintf( hint, sizeof hint, "sb_gui_render -- page %d/%d: %s (arrows or 1-9,0)",
               s_page + 1, PAGE_COUNT, s_pages[ s_page ].name );
-    gui()->draw_text( 12.0f, 8.0f, INK_DIM, hint );
+    gui()->draw_text( 12.0f, 8.0f, INK_DIM, hint ); 
 
     s_pages[ s_page ].build();
 }
@@ -802,15 +826,15 @@ main( int argc, char** argv )
     int ret_code = 1;
 
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
-        .title     = "ORB -- gui render matrix",
-        .w         = 1280 + 320, .h = 720 + 320,
-        .os_chrome = true,
-        .font      = GUI_FONT_CASCADIA_MONO,
-        .clock = sys_tick_seconds,
-        .sleep = sys_sleep_milliseconds,
-        .wait  = sys_wait_for_os_events_ms,
-        .clear = { 0.05f, 0.05f, 0.05f, 1.00f },
-        .debug = true,
+        .title      = "ORB -- gui render matrix",
+        .w          = 1280 + 320, .h = 720 + 320,
+        .os_chrome  = true,
+        .font       = GUI_FONT_CASCADIA_MONO,
+        .clock      = sys_tick_seconds,
+        .sleep      = sys_sleep_milliseconds,
+        .wait       = sys_wait_for_os_events_ms,
+        .clear      = { 0.05f, 0.05f, 0.05f, 1.00f },
+        .debug       = true,
     } );
     if ( vp0 == GUI_VP_INVALID )
     {
