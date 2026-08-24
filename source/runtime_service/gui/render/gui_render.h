@@ -526,7 +526,7 @@ typedef struct
    on 4 clips per window while the shipping build had 16.  The record's `clip` is a full 32-bit
    member, so there is no band to fit and no trade to make: both builds get 16, and the only cost
    of raising it further is the clip region's own size. */
-#define GUI_WIN_CLIP_MAX  16
+#define GUI_WIN_CLIP_MAX  8
 
 /* Drop the once-per-frame tessellation cache so the next flush rebuilds the shared geometry.
    The frame's semantic list is tessellated + z-sorted exactly once (lazily, on the first

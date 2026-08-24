@@ -660,9 +660,9 @@ gui_window_end( void )
        it must not survive this window, or it would paint into the next one. */
     rings_paint();
 
-    /* Balance the clip push, which window_begin only made for an expanded window. */
-    if ( !s_build.win.collapsed )
-        draw_pop_clip_rect();
+    /* Balance the clip push -- window_begin pushes one whether expanded (body clip) or
+       collapsed (title-bar-only clip). */
+    draw_pop_clip_rect();
 
     /* Subsequent draws (low-level API, the next window) revert to the background key and the
        main surface; the next window_begin re-routes them to its own viewport.  Restore the base

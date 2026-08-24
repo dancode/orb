@@ -301,8 +301,11 @@ layout_pop_region( void )
     {
         f32 top = canv_from_scr_y( f, f->origin_y );   /* cross to content anchor FIRST, so the
                                                           spans below stay content-to-content */
+        f32 save = draw_rounding();
+        draw_set_rounding( 0.0f );   /* debug box is a measurement outline, always square */
         draw_push_rect_outline( f->content_x, top, f->high_x - f->content_x, f->high_y - top,
                                 2.0f, style_ext( GUI_EXT_OK ) );
+        draw_set_rounding( save );
     }
 
     /* Region-geometry debug layer (GUI_DBG_REGION): the view rect, the reserved gutters, and

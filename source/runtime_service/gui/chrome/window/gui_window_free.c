@@ -717,12 +717,14 @@ window_draw_elevation( const gui_window_t* win, f32 disp_h )
                      0.0f, feather * WIN_SHADOW_DROP, col );
 }
 
-/* Open the window body -- or, when collapsed, just seed the collapse-arrow clip.  Expanded: push the
+/* Open the window body -- or, when collapsed, just push the title-bar clip.  Expanded: push the
    one clip rect the whole window shares, fill the body background (skipped for a frame-only shell so
    the borderless viewport shows through), reserve the menu-bar strip, and open the body scroll
-   region.  Collapsed: no region opens and no clip is pushed, but s_scope.clip is pointed at the shown
-   title bar so window_end's collapse arrow stays hittable instead of inheriting the previous
-   window's stale clip (which need not cover this bar, leaving the arrow intermittently dead). */
+   region.  Collapsed: no region opens, but a rounded clip sized to the title bar is still pushed
+   (mirrored in window_end) so the bar's corners match the expanded body's, and s_scope.clip is
+   pointed at the shown title bar so window_end's collapse arrow stays hittable instead of
+   inheriting the previous window's stale clip (which need not cover this bar, leaving the arrow
+   intermittently dead). */
 static void
 window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 title_h, f32 disp_h,
                   bool collapsed )
@@ -790,6 +792,13 @@ window_open_body( gui_window_t* win, gui_id_t id, gui_win_flags_t flags, f32 tit
     }
     else
     {
+        /* Collapsed (or minimized to a shelf chip): the title bar IS the whole window, so it
+           needs the same rounded-all-corners clip the expanded body gets -- window_end_titlebar
+           always fills the bar SQUARE and relies on this clip to cut it to the panel radius.
+           Collapse and minimize are both unavailable on a native or maximized window, so the
+           radius here is never the flush (square) case an expanded window has to account for.
+           Balanced in window_end, mirroring the expanded push. */
+        draw_push_clip_rect_ex( win->x, win->y, win->w, disp_h, ROUND_WIN, 0.0f, UI_CLIP_ROUND_ALL );
         s_scope.clip = ( gui_rect_t ){ win->x, win->y, win->w, disp_h };
     }
 }
@@ -937,8 +946,14 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         window_maximize_set( win, false );
     }
 
-    bool can_collapse = has_titlebar && !( flags & GUI_WIN_NOCOLLAPSE ) && !native && !win->maximized;
-    if ( !can_collapse ) win->collapsed = false;
+    /* Structural eligibility only (flags, native) clears the STORED flag -- losing collapse this
+       way is permanent, so it should only happen when the capability itself is gone.  Maximized is
+       a transient pin, not a capability loss: win->collapsed must survive it so restoring comes
+       back the way it was left, not forced open. */
+    bool can_collapse_flag = has_titlebar && !( flags & GUI_WIN_NOCOLLAPSE ) && !native;
+    if ( !can_collapse_flag ) win->collapsed = false;
+
+    bool can_collapse = can_collapse_flag && !win->maximized;
 
     /* Logical collapse: the state the arrow reflects and the autosize refit respects.  The VISUAL
        collapse (title-bar only this frame) is resolved below from disp_h once the height tween has
@@ -1159,8 +1174,9 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
     s_build.win.h         = disp_h;  /* displayed height (title bar only when collapsed) */
 
     /* A collapsed window emits no body: the caller skips its widgets on the false return, so
-       no body region is opened and no clip is pushed (window_end mirrors this on win_collapsed).
-       The fixed-size chrome window_end draws is wholly inside the app bounds.  A caller that
+       no body region is opened, though the title-bar clip pushed above still balances against
+       window_end's pop (window_end mirrors this on win_collapsed).  The fixed-size chrome
+       window_end draws is wholly inside the app bounds.  A caller that
        ignores the return and emits widgets anyway draws into the empty root layout frame --
        harmless zero-size rects -- rather than into the window. */
     window_open_body( win, id, flags, title_h, disp_h, collapsed );
