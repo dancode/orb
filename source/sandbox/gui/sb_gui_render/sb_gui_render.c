@@ -70,6 +70,7 @@ lerp_col( u32 a, u32 b, f32 t )
     misbehaving one stands out against its row.
 ==============================================================================================*/
 
+#define GRID_COLS    6       // cells per row -- every page's cell()/row_wide() calls share this
 #define GRID_X      60.0f    // left margin of the first column
 #define GRID_Y      60.0f    // top of the first row (below the hint line)
 #define CELL_W     180.0f    // cell box, label strip included
@@ -182,22 +183,15 @@ load_catalogue_assets( void )
 /*==============================================================================================
     Live tweak panel -- a fixed-position region (no window chrome, no drag, no dock) pinned at a
     caller-chosen screen rect, to see how a HUD-style control reads next to the catalogue grid.
-    Drawn once per frame regardless of page so the value persists across page switches.
+    build_frame opens it once per frame around the active page's build() call, so any slider,
+    checkbox, etc. a page emits lands in this region's stack and appends as a new row -- the
+    page owns what it puts there, the panel just owns the box and the vertical flow.
 ==============================================================================================*/
 
 #define TWEAK_TILE_MAX 120   // draw_rects() checker cap: CHECK_COLS * CHECK_ROWS_MAX below
+#define TWEAK_PANEL_W  240.0f   // wider than CELL_W -- labels + slider need the extra room
 
 static i32 s_tweak_tile_count = 60;
-
-static void
-draw_tweak_panel( void )
-{
-    gui()->region_begin( "tweak_panel", 1600.0f - 260.0f, 8.0f, 240.0f, 0.0f, GUI_REGION_FG,
-                         GUI_VP_MAIN, GUI_WIN_NOSCROLL | GUI_WIN_NO_CLIP);
-    gui()->stack();
-    gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX );
-    gui()->region_end();
-}
 
 /*==============================================================================================
     Page 1 -- fills: the fast path a plain draw_rect takes, the general SDF box catalogue built
@@ -207,7 +201,7 @@ draw_tweak_panel( void )
 static void
 page_fills( void )
 {
-    draw_tweak_panel();
+    gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX );
 
     gui_rect_t r;
 
@@ -215,7 +209,7 @@ page_fills( void )
     /* row 0 -- the fast path: draw_rect emits ONE quad with no SDF field at all (the "0 emits
        square shapes" branch every other verb on this page costs strictly more than). */
 
-    r = cell( 0, 6, "draw_rect (fast path)" );
+    r = cell( 0, GRID_COLS, "draw_rect (fast path)" );
     gui()->draw_rect( r.x, r.y, r.w, r.h, AMBER );
 
     /* row 0 -- batched fast path: draw_rects() emits the same quad-per-rect as
@@ -223,7 +217,7 @@ page_fills( void )
        histogram look of the bar strip below, so the two draw_rects() demos on this page read
        as distinct examples, not repeats of each other. */
 
-    r = row_wide( 0, 1, 5, "draw_rects() -- checker / 1 call (tweak panel sets count)" );
+    r = row_wide( 0, 1, GRID_COLS - 1, "draw_rects() -- checker / 1 call (tweak panel sets count)" );
     {
         enum { CHECK_COLS = 12, CHECK_ROWS_MAX = TWEAK_TILE_MAX / CHECK_COLS };
         gui_rect_col_t tiles[ TWEAK_TILE_MAX ];
@@ -244,51 +238,51 @@ page_fills( void )
     /* rows 1 - basic shape rects -- the general box catalogue: rounding, border, gradient and 
        circle all resolve through the same SDF quad, just with more of the record populated. */
 
-    r = cell( 6, 6, "round rect" );
+    r = cell( 6, GRID_COLS, "round rect" );
     gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 0.0f, TEAL );
 
-    r = cell( 7, 6, "round rect (border)" );
+    r = cell( 7, GRID_COLS, "round rect (border)" );
     gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 2.0f, TEAL );
     
-    r = cell( 8, 6, "round rect (circle)" );
+    r = cell( 8, GRID_COLS, "round rect (circle)" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 0.0f, TEAL ); }
     
-    r = cell( 9, 6, "round rect (border)" );
+    r = cell( 9, GRID_COLS, "round rect (border)" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 2.0f, TEAL ); }
 
 
 
-    r = cell( 12, 6, "gradient v" );
+    r = cell( 12, GRID_COLS, "gradient v" );
     gui()->draw_gradient( r, AMBER, PLUM, true );
        
-    r = cell( 13, 6, "gradient h" );
+    r = cell( 13, GRID_COLS, "gradient h" );
     gui()->draw_gradient( r, AMBER, PLUM, false );
 
     //------------------------------------------------------------------------------------------
     /* rows 2 - gradients */
 
-    r = cell( 14, 6, "round rect gradient (linear)" );
+    r = cell( 14, GRID_COLS, "round rect gradient (linear)" );
     gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_LINEAR, 0.0f, 0.5f );
      
-    r = cell( 15, 6, "rr gradient (radial)" );
+    r = cell( 15, GRID_COLS, "rr gradient (radial)" );
     gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_RADIAL, 0.0f, 0.5f );
     
-    r = cell( 16, 6, "rr gradient (conic)" );
+    r = cell( 16, GRID_COLS, "rr gradient (conic)" );
     gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_CONIC, gui_radians( 45.0f ), 0.5f );
     
-    r = cell( 18, 6, "frame (bg + border)" );
+    r = cell( 18, GRID_COLS, "frame (bg + border)" );
     gui()->draw_frame( r, INK_FAINT, TEAL, 2.0f );
     
     //------------------------------------------------------------------------------------------
     /* rows 2 - gradients */
 
-    // r = cell( 17, 6, "rect_cut (subtract)" );
+    // r = cell( 17, GRID_COLS, "rect_cut (subtract)" );
     // {
     //     gui_rect_t cut = { r.x + r.w * 0.55f, r.y - 10.0f, r.w * 0.55f, r.h * 0.7f };
     //     gui()->draw_rect_cut( r, 10.0f, cut, 6.0f, 1.0f, PLUM );
     // }
     // 
-    // r = cell( 18, 6, "box_xf (rotated)" );
+    // r = cell( 18, GRID_COLS, "box_xf (rotated)" );
     // gui()->draw_box_xf( r, 10.0f, 0.0f, gui_radians( 12.0f ), AMBER );
     
 }
@@ -302,43 +296,43 @@ page_symbols( void )
 {
     gui_rect_t r;
 
-    r = cell( 0, 6, "check_mark" );
+    r = cell( 0, GRID_COLS, "check_mark" );
     gui()->draw_check_mark( r, INK );
 
-    r = cell( 1, 6, "arrow (up)" );
+    r = cell( 1, GRID_COLS, "arrow (up)" );
     gui()->draw_arrow( r, GUI_DIR_UP, INK );
 
-    r = cell( 2, 6, "arrow (down)" );
+    r = cell( 2, GRID_COLS, "arrow (down)" );
     gui()->draw_arrow( r, GUI_DIR_DOWN, INK );
 
-    r = cell( 3, 6, "arrow (left)" );
+    r = cell( 3, GRID_COLS, "arrow (left)" );
     gui()->draw_arrow( r, GUI_DIR_LEFT, INK );
 
-    r = cell( 4, 6, "arrow (right)" );
+    r = cell( 4, GRID_COLS, "arrow (right)" );
     gui()->draw_arrow( r, GUI_DIR_RIGHT, INK );
 
-    r = cell( 5, 6, "arrow_pointing_at" );
+    r = cell( 5, GRID_COLS, "arrow_pointing_at" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_arrow_pointing_at( c.x, c.y, r.h * 0.3f, GUI_DIR_DOWN, AMBER ); }
 
-    r = cell( 6, 6, "chevron (up)" );
+    r = cell( 6, GRID_COLS, "chevron (up)" );
     gui()->draw_chevron( r, GUI_DIR_UP, 3.0f, INK );
 
-    r = cell( 7, 6, "chevron (down)" );
+    r = cell( 7, GRID_COLS, "chevron (down)" );
     gui()->draw_chevron( r, GUI_DIR_DOWN, 3.0f, INK );
 
-    r = cell( 8, 6, "plus_minus (+)" );
+    r = cell( 8, GRID_COLS, "plus_minus (+)" );
     gui()->draw_plus_minus( r, true, 3.0f, INK );
 
-    r = cell( 9, 6, "plus_minus (-)" );
+    r = cell( 9, GRID_COLS, "plus_minus (-)" );
     gui()->draw_plus_minus( r, false, 3.0f, INK );
 
-    r = cell( 10, 6, "close" );
+    r = cell( 10, GRID_COLS, "close" );
     gui()->draw_close( r, ROSE );
 
-    r = cell( 11, 6, "bullet" );
+    r = cell( 11, GRID_COLS, "bullet" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_bullet( c.x, c.y, r.h * 0.2f, TEAL ); }
 
-    r = cell( 12, 6, "grip" );
+    r = cell( 12, GRID_COLS, "grip" );
     gui()->draw_grip( r, INK_DIM );
 }
 
@@ -352,61 +346,61 @@ page_shapes( void )
 {
     gui_rect_t r; gui_vec2_t c; f32 rad;
 
-    r = cell( 0, 6, "round_rect" );
+    r = cell( 0, GRID_COLS, "round_rect" );
     gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 0.0f, TEAL );
 
-    r = cell( 1, 6, "round_rect (mixed)" );
+    r = cell( 1, GRID_COLS, "round_rect (mixed)" );
     gui()->draw_round_rect( r, 4.0f, 24.0f, 4.0f, 24.0f, 0.0f, PLUM );
 
-    r = cell( 2, 6, "round_rect (stroked)" );
+    r = cell( 2, GRID_COLS, "round_rect (stroked)" );
     gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 2.0f, TEAL );
 
-    r = cell( 3, 6, "box_xf (rotated)" );
+    r = cell( 3, GRID_COLS, "box_xf (rotated)" );
     gui()->draw_box_xf( r, 10.0f, 0.0f, gui_radians( 18.0f ), AMBER );
 
-    r = cell( 4, 6, "rect_cut (subtract)" );
+    r = cell( 4, GRID_COLS, "rect_cut (subtract)" );
     {
         gui_rect_t cut = { r.x + r.w * 0.5f, r.y - 10.0f, r.w * 0.6f, r.h * 0.6f };
         gui()->draw_rect_cut( r, 10.0f, cut, 6.0f, 1.0f, TEAL );
     }
 
-    r = cell( 5, 6, "circle" );
+    r = cell( 5, GRID_COLS, "circle" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_circle( c.x, c.y, rad, 0.0f, PLUM );
 
-    r = cell( 6, 6, "circle (stroked)" );
+    r = cell( 6, GRID_COLS, "circle (stroked)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_circle( c.x, c.y, rad, 3.0f, AMBER );
 
-    r = cell( 7, 6, "ngon (hex)" );
+    r = cell( 7, GRID_COLS, "ngon (hex)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ngon( c.x, c.y, rad, 6, 0.0f, 0.0f, TEAL );
 
-    r = cell( 8, 6, "ngon (oct, stroked)" );
+    r = cell( 8, GRID_COLS, "ngon (oct, stroked)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ngon( c.x, c.y, rad, 8, 0.0f, 3.0f, PLUM );
 
-    r = cell( 9, 6, "star" );
+    r = cell( 9, GRID_COLS, "star" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_star( c.x, c.y, rad, 5, 0.0f, 0.0f, 0.0f, AMBER );
 
-    r = cell( 10, 6, "arc" );
+    r = cell( 10, GRID_COLS, "arc" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_arc( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 270.0f ), 4.0f, TEAL );
 
-    r = cell( 11, 6, "arc_dashed" );
+    r = cell( 11, GRID_COLS, "arc_dashed" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 300.0f ), 4.0f, 6.0f, 4.0f, PLUM );
 
-    r = cell( 12, 6, "arc_gradient" );
+    r = cell( 12, GRID_COLS, "arc_gradient" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( -90.0f ), gui_radians( 180.0f ), 5.0f, AMBER, TEAL );
 
-    r = cell( 13, 6, "pie" );
+    r = cell( 13, GRID_COLS, "pie" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_pie( c.x, c.y, rad, gui_radians( -40.0f ), gui_radians( 120.0f ), AMBER );
 
-    r = cell( 14, 6, "progress_arc" );
+    r = cell( 14, GRID_COLS, "progress_arc" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_progress_arc( c.x, c.y, rad, 0.65f, 4.0f, TEAL );
 }
@@ -421,19 +415,19 @@ page_lines( void )
 {
     gui_rect_t r;
 
-    r = cell( 0, 6, "line" );
+    r = cell( 0, GRID_COLS, "line" );
     gui()->draw_line( r.x + 10.0f, r.y + 10.0f, r.x + r.w - 10.0f, r.y + r.h - 10.0f, 2.0f, TEAL );
 
-    r = cell( 1, 6, "dashed_line" );
+    r = cell( 1, GRID_COLS, "dashed_line" );
     gui()->draw_dashed_line( r.x + 10.0f, r.y + 10.0f, r.x + r.w - 10.0f, r.y + r.h - 10.0f, 6.0f, 4.0f, 2.0f, PLUM );
 
-    r = cell( 2, 6, "capsule" );
+    r = cell( 2, GRID_COLS, "capsule" );
     gui()->draw_capsule( r.x + 16.0f, r.y + r.h * 0.5f, r.x + r.w - 16.0f, r.y + r.h * 0.5f, 18.0f, AMBER );
 
-    r = cell( 3, 6, "capsule_outline" );
+    r = cell( 3, GRID_COLS, "capsule_outline" );
     gui()->draw_capsule_outline( r.x + 16.0f, r.y + r.h * 0.5f, r.x + r.w - 16.0f, r.y + r.h * 0.5f, 18.0f, 3.0f, TEAL );
 
-    r = cell( 4, 6, "polyline (open)" );
+    r = cell( 4, GRID_COLS, "polyline (open)" );
     {
         gui_vec2_t pts[ 4 ] = {
             { r.x + 10.0f, r.y + r.h - 10.0f }, { r.x + r.w * 0.4f, r.y + 10.0f },
@@ -442,7 +436,7 @@ page_lines( void )
         gui()->draw_polyline( pts, 4, 2.0f, GUI_STROKE_CENTER, false, PLUM );
     }
 
-    r = cell( 5, 6, "polyline (closed)" );
+    r = cell( 5, GRID_COLS, "polyline (closed)" );
     {
         gui_vec2_t pts[ 4 ] = {
             { r.x + r.w * 0.5f, r.y + 10.0f }, { r.x + r.w - 10.0f, r.y + r.h * 0.5f },
@@ -451,15 +445,15 @@ page_lines( void )
         gui()->draw_polyline( pts, 4, 2.0f, GUI_STROKE_CENTER, true, AMBER );
     }
 
-    r = cell( 6, 6, "bezier_quad" );
+    r = cell( 6, GRID_COLS, "bezier_quad" );
     gui()->draw_bezier_quad( r.x + 10.0f, r.y + r.h - 10.0f, r.x + r.w * 0.5f, r.y + 6.0f,
                               r.x + r.w - 10.0f, r.y + r.h - 10.0f, 2.0f, TEAL );
 
-    r = cell( 7, 6, "bezier_cubic" );
+    r = cell( 7, GRID_COLS, "bezier_cubic" );
     gui()->draw_bezier_cubic( r.x + 10.0f, r.y + r.h - 10.0f, r.x + r.w * 0.3f, r.y + 6.0f,
                                r.x + r.w * 0.7f, r.y + r.h - 6.0f, r.x + r.w - 10.0f, r.y + 10.0f, 2.0f, PLUM );
 
-    r = cell( 8, 6, "rounded_path" );
+    r = cell( 8, GRID_COLS, "rounded_path" );
     {
         gui_vec2_t pts[ 4 ] = {
             { r.x + 10.0f, r.y + r.h - 10.0f }, { r.x + 10.0f, r.y + 10.0f },
@@ -468,7 +462,7 @@ page_lines( void )
         gui()->draw_rounded_path( pts, 4, 12.0f, 2.0f, false, AMBER );
     }
 
-    r = cell( 9, 6, "smooth_path" );
+    r = cell( 9, GRID_COLS, "smooth_path" );
     {
         gui_vec2_t pts[ 5 ] = {
             { r.x + 10.0f, r.y + r.h * 0.5f }, { r.x + r.w * 0.3f, r.y + 10.0f },
@@ -478,7 +472,7 @@ page_lines( void )
         gui()->draw_smooth_path( pts, 5, 2.0f, false, TEAL );
     }
 
-    r = cell( 10, 6, "wire" );
+    r = cell( 10, GRID_COLS, "wire" );
     gui()->draw_wire( r.x + 10.0f, r.y + r.h * 0.25f, r.x + r.w - 10.0f, r.y + r.h * 0.75f, 20.0f, 80.0f, 2.0f, PLUM );
 }
 
@@ -491,25 +485,25 @@ page_patterns( void )
 {
     gui_rect_t r;
 
-    r = cell( 0, 6, "checker" );
+    r = cell( 0, GRID_COLS, "checker" );
     gui()->draw_checker( r, 12.0f, GUI_COLOR( 0x40, 0x40, 0x48, 0xFF ), GUI_COLOR( 0x24, 0x24, 0x2A, 0xFF ) );
 
-    r = cell( 1, 6, "grid" );
+    r = cell( 1, GRID_COLS, "grid" );
     gui()->draw_grid( r, 16.0f, 1.0f, r.x, r.y, INK_DIM );
 
-    r = cell( 2, 6, "hatch" );
+    r = cell( 2, GRID_COLS, "hatch" );
     gui()->draw_hatch( r, 10.0f, 2.0f, TEAL );
 
-    r = cell( 3, 6, "stripes" );
+    r = cell( 3, GRID_COLS, "stripes" );
     gui()->draw_stripes( r, 10.0f, 3.0f, gui_radians( 45.0f ), PLUM );
 
-    r = cell( 4, 6, "round_rect_gradient (linear)" );
+    r = cell( 4, GRID_COLS, "round_rect_gradient (linear)" );
     gui()->draw_round_rect_gradient( r, 12.0f, AMBER, TEAL, GUI_GRAD_LINEAR, gui_radians( 90.0f ), 0.5f );
 
-    r = cell( 5, 6, "round_rect_gradient (radial)" );
+    r = cell( 5, GRID_COLS, "round_rect_gradient (radial)" );
     gui()->draw_round_rect_gradient( r, 12.0f, AMBER, TEAL, GUI_GRAD_RADIAL, 0.0f, 0.5f );
 
-    r = cell( 6, 6, "round_rect_gradient (conic)" );
+    r = cell( 6, GRID_COLS, "round_rect_gradient (conic)" );
     gui()->draw_round_rect_gradient( r, 12.0f, AMBER, TEAL, GUI_GRAD_CONIC, gui_radians( 0.0f ), 0.5f );
 }
 
@@ -523,26 +517,26 @@ page_shadow( void )
 {
     gui_rect_t r;
 
-    r = cell( 0, 6, "shadow" );
+    r = cell( 0, GRID_COLS, "shadow" );
     gui()->draw_shadow( r, 16.0f, GUI_COLOR( 0x00, 0x00, 0x00, 0x90 ) );
 
-    r = cell( 1, 6, "drop_shadow" );
+    r = cell( 1, GRID_COLS, "drop_shadow" );
     gui()->draw_drop_shadow( r, 14.0f, 4.0f, 6.0f, GUI_COLOR( 0x00, 0x00, 0x00, 0xA0 ) );
     gui()->draw_round_rect( r, 8.0f, 8.0f, 8.0f, 8.0f, 0.0f, PLUM );
 
-    r = cell( 2, 6, "inset_shadow" );
+    r = cell( 2, GRID_COLS, "inset_shadow" );
     gui()->draw_round_rect( r, 8.0f, 8.0f, 8.0f, 8.0f, 0.0f, INK_FAINT );
     gui()->draw_inset_shadow( r, 12.0f, GUI_COLOR( 0x00, 0x00, 0x00, 0x90 ) );
 
-    r = cell( 3, 6, "edge_shadow" );
+    r = cell( 3, GRID_COLS, "edge_shadow" );
     gui()->draw_round_rect( r, 4.0f, 4.0f, 4.0f, 4.0f, 0.0f, INK_FAINT );
     gui()->draw_edge_shadow( r, GUI_EDGE_BOTTOM, r.h * 0.6f, GUI_COLOR( 0x00, 0x00, 0x00, 0xA0 ) );
 
-    r = cell( 4, 6, "glow (drawn under)" );
+    r = cell( 4, GRID_COLS, "glow (drawn under)" );
     gui()->draw_glow( r, 18.0f, AMBER );
     gui()->draw_round_rect( r, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, INK );
 
-    r = cell( 5, 6, "round_rect_shadow" );
+    r = cell( 5, GRID_COLS, "round_rect_shadow" );
     gui()->draw_round_rect_shadow( r, 4.0f, 24.0f, 4.0f, 24.0f, 10.0f, GUI_COLOR( 0x00, 0x00, 0x00, 0x90 ) );
     gui()->draw_round_rect( r, 4.0f, 24.0f, 4.0f, 24.0f, 0.0f, TEAL );
 }
@@ -557,19 +551,19 @@ page_sets( void )
 {
     gui_rect_t r;
 
-    r = cell( 0, 6, "dot_grid" );
+    r = cell( 0, GRID_COLS, "dot_grid" );
     gui()->draw_dot_grid( r, 6, 4, 24.0f, 24.0f, 7.0f, TEAL );
 
-    r = cell( 1, 6, "ticks (horizontal)" );
+    r = cell( 1, GRID_COLS, "ticks (horizontal)" );
     gui()->draw_ticks( r, 12, 2.0f, r.h * 0.6f, false, AMBER );
 
-    r = cell( 2, 6, "ticks (vertical)" );
+    r = cell( 2, GRID_COLS, "ticks (vertical)" );
     gui()->draw_ticks( r, 8, 2.0f, r.w * 0.6f, true, PLUM );
 
-    r = cell( 3, 6, "dial_ticks" );
+    r = cell( 3, GRID_COLS, "dial_ticks" );
     gui()->draw_dial_ticks( r, 12, 2.0f, 10.0f, 0.0f, TEAL );
 
-    r = cell( 4, 6, "meter" );
+    r = cell( 4, GRID_COLS, "meter" );
     gui()->draw_meter( r, 10, 0.7f, AMBER, GUI_COLOR( 0x40, 0x40, 0x48, 0xFF ) );
 }
 
@@ -586,32 +580,32 @@ page_motion( void )
 
     gui_rect_t r; gui_vec2_t c; f32 rad;
 
-    r = cell( 0, 6, "pulse" );
+    r = cell( 0, GRID_COLS, "pulse" );
     gui()->draw_pulse( r, 1.0f, 0.6f, 0.0f, AMBER );
 
-    r = cell( 1, 6, "swell" );
+    r = cell( 1, GRID_COLS, "swell" );
     gui()->draw_swell( r, 1.0f, 10.0f, 0.0f, TEAL );
 
-    r = cell( 2, 6, "ripple" );
+    r = cell( 2, GRID_COLS, "ripple" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ripple( c.x, c.y, rad * 0.4f, 3.0f, 24.0f, 1.0f, 0.0f, PLUM );
 
-    r = cell( 3, 6, "ring" );
+    r = cell( 3, GRID_COLS, "ring" );
     gui()->draw_ring( r, 6.0f, AMBER );
 
-    r = cell( 4, 6, "round_rect_dashed (ants)" );
+    r = cell( 4, GRID_COLS, "round_rect_dashed (ants)" );
     gui()->draw_round_rect_dashed( r, 10.0f, 2.0f, 8.0f, 6.0f, 40.0f, TEAL );
 
-    r = cell( 5, 6, "border_tracer" );
+    r = cell( 5, GRID_COLS, "border_tracer" );
     gui()->draw_border_tracer( r, 10.0f, 3.0f, 0.25f, 0.6f, PLUM );
 
-    r = cell( 6, 6, "border_progress" );
+    r = cell( 6, GRID_COLS, "border_progress" );
     gui()->draw_border_progress( r, 10.0f, 3.0f, 1.0f, 0.4f, AMBER );
 
-    r = cell( 7, 6, "spinner" );
+    r = cell( 7, GRID_COLS, "spinner" );
     gui()->draw_spinner( r, 1.2f, 3.0f, TEAL );
 
-    r = cell( 8, 6, "dot_spinner (tail)" );
+    r = cell( 8, GRID_COLS, "dot_spinner (tail)" );
     gui()->draw_dot_spinner( r, 10, 4.0f, 1.0f, PLUM, GUI_COLOR( 0xB0, 0x60, 0xE0, 0x00 ) );
 }
 
@@ -625,28 +619,28 @@ page_text( void )
 {
     gui_rect_t r;
 
-    r = cell( 0, 6, "text_in (left)" );
+    r = cell( 0, GRID_COLS, "text_in (left)" );
     gui()->draw_text_in( r, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, INK, "left" );
 
-    r = cell( 1, 6, "text_in (center)" );
+    r = cell( 1, GRID_COLS, "text_in (center)" );
     gui()->draw_text_in( r, GUI_ALIGN_CENTER, INK, "center" );
 
-    r = cell( 2, 6, "text_in (right)" );
+    r = cell( 2, GRID_COLS, "text_in (right)" );
     gui()->draw_text_in( r, GUI_ALIGN_RIGHT | GUI_ALIGN_VCENTER, INK, "right" );
 
-    r = cell( 3, 6, "text_clipped" );
+    r = cell( 3, GRID_COLS, "text_clipped" );
     gui()->draw_text_clipped( r, GUI_ALIGN_LEFT | GUI_ALIGN_VCENTER, INK, "a caption too long for its cell" );
 
-    r = cell( 4, 6, "text_xf (scaled/rot)" );
+    r = cell( 4, GRID_COLS, "text_xf (scaled/rot)" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_text_xf( c.x - 24.0f, c.y, AMBER, "spin", 1.4f, gui_radians( 20.0f ) ); }
 
-    r = cell( 5, 6, "text_outline" );
+    r = cell( 5, GRID_COLS, "text_outline" );
     gui()->draw_text_outline( r.x + 8.0f, r.y + r.h * 0.5f, "outline", INK, GUI_COLOR( 0x00, 0x00, 0x00, 0xFF ) );
 
-    r = cell( 6, 6, "text_shadow" );
+    r = cell( 6, GRID_COLS, "text_shadow" );
     gui()->draw_text_shadow( r.x + 8.0f, r.y + r.h * 0.5f, "shadow", INK, GUI_COLOR( 0x00, 0x00, 0x00, 0xA0 ), 2.0f, 2.0f );
 
-    r = cell( 7, 6, "ambient text_edge" );
+    r = cell( 7, GRID_COLS, "ambient text_edge" );
     {
         f32 save_w; u32 save_col;
         gui()->draw_get_text_edge( &save_w, &save_col );
@@ -677,19 +671,19 @@ page_icons( void )
         if ( id != GUI_ICON_NONE ) gui()->draw_icon_in( r, id, 0u );
     }
 
-    r = cell( 7, 6, "draw_icon_xf (rotated)" );
+    r = cell( 7, GRID_COLS, "draw_icon_xf (rotated)" );
     {
         gui_icon_id_t id = gui()->find_icon( "gear" );
         if ( id != GUI_ICON_NONE ) gui()->draw_icon_xf( r, id, AMBER, gui_radians( 25.0f ) );
     }
 
-    r = cell( 8, 6, "draw_sprite_in" );
+    r = cell( 8, GRID_COLS, "draw_sprite_in" );
     if ( s_sprite_swatch != GUI_SPRITE_NONE ) gui()->draw_sprite_in( r, s_sprite_swatch, 0u );
 
-    r = cell( 9, 6, "draw_shape_in (baked)" );
+    r = cell( 9, GRID_COLS, "draw_shape_in (baked)" );
     if ( s_shape_diamond != GUI_SHAPE_NONE ) gui()->draw_shape_in( r, s_shape_diamond, TEAL );
 
-    r = cell( 10, 6, "shape + ambient fx" );
+    r = cell( 10, GRID_COLS, "shape + ambient fx" );
     if ( s_shape_diamond != GUI_SHAPE_NONE )
     {
         gui()->draw_set_shape( s_shape_diamond );
@@ -709,30 +703,30 @@ page_brushes( void )
 {
     gui_rect_t r;
 
-    r = cell( 0, 6, "SOLID" );
+    r = cell( 0, GRID_COLS, "SOLID" );
     gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_SOLID, .col_a = TEAL } );
 
-    r = cell( 1, 6, "GRADIENT (vertical)" );
+    r = cell( 1, GRID_COLS, "GRADIENT (vertical)" );
     gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_GRADIENT, .col_a = AMBER, .col_b = PLUM,
                                             .flags = GUI_BRUSH_VERTICAL } );
 
-    r = cell( 2, 6, "GRADIENT (horizontal)" );
+    r = cell( 2, GRID_COLS, "GRADIENT (horizontal)" );
     gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_GRADIENT, .col_a = AMBER, .col_b = PLUM } );
 
-    r = cell( 3, 6, "SPRITE" );
+    r = cell( 3, GRID_COLS, "SPRITE" );
     if ( s_sprite_swatch != GUI_SPRITE_NONE )
         gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_SPRITE, .sprite = s_sprite_swatch, .col_a = INK } );
 
-    r = cell( 4, 6, "SPRITE (flip x/y)" );
+    r = cell( 4, GRID_COLS, "SPRITE (flip x/y)" );
     if ( s_sprite_swatch != GUI_SPRITE_NONE )
         gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_SPRITE, .sprite = s_sprite_swatch, .col_a = INK,
                                                 .flags = GUI_BRUSH_FLIP_X | GUI_BRUSH_FLIP_Y } );
 
-    r = cell( 5, 6, "NINE" );
+    r = cell( 5, GRID_COLS, "NINE" );
     if ( s_sprite_swatch != GUI_SPRITE_NONE )
         gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_sprite_swatch } );
 
-    r = cell( 6, 6, "NINE (tile)" );
+    r = cell( 6, GRID_COLS, "NINE (tile)" );
     if ( s_sprite_swatch != GUI_SPRITE_NONE )
         gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_sprite_swatch,
                                                 .flags = GUI_BRUSH_TILE } );
@@ -773,6 +767,7 @@ build_frame( void )
     /* page switching: number keys 1-9 then 0 jump to one of the first ten pages directly; left/
        right arrows step and wrap, reaching pages beyond the number-key range.  Fenced so a page
        that ever takes text input keeps its keys. */
+
     if ( !gui()->want_capture_keyboard() )
     {
         for ( i32 k = 0; k < PAGE_COUNT && k < 10; ++k )
@@ -789,9 +784,20 @@ build_frame( void )
     char hint[ 128 ];
     snprintf( hint, sizeof hint, "sb_gui_render -- page %d/%d: %s (arrows or 1-9,0)",
               s_page + 1, PAGE_COUNT, s_pages[ s_page ].name );
-    gui()->draw_text( 12.0f, 8.0f, INK_DIM, hint ); 
+    gui()->draw_text( 12.0f, 8.0f, INK_DIM, hint );
 
+    /* tweak_panel spans the whole page: region_begin/stack open a vertical flex column before
+       the page builds its cells, region_end closes it after -- any slider, checkbox, etc. the
+       page calls in between appends as the next row in that column.  Placed as one more grid
+       column past the last one, so it tracks GRID_X/CELL_W/CELL_GAP/GRID_COLS instead of a
+       number pinned to today's window size. */
+
+    f32 panel_x = GRID_X + ( f32 )GRID_COLS * ( CELL_W + CELL_GAP );
+    gui()->region_begin( "tweak_panel", panel_x, GRID_Y, TWEAK_PANEL_W, 0.0f, GUI_REGION_FG,
+                         GUI_VP_MAIN, GUI_WIN_NOSCROLL | GUI_WIN_NO_CLIP );
+    gui()->stack();
     s_pages[ s_page ].build();
+    gui()->region_end();
 }
 
 /*==============================================================================================
