@@ -79,6 +79,7 @@ scrollbar_widget( gui_id_t region_id, gui_rect_t track, bool vertical,
        so it is not folded into one clampf (whose bounds would invert).  Floored at the thumb's
        own thickness (SCROLLBAR_KNOB_W), not the slider's knob width -- a scrollbar is its own
        widget now, not a slider wearing a track. */
+
     f32 knob_len = ( content > 0.0f ) ? track_len * ( view / content ) : track_len;
     f32 min_len  = SCROLLBAR_KNOB_W;
     if ( knob_len < min_len )   knob_len = min_len;

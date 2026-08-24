@@ -2,25 +2,27 @@
 
     gui/render/pipeline/gui_render_init.c -- Shared GPU resources
 
-    The RENDER phase's one-time setup, shared by every surface for the life of the run: 
-    The compiled pipeline (+ wireframe twin), the two bindless samplers:
-    
-            1. font/coverage 
+    Sets up the GPU resources that every surface shares for the whole run: the compiled
+    pipeline (plus its wireframe twin), the two bindless samplers --
+
+            1. font/coverage
             2. image
 
-    Plus the push-constant layout they're built against.
-    
-    render_init creates them; render_shutdown tears them down and logs the run's peak pool fills,
-    draw-call count and per-draw state cost.
+    -- and the push-constant layout they're built against.
 
-        EMIT    gui_emit_*.c       widgets -> s_draw semantic command list
-        BUILD   gui_build_cache.c  diff + tessellate -> s_tess geometry + s_dispatch slot table
-        RENDER  this file          shared GPU resources (once) -> submits per surface
+    render_init creates all of this once; render_shutdown tears it down and logs the run's
+    peak pool usage, draw-call count, and per-draw state cost.
 
-    Surfaces own no geometry buffers of their own; the per-surface flush that uploads a
-    surface's slots into these shared tables' regions and issues its draw calls lives next
-    door in pipeline/gui_render_submit.c, which reads s_render (this file's static) as a
-    shared constant and never writes it.
+    The GUI pipeline runs in three stages:
+
+        EMIT    gui_emit_*.c       widgets -> a list of draw commands (s_draw)
+        BUILD   gui_build_cache.c  diff + tessellate -> geometry (s_tess) + a slot table (s_dispatch)
+        RENDER  this file          the shared GPU resources set up once here, then submitted per surface
+
+    No surface owns its own geometry buffers. The actual per-surface work -- uploading a
+    surface's slots into these shared tables and issuing its draw calls -- happens next door in
+    pipeline/gui_render_submit.c, which only reads s_render (this file's static state) and
+    never writes to it.
 
 ==============================================================================================*/
 
@@ -28,10 +30,11 @@
 
 // clang-format off
 /*==============================================================================================
-    Push constant layout -- must match gui_pc_t in shaders/gui_common.hlsli.
+    Push constant layout -- must match gui_pc_t in shaders/gui_common.hlsli.ord
 
-    The cooked container reflects the block's SIZE, and pipeline_create checks this 
-    struct against it; field ORDER is on the two comment blocks to keep in step.
+    The cooked shader container records the block's SIZE, and pipeline_create checks this
+    struct against that. Field ORDER isn't checked automatically, though -- keeping this
+    struct and the .hlsli struct in the same order is up to whoever edits either one.
 ==============================================================================================*/
 
 /* Note: in the future we may want to compress some values to make space to 16 bit values.
@@ -63,48 +66,55 @@ typedef struct
 
 /*  Push Constant Notes:
 
-    - The block is per-frame state across a viewport render, with partial updates per window.
-    - The mvp is the head, per viewport for screen pixel dimensions to be deduced, set once.
-    - The texture and its sampling model USED to live here, and forced a draw call per texture.
-      They moved onto the STYLE RECORD each quad names, the fragment reads the slot from there.
-    - The record picks between the two SAMPLERS above by the model packed with it.
-    - A glyph quad names no prim record at all, so its atlas comes from tex_cov / tex_sdf above.    
-    - Custom changes are done in the tail (end of push constant)
-    - The block is written ONCE per flush, before the dispatch walk, and re-pushed from the 
-      tail by the consumers that genuinely vary below that granularity: 
+    - This struct holds per-frame state for one viewport's render; a few fields get updated
+      again mid-frame, per window (the "tail", explained below).
+    - mvp comes first and is set once per viewport, holding its screen pixel dimensions.
+    - The texture and its filter mode used to live directly in this struct, which forced a
+      separate draw call per texture. They now live on the STYLE RECORD each quad points to,
+      and the fragment shader reads the sampler slot from there instead.
+    - That record picks which of the two SAMPLERS above to use, via a mode flag packed into it.
+    - A glyph quad doesn't point to a style record at all -- its atlas comes straight from
+      tex_cov / tex_sdf above.
+    - Anything project-specific goes at the tail (the end of this struct).
+    - The whole struct is pushed to the GPU ONCE per flush, before walking the draw list. A few
+      fields then get re-pushed on their own partway through, because they change more often
+      than "once per flush":
 
-        prim_base and clip_base, which are per WINDOW SLOT because the record arena is 
-        packed rather than slabbed, and the BATCH debug view's tint, which is deliberately
-        different per draw call (see gui_render_flush).          
+        prim_base and clip_base change per WINDOW SLOT, because a window's records sit wherever
+        the arena placed them rather than at a fixed offset; and the BATCH debug view's tint
+        changes per draw call on purpose (see gui_render_flush).
 
-    - All three go through the tail, and all are filtered against the last value pushed, 
-      so a normal frame with one window still pushes exactly once.
-    - Vulkan leaves push constants undefined until written, and the head is written after 
-      this flush's cmd_bind_pipeline, so a scene pass that bound its own pipeline earlier
-      in the command buffer cannot leave a stale matrix behind.
+    - All three of those re-pushes go through the tail, and each is skipped if its value hasn't
+      changed since the last push -- so a normal frame with just one window still only pushes
+      the whole struct exactly once.
+    - Vulkan leaves push constants with undefined content until something writes them. The head
+      is written right after this flush's cmd_bind_pipeline, so even if an earlier scene pass
+      bound a different pipeline first, no stale matrix can leak through.
 */
 /*==============================================================================================
-    Push Constant Tail Split -- the part of the push constant that changes per window slot.
-
+    Push Constant Tail Split -- marks where the "changes per window slot" part of the push
+    constant struct begins, so that part can be re-pushed on its own (see the notes above).
 ==============================================================================================*/
 
 #define GUI_PUSH_TAIL_OFF   ( (u32)offsetof( gui_push_t, samp_point ) )
 #define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, samp_point ) ) )
 
 /*==============================================================================================
-    Clip Table Sizing -- the storage buffer clip_coverage reads (gui_fx.hlsli).
+    Clip Table Sizing -- the storage buffer clip_coverage reads from (gui_fx.hlsli).
 
-    A ENTRY is two v4: (x0, y0, x1, y1) snapped pixel edges + (radius, feather, flags, value).
-    A REGION is an array of fixed per-window SLABS -- one per stable cache slot. 
-    Each GUI_WIN_CLIP_MAX entries, located at cache_idx * GUI_WIN_CLIP_MAX (clip_base).
-    The same base the window's quads bake into the clip band, so uploads land at fixed 
-    offsets and can never overflow.  
-    
-    One region per frame-in-flight only, NOT per viewport: a window's cache slot is unique
-    across the whole app (cache_idx comes from the single global RENDER_MAX_WIN table).
-    
-    So its slab means the same thing to every surface -- unlike the prim table's per-viewport
-    regions and the quad table's per-viewport claims, which carry per-surface geometry.
+    An ENTRY is two float4s: pixel edges (x0, y0, x1, y1) snapped to whole pixels, plus
+    (radius, feather, flags, value).
+
+    A REGION is a fixed array of per-window SLABS -- one per stable cache slot, each holding
+    GUI_WIN_CLIP_MAX entries, at offset cache_idx * GUI_WIN_CLIP_MAX (clip_base). A window's
+    quads bake in that same base when they're built, so uploads always land at a fixed,
+    predictable offset and can never overflow into another window's slab.
+
+    There's one region per frame-in-flight -- and that's it, NOT one per viewport too. That's
+    because a window's cache slot is unique across the whole app (cache_idx comes from one
+    single global table, RENDER_MAX_WIN), so its slab means the same thing no matter which
+    surface is drawing it. Compare that to the prim table's per-viewport regions and the quad
+    table's per-viewport claims below, which each hold geometry specific to one surface.
 ==============================================================================================*/
 
 #define GUI_CLIP_ENTRY_FLOATS  8u
@@ -114,34 +124,43 @@ typedef struct
 #define GUI_CLIP_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT )
 
 /*==============================================================================================
-    Primative Palette -- the storage buffer the fragment resolves a shape from.
+    Primitive Palette -- a storage buffer of shape records. Every quad's fragment shader
+    reads one of these records to know what shape and style to draw.
 
-    Record table is sized by CLAIM like the quad table below, not by cap.
+    The buffer has two parts, back to back:
 
-    Records are PACKED per window slot, not slabbed: a window's records sit wherever the arena
-    placed them (win_geo_slot_t.prim_base), so an upload lands at a moving offset and the flush
-    pushes that offset per slot -- where a clip slab sits at a fixed multiple and needs no
-    per-slot constant at all.
+      1. A FIXED HEADER at the front, laid out as:
 
-    The buffer leads with a FIXED HEADER whose origins never move as the claim space grows:
+             [ style palette blocks x FIF | overlay records x (FIF x viewports) | claim copies x FIF ]
 
-        [ palette blocks x FIF | overlay records x (FIF x viewports) | claim copies x FIF ]
-    
-    The STYLE PALETTE (gui.h, GUI_PAL_FIRST): one copy of a record every window on every surface
-    can name, where a claim's records are reachable only from the window slot that wrote them.
-    Regioned per FRAME-IN-FLIGHT and nothing else -- content is identical across surfaces, but a
-    style re-bake rewrites the table while earlier frames may still be reading it, and one block
-    per in-flight frame is what makes that write land somewhere no draw is looking.  A buffer
-    swap drops the uploaded bytes; render_pal_invalidate (gui_render_pal.c) makes each frame's
-    next flush re-upload its block from the CPU-side table.
+         This part never moves, even as the claim space below it grows.
 
-    The OVERLAY RECORDS: the DEBUG OVERLAY needs one record per (frame-in-flight, viewport) and
-    has no window slot to get one from.  It builds its quads outside the tessellator entirely,
-    yet it still has to name a texture -- the atlas slot, which is only known at flush time -- so
-    "carry style 0 and inherit" was never available to it.  dbg_flush rewrites the record every
-    flush, so a buffer swap needs no help here.
+      2. The CLAIM SPACE, sized the same way as the quad table (see below): it grows as
+         windows need more room, and once grown it never shrinks.
 
-    All bases index in RECORDS, not float4s.
+    Where a window's records live, and why:
+
+    A window's own records are NOT laid out in one tidy block per window. They live wherever
+    the arena happened to place that window (win_geo_slot_t.prim_base), so uploading them means
+    writing to a different offset every flush. This is different from the clip table, which
+    always sits at a fixed, predictable offset.
+
+    STYLE PALETTE (see GUI_PAL_FIRST in gui.h): every window, on every surface, shares the same
+    set of style records -- unlike a window's own claim records, which only that window can see.
+    There is one copy of the whole palette PER FRAME-IN-FLIGHT, not just one copy total. That's
+    because when a style gets re-baked, older frames might still be mid-flight and reading the
+    old table; writing into a separate per-frame block guarantees no in-flight draw ever reads a
+    half-written palette. When the buffer is swapped out, render_pal_invalidate (in
+    gui_render_pal.c) marks every frame's block dirty so the next flush re-uploads it fresh from
+    the CPU-side table.
+
+    OVERLAY RECORDS: the debug overlay draws its own quads outside the normal tessellator path,
+    so it has no window to borrow a record from. It still needs to name a texture (which atlas
+    slot to sample), and that slot is only known once the frame actually flushes -- so it can't
+    just reuse an existing style record ahead of time. Instead it gets its own record per
+    (frame-in-flight, viewport) pair, rewritten every flush by dbg_flush.
+
+    Note: every offset/base value in this section counts in RECORDS, not float4s.
 ==============================================================================================*/
 
 #define GUI_PAL_REGION_COUNT       RHI_MAX_FRAMES_IN_FLIGHT
@@ -161,10 +180,11 @@ typedef struct
 
 } gui_prim_claim_t;
 
-/* What one (frame-in-flight, viewport) slice of the claim space last uploaded, checked at
-   flush.  No geometry generation here, unlike the quad regions: content changes ride the
-   per-slot pending bits (s_prim_range_pending), so this only carries mapping moves -- any
-   mismatch re-uploads every slot of the surface. */
+/* Tracks what one (frame-in-flight, viewport) slice of the claim space last uploaded; checked
+   at every flush. Unlike the quad regions below, this has no geometry-generation field --
+   content changes are tracked separately, through per-slot pending bits
+   (s_prim_range_pending). This struct only needs to catch when the mapping itself has moved;
+   any mismatch here means every slot for that surface gets re-uploaded. */
 typedef struct
 {
     u32 anchor;   // arena record index mapped to the claim's first record
@@ -184,28 +204,35 @@ static struct
 } s_prim_gpu;
 
 /*==============================================================================================
-    Quad table sizing -- the geometry table (gui.h, gui_quad_t), sized by CLAIM, not by cap.
+    Quad table sizing -- the geometry table (gui.h, gui_quad_t). Unlike the tables above, this
+    one is NOT sized by a fixed cap -- it's sized by CLAIM.
 
-    The tables above carve fixed regions; the quad table is the big one, and a fixed
-    (frame-in-flight, viewport) slab of GUI_MAX_QUADS each would pay the worst case for every
-    viewport whether it is open or not.  Instead each viewport holds a CLAIM -- a contiguous,
-    bucket-granular run of the table sized to what its windows actually span -- and the buffer
-    holds one copy of the claim space per frame-in-flight.
+    The tables above carve out fixed-size regions, but the quad table is the big one: giving
+    every (frame-in-flight, viewport) pair a fixed slab of GUI_MAX_QUADS would mean paying the
+    worst-case size for every viewport, even ones that are closed or nearly empty. Instead, each
+    viewport holds a CLAIM -- a contiguous run of the table, rounded to bucket-sized chunks,
+    sized to whatever its own windows actually need. The buffer holds one copy of this whole
+    claim space per frame-in-flight.
 
-    Cross-viewport safety needs no new synchronization: claims are disjoint and never move in
-    place, so a surface only ever writes its own claim (its own frame-in-flight hazard is what
-    the per-frame copies cover, exactly as fixed regions did).  Growth takes fresh space at the
-    buffer tail; the vacated run is left dead until the tail itself is spent, at which point the
-    whole buffer is REPLACED and claims compact into it (the glyph-table pattern below):
-    in-flight frames keep reading the old buffer through the bindless slot their push constants
-    captured, and rhi's deferred destroy holds it until they retire.
+    Different viewports never need extra synchronization to write safely alongside each other:
+    claims never overlap and never move while in use, so each surface only ever touches its own
+    claim. (The usual frame-in-flight hazard -- reading a buffer while it's being overwritten --
+    is still handled the same way as the fixed regions above: one copy per frame-in-flight.)
+    When a viewport's claim needs to grow, it takes fresh space at the tail of the buffer and
+    leaves its old space unused. Once the tail runs out of room, the whole buffer gets REPLACED
+    and every claim is compacted into the new one (same pattern as the glyph table below): any
+    frame still in flight keeps reading the old buffer through the bindless slot its push
+    constant already captured, and rhi's deferred-destroy logic holds onto that old buffer until
+    those frames are done with it.
 
-    The arena->claim mapping is anchored per flush: the viewport's slots cover the arena range
-    [anchor, hi) (their reservations' union, interleave gaps included -- gap bytes are never
-    uploaded or referenced), and arena record a lands at claim.base + (a - anchor).
-    pc.quad_base carries the whole offset, so the shader indexes exactly as before.  A moved
-    anchor, a moved claim or a swapped buffer all mean a region's bytes no longer line up, and
-    the flush re-uploads the span whole -- the same ladder a geometry-generation bump rides.
+    Mapping from the CPU-side geometry arena to a GPU claim is recomputed every flush: a
+    viewport's windows cover some range of arena records [anchor, hi) -- the union of what they
+    reserved, gaps included (gap bytes are simply never uploaded or read). Arena record `a` maps
+    to claim.base + (a - anchor), and pc.quad_base carries that whole offset so the shader
+    indexes it exactly as before. If the anchor moves, the claim moves, or the buffer gets
+    swapped, the region's uploaded bytes no longer line up with the new mapping -- in any of
+    those cases the flush just re-uploads the whole span, the same fallback used when a
+    geometry-generation bump forces a re-upload.
 ==============================================================================================*/
 
 #define GUI_QUAD_BUCKET        256u    /* claim granularity, records: 4 KB steps absorb jitter */
@@ -217,9 +244,9 @@ typedef struct
     u32 alloc;  // claim size in records (bucket multiple); 0 = viewport holds no claim
 } gui_quad_claim_t;
 
-/* What one (frame-in-flight, viewport) region of the table last uploaded, checked at flush: any
-   mismatch means the region's bytes cannot be patched incrementally and the span re-uploads
-   whole. */
+/* Tracks what one (frame-in-flight, viewport) region of the table last uploaded; checked at
+   every flush. Any mismatch here means the region's bytes can't just be patched -- the whole
+   span gets re-uploaded from scratch. */
 typedef struct
 {
     u32 gen;      // geometry generation (s_geo_gen) the region was last uploaded with
@@ -240,20 +267,24 @@ static struct
 /*==============================================================================================
     Glyph UV table sizing -- the ID-indexed atlas rects (gui.h, gui_glyph_uv_t).
 
-    NOT regioned, unlike the three tables above.  Those are rewritten every frame, so each
-    (frame-in-flight, viewport) needs somewhere of its own to land.  This one is written when its
-    generation changes -- a font's pixels entering the atlas, or a repack moving a page -- which is
-    a boot-time event and then essentially never, and its contents are identical for every surface.
+    This table is NOT split into per-frame regions, unlike the three tables above. Those get
+    rewritten every single frame, so each (frame-in-flight, viewport) pair needs its own place
+    to land safely. This table only gets written when its generation changes -- a font's pixels
+    entering the atlas, or a repack moving a page -- which happens at boot and then almost
+    never, and its contents are the same for every surface anyway.
 
-    So instead of N copies to write into, there is ONE buffer, replaced wholesale on the rare
-    rebuild: render_glyph_buf_refresh creates the new one and hands the old to rhi's deferred
-    destroy, which already holds it until no frame in flight can be reading it.  Nothing is ever
-    overwritten in place, so there is nothing for an in-flight draw to race.
+    So instead of keeping N copies around to write into, there's just ONE buffer, replaced
+    wholesale on the rare occasions it needs to change: render_glyph_buf_refresh builds a fresh
+    buffer and hands the old one to rhi's deferred-destroy, which holds onto it until no frame
+    in flight could still be reading it. Nothing is ever overwritten in place, so there's no
+    race for an in-flight draw to lose.
 
-    Sized by glyph_table_used(), not by the full ID space: IDs are (font slot x stride), so the
-    buffer only needs to reach the highest RESIDENT slot's stride -- one font costs 4 KB where
-    the full 16-slot space costs 64.  used() is a high-water that can only grow on a rebuild,
-    and a rebuild bumps the generation, so the replace path above is also the growth path.
+    The buffer is sized by glyph_table_used(), not by the full space of possible IDs. An ID is
+    (font slot x stride), so the buffer only needs to reach as far as the highest slot actually
+    in use -- one loaded font costs 4 KB, where reserving room for the full 16-slot space would
+    cost 64 KB. used() only ever grows when a rebuild happens, and a rebuild is exactly what
+    bumps the generation -- so the same "replace on generation change" logic above also handles
+    growth, with no separate code path needed.
 ==============================================================================================*/
 
 ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
@@ -266,16 +297,18 @@ ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF % 4 == 0 && GUI_PUSH_TAIL_SIZE % 4 == 0,
 /*==============================================================================================
     Shared GPU resources -- created once in render_init, destroyed in render_shutdown.
 
-    Immutable across frames and shared by every viewport (and the debug overlay), so never 
-    a per-viewport or per-frame bottleneck.
-    
-    A surface owns NO geometry buffers of its own: the quad, style and clip tables below are one
-    buffer each, carved into a region per (frame-in-flight, viewport).  A viewport is a render
-    TARGET that windows are dispatched to, not an owner of windows -- the one context emits every
-    window and the flush routes each window's geometry to the viewport hosting it.
-    
-    The viewport list lives in the bound context (core/gui_ctx.c), so this file only ever 
-    touches a surface through the GPU pieces passed to it.
+    None of this changes frame to frame, and it's shared by every viewport (and the debug
+    overlay too), so it's never a per-viewport or per-frame bottleneck.
+
+    No surface owns its own geometry buffers. The quad, style, and clip tables below are each a
+    single buffer, carved into one region per (frame-in-flight, viewport). A viewport is just a
+    render TARGET that windows get dispatched to -- it doesn't own the windows themselves. The
+    one shared context emits every window, and the flush step routes each window's geometry to
+    whichever viewport is hosting it.
+
+    The actual list of viewports lives in the bound context (core/gui_ctx.c). This file never
+    looks at that list directly -- it only ever touches a surface through the GPU handles it's
+    handed.
 ==============================================================================================*/
 
 static struct
@@ -285,41 +318,45 @@ static struct
     rhi_sampler_t   font_sampler;       // coverage sampler: point, U repeats (dash tiling), V clamps
     u32             font_sampler_idx;   // bindless slot for font_sampler
 
-    /* Second sampler, bilinear, for the sampling models that filter: authored sprite art, a
-       caller's own textures (a scene render target), and distance-field glyphs.  BOTH slots are
-       pushed every flush and the FRAGMENT chooses between them from the sampling model the quad
-       resolved, so a draw call binds neither in particular -- which is exactly what lets one batch
-       mix a point-sampled glyph atlas with a filtered image.  The model answers on its own:
-       coverage is glyphs and icons, which must stay point-sampled to render crisp, and everything
-       else is a picture or a field, which must filter. */
+    /* The second sampler: bilinear, used for anything that should be filtered rather than
+       sampled crisp -- authored sprite art, a caller's own textures (like a scene render
+       target), and distance-field glyphs. BOTH sampler slots are pushed every flush, and the
+       FRAGMENT shader picks between them itself, based on the sampling mode each quad's style
+       record carries. That's what lets one batch mix a point-sampled glyph with a filtered
+       image without needing separate draw calls. The rule for which mode a quad gets: glyphs
+       and icons (coverage) must stay point-sampled to look crisp; everything else -- a picture
+       or a distance field -- gets filtered. */
 
     rhi_sampler_t   image_sampler;      // sampler for RGBA images (bilinear clamp)
     u32             image_sampler_idx;  // bindless slot for image_sampler
 
-    /* The frame clip table -- the storage buffer clip_coverage reads (gui_fx.hlsli).  One region
-       per (frame-in-flight, viewport): the flush writes each surface's dispatched slots' local
-       clip entries into its own region, so no surface's upload can overwrite entries another
-       surface's in-flight draws still read.  Registered bindless once; the slot index rides
-       pc.clip_buf every flush. */
+    /* The frame clip table -- the storage buffer clip_coverage reads from (gui_fx.hlsli). It
+       has one region per (frame-in-flight, viewport): each flush writes that surface's clip
+       entries into its own region only, so one surface's upload can never overwrite entries
+       another surface's in-flight draws are still reading. Registered bindless once at init;
+       the slot index rides along in pc.clip_buf on every flush. */
 
     rhi_buffer_t    clip_buf;           // storage buffer: all clip regions
     u32             clip_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
-    /* The prim record table (gui.h, gui_prim_t) -- claim-sized, replaced on growth (s_prim_gpu
-       above), written per window slot by the flush.  The bindless slot index rides pc.prim_buf
-       and the window's own record base rides pc.prim_base. */
+    /* The prim record table (gui.h, gui_prim_t): sized by claim, replaced wholesale when it
+       needs to grow (see s_prim_gpu above), and written per window slot on each flush. The
+       bindless slot index rides in pc.prim_buf; that window's own record offset rides in
+       pc.prim_base. */
 
     rhi_buffer_t    prim_buf;           // storage buffer: header + frame-in-flight claim copies
     u32             prim_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
-    /* The quad-record geometry table -- claim-sized, replaced on growth (s_quad_gpu above). */
+    /* The quad-record geometry table: sized by claim, replaced wholesale when it needs to grow
+       (see s_quad_gpu above). */
 
     rhi_buffer_t    quad_buf;           // storage buffer: frame-in-flight copies of the claim space
     u32             quad_buf_idx;       // bindless buffer slot (never 0 after a successful init)
 
-    /* The glyph UV table: ONE buffer, replaced wholesale when its generation changes rather than
-       regioned per frame (see the sizing note above).  The slot index rides pc.glyph_buf; there is
-       no base to push, since there is only ever one table. */
+    /* The glyph UV table: just ONE buffer, replaced wholesale when its generation changes,
+       rather than split into per-frame regions like the tables above (see the sizing note
+       above for why). The slot index rides in pc.glyph_buf; there's no base offset to push,
+       since there's only ever the one table. */
 
     rhi_buffer_t    glyph_buf;          // storage buffer: the glyph table through its used extent
     u32             glyph_buf_idx;      // bindless buffer slot (never 0 after a successful init)
@@ -328,16 +365,18 @@ static struct
 
     gui_render_mode_t debug_mode;       // NORMAL / WIREFRAME / BATCH -- how the UI list is rasterized
 
-    /* The frame clock handed down by the orchestrator (gui_render_set_time), already wrapped.
-       Held here rather than read from the IO snapshot because s_io lives in the frontend unit and
-       this server cannot see it -- the same one-way seam gui_render_set_mode crosses. */
+    /* The frame clock, handed down by the orchestrator (gui_render_set_time) already wrapped to
+       a repeating range. It's stored here, rather than read straight from the IO snapshot,
+       because s_io lives in the frontend unit and this backend code can't see it -- the same
+       one-way boundary gui_render_set_mode crosses. */
 
     f32 fx_time;                        // seconds since the first frame, wrapped; -> pc.time
 
-    /* Lifetime per-draw-state totals from gui_render_flush, reported at shutdown.  The scissor
-       filter is invisible by construction -- it changes no pixel -- so without a count there is no
-       way to tell whether it is earning anything on a real UI.  The push figure is no longer a
-       filter yield but a cost: the tail is per-FLUSH now, so state_flushes is its denominator. */
+    /* Running totals of per-draw GPU state changes, accumulated by gui_render_flush and
+       reported at shutdown. The scissor filter never shows up visually -- it changes no
+       pixel -- so without counting it there'd be no way to tell whether it's actually saving
+       anything on a real UI. The push-count is no longer measuring savings; it's a cost figure:
+       the tail push now happens per-FLUSH, so state_flushes is the number to divide it by. */
 
     u64 state_draws;                  // draw calls walked (the scissor filter's denominator)
     u64 state_flushes;                // surface flushes walked (the push denominator)
@@ -347,20 +386,22 @@ static struct
 } s_render;
 
 /*==============================================================================================
-    Init / shutdown -- the shared GPU resources (pipeline, font sampler, atlas).
+    Init / shutdown for the shared GPU resources (pipeline, font sampler, atlas).
 ==============================================================================================*/
 
 /*==============================================================================================
-    render_load_shaders -- the cooked pair, which is the only way the gui gets a pipeline.
+    render_load_shaders -- loads the cooked shader pair, the only way the gui gets a pipeline.
 
     bin/shaders/gui_quad.{vs,ps}.oshd are cooked from shaders/gui_quad.{vs,ps}.hlsl by the build
-    itself (the 'shader' lines on the gui target in orb.targets), so the .hlsl files are the
-    single source for what the GPU runs -- there is no embedded SPIR-V array and no GLSL
-    transcript to drift against them.  The containers carry reflection, which is what lets
-    pipeline_create validate the push range below against the actual SPIR-V.
+    itself (see the 'shader' lines on the gui target in orb.targets). That makes the .hlsl files
+    the single source of truth for what the GPU runs -- there's no embedded SPIR-V array and no
+    separate GLSL copy that could drift out of sync with them. The cooked containers also carry
+    shader reflection data, which is what lets pipeline_create check the push-constant range
+    below against what the actual compiled shader expects.
 
-    All-or-nothing, and a missing file is a hard failure with the path in it: an out-of-date or
-    absent cook must say so at init rather than paint a frame from stale bytes.
+    Loading is all-or-nothing: a missing shader file is a hard failure that reports the path, so
+    an out-of-date or missing build shows up immediately at init instead of silently drawing a
+    frame from stale bytes.
 ==============================================================================================*/
 
 static bool
@@ -398,16 +439,19 @@ render_load_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
 static void render_shutdown( void );   /* the clip-table failure path below unwinds through it */
 
 /*==============================================================================================
-    The glyph UV table's buffer -- created once, then REPLACED (never rewritten) on a rebuild.
+    The glyph UV table's buffer -- created once, then REPLACED (never rewritten in place) when
+    it needs to change.
 
-    render_glyph_buf_create allocates, registers bindless, and uploads whatever the table holds
-    right now.  render_glyph_buf_refresh is the per-flush check: when the table's generation has
-    moved, it builds a fresh buffer and retires the old handle and slot, both of which rhi holds
-    until no frame in flight can still be reading them (vk_garbage_push / vk_retire_safe_at).
+    render_glyph_buf_create allocates the buffer, registers it bindless, and uploads whatever
+    the table currently holds. render_glyph_buf_refresh is the per-flush check: whenever the
+    table's generation has moved on, it builds a brand new buffer and retires the old handle and
+    slot. rhi holds onto both until no frame in flight could still be reading them
+    (vk_garbage_push / vk_retire_safe_at).
 
-    Replacing rather than overwriting is what makes ONE buffer correct here.  The alternative --
-    a copy per frame in flight, like the three per-frame tables -- would be paying 3x for a table
-    that is identical every frame, to solve a write hazard that only exists if you write in place.
+    Replacing the buffer, instead of overwriting it in place, is exactly what lets this get away
+    with just ONE buffer. The alternative -- a separate copy per frame in flight, like the three
+    per-frame tables use -- would mean paying 3x the memory for a table that's identical every
+    frame, just to guard against a write hazard that only exists if you write in place at all.
 ==============================================================================================*/
 
 static bool
@@ -427,8 +471,9 @@ render_glyph_buf_create( void )
     s_render.glyph_buf_idx = rhi()->register_buffer( s_render.glyph_buf );
     if ( s_render.glyph_buf_idx == 0 )
     {
-        /* Clean up after ourselves (the quad/prim creators' rule): the refresh path restores the
-           OLD handle over this member on failure, so an unregistered buffer left here would leak. */
+        /* Clean up after ourselves, same rule the quad/prim creators follow: on failure the
+           refresh path below restores the OLD handle into this member, so leaving an
+           unregistered buffer here would leak it. */
         rhi()->buffer_destroy( s_render.glyph_buf );
         s_render.glyph_buf = ( rhi_buffer_t ){ RHI_NULL_HANDLE };
         return false;
@@ -452,8 +497,9 @@ render_glyph_buf_refresh( void )
 
     if ( !render_glyph_buf_create() )
     {
-        /* Keep drawing from the buffer we have: its rects are one generation stale, which is a
-           wrong glyph rectangle, where a zeroed bindless slot is every character gone. */
+        /* Keep drawing from the buffer we already have. Its rects being one generation stale
+           just means an occasional wrong glyph rectangle -- far better than falling back to a
+           zeroed bindless slot, which would make every character disappear. */
         s_render.glyph_buf     = old_buf;
         s_render.glyph_buf_idx = old_idx;
         GUI_WARN_ONCE( "glyph table rebuild could not allocate -- holding generation %u\n",
@@ -468,8 +514,8 @@ render_glyph_buf_refresh( void )
 }
 
 /*==============================================================================================
-    The quad table's buffer -- created at boot capacity, then REPLACED (never resized in place)
-    when the claims outgrow it.  See the claim scheme at the sizing block above.
+    The quad table's buffer -- created at a boot-time capacity, then REPLACED (never resized in
+    place) once the claims outgrow it. See the claim scheme in the sizing block above.
 ==============================================================================================*/
 
 static bool
@@ -498,15 +544,17 @@ quad_gpu_create( u32 capacity )
     return true;
 }
 
-/*  Give a viewport a claim of at least `need` records.  The common frame finds the claim already
-    big enough and returns immediately.  Growth allocates a FRESH run (geometric headroom, bucket
-    rounded) at the buffer tail -- the old run goes dead but its bytes stay valid for any frame
-    in flight.  When the tail cannot fit the run, the buffer is replaced and every claim compacts
-    into the new one; in-flight frames keep the old buffer via their captured bindless slot.
+/*  Give a viewport a claim of at least `need` records. On a typical frame the claim is already
+    big enough, and this returns immediately. When it needs to grow, it allocates a FRESH run at
+    the buffer's tail (sized with some geometric headroom, rounded up to a bucket) -- the old run
+    just goes unused, but its bytes stay valid for as long as any frame in flight might still be
+    reading them. If the tail doesn't have room for the new run, the whole buffer gets replaced
+    and every claim is compacted into the new one; any frame still in flight keeps reading the
+    old buffer through the bindless slot it already captured.
 
-    On an allocation failure the old (too small) claim is returned as-is -- the caller clamps its
-    upload span to the claim rather than writing past it, degrading to truncated geometry instead
-    of corruption. */
+    If allocation fails outright, the old (too-small) claim is returned unchanged -- the caller
+    is expected to clamp its upload to fit within that claim rather than write past it, so the
+    failure shows up as truncated geometry rather than memory corruption. */
 
 static gui_quad_claim_t*
 quad_gpu_reserve( i32 vp, u32 need )
@@ -526,7 +574,8 @@ quad_gpu_reserve( i32 vp, u32 need )
         return c;
     }
 
-    /* Swap: capacity at least doubles, or covers the compacted claims when they need more. */
+    /* Replace the buffer: grow capacity to at least double, or enough to fit every claim
+       compacted together if that needs more room. */
     u32 total = alloc;
     for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
         if ( (i32)v != vp )
@@ -548,8 +597,10 @@ quad_gpu_reserve( i32 vp, u32 need )
         return c;
     }
 
-    /* Compact every claim into the fresh buffer.  Regions chase buf_gen, so each surface's next
-       flush re-uploads its span into its new position; nothing is copied here. */
+    /* Compact every claim into the fresh buffer here -- but only their offsets, not their
+       bytes. Each region tracks the buffer generation it last uploaded into (buf_gen), so once
+       this generation bumps, every surface's next flush notices the mismatch and re-uploads its
+       span at the new position on its own. */
     s_quad_gpu.tail = 0;
     for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
     {
@@ -573,8 +624,9 @@ quad_gpu_reserve( i32 vp, u32 need )
 }
 
 /*==============================================================================================
-    The prim table's buffer -- the same replace-on-growth scheme as the quad table above, plus
-    the fixed header (palette blocks + overlay records) leading the claim space.
+    The prim table's buffer -- uses the same replace-on-growth scheme as the quad table above,
+    with one difference: it also has the fixed header (palette blocks + overlay records) sitting
+    in front of the claim space.
 ==============================================================================================*/
 
 static void render_pal_invalidate( void );   /* gui_render_pal.c, included after this unit */
@@ -607,8 +659,8 @@ prim_gpu_create( u32 capacity )
     return true;
 }
 
-/*  Give a viewport a claim of at least `need` records -- quad_gpu_reserve's twin; see it for the
-    growth and failure story. */
+/*  Give a viewport a claim of at least `need` records -- this is quad_gpu_reserve's twin; see
+    that function above for the full growth and failure story. */
 
 static gui_prim_claim_t*
 prim_gpu_reserve( i32 vp, u32 need )
@@ -628,7 +680,8 @@ prim_gpu_reserve( i32 vp, u32 need )
         return c;
     }
 
-    /* Swap: capacity at least doubles, or covers the compacted claims when they need more. */
+    /* Replace the buffer: grow capacity to at least double, or enough to fit every claim
+       compacted together if that needs more room. */
     u32 total = alloc;
     for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
         if ( (i32)v != vp )
@@ -694,11 +747,13 @@ render_init( void )
         .alpha_op     = RHI_BLEND_OP_ADD,
     };
 
-    /* BUFFERLESS: no attributes and vertex_stride 0, so the RHI creates the pipeline with no
-       vertex binding at all -- the stage pulls everything from the quad table by SV_VertexID.
-       One descriptor shared by both pipelines; only polygon_mode differs.  The wireframe variant
-       (VK_POLYGON_MODE_LINE) lets the debug render mode draw triangle edges through the same
-       shaders and push range -- the flush just binds whichever the mode selects. */
+    /* BUFFERLESS: attrib_count is 0 and vertex_stride is 0, so the RHI creates this pipeline
+       with no vertex buffer binding at all -- the vertex stage instead pulls everything it
+       needs straight from the quad table, indexed by SV_VertexID. Both pipelines below share
+       one descriptor and differ only in polygon_mode. The wireframe variant
+       (VK_POLYGON_MODE_LINE) lets the debug render mode draw triangle edges using the exact
+       same shaders and push-constant layout -- the flush just picks whichever pipeline the
+       current mode calls for. */
     rhi_pipeline_desc_t pdesc = {
         .vert               = vert,
         .frag               = frag,
@@ -716,9 +771,9 @@ render_init( void )
     };
     s_render.pipeline_quad = rhi()->pipeline_create( &pdesc );
 
-    /* Wireframe pipeline: the debug-view (normal / wireframe / batch-tint) toggle's only extra
-       GPU resource.  gui_render_flush falls back to the fill pipeline if this one ever fails to
-       create. */
+    /* The wireframe pipeline is the only extra GPU resource the debug-view toggle needs (normal
+       / wireframe / batch-tint). If it fails to create, gui_render_flush just falls back to the
+       normal fill pipeline. */
     pdesc.polygon_mode = RHI_POLYGON_LINE;
     pdesc.debug_name   = "gui_quad_wire";
     s_render.pipeline_quad_wire = rhi()->pipeline_create( &pdesc );
@@ -726,14 +781,16 @@ render_init( void )
     rhi()->shader_destroy( frag );
     rhi()->shader_destroy( vert );
 
-    /* The wireframe pipeline is a debug convenience -- a failure there is non-fatal (the mode just
-       falls back to the fill pipeline at flush time); only the fill pipeline is required. */
+    /* The wireframe pipeline is just a debug convenience -- if it fails to create that's not
+       fatal, since the mode falls back to the fill pipeline at flush time. Only the fill
+       pipeline is actually required. */
     if ( !rhi_handle_valid( s_render.pipeline_quad ) )
         return false;
 
-    /* Font sampler: nearest filter.  V/W clamp-to-edge (no bleeding between atlas glyph rows); U
-       repeats so a dashed line's single quad can tile an atlas stipple row along its length.  Glyph
-       and white-texel U coords stay within [0,1], so wrapping never affects text or fills. */
+    /* Font sampler: nearest filter, so text stays crisp. V/W clamp-to-edge, so neighboring atlas
+       glyph rows never bleed into each other. U repeats, so a single dashed-line quad can tile
+       an atlas stipple pattern along its length. Regular glyph and solid-fill U coordinates
+       always stay within [0,1] anyway, so that repeat setting never affects text or fills. */
     s_render.font_sampler = rhi()->sampler_create( &( rhi_sampler_desc_t ){
         .min_filter = RHI_FILTER_NEAREST,
         .mag_filter = RHI_FILTER_NEAREST,
@@ -751,10 +808,11 @@ render_init( void )
     }
     s_render.font_sampler_idx = rhi()->register_sampler( s_render.font_sampler );
 
-    /* The image sampler: bilinear, and CLAMP on both axes -- a sprite never tiles through the
-       sampler (the tessellator repeats quads for that), and REPEAT here would wrap a stretched
-       piece onto its neighbour in the atlas.  Non-fatal if it fails: image draws fall back to the
-       point sampler below, which looks blocky but renders. */
+    /* The image sampler: bilinear, and CLAMP on both axes. A sprite is never tiled by this
+       sampler -- when tiling is wanted, the tessellator does it by repeating quads instead --
+       so using REPEAT here would risk wrapping a stretched sprite onto its neighbor in the
+       atlas. It's fine if this fails to create: image draws just fall back to the point sampler
+       instead, which looks blocky but still renders correctly. */
     s_render.image_sampler = rhi()->sampler_create( &( rhi_sampler_desc_t ){
         .min_filter = RHI_FILTER_LINEAR,
         .mag_filter = RHI_FILTER_LINEAR,
@@ -766,9 +824,10 @@ render_init( void )
     if ( rhi_handle_valid( s_render.image_sampler ) )
         s_render.image_sampler_idx = rhi()->register_sampler( s_render.image_sampler );
 
-    /* The frame clip table.  REQUIRED, not a nicety: the fragment is the only thing cutting
-       content to its clip now (the scissor is a full-surface constant), so running without the
-       table would let every scrolled row paint past its region. */
+    /* The frame clip table. This is REQUIRED, not just a nicety: the fragment shader is the
+       only thing cutting content to its clip rect now (the scissor rect is a fixed,
+       full-surface constant), so running without this table would let every scrolled row paint
+       right past its region. */
     s_render.clip_buf = rhi()->buffer_create( &( rhi_buffer_desc_t ){
         .size       = GUI_CLIP_REGION_COUNT * GUI_CLIP_REGION_BYTES,
         .usage      = RHI_BUFFER_USAGE_STORAGE,
@@ -784,10 +843,10 @@ render_init( void )
         return false;
     }
 
-    /* The primitive record table.  REQUIRED for the same reason the clip table is: once the
-       fragment resolves its shape from a record, a frame without one has nothing to draw.  Boot
-       capacity claim space behind the fixed header (palette blocks + overlay records); grows on
-       claim pressure (prim_gpu_reserve). */
+    /* The primitive record table. REQUIRED for the same reason the clip table is: the fragment
+       shader resolves a quad's shape from its record, so with no table there's nothing for it
+       to draw. Starts with a boot-sized claim space sitting behind the fixed header (palette
+       blocks + overlay records), and grows under claim pressure via prim_gpu_reserve. */
     if ( !prim_gpu_create( GUI_PRIM_GPU_BOOT_CAP ) )
     {
         gui_log( GUI_LOG_ERROR, "primitive record buffer unavailable -- gui render disabled" );
@@ -795,9 +854,9 @@ render_init( void )
         return false;
     }
 
-    /* The quad-record geometry table.  REQUIRED like the two tables above: every draw pulls its
-       placement from it.  Created at boot capacity; viewport claims grow it on demand
-       (quad_gpu_reserve). */
+    /* The quad-record geometry table. REQUIRED like the two tables above: every draw pulls its
+       placement from it. Created at boot capacity; viewport claims grow it on demand via
+       quad_gpu_reserve. */
     if ( !quad_gpu_create( GUI_QUAD_GPU_BOOT_CAP ) )
     {
         gui_log( GUI_LOG_ERROR, "quad record buffer unavailable -- gui render disabled" );
@@ -805,8 +864,8 @@ render_init( void )
         return false;
     }
 
-    /* The glyph UV table.  REQUIRED: a glyph quad carries a table ID in place of its atlas rect,
-       so without the table every character samples texel zero. */
+    /* The glyph UV table. REQUIRED: a glyph quad only carries a table ID rather than its own
+       atlas rect, so without this table every character would end up sampling texel zero. */
     if ( !render_glyph_buf_create() )
     {
         gui_log( GUI_LOG_ERROR, "glyph table buffer unavailable -- gui render disabled" );
@@ -814,19 +873,20 @@ render_init( void )
         return false;
     }
 
-    /* Fonts boot in the DRAW unit now (gui_draw_boot, after the whole server stands up) --
-       solids stay bound to this same shared atlas index even though they never sample it
-       (GUI_OP_SELF skips the texel read), so solids and text still merge into one draw. */
+    /* Fonts get loaded later, in the DRAW unit (gui_draw_boot, once the whole server has stood
+       up). Solid-color shapes still get bound to this same shared atlas index even though they
+       never actually sample it (GUI_OP_SELF skips the texel read) -- that's what lets solids
+       and text merge into a single draw call together. */
     return true;
 }
 
 static void
 render_shutdown( void )
 {
-    /* Peak fill of each BUILD pool over the run, so the caps can be moved from measurement rather
-       than from a guess.  The three are independent budgets: quads scale with how much is on
-       screen, styles with how many distinct looks it uses, and gpu commands with how the viewport
-       splits them. */
+    /* Logs the peak fill of each BUILD-stage pool over the run, so the size caps can be tuned
+       from real measurements instead of guesswork. These are three independent budgets: quads
+       scale with how much is on screen, styles scale with how many distinct looks are in use,
+       and gpu commands scale with how the viewport splits work up. */
     gui_log( GUI_LOG_INFO,
              "peak build pools: quads %u/%u (%.1f%%), styles %u/%u (%.1f%%), gpu cmds %u/%u (%.1f%%)",
              s_tess_stats.quad_hwm, GUI_MAX_QUADS, 100.0f * s_tess_stats.quad_hwm / (f32)GUI_MAX_QUADS,
@@ -845,16 +905,18 @@ render_shutdown( void )
                  s_tess_stats.uncacheable_wins, s_tess_stats.uncacheable_wins == 1u ? "" : "s",
                  (unsigned)WIN_SLOT_CMD_MAX );
 
-    // Peak draw calls in a single frame -- a measure of batching effectiveness.
+    // Peak draw calls seen in a single frame -- a rough measure of how well batching is working.
     gui_log( GUI_LOG_INFO, "peak draw calls in a frame: %u", cache_draw_call_hwm() );
 
-    /* Per-draw state cost.
-         pushes   -- tail writes: the full block once per flush, plus one tail per dispatched
-                     window slot (prim_base and clip_base, the per-slot constants), plus one per
-                     draw in the BATCH debug view.  Quoted against flushes, so a normal run reads
-                     roughly 1 + the number of windows on the surface.
-         scissors -- exactly one full-surface set per flush now: clipping is per-fragment (the
-                     clip band), so scissor state never changes mid-walk. */
+    /* Per-draw GPU state cost.
+         pushes   -- counts tail writes: the full push-constant block once per flush, plus one
+                     tail push per dispatched window slot (for the per-slot prim_base and
+                     clip_base values), plus one more per draw call in the BATCH debug view.
+                     Reported against the flush count, so a normal run should read roughly
+                     1 + the number of windows on the surface.
+         scissors -- now exactly one full-surface scissor set per flush: clipping happens per
+                     fragment now (via the clip band), so the scissor rect never needs to
+                     change mid-walk. */
     if ( s_render.state_draws )
     {
         gui_log( GUI_LOG_INFO,
@@ -868,8 +930,9 @@ render_shutdown( void )
                                         : 0.0 );
     }
 
-    /* The last submitted frame may still be executing on the GPU; the destroys below
-       (font textures, samplers, pipelines) are immediate, so drain the device first. */
+    /* The last submitted frame might still be running on the GPU, but the destroys below (font
+       textures, samplers, pipelines) happen immediately -- so drain the device first to make
+       sure nothing is still using them. */
     rhi()->device_wait_idle();
 
     if ( s_render.font_sampler_idx )
@@ -911,9 +974,9 @@ render_shutdown( void )
     memset( &s_render, 0, sizeof( s_render ) );
 }
 
-/* Memory accounting lives in render/gui_render_mem.c (backend_memory) -- the LAST include
-   of the unity TU, so it can sizeof every backend static, including the capture/debug files
-   included after this one. */
+/* Memory accounting lives in render/gui_render_mem.c (backend_memory). It's included LAST in
+   this unity build file, so it can take sizeof() every backend static -- including the
+   capture/debug files that get included after this one. */
 
 // clang-format on
 /*============================================================================================*/
