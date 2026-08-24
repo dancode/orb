@@ -173,12 +173,13 @@ typedef struct
 #define GUI_PRIM_BUCKET        32u    // claim granularity, records: 4 KB steps absorb jitter
 #define GUI_PRIM_GPU_BOOT_CAP  512u   // boot capacity, records per frame-in-flight copy
 
-typedef struct      // A viewport's claim of the primitive table, in records.
+typedef struct      // A viewport's claim of a CLAIM-sized table, in records. Shared shape for
+                    // the prim and quad tables below -- see claim_space_reserve.
 {
     u32 base;       // claim start within one frame-in-flight copy, in records (bucket-aligned)
     u32 alloc;      // claim size in records (bucket multiple); 0 = viewport holds no claim
 
-} gui_prim_claim_t;
+} gui_claim_t;
 
 /* Tracks what one (frame-in-flight, viewport) slice of the claim space last uploaded. 
    Checked at every flush. Unlike the quad regions below, this has no geometry-generation field
@@ -200,7 +201,7 @@ static struct
     u32               tail;      // first free record past every claim (bump; compacts on swap)
     u32               buf_gen;   // bumped per buffer swap; stale regions re-upload on next flush
 
-    gui_prim_claim_t  claim [ GUI_MAX_VIEWPORTS ];
+    gui_claim_t       claim [ GUI_MAX_VIEWPORTS ];
     gui_prim_region_t region[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
 
 } s_prim_gpu;
@@ -240,13 +241,6 @@ static struct
 #define GUI_QUAD_BUCKET        256u    /* claim granularity, records: 4 KB steps absorb jitter */
 #define GUI_QUAD_GPU_BOOT_CAP  8192u   /* boot capacity, records per frame-in-flight copy */
 
-typedef struct
-{
-    u32 base;   // claim start within one frame-in-flight copy, in records (bucket-aligned)
-    u32 alloc;  // claim size in records (bucket multiple); 0 = viewport holds no claim
-
-} gui_quad_claim_t;
-
 /* Tracks what one (frame-in-flight, viewport) region of the table last uploaded; checked at
    every flush. Any mismatch here means the region's bytes can't just be patched -- the whole
    span gets re-uploaded from scratch. */
@@ -265,7 +259,7 @@ static struct
     u32               capacity;  // records per frame-in-flight copy
     u32               tail;      // first free record past every claim (bump; compacts on swap)
     u32               buf_gen;   // bumped per buffer swap; stale regions re-upload on next flush
-    gui_quad_claim_t  claim [ GUI_MAX_VIEWPORTS ];
+    gui_claim_t       claim [ GUI_MAX_VIEWPORTS ];
     gui_quad_region_t region[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
 
 } s_quad_gpu;
@@ -520,6 +514,95 @@ render_glyph_buf_refresh( void )
 }
 
 /*==============================================================================================
+    claim_space_reserve -- shared growth logic for the quad and prim tables' claim spaces.
+
+    Give a viewport a claim of at least `need` records. On a typical frame the claim is already
+    big enough, and this returns immediately. When it needs to grow, it allocates a FRESH run at
+    the buffer's tail (sized with some geometric headroom, rounded up to `bucket`) -- the old run
+    just goes unused, but its bytes stay valid for as long as any frame in flight might still be
+    reading them. If the tail doesn't have room for the new run, the whole buffer gets replaced
+    (via `create_fn`, which stores the new capacity into `*p_capacity` itself) and every claim is
+    compacted into the new one; any frame still in flight keeps reading the old buffer through
+    the bindless slot it already captured -- `*p_buf`/`*p_idx` are only swapped forward once
+    `create_fn` succeeds, and unregistered/destroyed after the compaction is safely recorded.
+
+    If allocation fails outright, the old (too-small) claim is returned unchanged -- the caller
+    is expected to clamp its upload to fit within that claim rather than write past it, so the
+    failure shows up as truncated geometry rather than memory corruption. `what` names the table
+    in the resulting log/warn lines. */
+
+static gui_claim_t*
+claim_space_reserve( gui_claim_t* claim, u32* p_tail, u32* p_capacity, u32 bucket,
+                      u32 hdr_records, u32 bytes_per_record, i32 vp, u32 need,
+                      rhi_buffer_t* p_buf, u32* p_idx, bool (*create_fn)( u32 capacity ),
+                      const char* what )
+{
+    gui_claim_t* c = &claim[ vp ];
+    if ( need <= c->alloc )
+        return c;
+
+    u32 alloc = need + need / 4u;
+    alloc = ( alloc + bucket - 1u ) / bucket * bucket;
+
+    if ( *p_tail + alloc <= *p_capacity )
+    {
+        c->base   = *p_tail;
+        c->alloc  = alloc;
+        *p_tail  += alloc;
+        return c;
+    }
+
+    /* Replace the buffer: grow capacity to at least double, or enough to fit every claim
+       compacted together if that needs more room. */
+    u32 total = alloc;
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+        if ( (i32)v != vp )
+            total += claim[ v ].alloc;
+
+    u32 capacity = *p_capacity * 2u;
+    if ( capacity < total )
+        capacity = total;
+
+    rhi_buffer_t old_buf = *p_buf;
+    u32          old_idx = *p_idx;
+
+    if ( !create_fn( capacity ) )
+    {
+        *p_buf = old_buf;
+        *p_idx = old_idx;
+        GUI_WARN_ONCE( "gui %s table could not grow to %u records -- rendering may degrade\n",
+                       what, capacity );
+        return c;
+    }
+
+    /* Compact every claim into the fresh buffer here -- but only their offsets, not their
+       bytes. Each region tracks the buffer generation it last uploaded into (buf_gen), so once
+       this generation bumps, every surface's next flush notices the mismatch and re-uploads its
+       span at the new position on its own. */
+    *p_tail = 0;
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+    {
+        gui_claim_t* cv = &claim[ v ];
+        if ( (i32)v == vp )
+            cv->alloc = alloc;
+        if ( cv->alloc == 0 )
+            continue;
+        cv->base  = *p_tail;
+        *p_tail  += cv->alloc;
+    }
+
+    gui_log( GUI_LOG_INFO, "gui %s table grew: %u records per frame copy (%u KB total)",
+             what, capacity, ( hdr_records + RHI_MAX_FRAMES_IN_FLIGHT * capacity )
+                                 * bytes_per_record / 1024u );
+
+    if ( old_idx )
+        rhi()->unregister_buffer( old_idx );
+    if ( rhi_handle_valid( old_buf ) )
+        rhi()->buffer_destroy( old_buf );
+    return c;
+}
+
+/*==============================================================================================
     The quad table's buffer -- created at a boot-time capacity, then REPLACED (never resized in
     place) once the claims outgrow it. See the claim scheme in the sizing block above.
 ==============================================================================================*/
@@ -550,83 +633,13 @@ quad_gpu_create( u32 capacity )
     return true;
 }
 
-/*  Give a viewport a claim of at least `need` records. On a typical frame the claim is already
-    big enough, and this returns immediately. When it needs to grow, it allocates a FRESH run at
-    the buffer's tail (sized with some geometric headroom, rounded up to a bucket) -- the old run
-    just goes unused, but its bytes stay valid for as long as any frame in flight might still be
-    reading them. If the tail doesn't have room for the new run, the whole buffer gets replaced
-    and every claim is compacted into the new one; any frame still in flight keeps reading the
-    old buffer through the bindless slot it already captured.
-
-    If allocation fails outright, the old (too-small) claim is returned unchanged -- the caller
-    is expected to clamp its upload to fit within that claim rather than write past it, so the
-    failure shows up as truncated geometry rather than memory corruption. */
-
-static gui_quad_claim_t*
+static gui_claim_t*
 quad_gpu_reserve( i32 vp, u32 need )
 {
-    gui_quad_claim_t* c = &s_quad_gpu.claim[ vp ];
-    if ( need <= c->alloc )
-        return c;
-
-    u32 alloc = need + need / 4u;
-    alloc = ( alloc + GUI_QUAD_BUCKET - 1u ) / GUI_QUAD_BUCKET * GUI_QUAD_BUCKET;
-
-    if ( s_quad_gpu.tail + alloc <= s_quad_gpu.capacity )
-    {
-        c->base           = s_quad_gpu.tail;
-        c->alloc          = alloc;
-        s_quad_gpu.tail  += alloc;
-        return c;
-    }
-
-    /* Replace the buffer: grow capacity to at least double, or enough to fit every claim
-       compacted together if that needs more room. */
-    u32 total = alloc;
-    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
-        if ( (i32)v != vp )
-            total += s_quad_gpu.claim[ v ].alloc;
-
-    u32 capacity = s_quad_gpu.capacity * 2u;
-    if ( capacity < total )
-        capacity = total;
-
-    rhi_buffer_t old_buf = s_render.quad_buf;
-    u32          old_idx = s_render.quad_buf_idx;
-
-    if ( !quad_gpu_create( capacity ) )
-    {
-        s_render.quad_buf     = old_buf;
-        s_render.quad_buf_idx = old_idx;
-        GUI_WARN_ONCE( "gui quad table could not grow to %u records -- geometry may truncate\n",
-                       capacity );
-        return c;
-    }
-
-    /* Compact every claim into the fresh buffer here -- but only their offsets, not their
-       bytes. Each region tracks the buffer generation it last uploaded into (buf_gen), so once
-       this generation bumps, every surface's next flush notices the mismatch and re-uploads its
-       span at the new position on its own. */
-    s_quad_gpu.tail = 0;
-    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
-    {
-        gui_quad_claim_t* cv = &s_quad_gpu.claim[ v ];
-        if ( (i32)v == vp )
-            cv->alloc = alloc;
-        if ( cv->alloc == 0 )
-            continue;
-        cv->base         = s_quad_gpu.tail;
-        s_quad_gpu.tail += cv->alloc;
-    }
-
-    gui_log( GUI_LOG_INFO, "gui quad table grew: %u records per frame copy (%u KB total)",
-             capacity, RHI_MAX_FRAMES_IN_FLIGHT * capacity * (u32)GUI_QUAD_BYTES / 1024u );
-
-    if ( old_idx )
-        rhi()->unregister_buffer( old_idx );
-    if ( rhi_handle_valid( old_buf ) )
-        rhi()->buffer_destroy( old_buf );
-    return c;
+    return claim_space_reserve( s_quad_gpu.claim, &s_quad_gpu.tail, &s_quad_gpu.capacity,
+                                 GUI_QUAD_BUCKET, 0u, (u32)GUI_QUAD_BYTES, vp, need,
+                                 &s_render.quad_buf, &s_render.quad_buf_idx, quad_gpu_create,
+                                 "quad" );
 }
 
 /*==============================================================================================
@@ -665,71 +678,13 @@ prim_gpu_create( u32 capacity )
     return true;
 }
 
-/*  Give a viewport a claim of at least `need` records -- this is quad_gpu_reserve's twin; see
-    that function above for the full growth and failure story. */
-
-static gui_prim_claim_t*
+static gui_claim_t*
 prim_gpu_reserve( i32 vp, u32 need )
 {
-    gui_prim_claim_t* c = &s_prim_gpu.claim[ vp ];
-    if ( need <= c->alloc )
-        return c;
-
-    u32 alloc = need + need / 4u;
-    alloc = ( alloc + GUI_PRIM_BUCKET - 1u ) / GUI_PRIM_BUCKET * GUI_PRIM_BUCKET;
-
-    if ( s_prim_gpu.tail + alloc <= s_prim_gpu.capacity )
-    {
-        c->base           = s_prim_gpu.tail;
-        c->alloc          = alloc;
-        s_prim_gpu.tail  += alloc;
-        return c;
-    }
-
-    /* Replace the buffer: grow capacity to at least double, or enough to fit every claim
-       compacted together if that needs more room. */
-    u32 total = alloc;
-    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
-        if ( (i32)v != vp )
-            total += s_prim_gpu.claim[ v ].alloc;
-
-    u32 capacity = s_prim_gpu.capacity * 2u;
-    if ( capacity < total )
-        capacity = total;
-
-    rhi_buffer_t old_buf = s_render.prim_buf;
-    u32          old_idx = s_render.prim_buf_idx;
-
-    if ( !prim_gpu_create( capacity ) )
-    {
-        s_render.prim_buf     = old_buf;
-        s_render.prim_buf_idx = old_idx;
-        GUI_WARN_ONCE( "gui prim table could not grow to %u records -- styling may degrade\n",
-                       capacity );
-        return c;
-    }
-
-    s_prim_gpu.tail = 0;
-    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
-    {
-        gui_prim_claim_t* cv = &s_prim_gpu.claim[ v ];
-        if ( (i32)v == vp )
-            cv->alloc = alloc;
-        if ( cv->alloc == 0 )
-            continue;
-        cv->base         = s_prim_gpu.tail;
-        s_prim_gpu.tail += cv->alloc;
-    }
-
-    gui_log( GUI_LOG_INFO, "gui prim table grew: %u records per frame copy (%u KB total)",
-             capacity, ( (u32)GUI_PRIM_HDR_RECORDS + RHI_MAX_FRAMES_IN_FLIGHT * capacity )
-                           * (u32)GUI_PRIM_BYTES / 1024u );
-
-    if ( old_idx )
-        rhi()->unregister_buffer( old_idx );
-    if ( rhi_handle_valid( old_buf ) )
-        rhi()->buffer_destroy( old_buf );
-    return c;
+    return claim_space_reserve( s_prim_gpu.claim, &s_prim_gpu.tail, &s_prim_gpu.capacity,
+                                 GUI_PRIM_BUCKET, (u32)GUI_PRIM_HDR_RECORDS, (u32)GUI_PRIM_BYTES,
+                                 vp, need, &s_render.prim_buf, &s_render.prim_buf_idx,
+                                 prim_gpu_create, "prim" );
 }
 
 static bool

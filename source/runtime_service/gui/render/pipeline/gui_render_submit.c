@@ -177,7 +177,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     u32 claim_base = 0;
     if ( res_hi > quad_lo )
     {
-        const gui_quad_claim_t* qc = quad_gpu_reserve( vp_index, res_hi - quad_lo );
+        const gui_claim_t* qc = quad_gpu_reserve( vp_index, res_hi - quad_lo );
         claim_base = qc->base;
         claim_recs = qc->alloc;
         gpu_org    = frame * s_quad_gpu.capacity + qc->base;
@@ -211,7 +211,7 @@ gui_render_flush( rhi_texture_t target, i32 vp_index, rhi_cmd_t cmd, i32 win_w, 
     u32 prim_claim_recs = 0;
     if ( prim_hi > prim_lo )
     {
-        const gui_prim_claim_t* pc = prim_gpu_reserve( vp_index, prim_hi - prim_lo );
+        const gui_claim_t* pc = prim_gpu_reserve( vp_index, prim_hi - prim_lo );
         prim_claim_recs = pc->alloc;
         prim_gpu_org    = (u32)GUI_PRIM_HDR_RECORDS + frame * s_prim_gpu.capacity + pc->base;
         if ( prim_hi - prim_lo > prim_claim_recs )
