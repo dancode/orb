@@ -206,8 +206,8 @@ static struct
 } s_prim_gpu;
 
 /*==============================================================================================
-    Quad table sizing -- the geometry table (gui.h, gui_quad_t). Unlike the tables above, this
-    one is NOT sized by a fixed cap -- it's sized by CLAIM.
+    Quad table sizing -- the geometry table (gui.h, gui_quad_t). Unlike the tables above, 
+    this one is NOT sized by a fixed cap -- it's sized by CLAIM.
 
     The tables above carve out fixed-size regions, but the quad table is the big one: giving
     every (frame-in-flight, viewport) pair a fixed slab of GUI_MAX_QUADS would mean paying the
@@ -244,17 +244,20 @@ typedef struct
 {
     u32 base;   // claim start within one frame-in-flight copy, in records (bucket-aligned)
     u32 alloc;  // claim size in records (bucket multiple); 0 = viewport holds no claim
+
 } gui_quad_claim_t;
 
 /* Tracks what one (frame-in-flight, viewport) region of the table last uploaded; checked at
    every flush. Any mismatch here means the region's bytes can't just be patched -- the whole
    span gets re-uploaded from scratch. */
+
 typedef struct
 {
     u32 gen;      // geometry generation (s_geo_gen) the region was last uploaded with
     u32 anchor;   // arena record index mapped to the claim's first record
     u32 base;     // claim base the upload targeted
     u32 buf_gen;  // buffer generation the upload landed in
+
 } gui_quad_region_t;
 
 static struct

@@ -586,7 +586,7 @@ typedef struct gui_api_s
     void ( *volatile_cb    )( const char* label, gui_volatile_fn fn );
     void ( *volatile_begin )( void );   // called from inside fn: stamp the callback's start position
     void ( *volatile_end   )( void );   // called from inside fn: reserved, no-op today
-
+    
     /* text_size -- laid-out pixel size of s (widest line x line span; '\n' breaks).  CalcTextSize. */
     gui_vec2_t ( *text_size )( const char* str );
 

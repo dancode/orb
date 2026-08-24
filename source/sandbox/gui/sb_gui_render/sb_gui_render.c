@@ -15,7 +15,9 @@
     node-graph internals, the full baked-shape effect matrix) either need an app-supplied asset
     this sandbox has none of, or already have their own exhaustive demo in sb_gui_sdf.
 
-    Number keys 1-9 then 0 select a page; the page list is the extension point.
+    Number keys 1-9 then 0 jump straight to one of the first ten pages; left/right arrow steps to
+    the previous/next page and wraps, so the catalogue is not capped at ten pages.  The page list
+    is the extension point.
 
 ==============================================================================================*/
 
@@ -68,12 +70,12 @@ lerp_col( u32 a, u32 b, f32 t )
     misbehaving one stands out against its row.
 ==============================================================================================*/
 
-#define GRID_X      40.0f    // left margin of the first column
-#define GRID_Y      70.0f    // top of the first row (below the hint line)
+#define GRID_X      60.0f    // left margin of the first column
+#define GRID_Y      60.0f    // top of the first row (below the hint line)
 #define CELL_W     180.0f    // cell box, label strip included
-#define CELL_H     140.0f
-#define CELL_GAP    16.0f
-#define LABEL_H     16.0f    // strip at the bottom of a cell holding its caption
+#define CELL_H     160.0f
+#define CELL_GAP    32.0f
+#define LABEL_H     24.0f    // strip at the bottom of a cell holding its caption
 
 /* Cell n of a page: its drawing area, with the caption written under it. */
 static gui_rect_t
@@ -188,50 +190,14 @@ page_fills( void )
 
     /* row 0 -- the fast path: draw_rect emits ONE quad with no SDF field at all (the "0 emits
        square shapes" branch every other verb on this page costs strictly more than). */
+
     r = cell( 0, 6, "draw_rect (fast path)" );
     gui()->draw_rect( r.x, r.y, r.w, r.h, AMBER );
-
-    /* rows 0-1 continue -- the general box catalogue: rounding, border, gradient and circle all
-       resolve through the same SDF quad, just with more of the record populated. */
-    r = cell( 1, 6, "round rect" );
-    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 0.0f, TEAL );
-
-    r = cell( 2, 6, "round rect border" );
-    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 2.0f, TEAL );
-
-    r = cell( 3, 6, "gradient v" );
-    gui()->draw_gradient( r, AMBER, PLUM, true );
-
-    r = cell( 4, 6, "gradient h" );
-    gui()->draw_gradient( r, AMBER, PLUM, false );
-
-    r = cell( 5, 6, "circle" );
-    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 0.0f, PLUM ); }
-
-    r = cell( 6, 6, "round rect gradient (linear)" );
-    gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_LINEAR, 0.0f, 0.5f );
-
-    r = cell( 7, 6, "round rect gradient (radial)" );
-    gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_RADIAL, 0.0f, 0.5f );
-
-    r = cell( 8, 6, "round rect gradient (conic)" );
-    gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_CONIC, gui_radians( 45.0f ), 0.5f );
-
-    r = cell( 9, 6, "frame (bg + border)" );
-    gui()->draw_frame( r, INK_FAINT, TEAL, 2.0f );
-
-    r = cell( 10, 6, "rect_cut (subtract)" );
-    {
-        gui_rect_t cut = { r.x + r.w * 0.55f, r.y - 10.0f, r.w * 0.55f, r.h * 0.7f };
-        gui()->draw_rect_cut( r, 10.0f, cut, 6.0f, 1.0f, PLUM );
-    }
-
-    r = cell( 11, 6, "box_xf (rotated)" );
-    gui()->draw_box_xf( r, 10.0f, 0.0f, gui_radians( 12.0f ), AMBER );
 
     /* row 2 -- the batch form: N bars, ONE draw_rects() call.  A custom widget doing dense
        per-frame fills (timeline bars, graph columns) reaches for this instead of N draw_rect
        calls, which would otherwise exhaust the frame's command budget one quad at a time. */
+
     r = row_wide( 2, 6, "draw_rects() -- 48 bars / 1 call" );
     {
         enum { BAR_COUNT = 48 };
@@ -248,6 +214,46 @@ page_fills( void )
         }
         gui()->draw_rects( bars, BAR_COUNT );
     }
+
+    /* rows 0-1 continue -- the general box catalogue: rounding, border, gradient and circle all
+       resolve through the same SDF quad, just with more of the record populated. */
+
+    r = cell( 6, 6, "round rect" );
+    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 0.0f, TEAL );
+
+    // r = cell( 2, 6, "round rect border" );
+    // gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 2.0f, TEAL );
+    // 
+    // r = cell( 3, 6, "gradient v" );
+    // gui()->draw_gradient( r, AMBER, PLUM, true );
+    // 
+    // r = cell( 4, 6, "gradient h" );
+    // gui()->draw_gradient( r, AMBER, PLUM, false );
+    // 
+    // r = cell( 5, 6, "circle" );
+    // { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 0.0f, PLUM ); }
+    // 
+    // r = cell( 6, 6, "round rect gradient (linear)" );
+    // gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_LINEAR, 0.0f, 0.5f );
+    // 
+    // r = cell( 7, 6, "round rect gradient (radial)" );
+    // gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_RADIAL, 0.0f, 0.5f );
+    // 
+    // r = cell( 8, 6, "round rect gradient (conic)" );
+    // gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_CONIC, gui_radians( 45.0f ), 0.5f );
+    // 
+    // r = cell( 9, 6, "frame (bg + border)" );
+    // gui()->draw_frame( r, INK_FAINT, TEAL, 2.0f );
+    // 
+    // r = cell( 10, 6, "rect_cut (subtract)" );
+    // {
+    //     gui_rect_t cut = { r.x + r.w * 0.55f, r.y - 10.0f, r.w * 0.55f, r.h * 0.7f };
+    //     gui()->draw_rect_cut( r, 10.0f, cut, 6.0f, 1.0f, PLUM );
+    // }
+    // 
+    // r = cell( 11, 6, "box_xf (rotated)" );
+    // gui()->draw_box_xf( r, 10.0f, 0.0f, gui_radians( 12.0f ), AMBER );
+    
 }
 
 /*==============================================================================================
@@ -614,8 +620,11 @@ page_text( void )
 }
 
 /*==============================================================================================
-    Page 10 -- icons, sprites, brushes and baked shapes: the atlas-backed art kinds, all of which
-    batch into the same draw call as text and fills.
+    Page 10 -- icons, sprites and baked shapes: the atlas-backed art kinds, all of which batch
+    into the same draw call as text and fills.  The built-in icon set (save/folder/file/gear/
+    grid/wire/view) loads from PNGs under assets/icons at gui boot; a blank cell here means that
+    file is missing on disk, not that the draw call failed -- find_icon returns GUI_ICON_NONE and
+    the cell is skipped rather than drawing a broken quad.
 ==============================================================================================*/
 
 static void
@@ -640,21 +649,10 @@ page_icons( void )
     r = cell( 8, 6, "draw_sprite_in" );
     if ( s_sprite_swatch != GUI_SPRITE_NONE ) gui()->draw_sprite_in( r, s_sprite_swatch, 0u );
 
-    r = cell( 9, 6, "draw_brush (SOLID)" );
-    gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_SOLID, .col_a = TEAL } );
-
-    r = cell( 10, 6, "draw_brush (GRADIENT)" );
-    gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_GRADIENT, .col_a = AMBER, .col_b = PLUM,
-                                            .flags = GUI_BRUSH_VERTICAL } );
-
-    r = cell( 11, 6, "draw_brush (NINE)" );
-    if ( s_sprite_swatch != GUI_SPRITE_NONE )
-        gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_sprite_swatch } );
-
-    r = cell( 12, 6, "draw_shape_in (baked)" );
+    r = cell( 9, 6, "draw_shape_in (baked)" );
     if ( s_shape_diamond != GUI_SHAPE_NONE ) gui()->draw_shape_in( r, s_shape_diamond, TEAL );
 
-    r = cell( 13, 6, "shape + ambient fx" );
+    r = cell( 10, 6, "shape + ambient fx" );
     if ( s_shape_diamond != GUI_SHAPE_NONE )
     {
         gui()->draw_set_shape( s_shape_diamond );
@@ -662,6 +660,45 @@ page_icons( void )
         gui()->draw_ring( r, 3.0f, INK );
         gui()->draw_set_shape( GUI_SHAPE_NONE );
     }
+}
+
+/*==============================================================================================
+    Page 11 -- brushes: the fill-kind indirection behind draw_brush -- solid, gradient, sprite
+    and nine-slice, plus the flip/tile flags each of the latter two reads.
+==============================================================================================*/
+
+static void
+page_brushes( void )
+{
+    gui_rect_t r;
+
+    r = cell( 0, 6, "SOLID" );
+    gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_SOLID, .col_a = TEAL } );
+
+    r = cell( 1, 6, "GRADIENT (vertical)" );
+    gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_GRADIENT, .col_a = AMBER, .col_b = PLUM,
+                                            .flags = GUI_BRUSH_VERTICAL } );
+
+    r = cell( 2, 6, "GRADIENT (horizontal)" );
+    gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_GRADIENT, .col_a = AMBER, .col_b = PLUM } );
+
+    r = cell( 3, 6, "SPRITE" );
+    if ( s_sprite_swatch != GUI_SPRITE_NONE )
+        gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_SPRITE, .sprite = s_sprite_swatch, .col_a = INK } );
+
+    r = cell( 4, 6, "SPRITE (flip x/y)" );
+    if ( s_sprite_swatch != GUI_SPRITE_NONE )
+        gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_SPRITE, .sprite = s_sprite_swatch, .col_a = INK,
+                                                .flags = GUI_BRUSH_FLIP_X | GUI_BRUSH_FLIP_Y } );
+
+    r = cell( 5, 6, "NINE" );
+    if ( s_sprite_swatch != GUI_SPRITE_NONE )
+        gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_sprite_swatch } );
+
+    r = cell( 6, 6, "NINE (tile)" );
+    if ( s_sprite_swatch != GUI_SPRITE_NONE )
+        gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_NINE, .sprite = s_sprite_swatch,
+                                                .flags = GUI_BRUSH_TILE } );
 }
 
 /*==============================================================================================
@@ -686,6 +723,7 @@ static const page_t s_pages[] = {
     { "motion",            page_motion   },
     { "text",              page_text     },
     { "icons + sprites",   page_icons    },
+    { "brushes",           page_brushes  },
 };
 
 #define PAGE_COUNT ( ( i32 )( sizeof s_pages / sizeof s_pages[ 0 ] ) )
@@ -695,18 +733,24 @@ static i32 s_page = 0;
 static void
 build_frame( void )
 {
-    /* number-key page switching (1-9 then 0 for the 10th); fenced so a page that ever takes
-       text input keeps its keys */
+    /* page switching: number keys 1-9 then 0 jump to one of the first ten pages directly; left/
+       right arrows step and wrap, reaching pages beyond the number-key range.  Fenced so a page
+       that ever takes text input keeps its keys. */
     if ( !gui()->want_capture_keyboard() )
-        for ( i32 k = 0; k < PAGE_COUNT; ++k )
+    {
+        for ( i32 k = 0; k < PAGE_COUNT && k < 10; ++k )
         {
             app_key_t key = ( k < 9 ) ? ( app_key_t )( APP_KEY_1 + k ) : APP_KEY_0;
             if ( gui()->is_key_pressed( key ) )
                 s_page = k;
         }
 
+        if ( gui()->is_key_pressed( APP_KEY_RIGHT ) ) s_page = ( s_page + 1 ) % PAGE_COUNT;
+        if ( gui()->is_key_pressed( APP_KEY_LEFT  ) ) s_page = ( s_page - 1 + PAGE_COUNT ) % PAGE_COUNT;
+    }
+
     char hint[ 128 ];
-    snprintf( hint, sizeof hint, "sb_gui_render -- page %d/%d: %s",
+    snprintf( hint, sizeof hint, "sb_gui_render -- page %d/%d: %s (arrows or 1-9,0)",
               s_page + 1, PAGE_COUNT, s_pages[ s_page ].name );
     gui()->draw_text( 12.0f, 8.0f, INK_DIM, hint );
 
@@ -746,13 +790,13 @@ main( int argc, char** argv )
 
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "ORB -- gui render matrix",
-        .w         = 1280, .h = 720,
+        .w         = 1280 + 320, .h = 720,
         .os_chrome = true,
         .font      = GUI_FONT_CASCADIA_MONO,
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,
-        .clear = { 0.10f, 0.10f, 0.13f, 1.00f },
+        .clear = { 0.05f, 0.05f, 0.05f, 1.00f },
         .debug = true,
     } );
     if ( vp0 == GUI_VP_INVALID )
