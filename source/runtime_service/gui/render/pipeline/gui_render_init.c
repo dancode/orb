@@ -170,26 +170,27 @@ typedef struct
 #define GUI_PRIM_HDR_RECORDS     ( GUI_PRIM_OVERLAY_ORIGIN \
                                  + RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS )
 
-#define GUI_PRIM_BUCKET        32u    /* claim granularity, records: 4 KB steps absorb jitter */
-#define GUI_PRIM_GPU_BOOT_CAP  512u   /* boot capacity, records per frame-in-flight copy */
+#define GUI_PRIM_BUCKET        32u    // claim granularity, records: 4 KB steps absorb jitter
+#define GUI_PRIM_GPU_BOOT_CAP  512u   // boot capacity, records per frame-in-flight copy
 
-typedef struct
+typedef struct      // A viewport's claim of the primitive table, in records.
 {
-    u32 base;   // claim start within one frame-in-flight copy, in records (bucket-aligned)
-    u32 alloc;  // claim size in records (bucket multiple); 0 = viewport holds no claim
+    u32 base;       // claim start within one frame-in-flight copy, in records (bucket-aligned)
+    u32 alloc;      // claim size in records (bucket multiple); 0 = viewport holds no claim
 
 } gui_prim_claim_t;
 
-/* Tracks what one (frame-in-flight, viewport) slice of the claim space last uploaded; checked
-   at every flush. Unlike the quad regions below, this has no geometry-generation field --
-   content changes are tracked separately, through per-slot pending bits
-   (s_prim_range_pending). This struct only needs to catch when the mapping itself has moved;
-   any mismatch here means every slot for that surface gets re-uploaded. */
-typedef struct
+/* Tracks what one (frame-in-flight, viewport) slice of the claim space last uploaded. 
+   Checked at every flush. Unlike the quad regions below, this has no geometry-generation field
+   -- content changes are tracked separately, through per-slot pending bits (s_prim_range_pending).
+   This struct only needs to catch when the mapping itself has moved; any mismatch here means
+   every slot for that surface gets re-uploaded. */
+
+typedef struct      // A viewport's last-uploaded region of the primitive table, in records.
 {
-    u32 anchor;   // arena record index mapped to the claim's first record
-    u32 base;     // claim base the uploads targeted
-    u32 buf_gen;  // buffer generation the uploads landed in
+    u32 anchor;     // arena record index mapped to the claim's first record
+    u32 base;       // claim base the uploads targeted
+    u32 buf_gen;    // buffer generation the uploads landed in
 
 } gui_prim_region_t;
 
@@ -201,6 +202,7 @@ static struct
 
     gui_prim_claim_t  claim [ GUI_MAX_VIEWPORTS ];
     gui_prim_region_t region[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
+
 } s_prim_gpu;
 
 /*==============================================================================================
