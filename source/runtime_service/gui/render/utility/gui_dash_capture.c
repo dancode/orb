@@ -96,6 +96,7 @@ dash_capture_build( void )
     sn->quad_hwm       = s_tess_stats.quad_hwm;
     sn->tess_prims     = s_tess.prim_count;   /* records, both bands: styles plus fx pages */
     sn->tess_fx_pages  = s_tess.fx_page_count;
+    sn->tess_fx_rows   = s_tess.fx_row_count;
     sn->prim_hwm       = s_tess_stats.prim_hwm;
     sn->overflow_ever  = ( s_tess_stats.overflow_walls != 0u );
     sn->band0_quad_end = s_tess_stats.band0_quad_end;

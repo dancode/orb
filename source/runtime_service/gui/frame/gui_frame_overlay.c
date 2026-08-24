@@ -370,6 +370,7 @@ overlay_perf( int mode )
                        rs.prim_total ? 100.0f * (f32)( rs.prim_total - rs.prim_unique )
                                               / (f32)rs.prim_total
                                      : 0.0f );
+            gui_textf( " fx     %6u", rs.fx_count_all );
             gui_textf( "batches %6u", rs.draw_calls );
             gui_textf( "cmds    %6u", rs.cmd_count  );
             gui_textf( "clips   %6u", rs.clip_count );

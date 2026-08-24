@@ -209,6 +209,12 @@ static struct
        single "records" number cannot say which one to go after. */
     u32         fx_page_count;
 
+    /* Individual fx records written this build -- the SLOT count the dashboard wants beside the
+       page count above: fx_page_count is what the pages cost the prim arena (4 rows apiece
+       whether full or not), fx_row_count is how many of those rows a caller actually asked for.
+       The gap between fx_row_count and fx_page_count*4 is memo-broken pages sitting under-full. */
+    u32         fx_row_count;
+
     /* The ambient PER-INSTANCE lanes -- all three ride the QUAD, never the style, so an animated
        border, a turning shape and a staggered pulse never add prim records: cur_prim states only
        what is shared (shape, widths, rates).  Each is an ambient the command sets before its

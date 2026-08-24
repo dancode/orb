@@ -3201,6 +3201,8 @@ typedef struct
 
     u32 quad_count_all;     // physical quad arena fill, both bands, slot padding included (cap: GUI_MAX_QUADS)
     u32 prim_count_all;     // physical prim arena (unique pool) fill, both bands (cap: GUI_MAX_PRIMS)
+    u32 fx_count_all;       // individual fx instance records held in prim_count_all's fx pages, both
+                            //   bands (cap: fx pages * 4) -- how full those borrowed slots actually are
 
     u32 win_total;          // windows tracked this frame
     u32 win_retained;       // windows whose geometry was reused (no re-tessellation)

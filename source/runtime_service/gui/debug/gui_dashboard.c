@@ -772,7 +772,7 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
     };
     const u32 n     = sizeof( rows ) / sizeof( rows[ 0 ] );
     const f32 lh    = font_line_h();
-    const f32 row_h = ( r.h - lh * 4.0f - 4.0f ) / (f32)n;   /* four summary lines below the bars */
+    const f32 row_h = ( r.h - lh * 5.0f - 4.0f ) / (f32)n;   /* five summary lines below the bars */
     const f32 bar_x = r.x + 84.0f;    /* label column + a clear gap before the bars */
     const f32 val_w = 132.0f;         /* value column: fits a full "NNNNN / NNNNN" with no ellipsis */
     const f32 bar_w = r.w - 84.0f - val_w;
@@ -850,8 +850,8 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
     dash_bytes( sn->tess_quads * (u32)GUI_QUAD_BYTES + sn->tess_prims * (u32)GUI_PRIM_BYTES,
                 gb, sizeof( gb ) );
 
-    f32 sy = r.y + r.h - lh * 4.0f - 1.0f;
-    struct { const char* label; char val[ 72 ]; } sum[ 4 ];
+    f32 sy = r.y + r.h - lh * 5.0f - 1.0f;
+    struct { const char* label; char val[ 72 ]; } sum[ 5 ];
 
     fmt_snprintf( sum[ 0 ].val, sizeof( sum[ 0 ].val ), "%u / %u quads drawn  (%.0f%%)",
                   tq, vq, vq ? 100.0f * (f32)tq / (f32)vq : 0.0f );
@@ -863,13 +863,21 @@ dash_panel_emit( gui_rect_t r, const dash_snapshot_t* sn )
     /* What this frame's tessellation occupies in ONE of the GPU tables' (frame-in-flight,
        viewport) regions -- quads plus styles.  It is the frame's own footprint, not a cap. */
     fmt_snprintf( sum[ 3 ].val, sizeof( sum[ 3 ].val ), "%s of quads + styles", gb );
+    /* Individual fx records actually written vs. the row capacity the fx PAGES bought -- the pack
+       fraction the "prims" bar's sub-band cannot show, since that bar only prices pages, not the
+       rows inside them.  A run broken by dissimilar quads (gui_build_tess_quad.c's tess_fx_local
+       one-deep memo) leaves pages under-full; this line is where that shows up. */
+    u32 fx_cap = sn->tess_fx_pages * ( GUI_PRIM_ROWS / GUI_FX_ROWS );
+    fmt_snprintf( sum[ 4 ].val, sizeof( sum[ 4 ].val ), "%u / %u rows  (%.0f%% packed)",
+                  sn->tess_fx_rows, fx_cap, fx_cap ? 100.0f * (f32)sn->tess_fx_rows / (f32)fx_cap : 0.0f );
 
     sum[ 0 ].label = "glyphs";
     sum[ 1 ].label = "runs";
     sum[ 2 ].label = "dbg band";
     sum[ 3 ].label = "gpu bytes";
+    sum[ 4 ].label = "fx slots";
 
-    for ( u32 i = 0; i < 4; ++i )
+    for ( u32 i = 0; i < 5; ++i )
     {
         f32 ly = sy + (f32)i * lh;
         dash_text( r.x + 2.0f, ly, bar_x - 10.0f, DASH_COL_TEXT_DIM, sum[ i ].label );

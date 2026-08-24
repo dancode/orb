@@ -106,6 +106,7 @@ draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col )
 /* Frame / bezel (Dear ImGui RenderFrame): a filled rounded body with an optional border, the basis
    every widget frame shares.  Uses the control-frame rounding (ROUND_WIDGET) so a custom-drawn frame
    matches the built-in buttons / inputs; pass border <= 0 to skip the outline. */
+
 static void
 draw_frame( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
 {

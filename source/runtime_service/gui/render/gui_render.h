@@ -870,6 +870,8 @@ void                gui_render_set_time     ( f32 seconds );
            per-instance records (turn / phase / border colour / uv rect) and dedups only across a
            consecutive run.  tess_prims - tess_fx_pages is the style count. */
         u32  tess_prims, prim_hwm, tess_fx_pages;
+        u32  tess_fx_rows;    /* individual fx records written, vs tess_fx_pages * (GUI_PRIM_ROWS /
+                                  GUI_FX_ROWS) -- the pack fraction memo-broken pages leave unfilled */
         u32  tess_cmds;                                  /* LIVE GPU draw cmds, both bands (dormant/empty excluded) */
         u32  tess_cmds_dbg;                              /* of tess_cmds, the debug band's share     */
         bool overflow_ever;                              /* any cap spilled this run (see the gui log) */

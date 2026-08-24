@@ -64,6 +64,7 @@ tess_reset( void )
     s_tess.cmd_hint             = GUI_PAL_NONE;
     s_tess.fx_page              = s_tess.fx_page_used = s_tess.fx_memo_row = 0;
     s_tess.fx_page_count        = 0;
+    s_tess.fx_row_count         = 0;
     s_tess.slot_clips           = NULL;
     s_tess.slot_clip_count      = NULL;
     s_tess.slot_clip_pending    = NULL;
@@ -454,6 +455,7 @@ tess_fx_local( u32 uv0, u32 uv1 )
     memcpy( page_p + s_tess.fx_page_used * GUI_FX_BYTES, &fx, sizeof fx );
     s_tess.fx_memo_row = s_tess.fx_page * GUI_PRIM_ROWS + s_tess.fx_page_used * GUI_FX_ROWS;
     s_tess.fx_page_used++;
+    s_tess.fx_row_count++;
     return s_tess.fx_memo_row;
 }
 
