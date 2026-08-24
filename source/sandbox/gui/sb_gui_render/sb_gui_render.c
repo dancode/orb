@@ -777,7 +777,7 @@ build_frame( void )
                 s_page = k;
         }
 
-        if ( gui()->is_key_pressed( APP_KEY_RIGHT ) ) s_page = ( s_page + 1 ) % PAGE_COUNT;
+        if ( gui()->is_key_pressed( APP_KEY_RIGHT ) ) s_page = (s s_page + 1 ) % PAGE_COUNT;
         if ( gui()->is_key_pressed( APP_KEY_LEFT  ) ) s_page = ( s_page - 1 + PAGE_COUNT ) % PAGE_COUNT;
     }
 

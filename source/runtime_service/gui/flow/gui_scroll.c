@@ -337,32 +337,42 @@ layout_pop_region( void )
                           f->pushed_clip, f->backdrop_phase );
     }
 
-    /* Wheel: the hovered region consumes it (vertical by default, horizontal with Shift).
-       Gated by the owning window (hover_win), unclaimed-this-frame, no in-flight drag, and the
-       cursor inside this region's box.  Re-clamp against this frame's measured content. */
+    /* Wheel: the hovered region consumes it (vertical by default, horizontal with Shift), but
+       only if it actually has range to move on that axis -- a region whose content fits its view
+       has nothing to scroll, so the notch must fall through to an enclosing region instead of
+       being silently swallowed here.  Same overflow test as scroll_clamp, so "can scroll" and
+       "the clamp would allow it" never disagree.  Gated by the owning window (hover_win),
+       unclaimed-this-frame, no in-flight drag, and the cursor inside this region's box. */
     bool wheel_free  = !s_build.wheel_used && !( f->flags & GUI_WIN_NOMOUSESCROLL );
     bool over_region = ( s_interaction.hover_win == s_build.win.id ) && rect_hit( f->outer );
     if ( wheel_free && over_region && interact_idle() && s_io.mouse_wheel != 0.0f )
     {
-        const f32 step  = WIDGET_H * 3.0f;   /* content advanced per wheel notch (tunable) */
-        bool      shift = io_shift();
-        if ( shift ) f->scroll->scroll_x -= s_io.mouse_wheel * step;
-        else         f->scroll->scroll_y -= s_io.mouse_wheel * step;
+        bool shift = io_shift();
+        f32  tol   = region_spill_tol();
+        bool can_scroll = shift ? ( content_w - f->view.w > tol )
+                                 : ( content_h - f->view.h > tol );
+        if ( can_scroll )
+        {
+            const f32 step = WIDGET_H * 3.0f;   /* content advanced per wheel notch (tunable) */
+            if ( shift ) f->scroll->scroll_x -= s_io.mouse_wheel * step;
+            else         f->scroll->scroll_y -= s_io.mouse_wheel * step;
 
-        /* Re-clamp against this frame's measured content. */
-        scroll_clamp( &f->scroll->scroll_y, content_h, f->view.h );
-        scroll_clamp( &f->scroll->scroll_x, content_w, f->view.w );
+            /* Re-clamp against this frame's measured content. */
+            scroll_clamp( &f->scroll->scroll_y, content_h, f->view.h );
+            scroll_clamp( &f->scroll->scroll_x, content_w, f->view.w );
 
-        /* The new offset only reaches the screen next frame -- this frame's items were already
-           positioned from the pre-update value (layout_push_region seeds the pen from *scroll
-           at push, before this pop runs).  Without forcing one more build, a frame with no other
-           stimulus goes clean (retained cache sees identical output vs. last frame) and the
-           update stalls until some unrelated input arrives -- every other notch appears to do
-           nothing, since it is showing the previous notch's result.  Same fix as the collapse /
-           close toggles above: force the guaranteed follow-up frame that flushes it. */
-        redraw_request();
+            /* The new offset only reaches the screen next frame -- this frame's items were
+               already positioned from the pre-update value (layout_push_region seeds the pen
+               from *scroll at push, before this pop runs).  Without forcing one more build, a
+               frame with no other stimulus goes clean (retained cache sees identical output vs.
+               last frame) and the update stalls until some unrelated input arrives -- every other
+               notch appears to do nothing, since it is showing the previous notch's result.  Same
+               fix as the collapse / close toggles above: force the guaranteed follow-up frame
+               that flushes it. */
+            redraw_request();
 
-        s_build.wheel_used = true;
+            s_build.wheel_used = true;
+        }
     }
 
     /* Pop the frame and advance the parent pen past the region box, so the parent's next
