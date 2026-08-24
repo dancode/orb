@@ -126,7 +126,7 @@ typedef struct
     The buffer leads with a FIXED HEADER whose origins never move as the claim space grows:
 
         [ palette blocks x FIF | overlay records x (FIF x viewports) | claim copies x FIF ]
-
+    
     The STYLE PALETTE (gui.h, GUI_PAL_FIRST): one copy of a record every window on every surface
     can name, where a claim's records are reachable only from the window slot that wrote them.
     Regioned per FRAME-IN-FLIGHT and nothing else -- content is identical across surfaces, but a

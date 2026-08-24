@@ -2968,27 +2968,28 @@ ORB_STATIC_ASSERT( GUI_MAX_PRIMS - 1u <= GUI_QUAD_PRIM_MASK,
     A slot-local style index names a record inside the emitting window's own arena run, so two
     windows drawing the same button hold two copies of one record and no dedup walk can reach
     across the boundary between them.  A PALETTE entry is that record placed once, outside every
-    region, named by an index the arena can never produce: the prim field is 11 bits and the arena
-    caps at GUI_MAX_PRIMS, so GUI_PAL_FIRST .. GUI_PAL_FIRST + GUI_PAL_MAX - 1 is index space
-    nothing else can occupy.
+    region, named by an index the arena can never produce: the prim field is 11 bits and the 
+    arena caps at GUI_MAX_PRIMS, so GUI_PAL_FIRST .. GUI_PAL_FIRST + GUI_PAL_MAX - 1 is index
+    space nothing else can occupy.
 
-    Which base an index resolves against is therefore the index itself -- at or above GUI_PAL_FIRST
-    it resolves absolutely against pc.pal_base, below it slot-locally against pc.prim_base exactly
-    as before (shaders: prim_row, gui_common.hlsli).  Reserving LOW indices instead would have
-    rebased every slot-local index, every win_geo_slot_t.prim_base and the asserts above.
+    Which base an index resolves against is therefore the index itself -- at or above 
+    GUI_PAL_FIRST it resolves absolutely against pc.pal_base, below it slot-locally against 
+    pc.prim_base exactly as before (shaders: prim_row, gui_common.hlsli).  Reserving LOW 
+    indices instead would have rebased every slot-local index, every win_geo_slot_t.prim_base
+    and the asserts above.
 
-    fx rows are NOT palettized: they stay slot-local against prim_base, so a palette style still
-    composes with a per-instance turn, animation phase and uv rect.
+    fx rows are NOT palettized: they stay slot-local against prim_base, so a palette style 
+    still composes with a per-instance turn, animation phase and uv rect.
 
-    Palette CONTENT is learned, not constant: radii, feather and border widths scale with em and DPI
-    (gui_style_apply), so the table is emptied and re-learned when the landed style moves.  Static in
-    SLOT, live in CONTENT.
+    Palette CONTENT is learned, not constant: radii, feather and border widths scale with em 
+    and DPI (gui_style_apply), the table is emptied and re-learned when the landed style moves.
+    Static in SLOT, live in CONTENT.
 
     MIXED DPI needs no second addressing scheme.  Two monitors at different scales put two style
-    scales in one frame (gui_frame_dpi.c: windows build sequentially and each lands its own), and a
-    scale reaches the record as SCALED LANE VALUES -- a 10.67 radius at 1x is a 21.33 radius at 2x,
-    which is a different record by its bytes.  So both scales' vocabularies simply coexist in the one
-    table, and the content-addressed lookup separates them for free.
+    scales in one frame (gui_frame_dpi.c: windows build sequentially and each lands its own),
+    and a scale reaches the record as SCALED LANE VALUES -- a 10.67 radius at 1x is a 21.33
+    radius at 2x, which is a different record by its bytes.  So both scales' vocabularies 
+    simply coexist in the one table, and the content-addressed lookup separates them for free.
 
     ENTRIES ARE EARNED, NOT AUTHORED.  There is one route in: a record the frame draws again in a
     later build frame takes an entry on the spot (pal_intern, render/pipeline/gui_render_intern.c).
