@@ -80,9 +80,9 @@ typedef struct
       fields then get re-pushed on their own partway through, because they change more often
       than "once per flush":
 
-        prim_base and clip_base change per WINDOW SLOT, because a window's records sit wherever
-        the arena placed them rather than at a fixed offset; and the BATCH debug view's tint
-        changes per draw call on purpose (see gui_render_flush).
+        The prim_base and clip_base change per WINDOW SLOT, because a window's records sit
+        wherever the arena placed them rather than at a fixed offset; and the BATCH debug 
+        view's tint changes per draw call on purpose (see gui_render_flush).
 
     - All three of those re-pushes go through the tail, and each is skipped if its value hasn't
       changed since the last push -- so a normal frame with just one window still only pushes
@@ -97,7 +97,14 @@ typedef struct
 ==============================================================================================*/
 
 #define GUI_PUSH_TAIL_OFF   ( (u32)offsetof( gui_push_t, samp_point ) )
-#define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, samp_point ) ) )
+#define GUI_PUSH_TAIL_SIZE  ( (u32)( sizeof( gui_push_t ) - offsetof( gui_push_t, samp_point )))
+
+ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
+                   "the mvp must lead gui_push_t -- the per-draw push writes everything after it" );
+ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF == sizeof( ( (gui_push_t*)0 )->mvp ),
+                   "gui_push_t tail must start immediately after the mvp" );
+ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF % 4 == 0 && GUI_PUSH_TAIL_SIZE % 4 == 0,
+                   "vkCmdPushConstants requires 4-byte aligned offset and size" );
 
 /*==============================================================================================
     Clip Table Sizing -- the storage buffer clip_coverage reads from (gui_fx.hlsli).
@@ -122,6 +129,22 @@ typedef struct
 #define GUI_CLIP_REGION_MAX    ( RENDER_MAX_WIN * GUI_WIN_CLIP_MAX )     /* entries per region */
 #define GUI_CLIP_REGION_BYTES  ( GUI_CLIP_REGION_MAX * GUI_CLIP_ENTRY_BYTES )
 #define GUI_CLIP_REGION_COUNT  ( RHI_MAX_FRAMES_IN_FLIGHT )
+
+/*==============================================================================================
+    Claim Space -- one viewport's slice of a CLAIM-sized table, in records.
+
+    Both the prim table and the quad table below are sized by claim rather than by a fixed
+    per-viewport slab (see each section's sizing notes). This is the shape they share; the
+    growth logic that allocates and compacts it, claim_space_reserve, lives further down where
+    it's used by both tables' create/reserve functions.
+==============================================================================================*/
+
+typedef struct
+{
+    u32 base;       // claim start within one frame-in-flight copy, in records (bucket-aligned)
+    u32 alloc;      // claim size in records (bucket multiple); 0 = viewport holds no claim
+
+} gui_claim_t;
 
 /*==============================================================================================
     Primitive Palette -- a storage buffer of shape records. Every quad's fragment shader
@@ -173,15 +196,7 @@ typedef struct
 #define GUI_PRIM_BUCKET        32u    // claim granularity, records: 4 KB steps absorb jitter
 #define GUI_PRIM_GPU_BOOT_CAP  512u   // boot capacity, records per frame-in-flight copy
 
-typedef struct      // A viewport's claim of a CLAIM-sized table, in records. Shared shape for
-                    // the prim and quad tables below -- see claim_space_reserve.
-{
-    u32 base;       // claim start within one frame-in-flight copy, in records (bucket-aligned)
-    u32 alloc;      // claim size in records (bucket multiple); 0 = viewport holds no claim
-
-} gui_claim_t;
-
-/* Tracks what one (frame-in-flight, viewport) slice of the claim space last uploaded. 
+/* Tracks what one (frame-in-flight, viewport) slice of the claim space last uploaded.
    Checked at every flush. Unlike the quad regions below, this has no geometry-generation field
    -- content changes are tracked separately, through per-slot pending bits (s_prim_range_pending).
    This struct only needs to catch when the mapping itself has moved; any mismatch here means
@@ -259,6 +274,7 @@ static struct
     u32               capacity;  // records per frame-in-flight copy
     u32               tail;      // first free record past every claim (bump; compacts on swap)
     u32               buf_gen;   // bumped per buffer swap; stale regions re-upload on next flush
+
     gui_claim_t       claim [ GUI_MAX_VIEWPORTS ];
     gui_quad_region_t region[ RHI_MAX_FRAMES_IN_FLIGHT * GUI_MAX_VIEWPORTS ];
 
@@ -287,12 +303,8 @@ static struct
     growth, with no separate code path needed.
 ==============================================================================================*/
 
-ORB_STATIC_ASSERT( offsetof( gui_push_t, mvp ) == 0,
-                   "the mvp must lead gui_push_t -- the per-draw push writes everything after it" );
-ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF == sizeof( ( (gui_push_t*)0 )->mvp ),
-                   "gui_push_t tail must start immediately after the mvp" );
-ORB_STATIC_ASSERT( GUI_PUSH_TAIL_OFF % 4 == 0 && GUI_PUSH_TAIL_SIZE % 4 == 0,
-                   "vkCmdPushConstants requires 4-byte aligned offset and size" );
+/* see: gui_glyph_uv_t in gui.h for the struct layout, and 
+   gui_glyph_uv.c for the CPU-side table that backs this GPU buffer. */
 
 /*==============================================================================================
     Shared GPU resources -- created once in render_init, destroyed in render_shutdown.

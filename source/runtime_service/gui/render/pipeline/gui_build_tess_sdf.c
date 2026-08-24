@@ -120,6 +120,7 @@ tess_fx_box_core( f32 x, f32 y, f32 w, f32 h, const f32* r4,
        ceilings, so what remains is the one bound that is about the SHAPE rather than the storage
        -- a corner radius past half the short side is a capsule -- plus the negatives, which are
        nonsense in every field. */
+
     f32 hx = w * 0.5f, hy = h * 0.5f;
     f32 lim = ( hx < hy ) ? hx : hy;
 
