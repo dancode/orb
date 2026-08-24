@@ -99,13 +99,14 @@ cell( i32 index, i32 columns, const char* caption )
     return box;
 }
 
-/* A cell spanning `span` grid columns at row `row` -- for a wide demonstration (the draw_rects
-   batch strip) that would otherwise cramp into one 180 px column. */
+/* A cell spanning `span` grid columns starting at column `col` of row `row` -- for a wide
+   demonstration (the draw_rects batch strip) that would otherwise cramp into one 180 px
+   column. */
 static gui_rect_t
-row_wide( i32 row, i32 span, const char* caption )
+row_wide( i32 row, i32 col, i32 span, const char* caption )
 {
     gui_rect_t box = {
-        GRID_X, GRID_Y + ( f32 )row * ( CELL_H + CELL_GAP ),
+        GRID_X + ( f32 )col * ( CELL_W + CELL_GAP ), GRID_Y + ( f32 )row * ( CELL_H + CELL_GAP ),
         ( f32 )span * CELL_W + ( f32 )( span - 1 ) * CELL_GAP, CELL_H,
     };
 
@@ -194,11 +195,34 @@ page_fills( void )
     r = cell( 0, 6, "draw_rect (fast path)" );
     gui()->draw_rect( r.x, r.y, r.w, r.h, AMBER );
 
+    /* rest of row 0 -- the batched fast path: draw_rects() emits the same quad-per-rect as
+       draw_rect above, just N of them in ONE command.  A checker mosaic rather than the
+       histogram look of the bar strip below, so the two draw_rects() demos on this page read
+       as distinct examples, not repeats of each other. */
+
+    r = row_wide( 0, 1, 5, "draw_rects() -- 60 tile checker / 1 call" );
+    {
+        enum { CHECK_COLS = 12, CHECK_ROWS = 5, TILE_COUNT = CHECK_COLS * CHECK_ROWS };
+        gui_rect_col_t tiles[ TILE_COUNT ];
+        f32 tw = r.w / ( f32 )CHECK_COLS, th = r.h / ( f32 )CHECK_ROWS;
+        i32 n = 0;
+        for ( i32 y = 0; y < CHECK_ROWS; ++y )
+            for ( i32 x = 0; x < CHECK_COLS; ++x )
+            {
+                bool  light = ( x + y ) % 2 == 0;
+                tiles[ n++ ] = ( gui_rect_col_t ){
+                    r.x + ( f32 )x * tw + 1.0f, r.y + ( f32 )y * th + 1.0f, tw - 2.0f, th - 2.0f,
+                    light ? AMBER : TEAL,
+                };
+            }
+        gui()->draw_rects( tiles, TILE_COUNT );
+    }
+
     /* row 2 -- the batch form: N bars, ONE draw_rects() call.  A custom widget doing dense
        per-frame fills (timeline bars, graph columns) reaches for this instead of N draw_rect
        calls, which would otherwise exhaust the frame's command budget one quad at a time. */
 
-    r = row_wide( 2, 6, "draw_rects() -- 48 bars / 1 call" );
+    r = row_wide( 2, 0, 6, "draw_rects() -- 48 bars / 1 call" );
     {
         enum { BAR_COUNT = 48 };
         gui_rect_col_t bars[ BAR_COUNT ];
