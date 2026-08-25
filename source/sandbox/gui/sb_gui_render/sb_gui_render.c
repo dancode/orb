@@ -322,38 +322,67 @@ page_fills( void )
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
-    /* rows 2 - gradients */
+    /* row 2 -- gradients: the linear/radial/conic blend the fill quad can carry. */
+
+    panel_row_begin( 2, "fills_row2" );
+
+    static float grad_round = 14.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "grad rounding", &grad_round, 0, CELL_H * 0.5f, 1.0f );
+    if ( gui()->button( "reset##9" )) { grad_round = 14.0f; }
+
+    static float grad_mix = 0.5f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "grad mix", &grad_mix, 0.0f, 1.0f, 0.05f );
+    if ( gui()->button( "reset##10" )) { grad_mix = 0.5f; }
+
+    static float grad_angle_deg = 45.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "grad angle", &grad_angle_deg, 0.0f, 360.0f, 1.0f );
+    if ( gui()->button( "reset##11" )) { grad_angle_deg = 45.0f; }
 
     r = cell( 12, GRID_COLS, "gradient v" );
     gui()->draw_gradient( r, AMBER, PLUM, true );
-       
+
     r = cell( 13, GRID_COLS, "gradient h" );
     gui()->draw_gradient( r, AMBER, PLUM, false );
 
     r = cell( 14, GRID_COLS, "round rect gradient (linear)" );
-    gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_LINEAR, 0.0f, 0.5f );
-     
-    r = cell( 15, GRID_COLS, "rr gradient (radial)" );
-    gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_RADIAL, 0.0f, 0.5f );
-    
-    r = cell( 16, GRID_COLS, "rr gradient (conic)" );
-    gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_CONIC, gui_radians( 45.0f ), 0.5f );
-    
-    r = cell( 18, GRID_COLS, "frame (bg + border)" );
-    gui()->draw_frame( r, INK_FAINT, TEAL, 2.0f );
-    
-    //------------------------------------------------------------------------------------------
-    /* rows 2 - gradients */
+    gui()->draw_round_rect_gradient( r, grad_round, AMBER, TEAL, GUI_GRAD_LINEAR, 0.0f, grad_mix );
 
-    // r = cell( 17, GRID_COLS, "rect_cut (subtract)" );
-    // {
-    //     gui_rect_t cut = { r.x + r.w * 0.55f, r.y - 10.0f, r.w * 0.55f, r.h * 0.7f };
-    //     gui()->draw_rect_cut( r, 10.0f, cut, 6.0f, 1.0f, PLUM );
-    // }
-    // 
-    // r = cell( 18, GRID_COLS, "box_xf (rotated)" );
-    // gui()->draw_box_xf( r, 10.0f, 0.0f, gui_radians( 12.0f ), AMBER );
+    r = cell( 15, GRID_COLS, "rr gradient (radial)" );
+    gui()->draw_round_rect_gradient( r, grad_round, AMBER, TEAL, GUI_GRAD_RADIAL, 0.0f, grad_mix );
+
+    r = cell( 16, GRID_COLS, "rr gradient (conic)" );
+    gui()->draw_round_rect_gradient( r, grad_round, AMBER, TEAL, GUI_GRAD_CONIC, gui_radians( grad_angle_deg ), grad_mix );
+
+    panel_row_end();
+
+    //------------------------------------------------------------------------------------------
+    /* row 3 -- frame: a single quad compositing an inner fill with an outer stroke. */
+
+    panel_row_begin( 3, "fills_row3" );
     
+    
+
+    static float frame_border = 2.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "frame border", &frame_border, 1.0f, 16.0f, 1.0f );
+    if ( gui()->button( "reset##12" )) { frame_border = 2.0f; }
+
+    static float frame_border_align = 0.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "border align", &frame_border_align, 0, 1.0f, 0.25f );
+    if ( gui()->button( "reset##13" )) { frame_border_align = 0.0f; }
+
+    r = cell( 18, GRID_COLS, "frame (bg + border)" );
+    gui()->draw_set_border_align( frame_border_align );
+    gui()->draw_set_rounding( 16.0f );
+    gui()->draw_frame( r, INK_FAINT, TEAL, frame_border );
+    gui()->draw_set_rounding( 0.0f);
+
+    gui()->draw_set_border_align( 0.0f );    
+    panel_row_end();
 }
 
 /*==============================================================================================
