@@ -277,7 +277,7 @@ page_fills( void )
     gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "rect fill", &round_w, 0, CELL_H * 0.5, 1.0f );
     if ( gui()->button( "reset##2" )) { round_w =TWEAK_ROUND_WIDTH; }
-    panel_row_end();
+    
 
     r = cell( 6, GRID_COLS, "round rect" );
     gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, 0.0f, TEAL );
@@ -285,12 +285,21 @@ page_fills( void )
     r = cell( 7, GRID_COLS, "round rect (border)" );
     gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, 2.0f, TEAL );
     
+    static float radius_w = TWEAK_ROUND_WIDTH;
+    gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "radius", &radius_w, 0, cell_radius( CELL_H ), 1.0f );
+    if ( gui()->button( "reset##3" )) { radius_w = cell_radius( CELL_Hr ); }
+
     r = cell( 8, GRID_COLS, "round rect (circle)" );
-    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 0.0f, TEAL ); }
+    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius_w, 0.0f, TEAL ); }
     
     r = cell( 9, GRID_COLS, "round rect (border)" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 2.0f, TEAL ); }
 
+    panel_row_end();
+
+    //------------------------------------------------------------------------------------------
+    /* rows 2 - gradients */
 
 
     r = cell( 12, GRID_COLS, "gradient v" );
@@ -298,9 +307,6 @@ page_fills( void )
        
     r = cell( 13, GRID_COLS, "gradient h" );
     gui()->draw_gradient( r, AMBER, PLUM, false );
-
-    //------------------------------------------------------------------------------------------
-    /* rows 2 - gradients */
 
     r = cell( 14, GRID_COLS, "round rect gradient (linear)" );
     gui()->draw_round_rect_gradient( r, 14.0f, AMBER, TEAL, GUI_GRAD_LINEAR, 0.0f, 0.5f );
@@ -347,7 +353,7 @@ page_symbols( void )
     gui()->slider_float_step( "rect size", &check_size, 0, r.w, 1.0f );    
     if ( gui()->button( "reset" )) { check_size = r.w; }
     r.w = check_size;
-        
+
     panel_row_end();
 
     gui()->draw_check_mark( r, INK );
