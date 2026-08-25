@@ -296,12 +296,12 @@ draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness,
        ring r = 100  256 verts / 1152 idx -> 32 / 48
 
    A ring is a rounded rect whose radius reached its half-extent, which is why it needs no shape of
-   its own: GUI_OP_BAND already paints a band `border` px wide lying INSIDE the boundary.  Two
-   details make it match what the polyline drew:
-     - GUI_STROKE_CENTER centres the band ON radius r, so the band spans [r - t/2, r + t/2].  The
-       SDF band hangs inside its boundary, so the boundary is r + t/2.
-     - tess_fx_box does not grid-snap a circle (it derives that), so a ring and a filled disc at the
-       same centre stay concentric to the sub-pixel.  Concentric marks are the common case here. */
+   its own: GUI_OP_BAND already paints a band `border` px wide lying INSIDE the boundary.  The
+   border-align ambient (draw_set_border_align) inflates the outer radius by align * thickness
+   before that band is cut, exactly as draw_push_ngon and draw_push_rect_outline do -- 0 leaves the
+   ring inside r (the default), 0.5 centres the band on r, 1 pushes it entirely outside.
+   tess_fx_box does not grid-snap a circle (it derives that), so a ring and a filled disc at the
+   same centre stay concentric to the sub-pixel regardless of alignment. */
 void
 draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col )
 {
@@ -317,7 +317,7 @@ draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col )
        word's border field could describe -- with anything fatter falling back to a stroked polyline
        of up to 64 segments.  The record's border is a plain float, so the gate has nothing left to
        catch and the fallback is gone with it. */
-    f32 outer = r + thickness * 0.5f;
+    f32 outer = r + draw_border_align() * thickness;
     /* draw_push_rect_outline takes its radius from the AMBIENT rounding, clamped to half the
        extent -- so asking for the full half-extent is how a square becomes a circle here. */
     f32 save = draw_rounding();

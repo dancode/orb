@@ -275,6 +275,7 @@ page_fills( void )
        circle all resolve through the same SDF quad, just with more of the record populated. */
 
     panel_row_begin( 1, "fills_row1" );
+
     static float round_w = TWEAK_ROUND_WIDTH;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "rect fill", &round_w, 0, CELL_H * 0.5, 1.0f );
@@ -284,6 +285,12 @@ page_fills( void )
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "border", &border, 1.0f, 16.0f, 1.0f );
     if ( gui()->button( "reset##4" )) { border = 2.0f; }
+
+    static float border_align = 0.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "border align", &border_align, 0, 1.0f, 0.25f );
+    if ( gui()->button( "reset##4" )) { border_align = 0.0f; }
+    gui()->draw_set_border_align( border_align );
 
     r = cell( 6, GRID_COLS, "round rect" );
     gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, 0.0f, TEAL );
@@ -296,16 +303,13 @@ page_fills( void )
     gui()->slider_float_step( "circle radius", &radius, 0, cell_radius( r ), 1.0f );
     if ( gui()->button( "reset##3" )) { radius = cell_radius( r ); }
 
-    static bool lock_radius = false;
-    gui()->checkbox( "lock radius", &lock_radius );
-
     r = cell( 8, GRID_COLS, "round rect (circle)" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius, 0.0f, TEAL ); }
     
     r = cell( 9, GRID_COLS, "round rect (border)" );
-    float radius_alt = lock_radius ? radius - ( border * 0.5f ) : radius;
-    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius_alt, border, TEAL ); }
+    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius, border, TEAL ); }
 
+    gui()->draw_set_border_align( 0.0f );
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
