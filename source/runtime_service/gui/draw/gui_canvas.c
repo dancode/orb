@@ -168,9 +168,9 @@ gui_load_icon( const char* name, const char* path )
 }
 
 u32
-gui_load_icons( const char* const* paths, u32 count )
+gui_load_icons( const char* const* pairs, u32 count )
 {
-    return icon_load_paths( paths, count );   // resolves each path against the root itself
+    return icon_load_pairs( pairs, count );   // resolves each path against the root itself
 }
 
 /* The distance-field twins.  Same inputs plus the stored-field size; everything downstream of the

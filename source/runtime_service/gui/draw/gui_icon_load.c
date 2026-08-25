@@ -186,48 +186,37 @@ icon_load_file_sdf( const char* name, const char* path, u32 out_max )
 }
 
 /*==============================================================================================
-    icon_load_paths -- register a caller-supplied list of image files in one pass.
+    icon_load_pairs -- register a caller-supplied list of icons in one pass.
 
-    Each entry is a root-relative image path ("assets/icon/gear.png"), resolved against
-    sys_root_dir() so hosts work from any working directory.  The icon registers under its file
-    stem ("gear"), which is what gui()->find_icon takes at draw time.  A path whose stem is
-    already registered is skipped -- the registry has no dedup or unregister of its own, so this
-    is what makes the call idempotent and safe to repeat (e.g. from a hot-reloaded module).
+    `pairs` is a flat array of string PAIRS -- lookup name first, then a root-relative image
+    path:
+
+        { "gear", "assets/icon/gear.png",  "play", "assets/my_project/icon/play.png" }
+
+    `count` is the TOTAL string count (use ARRAY_COUNT on the table), so it must be even; an
+    odd count means a name without its path and asserts.  Paths resolve against sys_root_dir()
+    so hosts work from any working directory; the name is what gui()->find_icon takes at draw
+    time.  A name already registered is skipped -- the registry has no dedup or unregister of
+    its own, so this is what makes the call idempotent and safe to repeat (e.g. from a
+    hot-reloaded module).
 
     Returns how many of the named icons are available afterward (freshly loaded or already
-    present); a shortfall against `count` means missing or undecodable files, which the load
+    present); a shortfall against count / 2 means missing or undecodable files, which the load
     path logs individually.
 ==============================================================================================*/
 
-/* Basename of path minus extension, e.g. "assets/icon/gear.png" -> "gear". */
-static void
-icon_path_stem( const char* path, char* out, int out_size )
-{
-    const char* base = path;
-    for ( const char* p = path; *p; ++p )
-        if ( *p == '/' || *p == '\\' )
-            base = p + 1;
-
-    const char* dot = strrchr( base, '.' );
-    int         len = dot && dot > base ? (int)( dot - base ) : (int)strlen( base );
-    if ( len > out_size - 1 )
-        len = out_size - 1;
-    memcpy( out, base, (size_t)len );
-    out[ len ] = '\0';
-}
-
 u32
-icon_load_paths( const char* const* paths, u32 count )
+icon_load_pairs( const char* const* pairs, u32 count )
 {
-    u32 available = 0;
-    for ( u32 i = 0; i < count; ++i )
-    {
-        if ( !paths[ i ] )
-            continue;
+    ORB_ASSERT_MSG( ( count & 1 ) == 0,
+                    "icon_load_pairs: odd count -- pass name,path string pairs" );
 
-        char name[ 64 ];
-        icon_path_stem( paths[ i ], name, (int)sizeof( name ) );
-        if ( name[ 0 ] == '\0' )
+    u32 available = 0;
+    for ( u32 i = 0; i + 1 < count; i += 2 )   // + 1: an odd trailing name has no path to load
+    {
+        const char* name = pairs[ i ];
+        const char* path = pairs[ i + 1 ];
+        if ( !name || !path || name[ 0 ] == '\0' )
             continue;
 
         if ( icon_find( name ) != GUI_ICON_NONE )
@@ -237,7 +226,7 @@ icon_load_paths( const char* const* paths, u32 count )
         }
 
         char resolved[ 576 ];
-        fmt_snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), paths[ i ] );
+        fmt_snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), path );
         if ( icon_load_file( name, resolved ) != GUI_ICON_NONE )
             ++available;
     }
@@ -247,32 +236,32 @@ icon_load_paths( const char* const* paths, u32 count )
 /*==============================================================================================
     Built-in icon set -- declared upfront here and loaded in one pass at backend init.
 
-    Add engine icons by dropping a PNG under <root>/assets/icon and listing its path here; the
-    icon registers under the file stem, looked up at draw time with gui()->find_icon( "<stem>" ).
-    A host or the editor can register its OWN icons on top of these at runtime via
-    gui()->load_icon, or a whole set at once via gui()->load_icons.
+    Add engine icons by dropping a PNG under <root>/assets/icon and listing a name,path pair
+    here; look one up at draw time with gui()->find_icon( "<name>" ).  A host or the editor can
+    register its OWN icons on top of these at runtime via gui()->load_icon, or a whole set at
+    once via gui()->load_icons.
 
     "orb" -- the engine's own mark and the fallback a demo can reach for when its own icon fails
     to load -- is authored art (assets/icon_source/orb.png) rather than one of these, loaded via
     icon_load_file_sdf below so the badge stays resolution-independent at any draw size.
 ==============================================================================================*/
 
-static const char* const s_builtin_icon_paths[] =
+static const char* const s_builtin_icons[] =
 {
-    "assets/icon/save.png",
-    "assets/icon/folder.png",
-    "assets/icon/file.png",
-    "assets/icon/gear.png",
-    "assets/icon/grid.png",
-    "assets/icon/wire.png",
-    "assets/icon/view.png",
+    "save",   "assets/icon/save.png",
+    "folder", "assets/icon/folder.png",
+    "file",   "assets/icon/file.png",
+    "gear",   "assets/icon/gear.png",
+    "grid",   "assets/icon/grid.png",
+    "wire",   "assets/icon/wire.png",
+    "view",   "assets/icon/view.png",
 };
 
 void
 icon_load_builtins( void )
 {
-    u32 total  = (u32)ARRAY_COUNT( s_builtin_icon_paths ) + 1;   // + "orb"
-    u32 loaded = icon_load_paths( s_builtin_icon_paths, (u32)ARRAY_COUNT( s_builtin_icon_paths ) );
+    u32 total  = (u32)ARRAY_COUNT( s_builtin_icons ) / 2 + 1;   // + "orb"
+    u32 loaded = icon_load_pairs( s_builtin_icons, (u32)ARRAY_COUNT( s_builtin_icons ) );
     {
         char path[ 576 ];
         fmt_snprintf( path, sizeof( path ), "%s/assets/icon_source/orb_keyed.png", sys_root_dir() );

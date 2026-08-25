@@ -193,7 +193,7 @@ cell_radius( gui_rect_t r )
 static gui_sprite_id_t s_sprite_swatch = GUI_SPRITE_NONE;
 static gui_shape_id_t  s_shape_diamond = GUI_SHAPE_NONE;
 
-static void
+static bool
 load_catalogue_assets( void )
 {
     /* A 16x16 two-tone checker, straight-alpha RGBA8, so draw_sprite_in / GUI_BRUSH_SPRITE /
@@ -224,6 +224,26 @@ load_catalogue_assets( void )
             shape_cov[ y * SHAPE_SRC + x ] = ( fabsf( u ) + fabsf( v ) <= 0.38f ) ? 255u : 0u;
         }
     s_shape_diamond = gui()->register_shape( "sb_render_diamond", SHAPE_SRC, SHAPE_SRC, shape_cov, NULL );
+
+    return true;
+}
+
+static bool
+load_icons( void )
+{
+    static const char* const s_my_icons[] = {
+        "save", "assets/icon/save.png",
+        // "assets/my_project/icon/play.png",
+    };
+
+    u32 count = ARRAY_COUNT( s_my_icons );
+    u32 have = gui()->load_icons( s_my_icons, count );
+    if ( have != count / 2 )
+    {
+        fprintf( stderr, "[sb_gui_render] icons could not be found" );
+        return false;
+    }
+    return true;
 }
 
 /*==============================================================================================
@@ -577,11 +597,20 @@ page_shapes( void )
     r = cell( 6, GRID_COLS, "rect_xf (rotated)" );
     gui()->draw_rect_xf( r, 10.0f, 0.0f, gui_radians( shape_rot_deg ), AMBER );
 
-    gui_icon_id_t icon = gui()->find_icon( "orb" );
-
+    gui_icon_id_t icon = gui()->find_icon( "save" );
+    
     r = cell( 7, GRID_COLS, "icon_xf (rotated)" ); 
     // r.w *= scale; r.h *= scale;
-    gui()->draw_icon_xf( r, icon, AMBER, gui_radians( shape_rot_deg ));
+
+    gui_vec2_t icon_size = gui()->icon_size( icon );
+    gui_rect_t icon_rect = {
+        r.x + ( r.w - icon_size.x * scale ) * 0.5f,
+        r.y + ( r.h - icon_size.y * scale ) * 0.5f,
+        icon_size.x * scale,
+        icon_size.y * scale,
+    };
+    gui()->draw_icon_xf( icon_rect, icon, AMBER, gui_radians( shape_rot_deg ));
+    // gui()->draw_icon_xf( r, icon, AMBER, gui_radians( shape_rot_deg ));
 
     panel_row_end();
 
@@ -1317,7 +1346,8 @@ main( int argc, char** argv )
         goto shutdown;
     }
 
-    load_catalogue_assets();
+    if ( !load_catalogue_assets() ) goto shutdown;
+    if ( !load_icons() ) goto shutdown;
 
     f32 dt = 0.0f;
     while ( gui()->boot_poll( &dt ) )

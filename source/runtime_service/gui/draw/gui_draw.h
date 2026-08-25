@@ -126,9 +126,10 @@ gui_icon_id_t   icon_load_file    ( const char* name, const char* path );  // de
    several times that and should carry a transparent margin. */
 gui_icon_id_t   icon_register_sdf ( const char* name, u32 w, u32 h, const u8* coverage, u32 out_max );
 gui_icon_id_t   icon_load_file_sdf( const char* name, const char* path, u32 out_max );
-/* Batch loader over icon_load_file: root-relative image paths, each registered under its file
-   stem; already-registered stems are skipped (idempotent).  Returns how many are available. */
-u32             icon_load_paths   ( const char* const* paths, u32 count );
+/* Batch loader over icon_load_file: a flat array of name,path string pairs (count = total
+   strings, must be even -- asserts on odd), paths root-relative; already-registered names are
+   skipped (idempotent).  Returns how many of the named icons are available. */
+u32             icon_load_pairs   ( const char* const* pairs, u32 count );
 void            icon_load_builtins( void );                                // register the engine's built-in icon set from disk
 gui_icon_id_t   icon_find         ( const char* name );
 bool            icon_atlas_init   ( void );   // enable icon registration (shared atlas owns GPU)
