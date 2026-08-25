@@ -382,15 +382,13 @@ page_fills( void )
     gui()->slider_float_step( "align", &frame_border_align, 0, 1.0f, 0.25f );
     if ( gui()->button( "reset##14" )) { frame_border_align = 0.0f; }
 
-    /* draw_frame takes its rounding from the ambient, like every other rect-shaped verb -- it
-       does not read ROUND_WIDGET itself, so this cell sets/restores rounding around the call
-       exactly the way a widget call site would. */
+    /* draw_round_frame is draw_round_rect's dual-color sibling: rounding is a parameter, not the
+       ambient, so this cell -- a plain userspace draw, not a widget paint -- never touches
+       draw_set_rounding at all. */
     r = cell( 18, GRID_COLS, "frame (bg + border)" );
 
     gui()->draw_set_border_align( frame_border_align );
-    // gui()->draw_set_rounding( frame_round );
-    gui()->draw_frame( r, INK_FAINT, TEAL, frame_border );
-    // gui()->draw_set_rounding( 0.0f );
+    gui()->draw_round_frame( r, frame_round, INK_FAINT, TEAL, frame_border );
     gui()->draw_set_border_align( 0.0f );
 
     panel_row_end();

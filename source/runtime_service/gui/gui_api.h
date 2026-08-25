@@ -768,8 +768,10 @@ typedef struct gui_api_s
 
     /*=============================  ambient draw state -- save, set, draw, restore  =============================*/
 
-    /* Ambient corner rounding for the rect-shaped verbs (draw_rect / draw_brush / draw_frame /
-       draw_texture_in / draw_shadow).  Ambient rather than a parameter because it applies to
+    /* Ambient corner rounding for the rect-shaped verbs (draw_rect / draw_brush /
+       draw_texture_in / draw_shadow).  draw_frame / draw_round_frame do NOT honor this -- they
+       take rounding as a parameter (or force it to 0) precisely so a plain 2D draw call never
+       has style bleed into it.  Ambient rather than a parameter because it applies to
        verbs that have no business growing one, and because a container wants to round everything
        drawn inside it without every call site knowing.  A rounded rect resolves as an SDF surface
        (gui.h, the effect band), which is what lets a TEXTURED quad round at all.
@@ -854,6 +856,8 @@ typedef struct gui_api_s
          - angles are RADIANS in screen space: 0 points +x, positive turns clockwise (y down).
          - `rounding` is a corner radius in px.  A verb with no radius parameter honors the
            ambient rounding (draw_set_rounding); one that takes its own ignores the ambient.
+           draw_frame is the one exception: it has no radius parameter AND ignores the ambient,
+           forcing 0 -- see draw_frame / draw_round_frame below.
          - `thickness` picks fill vs stroke on the shapes that offer both: 0 FILLS the shape,
            a positive value strokes its outline that many px wide.  Closed outlines honor the
            border-align ambient (draw_set_border_align).
@@ -886,7 +890,13 @@ typedef struct gui_api_s
     /* The box family first, then the radial shapes, then the circular sectors.  Filled or
        stroked per the convention above; every one is a single SDF quad. */
 
+    /* draw_frame / draw_round_frame -- draw_rect / draw_round_rect's dual-color sibling: a filled
+       body plus a border band, ONE quad.  draw_frame is always square (rounding forced to 0, like
+       draw_rect); draw_round_frame takes rounding as a parameter (like draw_round_rect).  Neither
+       reads the ambient rounding -- a caller never needs to save/set/restore draw_set_rounding
+       around either call. */
     void ( *draw_frame             )( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
+    void ( *draw_round_frame       )( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 thickness, u32 col );
 
     /* The SDF box under a rotation about its centre (radians, screen space) -- rotated cards,

@@ -78,7 +78,7 @@
 
 /*============================================================================================*/
 
-/* Symbol style first: gui_face.c paints through gui_draw_frame, and the widget renders paint
+/* Symbol style first: gui_face.c paints through gui_draw_bezel, and the widget renders paint
    through both. */
 #include "runtime_service/gui/stock/gui_symbol_style.c"
 #include "runtime_service/gui/stock/gui_face.c"

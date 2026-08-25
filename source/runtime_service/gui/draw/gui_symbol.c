@@ -23,7 +23,7 @@
 
     Compiled in the DRAW unit (gui_draw.c) after gui_paint.c.  Everything here is
     PARAMETER-PURE: the emitters that resolve their own look (draw_arrow,
-    draw_check_indicator, draw_rule, draw_close_x, draw_frame -- style-var picks, WIN_BORDER,
+    draw_check_indicator, draw_rule, draw_close_x, draw_bezel -- style-var picks, WIN_BORDER,
     ROUND_WIDGET) live in stock/gui_symbol_style.c.  The public gui_draw_* surface over
     the pure set is at the foot.
 
@@ -1280,6 +1280,30 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
     }
     draw_round_rect_ex( box, r_tl, r_tr, r_br, r_bl, thickness, col );
 }
+
+/* draw_rect's dual-color sibling: a filled body with a border band, one quad, ALWAYS square --
+   rounding is forced to 0 regardless of the caller's ambient state, exactly like draw_rect.
+   draw_push_frame takes rounding as a real argument, so this passes 0 straight through; it never
+   reads or touches the ambient at all, not even transiently. */
+void
+draw_frame( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
+{
+    draw_push_frame( r.x, r.y, r.w, r.h, border, col_bg, col_border, 0.0f );
+}
+void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border )
+                                                                               { draw_frame( box, col_bg, col_border, border ); }
+
+/* draw_round_rect's dual-color sibling: same fill+border quad, rounding taken as an explicit
+   argument and passed straight through to draw_push_frame -- no ambient involved.  Widget
+   chrome's own bezel painter, which genuinely wants the ambient (gui_draw_bezel,
+   stock/gui_symbol_style.c), stays separate. */
+void
+draw_round_frame( gui_rect_t r, f32 rounding, u32 col_bg, u32 col_border, f32 border )
+{
+    draw_push_frame( r.x, r.y, r.w, r.h, border, col_bg, col_border, rounding );
+}
+void gui_draw_round_frame( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border )
+                                                                               { draw_round_frame( box, rounding, col_bg, col_border, border ); }
 
 void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col )
                                                                                { draw_ngon( cx, cy, r, sides, rot, thickness, col ); }

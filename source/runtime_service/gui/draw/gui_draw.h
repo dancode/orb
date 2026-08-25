@@ -47,7 +47,7 @@ void draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w );
 void draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w );
 
 /* The shape palette (draw/gui_symbol.c) -- parameter-pure emitters.  The styled half of the
-   family (draw_arrow, draw_check_indicator, draw_rule, draw_close_x, draw_frame -- emitters
+   family (draw_arrow, draw_check_indicator, draw_rule, draw_close_x, draw_bezel -- emitters
    that resolve their own look), the styled painters, and label_natural_w all live in the
    stock unit (stock/gui_stock_internal.h). */
 void draw_bullet( f32 cx, f32 cy, f32 r, u32 color );
@@ -66,6 +66,14 @@ void draw_edge_shadow( gui_rect_t box, gui_edge_t edge, f32 size, u32 col );
 void draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col );
 void draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
                          f32 thickness, u32 col );
+/* draw_frame / draw_round_frame -- the dual-color sibling of draw_rect / draw_round_rect: a
+   filled body plus a border band in one quad.  Neither reads the ambient rounding: draw_frame
+   forces it to 0 (square, like draw_rect), draw_round_frame takes it as an argument (like
+   draw_round_rect).  Widget chrome's own bezel painter, which DOES read the ambient
+   (draw_set_rounding), is gui_draw_bezel in the stock unit -- not part of this parameter-pure
+   surface. */
+void draw_frame      ( gui_rect_t b, u32 col_bg, u32 col_border, f32 border );
+void draw_round_frame( gui_rect_t b, f32 rounding, u32 col_bg, u32 col_border, f32 border );
 void draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
 void draw_grid( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f32 origin_y, u32 col );
 void draw_dropdown_arrow( gui_rect_t box, u32 color );

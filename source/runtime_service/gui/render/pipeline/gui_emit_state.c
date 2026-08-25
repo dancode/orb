@@ -1109,18 +1109,29 @@ draw_scope_set( gui_draw_scope_t s )
     s_draw.text_clip_x1 = s.text_clip_x1;
 }
 
-/* Fit the ambient corner radius to a rect: no corner may eat more than half of either extent, and
-   a radius the clamp leaves under half a pixel is not a corner at all. */
+/* Fit a corner radius to a rect: no corner may eat more than half of either extent, and a radius
+   the clamp leaves under half a pixel is not a corner at all.  Takes the radius as an argument --
+   the ambient-reading form below is the thin wrapper, not the other way round, so a caller with
+   its own explicit radius (draw_push_frame) clamps through the exact same rule without touching
+   s_draw.rounding at all. */
 
 static f32
-draw_clamp_rounding( f32 w, f32 h )
+draw_clamp_rounding_val( f32 r, f32 w, f32 h )
 {
-    f32 r  = s_draw.rounding;
     f32 hw = ( w < 0.0f ? -w : w ) * 0.5f;
     f32 hh = ( h < 0.0f ? -h : h ) * 0.5f;
     if ( r > hw ) r = hw;
     if ( r > hh ) r = hh;
     return r < 0.5f ? 0.0f : r;   /* sub-pixel radius -> square fast path */
+}
+
+/* The ambient form: fit s_draw.rounding to the rect.  What every rect-shaped verb with no radius
+   parameter of its own calls. */
+
+static f32
+draw_clamp_rounding( f32 w, f32 h )
+{
+    return draw_clamp_rounding_val( s_draw.rounding, w, h );
 }
 
 // clang-format on

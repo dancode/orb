@@ -336,7 +336,7 @@ picker_bar_marker( gui_rect_t bar, f32 t )
 
     f32 save = draw_rounding();
     draw_set_rounding( ROUND_WIDGET );
-    gui_draw_frame( m, GUI_COLOR( 255, 255, 255, 255 ), GUI_COLOR( 0, 0, 0, 200 ), 1.0f );
+    gui_draw_bezel( m, GUI_COLOR( 255, 255, 255, 255 ), GUI_COLOR( 0, 0, 0, 200 ), 1.0f );
     draw_set_rounding( save );
 }
 

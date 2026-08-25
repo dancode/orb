@@ -14,13 +14,13 @@
     draw_push_rect_outline -- emit a hollow rectangle semantic command.
 ==============================================================================================*/
 
-void
-draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
+/* Shared base for a stroked rect: `rounding` arrives explicit and already clamped, the same
+   convention draw_rect_cmd's callers follow -- the ambient-reading draw_push_rect_outline below is
+   the thin wrapper, and draw_push_frame reaches this directly so its own explicit rounding
+   survives every one of its fallback branches instead of being silently re-read from the ambient. */
+static void
+draw_rect_outline_cmd( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr, f32 rounding )
 {
-    /* Rounded outlines become GUI_OP_BAND surfaces with an AA skirt past the authored rect --
-       the same 1 px cull slack the rounded fill takes (see draw_rect_cmd). */
-    f32 rounding = draw_clamp_rounding( w, h );
-
     /* Border alignment, resolved here and nowhere else: an aligned band is the INSIDE band of
        the shape inflated by align * width, with the radius growing by the same amount so the
        corners stay concentric with the authored ones.  A square outline (radius 0) keeps its
@@ -53,41 +53,55 @@ draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
     draw_cmd_seal();
 }
 
+void
+draw_push_rect_outline( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr )
+{
+    /* Rounded outlines become GUI_OP_BAND surfaces with an AA skirt past the authored rect --
+       the same 1 px cull slack the rounded fill takes (see draw_rect_cmd). */
+    draw_rect_outline_cmd( x, y, w, h, t, abgr, draw_clamp_rounding( w, h ) );
+}
+
 /*==============================================================================================
     draw_push_frame -- the widget bezel: filled body + border band as ONE command.
 
     The fragment composites the band (col_border, `t` px inside the boundary) over the fill in a
     single quad (GUI_OP_FRAME), where the fill + outline pair costs two quads rounded and five
     square.  The pair still exists below as the fallback for what one field cannot say.
+
+    `rounding` arrives explicit -- like draw_push_round_rect_ex, NOT read from the ambient here.
+    Every fallback branch below reaches draw_rect_cmd / draw_rect_outline_cmd directly instead of
+    the ambient-reading draw_push_rect_filled / draw_push_rect_outline, so the value passed in is
+    the value every branch actually draws with, not just the common one.
 ==============================================================================================*/
 
 void
-draw_push_frame( f32 x, f32 y, f32 w, f32 h, f32 t, u32 col_bg, u32 col_border )
+draw_push_frame( f32 x, f32 y, f32 w, f32 h, f32 t, u32 col_bg, u32 col_border, f32 rounding )
 {
     u32 fill = draw_apply_alpha( col_bg );
     u32 bord = draw_apply_alpha( col_border );
+
+    rounding = draw_clamp_rounding_val( rounding, w, h );
 
     /* One side invisible degenerates to the primitive the other side is; an outward-aligned
        band reaches past the boundary the fill's field ends at, so it keeps the pair. */
     if ( t <= 0.0f || ( bord >> 24 ) == 0u )
     {
-        draw_push_rect_filled( x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col_bg );
+        draw_rect_cmd( x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col_bg, rounding, s_draw.corner_pow );
         return;
     }
     if ( ( fill >> 24 ) == 0u )
     {
-        draw_push_rect_outline( x, y, w, h, t, col_border );
+        draw_rect_outline_cmd( x, y, w, h, t, col_border, rounding );
         return;
     }
     if ( s_draw.border_align > 0.0f )
     {
-        draw_push_rect_filled( x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col_bg );
-        draw_push_rect_outline( x, y, w, h, t, col_border );
+        draw_rect_cmd( x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, 0, col_bg, rounding, s_draw.corner_pow );
+        draw_rect_outline_cmd( x, y, w, h, t, col_border, rounding );
         return;
     }
 
-    f32 rounding = draw_clamp_rounding( w, h );
-    f32 pad      = ( rounding > 0.0f ) ? 1.0f : 0.0f;
+    f32 pad = ( rounding > 0.0f ) ? 1.0f : 0.0f;
 
     gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_FRAME, fill | bord, x, y, w, h, pad );
     if ( !e )

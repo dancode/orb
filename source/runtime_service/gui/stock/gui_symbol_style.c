@@ -10,7 +10,7 @@
     draw.  Each composes the pure emitter it left behind, through the public gui_draw_* surface
     (gui_host.h) or the render primitives directly.
 
-    The public wrappers (gui_draw_arrow / gui_draw_close / gui_draw_frame) live at the foot,
+    The public wrappers (gui_draw_arrow / gui_draw_close / gui_draw_bezel) live at the foot,
     beside their targets, so the draw unit never calls upward.
 
 ==============================================================================================*/
@@ -103,17 +103,18 @@ draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col )
         draw_push_rect_filled( x, yc - thickness * 0.5f, w, thickness, 0, 0, 1, 1, 0, col );
 }
 
-/* Frame / bezel (Dear ImGui RenderFrame): a filled body with an optional border, composited as
+/* Widget bezel (Dear ImGui RenderFrame): a filled body with an optional border, composited as
    ONE quad -- the single-draw path draw_fill + draw_outline can't reach.  Rounding comes from the
-   ambient (draw_set_rounding), exactly like every other rect-shaped verb; it does not read
-   ROUND_WIDGET itself.  A caller painting widget chrome sets that ambient before calling, the same
-   way gui_face.c's face_paint and every other ROUND_WIDGET call site does; pass border <= 0 to skip
-   the outline. */
+   ambient (draw_set_rounding) -- unlike the userspace draw_frame / draw_round_frame (draw unit),
+   which take it as an argument or force it to 0, this one is deliberately styled: it exists for
+   widget chrome, and a caller painting widget chrome sets the ambient before calling, the same
+   way gui_face.c's face_paint and every other ROUND_WIDGET call site does.  Pass border <= 0 to
+   skip the outline. */
 
 static void
-draw_frame( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
+draw_bezel( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
 {
-    draw_push_frame( r.x, r.y, r.w, r.h, border, col_bg, col_border );
+    draw_push_frame( r.x, r.y, r.w, r.h, border, col_bg, col_border, draw_rounding() );
 }
 
 /*==============================================================================================
@@ -123,7 +124,7 @@ draw_frame( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
 
 void gui_draw_arrow( gui_rect_t box, gui_dir_t dir, u32 col )                 { draw_arrow( box, dir, col ); }
 void gui_draw_close( gui_rect_t box, u32 col )                                { draw_close_x( box, col ); }
-void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border ) { draw_frame( box, col_bg, col_border, border ); }
+void gui_draw_bezel( gui_rect_t box, u32 col_bg, u32 col_border, f32 border ) { draw_bezel( box, col_bg, col_border, border ); }
 
 // clang-format on
 /*============================================================================================*/

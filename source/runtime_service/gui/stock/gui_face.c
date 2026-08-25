@@ -159,12 +159,11 @@ face_paint( gui_rect_t r, u8 role, u8 rest_role, u8 rest_phase,
 
     if ( border_w > 0.0f )
     {
-        /* gui_draw_frame reads its rounding from the ambient, like every other rect-shaped verb --
-           set the control-frame radius here, at the call site, rather than have the primitive
-           assume it. */
+        /* gui_draw_bezel reads its rounding from the ambient -- set the control-frame radius here,
+           at the call site, rather than have the primitive assume it. */
         f32 save = draw_rounding();
         draw_set_rounding( ROUND_WIDGET );
-        gui_draw_frame( r, col, border_col, border_w );
+        gui_draw_bezel( r, col, border_col, border_w );
         draw_set_rounding( save );
     }
     else

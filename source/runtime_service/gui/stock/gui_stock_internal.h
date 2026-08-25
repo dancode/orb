@@ -35,7 +35,7 @@ void rings_paint( void );
 
 /* The styled half of the symbol palette (stock/gui_symbol_style.c): emitters that resolve
    their own look (style-var picks, WIN_BORDER, ROUND_WIDGET) over the draw unit's pure ones.
-   Their public wrappers (gui_draw_arrow / gui_draw_close / gui_draw_frame) are in gui_host.h. */
+   Their public wrappers (gui_draw_arrow / gui_draw_close / gui_draw_bezel) are in gui_host.h. */
 void draw_arrow          ( gui_rect_t box, gui_dir_t dir, u32 color );
 void draw_collapse_arrow ( gui_rect_t box, bool collapsed, u32 color );
 void draw_close_x        ( gui_rect_t box, u32 color );
