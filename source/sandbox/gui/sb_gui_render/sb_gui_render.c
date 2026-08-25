@@ -236,7 +236,7 @@ page_fills( void )
     //------------------------------------------------------------------------------------------
 
     panel_row_begin( 0, "fills_row0" );
-        
+    
     r = cell( 0, GRID_COLS, "draw_rect (fast path)" );    
 
     /* slider -- width and height */
@@ -336,10 +336,6 @@ page_fills( void )
     gui()->slider_float_step( "round", &grad_round, 0, CELL_H * 0.5f, 1.0f );
     if ( gui()->button( "reset##9" )) { grad_round = 14.0f; }
 
-    /* draw_round_rect_gradient's mid overloads 0 as its "unset, use linear" sentinel and clamps
-       out anything >= 0.999 for the same log()-domain reason -- 0.02..0.98 keeps the slider's
-       whole span inside the range that actually bends the ramp, instead of spending both ends on
-       a dead zone that reads identically to 0.5. */
     static float grad_mix = 0.5f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "mix", &grad_mix, 0.02f, 0.98f, 0.02f );
@@ -349,6 +345,12 @@ page_fills( void )
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "angle", &grad_angle_deg, 0.0f, 360.0f, 1.0f );
     if ( gui()->button( "reset##11" )) { grad_angle_deg = 45.0f; }
+
+    //------------------------------------------------------------------------------------------
+    /* draw_round_rect_gradient's mid overloads 0 as its "unset, use linear" sentinel and clamps
+       out anything >= 0.999 for the same log()-domain reason -- 0.02..0.98 keeps the slider's
+       whole span inside the range that actually bends the ramp, instead of spending both ends on
+       a dead zone that reads identically to 0.5. */
 
     r = cell( 12, GRID_COLS, "gradient v" );
     gui()->draw_gradient( r, AMBER, PLUM, true );
@@ -388,24 +390,35 @@ page_fills( void )
     gui()->slider_float_step( "align", &frame_border_align, 0, 1.0f, 0.1f );
     if ( gui()->button( "reset##14" )) { frame_border_align = 0.0f; }
     
-    panel_row_end();
-
     //------------------------------------------------------------------------------------------
-    // draw_round_frame is draw_round_rect's dual-color sibling: rounding is a parameter, not the
-    // ambient, so this cell -- a plain userspace draw, not a widget paint -- never touches
+    // draw_frame / draw_round_frame are draw_rect / draw_round_rect's dual-color sibling: a
+    // filled body plus a border band in one quad.  draw_frame is always square (rounding forced
+    // to 0); draw_round_frame takes rounding as a parameter -- neither reads the ambient
+    // rounding, so this cell -- a plain userspace draw, not a widget paint -- never touches
     // draw_set_rounding at all.
     //------------------------------------------------------------------------------------------
 
-    panel_row_begin( 4, "fills_row4" );
+    r = cell( 18, GRID_COLS, "frame (bg + border, square)" );
 
-    r = cell( 18, GRID_COLS, "frame (bg + border)" );
+    gui()->draw_set_border_align( frame_border_align );
+    gui()->draw_frame( r, INK_FAINT, TEAL, frame_border );
+    gui()->draw_set_border_align( 0.0f );
+
+    r = cell( 19, GRID_COLS, "frame (bg + border)" );
 
     gui()->draw_set_border_align( frame_border_align );
     gui()->draw_round_frame( r, frame_round, INK_FAINT, TEAL, frame_border );
     gui()->draw_set_border_align( 0.0f );
 
-    /* draw_round_rect takes its four corner radii independently -- this cell is the one place in
-       the page that exercises that, instead of the uniform round_w every other rounded cell uses. */
+    panel_row_end();
+
+    //------------------------------------------------------------------------------------------
+    // draw_round_rect takes its four corner radii independently -- this cell is the one place in
+    // the page that exercises that, instead of the uniform round_w every other rounded cell uses.
+    //------------------------------------------------------------------------------------------
+
+    panel_row_begin( 4, "fills_row4" );
+
     static float corner_tl = TWEAK_ROUND_WIDTH, corner_tr = TWEAK_ROUND_WIDTH, 
                  corner_br = TWEAK_ROUND_WIDTH, corner_bl = TWEAK_ROUND_WIDTH;
 
@@ -909,8 +922,8 @@ typedef struct
 
 static const page_t s_pages[] = {
     { "fills",             page_fills    },
-    { "symbols",           page_symbols  },
     { "shapes",            page_shapes   },
+    { "symbols",           page_symbols  },
     { "lines + paths",     page_lines    },
     { "patterns + grads",  page_patterns },
     { "light + shadow",    page_shadow   },
