@@ -26,12 +26,15 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tie
 
     gui_dpi_land( vp );
 
-    /* GUI_WIN_CHILD_RESIZE_X/_Y (gui.h) puts a draggable grip on the right / bottom edge. 
-       It is the same flag and the same user_w/user_h field that child_begin drags: seeded
-       once from the passed w/h (or a default), then owned by the drag from then on.
+    /* A region is exactly two modes per axis, chosen by the sign of w / h -- there is no third,
+       user-driven mode: a region has no chrome to grab, so GUI_WIN_CHILD_RESIZE_X/_Y (a paired
+       resize+move affordance that belongs to child_begin, where a real drag handle exists) is
+       disallowed below rather than left to half-work as resize-with-no-move.
 
-       Without the flag, the axis autosizes the same way child_begin's h <= 0 does (AutoResizeY):
-       hug last frame's measured content if there is any, else open one widget-row tall.
+         w / h > 0  -- pinned exactly to that size, verbatim.
+         w / h <= 0 -- autosized every frame to last frame's measured content (the same
+                       AutoResizeY child_begin's h <= 0 does), or one widget-row / WIDGET_H * 4
+                       the first frame there is nothing measured yet to hug.
 
        layout_push_region insets the view from this box by WIN_BORDER (view_w loses it twice,
        left and right; view_h loses it once). On the autosize path that border has to be added
@@ -39,11 +42,17 @@ gui_region_begin( const char* id_str, f32 x, f32 y, f32 w, f32 h, gui_region_tie
        against, and region_gutters mistakes that shortfall for overflow and reserves a
        scrollbar gutter nothing needs.
 
-       x and y each choose autosize or resize independently. A caller can autosize one axis
-       (w or h <= 0) while dragging the other (its CHILD_RESIZE_X/_Y bit set) in the same
-       region -- that is deliberate, not a conflict. */
+       Each axis picks independently: a region may autosize w while h is pinned, or any other
+       mix. */
 
-    bool resize_x = ( flags & GUI_WIN_CHILD_RESIZE_X ) != 0;
+    ORB_ASSERT_MSG( !( flags & ( GUI_WIN_CHILD_RESIZE_X | GUI_WIN_CHILD_RESIZE_Y ) ),
+                    "gui_region_begin: CHILD_RESIZE_X/_Y is a child_begin affordance, not "
+                    "supported on a region" );
+
+    bool resize_x = ( flags & GUI_WIN_CHILD_RESIZE_X ) != 0;   /* always false past the assert
+                                                                   above; the branches below stay
+                                                                   shared with child_begin's, where
+                                                                   the flag is live */
     bool resize_y = ( flags & GUI_WIN_CHILD_RESIZE_Y ) != 0;
 
     if ( resize_x )

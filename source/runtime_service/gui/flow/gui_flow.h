@@ -100,6 +100,10 @@ typedef struct
 
     gui_rect_t prev_item;           // last cell emitted this region: same_line() reopens its
     bool cont_pending;              //   line, and the next emit is a one-shot pen placement
+    bool filled;                    // most recent placement on this line filled its track/pen
+                                     //   slot rather than sizing to natural content -- guards a
+                                     //   same_line() continuation past it from feeding growth
+                                     //   back into content_w (see line_place_pen)
 
     u8  pack_dir;                   // gui_pack_dir_t: 0 horizontal (bar), 1 vertical (strip)
     f32 pack_size_next;             // pending main-axis size unit; < 0 = unset (natural)
@@ -247,8 +251,9 @@ void            layout_new_frame( void );   /* flow/gui_layout_core.c -- reset t
     Persistent region state (flow/gui_scroll.c)
 
     A child_begin or gui_region_begin region's scroll offset, last-measured content size, and
-    (if GUI_WIN_CHILD_RESIZE_X/_Y is set) user-dragged size, kept across frames in the keyed
-    state pool (gui_ctx.c), keyed by region id.  Windows keep these inline in gui_window_t.
+    (if GUI_WIN_CHILD_RESIZE_X/_Y is set on a child_begin -- gui_region_begin asserts against it)
+    user-dragged size, kept across frames in the keyed state pool (gui_ctx.c), keyed by region id.
+    Windows keep these inline in gui_window_t.
 
 ==============================================================================================*/
 

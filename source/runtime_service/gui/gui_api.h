@@ -1518,9 +1518,11 @@ typedef struct gui_api_s
        It is the third caller of the same scroll-region engine window_begin and child_begin sit
        on, stripped to just a rect + persisted scroll/content state, for a HUD-style element that
        needs a fixed, caller-positioned box rather than a movable window -- the perf overlay is
-       the reference case.  w/h <= 0 autosizes that axis to last frame's measured content, like
-       child_begin's AutoResizeY; GUI_WIN_CHILD_RESIZE_X/_Y opts that axis into a drag grip
-       instead, same as child_begin.  Unlike window_begin / child_begin, it takes no parent
+       the reference case.  Exactly two modes per axis, chosen by the sign of w/h: > 0 pins it
+       exactly, <= 0 autosizes it every frame to last frame's measured content (like child_begin's
+       AutoResizeY).  No user-driven third mode: a region has no chrome to grab, so
+       GUI_WIN_CHILD_RESIZE_X/_Y (child_begin's drag-grip flag) asserts if passed here.  Unlike
+       window_begin / child_begin, it takes no parent
        region -- call it directly at the top of a frame.  Paints on viewport `vp` (rect in that
        surface's client space; GUI_VP_MAIN = the primary, GUI_VP_INVALID and a closed viewport
        map to it) at the z tier picked by `tier` (gui_region_tier_t: MID over windows / under
@@ -1536,7 +1538,7 @@ typedef struct gui_api_s
        THIS frame (re-bases the live pen), so call it right after opening the region, before content
        -- no one-frame lag, unlike the wheel.  Pairs with GUI_WIN_ANCHOR_BOTTOM to drive a console's
        wheel + PageUp/Down + jump-to-tail keys without any offset bookkeeping in the caller. */
-    void       ( *scroll_by     )( f32 dx, f32 dy );
+    void ( *scroll_by     )( f32 dx, f32 dy );
 
     /*=================================  window features as mechanisms  =================================*/
 
@@ -2707,13 +2709,13 @@ typedef struct gui_api_s
 
     /* slider_int -- integer slider over [lo,hi]; every track position lands on a whole value, drawn
        centered ("%d").  Same GUI_ITEM_NO_VALUE_TEXT suppression as slider_float. */
-    bool ( *slider_int  )( const char* label, i32* v, i32 lo, i32 hi );
+    bool ( *slider_int )( const char* label, i32* v, i32 lo, i32 hi );
 
     /* drag_int -- a framed integer field driven by a left/right drag (the DragInt analogue): no
        track, so no max travel -- v_speed units of value per pixel.  v_min < v_max bounds it; both
        equal leaves it unbounded.  format is the printf form of the shown value ("%d" when NULL,
        e.g. "HP: %d").  Returns true only on frames the drag changes the value. */
-    bool ( *drag_int    )( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format );
+    bool ( *drag_int )( const char* label, i32* v, f32 v_speed, i32 v_min, i32 v_max, const char* format );
 
     /* drag_float -- the floating-point DragFloat: a framed value changed by a left/right drag,
        v_speed units per pixel, no track travel.  v_min < v_max bounds it; both equal is unbounded.

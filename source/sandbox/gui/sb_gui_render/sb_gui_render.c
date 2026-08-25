@@ -53,13 +53,13 @@
 static u32
 lerp_col( u32 a, u32 b, f32 t )
 {
-    u8 ar = ( u8 )( a       & 0xFF ), ag = ( u8 )( ( a >> 8  ) & 0xFF );
+    u8 ar = ( u8 )( a           & 0xFF ), ag = ( u8 )( ( a >> 8  ) & 0xFF );
     u8 ab = ( u8 )( ( a >> 16 ) & 0xFF ), aa = ( u8 )( ( a >> 24 ) & 0xFF );
-    u8 br = ( u8 )( b       & 0xFF ), bg = ( u8 )( ( b >> 8  ) & 0xFF );
+    u8 br = ( u8 )( b           & 0xFF ), bg = ( u8 )( ( b >> 8  ) & 0xFF );
     u8 bb = ( u8 )( ( b >> 16 ) & 0xFF ), ba = ( u8 )( ( b >> 24 ) & 0xFF );
 
-    u8 r = ( u8 )( ar + ( f32 )( br - ar ) * t );
-    u8 g = ( u8 )( ag + ( f32 )( bg - ag ) * t );
+    u8 r  = ( u8 )( ar + ( f32 )( br - ar ) * t );
+    u8 g  = ( u8 )( ag + ( f32 )( bg - ag ) * t );
     u8 bl = ( u8 )( ab + ( f32 )( bb - ab ) * t );
     u8 al = ( u8 )( aa + ( f32 )( ba - aa ) * t );
     return GUI_COLOR( r, g, bl, al );
@@ -205,10 +205,22 @@ page_fills( void )
 
     //------------------------------------------------------------------------------------------
     /* row 0 -- the fast path: draw_rect emits ONE quad with no SDF field at all (the "0 emits
-       square shapes" branch every other verb on this page costs strictly more than). */
+       square shapes" branch every other verb on this page costs strictly more than). */  
 
     r = cell( 0, GRID_COLS, "draw_rect (fast path)" );
-    gui()->draw_rect( r.x, r.y, r.w, r.h, AMBER );
+
+    /* Panel column template: col 0 fills for every slider, col 1 holds a same-row control
+       (natural width, so every col 1 across the panel shares one measured width) -- installed
+       once so every slider below lines up at the same width, not just this row's. A row with
+       nothing for col 1 calls skip() to consume the slot instead of leaving the template. */
+    gui()->row2( 256, 0 );
+    gui()->field_label_left( 96 );
+    static float rect_width = 0;
+    gui()->slider_float_step( "rect size", &rect_width, 0, r.w, 1.0f );
+    if ( gui()->button( "reset" )) { rect_width = r.w; }
+
+    gui()->draw_rect( r.x, r.y, rect_width, r.h, AMBER );
+    // gui()->draw_rect( r.x, r.y, r.w, r.h, AMBER );
 
     /* row 0 -- batched fast path: draw_rects() emits the same quad-per-rect as
        draw_rect above, just N of them in ONE command.  A checker mosaic rather than the
@@ -216,6 +228,8 @@ page_fills( void )
        as distinct examples, not repeats of each other. */
 
     gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX );
+    if ( gui()->button( "reset" )) { s_tweak_tile_count = TWEAK_TILE_MAX; }
+
     r = row_wide( 0, 1, GRID_COLS - 1, "draw_rects() -- checker / 1 call (tweak panel sets count)" );
     {
         enum { CHECK_COLS = 12, CHECK_ROWS_MAX = TWEAK_TILE_MAX / CHECK_COLS };
@@ -791,7 +805,7 @@ build_frame( void )
        column past the last one, so it tracks GRID_X/CELL_W/CELL_GAP/GRID_COLS instead of a
        number pinned to today's window size. */
     f32 panel_x = GRID_X + ( f32 )GRID_COLS * ( CELL_W + CELL_GAP );
-    gui()->region_begin( "tweak_panel", panel_x, GRID_Y, TWEAK_PANEL_W, 0.0f, GUI_REGION_FG,
+    gui()->region_begin( "tweak_panel", panel_x, GRID_Y, 0.0f ,0.0f, GUI_REGION_FG,
                          GUI_VP_MAIN, GUI_WIN_NOSCROLL | GUI_WIN_NO_CLIP );
     gui()->stack();
     s_pages[ s_page ].build();
@@ -831,7 +845,7 @@ main( int argc, char** argv )
 
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title      = "ORB -- gui render matrix",
-        .w          = 1280 + 320, .h = 720 + 320,
+        .w          = 1920, .h = 1024,
         .os_chrome  = true,
         .font       = GUI_FONT_CASCADIA_MONO,
         .clock      = sys_tick_seconds,

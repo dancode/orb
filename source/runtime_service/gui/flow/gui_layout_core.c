@@ -1002,6 +1002,9 @@ line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
     f32 nat_main  = horiz ? ( natural_w > 0.0f ? natural_w : 0.0f ) : h;
     f32 cross_ext = horiz ? h : ( natural_w > 0.0f ? natural_w : f->content_w );
 
+    bool prev_filled = f->line.filled;   /* the item this placement continues from, if any --
+                                             read before this item overwrites the flag below */
+
     f32 unit = f->line.pack_size_next;
     f->line.pack_size_next = -1.0f;   /* consume -> next item is natural */
 
@@ -1010,6 +1013,13 @@ line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
     if ( main_avail < 0.0f ) main_avail = 0.0f;
 
     f32 main_ext = unit_resolve( unit, nat_main, main_avail );
+
+    /* Dynamic (content_w-chasing) placements only: an explicit FILL/FRACTION unit, or the
+       implicit fill fallback (unset unit, no natural size of its own) -- mirrors unit_resolve's
+       own branches rather than comparing resolved pixels, so a fixed unit (> 1) or a real natural
+       size (unit unset, natural_w > 0) that happens to consume the exact room left is never
+       misread as a fill; see the matching unit-vs-geometry note in line_place_cell. */
+    f->line.filled = ( unit < 0.0f ) ? ( nat_main <= 0.0f ) : ( unit > 0.0f && unit <= 1.0f );
 
     /* Opt-in auto-wrap (pack_wrap): a natural / fixed item that overruns the line breaks to a
        fresh one first -- never on a still-empty line (an oversized item places rather than
@@ -1041,7 +1051,18 @@ line_place_pen( layout_frame_t* f, f32 natural_w, f32 h )
     f->line.main += main_ext + ( horiz ? mod_gap_x( f ) : mod_gap_y( f ) );
     if ( cross_ext > f->line.ext ) f->line.ext = cross_ext;
 
-    content_reach( f, r.x + r.w, r.y + r.h );
+    /* A same_line() (or pack run) continuing past a predecessor that FILLED its track must not
+       feed its own trailing extent into the x highwater when that predecessor's edge was itself
+       content_w-derived (main_edge above): filled-then-append is self-referential -- content_w
+       widens to last frame's reach, the fill re-fills to the new content_w, the trailing item
+       lands further out again, forever (this was the "scales off screen" runaway).  Clamp the
+       reach to the honest view edge (wrap_edge is exactly that on the horizontal axis; band_bottom
+       is already view-derived so the vertical strip case needs no clamp) -- the item still PAINTS
+       at its real position, only the content measure ignores the overflow it did not earn. */
+    f32 x_end = r.x + r.w;
+    if ( horiz && prev_filled && x_end > wrap_edge ) x_end = wrap_edge;
+
+    content_reach( f, x_end, r.y + r.h );
     f->line.prev_item = r;
     return r;
 }
@@ -1096,8 +1117,20 @@ line_place_cell( layout_frame_t* f, f32 natural_w, f32 h )
        widened canvas re-justify itself forever (content_w can grow but never shrink back, and a
        right-aligned item parks off-view for good).  Width from origin is position-independent, so
        the measure collapses the frame the wide content disappears.  Left-aligned the two spellings
-       are identical. */
-    f32 x_reach = ( r.w < f->tmpl.cellw[ c ] ) ? f->tmpl.cellx[ c ] + r.w : f->tmpl.cellx[ c ];
+       are identical.
+
+       Only a FILL (unit 1) or FRACTION (0,1) column is this self-referential: its width is an
+       avail-of-content_w echo, so a cell that fills it must not feed that width back in.  A FIXED
+       px column (unit > 1) and a NATURAL column (unit 0 -- nat_mask, since nat_tracks_substitute
+       already overwrote tmpl.cols[c] with last frame's measured px by the time we get here) both
+       resolve from real, non-content_w-derived sources, so r.w == cellw[c] for them is genuine
+       content, not an echo -- checking r.w against cellw[c] alone cannot tell the two apart, only
+       the column's own unit can. */
+    bool natural_col  = ( f->tmpl.nat_mask >> c ) & 1u;
+    bool dynamic_col  = !natural_col && ( f->tmpl.cols[ c ] <= 1.0f );   /* FILL or FRACTION only */
+    f->line.filled = dynamic_col && ( r.w >= f->tmpl.cellw[ c ] );   /* read by a same_line()
+                                        continuation, see line_place_pen's prev_filled guard */
+    f32 x_reach = f->line.filled ? f->tmpl.cellx[ c ] : f->tmpl.cellx[ c ] + r.w;
     claim_note( r.x + r.w, r.y + r.h );   /* footprint watcher counts the full seated cell --
                                              a filled track is claimed space even though the
                                              region's content measure above must ignore it */

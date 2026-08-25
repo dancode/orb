@@ -236,12 +236,13 @@ static void
 overlay_backdrop( void )
 {
     /* Called as the first statement inside a region's body, right after gui_region_begin, so
-       lf() is still that region's frame -- outer is the exact box it resolved this frame
-       (fixed, autosized to content, or user-resized via GUI_WIN_CHILD_RESIZE_X/_Y).  Reading
-       the box directly, rather than re-deriving a size from the region's measured content,
-       keeps this correct once a region is resizeable: a dragged box need not match its
-       content's extent, so the two can no longer be assumed equal.  gui_region_begin never
-       resolves a zero-size box, so no positive-size guard is needed here. */
+       lf() is still that region's frame -- outer is the exact box it resolved this frame, either
+       pinned (w/h > 0) or autosized to last frame's measured content (w/h <= 0; a region has no
+       third, user-resized mode).  Reading the box directly, rather than re-deriving a size from
+       the region's measured content, is what makes it correct on the autosize path too, not just
+       pinned: content_w/h read back a frame stale would draw the backdrop a frame behind the
+       actual box.  gui_region_begin never resolves a zero-size box, so no positive-size guard is
+       needed here. */
 
     gui_rect_t box = lf()->outer;
     gui_draw_rect( box.x, box.y, box.w, box.h, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ));
