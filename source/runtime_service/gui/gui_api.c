@@ -519,6 +519,7 @@ const gui_api_t g_gui_api_struct =
     .slider_float                       = gui_slider_float,
     .slider_float_step                  = gui_slider_float_step,
     .slider_int                         = gui_slider_int,
+    .next_slider_animate                = gui_next_slider_animate,
     .drag_int                           = gui_drag_int,
     .drag_float                         = gui_drag_float,
     .drag_float2                        = gui_drag_float2,

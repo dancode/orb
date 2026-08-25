@@ -73,6 +73,37 @@ item_repeat_tick( bool pressed )
     return false;
 }
 
+/* Arm the press-to-drag distance tracker for `id` at the cursor's current position -- call once,
+   on st.pressed.  Single-slot in s_interaction, the same reasoning as active_id: only one widget
+   is ever held at a time, so one arm record covers whichever widget currently owns it. */
+void
+item_drag_arm( gui_id_t id )
+{
+    s_interaction.drag_armed_id = id;
+    s_interaction.drag_press_x  = s_io.mouse_x;
+    s_interaction.drag_press_y  = s_io.mouse_y;
+    s_interaction.drag_exceeded = false;
+}
+
+/* True once the cursor has moved more than thresh_px from where item_drag_arm(id) was called --
+   sticky for the rest of the hold, so a drag that wanders back near the press point still reads
+   as a drag, not a click.  False if `id` never armed, or a different widget now owns the slot. */
+bool
+item_drag_exceeded( gui_id_t id, f32 thresh_px )
+{
+    if ( s_interaction.drag_armed_id != id )
+        return false;
+
+    if ( !s_interaction.drag_exceeded )
+    {
+        f32 dx = s_io.mouse_x - s_interaction.drag_press_x;
+        f32 dy = s_io.mouse_y - s_interaction.drag_press_y;
+        if ( dx * dx + dy * dy > thresh_px * thresh_px )
+            s_interaction.drag_exceeded = true;
+    }
+    return s_interaction.drag_exceeded;
+}
+
 /* Unified hover/active/focus/click state machine.  Call once per widget with the
    hit rect and the desired interaction kind; the returned flags are all a widget
    needs for drawing and value updates. */

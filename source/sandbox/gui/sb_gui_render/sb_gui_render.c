@@ -215,9 +215,10 @@ load_catalogue_assets( void )
 ==============================================================================================*/
 
 #define TWEAK_TILE_MAX 120   // draw_rects() checker cap: CHECK_COLS * CHECK_ROWS_MAX below
+#define TWEAK_EASE_TIME 0.50f
+#define TWEAK_ROUND_WIDTH 16.0f
 
 static i32 s_tweak_tile_count = 60;
-
 /*==============================================================================================
     Page 1 -- fills: the fast path a plain draw_rect takes, the general SDF box catalogue built
     on top of it, and the batched form for drawing many rects in one command.
@@ -232,16 +233,19 @@ page_fills( void )
     /* row 0 -- the fast path: draw_rect emits ONE quad with no SDF field at all */
 
     panel_row_begin( 0, "fills_row0" );
-    
-    static float rect_width = CELL_W;
+        
     r = cell( 0, GRID_COLS, "draw_rect (fast path)" );    
-    gui()->slider_float_step( "rect size", &rect_width, 0, r.w, 1.0f );
+
+    static float rect_width = CELL_W;
+    gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "rect width", &rect_width, 0, r.w, 1.0f );
     if ( gui()->button( "reset##1" )) { rect_width = r.w; }
 
     gui()->draw_rect( r.x, r.y, rect_width, r.h, AMBER );
-    
+
     /* row 0 -- batched fast path: draw_rects() emit N of them in ONE command */
 
+    gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
     gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX );
     if ( gui()->button( "reset##2" )) { s_tweak_tile_count = TWEAK_TILE_MAX; }    
 
@@ -268,11 +272,18 @@ page_fills( void )
     /* rows 1 - basic shape rects -- the general box catalogue: rounding, border, gradient and 
        circle all resolve through the same SDF quad, just with more of the record populated. */
 
+    panel_row_begin( 1, "fills_row1" );    
+    static float round_w = TWEAK_ROUND_WIDTH;
+    gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "rect fill", &round_w, 0, CELL_H * 0.5, 1.0f );
+    if ( gui()->button( "reset##2" )) { round_w =TWEAK_ROUND_WIDTH; }
+    panel_row_end();
+
     r = cell( 6, GRID_COLS, "round rect" );
-    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 0.0f, TEAL );
+    gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, 0.0f, TEAL );
 
     r = cell( 7, GRID_COLS, "round rect (border)" );
-    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 2.0f, TEAL );
+    gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, 2.0f, TEAL );
     
     r = cell( 8, GRID_COLS, "round rect (circle)" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 0.0f, TEAL ); }

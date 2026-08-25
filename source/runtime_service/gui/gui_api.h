@@ -2711,6 +2711,19 @@ typedef struct gui_api_s
        centered ("%d").  Same GUI_ITEM_NO_VALUE_TEXT suppression as slider_float. */
     bool ( *slider_int )( const char* label, i32* v, i32 lo, i32 hi );
 
+    /* next_slider_animate -- one-shot latch for the NEXT slider call: a plain click (press+release
+       with no drag) eases the value to the clicked position over `duration` seconds instead of
+       jumping, using `ease`.  Off by default -- an un-armed slider ignores this and jumps exactly
+       as before, so the animation costs nothing unless a caller opts in.  Actually dragging the
+       slider is untouched either way: live cursor tracking always wins over the tween.
+
+           gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, 0.15f );
+           gui()->slider_float( "volume", &vol, 0.0f, 1.0f );
+
+       To make a slider animated by default, wrap it: call this before your own slider function
+       each time you use it. */
+    void ( *next_slider_animate )( gui_ease_t ease, f32 duration );
+
     /* drag_int -- a framed integer field driven by a left/right drag (the DragInt analogue): no
        track, so no max travel -- v_speed units of value per pixel.  v_min < v_max bounds it; both
        equal leaves it unbounded.  format is the printf form of the shown value ("%d" when NULL,

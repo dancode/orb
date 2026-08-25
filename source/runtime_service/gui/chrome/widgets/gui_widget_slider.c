@@ -177,6 +177,131 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
 
 static gui_rect_t s_slider_anchor_track;
 
+/*==============================================================================================
+    Click-to-animate -- opt-in, one-shot per slider call (gui_next_slider_animate).  Armed, a
+    plain click (press+release, no drag) eases the value to the clicked position instead of
+    jumping there; an actual drag past SLIDER_ANIM_DRAG_THRESH cancels the tween and hands the
+    value straight back to live cursor tracking, same as an un-armed slider.  Un-armed, none of
+    this runs: a slider that never opts in costs one GUI_STATE_PEEK per call and nothing else.
+==============================================================================================*/
+
+#define GUI_SLIDER_ANIM_SALT    0x51DEA000u
+#define SLIDER_ANIM_DRAG_THRESH 4.0f    // px; matches GUI_DRAG_THRESH / PRESS_DEFER_THRESH elsewhere
+
+typedef struct
+{
+    f32        from;      // value when the tween armed
+    f32        dest;      // click-target value; re-aimed each held frame until release or cancel
+    gui_ease_t ease;      // captured at arm -- the next-call latch may be reused before this settles
+    bool       active;    // tween in flight -- owns the value instead of live cursor tracking
+    bool       canceled;  // press turned into a real drag -- live tracking took the value back
+
+} slider_anim_t;
+
+/* The one-shot latch itself: set by gui_next_slider_animate, consumed unconditionally by the very
+   next slider call -- same push-model shape as gui_next_input_filter (chrome/widgets/gui_input.c),
+   which is cleared by input_text_begin on EVERY call, not only on some interaction event.  A
+   slider must do the same: consuming only inside st.pressed left the flag standing on every frame
+   the armed slider wasn't actually clicked, so the first click on a LATER, un-armed slider picked
+   up the stale latch instead. */
+static gui_ease_t s_slider_anim_next_ease;
+static f32        s_slider_anim_next_duration;
+static bool       s_slider_anim_next_armed;
+
+void
+gui_next_slider_animate( gui_ease_t ease, f32 duration )
+{
+    s_slider_anim_next_ease     = ease;
+    s_slider_anim_next_duration = duration;
+    s_slider_anim_next_armed    = true;
+}
+
+typedef struct
+{
+    bool       armed;
+    gui_ease_t ease;
+    f32        duration;
+
+} slider_anim_req_t;
+
+/* Read-and-clear the latch -- call once per slider, unconditionally, before st.pressed is even
+   known, so a slider that goes unclicked this frame still consumes (and drops) whatever was
+   armed for it rather than leaving it for the next slider down. */
+static slider_anim_req_t
+slider_anim_consume_next( void )
+{
+    slider_anim_req_t req = { s_slider_anim_next_armed, s_slider_anim_next_ease, s_slider_anim_next_duration };
+    s_slider_anim_next_armed = false;
+    return req;
+}
+
+/* Press-frame consume: arms a tween from `v_now` if `req` was armed for this call, otherwise drops
+   any tween still settling from a prior click on this same slider (a plain click always jumps,
+   even if the last click armed one).  Called once, from inside the st.pressed branch; `dest` is
+   set the same frame by slider_anim_on_active (st.pressed implies st.active). */
+static void
+slider_anim_on_press( gui_id_t id, f32 v_now, slider_anim_req_t req )
+{
+    item_drag_arm( id );
+
+    gui_id_t       aid  = id_combine( id, GUI_SLIDER_ANIM_SALT );
+    slider_anim_t* anim = GUI_STATE( slider_anim_t, aid );
+    if ( req.armed )
+    {
+        anim->from     = v_now;
+        anim->ease     = req.ease;
+        anim->active   = true;
+        anim->canceled = false;
+        gui_anim_start( aid, req.duration );
+    }
+    else
+    {
+        anim->active = false;
+    }
+}
+
+/* Held-frame consume: aims the tween at the live click point and cancels it the instant the press
+   turns into a real drag.  `nv` is the freshly computed cursor value.  Returns true if the caller
+   should leave *v alone this frame (the tween owns it). */
+static bool
+slider_anim_on_active( gui_id_t id, f32 nv )
+{
+    gui_id_t aid = id_combine( id, GUI_SLIDER_ANIM_SALT );
+    const slider_anim_t* peek = GUI_STATE_PEEK( slider_anim_t, aid );
+    if ( !peek || !peek->active || peek->canceled )
+        return false;
+
+    slider_anim_t* anim = GUI_STATE( slider_anim_t, aid );
+    anim->dest = nv;
+
+    if ( item_drag_exceeded( id, SLIDER_ANIM_DRAG_THRESH ) )
+    {
+        anim->canceled = true;
+        return false;   /* real drag -- hand the value straight back to live tracking */
+    }
+    return true;
+}
+
+/* Runs every call, independent of st.active: a tween keeps driving the value after release, until
+   it settles.  PEEK first so an un-armed slider (the default) pays for one lookup and nothing
+   more.  Returns true and writes *out_value when the tween is live this frame. */
+static bool
+slider_anim_sample( gui_id_t id, f32* out_value )
+{
+    gui_id_t aid = id_combine( id, GUI_SLIDER_ANIM_SALT );
+    const slider_anim_t* peek = GUI_STATE_PEEK( slider_anim_t, aid );
+    if ( !peek || !peek->active || peek->canceled )
+        return false;
+
+    slider_anim_t* anim   = GUI_STATE( slider_anim_t, aid );
+    bool           active = false;
+    f32            t      = gui_anim_ease( aid, anim->ease, &active );
+    *out_value = f32_lerp( anim->from, anim->dest, t );
+    if ( !active )
+        anim->active = false;   /* settled -- next call falls through to normal handling */
+    return true;
+}
+
 /* slider_float_step -- slider_float quantized to `step` (e.g. 0.25 lands the value on 1/4 marks);
    step <= 0 leaves it continuous, so plain slider_float just forwards with step 0. */
 
@@ -184,6 +309,9 @@ bool
 gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
 {
     gui_id_t id = item_id( label );
+
+    /* Unconditional, every call -- see slider_anim_consume_next. */
+    slider_anim_req_t anim_req = slider_anim_consume_next();
 
     /* Route the widget's own label through the ambient field seam (gui_field_row): it paints the label
        -- an aligned column under a form / field_split, or trailing otherwise -- and hands back the
@@ -195,7 +323,10 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
     gui_item_state_t st = item_state( id, track_r, ITEM_DRAG );
 
     if ( st.pressed )
+    {
         s_slider_anchor_track = track_r;
+        slider_anim_on_press( id, *v, anim_req );
+    }
 
     /* Drag: map the cursor's track fraction to a value, snapping to the step grid when asked. */
 
@@ -209,7 +340,8 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
              nv = lo + floorf( ( nv - lo ) / step + 0.5f ) * step;   /* nearest step from lo */
         if ( nv < lo ) nv = lo;
         if ( nv > hi ) nv = hi;
-        if ( nv != *v )
+
+        if ( !slider_anim_on_active( id, nv ) && nv != *v )
         {
             *v      = nv;
             changed = true;
@@ -219,12 +351,25 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
     /* Keyboard value edit (activation captured this slider -- st.nav_adjust): each Left/Right
        repeat steps the quantize step when set, else 1% of the range.  value_step_f32 floors that at
        SLIDER_FLOAT_FMT's resolution and clamps, so a small-range slider still moves the printed
-       value every press. */
+       value every press.  A live click-to-animate tween is dropped first -- direct keyboard edits
+       win outright rather than fighting the tween's write next frame. */
     if ( st.nav_adjust != 0 )
     {
+        slider_anim_t* anim = GUI_STATE( slider_anim_t, id_combine( id, GUI_SLIDER_ANIM_SALT ) );
+        anim->active = false;
+
         f32 base = ( step > 0.0f ) ? step : ( hi - lo ) * 0.01f;
         if ( value_step_f32( v, st.nav_adjust, base, SLIDER_FLOAT_FMT, lo, hi ) )
             changed = true;
+    }
+
+    /* A tween keeps driving the value after release too, until it settles -- independent of
+       st.active so the ease continues on the frames after the mouse comes up. */
+    f32 anim_v;
+    if ( slider_anim_sample( id, &anim_v ) && anim_v != *v )
+    {
+        *v      = anim_v;
+        changed = true;
     }
 
     /* Paint gate: a scrolled-out slider skips its whole render prep (the value snprintf is real
@@ -252,12 +397,18 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
 {
     gui_id_t id = item_id( label );
 
+    /* Unconditional, every call -- see slider_anim_consume_next. */
+    slider_anim_req_t anim_req = slider_anim_consume_next();
+
     gui_field_row( label );   /* label via the ambient field seam; track_r = control track (see slider_float_step) */
     gui_rect_t track_r = cell_next( WIDGET_H );
     gui_item_state_t st = item_state( id, track_r, ITEM_DRAG );
 
     if ( st.pressed )
+    {
         s_slider_anchor_track = track_r;
+        slider_anim_on_press( id, (f32)*v, anim_req );
+    }
 
     bool changed = false;
     if ( st.active )
@@ -267,16 +418,36 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
         i32 nv = lo + (i32)floorf( t * (f32)( hi - lo ) + 0.5f );    /* nearest whole step */
         if ( nv < lo ) nv = lo;
         if ( nv > hi ) nv = hi;
-        if ( nv != *v )
+
+        if ( !slider_anim_on_active( id, (f32)nv ) && nv != *v )
         {
             *v      = nv;
             changed = true;
         }
     }
 
-    /* Keyboard value edit: one whole step per Left/Right repeat. */
-    if ( st.nav_adjust != 0 && value_step_i32( v, st.nav_adjust, 1, lo, hi ) )
-        changed = true;
+    /* Keyboard value edit: one whole step per Left/Right repeat.  Drop a live tween first -- see
+       the matching comment in gui_slider_float_step. */
+    if ( st.nav_adjust != 0 )
+    {
+        slider_anim_t* anim = GUI_STATE( slider_anim_t, id_combine( id, GUI_SLIDER_ANIM_SALT ) );
+        anim->active = false;
+
+        if ( value_step_i32( v, st.nav_adjust, 1, lo, hi ) )
+            changed = true;
+    }
+
+    /* A tween keeps driving the value after release too -- see gui_slider_float_step. */
+    f32 anim_v;
+    if ( slider_anim_sample( id, &anim_v ) )
+    {
+        i32 av = (i32)floorf( anim_v + 0.5f );
+        if ( av != *v )
+        {
+            *v      = av;
+            changed = true;
+        }
+    }
 
     /* Paint gate -- see slider_float_step. */
     if ( !draw_cull_box( track_r.x, track_r.y, track_r.w, track_r.h ) )

@@ -151,6 +151,11 @@ typedef struct
     gui_id_t  focus_ended_id;              //   state block in core/gui_ctx.c
     bool      focus_ended_edited;
 
+    gui_id_t  drag_armed_id;    // widget tracking press-to-cursor distance (item_drag_arm) --
+    f32       drag_press_x;     //   opt-in, single-slot for the same reason as active_id: only
+    f32       drag_press_y;     //   one widget can be held at a time
+    bool      drag_exceeded;    // sticky once movement crosses the caller's threshold
+
 } gui_interaction_t;
 
 extern gui_interaction_t s_interaction;   /* core/gui_ctx.c -- hover / active / focus */
@@ -368,6 +373,14 @@ void focus_release     ( void );           // Enter commit / Escape revert
 
 gui_item_state_t item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind );
 bool             item_grab ( gui_id_t id, gui_rect_t r, bool gate, bool* active );
+
+/* Opt-in press-to-drag distance tracking -- NOT part of item_state, since most widgets never need
+   to tell "clicked in place" from "dragged".  A widget that does (a click-to-animate slider, a
+   future drag-vs-tap gesture) arms it itself on st.pressed and polls item_drag_exceeded while
+   held; every other widget's item_state call costs nothing extra. */
+
+void item_drag_arm     ( gui_id_t id );                    // (re)start tracking from the cursor now
+bool item_drag_exceeded( gui_id_t id, f32 thresh_px );      // sticky true past thresh_px from the arm
 
 /* the keyboard-nav per-item seam (core/gui_nav_item.c) -- the registration half of nav; the
    resolver over the list it builds is chrome (chrome/nav/gui_nav.c).  item_state calls
