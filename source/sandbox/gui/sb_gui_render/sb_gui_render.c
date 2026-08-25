@@ -214,11 +214,13 @@ load_catalogue_assets( void )
     page owns what it puts there, the panel just owns the box and the vertical flow.
 ==============================================================================================*/
 
-#define TWEAK_TILE_MAX 120   // draw_rects() checker cap: CHECK_COLS * CHECK_ROWS_MAX below
-#define TWEAK_EASE_TIME 0.50f
-#define TWEAK_ROUND_WIDTH 16.0f
+#define TWEAK_EASE_TIME     0.50f
+#define TWEAK_EASE_FUNC     GUI_EASE_OUT_CUBIC
+#define TWEAK_ROUND_WIDTH   16.0f
+#define TWEAK_TILE_MAX      120
 
-static i32 s_tweak_tile_count = 60;
+static i32 s_tweak_tile_count = TWEAK_TILE_MAX;
+
 /*==============================================================================================
     Page 1 -- fills: the fast path a plain draw_rect takes, the general SDF box catalogue built
     on top of it, and the batched form for drawing many rects in one command.
@@ -237,7 +239,7 @@ page_fills( void )
     r = cell( 0, GRID_COLS, "draw_rect (fast path)" );    
 
     static float rect_width = CELL_W;
-    gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "rect width", &rect_width, 0, r.w, 1.0f );
     if ( gui()->button( "reset##1" )) { rect_width = r.w; }
 
@@ -245,7 +247,7 @@ page_fills( void )
 
     /* row 0 -- batched fast path: draw_rects() emit N of them in ONE command */
 
-    gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX, NULL );
     if ( gui()->button( "reset##2" )) { s_tweak_tile_count = TWEAK_TILE_MAX; }    
 
@@ -259,8 +261,8 @@ page_fills( void )
             i32   x = i % CHECK_COLS, y = i / CHECK_COLS;
             bool  light = ( x + y ) % 2 == 0;
             tiles[ i ] = ( gui_rect_col_t ) {
-                r.x + ( f32 )x * tw + 1.0f, r.y + ( f32 )y * th + 1.0f, tw - 2.0f, th - 2.0f,
-                light ? AMBER : TEAL,
+                r.x + ( f32 )x * tw + 1.0f, r.y + ( f32 )y * th + 1.0f, 
+                tw - 2.0f, th - 2.0f, light ? AMBER : TEAL,
             };
         }
         gui()->draw_rects( tiles, s_tweak_tile_count );
@@ -272,35 +274,42 @@ page_fills( void )
     /* rows 1 - basic shape rects -- the general box catalogue: rounding, border, gradient and 
        circle all resolve through the same SDF quad, just with more of the record populated. */
 
-    panel_row_begin( 1, "fills_row1" );    
+    panel_row_begin( 1, "fills_row1" );
     static float round_w = TWEAK_ROUND_WIDTH;
-    gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "rect fill", &round_w, 0, CELL_H * 0.5, 1.0f );
     if ( gui()->button( "reset##2" )) { round_w =TWEAK_ROUND_WIDTH; }
     
+    static float border = 2.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "border", &border, 1.0f, 16.0f, 1.0f );
+    if ( gui()->button( "reset##4" )) { border = 2.0f; }
 
     r = cell( 6, GRID_COLS, "round rect" );
     gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, 0.0f, TEAL );
 
     r = cell( 7, GRID_COLS, "round rect (border)" );
-    gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, 2.0f, TEAL );
+    gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, border, TEAL );
     
-    static float radius_w = TWEAK_ROUND_WIDTH;
-    gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "radius", &radius_w, 0, cell_radius( r ), 1.0f );
-    if ( gui()->button( "reset##3" )) { radius_w = cell_radius( r ); }
+    static float radius = 64.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "circle radius", &radius, 0, cell_radius( r ), 1.0f );
+    if ( gui()->button( "reset##3" )) { radius = cell_radius( r ); }
+
+    static bool lock_radius = false;
+    gui()->checkbox( "lock radius", &lock_radius );
 
     r = cell( 8, GRID_COLS, "round rect (circle)" );
-    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius_w, 0.0f, TEAL ); }
+    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius, 0.0f, TEAL ); }
     
     r = cell( 9, GRID_COLS, "round rect (border)" );
-    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, cell_radius( r ), 2.0f, TEAL ); }
+    float radius_alt = lock_radius ? radius - ( border * 0.5f ) : radius;
+    { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius_alt, border, TEAL ); }
 
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
     /* rows 2 - gradients */
-
 
     r = cell( 12, GRID_COLS, "gradient v" );
     gui()->draw_gradient( r, AMBER, PLUM, true );

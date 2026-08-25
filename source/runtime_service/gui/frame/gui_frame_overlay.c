@@ -821,15 +821,18 @@ gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
         F8      command stepper: show/hide the control window (Capture there freezes the frame)
         F9      render mode: normal -> wireframe -> batch tint
         F10     pipeline dashboard window
-        NP+     perf overlay tier  (off / fps / +timings / +counts / +retained)
-        NP-     state overlay tier (off / ids / +focus,nav / +popups)
+        NP+ NP- perf overlay tier, shifted up / down the ladder
+                (off / fps / +timings / +counts / +retained)
         , .     command stepper (while frozen): step the replay cursor back/forward
                 (repeat-aware -- holding scrubs; shift steps by 16)
                 (picking a command under the mouse is the stepper window's own Pick toggle, not
                 a hotkey -- a hotkey would fight the focused window's keyboard nav/type-ahead)
 
+    State overlay tier (off / ids / +focus,nav / +popups) has no hotkey -- rarely flipped, so it
+    is a selector-menu slider only.
+
     While armed, a selector panel (debug_selector_menu, right edge of viewport) is also up:
-    - Mirrors NP+ / NP- as sliders.
+    - Mirrors the perf tier as a slider (state overlay's slider has no key to mirror).
     - Adds the levers that have no key of their own: retained skip (tessellation cache), force
       redraw, idle skip.
     - Ends with a KEY LEGEND -- every key above, its name, and live value (lit when on). This is
@@ -859,8 +862,8 @@ void gui_debug_enable( bool enable )
 
 bool gui_debug_is_enabled( void ) { return s_debug_enabled; }
 
-static int  s_dbg_perf_mode;     /* perf overlay tier, NP_ADD cycles 0..DBG_PERF_TIERS-1     */
-static int  s_dbg_state_mode;    /* state overlay tier, NP_SUB cycles 0..3                  */
+static int  s_dbg_perf_mode;     /* perf overlay tier, NP+/NP- shift 0..DBG_PERF_TIERS-1     */
+static int  s_dbg_state_mode;    /* state overlay tier, selector-menu slider only, no hotkey */
 static int  s_dbg_dpi_step;      /* index into k_dpi_scale; 0 = AUTO (the shipping default)  */
 static bool s_dbg_font_open;     /* font registry overlay, selector menu checkbox toggles  */
 static bool s_dbg_mem_open;      /* memory overlay, selector menu checkbox toggles          */
@@ -934,7 +937,7 @@ static const struct
     { APP_KEY_NP_7, "NP7", "region",   GUI_DBG_REGION   },
 };
 
-/* NP+ / NP- tiers and the F9 render mode, spelled out -- what the sliders' bare numbers mean. */
+/* Perf/state tiers and the F9 render mode, spelled out -- what the sliders' bare numbers mean. */
 static const char* const k_perf_tier   [] = { "off", "fps", "+timings", "+counts", "+retained" };
 static const char* const k_state_tier  [] = { "off", "ids", "+focus", "+popups" };
 static const char* const k_render_mode [] = { "normal", "wireframe", "batch" };
@@ -1112,19 +1115,21 @@ debug_hotkeys( void )
             redraw_request();
         }
 
-    /* Perf / state overlay tiers keep a quick hotkey (numpad +/-, paired away from the letter
-       row) alongside their slider in debug_selector_menu -- flipped often enough while chasing a
-       frame that a click is friction. C/F/I have no letter keys at all: rarely-toggled booleans
-       are better discovered as checkboxes than memorized as hotkeys. */
-    if ( gui_is_key_pressed( APP_KEY_NP_ADD ) )
+    /* Perf overlay tier keeps a quick hotkey alongside its slider in debug_selector_menu --
+       flipped often enough while chasing a frame that a click is friction. '+' / '-' shift the
+       ladder up/down rather than cycling, so each key has one clamped direction instead of both
+       wrapping through the same key. State overlay tier has no hotkey -- rarely flipped, slider
+       only. C/F/I have no letter keys at all: rarely-toggled booleans are better discovered as
+       checkboxes than memorized as hotkeys. */
+    if ( gui_is_key_pressed( APP_KEY_NP_ADD ) && s_dbg_perf_mode < DBG_PERF_TIERS - 1 )
     {
-        s_dbg_perf_mode = ( s_dbg_perf_mode + 1 ) % DBG_PERF_TIERS;
+        ++s_dbg_perf_mode;
         redraw_request();
     }
 
-    if ( gui_is_key_pressed( APP_KEY_NP_SUB ) )
+    if ( gui_is_key_pressed( APP_KEY_NP_SUB ) && s_dbg_perf_mode > 0 )
     {
-        s_dbg_state_mode = ( s_dbg_state_mode + 1 ) % DBG_STATE_TIERS;
+        --s_dbg_perf_mode;
         redraw_request();
     }
 
@@ -1164,7 +1169,7 @@ debug_hotkeys( void )
       and the learning are not independent -- see gui_palette_mode_t.
     - A KEY LEGEND at the bottom: every key-driven setting, its name, and live value (lit when
       on). This is what makes the numpad keys usable without reading source -- a tier slider
-      reading "3" says nothing, "NP+ perf +counts" does. The seven layer bits (NP1-NP7) have no
+      reading "3" says nothing, "NP+/- perf +counts" does. The seven layer bits (NP1-NP7) have no
       other readout at all. Both halves walk the same k_dbg_layer / k_*_tier tables the hotkeys use.
 
     Whole panel at GUI_SCALE_DENSE (HUD row pitch, like the two overlays), so the legend costs
@@ -1188,8 +1193,8 @@ debug_hotkeys( void )
 #define SEL_IDLE    "Idle skip"
 #define SEL_FONTS   "Font registry"
 #define SEL_MEM     "Memory"
-#define SEL_PERF    "NP+ perf"
-#define SEL_STATE   "NP- state"
+#define SEL_PERF    "NP+/- perf"
+#define SEL_STATE   "state"
 #define SEL_DPI     "ui scale"
 #define SEL_PAL     "prim pal"
 
@@ -1245,15 +1250,11 @@ selector_content_w( f32 label_w )
     f32 slider_row = label_w + WIDGET_PAD + font_text_w( "0" ) * 8.0f;
     if ( slider_row > w ) w = slider_row;
 
-    /* Legend rows, each at its longest possible value. */
+    /* Legend rows, each at its longest possible value.  State overlay has no hotkey (see
+       debug_hotkeys), so it gets no legend row -- its slider readout above is the only display. */
     for ( int i = 0; i < DBG_PERF_TIERS; ++i )
     {
-        f32 row = font_text_w( legend_line( buf, sizeof( buf ), "NP+", "perf", k_perf_tier[ i ] ) );
-        if ( row > w ) w = row;
-    }
-    for ( int i = 0; i < DBG_STATE_TIERS; ++i )
-    {
-        f32 row = font_text_w( legend_line( buf, sizeof( buf ), "NP-", "state", k_state_tier[ i ] ) );
+        f32 row = font_text_w( legend_line( buf, sizeof( buf ), "NP+/-", "perf", k_perf_tier[ i ] ) );
         if ( row > w ) w = row;
     }
     for ( int i = 0; i < GUI_RENDER_MODE_COUNT; ++i )
@@ -1301,7 +1302,7 @@ debug_selector_menu( void )
     f32 top_y = gui_viewport_content_y( 0 ) + 8.0f;
 
     /* Thin by design: the legend runs straight down (one key per row), so the widest row is a
-       single "<key> <name> <value>" run (e.g. "NP- state +retained"), not two columns of them.
+       single "<key> <name> <value>" run (e.g. "NP+/- perf +retained"), not two columns of them.
        Panel width = widest row it can print + the region's own left/right inset
        (REGION_PAD_DEFAULT = WIDGET_PAD each side); label_w holds the longest slider label. */
     /* Widest slider label -- the four share one left column, so the tracks line up. */
@@ -1410,11 +1411,11 @@ debug_selector_menu( void )
                                                                 : COL_TEXT_SECONDARY_IDLE, line );
 
         /* Key legend, straight down: tier rows spell out the number their slider shows; layer
-           rows are the only state readout NP1-NP7 have. */
+           rows are the only state readout NP1-NP7 have.  State overlay has no key of its own --
+           its slider row above is its only control -- so it gets no legend row. */
         gui_separator_text( "keys" );
 
-        legend_row( "NP+", "perf",  k_perf_tier [ s_dbg_perf_mode  ], s_dbg_perf_mode  > 0 );
-        legend_row( "NP-", "state", k_state_tier[ s_dbg_state_mode ], s_dbg_state_mode > 0 );
+        legend_row( "NP+/-", "perf",  k_perf_tier [ s_dbg_perf_mode  ], s_dbg_perf_mode  > 0 );
 
         gui_render_mode_t rmode = gui_render_get_mode();
         legend_row( "F9", "render", k_render_mode[ rmode ], rmode != GUI_RENDER_NORMAL );
