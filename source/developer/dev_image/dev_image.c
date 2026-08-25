@@ -210,6 +210,35 @@ dev_image_key_luma( dev_image_t* img )
     }
 }
 
+bool
+dev_image_pad( const dev_image_t* src, int margin, dev_image_t* out )
+{
+    memset( out, 0, sizeof( *out ) );
+    if ( !src || !src->pixels )
+        return err( "dev_image_pad: NULL source" );
+    if ( margin < 0 )
+        return err( "dev_image_pad: negative margin" );
+
+    int w = src->w + margin * 2;
+    int h = src->h + margin * 2;
+
+    /* calloc, not malloc: the border must read as (0,0,0,0), fully transparent, everywhere the
+       source is not copied into. */
+    u8* pixels = (u8*)calloc( (size_t)w * (size_t)h, 4 );
+    if ( !pixels )
+        return err( "dev_image_pad: out of memory (%dx%d)", w, h );
+
+    for ( int row = 0; row < src->h; ++row )
+        memcpy( pixels + ( (size_t)( row + margin ) * (size_t)w + (size_t)margin ) * 4,
+                src->pixels + (size_t)row * (size_t)src->w * 4,
+                (size_t)src->w * 4 );
+
+    out->pixels = pixels;
+    out->w      = w;
+    out->h      = h;
+    return true;
+}
+
 /*==============================================================================================
     dev_image_split_sheet -- grid-cut a sprite sheet into per-cell PNGs.
 ==============================================================================================*/

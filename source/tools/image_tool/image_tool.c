@@ -8,6 +8,7 @@
 
     Usage:
         image_tool split <sheet> <cols> <rows> [-out <dir>] [-key]
+        image_tool key   <image> [-out <path>] [-pad <px>]
         image_tool info  <image>...
 
     split -- cut <sheet> into cols * rows equal cells and write each cell as
@@ -16,6 +17,16 @@
              -key         derive alpha from luminance (alpha = max rgb), knocking an opaque
                           dark background out to transparency.  Suggested automatically when
                           the sheet carries no alpha of its own.
+
+    key   -- single-image version of -key: derive alpha from luminance (alpha = max rgb), so a
+             flat dark background becomes real transparency instead of opaque black.  The usual
+             fix for a generated icon that reads as "a solid square" once loaded -- the engine's
+             icon loader trusts a real alpha channel over colour, so a background that is merely
+             dark but still opaque gets read as solid ink.
+             -out <path>  output file (default: <image path minus extension>_keyed.png)
+             -pad <px>    add a fully transparent margin of <px> on every side afterward.  An
+                          SDF bake needs an outside to fall off into (icon_register_sdf); art
+                          keyed right up to its own edges bakes with a hard, unantialiased cut.
 
     info  -- print dimensions, grid hints, and whether the image carries transparency.
 
@@ -123,6 +134,92 @@ run_split( int argc, char** argv )
 }
 
 /*==============================================================================================
+    run_key
+==============================================================================================*/
+
+static int
+run_key( int argc, char** argv )
+{
+    if ( argc < 1 )
+    {
+        fprintf( stderr, "usage: image_tool key <image> [-out <path>] [-pad <px>]\n" );
+        return 1;
+    }
+
+    const char* in_path = argv[ 0 ];
+    const char* out_arg = NULL;
+    int         pad     = 0;
+    for ( int i = 1; i < argc; ++i )
+    {
+        if ( strcmp( argv[ i ], "-out" ) == 0 && i + 1 < argc )
+            out_arg = argv[ ++i ];
+        else if ( strcmp( argv[ i ], "-pad" ) == 0 && i + 1 < argc )
+            pad = atoi( argv[ ++i ] );
+        else
+        {
+            fprintf( stderr, "image_tool: unknown key option '%s'\n", argv[ i ] );
+            return 1;
+        }
+    }
+    if ( pad < 0 )
+    {
+        fprintf( stderr, "image_tool: -pad must not be negative, got '%d'\n", pad );
+        return 1;
+    }
+
+    dev_image_t img;
+    if ( !dev_image_load( in_path, &img ) )
+    {
+        fprintf( stderr, "image_tool: %s\n", dev_image_last_error() );
+        return 1;
+    }
+
+    if ( dev_image_has_alpha( &img ) )
+        printf( "note: '%s' already carries transparency -- keying will still run, but this "
+                "may not be the flat-background art the verb is for\n", in_path );
+
+    dev_image_key_luma( &img );
+
+    dev_image_t final_img = img;
+    dev_image_t padded    = { 0 };
+    bool        did_pad   = false;
+    if ( pad > 0 )
+    {
+        if ( !dev_image_pad( &img, pad, &padded ) )
+        {
+            fprintf( stderr, "image_tool: %s\n", dev_image_last_error() );
+            dev_image_free( &img );
+            return 1;
+        }
+        final_img = padded;
+        did_pad   = true;
+    }
+
+    char out_path[ 576 ];
+    if ( out_arg )
+        snprintf( out_path, sizeof( out_path ), "%s", out_arg );
+    else
+    {
+        char stem[ 512 ];
+        default_out_dir( in_path, stem, (int)sizeof( stem ) );   // strips the extension
+        snprintf( out_path, sizeof( out_path ), "%s_keyed.png", stem );
+    }
+
+    bool ok = dev_image_write_png( out_path, &final_img );
+    if ( did_pad ) dev_image_free( &padded );
+    dev_image_free( &img );
+    if ( !ok )
+    {
+        fprintf( stderr, "image_tool: %s\n", dev_image_last_error() );
+        return 1;
+    }
+
+    printf( "keyed '%s' -> %s (%dx%d%s)\n", in_path, out_path, final_img.w, final_img.h,
+            did_pad ? ", padded" : "" );
+    return 0;
+}
+
+/*==============================================================================================
     run_info
 ==============================================================================================*/
 
@@ -162,11 +259,15 @@ print_usage( void )
 {
     fprintf( stderr,
              "usage: image_tool split <sheet> <cols> <rows> [-out <dir>] [-key]\n"
+             "       image_tool key   <image> [-out <path>] [-pad <px>]\n"
              "       image_tool info  <image>...\n"
              "\n"
              "  split  cut a sprite sheet into cols x rows individual .png files\n"
              "         -out <dir>  output directory (default: sheet path minus extension)\n"
              "         -key        alpha = max(r,g,b); makes a dark background transparent\n"
+             "  key    alpha = max(r,g,b) on a single image; -pad adds a transparent margin\n"
+             "         -out <path> output file (default: <image>_keyed.png)\n"
+             "         -pad <px>   transparent margin added after keying (an SDF bake needs one)\n"
              "  info   print image dimensions and whether transparency is present\n" );
 }
 
@@ -175,6 +276,8 @@ main( int argc, char** argv )
 {
     if ( argc >= 2 && strcmp( argv[ 1 ], "split" ) == 0 )
         return run_split( argc - 2, argv + 2 );
+    if ( argc >= 2 && strcmp( argv[ 1 ], "key" ) == 0 )
+        return run_key( argc - 2, argv + 2 );
     if ( argc >= 2 && strcmp( argv[ 1 ], "info" ) == 0 )
         return run_info( argc - 2, argv + 2 );
 

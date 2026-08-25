@@ -62,6 +62,11 @@ bool        dev_image_has_alpha( const dev_image_t* img );
    untouched.  Same coverage convention as the gui icon loader. */
 void        dev_image_key_luma( dev_image_t* img );
 
+/* Centre src in a fully transparent canvas `margin` pixels larger on every side.  An SDF bake
+   needs an outside to fall off into (gui_sdf_bake.c) -- this is that margin, made rather than
+   hoped for.  The caller frees out with dev_image_free(). */
+bool        dev_image_pad( const dev_image_t* src, int margin, dev_image_t* out );
+
 /* dev_image_split_sheet flags */
 #define DEV_IMAGE_SPLIT_KEY_LUMA  ( 1u << 0 )   /* run dev_image_key_luma before cutting */
 

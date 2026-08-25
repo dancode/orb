@@ -234,7 +234,7 @@ icon_load_builtins( void )
 
     {
         char path[ 576 ];
-        fmt_snprintf( path, sizeof( path ), "%s/assets/icon_source/orb_padded.png", sys_root_dir() );
+        fmt_snprintf( path, sizeof( path ), "%s/assets/icon_source/orb_keyed.png", sys_root_dir() );
         if ( icon_load_file_sdf( "orb", path, 0 ) != GUI_ICON_NONE )
             ++loaded;
     }

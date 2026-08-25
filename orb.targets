@@ -1144,6 +1144,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
 
     add         render   			# render dll
     add         dev_font   			# dev-only font baker
+	add         dev_image   		# dev-only used by image tool
 
     add         sb_vulkan   		# exe
     add         sb_asset_image   	# asset image loader proof
