@@ -238,18 +238,23 @@ page_fills( void )
         
     r = cell( 0, GRID_COLS, "draw_rect (fast path)" );    
 
-    static float rect_width = CELL_W;
+    static float rect_w = CELL_W;
+    static float rect_h = CELL_H;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "rect width", &rect_width, 0, r.w, 1.0f );
-    if ( gui()->button( "reset##1" )) { rect_width = r.w; }
+    gui()->slider_float_step( "rect width", &rect_w, 0, r.w, 1.0f );
+    if ( gui()->button( "reset##1" )) { rect_w = r.w; }
 
-    gui()->draw_rect( r.x, r.y, rect_width, r.h, AMBER );
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "rect height", &rect_h, 0, r.h, 1.0f );
+    if ( gui()->button( "reset##2" )) { rect_h = r.h; }
+
+    gui()->draw_rect( r.x, r.y, rect_w, rect_h, AMBER );
 
     /* row 0 -- batched fast path: draw_rects() emit N of them in ONE command */
 
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX, NULL );
-    if ( gui()->button( "reset##2" )) { s_tweak_tile_count = TWEAK_TILE_MAX; }    
+    if ( gui()->button( "reset##3" )) { s_tweak_tile_count = TWEAK_TILE_MAX; }    
 
     r = row_wide( 0, 1, GRID_COLS - 1, "draw_rects() -- checker / 1 call (tweak panel sets count)" );
     {
@@ -276,21 +281,30 @@ page_fills( void )
 
     panel_row_begin( 1, "fills_row1" );
 
+    /* rect rounding */
     static float round_w = TWEAK_ROUND_WIDTH;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "rect fill", &round_w, 0, CELL_H * 0.5, 1.0f );
-    if ( gui()->button( "reset##2" )) { round_w =TWEAK_ROUND_WIDTH; }
+    if ( gui()->button( "reset##5" )) { round_w =TWEAK_ROUND_WIDTH; }
     
+    /* rect border */
     static float border = 2.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "border", &border, 1.0f, 16.0f, 1.0f );
-    if ( gui()->button( "reset##4" )) { border = 2.0f; }
+    if ( gui()->button( "reset##6" )) { border = 2.0f; }
 
+    /* rect border alignment */
     static float border_align = 0.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "border align", &border_align, 0, 1.0f, 0.25f );
-    if ( gui()->button( "reset##4" )) { border_align = 0.0f; }
+    if ( gui()->button( "reset##7" )) { border_align = 0.0f; }
     gui()->draw_set_border_align( border_align );
+
+    /* circle radius */
+    static float radius = 64.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "circle radius", &radius, 0, cell_radius( r ), 1.0f );
+    if ( gui()->button( "reset##8" )) { radius = cell_radius( r ); }
 
     r = cell( 6, GRID_COLS, "round rect" );
     gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, 0.0f, TEAL );
@@ -298,11 +312,6 @@ page_fills( void )
     r = cell( 7, GRID_COLS, "round rect (border)" );
     gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, border, TEAL );
     
-    static float radius = 64.0f;
-    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "circle radius", &radius, 0, cell_radius( r ), 1.0f );
-    if ( gui()->button( "reset##3" )) { radius = cell_radius( r ); }
-
     r = cell( 8, GRID_COLS, "round rect (circle)" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius, 0.0f, TEAL ); }
     
