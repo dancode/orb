@@ -347,7 +347,7 @@ gui_draw_texture_in( gui_rect_t r, u32 bindless_idx, u32 tint_abgr )
 /* The rotated form -- one RGBA quad about its centre.  Does NOT honour the ambient rounding
    (draw_texture_in's one extra): a rotated field and a rotated picture are both fine alone, but
    the rounded textured quad routes through the axis-aligned box tessellator; a caller wanting a
-   rounded rotated picture stacks gui_draw_box_xf behind it instead. */
+   rounded rotated picture stacks gui_draw_rect_xf behind it instead. */
 void
 gui_draw_texture_xf( gui_rect_t r, u32 bindless_idx, u32 tint_abgr, f32 rot )
 {

@@ -445,13 +445,13 @@ panel_hud( void )
         f32 y = cell.y + cell.h - 40.0f - t * ( cell.h - 90.0f );
         u32 a = (u32)( 255.0f * ( t > 0.75f ? ( 1.0f - t ) / 0.25f : 1.0f ) );
 
-        /* Crits ride a rotated PLATE -- the loot-label idiom draw_box_xf exists for: the rounded
+        /* Crits ride a rotated PLATE -- the loot-label idiom draw_rect_xf exists for: the rounded
            box turns with the run (same angle, same centre), so the pair reads as one object. */
         if ( k_pops[ i ].peak >= 2.0f )
         {
             gui_vec2_t ts = gui()->text_size( k_pops[ i ].text );
             f32 pw = ts.x * s + 20.0f, ph = ts.y * s + 10.0f;
-            gui()->draw_box_xf( ( gui_rect_t ){ x - pw * 0.5f, y - ph * 0.5f, pw, ph },
+            gui()->draw_rect_xf( ( gui_rect_t ){ x - pw * 0.5f, y - ph * 0.5f, pw, ph },
                                 8.0f, 0.0f, rot,
                                 GUI_COLOR( 0x38, 0x18, 0x00, (u8)( a * 3 / 4 ) ) );
         }
@@ -1540,7 +1540,7 @@ win_five( void )
     keep_awake();
 
     /* 1  rotated SDF boxes. */
-    gui()->separator_text( "draw_box_xf -- the rounded box, turned" );
+    gui()->separator_text( "draw_rect_xf -- the rounded box, turned" );
     {
         gui_rect_t cell = gui()->canvas( 120.0f );
         gui()->draw_rect( cell.x, cell.y, cell.w, cell.h, PANEL );
@@ -1551,15 +1551,15 @@ win_five( void )
 
         /* Three fixed tilts, a soft rotated glow, and the spinner -- same four quadrant quads. */
         for ( u32 i = 0; i < 3; ++i )
-            gui()->draw_box_xf( ( gui_rect_t ){ cell.x + 40.0f + (f32)i * 130.0f, cy - 24.0f,
+            gui()->draw_rect_xf( ( gui_rect_t ){ cell.x + 40.0f + (f32)i * 130.0f, cy - 24.0f,
                                                 96.0f, 48.0f },
                                 10.0f, 0.0f, gui_radians( -18.0f + 14.0f * (f32)i ),
                                 i == 1 ? TEAL : GUI_COLOR( 0x2A, 0x2A, 0x33, 0xFF ) );
-        gui()->draw_box_xf( ( gui_rect_t ){ cell.x + 430.0f, cy - 22.0f, 90.0f, 44.0f },
+        gui()->draw_rect_xf( ( gui_rect_t ){ cell.x + 430.0f, cy - 22.0f, 90.0f, 44.0f },
                             10.0f, 26.0f, gui_radians( 20.0f ), ( AMBER & 0x00FFFFFFu ) | 0x90000000u );
         /* The label TURNS WITH the plate -- same angle, same centre -- so the pair reads as one
            object (the HUD's crit plates are this same composition). */
-        gui()->draw_box_xf( ( gui_rect_t ){ cell.x + 560.0f, cy - 20.0f, 110.0f, 40.0f },
+        gui()->draw_rect_xf( ( gui_rect_t ){ cell.x + 560.0f, cy - 20.0f, 110.0f, 40.0f },
                             12.0f, 0.0f, rot, VIOLET );
         gui()->font_use( s_font_sdf );
         text_xf_centered( cell.x + 615.0f, cy, INK, "spin", 0.9f, rot );
@@ -2935,7 +2935,7 @@ static sdf_demo_t s_demos[] = {
     { "Depth & Motion",  "Depth & Motion",  "shadow elevation / glow / pulse / swell / ripple / toggle",  win_depth,     1280.0f, 1024.0f, false },
     { "Radial Menu",     "Radial Menu",     "arc wedges as hit-tested interactive UI",                    win_radial,    1280.0f, 1024.0f, false },
     { "Dials",           "Dials",           "draggable knob / clock / compass with rotated labels",       win_dials,     1280.0f, 1024.0f, false },
-    { "New Verbs",       "New Verbs",       "box_xf / icon_xf / corner shadow / dashed + gradient arcs",  win_five,      1280.0f, 1024.0f, false },
+    { "New Verbs",       "New Verbs",       "rect_xf / icon_xf / corner shadow / dashed + gradient arcs",  win_five,      1280.0f, 1024.0f, false },
     { "Backdrops",       "Backdrops",       "checker + line grid as one-quad fragment patterns",          win_backdrops, 1280.0f, 1024.0f, false },
     { "Clip FX",         "Clip FX",         "push_clip_ex: per-corner rounding, per-edge feather",        win_clip_fx,   1280.0f, 1024.0f, false },
     { "Curves",          "Curves",          "GUI_FX_BEZIER: exact reference vs the 2-quad approximation", win_curves,    1280.0f, 1024.0f, false },

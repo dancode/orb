@@ -723,7 +723,7 @@ typedef struct gui_api_s
     void ( *image_texture   )( u32 bindless_idx, f32 w, f32 h, u32 tint_abgr );
     void ( *draw_texture_in )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr );
     /* The rotated form (radians, about the rect centre).  Ignores the ambient rounding --
-       a rounded rotated picture stacks draw_box_xf behind a plain one instead. */
+       a rounded rotated picture stacks draw_rect_xf behind a plain one instead. */
     void ( *draw_texture_xf )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr, f32 rot );
 
     /* Sprites -- authored art (a PNG you drew, not a generated icon), packed into a sprite atlas
@@ -904,7 +904,7 @@ typedef struct gui_api_s
     /* The SDF box under a rotation about its centre (radians, screen space) -- rotated cards,
        tilted badges, the plate behind rotated text.  feather 0 = crisp 1 px AA; wider = a rotated
        soft shadow.  Same single quad as the upright box. */
-    void ( *draw_box_xf            )( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col );
+    void ( *draw_rect_xf           )( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col );
 
     /* A rounded rect minus a second rounded rect -- true subtraction, which no number of extra
        quads can paint: blending only adds ink.  The notched avatar behind a status dot, the

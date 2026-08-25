@@ -442,9 +442,90 @@ page_fills( void )
 }
 
 /*==============================================================================================
-    Page 2 -- symbols: the widget glyph marks (menu ticks, tree arrows, close crosses, grips).
+    Page 2 -- shapes: the box family, radial shapes and circular sectors -- everything the shape
+    catalog resolves as a single SDF quad.
 ==============================================================================================*/
 
+static void
+page_shapes( void )
+{
+    gui_rect_t r; gui_vec2_t c; f32 rad;
+
+    //------------------------------------------------------------------------------------------
+    // row 0 -- rotation and boolean subtraction: the two rect-family moves that aren't a plain
+    // round_rect and so weren't already on the fills page.
+    //------------------------------------------------------------------------------------------
+
+    panel_row_begin( 0, "shapes_row0" );
+
+    static float shape_rot_deg = 18.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "angle", &shape_rot_deg, -180.0f, 180.0f, 1.0f );
+    if ( gui()->button( "reset##sh1" )) { shape_rot_deg = 18.0f; }
+
+    static float shape_cut_scale = 0.6f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "cut", &shape_cut_scale, 0.1f, 1.0f, 0.05f );
+    if ( gui()->button( "reset##sh2" )) { shape_cut_scale = 0.6f; }
+
+    /* rect rotated */
+    r = cell( 0, GRID_COLS, "rect_xf (rotated)" );
+    gui()->draw_rect_xf( r, 10.0f, 0.0f, gui_radians( shape_rot_deg ), AMBER );
+
+    /* rect cut */
+    r = cell( 1, GRID_COLS, "rect_cut (subtract)" );
+    {
+        gui_rect_t cut = { r.x + r.w * 0.5f, r.y - 10.0f, r.w * shape_cut_scale, r.h * shape_cut_scale };
+        gui()->draw_rect_cut( r, 10.0f, cut, 6.0f, 1.0f, TEAL );
+    }
+
+    panel_row_end();
+
+    //------------------------------------------------------------------------------------------
+    // rows 1 - 2 -- circular shapes and the ngon family, unchanged.
+    //------------------------------------------------------------------------------------------
+
+    r = cell( 6, GRID_COLS, "circle (stroked)" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_circle( c.x, c.y, rad, 3.0f, AMBER );
+
+    r = cell( 7, GRID_COLS, "ngon (hex)" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_ngon( c.x, c.y, rad, 6, 0.0f, 0.0f, TEAL );
+
+    r = cell( 8, GRID_COLS, "ngon (oct, stroked)" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_ngon( c.x, c.y, rad, 8, 0.0f, 3.0f, PLUM );
+
+    r = cell( 9, GRID_COLS, "star" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_star( c.x, c.y, rad, 5, 0.0f, 0.0f, 0.0f, AMBER );
+
+    r = cell( 10, GRID_COLS, "arc" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_arc( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 270.0f ), 4.0f, TEAL );
+
+    r = cell( 11, GRID_COLS, "arc_dashed" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 300.0f ), 4.0f, 6.0f, 4.0f, PLUM );
+
+    r = cell( 12, GRID_COLS, "arc_gradient" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( -90.0f ), gui_radians( 180.0f ), 5.0f, AMBER, TEAL );
+
+    r = cell( 13, GRID_COLS, "pie" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_pie( c.x, c.y, rad, gui_radians( -40.0f ), gui_radians( 120.0f ), AMBER );
+
+    r = cell( 14, GRID_COLS, "progress_arc" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_progress_arc( c.x, c.y, rad, 0.65f, 4.0f, TEAL );
+}
+
+
+/*==============================================================================================
+    Page 3 -- symbols: the widget glyph marks (menu ticks, tree arrows, close crosses, grips).
+==============================================================================================*/
 static void
 page_symbols( void )
 {
@@ -500,75 +581,6 @@ page_symbols( void )
 
     r = cell( 12, GRID_COLS, "grip" );
     gui()->draw_grip( r, INK_DIM );
-}
-
-/*==============================================================================================
-    Page 3 -- shapes: the box family, radial shapes and circular sectors -- everything the shape
-    catalog resolves as a single SDF quad.
-==============================================================================================*/
-
-static void
-page_shapes( void )
-{
-    gui_rect_t r; gui_vec2_t c; f32 rad;
-
-    r = cell( 0, GRID_COLS, "round_rect" );
-    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 0.0f, TEAL );
-
-    r = cell( 1, GRID_COLS, "round_rect (mixed)" );
-    gui()->draw_round_rect( r, 4.0f, 24.0f, 4.0f, 24.0f, 0.0f, PLUM );
-
-    r = cell( 2, GRID_COLS, "round_rect (stroked)" );
-    gui()->draw_round_rect( r, 14.0f, 14.0f, 14.0f, 14.0f, 2.0f, TEAL );
-
-    r = cell( 3, GRID_COLS, "box_xf (rotated)" );
-    gui()->draw_box_xf( r, 10.0f, 0.0f, gui_radians( 18.0f ), AMBER );
-
-    r = cell( 4, GRID_COLS, "rect_cut (subtract)" );
-    {
-        gui_rect_t cut = { r.x + r.w * 0.5f, r.y - 10.0f, r.w * 0.6f, r.h * 0.6f };
-        gui()->draw_rect_cut( r, 10.0f, cut, 6.0f, 1.0f, TEAL );
-    }
-
-    r = cell( 5, GRID_COLS, "circle" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_circle( c.x, c.y, rad, 0.0f, PLUM );
-
-    r = cell( 6, GRID_COLS, "circle (stroked)" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_circle( c.x, c.y, rad, 3.0f, AMBER );
-
-    r = cell( 7, GRID_COLS, "ngon (hex)" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 6, 0.0f, 0.0f, TEAL );
-
-    r = cell( 8, GRID_COLS, "ngon (oct, stroked)" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 8, 0.0f, 3.0f, PLUM );
-
-    r = cell( 9, GRID_COLS, "star" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_star( c.x, c.y, rad, 5, 0.0f, 0.0f, 0.0f, AMBER );
-
-    r = cell( 10, GRID_COLS, "arc" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 270.0f ), 4.0f, TEAL );
-
-    r = cell( 11, GRID_COLS, "arc_dashed" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 300.0f ), 4.0f, 6.0f, 4.0f, PLUM );
-
-    r = cell( 12, GRID_COLS, "arc_gradient" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( -90.0f ), gui_radians( 180.0f ), 5.0f, AMBER, TEAL );
-
-    r = cell( 13, GRID_COLS, "pie" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_pie( c.x, c.y, rad, gui_radians( -40.0f ), gui_radians( 120.0f ), AMBER );
-
-    r = cell( 14, GRID_COLS, "progress_arc" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_progress_arc( c.x, c.y, rad, 0.65f, 4.0f, TEAL );
 }
 
 /*==============================================================================================

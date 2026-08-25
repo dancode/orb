@@ -231,7 +231,7 @@ void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col
 void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
 void gui_draw_arc_dashed( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, f32 dash, f32 gap, u32 col );
 void gui_draw_arc_gradient( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col_a, u32 col_b );
-void gui_draw_box_xf( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col );
+void gui_draw_rect_xf( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col );
 void gui_draw_round_rect_shadow( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 feather, u32 col );
 void gui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
 void gui_draw_bezier_cubic( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );

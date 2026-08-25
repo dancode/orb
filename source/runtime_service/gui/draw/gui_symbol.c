@@ -1330,7 +1330,7 @@ void gui_draw_arc_gradient( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness
 
 /* The rotated SDF box, and the per-corner soft shadow -- the two rect-family verbs the effect
    band supported all along and nothing exposed. */
-void gui_draw_box_xf( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col )
+void gui_draw_rect_xf( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col )
 {
     draw_push_box_xf( box.x, box.y, box.w, box.h, rounding, feather, rot, col );
 }
