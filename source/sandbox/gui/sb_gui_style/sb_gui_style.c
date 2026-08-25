@@ -83,12 +83,12 @@ st_gui_font_bake( const char* family, u32 size_px, char* out, int n, void* user 
 
 static st_window_t s_windows[] =
 {
-    /* menu item       window title     description                                            fn                 open */
-    { "Style Editor",  "Style Editor",  "seeds + ramp, the colour grid, every metric var",     st_editor_window,  true  },
-    { "Look Gallery",  "Look Gallery",  "the widget vocabulary under the live style",          st_gallery_window, true  },
-    { "Window Lab",    "Window Lab",    "window flag combinations against the live style",     st_window_lab_window, false },
-    { "Style Export",  "Style Export",  "emit the live style as a theme entry or setup code",  st_export_window,  false },
-    { "Font Tool",     "Font Tool",     "find / bake / preview / export the face",             st_font_window,    false },
+    /* menu item       window title     description                                            fn                       open */
+    { "Style Editor",  "Style Editor",  "seeds + ramp, the colour grid, every metric var",     st_editor_window,        true  },
+    { "Look Gallery",  "Look Gallery",  "the widget vocabulary under the live style",          st_gallery_window,       true  },
+    { "Window Lab",    "Window Lab",    "window flag combinations against the live style",     st_window_lab_window,    false },
+    { "Style Export",  "Style Export",  "emit the live style as a theme entry or setup code",  st_export_window,        false },
+    { "Font Tool",     "Font Tool",     "find / bake / preview / export the face",             st_font_window,          true },
 };
 
 #define ST_WINDOW_COUNT ( (i32)( sizeof( s_windows ) / sizeof( s_windows[ 0 ] ) ) )
@@ -220,7 +220,7 @@ main( int argc, char** argv )
     /* gui owns the main window + render context (boot path); see sb_gui for the full rationale. */
     i32 vp0 = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui_style",
-        .w         = 1280, .h = 800,
+        .w         = 1920, .h = 1024,
         .os_chrome = true,
         .font      = GUI_FONT_CASCADIA_MONO,
         .clock     = sys_tick_seconds,

@@ -330,30 +330,30 @@ st_font_window( void )
         gui()->window_end();
         return;
     }
-
+    
     gui()->stack();
-
+    
     /* --- Source --------------------------------------------------------------- */
     gui()->separator_text( "Source" );
-
+    
     gui()->text( "Font name or file" );
     gui()->input_text( "##request", s_ft.request, sizeof( s_ft.request ) );
-
+    
     gui()->checkbox( "Include internal fonts", &s_ft.allow_local );
     gui()->same_line( -1 );
     gui()->help_marker( "On:  list assets/font_source/ (the project's shipped fonts) in the picker.\n"
                         "Off: skip them -- handy for browsing/testing the Windows registry alone." );
-
+    
     gui()->checkbox( "Include Windows fonts", &s_ft.allow_windows );
     gui()->same_line( -1 );
     gui()->help_marker( "Off: list/search assets/font_source/ only.\n"
                         "On:  also list installed fonts by friendly name from the OS font registry\n"
                         "     (e.g. \"Cascadia Mono\" -> C:\\Windows\\Fonts\\CascadiaMono.ttf)." );
-
+    
     /* Either checkbox governs the picker's scope -- rebuild the list when either flips. */
     if ( s_ft.list_has_windows != s_ft.allow_windows || s_ft.list_has_local != s_ft.allow_local )
         ft_scan();
-
+    
     /* Local picker: choosing a file copies its name into the request field above. */
     const char* combo_label = ( s_ft.count > 0 ) ? s_ft.names[ s_ft.sel ] : "(no local fonts)";
     
@@ -367,14 +367,14 @@ st_font_window( void )
             bool project = ( i < s_ft.local_count );
             if ( project )
                 gui()->push_style_color( GUI_ROLE_TEXT_PRIMARY, GUI_PHASE_ALL, GUI_COLOR( 0x7C, 0xD9, 0x92, 0xFF ) );
-
+    
             bool sel = ( i == s_ft.sel );
             if ( gui()->selectable( s_ft.names[ i ], &sel ) )
             {
                 s_ft.sel = i;
                 snprintf( s_ft.request, sizeof( s_ft.request ), "%s", s_ft.names[ i ] );
             }
-
+    
             if ( project )
                 gui()->pop_style_color( 1 );
         }
@@ -382,16 +382,16 @@ st_font_window( void )
         gui()->combo_end();
     }
     
-
+    
     // gui()->same_line( -1 );
     if ( gui()->small_button( "Refresh" ) )
         ft_scan();
-
+    
     gui()->slider_int( "Size (px)", &s_ft.size_px, 6, 72, NULL );
-
+    
     /* --- Actions -------------------------------------------------------------- */
     gui()->separator_text( "Bake" );
-
+    
     /* Two half-width buttons at normal height.  next_item_fit(1.0) makes each button fill its
        0.5 cell (a plain button would shrink to its label); button_fill is NOT used here -- it
        sizes its HEIGHT to the view bottom, which feeds back into the scroll extent when content
@@ -401,12 +401,12 @@ st_font_window( void )
     gui()->next_item_fit( 1.0f );
     if ( gui()->button( "Bake & Preview (stb)" ) )
         ft_bake_preview();
-
+    
     // if ( gui()->button_fill( "Export final (font_tool)" ) )
     gui()->next_item_fit( 1.0f );
     if ( gui()->button( "Export final (font_tool)" ) )
         ft_export_final();
-
+    
     gui()->stack();
     if ( s_ft.bake_status[ 0 ] )
     {
@@ -420,7 +420,7 @@ st_font_window( void )
     }
     if ( s_ft.export_path[ 0 ] && gui()->button( "Copy Path" ) )
         app()->clipboard_set( s_ft.export_path );
-
+    
     /* --- Preview -------------------------------------------------------------- */
     if ( s_ft.preview_ready )
     {
@@ -428,7 +428,7 @@ st_font_window( void )
         gui()->input_text_with_hint( "##sample", "Custom preview text...",
                                      s_ft.sample_text, sizeof( s_ft.sample_text ) );
         gui()->new_line( -1.0f );
-
+    
         /* NOTE -- the renderer resolves glyphs from ONE global active font at tessellation time,
            so push_font here recolors the WHOLE frame's text, not just these lines.  For a font
            bench that is the point (you see the face applied everywhere); a truly isolated preview
@@ -441,13 +441,13 @@ st_font_window( void )
         gui()->text( "abcdefghijklmnopqrstuvwxyz" );
         gui()->text( "0123456789  !@#$%^&*()-+=[]{};:" );
         gui()->pop_font();
-
+    
         gui()->separator_text( "Apply" );
         gui()->textf( "Live: %s  %d px", s_ft.preview_name, s_ft.preview_size );
         if ( gui()->button( "Use as UI font" ) )
             gui()->font_use( s_ft.preview_id );
     }
-
+    
     /* --- Atlas ------------------------------------------------------------------ */
     /* Independent of the bake/preview flow above -- shows the CURRENTLY ACTIVE font's atlas
        (whatever the app booted with, or last font_use'd via "Use as UI font"), so the controls are
@@ -456,12 +456,13 @@ st_font_window( void )
        color): only the red channel carries data, so glyph ink renders red-on-black rather than
        white-on-black.  Fine for judging packing (ink vs gap is still obvious); a true grayscale
        view would need a dedicated coverage-sampling draw path. */
+
     gui()->separator_text( "Atlas" );
     if ( gui()->button( "Show Atlas" ) )
         s_ft.show_atlas = !s_ft.show_atlas;
     gui()->same_line( -1 );
     gui()->checkbox( "2x", &s_ft.atlas_2x );
-
+    
     if ( s_ft.show_atlas )
     {
         u32 active_id = gui()->font_active_id();
@@ -469,10 +470,10 @@ st_font_window( void )
         if ( atlas_idx )
         {
             gui_vec2_t asz = gui()->font_atlas_size( active_id );
-
+    
             gui()->textf( "Active font #%u -- %.0f x %.0f px  (bindless #%u)",
                           active_id, asz.x, asz.y, atlas_idx );
-
+    
             /* Native resolution (or 2x via the checkbox) -- no fit-to-window scaling, so packing/
                coverage reads exactly as baked. */
             f32 scale = s_ft.atlas_2x ? 2.0f : 1.0f;

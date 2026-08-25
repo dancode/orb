@@ -321,6 +321,12 @@ st_editor_window( void )
     gui()->slider_int( "Steps", &sample_int, 0, 10, NULL );
     gui()->progress_bar( sample_val, NULL );
 
+    /* field_set is a global ambient authority, not reset per window (gui_layout.c) -- turn the
+       split back off before returning so a docked/inactive sibling that skips its own body (and
+       so never reaches ITS reset call, e.g. Look Gallery's) cannot leave this window's split
+       riding into whatever the host draws next. */
+    gui()->form( GUI_LABEL_RIGHT, 0.0f );
+
     /* Commit once: writing through style_get marks the theme anonymous (an intentional edit),
        then style_apply rescales the active metrics from the new base. */
     if ( changed )
