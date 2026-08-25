@@ -331,9 +331,13 @@ page_fills( void )
     gui()->slider_float_step( "round", &grad_round, 0, CELL_H * 0.5f, 1.0f );
     if ( gui()->button( "reset##9" )) { grad_round = 14.0f; }
 
+    /* draw_round_rect_gradient's mid overloads 0 as its "unset, use linear" sentinel and clamps
+       out anything >= 0.999 for the same log()-domain reason -- 0.02..0.98 keeps the slider's
+       whole span inside the range that actually bends the ramp, instead of spending both ends on
+       a dead zone that reads identically to 0.5. */
     static float grad_mix = 0.5f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "mix", &grad_mix, 0.0f, 1.0f, 0.05f );
+    gui()->slider_float_step( "mix", &grad_mix, 0.02f, 0.98f, 0.02f );
     if ( gui()->button( "reset##10" )) { grad_mix = 0.5f; }
 
     static float grad_angle_deg = 45.0f;
@@ -384,9 +388,9 @@ page_fills( void )
     r = cell( 18, GRID_COLS, "frame (bg + border)" );
 
     gui()->draw_set_border_align( frame_border_align );
-    gui()->draw_set_rounding( frame_round );
+    // gui()->draw_set_rounding( frame_round );
     gui()->draw_frame( r, INK_FAINT, TEAL, frame_border );
-    gui()->draw_set_rounding( 0.0f );
+    // gui()->draw_set_rounding( 0.0f );
     gui()->draw_set_border_align( 0.0f );
 
     panel_row_end();
