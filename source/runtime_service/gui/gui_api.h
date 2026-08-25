@@ -635,6 +635,7 @@ typedef struct gui_api_s
     gui_vec2_t    ( *icon_size     )( gui_icon_id_t id );
     void          ( *image         )( gui_icon_id_t id, f32 w, f32 h, u32 col );
     void          ( *draw_icon_in  )( gui_rect_t r, gui_icon_id_t id, u32 col );
+
     /* draw_icon_in turned about the fitted box's centre (radians, screen space) -- compass
        needles, minimap markers, spinner glyphs.  An SDF icon turns clean at any angle (its edge
        resolves in the fragment); a coverage icon shows its texels, the same split the two font

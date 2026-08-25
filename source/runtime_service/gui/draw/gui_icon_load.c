@@ -192,6 +192,10 @@ icon_load_file_sdf( const char* name, const char* path, u32 out_max )
     at draw time with gui()->find_icon( "<name>" ).  Paths are root-relative, resolved against
     sys_root_dir() like the built-in fonts, so hosts work from any working directory.  A host or the
     editor can register its OWN icons on top of these at runtime via gui()->load_icon.
+
+    "orb" -- the engine's own mark and the fallback a demo can reach for when its own icon fails
+    to load -- is authored art (assets/icon_source/orb.png) rather than one of these, loaded via
+    icon_load_file_sdf below so the badge stays resolution-independent at any draw size.
 ==============================================================================================*/
 
 typedef struct
@@ -215,7 +219,9 @@ static const gui_icon_decl_t s_builtin_icons[] =
 void
 icon_load_builtins( void )
 {
+    u32 total  = (u32)ARRAY_COUNT( s_builtin_icons ) + 1;   // + "orb"
     u32 loaded = 0;
+
     for ( u32 i = 0; i < ARRAY_COUNT( s_builtin_icons ); ++i )
     {
         char path[ 576 ];
@@ -226,9 +232,15 @@ icon_load_builtins( void )
             ++loaded;
     }
 
+    {
+        char path[ 576 ];
+        fmt_snprintf( path, sizeof( path ), "%s/assets/icon_source/orb_padded.png", sys_root_dir() );
+        if ( icon_load_file_sdf( "orb", path, 0 ) != GUI_ICON_NONE )
+            ++loaded;
+    }
+
     if ( loaded > 0 )
-        gui_log( GUI_LOG_INFO, "loaded %u/%u built-in icons",
-                 loaded, (u32)ARRAY_COUNT( s_builtin_icons ) );
+        gui_log( GUI_LOG_INFO, "loaded %u/%u built-in icons", loaded, total );
 }
 
 // clang-format on

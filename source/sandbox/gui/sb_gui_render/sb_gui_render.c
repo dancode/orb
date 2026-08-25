@@ -336,10 +336,10 @@ page_fills( void )
     r = cell( 7, GRID_COLS, "round rect (border)" );
     gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, border, TEAL );
     
-    r = cell( 8, GRID_COLS, "round rect (circle)" );
+    r = cell( 8, GRID_COLS, "circle rect" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius, 0.0f, TEAL ); }
     
-    r = cell( 9, GRID_COLS, "round rect (border)" );
+    r = cell( 9, GRID_COLS, "circle rect (border)" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius, border, TEAL ); }
 
     gui()->draw_set_border_align( 0.0f );
@@ -564,49 +564,64 @@ page_shapes( void )
 
     panel_row_begin( 1, "shapes_row1" );
 
-    static float shape_rot_deg = 18.0f;
+    static float shape_rot_deg = 0.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "angle", &shape_rot_deg, -180.0f, 180.0f, 1.0f );
-    if ( gui()->button( "reset##sh2" )) { shape_rot_deg = 18.0f; }
+    if ( gui()->button( "reset##sh2" )) { shape_rot_deg = 0.0f; }
 
     r = cell( 6, GRID_COLS, "rect_xf (rotated)" );
     gui()->draw_rect_xf( r, 10.0f, 0.0f, gui_radians( shape_rot_deg ), AMBER );
 
+    gui_icon_id_t icon = gui()->find_icon( "orb" );
+
+    r = cell( 7, GRID_COLS, "rect_xf (rotated)" );
+    gui()->draw_icon_xf( r, icon, AMBER, gui_radians( shape_rot_deg ));
+
     panel_row_end();
 
-    r = cell( 7, GRID_COLS, "circle (stroked)" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_circle( c.x, c.y, rad, 3.0f, AMBER );
+    //------------------------------------------------------------------------------------------
 
-    r = cell( 8, GRID_COLS, "ngon (hex)" );
+    panel_row_begin( 2, "shapes_row2" );
+
+
+    panel_row_end();
+
+    //------------------------------------------------------------------------------------------
+
+    /* ngon - triangle */    
+    r = cell( 12, GRID_COLS, "ngon (tri)" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_ngon( c.x, c.y, rad, 3, 0.0f, 0.0f, TEAL );
+
+    r = cell( 13, GRID_COLS, "ngon (hex)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ngon( c.x, c.y, rad, 6, 0.0f, 0.0f, TEAL );
 
-    r = cell( 9, GRID_COLS, "ngon (oct, stroked)" );
+    r = cell( 14, GRID_COLS, "ngon (oct, stroked)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ngon( c.x, c.y, rad, 8, 0.0f, 3.0f, PLUM );
 
-    r = cell( 10, GRID_COLS, "star" );
+    r = cell( 18, GRID_COLS, "star" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_star( c.x, c.y, rad, 5, 0.0f, 0.0f, 0.0f, AMBER );
 
-    r = cell( 11, GRID_COLS, "arc" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 270.0f ), 4.0f, TEAL );
-
-    r = cell( 12, GRID_COLS, "arc_dashed" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 300.0f ), 4.0f, 6.0f, 4.0f, PLUM );
-
-    r = cell( 13, GRID_COLS, "arc_gradient" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( -90.0f ), gui_radians( 180.0f ), 5.0f, AMBER, TEAL );
-
-    r = cell( 14, GRID_COLS, "pie" );
+    r = cell( 19, GRID_COLS, "pie" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_pie( c.x, c.y, rad, gui_radians( -40.0f ), gui_radians( 120.0f ), AMBER );
 
-    r = cell( 15, GRID_COLS, "progress_arc" );
+    r = cell( 24, GRID_COLS, "arc" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_arc( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 270.0f ), 4.0f, TEAL );
+
+    r = cell( 25, GRID_COLS, "arc_dashed" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 300.0f ), 4.0f, 6.0f, 4.0f, PLUM );
+
+    r = cell( 26, GRID_COLS, "arc_gradient" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( -90.0f ), gui_radians( 180.0f ), 5.0f, AMBER, TEAL );
+
+    r = cell( 27, GRID_COLS, "progress_arc" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_progress_arc( c.x, c.y, rad, 0.65f, 4.0f, TEAL );
 }
@@ -958,10 +973,16 @@ page_icons( void )
     r = cell( 8, GRID_COLS, "draw_sprite_in" );
     if ( s_sprite_swatch != GUI_SPRITE_NONE ) gui()->draw_sprite_in( r, s_sprite_swatch, 0u );
 
-    r = cell( 9, GRID_COLS, "draw_shape_in (baked)" );
+    r = cell( 9, GRID_COLS, "orb (engine badge)" );
+    {
+        gui_icon_id_t id = gui()->find_icon( "orb" );
+        if ( id != GUI_ICON_NONE ) gui()->draw_icon_in( r, id, AMBER );
+    }
+
+    r = cell( 10, GRID_COLS, "draw_shape_in (baked)" );
     if ( s_shape_diamond != GUI_SHAPE_NONE ) gui()->draw_shape_in( r, s_shape_diamond, TEAL );
 
-    r = cell( 10, GRID_COLS, "shape + ambient fx" );
+    r = cell( 11, GRID_COLS, "shape + ambient fx" );
     if ( s_shape_diamond != GUI_SHAPE_NONE )
     {
         gui()->draw_set_shape( s_shape_diamond );
@@ -1048,6 +1069,7 @@ page_fx_combo( void )
 
     /* 0..4 into GUI_FX_BOX_FILL/SKIRT("cast")/INSET/GLOW/RING -- the live block's caption below
        names the one currently picked. */
+
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_int( "variant", &fx_variant, 0, 4, NULL );
     if ( gui()->button( "reset##fx0" )) { fx_variant = GUI_FX_BOX_GLOW; }
@@ -1061,6 +1083,7 @@ page_fx_combo( void )
        shared rate/phase pair drives whichever of the two the depth/amount sliders below make
        visible (0 on either is silently "off": a depth-0 pulse and a zero-amount swell already
        read identically to the op not being set). */
+
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "rate", &fx_rate, 0.0f, 3.0f, 0.1f );
     if ( gui()->button( "reset##fx2" )) { fx_rate = 1.0f; }
