@@ -9,6 +9,7 @@
     Usage:
         image_tool split <sheet> <cols> <rows> [-out <dir>] [-key]
         image_tool key   <image> [-out <path>] [-pad <px>]
+        image_tool svg   <input.svg | dir> [-size <px>] [-margin <px>] [-out <path | dir>]
         image_tool info  <image>...
 
     split -- cut <sheet> into cols * rows equal cells and write each cell as
@@ -28,11 +29,22 @@
                           SDF bake needs an outside to fall off into (icon_register_sdf); art
                           keyed right up to its own edges bakes with a hard, unantialiased cut.
 
+    svg   -- rasterize an SVG (or every .svg in a directory) to transparent PNG.  Vector art
+             needs no keying: a path is either filled or it is not, so the output carries
+             clean alpha coverage directly.  Small sizes feed the gui coverage icon path;
+             a large size with a margin (e.g. -size 1024 -margin 64) produces a valid SDF
+             bake source (icon_register_sdf needs an outside to fall off into).
+             -size <px>    longest edge of the output, margins included (default: 32)
+             -margin <px>  transparent border on every side, carved out of -size (default: 0)
+             -out <path>   output file for a single input (default: <input minus extension>.png)
+                           or output directory for a directory input (default: the input dir)
+
     info  -- print dimensions, grid hints, and whether the image carries transparency.
 
-    Input is any stb_image format (PNG, JPG, BMP, TGA, GIF, ...); output is always PNG.
+    Input is any stb_image format (PNG, JPG, BMP, TGA, GIF, ...) or SVG; output is always PNG.
 
-    Link deps: dev_image (pixel work), sys (directory creation inside dev_image)
+    Link deps: dev_image (pixel work), dev_vector (svg parse + rasterize),
+               sys (directory creation, svg globbing)
 
 ==============================================================================================*/
 // clang-format off
@@ -42,7 +54,9 @@
 #include <string.h>
 
 #include "orb.h"
+#include "engine/sys/sys_host.h"
 #include "developer/dev_image/dev_image.h"
+#include "developer/dev_vector/dev_vector.h"
 
 /*==============================================================================================
     default_out_dir -- <sheet path minus extension>; "art/sheet.png" -> "art/sheet".
@@ -220,6 +234,147 @@ run_key( int argc, char** argv )
 }
 
 /*==============================================================================================
+    run_svg
+==============================================================================================*/
+
+/* Rasterize one SVG file to a transparent PNG.  Prints its own errors; returns false on any
+   failure so batch callers can count and continue. */
+static bool
+svg_bake_one( const char* in_path, const char* out_path, int size, int margin )
+{
+    dev_vector_svg_t svg;
+    if ( !dev_vector_svg_load( in_path, &svg ) )
+    {
+        fprintf( stderr, "image_tool: %s\n", dev_vector_last_error() );
+        return false;
+    }
+
+    dev_vector_raster_t raster;
+    bool ok = dev_vector_svg_raster( &svg, size, margin, &raster );
+    dev_vector_svg_free( &svg );
+    if ( !ok )
+    {
+        fprintf( stderr, "image_tool: %s\n", dev_vector_last_error() );
+        return false;
+    }
+
+    /* dev_vector_raster_t and dev_image_t share the RGBA8 pixel contract, so the PNG writer
+       takes the raster's fields directly. */
+    dev_image_t img = { raster.pixels, raster.w, raster.h };
+    int         w   = raster.w;
+    int         h   = raster.h;
+    ok = dev_image_write_png( out_path, &img );
+    dev_vector_raster_free( &raster );
+    if ( !ok )
+    {
+        fprintf( stderr, "image_tool: %s\n", dev_image_last_error() );
+        return false;
+    }
+
+    printf( "svg '%s' -> %s (%dx%d)\n", in_path, out_path, w, h );
+    return true;
+}
+
+/* Batch state threaded through the sys_file_glob callback. */
+typedef struct
+{
+    const char* out_dir;
+    int         size, margin;
+    int         failed;
+
+} svg_batch_t;
+
+static bool
+svg_glob_cb( const char* filename, const char* full_path, void* userdata )
+{
+    svg_batch_t* batch = (svg_batch_t*)userdata;
+
+    char stem[ 512 ];
+    default_out_dir( filename, stem, (int)sizeof( stem ) );   // strips the extension
+
+    char out_path[ 576 ];
+    snprintf( out_path, sizeof( out_path ), "%s/%s.png", batch->out_dir, stem );
+
+    if ( !svg_bake_one( full_path, out_path, batch->size, batch->margin ) )
+        ++batch->failed;
+    return true;   // keep iterating; failures are counted, not fatal
+}
+
+static int
+run_svg( int argc, char** argv )
+{
+    if ( argc < 1 )
+    {
+        fprintf( stderr, "usage: image_tool svg <input.svg | dir> [-size <px>] [-margin <px>]"
+                         " [-out <path | dir>]\n" );
+        return 1;
+    }
+
+    const char* in_path = argv[ 0 ];
+    const char* out_arg = NULL;
+    int         size    = 32;
+    int         margin  = 0;
+    for ( int i = 1; i < argc; ++i )
+    {
+        if ( strcmp( argv[ i ], "-out" ) == 0 && i + 1 < argc )
+            out_arg = argv[ ++i ];
+        else if ( strcmp( argv[ i ], "-size" ) == 0 && i + 1 < argc )
+            size = atoi( argv[ ++i ] );
+        else if ( strcmp( argv[ i ], "-margin" ) == 0 && i + 1 < argc )
+            margin = atoi( argv[ ++i ] );
+        else
+        {
+            fprintf( stderr, "image_tool: unknown svg option '%s'\n", argv[ i ] );
+            return 1;
+        }
+    }
+    if ( size <= 0 || margin < 0 || size - margin * 2 <= 0 )
+    {
+        fprintf( stderr, "image_tool: -size %d with -margin %d leaves no room for the art\n",
+                 size, margin );
+        return 1;
+    }
+
+    /* A single existing file rasterizes to one PNG; anything else is treated as a directory
+       and every *.svg inside it is rasterized. */
+    if ( sys_file_exists( in_path ) )
+    {
+        char out_path[ 576 ];
+        if ( out_arg )
+            snprintf( out_path, sizeof( out_path ), "%s", out_arg );
+        else
+        {
+            char stem[ 512 ];
+            default_out_dir( in_path, stem, (int)sizeof( stem ) );   // strips the extension
+            snprintf( out_path, sizeof( out_path ), "%s.png", stem );
+        }
+        return svg_bake_one( in_path, out_path, size, margin ) ? 0 : 1;
+    }
+
+    svg_batch_t batch = { 0 };
+    batch.out_dir     = out_arg ? out_arg : in_path;
+    batch.size        = size;
+    batch.margin      = margin;
+
+    if ( !sys_dir_make( batch.out_dir ) )
+    {
+        fprintf( stderr, "image_tool: cannot create output directory '%s'\n", batch.out_dir );
+        return 1;
+    }
+
+    int found = sys_file_glob( in_path, "*.svg", svg_glob_cb, &batch );
+    if ( found == 0 )
+    {
+        fprintf( stderr, "image_tool: no .svg files found in '%s' (and it is not a file)\n",
+                 in_path );
+        return 1;
+    }
+
+    printf( "rasterized %d of %d svg(s) -> %s/\n", found - batch.failed, found, batch.out_dir );
+    return batch.failed ? 1 : 0;
+}
+
+/*==============================================================================================
     run_info
 ==============================================================================================*/
 
@@ -260,6 +415,7 @@ print_usage( void )
     fprintf( stderr,
              "usage: image_tool split <sheet> <cols> <rows> [-out <dir>] [-key]\n"
              "       image_tool key   <image> [-out <path>] [-pad <px>]\n"
+             "       image_tool svg   <input.svg | dir> [-size <px>] [-margin <px>] [-out <path | dir>]\n"
              "       image_tool info  <image>...\n"
              "\n"
              "  split  cut a sprite sheet into cols x rows individual .png files\n"
@@ -268,6 +424,10 @@ print_usage( void )
              "  key    alpha = max(r,g,b) on a single image; -pad adds a transparent margin\n"
              "         -out <path> output file (default: <image>_keyed.png)\n"
              "         -pad <px>   transparent margin added after keying (an SDF bake needs one)\n"
+             "  svg    rasterize an SVG file (or every .svg in a directory) to transparent PNG\n"
+             "         -size <px>    longest output edge, margins included (default: 32)\n"
+             "         -margin <px>  transparent border per side (an SDF bake needs one)\n"
+             "         -out <path | dir>  output file, or directory for a directory input\n"
              "  info   print image dimensions and whether transparency is present\n" );
 }
 
@@ -278,6 +438,8 @@ main( int argc, char** argv )
         return run_split( argc - 2, argv + 2 );
     if ( argc >= 2 && strcmp( argv[ 1 ], "key" ) == 0 )
         return run_key( argc - 2, argv + 2 );
+    if ( argc >= 2 && strcmp( argv[ 1 ], "svg" ) == 0 )
+        return run_svg( argc - 2, argv + 2 );
     if ( argc >= 2 && strcmp( argv[ 1 ], "info" ) == 0 )
         return run_info( argc - 2, argv + 2 );
 

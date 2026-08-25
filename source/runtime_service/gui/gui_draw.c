@@ -109,7 +109,7 @@ gui_draw_shutdown( void )
 u32
 draw_unit_mem_bytes( void )
 {
-    return (u32)( sizeof( s_icons ) + sizeof( s_builtin_icons ) + sizeof( s_sprites ) );
+    return (u32)( sizeof( s_icons ) + sizeof( s_builtin_icon_paths ) + sizeof( s_sprites ) );
 }
 
 /*============================================================================================*/

@@ -623,7 +623,11 @@ typedef struct gui_api_s
        formats) to R8 coverage -- alpha channel when present, else luminance -- and registers it the
        same way, so a loaded icon is identical to a procedural one downstream.  `path` is resolved
        through asset_path -- a plain path relative to the assets root ("assets/icon/foo.png"), no
-       need to call asset_path yourself first.  find_icon looks one
+       need to call asset_path yourself first.  load_icons is the batch form an application's
+       own icon table wants: an array of such paths, each registered under its file stem
+       ("assets/icon/gear.png" -> "gear"); stems already registered are skipped, so the call is
+       idempotent and safe to repeat after a hot reload.  It returns how many of the named icons
+       are available afterward -- compare against `count` to log a shortfall.  find_icon looks one
        up by the name it was registered with (built-in icons register at gui init); icon_size is its
        native pixel size (for layout).  image is a layout widget (reserve w x h, draw centered/fit);
        draw_icon_in places an icon in a rect the caller already holds (cell / button label / canvas
@@ -631,6 +635,7 @@ typedef struct gui_api_s
 
     gui_icon_id_t ( *register_icon )( const char* name, u32 w, u32 h, const u8* coverage );
     gui_icon_id_t ( *load_icon     )( const char* name, const char* path );
+    u32           ( *load_icons    )( const char* const* paths, u32 count );
     gui_icon_id_t ( *find_icon     )( const char* name );
     gui_vec2_t    ( *icon_size     )( gui_icon_id_t id );
     void          ( *image         )( gui_icon_id_t id, f32 w, f32 h, u32 col );

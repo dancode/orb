@@ -8,7 +8,7 @@
 # +-- runtime/            # Host runtime scaffolding (run_host)
 # +-- runtime_service/    # Static services: rhi, draw, gui, input, asset, ahi
 # +-- runtime_modules/    # Dynamic DLL modules: render, audio, physics
-# +-- developer/          # Dev-only libs: dev_build, dev_font, dev_hot, dev_image
+# +-- developer/          # Dev-only libs: dev_build, dev_font, dev_hot, dev_image, dev_vector
 # +-- game/               # Reusable game framework (runner; world, entity, component to come)
 # +-- game_service/       # Game-specific static services
 # +-- game_modules/       # Game-specific dynamic modules
@@ -388,6 +388,14 @@ target dev_image
     root        source/developer/dev_image
     folder      07_DEVELOPER
     unit        dev_image.c
+    dep         sys
+
+target dev_vector
+
+    type        static
+    root        source/developer/dev_vector
+    folder      07_DEVELOPER
+    unit        dev_vector.c
     dep         sys
 
 target dev_ship
@@ -938,7 +946,7 @@ target image_tool
     folder      08_TOOL
     unit        image_tool.c
     flag        is_tool
-    dep         sys dev_image
+    dep         sys dev_image dev_vector
 
 target ship_tool
 
@@ -1228,6 +1236,7 @@ solution orb_build
     add         launch_tool
     add         dev_font   # used by font_tool
     add         dev_image   # used by image_tool
+    add         dev_vector   # used by image_tool
     add         dev_ship   # used by ship_tool
     add         pack   # used by asset_tool
 
@@ -1254,7 +1263,7 @@ solution orb_all
 
     add         example sb_ref_dll sb_gen_dll
     add         game nav game_example
-    add         dev_build dev_hot dev_font dev_image dev_ship
+    add         dev_build dev_hot dev_font dev_image dev_vector dev_ship
 
     add         host_common
 

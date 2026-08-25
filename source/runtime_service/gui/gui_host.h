@@ -155,6 +155,7 @@ void gui_volatile_end( void );
 /* icons -- runtime icon atlas */
 gui_icon_id_t gui_register_icon( const char* name, u32 w, u32 h, const u8* coverage );
 gui_icon_id_t gui_load_icon( const char* name, const char* path );
+u32 gui_load_icons( const char* const* paths, u32 count );
 gui_icon_id_t gui_register_icon_sdf( const char* name, u32 w, u32 h, const u8* coverage,
                                      u32 out_max );
 gui_icon_id_t gui_load_icon_sdf( const char* name, const char* path, u32 out_max );

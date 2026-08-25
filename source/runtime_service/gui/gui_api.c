@@ -88,6 +88,7 @@ const gui_api_t g_gui_api_struct =
     .draw_text_xf                       = gui_draw_text_xf,
     .register_icon                      = gui_register_icon,
     .load_icon                          = gui_load_icon,
+    .load_icons                         = gui_load_icons,
     .register_icon_sdf                  = gui_register_icon_sdf,
     .load_icon_sdf                      = gui_load_icon_sdf,
     .find_icon                          = gui_find_icon,

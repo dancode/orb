@@ -167,6 +167,12 @@ gui_load_icon( const char* name, const char* path )
     return icon_load_file( name, resolved );
 }
 
+u32
+gui_load_icons( const char* const* paths, u32 count )
+{
+    return icon_load_paths( paths, count );   // resolves each path against the root itself
+}
+
 /* The distance-field twins.  Same inputs plus the stored-field size; everything downstream of the
    id -- find, size, image, draw_icon_in -- is unchanged, because the fork is in what a texel means
    and that travels in the vertex, not in the API. */
