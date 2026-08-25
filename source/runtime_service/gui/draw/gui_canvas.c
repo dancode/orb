@@ -39,6 +39,8 @@ gui_canvas( f32 height )
 void
 gui_draw_rect( f32 x, f32 y, f32 w, f32 h, u32 abgr )
 {
+    if ( w <= 0.0f || h <= 0.0f )
+        return;
     draw_push_rect_filled( x, y, w, h, 0,0,1,1, 0, abgr );
 }
 
