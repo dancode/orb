@@ -385,7 +385,7 @@ void draw_push_grid             ( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f3
                                   f32 cell, f32 thickness, u32 abgr );
 
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr );
-void draw_push_frame            ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 col_bg, u32 col_border, f32 rounding );
+void draw_push_frame            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t, u32 col_bg, u32 col_border );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr );
 void draw_push_bezier           ( f32 ax, f32 ay, f32 cx, f32 cy, f32 bx, f32 by, f32 thickness, u32 abgr );
 

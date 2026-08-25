@@ -892,9 +892,10 @@ typedef struct gui_api_s
 
     /* draw_frame / draw_round_frame -- draw_rect / draw_round_rect's dual-color sibling: a filled
        body plus a border band, ONE quad.  draw_frame is always square (rounding forced to 0, like
-       draw_rect); draw_round_frame takes rounding as a parameter (like draw_round_rect).  Neither
-       reads the ambient rounding -- a caller never needs to save/set/restore draw_set_rounding
-       around either call. */
+       draw_rect); draw_round_frame takes rounding as a parameter (like draw_round_rect), but only
+       ONE radius for all four corners -- draw_round_rect's independent per-corner radii have no
+       frame equivalent.  Neither reads the ambient rounding -- a caller never needs to
+       save/set/restore draw_set_rounding around either call. */
     void ( *draw_frame             )( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_frame       )( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 thickness, u32 col );

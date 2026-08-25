@@ -1288,7 +1288,7 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
 void
 draw_frame( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
 {
-    draw_push_frame( r.x, r.y, r.w, r.h, border, col_bg, col_border, 0.0f );
+    draw_push_frame( r.x, r.y, r.w, r.h, 0.0f, border, col_bg, col_border );
 }
 void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border )
                                                                                { draw_frame( box, col_bg, col_border, border ); }
@@ -1300,7 +1300,7 @@ void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border )
 void
 draw_round_frame( gui_rect_t r, f32 rounding, u32 col_bg, u32 col_border, f32 border )
 {
-    draw_push_frame( r.x, r.y, r.w, r.h, border, col_bg, col_border, rounding );
+    draw_push_frame( r.x, r.y, r.w, r.h, rounding, border, col_bg, col_border );
 }
 void gui_draw_round_frame( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border )
                                                                                { draw_round_frame( box, rounding, col_bg, col_border, border ); }

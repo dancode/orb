@@ -114,7 +114,7 @@ draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col )
 static void
 draw_bezel( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
 {
-    draw_push_frame( r.x, r.y, r.w, r.h, border, col_bg, col_border, draw_rounding() );
+    draw_push_frame( r.x, r.y, r.w, r.h, draw_rounding(), border, col_bg, col_border );
 }
 
 /*==============================================================================================
