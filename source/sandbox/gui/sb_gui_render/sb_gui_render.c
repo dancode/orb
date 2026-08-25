@@ -571,7 +571,7 @@ page_shapes( void )
 
     static float scale = 1.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "angle", &scale, 0.5f, 4.0f, 0.1f );
+    gui()->slider_float_step( "scale", &scale, 0.5f, 4.0f, 0.1f );
     if ( gui()->button( "reset##sh3" )) { scale = 1.0f; }
 
     r = cell( 6, GRID_COLS, "rect_xf (rotated)" );
@@ -580,7 +580,7 @@ page_shapes( void )
     gui_icon_id_t icon = gui()->find_icon( "orb" );
 
     r = cell( 7, GRID_COLS, "icon_xf (rotated)" ); 
-    r.w *= scale; r.h *= scale;
+    // r.w *= scale; r.h *= scale;
     gui()->draw_icon_xf( r, icon, AMBER, gui_radians( shape_rot_deg ));
 
     panel_row_end();
