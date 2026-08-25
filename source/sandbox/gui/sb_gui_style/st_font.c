@@ -109,22 +109,6 @@ ft_add( const char* name )
     return s_ft.count < FT_LIST_MAX;
 }
 
-static bool
-ft_local_cb( const char* filename, const char* full_path, void* ud )
-{
-    UNUSED( full_path );
-    UNUSED( ud );
-    return ft_add( filename );
-}
-
-static bool
-ft_windows_cb( const char* name, const char* full_path, void* ud )
-{
-    UNUSED( full_path );
-    UNUSED( ud );
-    return ft_add( name );   /* friendly name, e.g. "Cascadia Mono Regular" */
-}
-
 /* Case-insensitive name compare for sorting the Windows portion of the list. */
 static int
 ft_name_cmp( const void* a, const void* b )
@@ -140,21 +124,69 @@ ft_name_cmp( const void* a, const void* b )
     return (unsigned char)*x - (unsigned char)*y;
 }
 
+/* True if `name` ends in one of the face extensions font_source/ is scanned for (case-
+   insensitive, matching sys_file_glob's Windows FindFirstFile semantics). */
+static bool
+ft_has_font_ext( const char* name )
+{
+    static const char* ext[] = { ".ttf", ".otf", ".ttc" };
+    size_t n = strlen( name );
+    for ( int i = 0; i < 3; ++i )
+    {
+        size_t el = strlen( ext[ i ] );
+        if ( n >= el && ft_name_cmp( name + n - el, ext[ i ] ) == 0 )
+            return true;
+    }
+    return false;
+}
+
+/* sys_dir_walk() callback for assets/font_source/: recurses into subdirectories so variants of a
+   family (weights, italics) can live in their own folder instead of crowding font_source/ flat.
+   The listed/request name is the path relative to font_source/ (e.g. "geist/Geist-Bold.ttf"),
+   which both keeps same-stem files in different folders distinct and is what ft_resolve() and
+   dev_font_resolve()'s font_source/-relative fallback expect. */
+static bool
+ft_local_cb( const char* filename, const char* full_path, void* ud )
+{
+    const char* root = (const char*)ud;
+
+    if ( !ft_has_font_ext( filename ) )
+        return true;   /* keep walking; not a font file */
+
+    const char* rel = full_path;
+    size_t      root_len = strlen( root );
+    if ( strncmp( full_path, root, root_len ) == 0 )
+    {
+        rel = full_path + root_len;
+        while ( *rel == '\\' || *rel == '/' ) ++rel;
+    }
+    return ft_add( rel );
+}
+
+static bool
+ft_windows_cb( const char* name, const char* full_path, void* ud )
+{
+    UNUSED( full_path );
+    UNUSED( ud );
+    return ft_add( name );   /* friendly name, e.g. "Cascadia Mono Regular" */
+}
+
 static void
 ft_scan( void )
 {
     s_ft.count = 0;
 
-    /* Local .ttf/.otf/.ttc under assets/font_source/ (listed first, by filename), when the scope
-       box is ticked. */
+    /* Local .ttf/.otf/.ttc under assets/font_source/, recursing into subdirectories so a family's
+       variants can be grouped in their own folder (listed first, sorted), when the scope box is
+       ticked. */
     if ( s_ft.allow_local )
     {
         char src[ 512 ];
         if ( dev_font_source_dir( src, sizeof( src ) ) )
         {
-            sys_file_glob( src, "*.ttf", ft_local_cb, NULL );
-            sys_file_glob( src, "*.otf", ft_local_cb, NULL );
-            sys_file_glob( src, "*.ttc", ft_local_cb, NULL );
+            sys_dir_walk( src, ft_local_cb, src );
+            if ( s_ft.count > 0 )
+                qsort( s_ft.names[ 0 ], (size_t)s_ft.count, FT_NAME_MAX, ft_name_cmp );
         }
     }
     s_ft.local_count = s_ft.count;   /* everything before here is a project font */
@@ -381,8 +413,7 @@ st_font_window( void )
         gui()->scale_pop();
         gui()->combo_end();
     }
-    
-    
+        
     // gui()->same_line( -1 );
     if ( gui()->small_button( "Refresh" ) )
         ft_scan();
@@ -396,7 +427,9 @@ st_font_window( void )
        0.5 cell (a plain button would shrink to its label); button_fill is NOT used here -- it
        sizes its HEIGHT to the view bottom, which feeds back into the scroll extent when content
        follows it (status + preview below), growing the region without bound every scrolled frame. */
+
     gui()->row2( 0.5f, 0.5f );
+
     // if ( gui()->button_fill( "Bake & Preview (stb)" ) )
     gui()->next_item_fit( 1.0f );
     if ( gui()->button( "Bake & Preview (stb)" ) )
@@ -445,7 +478,7 @@ st_font_window( void )
         gui()->separator_text( "Apply" );
         gui()->textf( "Live: %s  %d px", s_ft.preview_name, s_ft.preview_size );
         if ( gui()->button( "Use as UI font" ) )
-            gui()->font_use( s_ft.preview_id );
+             gui()->font_use( s_ft.preview_id );
     }
     
     /* --- Atlas ------------------------------------------------------------------ */

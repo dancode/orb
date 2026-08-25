@@ -250,13 +250,20 @@ resolve_ttf( const char* ttf_path, char* out, int size )
 {
     if ( has_dir_sep( ttf_path ) )
     {
-        if ( sys_file_time( ttf_path ) == 0 )
+        /* Absolute (or already-joined) path: use as-is. */
+        if ( sys_file_time( ttf_path ) > 0 )
         {
-            set_error( "font not found: '%s'", ttf_path );
-            return false;
+            snprintf( out, (size_t)size, "%s", ttf_path );
+            return true;
         }
-        snprintf( out, (size_t)size, "%s", ttf_path );
-        return true;
+
+        /* Otherwise treat it as font_source/-relative, e.g. "Roboto/Roboto-Bold.ttf" for a face
+           organized into a subdirectory. */
+        snprintf( out, (size_t)size, "%s" PATH_SEP "%s", g_rt.font_source_dir, ttf_path );
+        if ( sys_file_time( out ) > 0 ) return true;
+
+        set_error( "font not found: '%s'", ttf_path );
+        return false;
     }
 
     /* "" leaves the request untouched (it may already carry an extension); the rest probe the
