@@ -172,6 +172,7 @@ const gui_api_t g_gui_api_struct =
     .draw_swell                         = gui_draw_swell,
     .draw_ripple                        = gui_draw_ripple,
     .draw_ring                          = gui_draw_ring,
+    .draw_fx_box_ex                     = gui_draw_fx_box_ex,
     .draw_text_outline                  = gui_draw_text_outline,
     .draw_text_shadow                   = gui_draw_text_shadow,
     .draw_grip                          = gui_draw_grip,

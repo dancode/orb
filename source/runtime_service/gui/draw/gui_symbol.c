@@ -1043,6 +1043,22 @@ draw_ripple( f32 cx, f32 cy, f32 r, f32 thickness, f32 grow, f32 rate, f32 phase
     draw_push_ripple( cx, cy, r, thickness, grow, rate, phase, 1.0f, col );
 }
 
+/* The raw fx_box entry point: every knob draw_shadow / draw_glow / draw_pulse / draw_swell /
+   draw_ring narrows to one fixed combination, all exposed together here.  `variant` picks the
+   field (GUI_FX_BOX_FILL/SKIRT/INSET/GLOW/RING); a non-zero `rate` layers GUI_OP_PULSE on top of
+   whichever variant is set, and a non-zero `swell` layers GUI_OP_SWELL -- so a swelling glow or a
+   pulsing ring is one call instead of a new verb.  `border` is read only under GUI_FX_BOX_RING;
+   `cut_dx`/`cut_dy` only under GUI_FX_BOX_SKIRT.  Honors the ambient rounding.  A combination
+   worth keeping earns its own named verb -- this one is the experimentation path, not the
+   recommended one. */
+static void
+draw_fx_box_ex( gui_rect_t box, f32 feather, u32 variant, f32 rate, f32 depth, f32 phase,
+                f32 rot, f32 cut_dx, f32 cut_dy, f32 swell, f32 border, u32 col )
+{
+    draw_push_fx_box_ex( box.x, box.y, box.w, box.h, draw_rounding(), feather, variant,
+                         rate, depth, phase, rot, cut_dx, cut_dy, swell, border, col );
+}
+
 /*==============================================================================================
     Text effects + decorations
 ==============================================================================================*/
@@ -1379,6 +1395,9 @@ void gui_draw_swell   ( gui_rect_t box, f32 rate, f32 grow, f32 phase, u32 col )
 void gui_draw_ring    ( gui_rect_t box, f32 t, u32 col )                  { draw_ring( box, t, col ); }
 void gui_draw_ripple  ( f32 cx, f32 cy, f32 r, f32 thickness, f32 grow, f32 rate, f32 phase, u32 col )
                                                                                { draw_ripple( cx, cy, r, thickness, grow, rate, phase, col ); }
+void gui_draw_fx_box_ex( gui_rect_t box, f32 feather, u32 variant, f32 rate, f32 depth, f32 phase,
+                         f32 rot, f32 cut_dx, f32 cut_dy, f32 swell, f32 border, u32 col )
+                                                                               { draw_fx_box_ex( box, feather, variant, rate, depth, phase, rot, cut_dx, cut_dy, swell, border, col ); }
 
 /* text effects + decorations */
 void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline )

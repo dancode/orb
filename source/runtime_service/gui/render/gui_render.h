@@ -347,6 +347,17 @@ void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
                                   u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind,
                                   f32 grad_mid );
 
+/* The raw fx_box entry point every verb above narrows to one fixed combination -- every knob in
+   one call, for a combination that does not have its own verb yet.  `variant` picks the field
+   (GUI_FX_BOX_FILL/SKIRT/INSET/GLOW/RING); `rate`/`depth`/`phase` drive GUI_OP_PULSE on top of
+   whichever variant is set; `swell` drives GUI_OP_SWELL; `border` is read only under
+   GUI_FX_BOX_RING; `cut_dx`/`cut_dy` only under GUI_FX_BOX_SKIRT.  A combination worth keeping
+   earns its own named verb over draw_fx_box_cmd -- this one stays the experimentation path, not
+   the recommended one. */
+void draw_push_fx_box_ex        ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather,
+                                  u32 variant, f32 rate, f32 depth, f32 phase, f32 rot,
+                                  f32 cut_dx, f32 cut_dy, f32 swell, f32 border, u32 abgr );
+
 /* Push a circular sector -- a stroked arc with round caps, or a filled wedge with sharp radial
    edges.  Angles are radians in screen space (0 points +x, positive turns clockwise); a reversed
    range or a sweep past a full turn is normalized at tessellation.  One quad either way.

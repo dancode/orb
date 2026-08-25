@@ -255,6 +255,18 @@ draw_push_box_xf( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot
                      GUI_FX_BOX_FILL, 0.0f, 0.0f, 0.0f, rot, 0.0f, 0.0f, 0.0f, 0.0f, abgr );
 }
 
+/* draw_push_fx_box_ex -- the raw entry point, exposed as-is.  Every verb above is this call with
+   most of its arguments pinned; a caller reaching for it directly is combining knobs no named
+   verb combines yet. */
+void
+draw_push_fx_box_ex( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 variant,
+                     f32 rate, f32 depth, f32 phase, f32 rot, f32 cut_dx, f32 cut_dy,
+                     f32 swell, f32 border, u32 abgr )
+{
+    draw_fx_box_cmd( x, y, w, h, rounding, feather, variant, rate, depth, phase, rot,
+                     cut_dx, cut_dy, swell, border, abgr );
+}
+
 /*==============================================================================================
     draw_push_round_rect_ex -- emit a filled box with four independent corner radii.
 

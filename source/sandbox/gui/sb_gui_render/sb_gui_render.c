@@ -120,6 +120,26 @@ row_wide( i32 row, i32 col, i32 span, const char* caption )
     return box;
 }
 
+/* A block spanning `rows` by `cols` grid cells from (row, col) -- row_wide's two-axis sibling,
+   for a single large preview that needs real room (the fx combination page's live surface). */
+static gui_rect_t
+cell_block( i32 row, i32 col, i32 rows, i32 cols, const char* caption )
+{
+    gui_rect_t box = {
+        GRID_X + ( f32 )col * ( CELL_W + CELL_GAP ), GRID_Y + ( f32 )row * ( CELL_H + CELL_GAP ),
+        ( f32 )cols * CELL_W + ( f32 )( cols - 1 ) * CELL_GAP,
+        ( f32 )rows * CELL_H + ( f32 )( rows - 1 ) * CELL_GAP,
+    };
+
+    gui_rect_t strip = box;
+    strip.y += box.h - LABEL_H;
+    strip.h  = LABEL_H;
+    gui()->draw_text_in( strip, GUI_ALIGN_CENTER, INK_DIM, caption );
+
+    box.h -= LABEL_H;
+    return box;
+}
+
 #define TWEAK_PANEL_W       0.0f
 #define TWEAK_PANEL_COLW    320.0f
 
@@ -991,6 +1011,176 @@ page_brushes( void )
 }
 
 /*==============================================================================================
+    Page 12 -- fx combinations: draw_fx_box_ex, the raw entry point every verb on the light +
+    shadow and motion pages narrows to one fixed combination.  Those pages are the catalog of
+    what is already exposed; this one is the experimentation surface -- every knob live at once,
+    so a designer can find a combination worth its own named verb before asking for one.
+
+    variant picks the FIELD (fill / cast / inset / glow / ring) -- exclusive, one at a time, since
+    it names which surface the fragment resolves.  pulse and swell are independent ops layered on
+    top of whichever field is picked, which is why they get their own checkboxes rather than
+    riding the variant choice; both read the SAME shader clock (rate + phase), so animating them
+    at different speeds is not offered because the record has nowhere to put a second rate.
+==============================================================================================*/
+
+static void
+page_fx_combo( void )
+{
+    static const char* s_variant_names[ 5 ] = { "fill", "cast", "inset", "glow", "ring" };
+    static i32  fx_variant     = GUI_FX_BOX_GLOW;
+    static f32  fx_feather     = 24.0f;
+    static f32  fx_rate        = 1.0f;
+    static f32  fx_phase       = 0.0f;
+    static bool fx_pulse_on    = true;
+    static f32  fx_pulse_depth = 0.5f;
+    static bool fx_swell_on    = false;
+    static f32  fx_swell_amp   = 10.0f;
+    static f32  fx_rot_deg     = 0.0f;
+    static f32  fx_border      = 6.0f;
+
+    //------------------------------------------------------------------------------------------
+    // Every line is a peer pair in the row2 columns: a slider (its own label + track) with a
+    // reset button beside it, or -- pulse/swell -- two checkboxes beside each other on their own
+    // line rather than paired against a slider.
+    //------------------------------------------------------------------------------------------
+
+    panel_row_begin( 0, "fx_combo_row0" );
+
+    /* 0..4 into GUI_FX_BOX_FILL/SKIRT("cast")/INSET/GLOW/RING -- the live block's caption below
+       names the one currently picked. */
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_int( "variant", &fx_variant, 0, 4, NULL );
+    if ( gui()->button( "reset##fx0" )) { fx_variant = GUI_FX_BOX_GLOW; }
+
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "reach", &fx_feather, 2.0f, 48.0f, 1.0f );
+    if ( gui()->button( "reset##fx1" )) { fx_feather = 24.0f; }
+
+    /* GUI_OP_PULSE and GUI_OP_SWELL both read the SAME anim_rate/anim_phase lanes on the record
+       -- there is no second clock to give swell its own speed independent of pulse's -- so one
+       shared rate/phase pair drives whichever of the two the depth/amount sliders below make
+       visible (0 on either is silently "off": a depth-0 pulse and a zero-amount swell already
+       read identically to the op not being set). */
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "rate", &fx_rate, 0.0f, 3.0f, 0.1f );
+    if ( gui()->button( "reset##fx2" )) { fx_rate = 1.0f; }
+
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "phase", &fx_phase, 0.0f, 1.0f, 0.05f );
+    if ( gui()->button( "reset##fx3" )) { fx_phase = 0.0f; }
+
+    panel_row_end();
+
+    panel_row_begin( 1, "fx_combo_row1" );
+
+    /* pulse and swell, side by side -- both read the SAME anim_rate/anim_phase lanes on the
+       record (there is no second clock to give swell its own speed independent of pulse's), so
+       one shared rate/phase pair above drives whichever of these two is checked on. */
+    gui()->checkbox( "pulse", &fx_pulse_on );
+    gui()->checkbox( "swell", &fx_swell_on );
+
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "depth", &fx_pulse_depth, 0.0f, 1.0f, 0.05f );
+    if ( gui()->button( "reset##fx4" )) { fx_pulse_depth = 0.5f; }
+
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "swell amt", &fx_swell_amp, -20.0f, 20.0f, 1.0f );
+    if ( gui()->button( "reset##fx5" )) { fx_swell_amp = 10.0f; }
+
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "rotate", &fx_rot_deg, -180.0f, 180.0f, 1.0f );
+    if ( gui()->button( "reset##fx6" )) { fx_rot_deg = 0.0f; }
+
+    panel_row_end();
+
+    panel_row_begin( 2, "fx_combo_row2" );
+
+    /* Read only when variant is "ring" -- every other field ignores it. */
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "border", &fx_border, 1.0f, 20.0f, 1.0f );
+    if ( gui()->button( "reset##fx7" )) { fx_border = 6.0f; }
+
+    panel_row_end();
+
+    //------------------------------------------------------------------------------------------
+    // The live surface, sized to the three panel rows above it (cell_block(0,0,3,3)) rather than
+    // sprawling past them.  One draw_fx_box_ex call, every enabled knob stacked on whichever
+    // field `variant` picked.  A cast or an inset field paints nothing of its own on part of the
+    // box (the cut interior, the area outside the inset band), so those two get a plain body
+    // drawn alongside them -- a caster on TOP of a cast, a fill BELOW an inset -- the same
+    // pairing page 6 (light + shadow) uses, and not something draw_fx_box_ex does for you.
+    //------------------------------------------------------------------------------------------
+
+    f32 depth = fx_pulse_on ? fx_pulse_depth : 0.0f;
+    f32 swell = fx_swell_on ? fx_swell_amp   : 0.0f;
+    f32 rot   = gui_radians( fx_rot_deg );
+
+    if ( fx_rate > 0.0f )
+        gui()->request_redraw();
+
+    char caption[ 64 ];
+    snprintf( caption, sizeof caption, "draw_fx_box_ex -- %s", s_variant_names[ fx_variant ] );
+    gui_rect_t big = cell_block( 0, 0, 3, 3, caption );
+
+    /* Shrunk off `big`'s block, centred: a square rotated 45 degrees reaches ~1.4x its upright
+       half-extent, so the shape itself has to sit well inside the block's bounds or `rotate`
+       swings its corners out past the cell and over whatever the grid draws next to it. */
+    f32        shrink = 0.7f;
+    gui_rect_t box    = { big.x + big.w * ( 1.0f - shrink ) * 0.5f,
+                          big.y + big.h * ( 1.0f - shrink ) * 0.5f,
+                          big.w * shrink, big.h * shrink };
+
+    if ( fx_variant == GUI_FX_BOX_SKIRT )
+    {
+        gui()->draw_fx_box_ex( box, fx_feather, ( u32 )fx_variant, fx_rate, depth, fx_phase,
+                               rot, 0.0f, 0.0f, swell, fx_border, PLUM );
+        gui()->draw_round_rect( box, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, AMBER );
+    }
+    else if ( fx_variant == GUI_FX_BOX_INSET )
+    {
+        gui()->draw_round_rect( box, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, INK_FAINT );
+        gui()->draw_fx_box_ex( box, fx_feather, ( u32 )fx_variant, fx_rate, depth, fx_phase,
+                               rot, 0.0f, 0.0f, swell, fx_border, TEAL );
+    }
+    else
+    {
+        gui()->draw_fx_box_ex( box, fx_feather, ( u32 )fx_variant, fx_rate, depth, fx_phase,
+                               rot, 0.0f, 0.0f, swell, fx_border, AMBER );
+    }
+
+    //------------------------------------------------------------------------------------------
+    // row 3 -- directly under the live block: five worked combinations, none with its own named
+    // verb, each one call.
+    //------------------------------------------------------------------------------------------
+
+    gui()->request_redraw();
+
+    gui_rect_t r;
+
+    r = cell( 18, GRID_COLS, "glow + pulse" );
+    gui()->draw_fx_box_ex( r, 24.0f, GUI_FX_BOX_GLOW, 1.0f, 0.6f, 0.0f, 0.0f, 0.0f, 0.0f,
+                           0.0f, 0.0f, AMBER );
+
+    r = cell( 19, GRID_COLS, "ring + pulse" );
+    gui()->draw_fx_box_ex( r, 1.0f, GUI_FX_BOX_RING, 1.2f, 0.6f, 0.0f, 0.0f, 0.0f, 0.0f,
+                           0.0f, 8.0f, TEAL );
+
+    r = cell( 20, GRID_COLS, "glow + rotate" );
+    gui()->draw_fx_box_ex( r, 20.0f, GUI_FX_BOX_GLOW, 0.0f, 0.0f, 0.0f, gui_radians( 25.0f ),
+                           0.0f, 0.0f, 0.0f, 0.0f, PLUM );
+
+    r = cell( 21, GRID_COLS, "cast + swell" );
+    gui()->draw_fx_box_ex( r, 18.0f, GUI_FX_BOX_SKIRT, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                           8.0f, 0.0f, ROSE );
+    gui()->draw_round_rect( r, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, AMBER );
+
+    r = cell( 22, GRID_COLS, "inset + pulse" );
+    gui()->draw_round_rect( r, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, INK_FAINT );
+    gui()->draw_fx_box_ex( r, 10.0f, GUI_FX_BOX_INSET, 1.0f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
+                           0.0f, 0.0f, TEAL );
+}
+
+/*==============================================================================================
     Pages
 ==============================================================================================*/
 
@@ -1013,6 +1203,7 @@ static const page_t s_pages[] = {
     { "text",              page_text     },
     { "icons + sprites",   page_icons    },
     { "brushes",           page_brushes  },
+    { "fx combinations",   page_fx_combo },
 };
 
 #define PAGE_COUNT ( ( i32 )( sizeof s_pages / sizeof s_pages[ 0 ] ) )

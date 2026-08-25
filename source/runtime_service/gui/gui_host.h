@@ -261,6 +261,9 @@ void gui_draw_swell( gui_rect_t box, f32 rate, f32 grow, f32 phase, u32 col );
 void gui_draw_ring( gui_rect_t box, f32 t, u32 col );
 void gui_draw_ripple( f32 cx, f32 cy, f32 r, f32 thickness, f32 grow, f32 rate, f32 phase,
                       u32 col );
+void gui_draw_fx_box_ex( gui_rect_t box, f32 feather, u32 variant, f32 rate, f32 depth,
+                         f32 phase, f32 rot, f32 cut_dx, f32 cut_dy, f32 swell, f32 border,
+                         u32 col );
 void gui_draw_text_outline( f32 x, f32 y, const char* str, u32 col_text, u32 col_outline );
 void gui_draw_text_shadow( f32 x, f32 y, const char* str, u32 col_text, u32 col_shadow, f32 dx, f32 dy );
 void gui_draw_grip( gui_rect_t box, u32 col );

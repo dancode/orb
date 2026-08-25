@@ -1125,6 +1125,18 @@ typedef struct gui_api_s
        and under an ambient baked shape it traces that silhouette instead of a rectangle.  One
        quad.  Honors the ambient rounding. */
     void ( *draw_ring              )( gui_rect_t box, f32 t, u32 col );
+    /* The raw fx_box entry point: every knob draw_shadow / draw_glow / draw_pulse / draw_swell /
+       draw_ring narrows to one fixed combination, all exposed together here for a combination
+       that does not have its own verb yet.  `variant` picks the field (GUI_FX_BOX_FILL / SKIRT /
+       INSET / GLOW / RING); a non-zero `rate` layers GUI_OP_PULSE on top of whichever variant is
+       set and a non-zero `swell` layers GUI_OP_SWELL, so a swelling glow or a pulsing ring is one
+       call rather than a new verb.  `border` is read only under GUI_FX_BOX_RING; `cut_dx`/
+       `cut_dy` only under GUI_FX_BOX_SKIRT (the caster offset).  `rot` turns the whole surface
+       about its centre.  Honors the ambient rounding.  A combination worth keeping earns its own
+       named verb over this one -- it stays the experimentation path, not the recommended one. */
+    void ( *draw_fx_box_ex         )( gui_rect_t box, f32 feather, u32 variant, f32 rate,
+                                      f32 depth, f32 phase, f32 rot, f32 cut_dx, f32 cut_dy,
+                                      f32 swell, f32 border, u32 col );
     /* The dashed rounded border -- and at a non-zero `speed` (px/sec) the MARCHING ANTS, the
        selection border that scrolls on the clock.  dash/gap are arc-length px (the
        draw_dashed_line vocabulary); the period snaps so whole cycles fit the perimeter and a
