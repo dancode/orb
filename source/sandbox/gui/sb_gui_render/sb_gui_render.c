@@ -76,7 +76,7 @@ lerp_col( u32 a, u32 b, f32 t )
 #define CELL_W     180.0f    // cell box, label strip included
 #define CELL_H     160.0f
 #define CELL_GAP    32.0f
-#define LABEL_H     24.0f    // strip at the bottom of a cell holding its caption
+#define LABEL_H     30.0f    // strip at the bottom of a cell holding its caption
 
 /* Cell n of a page: its drawing area, with the caption written under it. */
 static gui_rect_t
@@ -232,30 +232,33 @@ page_fills( void )
     gui_rect_t r;
 
     //------------------------------------------------------------------------------------------
-    /* row 0 -- the fast path: draw_rect emits ONE quad with no SDF field at all */
+    // row 0 -- the fast path: draw_rect emits ONE quad with no SDF field at all
+    //------------------------------------------------------------------------------------------
 
     panel_row_begin( 0, "fills_row0" );
         
     r = cell( 0, GRID_COLS, "draw_rect (fast path)" );    
 
+    /* slider -- width and height */
     static float rect_w = CELL_W;
-    static float rect_h = CELL_H;
+    static float rect_h = CELL_H - LABEL_H;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "width", &rect_w, 0, r.w, 1.0f );
+    gui()->slider_float_step( "width", &rect_w, 0, CELL_W, 1.0f );
     if ( gui()->button( "reset##1" )) { rect_w = r.w; }
-
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "height", &rect_h, 0, r.h, 1.0f );
+    gui()->slider_float_step( "height", &rect_h, 0, CELL_H - LABEL_H, 1.0f );
     if ( gui()->button( "reset##2" )) { rect_h = r.h; }
+
+    /* draw -- (fast path) rect */
 
     gui()->draw_rect( r.x, r.y, rect_w, rect_h, AMBER );
 
-    /* row 0 -- batched fast path: draw_rects() emit N of them in ONE command */
-
+    /* slider -- draw count */
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_int( "count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX, NULL );
     if ( gui()->button( "reset##3" )) { s_tweak_tile_count = TWEAK_TILE_MAX; }    
 
+    /* draw -- (batched fast path) draw_rects() emit N of them in ONE command */
     r = row_wide( 0, 1, GRID_COLS - 1, "draw_rects() -- checker / 1 call (tweak panel sets count)" );
     {
         enum { CHECK_COLS = 12, CHECK_ROWS_MAX = TWEAK_TILE_MAX / CHECK_COLS };
@@ -276,8 +279,9 @@ page_fills( void )
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
-    /* rows 1 - basic shape rects -- the general box catalogue: rounding, border, gradient and 
-       circle all resolve through the same SDF quad, just with more of the record populated. */
+    // rows 1 - basic shape rects -- the general box catalogue: rounding, border, gradient and 
+    // circle all resolve through the same SDF quad, just with more of the record populated.
+    //------------------------------------------------------------------------------------------
 
     panel_row_begin( 1, "fills_row1" );
 
@@ -296,7 +300,7 @@ page_fills( void )
     /* rect border alignment */
     static float border_align = 0.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "align", &border_align, 0, 1.0f, 0.25f );
+    gui()->slider_float_step( "align", &border_align, 0, 1.0f, 0.1f );
     if ( gui()->button( "reset##7" )) { border_align = 0.0f; }
     gui()->draw_set_border_align( border_align );
 
@@ -379,13 +383,19 @@ page_fills( void )
 
     static float frame_border_align = 0.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "align", &frame_border_align, 0, 1.0f, 0.25f );
+    gui()->slider_float_step( "align", &frame_border_align, 0, 1.0f, 0.1f );
     if ( gui()->button( "reset##14" )) { frame_border_align = 0.0f; }
 
     /* draw_round_frame is draw_round_rect's dual-color sibling: rounding is a parameter, not the
        ambient, so this cell -- a plain userspace draw, not a widget paint -- never touches
        draw_set_rounding at all. */
     r = cell( 18, GRID_COLS, "frame (bg + border)" );
+
+    gui()->draw_set_border_align( frame_border_align );
+    gui()->draw_round_frame( r, frame_round, INK_FAINT, TEAL, frame_border );
+    gui()->draw_set_border_align( 0.0f );
+
+    r = cell( 24, GRID_COLS, "frame (bg + border)" );
 
     gui()->draw_set_border_align( frame_border_align );
     gui()->draw_round_frame( r, frame_round, INK_FAINT, TEAL, frame_border );
@@ -593,6 +603,17 @@ page_lines( void )
 
     r = cell( 10, GRID_COLS, "wire" );
     gui()->draw_wire( r.x + 10.0f, r.y + r.h * 0.25f, r.x + r.w - 10.0f, r.y + r.h * 0.75f, 20.0f, 80.0f, 2.0f, PLUM );
+
+    /* path_line_to / path_stroke -- the retained sibling of draw_polyline: build the point run
+       across several calls, then stroke it in one shot.  Same tessellation, different calling
+       convention -- useful when the points come from a loop rather than a fixed array. */
+    r = cell( 11, GRID_COLS, "path_line_to / path_stroke" );
+    gui()->path_line_to( r.x + 10.0f, r.y + r.h * 0.5f );
+    gui()->path_line_to( r.x + r.w * 0.3f, r.y + 10.0f );
+    gui()->path_line_to( r.x + r.w * 0.5f, r.y + r.h - 10.0f );
+    gui()->path_line_to( r.x + r.w * 0.7f, r.y + 10.0f );
+    gui()->path_line_to( r.x + r.w - 10.0f, r.y + r.h * 0.5f );
+    gui()->path_stroke( 2.0f, GUI_STROKE_CENTER, false, TEAL );
 }
 
 /*==============================================================================================

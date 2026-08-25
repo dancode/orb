@@ -896,6 +896,7 @@ typedef struct gui_api_s
        ONE radius for all four corners -- draw_round_rect's independent per-corner radii have no
        frame equivalent.  Neither reads the ambient rounding -- a caller never needs to
        save/set/restore draw_set_rounding around either call. */
+
     void ( *draw_frame             )( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_frame       )( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 thickness, u32 col );
