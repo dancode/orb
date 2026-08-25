@@ -326,7 +326,8 @@ page_fills( void )
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
-    /* row 2 -- gradients: the linear/radial/conic blend the fill quad can carry. */
+    // row 2 -- gradients: the linear/radial/conic blend the fill quad can carry.
+    //------------------------------------------------------------------------------------------
 
     panel_row_begin( 2, "fills_row2" );
 
@@ -367,7 +368,8 @@ page_fills( void )
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
-    /* row 3 -- frame: a single quad compositing an inner fill with an outer stroke. */
+    // row 3 -- frame: a single quad compositing an inner fill with an outer stroke.
+    //------------------------------------------------------------------------------------------
 
     panel_row_begin( 3, "fills_row3" );
 
@@ -385,21 +387,43 @@ page_fills( void )
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "align", &frame_border_align, 0, 1.0f, 0.1f );
     if ( gui()->button( "reset##14" )) { frame_border_align = 0.0f; }
+    
+    panel_row_end();
 
-    /* draw_round_frame is draw_round_rect's dual-color sibling: rounding is a parameter, not the
-       ambient, so this cell -- a plain userspace draw, not a widget paint -- never touches
-       draw_set_rounding at all. */
+    //------------------------------------------------------------------------------------------
+    // draw_round_frame is draw_round_rect's dual-color sibling: rounding is a parameter, not the
+    // ambient, so this cell -- a plain userspace draw, not a widget paint -- never touches
+    // draw_set_rounding at all.
+    //------------------------------------------------------------------------------------------
+
+    panel_row_begin( 4, "fills_row4" );
+
     r = cell( 18, GRID_COLS, "frame (bg + border)" );
 
     gui()->draw_set_border_align( frame_border_align );
     gui()->draw_round_frame( r, frame_round, INK_FAINT, TEAL, frame_border );
     gui()->draw_set_border_align( 0.0f );
 
-    r = cell( 24, GRID_COLS, "frame (bg + border)" );
+    /* draw_round_rect takes its four corner radii independently -- this cell is the one place in
+       the page that exercises that, instead of the uniform round_w every other rounded cell uses. */
+    static float corner_tl = TWEAK_ROUND_WIDTH, corner_tr = TWEAK_ROUND_WIDTH, 
+                 corner_br = TWEAK_ROUND_WIDTH, corner_bl = TWEAK_ROUND_WIDTH;
 
-    gui()->draw_set_border_align( frame_border_align );
-    gui()->draw_round_frame( r, frame_round, INK_FAINT, TEAL, frame_border );
-    gui()->draw_set_border_align( 0.0f );
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "tl", &corner_tl, 0, CELL_H * 0.5f, 1.0f );
+    if ( gui()->button( "reset##15" )) { corner_tl = TWEAK_ROUND_WIDTH; }
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "tr", &corner_tr, 0, CELL_H * 0.5f, 1.0f );
+    if ( gui()->button( "reset##16" )) { corner_tr = TWEAK_ROUND_WIDTH; }
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "br", &corner_br, 0, CELL_H * 0.5f, 1.0f );
+    if ( gui()->button( "reset##17" )) { corner_br = TWEAK_ROUND_WIDTH; }
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "bl", &corner_bl, 0, CELL_H * 0.5f, 1.0f );
+    if ( gui()->button( "reset##18" )) { corner_bl = TWEAK_ROUND_WIDTH; }
+
+    r = cell( 24, GRID_COLS, "round rect (per-corner)" );
+    gui()->draw_round_rect( r, corner_tl, corner_tr, corner_br, corner_bl, 0.0f, TEAL );
 
     panel_row_end();
 }
