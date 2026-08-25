@@ -333,7 +333,11 @@ picker_bar_marker( gui_rect_t bar, f32 t )
 {
     f32 my = floorf( bar.y + t * ( bar.h - 1.0f ) );
     gui_rect_t m = { bar.x - 1.0f, my - 1.5f, bar.w + 2.0f, 4.0f };
+
+    f32 save = draw_rounding();
+    draw_set_rounding( ROUND_WIDGET );
     gui_draw_frame( m, GUI_COLOR( 255, 255, 255, 255 ), GUI_COLOR( 0, 0, 0, 200 ), 1.0f );
+    draw_set_rounding( save );
 }
 
 /* The six-sector hue rainbow, top (red) to bottom (red again). */

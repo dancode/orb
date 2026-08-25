@@ -103,17 +103,17 @@ draw_rule( f32 x, f32 yc, f32 w, f32 thickness, u32 col )
         draw_push_rect_filled( x, yc - thickness * 0.5f, w, thickness, 0, 0, 1, 1, 0, col );
 }
 
-/* Frame / bezel (Dear ImGui RenderFrame): a filled rounded body with an optional border, the basis
-   every widget frame shares.  Uses the control-frame rounding (ROUND_WIDGET) so a custom-drawn frame
-   matches the built-in buttons / inputs; pass border <= 0 to skip the outline. */
+/* Frame / bezel (Dear ImGui RenderFrame): a filled body with an optional border, composited as
+   ONE quad -- the single-draw path draw_fill + draw_outline can't reach.  Rounding comes from the
+   ambient (draw_set_rounding), exactly like every other rect-shaped verb; it does not read
+   ROUND_WIDGET itself.  A caller painting widget chrome sets that ambient before calling, the same
+   way gui_face.c's face_paint and every other ROUND_WIDGET call site does; pass border <= 0 to skip
+   the outline. */
 
 static void
 draw_frame( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
 {
-    f32 save = draw_rounding();
-    draw_set_rounding( ROUND_WIDGET );
     draw_push_frame( r.x, r.y, r.w, r.h, border, col_bg, col_border );
-    draw_set_rounding( save );
 }
 
 /*==============================================================================================

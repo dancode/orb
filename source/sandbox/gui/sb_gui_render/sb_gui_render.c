@@ -137,7 +137,7 @@ panel_row_begin( i32 row, const char* id_str )
     gui()->region_begin( id_str, x, y, TWEAK_PANEL_W, CELL_H, GUI_REGION_FG,
                          GUI_VP_MAIN, GUI_WIN_NOSCROLL | GUI_WIN_NO_CLIP );
     gui()->row2( TWEAK_PANEL_COLW, 0 );
-    gui()->field_label_left( 96 );
+    gui()->field_label_left( 80 );
 }
 
 static void
@@ -241,11 +241,11 @@ page_fills( void )
     static float rect_w = CELL_W;
     static float rect_h = CELL_H;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "rect width", &rect_w, 0, r.w, 1.0f );
+    gui()->slider_float_step( "width", &rect_w, 0, r.w, 1.0f );
     if ( gui()->button( "reset##1" )) { rect_w = r.w; }
 
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "rect height", &rect_h, 0, r.h, 1.0f );
+    gui()->slider_float_step( "height", &rect_h, 0, r.h, 1.0f );
     if ( gui()->button( "reset##2" )) { rect_h = r.h; }
 
     gui()->draw_rect( r.x, r.y, rect_w, rect_h, AMBER );
@@ -253,7 +253,7 @@ page_fills( void )
     /* row 0 -- batched fast path: draw_rects() emit N of them in ONE command */
 
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX, NULL );
+    gui()->slider_int( "count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX, NULL );
     if ( gui()->button( "reset##3" )) { s_tweak_tile_count = TWEAK_TILE_MAX; }    
 
     r = row_wide( 0, 1, GRID_COLS - 1, "draw_rects() -- checker / 1 call (tweak panel sets count)" );
@@ -284,7 +284,7 @@ page_fills( void )
     /* rect rounding */
     static float round_w = TWEAK_ROUND_WIDTH;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "rect fill", &round_w, 0, CELL_H * 0.5, 1.0f );
+    gui()->slider_float_step( "round", &round_w, 0, CELL_H * 0.5, 1.0f );
     if ( gui()->button( "reset##5" )) { round_w =TWEAK_ROUND_WIDTH; }
     
     /* rect border */
@@ -296,14 +296,14 @@ page_fills( void )
     /* rect border alignment */
     static float border_align = 0.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "border align", &border_align, 0, 1.0f, 0.25f );
+    gui()->slider_float_step( "align", &border_align, 0, 1.0f, 0.25f );
     if ( gui()->button( "reset##7" )) { border_align = 0.0f; }
     gui()->draw_set_border_align( border_align );
 
     /* circle radius */
     static float radius = 64.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "circle radius", &radius, 0, cell_radius( r ), 1.0f );
+    gui()->slider_float_step( "radius", &radius, 0, cell_radius( r ), 1.0f );
     if ( gui()->button( "reset##8" )) { radius = cell_radius( r ); }
 
     r = cell( 6, GRID_COLS, "round rect" );
@@ -328,17 +328,17 @@ page_fills( void )
 
     static float grad_round = 14.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "grad rounding", &grad_round, 0, CELL_H * 0.5f, 1.0f );
+    gui()->slider_float_step( "round", &grad_round, 0, CELL_H * 0.5f, 1.0f );
     if ( gui()->button( "reset##9" )) { grad_round = 14.0f; }
 
     static float grad_mix = 0.5f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "grad mix", &grad_mix, 0.0f, 1.0f, 0.05f );
+    gui()->slider_float_step( "mix", &grad_mix, 0.0f, 1.0f, 0.05f );
     if ( gui()->button( "reset##10" )) { grad_mix = 0.5f; }
 
     static float grad_angle_deg = 45.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "grad angle", &grad_angle_deg, 0.0f, 360.0f, 1.0f );
+    gui()->slider_float_step( "angle", &grad_angle_deg, 0.0f, 360.0f, 1.0f );
     if ( gui()->button( "reset##11" )) { grad_angle_deg = 45.0f; }
 
     r = cell( 12, GRID_COLS, "gradient v" );
@@ -347,7 +347,7 @@ page_fills( void )
     r = cell( 13, GRID_COLS, "gradient h" );
     gui()->draw_gradient( r, AMBER, PLUM, false );
 
-    r = cell( 14, GRID_COLS, "round rect gradient (linear)" );
+    r = cell( 14, GRID_COLS, "rr gradient (linear)" );
     gui()->draw_round_rect_gradient( r, grad_round, AMBER, TEAL, GUI_GRAD_LINEAR, 0.0f, grad_mix );
 
     r = cell( 15, GRID_COLS, "rr gradient (radial)" );
@@ -362,26 +362,33 @@ page_fills( void )
     /* row 3 -- frame: a single quad compositing an inner fill with an outer stroke. */
 
     panel_row_begin( 3, "fills_row3" );
-    
-    
+
+    static float frame_round = 16.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "round", &frame_round, 0, CELL_H * 0.5f, 1.0f );
+    if ( gui()->button( "reset##12" )) { frame_round = 16.0f; }
 
     static float frame_border = 2.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "frame border", &frame_border, 1.0f, 16.0f, 1.0f );
-    if ( gui()->button( "reset##12" )) { frame_border = 2.0f; }
+    gui()->slider_float_step( "border", &frame_border, 1.0f, 16.0f, 1.0f );
+    if ( gui()->button( "reset##13" )) { frame_border = 2.0f; }
 
     static float frame_border_align = 0.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "border align", &frame_border_align, 0, 1.0f, 0.25f );
-    if ( gui()->button( "reset##13" )) { frame_border_align = 0.0f; }
+    gui()->slider_float_step( "align", &frame_border_align, 0, 1.0f, 0.25f );
+    if ( gui()->button( "reset##14" )) { frame_border_align = 0.0f; }
 
+    /* draw_frame takes its rounding from the ambient, like every other rect-shaped verb -- it
+       does not read ROUND_WIDGET itself, so this cell sets/restores rounding around the call
+       exactly the way a widget call site would. */
     r = cell( 18, GRID_COLS, "frame (bg + border)" );
-    gui()->draw_set_border_align( frame_border_align );
-    gui()->draw_set_rounding( 16.0f );
-    gui()->draw_frame( r, INK_FAINT, TEAL, frame_border );
-    gui()->draw_set_rounding( 0.0f);
 
-    gui()->draw_set_border_align( 0.0f );    
+    gui()->draw_set_border_align( frame_border_align );
+    gui()->draw_set_rounding( frame_round );
+    gui()->draw_frame( r, INK_FAINT, TEAL, frame_border );
+    gui()->draw_set_rounding( 0.0f );
+    gui()->draw_set_border_align( 0.0f );
+
     panel_row_end();
 }
 
