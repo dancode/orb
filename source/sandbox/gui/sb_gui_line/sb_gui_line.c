@@ -105,7 +105,7 @@ panel_fan( void )
 
     gui()->checkbox( "spin", &s_fan_spin );
     gui()->slider_float( "thickness (px)", &s_fan_th, 0.25f, 24.0f );
-    gui()->slider_int( "spokes", &s_fan_n, 2, 64 );
+    gui()->slider_int( "spokes", &s_fan_n, 2, 64, NULL );
 
     if ( s_fan_spin )
     {

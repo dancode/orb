@@ -391,10 +391,17 @@ gui_slider_float( const char* label, f32* v, f32 lo, f32 hi )
     return gui_slider_float_step( label, v, lo, hi, 0.0f );
 }
 
-/* slider_int -- the integer slider; every track position lands on a whole value in [lo,hi]. */
+/* slider_int -- the integer slider; every track position lands on a whole value in [lo,hi].
+   format is the printf form of the shown value ("%d" when NULL/empty, e.g. "Quality: %d") --
+   same DragInt idiom drag_int_box uses.  A format with no conversion specifier at all (e.g. an
+   options ladder passing items[*v] straight through) prints that string verbatim and *v is
+   simply an unused vararg, so an option-list slider reads its rung's name instead of its
+   index -- see the DPI ladder in gui_frame_overlay.c. */
 bool
-gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
+gui_slider_int( const char* label, i32* v, i32 lo, i32 hi, const char* format )
 {
+    if ( !format || !format[ 0 ] ) format = "%d";
+
     gui_id_t id = item_id( label );
 
     /* Unconditional, every call -- see slider_anim_consume_next. */
@@ -454,7 +461,7 @@ gui_slider_int( const char* label, i32* v, i32 lo, i32 hi )
     {
         f32  t_cur = ( hi > lo ) ? ( (f32)( *v - lo ) / (f32)( hi - lo ) ) : 0.0f;
         char buf[ 32 ];
-        fmt_snprintf( buf, sizeof( buf ), "%d", *v );
+        fmt_snprintf( buf, sizeof( buf ), format, *v );
         slider_render( id, track_r, st, t_cur, buf );
     }
     return changed;

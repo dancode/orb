@@ -7,11 +7,11 @@
 
     Pick a built-in theme, then tune every SEED / RAMP / CELL / VAR knob live.  The flow is the
     one the gui style API is built around: theme_list/theme_set switch named presets; style_peek
-    reads the base style WITHOUT marking it anonymous (so the theme combo keeps naming the active
-    theme until an edit lands); style_get commits an edit (theme goes "(custom)"); style_apply
-    rescales the active metrics.  Widgets edit a local copy of the base style and the whole copy
-    is committed once per frame only when something actually changed -- so merely opening the
-    window never disturbs the theme.
+    reads the base style WITHOUT marking it anonymous (so the theme combo keeps naming the
+active theme until an edit lands); style_get commits an edit (theme goes "(custom)");
+style_apply rescales the active metrics.  Widgets edit a local copy of the base style and the
+whole copy is committed once per frame only when something actually changed -- so merely opening
+the window never disturbs the theme.
 
     Nothing here names an individual colour or var: the editor walks the engine's own name
     tables (style_seed_name / _ramp_name / _role_name / _phase_name / _var_name / _var_class /
@@ -59,7 +59,7 @@ static bool
 se_px( const char* label, f32* field, i32 lo, i32 hi )
 {
     i32 v = (i32)( *field + 0.5f );
-    if ( gui()->slider_int( label, &v, lo, hi ) )
+    if ( gui()->slider_int( label, &v, lo, hi, NULL ) )
     {
         *field = (f32)v;
         return true;
@@ -318,7 +318,7 @@ st_editor_window( void )
 
     gui()->form( GUI_LABEL_RIGHT, label_width );
     gui()->slider_float( "Slider", &sample_val, 0.0f, 1.0f );
-    gui()->slider_int( "Steps", &sample_int, 0, 10 );
+    gui()->slider_int( "Steps", &sample_int, 0, 10, NULL );
     gui()->progress_bar( sample_val, NULL );
 
     /* Commit once: writing through style_get marks the theme anonymous (an intentional edit),

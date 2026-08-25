@@ -56,7 +56,7 @@
 #include <string.h>
 
 #include "orb.h"
-#include "base/fmt.h"   // fmt_snprintf -- the bench's per-row formatting is part of what emit ms measures
+#include "base/fmt.h"    // fmt_snprintf -- the bench's per-row formatting is part of what emit ms measures
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
 #include "engine/sys/sys_host.h"
@@ -653,15 +653,15 @@ show_control( void )
 
         gui()->stack();
         gui()->separator_text( "load" );
-        gui()->slider_int( "flood wins",  &s_flood_count, 1,   STRESS_FLOOD_MAX );
-        gui()->slider_int( "wall rows",   &s_wall_rows,   10,  STRESS_WALL_MAX  );
-        gui()->slider_int( "table rows",  &s_table_rows,  100, STRESS_TABLE_MAX );
-        gui()->slider_int( "storm prims", &s_storm_count, 100, STRESS_STORM_MAX );
-        gui()->slider_int( "churn chips", &s_churn_count, 50,  STRESS_CHURN_MAX );
-        gui()->slider_int( "dock wins",   &s_dock_count,  4,   STRESS_DOCK_MAX  );
-        gui()->slider_int( "mutate rows", &s_mut_rows,    20,  STRESS_MUT_MAX   );
-        gui()->slider_int( "swarm blks",  &s_swarm_count, 4,   STRESS_SWARM_MAX );
-        gui()->slider_int( "fill layers", &s_fill_layers, 10,  STRESS_FILL_MAX  );
+        gui()->slider_int( "flood wins",  &s_flood_count, 1,   STRESS_FLOOD_MAX, NULL );
+        gui()->slider_int( "wall rows",   &s_wall_rows,   10,  STRESS_WALL_MAX, NULL );
+        gui()->slider_int( "table rows",  &s_table_rows,  100, STRESS_TABLE_MAX, NULL );
+        gui()->slider_int( "storm prims", &s_storm_count, 100, STRESS_STORM_MAX, NULL );
+        gui()->slider_int( "churn chips", &s_churn_count, 50,  STRESS_CHURN_MAX, NULL );
+        gui()->slider_int( "dock wins",   &s_dock_count,  4,   STRESS_DOCK_MAX, NULL );
+        gui()->slider_int( "mutate rows", &s_mut_rows,    20,  STRESS_MUT_MAX, NULL );
+        gui()->slider_int( "swarm blks",  &s_swarm_count, 4,   STRESS_SWARM_MAX, NULL );
+        gui()->slider_int( "fill layers", &s_fill_layers, 10,  STRESS_FILL_MAX, NULL );
         gui()->checkbox( "clip offscreen rows (2/3)", &s_clip );
 
         gui()->separator();

@@ -246,7 +246,7 @@ page_fills( void )
     /* row 0 -- batched fast path: draw_rects() emit N of them in ONE command */
 
     gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
-    gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX );
+    gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX, NULL );
     if ( gui()->button( "reset##2" )) { s_tweak_tile_count = TWEAK_TILE_MAX; }    
 
     r = row_wide( 0, 1, GRID_COLS - 1, "draw_rects() -- checker / 1 call (tweak panel sets count)" );
@@ -287,8 +287,8 @@ page_fills( void )
     
     static float radius_w = TWEAK_ROUND_WIDTH;
     gui()->next_slider_animate( GUI_EASE_OUT_CUBIC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "radius", &radius_w, 0, cell_radius( CELL_H ), 1.0f );
-    if ( gui()->button( "reset##3" )) { radius_w = cell_radius( CELL_Hr ); }
+    gui()->slider_float_step( "radius", &radius_w, 0, cell_radius( r ), 1.0f );
+    if ( gui()->button( "reset##3" )) { radius_w = cell_radius( r ); }
 
     r = cell( 8, GRID_COLS, "round rect (circle)" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius_w, 0.0f, TEAL ); }

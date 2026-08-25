@@ -528,8 +528,8 @@ ex_style_font_sizes( void )
         i32                small = (i32)( st->var[ GUI_VAR_TYPE_SMALL ] + 0.5f );
         i32                large = (i32)( st->var[ GUI_VAR_TYPE_LARGE ] + 0.5f );
         bool               edit  = false;
-        edit |= gui()->slider_int( "GUI_VAR_TYPE_SMALL", &small, 0, 12 );
-        edit |= gui()->slider_int( "GUI_VAR_TYPE_LARGE", &large, 0, 24 );
+        edit |= gui()->slider_int( "GUI_VAR_TYPE_SMALL", &small, 0, 12, NULL );
+        edit |= gui()->slider_int( "GUI_VAR_TYPE_LARGE", &large, 0, 24, NULL );
         if ( edit )
         {
             gui_style_t work = *st;                       /* commit like a style editor: the theme */

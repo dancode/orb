@@ -170,14 +170,14 @@ ex_widgets_text( void )
         gui()->separator_text( "tree_node (parametric)" );
         static i32 depth   = 2;
         static i32 breadth = 3;
-        gui()->slider_int( "Depth",    &depth,   1, 4 );
-        gui()->slider_int( "Children", &breadth, 1, 4 );
+        gui()->slider_int( "Depth",    &depth,   1, 4, NULL );
+        gui()->slider_int( "Children", &breadth, 1, 4, NULL );
         ex_tree_rec( 1, depth, breadth );
 
         /* indent / unindent -- the raw mechanism behind tree nesting. */
         gui()->separator_text( "indent / unindent" );
         static i32 ind = 24;
-        gui()->slider_int( "Indent (px)", &ind, 4, 80 );
+        gui()->slider_int( "Indent (px)", &ind, 4, 80, NULL );
         gui()->text( "at the margin" );
         gui()->indent( (f32)ind );
         gui()->text( "indented" );
@@ -279,8 +279,8 @@ ex_widgets_numeric( void )
         gui()->separator_text( "Step parameters" );
         static i32 step      = 1;
         static i32 step_fast = 10;
-        gui()->slider_int( "step",      &step,      0, 10  );
-        gui()->slider_int( "step_fast", &step_fast, 0, 100 );
+        gui()->slider_int( "step",      &step,      0, 10, NULL );
+        gui()->slider_int( "step_fast", &step_fast, 0, 100, NULL );
 
         gui()->separator_text( "input_int / input_float / input_double" );
         static i32 iv = 42;
@@ -346,7 +346,7 @@ ex_widgets_sliders( void )
         gui()->slider_float( "step size", &step, 0.0f, 2.0f );
 
         static i32 si = 3;
-        gui()->slider_int( "int", &si, (i32)lo, (i32)hi );
+        gui()->slider_int( "int", &si, (i32)lo, (i32)hi, NULL );
 
         gui()->separator_text( "drag_int / drag_float (no track)" );
         static f32  speed   = 0.05f;
@@ -450,7 +450,7 @@ ex_widgets_plots( void )
         /* More samples than pixels: both plots stride-sample down to one mark per pixel. */
         gui()->separator_text( "Sample density (downsampling)" );
         static i32 dense_n = 600;
-        gui()->slider_int( "count", &dense_n, 2, 1024 );
+        gui()->slider_int( "count", &dense_n, 2, 1024, NULL );
         f32 dense[ 1024 ];
         for ( i32 i = 0; i < dense_n; ++i )
             dense[ i ] = sinf( (f32)i * 0.05f ) * ( 1.0f - (f32)i / 1024.0f );
@@ -681,7 +681,7 @@ ex_widgets_tabs( void )
                 static i32  quality = 2;
                 gui()->text( "General settings live on this tab." );
                 gui()->checkbox( "Vsync", &vsync );
-                gui()->slider_int( "Quality", &quality, 0, 4 );
+                gui()->slider_int( "Quality", &quality, 0, 4, NULL );
                 gui()->tab_item_end();
             }
             if ( gui()->tab_item_begin( "Audio", NULL, GUI_TAB_ITEM_NONE ) )

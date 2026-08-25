@@ -498,7 +498,7 @@ step_window( bool* open )
 
             /* Scrubber over the whole frozen prefix, with a tick at every segment boundary. */
             i32 v = (i32)cur;
-            if ( gui_slider_int( "##step_cursor", &v, 0, (i32)cnt ) )
+            if ( gui_slider_int( "##step_cursor", &v, 0, (i32)cnt, NULL ) )
                 step_seek_dirty( v < 0 ? 0u : (u32)v );
             if ( cnt > 0 )
             {

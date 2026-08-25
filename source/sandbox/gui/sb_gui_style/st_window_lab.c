@@ -148,7 +148,7 @@ st_window_lab_window( void )
     }
 
     gui()->separator_text( "Subject content" );
-    gui()->slider_int( "Rows", &s_lab_rows, 0, 40 );
+    gui()->slider_int( "Rows", &s_lab_rows, 0, 40, NULL );
     gui()->checkbox( "Wide line (overflows width)", &s_lab_wide );
 
     /* A payload to fly: drag this over the subject to see DRAG_TARGET light its body. */

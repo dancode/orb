@@ -51,7 +51,7 @@ ex_draw_lines( void )
 
         /* ---- controls ---- */
         gui()->separator_text( "Parameters" );
-        gui()->slider_int( "Thickness", &thickness_px, 0, 16 );
+        gui()->slider_int( "Thickness", &thickness_px, 0, 16, NULL );
         f32 thickness = (f32)thickness_px;
         gui()->textf( "alignment: %s", align_names[ align_idx ] );
 
@@ -246,51 +246,51 @@ ex_draw_shapes( void )
 
             static i32 p_arrow = 18;     /* px */
             r = gui()->canvas( H ); gui()->draw_arrow( ex_sym_box( r, (f32)p_arrow ), GUI_DIR_RIGHT, col );
-            gui()->slider_int( "Arrow size (px)", &p_arrow, 8, 26 );
+            gui()->slider_int( "Arrow size (px)", &p_arrow, 8, 26, NULL );
 
             static i32 p_check = 22;     /* px */
             r = gui()->canvas( H ); gui()->draw_check_mark( ex_sym_box( r, (f32)p_check ), grn );
-            gui()->slider_int( "Check size (px)", &p_check, 8, 26 );
+            gui()->slider_int( "Check size (px)", &p_check, 8, 26, NULL );
 
             static i32 p_chev = 2;       /* stroke weight, px */
             r = gui()->canvas( H ); gui()->draw_chevron( ex_sym_box( r, H ), GUI_DIR_RIGHT, (f32)p_chev, col );
-            gui()->slider_int( "Chevron weight", &p_chev, 1, 5 );
+            gui()->slider_int( "Chevron weight", &p_chev, 1, 5, NULL );
 
             static i32 p_pm = 2;         /* stroke weight, px */
             r = gui()->canvas( H ); gui()->draw_plus_minus( ex_sym_box( r, H ), true, (f32)p_pm, col );
-            gui()->slider_int( "Plus weight", &p_pm, 1, 5 );
+            gui()->slider_int( "Plus weight", &p_pm, 1, 5, NULL );
 
             static i32 p_close = 18;     /* px */
             r = gui()->canvas( H ); gui()->draw_close( ex_sym_box( r, (f32)p_close ), col );
-            gui()->slider_int( "Close size (px)", &p_close, 8, 26 );
+            gui()->slider_int( "Close size (px)", &p_close, 8, 26, NULL );
 
             static i32 p_bull = 4;       /* radius, px */
             r = gui()->canvas( H ); gui()->draw_bullet( r.x + r.w * 0.5f, r.y + H * 0.5f, (f32)p_bull, col );
-            gui()->slider_int( "Bullet radius", &p_bull, 2, 10 );
+            gui()->slider_int( "Bullet radius", &p_bull, 2, 10, NULL );
 
             static i32 p_sides = 6;
             r = gui()->canvas( H ); gui()->draw_ngon( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, (u32)p_sides, t*0.3f, 0.0f, acc );
-            gui()->slider_int( "Polygon sides", &p_sides, 3, 12 );
+            gui()->slider_int( "Polygon sides", &p_sides, 3, 12, NULL );
 
             static i32 p_ring = 2;       /* stroke weight, px */
             r = gui()->canvas( H ); gui()->draw_circle( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, (f32)p_ring, acc );
-            gui()->slider_int( "Ring weight", &p_ring, 1, 6 );
+            gui()->slider_int( "Ring weight", &p_ring, 1, 6, NULL );
 
             static i32 p_arc = 240;      /* whole degrees */
             r = gui()->canvas( H ); gui()->draw_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, 0.0f, gui_radians( (f32)p_arc ), 3.0f, acc );
-            gui()->slider_int( "Arc sweep (deg)", &p_arc, 20, 360 );
+            gui()->slider_int( "Arc sweep (deg)", &p_arc, 20, 360, NULL );
 
             static i32 p_pie = 150;      /* whole degrees, swept from -90 */
             r = gui()->canvas( H ); gui()->draw_pie( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, gui_radians( -90.0f ), gui_radians( -90.0f + (f32)p_pie ), acc );
-            gui()->slider_int( "Pie sweep (deg)", &p_pie, 20, 360 );
+            gui()->slider_int( "Pie sweep (deg)", &p_pie, 20, 360, NULL );
 
             static i32 p_round = 8;      /* corner radius, px */
             r = gui()->canvas( H ); gui()->draw_round_rect( ex_sym_box( r, H ), (f32)p_round, (f32)p_round, 0.0f, 0.0f, 0.0f, 0xFF4A90D0u );
-            gui()->slider_int( "Tab corner (px)", &p_round, 0, 13 );
+            gui()->slider_int( "Tab corner (px)", &p_round, 0, 13, NULL );
 
             static i32 p_border = 2;     /* frame border, px */
             r = gui()->canvas( H ); gui()->draw_frame( ex_sym_box( r, H ), 0xFF303840u, acc, (f32)p_border );
-            gui()->slider_int( "Frame border (px)", &p_border, 1, 6 );
+            gui()->slider_int( "Frame border (px)", &p_border, 1, 6, NULL );
 
             static f32 p_bow = 0.4f;     /* continuous curve shape */
             r = gui()->canvas( H ); gui()->draw_bezier_quad( r.x+4, r.y+H*0.5f, r.x+r.w*0.5f, r.y+H*0.5f - H*p_bow, r.x+r.w-4, r.y+H*0.5f, 2.0f, acc );
@@ -305,15 +305,15 @@ ex_draw_shapes( void )
 
             static i32 p_dash = 5;       /* dash length, px */
             r = gui()->canvas( H ); gui()->draw_dashed_line( r.x+4, r.y+H*0.5f, r.x+r.w-4, r.y+H*0.5f, (f32)p_dash, 3.0f, 2.0f, col );
-            gui()->slider_int( "Dash length (px)", &p_dash, 2, 12 );
+            gui()->slider_int( "Dash length (px)", &p_dash, 2, 12, NULL );
 
             static i32 p_cell = 6;       /* cell size, px */
             r = gui()->canvas( H ); gui()->draw_checker( ex_sym_box( r, H ), (f32)p_cell, 0xFF808080u, 0xFF404040u );
-            gui()->slider_int( "Checker cell (px)", &p_cell, 3, 14 );
+            gui()->slider_int( "Checker cell (px)", &p_cell, 3, 14, NULL );
 
             static i32 p_hatch = 5;      /* line spacing, px */
             r = gui()->canvas( H ); gui()->draw_hatch( ex_sym_box( r, H ), (f32)p_hatch, 1.0f, 0xFF909090u );
-            gui()->slider_int( "Hatch spacing (px)", &p_hatch, 3, 14 );
+            gui()->slider_int( "Hatch spacing (px)", &p_hatch, 3, 14, NULL );
 
             static bool p_horiz = true;  /* gradient axis */
             r = gui()->canvas( H ); gui()->draw_gradient( ex_sym_box( r, H ), acc, 0xFF102030u, p_horiz );
@@ -326,7 +326,7 @@ ex_draw_shapes( void )
                 gui()->draw_shadow( box, (f32)p_spread, 0xC0000000u );
                 gui()->draw_rect( box.x, box.y, box.w, box.h, 0xFF3A4450u );
             }
-            gui()->slider_int( "Shadow spread", &p_spread, 1, 12 );
+            gui()->slider_int( "Shadow spread", &p_spread, 1, 12, NULL );
 
             /* The same surface one row up, resolved exponentially instead of linearly.  Sitting
                beside the shadow on purpose: the two differ in the falloff CURVE and nothing else,
@@ -338,7 +338,7 @@ ex_draw_shapes( void )
                 gui()->draw_glow( box, (f32)p_glow, 0xFF40C8FFu );
                 gui()->draw_rect( box.x, box.y, box.w, box.h, 0xFF102028u );
             }
-            gui()->slider_int( "Glow reach (px)", &p_glow, 2, 16 );
+            gui()->slider_int( "Glow reach (px)", &p_glow, 2, 16, NULL );
 
             /* The lattice: every count below is the SAME one quad and one style record, which is
                the whole reason a 40-tick ruler is now a thing you can draw. */
@@ -346,33 +346,33 @@ ex_draw_shapes( void )
             r = gui()->canvas( H );
             gui()->draw_ticks( ( gui_rect_t ){ r.x + 4.0f, r.y + 6.0f, r.w - 8.0f, H - 12.0f },
                                (u32)p_ticks, 1.0f, 0.0f, false, col );
-            gui()->slider_int( "Ruler ticks", &p_ticks, 2, 64 );
+            gui()->slider_int( "Ruler ticks", &p_ticks, 2, 64, NULL );
 
             static i32 p_dots = 5;       /* dots per side of the field */
             r = gui()->canvas( H );
             gui()->draw_dot_grid( ex_sym_box( r, H ), (u32)p_dots, (u32)p_dots,
                                   H / (f32)( p_dots + 1 ), H / (f32)( p_dots + 1 ), 2.0f, acc );
-            gui()->slider_int( "Dot field N x N", &p_dots, 2, 9 );
+            gui()->slider_int( "Dot field N x N", &p_dots, 2, 9, NULL );
 
             /* The angular fold, spinning on the shader clock: the count moves, the cost does not.
                Compare with the arc spinner two rows down -- both re-tessellate nothing. */
             static i32 p_sdots = 8;      /* dots around the ring */
             r = gui()->canvas( H );
             gui()->draw_dot_spinner( ex_sym_box( r, H ), (u32)p_sdots, 3.0f, 0.6f, acc, 0u );
-            gui()->slider_int( "Spinner dots", &p_sdots, 3, 16 );
+            gui()->slider_int( "Spinner dots", &p_sdots, 3, 16, NULL );
 
             static i32 p_dial = 12;      /* marks around the dial face */
             r = gui()->canvas( H );
             gui()->draw_dial_ticks( ex_sym_box( r, H ), (u32)p_dial, 1.0f, 5.0f, 0.0f, col );
-            gui()->slider_int( "Dial marks", &p_dial, 4, 36 );
+            gui()->slider_int( "Dial marks", &p_dial, 4, 36, NULL );
 
             static i32 p_grip = 20;      /* grip box, px */
             r = gui()->canvas( H ); gui()->draw_grip( ex_sym_box( r, (f32)p_grip ), col );
-            gui()->slider_int( "Grip size (px)", &p_grip, 10, 26 );
+            gui()->slider_int( "Grip size (px)", &p_grip, 10, 26, NULL );
 
             static i32 p_spin = 3;       /* stroke weight, px */
             r = gui()->canvas( H ); gui()->draw_spinner( ex_sym_box( r, H ), 1.0f, (f32)p_spin, acc );
-            gui()->slider_int( "Spinner weight", &p_spin, 1, 6 );
+            gui()->slider_int( "Spinner weight", &p_spin, 1, 6, NULL );
 
             static f32 p_prog = 0.66f;   /* continuous 0..1 fraction */
             r = gui()->canvas( H ); gui()->draw_progress_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, p_prog, 3.0f, acc );
@@ -385,7 +385,7 @@ ex_draw_shapes( void )
             r = gui()->canvas( H );
             gui()->draw_border_tracer( ( gui_rect_t ){ r.x + 4.0f, r.y + 3.0f, r.w - 8.0f, H - 6.0f },
                                        6.0f, 2.0f, (f32)p_trace * 0.01f, 0.4f, acc );
-            gui()->slider_int( "Tracer arc (%)", &p_trace, 2, 100 );
+            gui()->slider_int( "Tracer arc (%)", &p_trace, 2, 100, NULL );
 
             /* The determinate twin: same arc, placed by a value instead of the clock. */
             static f32 p_bprog = 0.30f;  /* position around the border, 0..1 from top-left */
@@ -396,7 +396,7 @@ ex_draw_shapes( void )
 
             static i32 p_half = 6;       /* pointer half-extent, px */
             r = gui()->canvas( H ); gui()->draw_arrow_pointing_at( r.x + r.w*0.5f, r.y + H*0.5f, (f32)p_half, GUI_DIR_DOWN, col );
-            gui()->slider_int( "Pointer half (px)", &p_half, 3, 12 );
+            gui()->slider_int( "Pointer half (px)", &p_half, 3, 12, NULL );
         }
         gui()->row( 0 );
 
@@ -519,7 +519,7 @@ ex_draw_icons( void )
         /* Parametric: size + tint drive the image() row live. */
         static i32 ic_sz   = 48;
         static f32 tint[ 3 ] = { 1.0f, 0.8f, 0.4f };
-        gui()->slider_int( "image size", &ic_sz, 16, 96 );
+        gui()->slider_int( "image size", &ic_sz, 16, 96, NULL );
         gui()->color_edit3( "tint", tint, GUI_COLOR_EDIT_NONE );
         u32 tcol = GUI_COLOR( (u8)( tint[ 0 ] * 255.0f ), (u8)( tint[ 1 ] * 255.0f ),
                               (u8)( tint[ 2 ] * 255.0f ), 0xFF );
@@ -619,7 +619,7 @@ ex_draw_custom( void )
         /* --- draw_text_in / draw_text_clipped, alignment picked live ----------------------- */
         gui()->separator_text( "draw_text_in (alignment picker)" );
         static i32 ta = 4;      /* 0..8: 3x3 alignment grid index */
-        gui()->slider_int( "alignment cell (3x3)", &ta, 0, 8 );
+        gui()->slider_int( "alignment cell (3x3)", &ta, 0, 8, NULL );
         {
             gui_align_t ah = ( ta % 3 ) == 1 ? GUI_ALIGN_HCENTER : ( ta % 3 ) == 2 ? GUI_ALIGN_RIGHT  : GUI_ALIGN_LEFT;
             gui_align_t av = ( ta / 3 ) == 1 ? GUI_ALIGN_VCENTER : ( ta / 3 ) == 2 ? GUI_ALIGN_BOTTOM : GUI_ALIGN_TOP;

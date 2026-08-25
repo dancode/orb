@@ -77,7 +77,7 @@ ex_layout_fields( void )
 
         /* The label gutter width is itself a live parameter. */
         static i32 label_w = 90;
-        gui()->slider_int( "Label width", &label_w, 40, 180 );
+        gui()->slider_int( "Label width", &label_w, 40, 180, NULL );
 
         /* Each section reuses the same labels, so scope ids with push_id. */
         gui()->separator_text( "field_label_left" );
@@ -133,8 +133,8 @@ ex_layout_grid( void )
         static i32  nc        = 3;
         static i32  nr        = 3;
         static bool skip_ctr  = true;
-        gui()->slider_int( "Columns", &nc, 1, 6 );
-        gui()->slider_int( "Rows",    &nr, 1, 6 );
+        gui()->slider_int( "Columns", &nc, 1, 6, NULL );
+        gui()->slider_int( "Rows",    &nr, 1, 6, NULL );
         gui()->checkbox( "skip() the center cell", &skip_ctr );
 
         /* The grid fills the remaining content box, so bound it in a fixed-height child. */
@@ -205,7 +205,7 @@ ex_layout_align( void )
 
         gui()->separator_text( "new_line( h )" );
         static i32 gap_h = 32;
-        gui()->slider_int( "gap height", &gap_h, 0, 96 );
+        gui()->slider_int( "gap height", &gap_h, 0, 96, NULL );
         gui()->text( "above the gap" );
         gui()->new_line( (f32)gap_h );
         gui()->text( "below the gap" );
@@ -295,7 +295,7 @@ ex_layout_pack( void )
         gui()->stack();
         gui()->separator_text( "pack_nextline() -- wrap the run" );
         static i32 per_line = 3;
-        gui()->slider_int( "items per line", &per_line, 1, 6 );
+        gui()->slider_int( "items per line", &per_line, 1, 6, NULL );
         gui()->bar();
         for ( i32 i = 0; i < 9; i++ )
         {
@@ -408,7 +408,7 @@ ex_layout_sizing( void )
         gui()->text( "Intent -> pixels; every value below is live." );
 
         static i32 n = 3;
-        gui()->slider_int( "n", &n, 0, 12 );
+        gui()->slider_int( "n", &n, 0, 12, NULL );
 
         gui()->separator_text( "The sz_ family" );
         gui()->label_text( "sz_u( n )",       "grid quanta" );
@@ -460,7 +460,7 @@ ex_layout_carve( void )
         gui()->split_begin( "##src", gui()->button_width( bake ) );
             gui()->stack();
             static i32 quality = 2;
-            gui()->slider_int( "Quality", &quality, 0, 4 );
+            gui()->slider_int( "Quality", &quality, 0, 4, NULL );
             static bool fast = true;
             gui()->checkbox( "Fast path", &fast );
         gui()->split_next();
@@ -473,7 +473,7 @@ ex_layout_carve( void )
         static f32 ratio = 0.3f;
         static i32 gap   = 6;
         gui()->slider_float( "sidebar fraction", &ratio, 0.1f, 0.9f );
-        gui()->slider_int  ( "gap", &gap, 0, 16 );
+        gui()->slider_int  ( "gap", &gap, 0, 16, NULL );
         {
             gui_rect_t area = gui()->canvas( 90.0f );
             gui_rect_t panes[ 3 ];

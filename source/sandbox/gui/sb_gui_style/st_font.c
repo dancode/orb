@@ -387,7 +387,7 @@ st_font_window( void )
     if ( gui()->small_button( "Refresh" ) )
         ft_scan();
 
-    gui()->slider_int( "Size (px)", &s_ft.size_px, 6, 72 );
+    gui()->slider_int( "Size (px)", &s_ft.size_px, 6, 72, NULL );
 
     /* --- Actions -------------------------------------------------------------- */
     gui()->separator_text( "Bake" );

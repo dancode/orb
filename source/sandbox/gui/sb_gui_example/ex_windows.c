@@ -77,7 +77,7 @@ ex_windows_playground( void )
         gui()->pop_item_flag();
 
         gui()->separator_text( "Subject content" );
-        gui()->slider_int( "filler lines", &lines, 0, 60 );
+        gui()->slider_int( "filler lines", &lines, 0, 60, NULL );
         gui()->checkbox( "one extra-wide line (feeds HSCROLL)", &wide_line );
 
         gui()->separator_text( "window_set_drag (GLOBAL: every window)" );

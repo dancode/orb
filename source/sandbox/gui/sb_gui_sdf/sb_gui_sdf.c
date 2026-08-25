@@ -2835,7 +2835,7 @@ win_anim_fx( void )
     }
 
     gui()->separator_text( "the ngon field -- flat sides, exact at any size, corners that round" );
-    gui()->slider_int( "sides", &s_ngon_sides, 3, 12 );
+    gui()->slider_int( "sides", &s_ngon_sides, 3, 12, NULL );
     gui()->slider_float( "corner rounding (px)", &s_ngon_round, 0.0f, 18.0f );
     {
         gui_rect_t r  = gui()->canvas( 120.0f );

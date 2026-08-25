@@ -69,8 +69,7 @@ tl_busy_ns( i64 ns )
 {
     i64          end = sys_tick_nanoseconds() + ns;
     volatile u32 x   = 1;
-    while ( sys_tick_nanoseconds() < end )
-        x = x * 1664525u + 1013904223u;
+    while ( sys_tick_nanoseconds() < end ) x = x * 1664525u + 1013904223u;
 }
 
 /* Cheap per-caller PRNG for duration jitter. */
@@ -199,7 +198,7 @@ tl_worker_main( void* arg )
             thread_sleep_ms( 3 + w->index * 2 + ( tl_rand( &rng ) & 7 ) );
         }
         else
-            thread_sleep_ms( 20 );    /* parked: emits nothing, keeps its ring */
+            thread_sleep_ms( 20 ); /* parked: emits nothing, keeps its ring */
     }
 }
 
@@ -239,17 +238,17 @@ tl_workload_window( void )
         gui()->field_label_left( 130.0f );
 
         gui()->checkbox( "Nested sim tree", &s_nested );
-        gui()->slider_int( "depth", &s_nest_depth, 1, 6 );
+        gui()->slider_int( "depth", &s_nest_depth, 1, 6, NULL );
         gui()->slider_float( "load ms", &s_nest_ms, 0.0f, 8.0f );
         gui()->separator();
 
         i32 busy = sys_atomic_read( &s_busy_workers );
-        if ( gui()->slider_int( "busy workers", &busy, 0, TL_MAX_WORKERS ) )
+        if ( gui()->slider_int( "busy workers", &busy, 0, TL_MAX_WORKERS, NULL ) )
             sys_atomic_write( &s_busy_workers, busy );
         gui()->separator();
 
         gui()->checkbox( "Micro-zone spam", &s_spam );
-        gui()->slider_int( "zones/frame", &s_spam_count, 10, 2000 );
+        gui()->slider_int( "zones/frame", &s_spam_count, 10, 2000, NULL );
         gui()->separator();
 
         if ( gui()->button( "Spike now (40 ms)" ) )

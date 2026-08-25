@@ -1363,8 +1363,8 @@ debug_selector_menu( void )
         /* Tier sliders under a left label column, so the labels align and the tracks line up
            with each other instead of each starting after its own label's width. */
         gui_field_label_left( label_w );
-        gui_slider_int( SEL_PERF,  &s_dbg_perf_mode,  0, DBG_PERF_TIERS  - 1 );
-        gui_slider_int( SEL_STATE, &s_dbg_state_mode, 0, DBG_STATE_TIERS - 1 );
+        gui_slider_int( SEL_PERF,  &s_dbg_perf_mode,  0, DBG_PERF_TIERS  - 1, k_perf_tier [ s_dbg_perf_mode  ] );
+        gui_slider_int( SEL_STATE, &s_dbg_state_mode, 0, DBG_STATE_TIERS - 1, k_state_tier[ s_dbg_state_mode ] );
 
         /* UI scale, so a layout can be checked at 2x without a second monitor or a relaunch.
            Re-read from the engine first: a host driving dpi_set itself (from a cvar, say) owns
@@ -1378,7 +1378,7 @@ debug_selector_menu( void )
         if ( gui_dpi_mode() != GUI_DPI_MANUAL )
             s_dbg_dpi_step = 0;
 
-        if ( gui_slider_int( SEL_DPI, &s_dbg_dpi_step, 0, DBG_DPI_STEPS - 1 ) )
+        if ( gui_slider_int( SEL_DPI, &s_dbg_dpi_step, 0, DBG_DPI_STEPS - 1, k_dpi_name[ s_dbg_dpi_step ] ) )
             gui_dpi_set( s_dbg_dpi_step == 0 ? GUI_DPI_AUTO : GUI_DPI_MANUAL,
                          k_dpi_scale[ s_dbg_dpi_step ] );
 
@@ -1392,7 +1392,7 @@ debug_selector_menu( void )
            of the lever.  Deliberately NOT restored by debug_reset: comparing two modes usually
            means closing this panel so it stops covering what is being compared. */
         int pal_step = (int)pal_mode();
-        if ( gui_slider_int( SEL_PAL, &pal_step, 0, DBG_PAL_MODES - 1 ) )
+        if ( gui_slider_int( SEL_PAL, &pal_step, 0, DBG_PAL_MODES - 1, k_pal_mode[ pal_step ] ) )
             pal_set_mode( (gui_palette_mode_t)pal_step );
         gui_field_set( NULL );
 

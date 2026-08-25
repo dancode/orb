@@ -2708,8 +2708,11 @@ typedef struct gui_api_s
     bool ( *slider_float_step )( const char* label, f32* v, f32 lo, f32 hi, f32 step );
 
     /* slider_int -- integer slider over [lo,hi]; every track position lands on a whole value, drawn
-       centered ("%d").  Same GUI_ITEM_NO_VALUE_TEXT suppression as slider_float. */
-    bool ( *slider_int )( const char* label, i32* v, i32 lo, i32 hi );
+       centered.  format is the printf form of the shown value ("%d" when NULL/empty, DragInt
+       parity) -- a format with no conversion specifier prints verbatim, so an option-list slider
+       can pass items[*v] and show its rung's name instead of its index.  Same GUI_ITEM_NO_VALUE_TEXT
+       suppression as slider_float. */
+    bool ( *slider_int )( const char* label, i32* v, i32 lo, i32 hi, const char* format );
 
     /* next_slider_animate -- one-shot latch for the NEXT slider call: a plain click (press+release
        with no drag) eases the value to the clicked position over `duration` seconds instead of

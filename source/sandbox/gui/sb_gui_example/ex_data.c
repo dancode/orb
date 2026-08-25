@@ -66,7 +66,7 @@ ex_data_tables( void )
 
         /* Height is the table's box, scrolling or not (0 would mean "auto, 8 rows tall"). */
         static i32 theight = 180;
-        gui()->slider_int( "body height", &theight, 80, 320 );
+        gui()->slider_int( "body height", &theight, 80, 320, NULL );
 
         /* --- sortable three-column table ---------------------------------------------------- */
         /* Column management is all user-driven: click a header to sort, drag a boundary (or

@@ -62,7 +62,7 @@ st_gallery_window( void )
     gui()->stack();
     gui()->form( GUI_LABEL_RIGHT, gui()->text_size( "Slider float " ).x );
     gui()->slider_float( "Slider float", &fval, 0.0f, 1.0f );
-    gui()->slider_int( "Slider int", &ival, 0, 10 );
+    gui()->slider_int( "Slider int", &ival, 0, 10, NULL );
     gui()->drag_float( "Drag float", &fval, 0.01f, 0.0f, 1.0f, NULL );
     gui()->input_text( "Input", text, sizeof text );
     gui()->form( GUI_LABEL_RIGHT, 0.0f );
