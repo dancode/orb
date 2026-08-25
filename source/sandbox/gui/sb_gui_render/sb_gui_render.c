@@ -120,6 +120,32 @@ row_wide( i32 row, i32 col, i32 span, const char* caption )
     return box;
 }
 
+#define TWEAK_PANEL_W       0.0f
+#define TWEAK_PANEL_COLW    320.0f
+
+/* Column of tweak controls beside grid row `row`, top-aligned with that row's cells instead of
+   stacking every page's controls into one tall column down the side of the whole grid.  `id_str`
+   must be unique per call within a frame (region ids don't fold in push_id) -- "<page>_rowN" is
+   enough.  About four rows of one row2() pair (label+slider, then a lone control) fit before the
+   region runs past CELL_H; a caller with more than that should open a second row region rather
+   than let this one overflow into the row below. */
+static void
+panel_row_begin( i32 row, const char* id_str )
+{
+    f32 x = GRID_X + ( f32 )GRID_COLS * ( CELL_W + CELL_GAP );
+    f32 y = GRID_Y + ( f32 )row * ( CELL_H + CELL_GAP );
+    gui()->region_begin( id_str, x, y, TWEAK_PANEL_W, CELL_H, GUI_REGION_FG,
+                         GUI_VP_MAIN, GUI_WIN_NOSCROLL | GUI_WIN_NO_CLIP );
+    gui()->row2( TWEAK_PANEL_COLW, 0 );
+    gui()->field_label_left( 96 );
+}
+
+static void
+panel_row_end( void )
+{
+    gui()->region_end();
+}
+
 /* Cell centre -- the radial verbs (circle, ngon, star, arc family) take a centre + radius
    rather than a box. */
 static gui_vec2_t
@@ -189,7 +215,6 @@ load_catalogue_assets( void )
 ==============================================================================================*/
 
 #define TWEAK_TILE_MAX 120   // draw_rects() checker cap: CHECK_COLS * CHECK_ROWS_MAX below
-#define TWEAK_PANEL_W  240.0f   // wider than CELL_W -- labels + slider need the extra room
 
 static i32 s_tweak_tile_count = 60;
 
@@ -204,31 +229,21 @@ page_fills( void )
     gui_rect_t r;
 
     //------------------------------------------------------------------------------------------
-    /* row 0 -- the fast path: draw_rect emits ONE quad with no SDF field at all (the "0 emits
-       square shapes" branch every other verb on this page costs strictly more than). */  
+    /* row 0 -- the fast path: draw_rect emits ONE quad with no SDF field at all */
 
-    r = cell( 0, GRID_COLS, "draw_rect (fast path)" );
-
-    /* Panel column template: col 0 fills for every slider, col 1 holds a same-row control
-       (natural width, so every col 1 across the panel shares one measured width) -- installed
-       once so every slider below lines up at the same width, not just this row's. A row with
-       nothing for col 1 calls skip() to consume the slot instead of leaving the template. */
-    gui()->row2( 256, 0 );
-    gui()->field_label_left( 96 );
-    static float rect_width = 0;
+    panel_row_begin( 0, "fills_row0" );
+    
+    static float rect_width = CELL_W;
+    r = cell( 0, GRID_COLS, "draw_rect (fast path)" );    
     gui()->slider_float_step( "rect size", &rect_width, 0, r.w, 1.0f );
-    if ( gui()->button( "reset" )) { rect_width = r.w; }
+    if ( gui()->button( "reset##1" )) { rect_width = r.w; }
 
     gui()->draw_rect( r.x, r.y, rect_width, r.h, AMBER );
-    // gui()->draw_rect( r.x, r.y, r.w, r.h, AMBER );
-
-    /* row 0 -- batched fast path: draw_rects() emits the same quad-per-rect as
-       draw_rect above, just N of them in ONE command.  A checker mosaic rather than the
-       histogram look of the bar strip below, so the two draw_rects() demos on this page read
-       as distinct examples, not repeats of each other. */
+    
+    /* row 0 -- batched fast path: draw_rects() emit N of them in ONE command */
 
     gui()->slider_int( "rect count", &s_tweak_tile_count, 1, TWEAK_TILE_MAX );
-    if ( gui()->button( "reset" )) { s_tweak_tile_count = TWEAK_TILE_MAX; }
+    if ( gui()->button( "reset##2" )) { s_tweak_tile_count = TWEAK_TILE_MAX; }    
 
     r = row_wide( 0, 1, GRID_COLS - 1, "draw_rects() -- checker / 1 call (tweak panel sets count)" );
     {
@@ -239,13 +254,15 @@ page_fills( void )
         {
             i32   x = i % CHECK_COLS, y = i / CHECK_COLS;
             bool  light = ( x + y ) % 2 == 0;
-            tiles[ i ] = ( gui_rect_col_t ){
+            tiles[ i ] = ( gui_rect_col_t ) {
                 r.x + ( f32 )x * tw + 1.0f, r.y + ( f32 )y * th + 1.0f, tw - 2.0f, th - 2.0f,
                 light ? AMBER : TEAL,
             };
         }
         gui()->draw_rects( tiles, s_tweak_tile_count );
     }
+    
+    panel_row_end();
 
     //------------------------------------------------------------------------------------------
     /* rows 1 - basic shape rects -- the general box catalogue: rounding, border, gradient and 
@@ -307,9 +324,21 @@ page_fills( void )
 static void
 page_symbols( void )
 {
+    panel_row_begin( 0, "symbols_row1" );
+    gui()->row2( TWEAK_PANEL_COLW, 0 );
+    gui()->field_label_left( 96 );
+    
     gui_rect_t r;
 
     r = cell( 0, GRID_COLS, "check_mark" );
+
+    static float check_size = 0.0f;
+    gui()->slider_float_step( "rect size", &check_size, 0, r.w, 1.0f );    
+    if ( gui()->button( "reset" )) { check_size = r.w; }
+    r.w = check_size;
+        
+    panel_row_end();
+
     gui()->draw_check_mark( r, INK );
 
     r = cell( 1, GRID_COLS, "arrow (up)" );
@@ -799,17 +828,9 @@ build_frame( void )
               s_page + 1, PAGE_COUNT, s_pages[ s_page ].name );
     gui()->draw_text( 12.0f, 8.0f, INK_DIM, hint );
 
-    /* tweak_panel spans the whole page: region_begin/stack open a vertical flex column before
-       the page builds its cells, region_end closes it after -- any slider, checkbox, etc. the
-       page calls in between appends as the next row in that column.  Placed as one more grid
-       column past the last one, so it tracks GRID_X/CELL_W/CELL_GAP/GRID_COLS instead of a
-       number pinned to today's window size. */
-    f32 panel_x = GRID_X + ( f32 )GRID_COLS * ( CELL_W + CELL_GAP );
-    gui()->region_begin( "tweak_panel", panel_x, GRID_Y, 0.0f ,0.0f, GUI_REGION_FG,
-                         GUI_VP_MAIN, GUI_WIN_NOSCROLL | GUI_WIN_NO_CLIP );
-    gui()->stack();
+    /* Each page opens its own row-aligned tweak strips (panel_row_begin/end) around whatever
+       cell rows need live controls -- there is no page-spanning panel here anymore. */
     s_pages[ s_page ].build();
-    gui()->region_end();
 }
 
 /*==============================================================================================

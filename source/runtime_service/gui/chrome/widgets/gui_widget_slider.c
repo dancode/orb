@@ -174,10 +174,12 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
    different value, and the two states alternate every frame.  Anchoring the mapping to the
    geometry at press time keeps the value a pure function of cursor displacement, so it converges
    instead of oscillating no matter what the drag itself causes to move. */
+
 static gui_rect_t s_slider_anchor_track;
 
 /* slider_float_step -- slider_float quantized to `step` (e.g. 0.25 lands the value on 1/4 marks);
    step <= 0 leaves it continuous, so plain slider_float just forwards with step 0. */
+
 bool
 gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
 {
@@ -187,6 +189,7 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
        -- an aligned column under a form / field_split, or trailing otherwise -- and hands back the
        control track as the next cell.  With labels hidden (field.hide), skipped (skip_label), or
        empty ("##id") it is a no-op and the track fills the whole row.  No second "_label" widget. */
+
     gui_field_row( label );
     gui_rect_t track_r = cell_next( WIDGET_H );
     gui_item_state_t st = item_state( id, track_r, ITEM_DRAG );
@@ -195,6 +198,7 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
         s_slider_anchor_track = track_r;
 
     /* Drag: map the cursor's track fraction to a value, snapping to the step grid when asked. */
+
     bool changed = false;
     if ( st.active )
     {
@@ -202,7 +206,7 @@ gui_slider_float_step( const char* label, f32* v, f32 lo, f32 hi, f32 step )
         f32 t  = saturate( ( s_io.mouse_x - at.x ) / at.w );
         f32 nv = lo + t * ( hi - lo );
         if ( step > 0.0f )
-            nv = lo + floorf( ( nv - lo ) / step + 0.5f ) * step;   /* nearest step from lo */
+             nv = lo + floorf( ( nv - lo ) / step + 0.5f ) * step;   /* nearest step from lo */
         if ( nv < lo ) nv = lo;
         if ( nv > hi ) nv = hi;
         if ( nv != *v )
