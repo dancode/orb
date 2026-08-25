@@ -452,72 +452,141 @@ page_shapes( void )
     gui_rect_t r; gui_vec2_t c; f32 rad;
 
     //------------------------------------------------------------------------------------------
-    // row 0 -- rotation and boolean subtraction: the two rect-family moves that aren't a plain
-    // round_rect and so weren't already on the fills page.
+    // row 0 -- boolean subtraction: five draw_rect_cut applications, each a real UI shape that
+    // blending alone can't paint (a second opaque quad only ever adds ink, never removes it).
     //------------------------------------------------------------------------------------------
 
     panel_row_begin( 0, "shapes_row0" );
 
-    static float shape_rot_deg = 18.0f;
+    /* `scale` grows or shrinks every cut's base size (including the window's, which used to be
+       the only one with a size control); `soft` feeds all five as the carved edge's AA band --
+       below the standard 1 px it clamps flat, above it the edge visibly blurs; `shift` nudges
+       each cut by the same signed unit count, but every cell below picks its OWN axis for that
+       nudge, since a corner notch and an edge notch don't translate the same way; `round` is the
+       fraction of each cut's own half-size used as its cut_rounding, from a square bite at 0 to
+       a fully circular one at 1. */
+
+    static float shape_cut_scale = 1.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "angle", &shape_rot_deg, -180.0f, 180.0f, 1.0f );
-    if ( gui()->button( "reset##sh1" )) { shape_rot_deg = 18.0f; }
+    gui()->slider_float_step( "scale", &shape_cut_scale, 0.3f, 1.8f, 0.05f );
+    if ( gui()->button( "reset##sh1" )) { shape_cut_scale = 1.0f; }
 
-    static float shape_cut_scale = 0.6f;
+    static float shape_cut_soft = 1.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "cut", &shape_cut_scale, 0.1f, 1.0f, 0.05f );
-    if ( gui()->button( "reset##sh2" )) { shape_cut_scale = 0.6f; }
+    gui()->slider_float_step( "soft", &shape_cut_soft, 0.0f, 32.0f, 1.0f );
+    if ( gui()->button( "reset##sh2" )) { shape_cut_soft = 1.0f; }
 
-    /* rect rotated */
-    r = cell( 0, GRID_COLS, "rect_xf (rotated)" );
-    gui()->draw_rect_xf( r, 10.0f, 0.0f, gui_radians( shape_rot_deg ), AMBER );
+    static float shape_cut_shift = 0.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "shift", &shape_cut_shift, -32.0f, 32.0f, 1.0f );
+    if ( gui()->button( "reset##sh3" )) { shape_cut_shift = 0.0f; }
 
-    /* rect cut */
-    r = cell( 1, GRID_COLS, "rect_cut (subtract)" );
+    static float shape_cut_round_t = 1.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "round", &shape_cut_round_t, 0.0f, 1.0f, 0.05f );
+    if ( gui()->button( "reset##sh4" )) { shape_cut_round_t = 10.0f; }
+
+    /* badge seat -- a circular cut straddling the corner bites a clean seat for a status dot or
+       notification badge, with no second quad's AA edge crossing the card's own border.  `shift`
+       slides the seat along the diagonal, further into or out of the corner. */
+    r = cell( 0, GRID_COLS, "rect_cut (badge)" );
     {
-        gui_rect_t cut = { r.x + r.w * 0.5f, r.y - 10.0f, r.w * shape_cut_scale, r.h * shape_cut_scale };
-        gui()->draw_rect_cut( r, 10.0f, cut, 6.0f, 1.0f, TEAL );
+        f32 d = r.w * 0.34f * shape_cut_scale;
+        gui_rect_t cut = { r.x + r.w - d * 0.5f, r.y - d * 0.5f + shape_cut_shift, d, d };
+        gui()->draw_rect_cut( r, 10.0f, cut, d * 0.5f * shape_cut_round_t, shape_cut_soft, AMBER );
+    }
+
+    /* ticket stub -- a circular cut straddling the side edge, the perforated notch of a ticket or
+       coupon.  `shift` slides the notch up or down the edge. */
+    r = cell( 1, GRID_COLS, "rect_cut (ticket)" );
+    {
+        f32 d = r.h * 0.3f * shape_cut_scale;
+        gui_rect_t cut = { r.x - d * 0.5f, r.y + r.h * 0.5f - d * 0.5f + shape_cut_shift, d, d };
+        gui()->draw_rect_cut( r, 10.0f, cut, d * 0.5f * shape_cut_round_t, shape_cut_soft, TEAL );
+    }
+
+    /* ring window -- a circular cut fully inside the box turns a filled rect into a porthole: a
+       loading track's back plate, or a picture-frame mat.  `shift` slides the hole off-centre,
+       thinning the ring's wall on one side. */
+    r = cell( 2, GRID_COLS, "rect_cut (window)" );
+    {
+        gui_vec2_t cc = cell_center( r );
+        f32        d  = ( r.h < r.w ? r.h : r.w ) * 0.6f * shape_cut_scale;
+        gui_rect_t cut = { cc.x - d * 0.5f + shape_cut_shift, cc.y - d * 0.5f, d, d };
+        gui()->draw_rect_cut( r, 10.0f, cut, d * 0.5f * shape_cut_round_t, shape_cut_soft, PLUM );
+    }
+
+    /* folded corner -- an unrounded cut sliced off the corner: the dog-eared card or ribbon-flag
+       silhouette.  `round` walks it from a sharp fold at 0 to a badge-seat curve at 1; `shift`
+       slides the fold along the bottom edge. */
+    r = cell( 3, GRID_COLS, "rect_cut (corner)" );
+    {
+        f32 d = r.w * 0.45f * shape_cut_scale;
+        gui_rect_t cut = { r.x + r.w - d * 0.5f + shape_cut_shift, r.y + r.h - d * 0.5f, d, d };
+        gui()->draw_rect_cut( r, 10.0f, cut, d * 0.5f * shape_cut_round_t, shape_cut_soft, AMBER );
+    }
+
+    /* device notch -- a thin cut straddling the top edge, the sensor-notch / card-reader-slot
+       silhouette in a device or hardware mockup.  `shift` slides the slot sideways along the
+       edge. */
+    r = cell( 4, GRID_COLS, "rect_cut (device notch)" );
+    {
+        f32        w = r.w * 0.4f * shape_cut_scale, h = r.h * 0.22f * shape_cut_scale;
+        gui_rect_t cut = { r.x + r.w * 0.5f - w * 0.5f + shape_cut_shift, r.y - h * 0.5f, w, h };
+        gui()->draw_rect_cut( r, 10.0f, cut, h * 0.5f * shape_cut_round_t, shape_cut_soft, TEAL );
     }
 
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
-    // rows 1 - 2 -- circular shapes and the ngon family, unchanged.
+    // row 1 -- rotation, then circular shapes and the ngon family.
     //------------------------------------------------------------------------------------------
 
-    r = cell( 6, GRID_COLS, "circle (stroked)" );
+    panel_row_begin( 1, "shapes_row1" );
+
+    static float shape_rot_deg = 18.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "angle", &shape_rot_deg, -180.0f, 180.0f, 1.0f );
+    if ( gui()->button( "reset##sh2" )) { shape_rot_deg = 18.0f; }
+
+    r = cell( 6, GRID_COLS, "rect_xf (rotated)" );
+    gui()->draw_rect_xf( r, 10.0f, 0.0f, gui_radians( shape_rot_deg ), AMBER );
+
+    panel_row_end();
+
+    r = cell( 7, GRID_COLS, "circle (stroked)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_circle( c.x, c.y, rad, 3.0f, AMBER );
 
-    r = cell( 7, GRID_COLS, "ngon (hex)" );
+    r = cell( 8, GRID_COLS, "ngon (hex)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ngon( c.x, c.y, rad, 6, 0.0f, 0.0f, TEAL );
 
-    r = cell( 8, GRID_COLS, "ngon (oct, stroked)" );
+    r = cell( 9, GRID_COLS, "ngon (oct, stroked)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ngon( c.x, c.y, rad, 8, 0.0f, 3.0f, PLUM );
 
-    r = cell( 9, GRID_COLS, "star" );
+    r = cell( 10, GRID_COLS, "star" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_star( c.x, c.y, rad, 5, 0.0f, 0.0f, 0.0f, AMBER );
 
-    r = cell( 10, GRID_COLS, "arc" );
+    r = cell( 11, GRID_COLS, "arc" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_arc( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 270.0f ), 4.0f, TEAL );
 
-    r = cell( 11, GRID_COLS, "arc_dashed" );
+    r = cell( 12, GRID_COLS, "arc_dashed" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 300.0f ), 4.0f, 6.0f, 4.0f, PLUM );
 
-    r = cell( 12, GRID_COLS, "arc_gradient" );
+    r = cell( 13, GRID_COLS, "arc_gradient" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( -90.0f ), gui_radians( 180.0f ), 5.0f, AMBER, TEAL );
 
-    r = cell( 13, GRID_COLS, "pie" );
+    r = cell( 14, GRID_COLS, "pie" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_pie( c.x, c.y, rad, gui_radians( -40.0f ), gui_radians( 120.0f ), AMBER );
 
-    r = cell( 14, GRID_COLS, "progress_arc" );
+    r = cell( 15, GRID_COLS, "progress_arc" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_progress_arc( c.x, c.y, rad, 0.65f, 4.0f, TEAL );
 }

@@ -916,22 +916,26 @@ typedef struct gui_api_s
 
     void ( *draw_circle            )( f32 cx, f32 cy, f32 r, f32 thickness, u32 col );
     void ( *draw_ngon              )( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col );
+
     /* The n-pointed star: draw_ngon with each edge midpoint pulled in to ratio * r.  ratio <= 0
        takes the classic five-point proportion; the field caps it at the polygon's apothem. */
     void ( *draw_star              )( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness, u32 col );
     void ( *draw_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
     void ( *draw_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
+
     /* The arc cut by an angular dash pattern -- dotted rings, tick dials.  dash/gap are arc-length
        pixels at radius r (the draw_dashed_line vocabulary); the period is snapped so whole cycles
        fit the sweep, so a closed dashed ring meets itself without a seam.  Animate by rotating
        a0/a1 together: the pattern rides the sector's frame. */
     void ( *draw_arc_dashed        )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
                                       f32 dash, f32 gap, u32 col );
+
     /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1) by ANGLE -- the hot/cold value
        arc.  A per-vertex colour cannot express this (it varies by angle, not position); the
        fragment lerps it from the aperture it already computes. */
     void ( *draw_arc_gradient      )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
                                       u32 col_a, u32 col_b );
+
     /* The determinate ring: an arc of `frac` (0..1) of a full turn from 12 o'clock. */
     void ( *draw_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
 
