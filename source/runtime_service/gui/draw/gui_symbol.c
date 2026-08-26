@@ -196,7 +196,8 @@ static void
 draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness, u32 col )
 {
     if ( ratio <= 0.0f )
-        ratio = 0.5f;
+         ratio = 0.5f;
+
     draw_push_ngon( cx, cy, r, points, rot, draw_rounding(),
                     ( thickness <= 0.0f ) ? 0.0f : sym_thick( thickness ), ratio, col );
 }

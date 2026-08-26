@@ -674,19 +674,35 @@ page_shapes( void )
     gui()->draw_ngon( c.x, c.y, rad, 6, radians, thickness, TEAL );
     if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
-    r = cell( 15, GRID_COLS, "ngon (line)" );
+    r = cell( 15, GRID_COLS, "ngon (oct)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ngon( c.x, c.y, rad, 8, radians, thickness, TEAL );
     if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
-    /* ratio -- midpoint tuning */
-    static float ratio = 1.0f;
+    static int sides = 12;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "ration", &ratio, 0.0f, 1.0f, 0.1f );
-    if ( gui()->button( "reset##sh5" )) { ratio = 0.0f; }
+    gui()->slider_int( "sides", &sides, 1, 16, NULL );
+    if ( gui()->button( "reset##sh6" )) { sides = 12; }
+
+    r = cell( 16, GRID_COLS, "ngon (var)" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_ngon( c.x, c.y, rad, sides, radians, thickness, TEAL );
+    if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
+
+    //------------------------------------------------------------------------------------------
+
+    panel_row_begin( 2, "shapes_row2" );
+
+    /* ratio -- midpoint tuning */
+    static float ratio = 0.5f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "ration", &ratio, 0.1f, 1.0f, 0.01f );
+    if ( gui()->button( "reset##sh5" )) { ratio = 0.5f; }
+
+    panel_row_end();
 
     /* star */
-    r = cell( 16, GRID_COLS, "star" );
+    r = cell( 18, GRID_COLS, "star" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_star( c.x, c.y, rad, 5, ratio, radians, thickness, AMBER );
     
