@@ -633,6 +633,10 @@ page_shapes( void )
     };
     gui()->draw_icon_xf( file_rect, file, AMBER, gui_radians( shape_rot_deg ));
 
+
+    r = cell( 10, GRID_COLS, "sprite + xf" );
+
+
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
@@ -692,6 +696,7 @@ page_shapes( void )
     gui()->draw_ngon( c.x, c.y, rad, sides, radians, thickness, TEAL );
     if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
+
     //------------------------------------------------------------------------------------------
     // row 3 + 4 controls
 
@@ -726,7 +731,7 @@ page_shapes( void )
 
     static float width = 4.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "width", &width, 0.0f, 10.0f, 0.1f );
+    gui()->slider_float_step( "width", &width, 0.0f, 32.0f, 0.1f );
     if ( gui()->button( "reset##width" )) { width = 0.0f; }
 
     static float dash = 6.0f;
@@ -738,7 +743,12 @@ page_shapes( void )
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "gap", &gap, 0.0f, 12.0f, 1.0f );
     if ( gui()->button( "reset##gap" )) { gap = 4.0f; }
-    
+        
+    static float progress = 1.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "progress", &progress, 0.0f, 1.0f, 0.1f );
+    if ( gui()->button( "reset##progress" )) { progress = 1.0f; }
+
     panel_row_end();
     
     //------------------------------------------------------------------------------------------
@@ -769,13 +779,15 @@ page_shapes( void )
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, dash,gap, PLUM );
     
-    // r = cell( 26, GRID_COLS, "arc_gradient" );
-    // c = cell_center( r ); rad = cell_radius( r );
-    // gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( -90.0f ), gui_radians( 180.0f ), 5.0f, AMBER, TEAL );
-    // 
-    // r = cell( 27, GRID_COLS, "progress_arc" );
-    // c = cell_center( r ); rad = cell_radius( r );
-    // gui()->draw_progress_arc( c.x, c.y, rad, 0.65f, 4.0f, TEAL );
+    /* a gradiant between two colors */
+    r = cell( 25, GRID_COLS, "arc_gradient" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, AMBER, TEAL );
+    
+    /* arc progeess -- just arc with 1.0 normalized progress */
+    r = cell( 26, GRID_COLS, "progress_arc" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_progress_arc( c.x, c.y, rad, progress, width, TEAL );
 
     panel_row_end();
 }

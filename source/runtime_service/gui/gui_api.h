@@ -930,6 +930,7 @@ typedef struct gui_api_s
        ticket silhouette.  `cut` shares `box`'s absolute space and may straddle its edge; `soft`
        is the carved edge's AA band in px (clamped up to the standard 1 px).  ONE quad; ramps,
        patterns and the border frame compose over it like any other fill. */
+
     void ( *draw_rect_cut          )( gui_rect_t box, f32 rounding, gui_rect_t cut,
                                       f32 cut_rounding, f32 soft, u32 col );
 
@@ -938,6 +939,7 @@ typedef struct gui_api_s
 
     /* The n-pointed star: draw_ngon with each edge midpoint pulled in to ratio * r.  ratio <= 0
        takes the classic five-point proportion; the field caps it at the polygon's apothem. */
+
     void ( *draw_star              )( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness, u32 col );
     void ( *draw_arc               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
     void ( *draw_pie               )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
@@ -946,12 +948,14 @@ typedef struct gui_api_s
        pixels at radius r (the draw_dashed_line vocabulary); the period is snapped so whole cycles
        fit the sweep, so a closed dashed ring meets itself without a seam.  Animate by rotating
        a0/a1 together: the pattern rides the sector's frame. */
+
     void ( *draw_arc_dashed        )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
                                       f32 dash, f32 gap, u32 col );
 
     /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1) by ANGLE -- the hot/cold value
        arc.  A per-vertex colour cannot express this (it varies by angle, not position); the
        fragment lerps it from the aperture it already computes. */
+
     void ( *draw_arc_gradient      )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
                                       u32 col_a, u32 col_b );
 
