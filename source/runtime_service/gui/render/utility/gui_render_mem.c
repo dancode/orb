@@ -199,6 +199,7 @@ backend_pool_report( void )
             [GUI_CMD_NGON]          = "  ngon",
             [GUI_CMD_BOX_DASH]      = "  box_dash",
             [GUI_CMD_FRAME]         = "  frame",
+            [GUI_CMD_ROUND_FRAME_EX] = "  round_frame_ex",
             [GUI_CMD_REPEAT]        = "  repeat",
             [GUI_CMD_REPEAT_POLAR]  = "  repeat_polar",
             [GUI_CMD_BOX_CUT]       = "  box_cut",

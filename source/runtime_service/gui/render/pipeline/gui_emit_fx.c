@@ -268,22 +268,28 @@ draw_push_fx_box_ex( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, u32 
 }
 
 /*==============================================================================================
-    draw_push_round_rect_ex -- emit a filled box with four independent corner radii.
+    draw_push_round_rect_ex -- emit a filled or stroked box with four independent corner radii.
 
     The ambient rounding does NOT apply here and is not consulted: a caller reaching for this is
     naming every corner, and silently folding in a scope-level radius is how a tab ends up rounded
     on the two corners it wanted square.  The radii are clamped to the box at tessellation time
     (tess_fx_box_core), so an over-large one degenerates to a capsule rather than inverting.
 
+    `border` > 0 bends the field into a band that width, lying inside the boundary (GUI_OP_BAND);
+    0 fills.  BAND is a function of the scalar distance the field already resolved to, not of how
+    many radii went into it, so an asymmetric stroke costs the SAME one quad the fill does -- no
+    perimeter walk, unlike the old per-corner outline.
+
     `feather` widens the falloff band exactly as draw_push_shadow's does: 0 gets the standard 1 px
-    AA, wider makes the per-corner SOFT SHADOW -- the drop shadow under a tab or an asymmetric
-    card, which draw_push_shadow (one radius) could not shape.  The quadrants agree at any feather
-    (tess_fx_box_core's centre-line proof), so softness places no per-corner restriction.
+    AA, wider makes the per-corner SOFT SHADOW when filled, or a soft-edged ring when stroked --
+    the drop shadow under a tab, which draw_push_shadow (one radius) could not shape.  The
+    quadrants agree at any feather (tess_fx_box_core's centre-line proof), so softness places no
+    per-corner restriction.
 ==============================================================================================*/
 
 void
 draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
-                         f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
+                         f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather, f32 border,
                          u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind, f32 grad_mid )
 {
     /* The ramp midpoint, authored 0..1 (where the 50/50 blend lands along the ramp), mapped to
@@ -322,6 +328,7 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
     e->round_rect.rbl           = rbl;
     e->round_rect.feather       = feather;
     e->round_rect.corner_pow    = s_draw.corner_pow;
+    e->round_rect.border        = ( border > 0.0f ) ? border : 0.0f;
     e->round_rect.abgr          = col;
     e->round_rect.col_b         = cb;
     e->round_rect.grad_ang      = grad_ang;

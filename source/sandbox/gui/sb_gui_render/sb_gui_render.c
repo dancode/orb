@@ -679,18 +679,16 @@ page_shapes( void )
     gui()->draw_ngon( c.x, c.y, rad, 8, radians, thickness, TEAL );
     if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
-    // r = cell( 13, GRID_COLS, "ngon (hex)" );
-    // c = cell_center( r ); rad = cell_radius( r );
-    // gui()->draw_ngon( c.x, c.y, rad, 6, 0.0f, 0.0f, TEAL );
-    // 
-    // r = cell( 14, GRID_COLS, "ngon (oct, stroked)" );
-    // c = cell_center( r ); rad = cell_radius( r );
-    // gui()->draw_ngon( c.x, c.y, rad, 8, 0.0f, 3.0f, PLUM );
-    // 
-    // r = cell( 18, GRID_COLS, "star" );
-    // c = cell_center( r ); rad = cell_radius( r );
-    // gui()->draw_star( c.x, c.y, rad, 5, 0.0f, 0.0f, 0.0f, AMBER );
-    // 
+    static float ratio = 0.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "ration", &ratio, 0.0f, 180.0f, 15.0f );
+    if ( gui()->button( "reset##sh5" )) { ratio = 0.0f; }
+
+    /* ratio -- midpoint */
+    r = cell( 16, GRID_COLS, "star" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_star( c.x, c.y, rad, 5, ratio, radians, thickness, AMBER );
+    
     // r = cell( 19, GRID_COLS, "pie" );
     // c = cell_center( r ); rad = cell_radius( r );
     // gui()->draw_pie( c.x, c.y, rad, gui_radians( -40.0f ), gui_radians( 120.0f ), AMBER );

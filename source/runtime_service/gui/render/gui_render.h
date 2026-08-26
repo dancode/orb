@@ -337,13 +337,15 @@ void draw_push_ripple           ( f32 cx, f32 cy, f32 r, f32 thickness, f32 spre
 void draw_push_box_xf           ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 feather, f32 rot,
                                   u32 abgr );
 
-/* Push a filled box with four independent corner radii (tab / notch / asymmetric card).  Ignores
-   the ambient rounding -- the caller names every corner.  Filled only; the stroked form stays a
-   perimeter polyline.  `feather` widens the falloff band exactly as draw_push_shadow's does
-   (0 = the standard 1 px AA) -- the per-corner soft shadow.
+/* Push a filled or stroked box with four independent corner radii (tab / notch / asymmetric
+   card).  Ignores the ambient rounding -- the caller names every corner.  `border` > 0 strokes
+   a band that width, lying inside the boundary, exactly like draw_push_rect_outline's rounded
+   case; 0 fills.  `feather` widens the falloff band exactly as draw_push_shadow's does
+   (0 = the standard 1 px AA) -- the per-corner soft shadow when filled, or a soft-edged ring
+   when stroked; the two combine freely, same as the uniform-radius surface.
    col_b != abgr makes it a ramp, shaped by `grad_kind` (gui_grad_t) and oriented by `grad_ang`. */
 void draw_push_round_rect_ex    ( f32 x, f32 y, f32 w, f32 h,
-                                  f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
+                                  f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather, f32 border,
                                   u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind,
                                   f32 grad_mid );
 
@@ -397,6 +399,13 @@ void draw_push_grid             ( f32 x, f32 y, f32 w, f32 h, f32 ox, f32 oy, f3
 
 void draw_push_rect_outline     ( f32 x, f32 y, f32 w, f32 h, f32 t, u32 abgr );
 void draw_push_frame            ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t, u32 col_bg, u32 col_border );
+
+/* draw_push_frame's per-corner sibling: filled body + border band, one quad, four independent
+   corner radii instead of one.  Ignores the ambient rounding, same convention as
+   draw_push_round_rect_ex -- a caller reaching for this is naming every corner. */
+void draw_push_round_frame_ex   ( f32 x, f32 y, f32 w, f32 h,
+                                  f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 t,
+                                  u32 col_bg, u32 col_border );
 void draw_push_triangle         ( f32 ax, f32 ay, f32 bx, f32 by, f32 cx, f32 cy, u32 abgr );
 void draw_push_bezier           ( f32 ax, f32 ay, f32 cx, f32 cy, f32 bx, f32 by, f32 thickness, u32 abgr );
 

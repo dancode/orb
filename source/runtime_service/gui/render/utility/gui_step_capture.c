@@ -443,6 +443,12 @@ step_cmd_bounds( const gui_cmd_t* c )
             const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
             return ( gui_rect_t ){ e->frame.x, e->frame.y, e->frame.w, e->frame.h };
         }
+        case GUI_CMD_ROUND_FRAME_EX:
+        {
+            const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );
+            return ( gui_rect_t ){ e->round_frame_ex.x, e->round_frame_ex.y,
+                                   e->round_frame_ex.w, e->round_frame_ex.h };
+        }
         case GUI_CMD_RECT_GRADIENT:
         {
             const gui_cmd_ext_t* e = step_cmd_ext_slot( c->offset );

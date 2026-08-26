@@ -120,6 +120,72 @@ draw_push_frame( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 t, u32 col_bg, u3
 }
 
 /*==============================================================================================
+    draw_push_round_frame_ex -- draw_push_frame's per-corner sibling.
+
+    Every fallback below reaches draw_push_round_rect_ex directly (fill via border 0, outline via
+    border t) rather than draw_rect_cmd / draw_rect_outline_cmd, which only know one shared
+    rounding -- the same "explicit radii survive every branch" rule draw_push_frame follows for
+    its own single radius.
+==============================================================================================*/
+
+void
+draw_push_round_frame_ex( f32 x, f32 y, f32 w, f32 h,
+                         f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 t,
+                         u32 col_bg, u32 col_border )
+{
+    u32 fill = draw_apply_alpha( col_bg );
+    u32 bord = draw_apply_alpha( col_border );
+
+    /* One side invisible degenerates to the primitive the other side is; an outward-aligned band
+       reaches past the boundary the fill's field ends at, so it keeps the pair -- draw_push_round_
+       rect_ex's stroke has no align concept of its own, same as the uniform path without one. */
+    if ( t <= 0.0f || ( bord >> 24 ) == 0u )
+    {
+        draw_push_round_rect_ex( x, y, w, h, rtl, rtr, rbr, rbl, 0.0f, 0.0f,
+                                 col_bg, col_bg, 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
+        return;
+    }
+    if ( ( fill >> 24 ) == 0u )
+    {
+        draw_push_round_rect_ex( x, y, w, h, rtl, rtr, rbr, rbl, 0.0f, t,
+                                 col_border, col_border, 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
+        return;
+    }
+    if ( s_draw.border_align > 0.0f )
+    {
+        draw_push_round_rect_ex( x, y, w, h, rtl, rtr, rbr, rbl, 0.0f, 0.0f,
+                                 col_bg, col_bg, 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
+        draw_push_round_rect_ex( x, y, w, h, rtl, rtr, rbr, rbl, 0.0f, t,
+                                 col_border, col_border, 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
+        return;
+    }
+
+    f32 rmax = rtl;
+    if ( rtr > rmax ) rmax = rtr;
+    if ( rbr > rmax ) rmax = rbr;
+    if ( rbl > rmax ) rmax = rbl;
+    f32 pad = ( rmax > 0.0f ) ? 1.0f : 0.0f;
+
+    gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_ROUND_FRAME_EX, fill | bord, x, y, w, h, pad );
+    if ( !e )
+        return;
+
+    e->round_frame_ex.x          = x;
+    e->round_frame_ex.y          = y;
+    e->round_frame_ex.w          = w;
+    e->round_frame_ex.h          = h;
+    e->round_frame_ex.t          = t;
+    e->round_frame_ex.rtl        = rtl;
+    e->round_frame_ex.rtr        = rtr;
+    e->round_frame_ex.rbr        = rbr;
+    e->round_frame_ex.rbl        = rbl;
+    e->round_frame_ex.corner_pow = ( rmax > 0.0f ) ? s_draw.corner_pow : 0.0f;
+    e->round_frame_ex.abgr       = fill;
+    e->round_frame_ex.col_border = bord;
+    draw_cmd_seal();
+}
+
+/*==============================================================================================
     draw_push_triangle -- emit a solid triangle semantic command.
 ==============================================================================================*/
 

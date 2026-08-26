@@ -775,7 +775,7 @@ draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
                           gui_grad_t kind, f32 angle, f32 mid )
 {
     draw_push_round_rect_ex( box.x, box.y, box.w, box.h,
-                             rounding, rounding, rounding, rounding, 0.0f,
+                             rounding, rounding, rounding, rounding, 0.0f, 0.0f,
                              col_a, col_b, angle, (u32)kind, mid );
 }
 
@@ -1211,9 +1211,9 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
 {
     /* Uniform-radius fast path: route an equal-cornered rect -- filled or stroked -- through the
        backend's single rounded-rect command, which is an SDF surface (one quad, exact analytic
-       AA).  Asymmetric corners go straight to draw_push_round_rect_ex, the backend's per-corner
-       filled surface -- there is no stroked form of an asymmetric rect yet (thickness is ignored
-       when the corners differ; see the draw_round_rect_outline gap noted on the vtable entry). */
+       AA).  Asymmetric corners go to draw_push_round_rect_ex, the backend's per-corner surface --
+       filled or stroked both, since GUI_OP_BAND bands whatever distance the field resolved to
+       regardless of how many radii shaped it. */
     bool equal_corners = ( r_tl == r_tr && r_tr == r_br && r_br == r_bl );
     if ( equal_corners )
     {
@@ -1227,7 +1227,8 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
         draw_set_rounding( save );
         return;
     }
-    draw_push_round_rect_ex( box.x, box.y, box.w, box.h, r_tl, r_tr, r_br, r_bl, 0.0f,
+    f32 border = ( thickness <= 0.0f ) ? 0.0f : sym_thick( thickness );
+    draw_push_round_rect_ex( box.x, box.y, box.w, box.h, r_tl, r_tr, r_br, r_bl, 0.0f, border,
                              col, col, 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
 }
 
@@ -1257,8 +1258,24 @@ draw_round_frame( gui_rect_t r, f32 rounding, u32 col_bg, u32 col_border, f32 bo
     draw_push_frame( r.x, r.y, r.w, r.h, rounding, border, col_bg, col_border );
 }
 void gui_draw_round_frame( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border )
-{ 
-    draw_round_frame( box, rounding, col_bg, col_border, border ); 
+{
+    draw_round_frame( box, rounding, col_bg, col_border, border );
+}
+
+/* draw_round_frame's per-corner sibling: same fill+border quad, four independent radii instead
+   of one, passed straight through to draw_push_round_frame_ex -- no ambient involved, exactly
+   like draw_round_rect's asymmetric branch. */
+
+void
+draw_round_frame_ex( gui_rect_t r, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
+                     u32 col_bg, u32 col_border, f32 border )
+{
+    draw_push_round_frame_ex( r.x, r.y, r.w, r.h, rtl, rtr, rbr, rbl, border, col_bg, col_border );
+}
+void gui_draw_round_frame_ex( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
+                              u32 col_bg, u32 col_border, f32 border )
+{
+    draw_round_frame_ex( box, r_tl, r_tr, r_br, r_bl, col_bg, col_border, border );
 }
 
 void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col )
@@ -1306,7 +1323,7 @@ void gui_draw_rect_xf( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 c
 void gui_draw_round_rect_shadow( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
                                  f32 feather, u32 col )
 {
-    draw_push_round_rect_ex( box.x, box.y, box.w, box.h, r_tl, r_tr, r_br, r_bl, feather,
+    draw_push_round_rect_ex( box.x, box.y, box.w, box.h, r_tl, r_tr, r_br, r_bl, feather, 0.0f,
                              col, col, 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
 }
 

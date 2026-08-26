@@ -902,19 +902,19 @@ typedef struct gui_api_s
     /* The box family first, then the radial shapes, then the circular sectors.  Filled or
        stroked per the convention above; every one is a single SDF quad. */
 
-    /* draw_frame / draw_round_frame -- draw_rect / draw_round_rect's dual-color sibling: a filled
-       body plus a border band, ONE quad.  draw_frame is always square (rounding forced to 0, like
-       draw_rect); draw_round_frame takes rounding as a parameter (like draw_round_rect), but only
-       ONE radius for all four corners -- draw_round_rect's independent per-corner radii have no
-       frame equivalent.  Neither reads the ambient rounding -- a caller never needs to
-       save/set/restore draw_set_rounding around either call. */
+    /* draw_frame / draw_round_frame / draw_round_frame_ex -- draw_rect / draw_round_rect's
+       dual-color sibling: a filled body plus a border band, ONE quad.  draw_frame is always
+       square (rounding forced to 0, like draw_rect); draw_round_frame takes one radius for all
+       four corners (like draw_round_rect's equal-corner path); draw_round_frame_ex takes all
+       four independently (like draw_round_rect's asymmetric path).  None read the ambient
+       rounding -- a caller never needs to save/set/restore draw_set_rounding around any of
+       the three. */
 
     void ( *draw_frame             )( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_frame       )( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border );
+    void ( *draw_round_frame_ex    )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
+                                      u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 thickness, u32 col );
-
-    // TODO: draw_round_rect_outline -- a stroked rect with independent corner radii, one quad, the fragment
-    // TODO: draw_round_frame_ex -- a round frame with independent corner radii, one quad.
 
     /* The SDF box under a rotation about its centre (radians, screen space) -- rotated cards,
        tilted badges, the plate behind rotated text.  feather 0 = crisp 1 px AA; wider = a rotated

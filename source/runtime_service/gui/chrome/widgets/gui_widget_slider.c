@@ -128,7 +128,7 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
     {
         u32 fill_col = style_col_mix( GUI_ROLE_ACCENT, mix );
         draw_push_round_rect_ex( track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f,
-                                 ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, 0.0f,
+                                 ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, 0.0f, 0.0f,
                                  fill_col, fill_col, 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
     }
 

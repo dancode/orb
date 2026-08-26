@@ -139,6 +139,7 @@ const gui_api_t g_gui_api_struct =
     .draw_plus_minus                    = gui_draw_plus_minus,
     .draw_frame                         = gui_draw_frame,
     .draw_round_frame                   = gui_draw_round_frame,
+    .draw_round_frame_ex                = gui_draw_round_frame_ex,
     .draw_round_rect                    = gui_draw_round_rect,
     .draw_ngon                          = gui_draw_ngon,
     .draw_star                          = gui_draw_star,

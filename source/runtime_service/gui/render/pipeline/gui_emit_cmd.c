@@ -62,6 +62,7 @@ static const u8 k_cmd_hash_len[ GUI_CMD_COUNT ] = {
        pc.time -- the geometry never changes, which is the entire point of the mode). */
     [GUI_CMD_FX_BOX]        = sizeof(( (gui_cmd_ext_t*)0 )->fx_box ),
     [GUI_CMD_ROUND_RECT_EX] = sizeof(( (gui_cmd_ext_t*)0 )->round_rect ),
+    [GUI_CMD_ROUND_FRAME_EX] = sizeof(( (gui_cmd_ext_t*)0 )->round_frame_ex ),
 
     /* Both sectors fold the same member.  A spinner's start angle moves every frame, so this
        dirties every frame -- honestly, since the geometry really does rotate.  (A spinner that

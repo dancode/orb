@@ -348,9 +348,26 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 s_tess.cur_corner_pow = e->frame.corner_pow;
                 s_tess.cur_col_border = e->frame.col_border;   /* rides the quad, not the style */
                 tess_fx_box( e->frame.x, e->frame.y, e->frame.w, e->frame.h, e->frame.rounding,
-                           ( e->frame.rounding > 0.0f ) ? TESS_FX_AA : 0.0f, 
+                           ( e->frame.rounding > 0.0f ) ? TESS_FX_AA : 0.0f,
                              e->frame.t, 0.0f, 0.0f, 0.0f,
                              0, 0, 1, 1, /* tex id */ 0, e->frame.abgr, NULL );
+                break;
+            }
+
+            /* frame's per-corner sibling -- same body + border composite, four radii instead of
+               one.  tess_round_frame_ex sets GUI_OP_FRAME itself (the round_rect_ex convention:
+               the per-corner "_ex" helpers own their op, where the uniform ones take it from the
+               dispatcher). */
+            case GUI_CMD_ROUND_FRAME_EX:
+            {
+                const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
+                s_tess.cur_corner_pow = e->round_frame_ex.corner_pow;
+                s_tess.cur_col_border = e->round_frame_ex.col_border;
+                tess_round_frame_ex( e->round_frame_ex.x, e->round_frame_ex.y,
+                                     e->round_frame_ex.w, e->round_frame_ex.h,
+                                     e->round_frame_ex.rtl, e->round_frame_ex.rtr,
+                                     e->round_frame_ex.rbr, e->round_frame_ex.rbl,
+                                     e->round_frame_ex.t, e->round_frame_ex.abgr );
                 break;
             }
 
@@ -432,8 +449,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 break;
             }
 
-            /* Four radii and a ramp -- and still one surface, one command and no batch split,
-               exactly like the uniform fill it generalizes. */
+            /* Four radii, a ramp, and an optional border -- and still one surface, one command
+               and no batch split, exactly like the uniform fill/outline it generalizes. */
             case GUI_CMD_ROUND_RECT_EX:
             {
                 const gui_cmd_ext_t* e = draw_cmd_ext_slot( c->offset );
@@ -442,7 +459,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                                     e->round_rect.w, e->round_rect.h,
                                     e->round_rect.rtl, e->round_rect.rtr,
                                     e->round_rect.rbr, e->round_rect.rbl,
-                                    e->round_rect.feather, e->round_rect.abgr,
+                                    e->round_rect.feather, e->round_rect.border,
+                                    e->round_rect.abgr,
                                     e->round_rect.col_b, e->round_rect.grad_ang,
                                     e->round_rect.grad_kind, e->round_rect.grad_mid );
                 break;

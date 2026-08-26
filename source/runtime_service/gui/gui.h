@@ -1862,8 +1862,9 @@ typedef enum
                              //   sprite carries slice insets (1, 3 or 9 quads from one command)
     GUI_CMD_FX_BOX,          // the parameterized GUI_FX_BOX surface: a soft shadow (wide feather)
                              //   or a shader-clock pulse (rate/depth) -- one member, mode derived
-    GUI_CMD_ROUND_RECT_EX,   // filled box with a PER-CORNER radius: one GUI_FX_BOX quad carrying
-                             //   all four radii, the fragment picking one by the sign of its position
+    GUI_CMD_ROUND_RECT_EX,   // filled or stroked box with a PER-CORNER radius: one GUI_FX_BOX quad
+                             //   carrying all four radii, the fragment picking one by the sign of
+                             //   its position; a border > 0 bands it (GUI_OP_BAND) same as uniform
     GUI_CMD_ARC,             // stroked circular arc, round caps: one GUI_FX_ARC quad
     GUI_CMD_PIE,             // filled wedge, sharp radial edges: one GUI_FX_PIE quad
     GUI_CMD_ARC_DASH,        // arc cut by an angular dash pattern (GUI_FX_ARC + GUI_OP_DASH): dotted rings,
@@ -1884,6 +1885,8 @@ typedef enum
                              //   dashed border, and at a non-zero scroll rate the marching ants
     GUI_CMD_FRAME,           // filled body + border band composited in the FRAGMENT
                              //   (GUI_OP_FRAME): the widget bezel as ONE quad
+    GUI_CMD_ROUND_FRAME_EX,  // draw_round_rect_ex's dual-color sibling: filled body + border band
+                             //   with a PER-CORNER radius (GUI_OP_FRAME) -- the asymmetric bezel
     GUI_CMD_REPEAT,          // nx by ny copies of one rounded cell (GUI_OP_REPEAT): dot grids,
                              //   tick strips, segmented bars -- one quad whatever the count
     GUI_CMD_REPEAT_POLAR,    // n copies on a circle (GUI_OP_REPEAT_POLAR): dot rings, dial faces,
@@ -2053,6 +2056,15 @@ typedef union
        boundary -- the emit site falls back to the fill + outline pair when the ambient
        border alignment pushes the band outward, so this member never carries an align. */
     struct { f32 x, y, w, h, t;              f32 rounding, corner_pow;  u32 abgr, col_border; } frame;
+
+    /* frame's per-corner sibling: the asymmetric bezel (a tab strip's frame, a notch's border),
+       filled body + border band in one quad exactly like `frame` above, just naming all four
+       corners instead of one shared rounding.  `t` is the band's width, lying inside the
+       boundary, same convention as `frame` -- and same fallback rule at the emit site when the
+       ambient border alignment would push it outward.  No gradient lane: a two-colour fill and
+       an asymmetric ramp are two different asks, and `round_rect` already covers the ramp. */
+    struct { f32 x, y, w, h, t; f32 rtl, rtr, rbr, rbl; f32 corner_pow; u32 abgr, col_border; } round_frame_ex;
+
     struct { f32 ax, ay, bx, by, cx, cy;                     u32 abgr; } tri;
     struct { f32 ax, ay, cx, cy, bx, by, thickness;          u32 abgr; } bezier;
 
@@ -2165,17 +2177,18 @@ typedef union
              u32 abgr, variant; f32 cut_dx, cut_dy; f32 phase;
              u32 curve; f32 curve_param; f32 swell, border; u32 shape; } fx_box;
 
-    /* Per-corner rounded fill -- the tab / notch / asymmetric card shape.  Geometrically it is
-       the SAME one quad a uniform rounded rect emits; the one thing that differs is
-       that each quad carries its own packed word, because the radius is the only shape
-       parameter that lives in the WORD rather than in the vertices.  A quadrant already sees
-       exactly one corner, so per-corner radii cost no extra geometry -- only the four separate
-       stamps (see tess_fx_box_core).
+    /* Per-corner rounded box, filled or stroked -- the tab / notch / asymmetric card shape.
+       Geometrically it is the SAME one quad a uniform rounded rect emits; the one thing that
+       differs is that each quad carries its own packed word, because the radius is the only
+       shape parameter that lives in the WORD rather than in the vertices.  A quadrant already
+       sees exactly one corner, so per-corner radii cost no extra geometry -- only the four
+       separate stamps (see tess_fx_box_core).
        The field order IS the quadrant order the tessellator walks (top-left, top-right,
        bottom-right, bottom-left), so the two cannot drift apart.
-       Filled and solid-colour only.  The stroked form stays a perimeter polyline:
-       GUI_OP_BAND derives its interior hole from a single radius, and generalizing that is
-       not worth it for a shape whose outline the polyline already draws correctly.
+       `border` > 0 bends the field into a band (GUI_OP_BAND) exactly as the uniform-radius
+       path does: BAND is a function of the scalar distance the field already resolved to, not
+       of how many radii went into it, so a stroked outline costs nothing a filled one didn't
+       already pay for.  0 fills.
        `feather` is the falloff band exactly as fx_box carries it -- 0 gets the standard 1 px
        AA, wider makes the per-corner SOFT SHADOW (the tab / asymmetric-card drop shadow); the
        quadrants agree at any feather (tess_fx_box_core's centre-line proof).
@@ -2189,7 +2202,7 @@ typedef union
        conic exist at all -- neither can be described by colours at a rectangle's corners.
        `grad_mid` is the ramp's midpoint bend, stored as the EXPONENT the record carries
        (mapped once at push time, ln 0.5 / ln mid); 0 is the linear default. */
-    struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather, corner_pow; u32 abgr;
+    struct { f32 x, y, w, h; f32 rtl, rtr, rbr, rbl; f32 feather, corner_pow, border; u32 abgr;
              u32 col_b; f32 grad_ang; u32 grad_kind; f32 grad_mid; } round_rect;
 
     /* Circular sector -- ONE member serving GUI_CMD_ARC and GUI_CMD_PIE, which differ only in

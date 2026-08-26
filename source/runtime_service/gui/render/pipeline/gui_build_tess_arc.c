@@ -73,13 +73,15 @@ tess_fx_ngon( f32 pcx, f32 pcy, f32 r, u32 sides, f32 rot, f32 rounding,
 }
 
 /*==============================================================================================
-    tess_round_rect_ex -- a fill whose four corners have four different radii.
+    tess_round_rect_ex -- a fill or stroke whose four corners have four different radii.
 
     The tab, the notch, the asymmetric card: shapes that used to walk a per-corner perimeter (up to
     72 sampled points) and fan it into as many separate TRIANGLE commands, with a polygonal boundary
     and no antialiasing at all.  Here it is the ONE quad record a uniform rounded rect costs, and
     the boundary is exact, because all four radii ride the record and the fragment picks the one
-    its own quadrant wants -- the radii are data, not geometry.
+    its own quadrant wants -- the radii are data, not geometry.  A stroke costs the same one quad:
+    GUI_OP_BAND bends whatever scalar distance the field resolved to, which does not care how many
+    radii shaped that distance.
 
         perimeter fan, 4 rounded corners   ~70 verts, 62 draw commands, aliased
         the field                          1 record,   1 draw command,   antialiased
@@ -94,7 +96,7 @@ tess_fx_ngon( f32 pcx, f32 pcy, f32 r, u32 sides, f32 rot, f32 rounding,
 
 static void
 tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
-                    f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather,
+                    f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 feather, f32 border,
                     u32 abgr, u32 col_b, f32 grad_ang, u32 grad_kind, f32 grad_mid )
 {
     /* Corner order: top-left, top-right, bottom-right, bottom-left -- the order gui_cmd_t
@@ -102,6 +104,9 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
        them, which is what the fragment indexes by the sign of its own position.  feather below
        the standard AA band clamps up -- 0 means "crisp", never "hard-edged". */
     const f32 r4[ 4 ] = { rtl, rtr, rbr, rbl };
+
+    if ( border > 0.0f )
+        s_tess.cur_ops |= GUI_OP_BAND;
 
     /* Equal endpoints ARE a flat fill, so the op is left off rather than special-cased: a ramp
        between one colour and itself is that colour, and the fragment should not pay for it. */
@@ -117,8 +122,33 @@ tess_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
     }
 
     tess_fx_box_core( x, y, w, h, r4, ( feather > TESS_FX_AA ) ? feather : TESS_FX_AA,
-                      0.0f, 0.0f, 0.0f, 0.0f,
+                      border, 0.0f, 0.0f, 0.0f,
                       0, 0, 1, 1, 0, abgr, &aux );
+}
+
+/*==============================================================================================
+    tess_round_frame_ex -- draw_push_frame's per-corner sibling: body + border band, one quad,
+    four independent corner radii.
+
+    GUI_OP_FRAME composites `abgr` (the body) and s_tess.cur_col_border (the band, set by the
+    dispatcher before this runs -- see GUI_CMD_FRAME's own case) over the SAME field
+    tess_round_rect_ex resolves; the per-corner radii cost nothing extra here either, for the
+    identical reason.  No gradient lane -- see the round_frame_ex struct comment (gui.h). */
+
+static void
+tess_round_frame_ex( f32 x, f32 y, f32 w, f32 h,
+                     f32 rtl, f32 rtr, f32 rbr, f32 rbl, f32 t, u32 abgr )
+{
+    const f32 r4[ 4 ] = { rtl, rtr, rbr, rbl };
+    f32 rmax = rtl;
+    if ( rtr > rmax ) rmax = rtr;
+    if ( rbr > rmax ) rmax = rbr;
+    if ( rbl > rmax ) rmax = rbl;
+
+    s_tess.cur_ops |= GUI_OP_FRAME;
+    tess_fx_box_core( x, y, w, h, r4, ( rmax > 0.0f ) ? TESS_FX_AA : 0.0f,
+                      t, 0.0f, 0.0f, 0.0f,
+                      0, 0, 1, 1, 0, abgr, NULL );
 }
 
 /*==============================================================================================

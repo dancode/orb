@@ -60,7 +60,7 @@ static const char* k_step_type_name[] = {
     "line", "polyline", "dashed_line", "rect_gradient", "rect_list",
     "sprite", "fx_box", "round_rect_ex", "arc", "pie",
     "arc_dash", "arc_grad", "image_xf", "checker", "grid",
-    "ngon", "box_dash", "frame", "repeat", "repeat_polar", "box_cut",
+    "ngon", "box_dash", "frame", "round_frame_ex", "repeat", "repeat_polar", "box_cut",
 };
 
 /* id -> registered source string (debug overlay's registry) or hex.  buf must hold >= 12.
@@ -155,6 +155,15 @@ step_cmd_detail( const step_cmd_info_t* ci )
                        e->frame.w, e->frame.h );
             fmt_snprintf( b2, sizeof( b2 ), "t %.1f   round %.1f", e->frame.t,
                       e->frame.rounding );
+            row2 = b2;
+            break;
+        case GUI_CMD_ROUND_FRAME_EX:
+            gui_textf( "rect %.0f,%.0f  %.0f x %.0f", e->round_frame_ex.x, e->round_frame_ex.y,
+                       e->round_frame_ex.w, e->round_frame_ex.h );
+            /* Listed in quadrant order, same as ROUND_RECT_EX. */
+            fmt_snprintf( b2, sizeof( b2 ), "t %.1f   r tl %.1f  tr %.1f  br %.1f  bl %.1f",
+                          e->round_frame_ex.t, e->round_frame_ex.rtl, e->round_frame_ex.rtr,
+                          e->round_frame_ex.rbr, e->round_frame_ex.rbl );
             row2 = b2;
             break;
         case GUI_CMD_TRIANGLE:
@@ -326,6 +335,12 @@ step_cmd_detail( const step_cmd_info_t* ci )
         {
             f32 x = step_swatch( r, r.x, "fill", e->frame.abgr );
             step_swatch( r, x, "border", e->frame.col_border );
+            break;
+        }
+        case GUI_CMD_ROUND_FRAME_EX:
+        {
+            f32 x = step_swatch( r, r.x, "fill", e->round_frame_ex.abgr );
+            step_swatch( r, x, "border", e->round_frame_ex.col_border );
             break;
         }
         case GUI_CMD_RECT_LIST:
