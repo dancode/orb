@@ -597,20 +597,31 @@ page_shapes( void )
     r = cell( 6, GRID_COLS, "rect_xf (rotated)" );
     gui()->draw_rect_xf( r, 10.0f, 0.0f, gui_radians( shape_rot_deg ), AMBER );
 
-    gui_icon_id_t icon = gui()->find_icon( "save" );
     
     r = cell( 7, GRID_COLS, "icon_xf (rotated)" ); 
-    // r.w *= scale; r.h *= scale;
 
-    gui_vec2_t icon_size = gui()->icon_size( icon );
+    gui_icon_id_t save = gui()->find_icon( "save" );
+    gui_vec2_t icon_size = gui()->icon_size( save );
     gui_rect_t icon_rect = {
         r.x + ( r.w - icon_size.x * scale ) * 0.5f,
         r.y + ( r.h - icon_size.y * scale ) * 0.5f,
         icon_size.x * scale,
         icon_size.y * scale,
     };
-    gui()->draw_icon_xf( icon_rect, icon, AMBER, gui_radians( shape_rot_deg ));
+    gui()->draw_icon_xf( icon_rect, save, AMBER, gui_radians( shape_rot_deg ));
     // gui()->draw_icon_xf( r, icon, AMBER, gui_radians( shape_rot_deg ));
+
+    r = cell( 8, GRID_COLS, "icon_xf (rotated)" ); 
+
+    gui_icon_id_t cog = gui()->find_icon( "cog" );
+    gui_vec2_t cog_size = gui()->icon_size( cog );
+    gui_rect_t cog_rect = {
+        r.x + ( r.w - cog_size.x * scale ) * 0.5f,
+        r.y + ( r.h - cog_size.y * scale ) * 0.5f,
+        cog_size.x * scale,
+        cog_size.y * scale,
+    };
+    gui()->draw_icon_xf( cog_rect, cog, AMBER, gui_radians( shape_rot_deg ));
 
     panel_row_end();
 
@@ -991,7 +1002,7 @@ page_icons( void )
 {
     gui_rect_t r;
 
-    static const char* s_icon_names[ 7 ] = { "save", "folder", "file", "gear", "grid", "wire", "view" };
+    static const char* s_icon_names[ 7 ] = { "save", "folder", "file", "cog", "grid", "wire", "view" };
     for ( i32 i = 0; i < 7; ++i )
     {
         r = cell( i, 6, s_icon_names[ i ] );
@@ -1001,7 +1012,7 @@ page_icons( void )
 
     r = cell( 7, GRID_COLS, "draw_icon_xf (rotated)" );
     {
-        gui_icon_id_t id = gui()->find_icon( "gear" );
+        gui_icon_id_t id = gui()->find_icon( "cog" );
         if ( id != GUI_ICON_NONE ) gui()->draw_icon_xf( r, id, AMBER, gui_radians( 25.0f ) );
     }
 

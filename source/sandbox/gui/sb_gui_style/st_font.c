@@ -110,6 +110,7 @@ ft_add( const char* name )
 }
 
 /* Case-insensitive name compare for sorting the Windows portion of the list. */
+
 static int
 ft_name_cmp( const void* a, const void* b )
 {
@@ -126,6 +127,7 @@ ft_name_cmp( const void* a, const void* b )
 
 /* True if `name` ends in one of the face extensions font_source/ is scanned for (case-
    insensitive, matching sys_file_glob's Windows FindFirstFile semantics). */
+
 static bool
 ft_has_font_ext( const char* name )
 {

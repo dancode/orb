@@ -251,7 +251,7 @@ static const char* const s_builtin_icons[] =
     "save",   "assets/icon/save.png",
     "folder", "assets/icon/folder.png",
     "file",   "assets/icon/file.png",
-    "gear",   "assets/icon/gear.png",
+    "cog",    "assets/icon/cog.png",
     "grid",   "assets/icon/grid.png",
     "wire",   "assets/icon/wire.png",
     "view",   "assets/icon/view.png",
