@@ -276,10 +276,11 @@ gui_checkbox( const char* label, bool* v )
 
     checkbox_face( c.box, id, c.st, *v );
 
-    /* The label, when the field kept it -- plainly, no ellipsis (markers still stripped); a label
-       too wide for its track overflows and is bounded by the window clip, matching text() and the
-       input widgets. */
-    if ( c.show_label ) draw_label( c.label_x, c.label_y, COL_TEXT_PRIMARY_IDLE, label );
+    /* The label, when the field kept it, fit to its track like radio_button's: under a field split
+       the label track abuts the control track (the box itself), so an unclipped label long enough
+       to overflow would paint straight over it -- ellipsis instead, matching every other split
+       field. */
+    if ( c.show_label ) draw_label_fit( c.label_x, c.label_y, COL_TEXT_PRIMARY_IDLE, label, c.label_w );
 
     bool changed = false;
     if ( c.st.clicked )

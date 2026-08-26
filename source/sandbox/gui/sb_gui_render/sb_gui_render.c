@@ -157,7 +157,7 @@ panel_row_begin( i32 row, const char* id_str )
     gui()->region_begin( id_str, x, y, TWEAK_PANEL_W, CELL_H, GUI_REGION_FG,
                          GUI_VP_MAIN, GUI_WIN_NOSCROLL | GUI_WIN_NO_CLIP );
     gui()->row2( TWEAK_PANEL_COLW, 0 );
-    gui()->field_label_left( 80 );
+    gui()->field_label_left( 96 );
 }
 
 static void
@@ -647,6 +647,10 @@ page_shapes( void )
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
     gui()->slider_float_step( "rotation", &rotation, 0.0f, 180.0f, 15.0f );
     if ( gui()->button( "reset##sh5" )) { rotation = 0.0f; }
+
+    static bool show_center = false;
+    gui()->checkbox( "show center", &show_center );
+    gui()->skip();
 
     float radians = gui_radians( rotation );
     panel_row_end();
