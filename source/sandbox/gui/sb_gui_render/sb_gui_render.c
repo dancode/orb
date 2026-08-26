@@ -438,13 +438,13 @@ page_fills( void )
     // draw_set_rounding at all.
     //------------------------------------------------------------------------------------------
 
-    r = cell( 18, GRID_COLS, "frame (bg + border, square)" );
+    r = cell( 18, GRID_COLS, "frame (bg + border)" );
 
     gui()->draw_set_border_align( frame_border_align );
     gui()->draw_frame( r, INK_FAINT, TEAL, frame_border );
     gui()->draw_set_border_align( 0.0f );
 
-    r = cell( 19, GRID_COLS, "frame (bg + border)" );
+    r = cell( 19, GRID_COLS, "round frame (bg + border)" );
 
     gui()->draw_set_border_align( frame_border_align );
     gui()->draw_round_frame( r, frame_round, INK_FAINT, TEAL, frame_border );
@@ -475,8 +475,11 @@ page_fills( void )
     gui()->slider_float_step( "bl", &corner_bl, 0, CELL_H * 0.5f, 1.0f );
     if ( gui()->button( "reset##18" )) { corner_bl = TWEAK_ROUND_WIDTH; }
 
-    r = cell( 24, GRID_COLS, "round rect (per-corner)" );
+    r = cell( 24, GRID_COLS, "round rect (corner)" );
     gui()->draw_round_rect_ex( r, corner_tl, corner_tr, corner_br, corner_bl, 0.0f, TEAL );
+
+    r = cell( 25, GRID_COLS, "round frame (corner)" );
+    gui()->draw_round_frame_ex( r, corner_tl, corner_tr, corner_br, corner_bl, INK_FAINT, TEAL, frame_border );
 
     panel_row_end();
 }
@@ -691,25 +694,42 @@ page_shapes( void )
 
     //------------------------------------------------------------------------------------------
 
-    panel_row_begin( 2, "shapes_row2" );
+    panel_row_begin( 3, "shapes_row3" );
 
-    /* ratio -- midpoint tuning */
+    /* star ratio -- midpoint tuning */
     static float ratio = 0.5f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "ration", &ratio, 0.1f, 1.0f, 0.01f );
-    if ( gui()->button( "reset##sh5" )) { ratio = 0.5f; }
+    gui()->slider_float_step( "star ratio", &ratio, 0.1f, 1.0f, 0.01f );
+    if ( gui()->button( "reset##star_ratio" )) { ratio = 0.5f; }
+
+    /* star - sides */
+    static int star_sides = 5;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_int( "star sides", &star_sides, 1, 16, NULL );
+    if ( gui()->button( "reset##star_size" )) { star_sides = 5; }
+
+    /* star - sides */
+    static float angle_a = -45.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "angle a", &angle_a, -360.0f, 360.0f, 5.0f );
+    if ( gui()->button( "reset##arc_angle_a" )) { angle_a = -45.0f; }
+
+    static float angle_b = 45.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "angle b", &angle_b, -360.0f, 360.0f, 5.0f );
+    if ( gui()->button( "reset##arc_angle_b" )) { angle_b = +45.0f; }
 
     panel_row_end();
 
     /* star */
     r = cell( 18, GRID_COLS, "star" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_star( c.x, c.y, rad, 5, ratio, radians, thickness, AMBER );
+    gui()->draw_star( c.x, c.y, rad, star_sides, ratio, radians, thickness, AMBER );
     
-    // r = cell( 19, GRID_COLS, "pie" );
-    // c = cell_center( r ); rad = cell_radius( r );
-    // gui()->draw_pie( c.x, c.y, rad, gui_radians( -40.0f ), gui_radians( 120.0f ), AMBER );
-    // 
+    r = cell( 19, GRID_COLS, "pie" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_pie( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), AMBER );
+    
     // r = cell( 24, GRID_COLS, "arc" );
     // c = cell_center( r ); rad = cell_radius( r );
     // gui()->draw_arc( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 270.0f ), 4.0f, TEAL );

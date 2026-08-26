@@ -301,6 +301,21 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
     if ( grad_mid > 0.001f && grad_mid < 0.999f && grad_mid != 0.5f )
         mid_e = -0.69314718f / logf( grad_mid );
 
+    /* Border alignment: the same push-time inflation the plain outline runs, applied to all four
+       corners so they stay concentric with the authored ones. */
+    if ( border > 0.0f )
+    {
+        f32 ba = s_draw.border_align * border;
+        if ( ba > 0.0f )
+        {
+            x -= ba;  y -= ba;  w += ba * 2.0f;  h += ba * 2.0f;
+            if ( rtl > 0.0f ) rtl += ba;
+            if ( rtr > 0.0f ) rtr += ba;
+            if ( rbr > 0.0f ) rbr += ba;
+            if ( rbl > 0.0f ) rbl += ba;
+        }
+    }
+
     /* Cull against the grown box: the falloff skirt is real geometry (feather/2 past the rect,
        plus the tessellator's pixel of slack) -- the draw_push_shadow rule. */
 

@@ -137,8 +137,7 @@ draw_push_round_frame_ex( f32 x, f32 y, f32 w, f32 h,
     u32 bord = draw_apply_alpha( col_border );
 
     /* One side invisible degenerates to the primitive the other side is; an outward-aligned band
-       reaches past the boundary the fill's field ends at, so it keeps the pair -- draw_push_round_
-       rect_ex's stroke has no align concept of its own, same as the uniform path without one. */
+       reaches past the boundary the fill's field ends at, so it keeps the pair. */
     if ( t <= 0.0f || ( bord >> 24 ) == 0u )
     {
         draw_push_round_rect_ex( x, y, w, h, rtl, rtr, rbr, rbl, 0.0f, 0.0f,

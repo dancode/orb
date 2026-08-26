@@ -37,26 +37,32 @@
 ==============================================================================================*/
 
 /* Make a vec2 (the render server owns its own v2; this is the draw unit's local one). */
+
 static gui_vec2_t sv2( f32 x, f32 y ) { return ( gui_vec2_t ){ x, y }; }
 
 /* Stroke width floored at one pixel.  A sub-pixel thickness strokes to nothing, so every mark
    that takes a caller thickness passes it through here -- one rule, not ten open-coded clamps. */
+
 static f32 sym_thick( f32 thickness ) { return thickness < 1.0f ? 1.0f : thickness; }
 
 /* The box's inscribed extent -- the shorter side, which is what a square mark (arrow, plus,
    spinner) sizes itself against so it stays square in a non-square cell. */
+
 static f32 sym_min_side( gui_rect_t box ) { return box.w < box.h ? box.w : box.h; }
 
 /* Fill a convex outline as a triangle fan from the first point (the one fill route every convex
    shape here -- polygon, pie, per-corner rounded rect -- shares).  Each triangle is one draw
    command, so a high-segment fill is command-heavy; prefer draw_push_circle_filled for a plain
    disc, which is a single command. */
+
 static void
 sym_fill_convex( const gui_vec2_t* pts, u32 n, u32 col )
 {
     for ( u32 i = 1; i + 1 < n; ++i )
+    {
         draw_push_triangle( pts[ 0 ].x, pts[ 0 ].y, pts[ i ].x, pts[ i ].y,
                             pts[ i + 1 ].x, pts[ i + 1 ].y, col );
+    }
 }
 
 /*==============================================================================================
@@ -66,6 +72,7 @@ sym_fill_convex( const gui_vec2_t* pts, u32 n, u32 col )
 /* Chevron glyph: a stroked '>' pointing `dir`, centered in `box` (the open sibling of the filled
    arrow).  Three points -- the two back corners and the apex -- stroked as an open polyline, sized
    to the same half-extent as draw_arrow so the two styles are interchangeable at any font size. */
+
 static void
 draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 color )
 {
@@ -94,6 +101,7 @@ draw_chevron( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 color )
    Two antialiased line segments -- a short down-stroke into the valley, then a long up-stroke --
    the same line primitive the close 'X' uses, so ticks and crosses stroke identically.  The
    geometry is expressed as fractions of the fitted square so it scales crisply at any box size. */
+
 static void
 draw_check_mark( gui_rect_t box, u32 color )
 {
@@ -117,6 +125,7 @@ draw_check_mark( gui_rect_t box, u32 color )
    draw_arrow, so it drops cleanly into a narrow side column without overrunning the column width.
    Fixed DOWN orientation -- unlike draw_arrow it is not a general direction glyph and does not
    follow GUI_VAR_ARROW_SHAPE; the toolbar affordance stays this one mark regardless of theme. */
+
 void
 draw_dropdown_arrow( gui_rect_t box, u32 color )
 {
@@ -142,6 +151,7 @@ draw_bullet( f32 cx, f32 cy, f32 r, u32 color )
    triangle of half-extent `half` with its tip exactly on (tx,ty), opening away in `dir`.  Used for
    pointer chrome -- a tooltip / popup beak, a "jump to" marker -- where the tip must land on a point
    rather than be centered in a box (the box-centered case is draw_arrow).  Always filled. */
+
 static void
 draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 color )
 {
@@ -192,6 +202,7 @@ draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col )
    parameter), so a rating mark or a badge is the same one quad the polygon is.  ratio <= 0 takes
    the classic five-point proportion; the useful range runs from ~0.3 (sharp) to the polygon's
    apothem (flat), and the field caps it there.  Same `rot` convention as draw_ngon. */
+
 static void
 draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness, u32 col )
 {
@@ -220,6 +231,7 @@ draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness,
    ring inside r (the default), 0.5 centres the band on r, 1 pushes it entirely outside.
    tess_fx_box does not grid-snap a circle (it derives that), so a ring and a filled disc at the
    same centre stay concentric to the sub-pixel regardless of alignment. */
+
 void
 draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col )
 {
