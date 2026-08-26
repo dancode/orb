@@ -643,6 +643,12 @@ page_shapes( void )
     gui()->slider_float_step( "thickness", &thickness, 0.0f, 10.0f, 0.1f );
     if ( gui()->button( "reset##sh4" )) { thickness = 0.0f; }
 
+    static float rotation = 0.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "rotation", &rotation, 0.0f, 180.0f, 15.0f );
+    if ( gui()->button( "reset##sh5" )) { rotation = 0.0f; }
+
+    float radians = gui_radians( rotation );
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
@@ -650,21 +656,24 @@ page_shapes( void )
     /* ngon - triangle */    
     r = cell( 12, GRID_COLS, "ngon (tri)" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 3, 0.0f, thickness, TEAL );
+    gui()->draw_ngon( c.x, c.y, rad, 3, radians, thickness, TEAL );
+    gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
     /* ngon - quad */    
     r = cell( 13, GRID_COLS, "ngon (quad)" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 4, 0.0f, thickness, TEAL );
+    gui()->draw_ngon( c.x, c.y, rad, 4, radians, thickness, TEAL );
+    gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
     r = cell( 14, GRID_COLS, "ngon (pent)" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 5, 0.0f, thickness, TEAL );
+    gui()->draw_ngon( c.x, c.y, rad, 5, radians, thickness, TEAL );
+    gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
     r = cell( 15, GRID_COLS, "ngon (line)" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 2, 0.0f, thickness, TEAL );
-
+    gui()->draw_ngon( c.x, c.y, rad, 2, radians, thickness, TEAL );
+    gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
     // r = cell( 13, GRID_COLS, "ngon (hex)" );
     // c = cell_center( r ); rad = cell_radius( r );

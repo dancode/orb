@@ -261,13 +261,13 @@ draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
    A signed-distance surface now, filled and stroked both -- the sampled fan and its 64-point
    ribbon are gone.  The boundary is exact at any size, both forms antialias, and the corners
    round by the ambient rounding (a design tool's rounded hexagon badge), which the fan never
-   could.  `rot` keeps the sampled convention: 0 puts a vertex at +x, the angle algebra every
-   caller already speaks -- the field's own reference (a vertex up) differs by a quarter turn,
-   folded in here. */
+   could.  `rot` keeps the field's own reference: 0 puts a vertex at the top, so an unrotated
+   triangle/pentagon/star sits point-up and symmetric rather than pointing at +x. */
+
 static void
 draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col )
 {
-    draw_push_ngon( cx, cy, r, sides, rot + SYM_PI * 0.5f, draw_rounding(),
+    draw_push_ngon( cx, cy, r, sides, rot, draw_rounding(),
                     ( thickness <= 0.0f ) ? 0.0f : sym_thick( thickness ), 0.0f, col );
 }
 
@@ -280,7 +280,7 @@ draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness,
 {
     if ( ratio <= 0.0f )
         ratio = 0.5f;
-    draw_push_ngon( cx, cy, r, points, rot + SYM_PI * 0.5f, draw_rounding(),
+    draw_push_ngon( cx, cy, r, points, rot, draw_rounding(),
                     ( thickness <= 0.0f ) ? 0.0f : sym_thick( thickness ), ratio, col );
 }
 
@@ -1265,12 +1265,26 @@ draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col )
 ==============================================================================================*/
 
 /* glyph marks */
-void gui_draw_check_mark( gui_rect_t box, u32 col )                       { draw_check_mark( box, col ); }
-void gui_draw_bullet    ( f32 cx, f32 cy, f32 r, u32 col )                  { draw_bullet( cx, cy, r, col ); }
+void gui_draw_check_mark( gui_rect_t box, u32 col )
+{ 
+    draw_check_mark( box, col ); 
+}
+void gui_draw_bullet    ( f32 cx, f32 cy, f32 r, u32 col ) 
+{ 
+    draw_bullet( cx, cy, r, col );
+}
 void gui_draw_arrow_pointing_at( f32 tx, f32 ty, f32 half, gui_dir_t dir, u32 col )
-                                                                               { draw_arrow_pointing_at( tx, ty, half, dir, col ); }
-void gui_draw_chevron   ( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 col ) { draw_chevron( box, dir, thickness, col ); }
-void gui_draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 col )       { draw_plus_minus( box, plus, thickness, col ); }
+{
+    draw_arrow_pointing_at( tx, ty, half, dir, col ); 
+}
+void gui_draw_chevron   ( gui_rect_t box, gui_dir_t dir, f32 thickness, u32 col ) 
+{ 
+    draw_chevron( box, dir, thickness, col ); 
+}
+void gui_draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 col )       
+{ 
+    draw_plus_minus( box, plus, thickness, col ); 
+}
 
 /* shapes */
 void
@@ -1301,33 +1315,52 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
    rounding is forced to 0 regardless of the caller's ambient state, exactly like draw_rect.
    draw_push_frame takes rounding as a real argument, so this passes 0 straight through; it never
    reads or touches the ambient at all, not even transiently. */
+
 void
 draw_frame( gui_rect_t r, u32 col_bg, u32 col_border, f32 border )
 {
     draw_push_frame( r.x, r.y, r.w, r.h, 0.0f, border, col_bg, col_border );
 }
 void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border )
-                                                                               { draw_frame( box, col_bg, col_border, border ); }
+{ 
+    draw_frame( box, col_bg, col_border, border ); 
+}
 
 /* draw_round_rect's dual-color sibling: same fill+border quad, rounding taken as an explicit
    argument and passed straight through to draw_push_frame -- no ambient involved.  Widget
    chrome's own bezel painter, which genuinely wants the ambient (gui_draw_bezel,
    stock/gui_symbol_style.c), stays separate. */
+
 void
 draw_round_frame( gui_rect_t r, f32 rounding, u32 col_bg, u32 col_border, f32 border )
 {
     draw_push_frame( r.x, r.y, r.w, r.h, rounding, border, col_bg, col_border );
 }
 void gui_draw_round_frame( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border )
-                                                                               { draw_round_frame( box, rounding, col_bg, col_border, border ); }
+{ 
+    draw_round_frame( box, rounding, col_bg, col_border, border ); 
+}
 
 void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col )
-                                                                               { draw_ngon( cx, cy, r, sides, rot, thickness, col ); }
+{ 
+    draw_ngon( cx, cy, r, sides, rot, thickness, col ); 
+}
 void gui_draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness, u32 col )
-                                                                               { draw_star( cx, cy, r, points, ratio, rot, thickness, col ); }
-void gui_draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col )          { draw_circle( cx, cy, r, thickness, col ); }
-void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )  { draw_arc( cx, cy, r, a0, a1, thickness, col ); }
-void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )                 { draw_pie( cx, cy, r, a0, a1, col ); }
+{ 
+    draw_star( cx, cy, r, points, ratio, rot, thickness, col ); 
+}
+void gui_draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col )          
+{ 
+    draw_circle( cx, cy, r, thickness, col ); 
+}
+void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )  
+{ 
+    draw_arc( cx, cy, r, a0, a1, thickness, col ); 
+}
+void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )                
+{ 
+    draw_pie( cx, cy, r, a0, a1, col ); 
+}
 
 /* The self-sampled sector variants -- both bind straight to their backend primitives; the emit
    side owns the dash quantization and the gradient's reversed-range colour swap. */
