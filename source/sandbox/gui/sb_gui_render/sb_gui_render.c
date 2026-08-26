@@ -613,15 +613,15 @@ page_shapes( void )
 
     r = cell( 8, GRID_COLS, "icon_xf (rotated)" ); 
 
-    gui_icon_id_t cog = gui()->find_icon( "cog" );
-    gui_vec2_t cog_size = gui()->icon_size( cog );
-    gui_rect_t cog_rect = {
-        r.x + ( r.w - cog_size.x * scale ) * 0.5f,
-        r.y + ( r.h - cog_size.y * scale ) * 0.5f,
-        cog_size.x * scale,
-        cog_size.y * scale,
-    };
-    gui()->draw_icon_xf( cog_rect, cog, AMBER, gui_radians( shape_rot_deg ));
+    // gui_icon_id_t cog = gui()->find_icon( "settings" );
+    // gui_vec2_t cog_size = gui()->icon_size( cog );
+    // gui_rect_t cog_rect = {
+    //     r.x + ( r.w - cog_size.x * scale ) * 0.5f,
+    //     r.y + ( r.h - cog_size.y * scale ) * 0.5f,
+    //     cog_size.x * scale,
+    //     cog_size.y * scale,
+    // };
+    // gui()->draw_icon_xf( cog_rect, cog, AMBER, gui_radians( shape_rot_deg ));
 
     panel_row_end();
 

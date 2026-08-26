@@ -248,13 +248,15 @@ icon_load_pairs( const char* const* pairs, u32 count )
 
 static const char* const s_builtin_icons[] =
 {
-    "save",   "assets/icon/save.png",
-    "folder", "assets/icon/folder.png",
-    "file",   "assets/icon/file.png",
-    "cog",    "assets/icon/cog.png",
-    "grid",   "assets/icon/grid.png",
-    "wire",   "assets/icon/wire.png",
-    "view",   "assets/icon/view.png",
+    "settings", "assets/icon/settings.png",
+    "save",     "assets/icon/save.png",
+    "folder",   "assets/icon/folder.png",
+
+    // "file",   "assets/icon/file.png",
+    
+    // "grid",   "assets/icon/grid.png",
+    // "wire",   "assets/icon/wire.png",
+    // "view",   "assets/icon/view.png",
 };
 
 void
