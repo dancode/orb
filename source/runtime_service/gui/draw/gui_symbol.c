@@ -242,8 +242,8 @@ round_rect_perimeter_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, gui_v
    different radii is not a shape GUI_OP_BAND can describe (its band is derived from one), and the
    closed antialiased polyline draws it correctly already. */
 void
-draw_round_rect_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
-                    f32 thickness, u32 col )
+draw_round_rect_asym( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
+                      f32 thickness, u32 col )
 {
     if ( thickness <= 0.0f )
     {
@@ -1293,7 +1293,7 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
 {
     /* Uniform-radius fast path: route an equal-cornered rect -- filled or stroked -- through the
        backend's single rounded-rect command, which is an SDF surface (one quad, exact analytic
-       AA).  Asymmetric corners go to draw_round_rect_ex, which is a surface too when FILLED; only
+       AA).  Asymmetric corners go to draw_round_rect_asym, which is a surface too when FILLED; only
        its stroked form pays a tessellated arc and a polyline. */
     bool equal_corners = ( r_tl == r_tr && r_tr == r_br && r_br == r_bl );
     if ( equal_corners )
@@ -1308,7 +1308,7 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
         draw_set_rounding( save );
         return;
     }
-    draw_round_rect_ex( box, r_tl, r_tr, r_br, r_bl, thickness, col );
+    draw_round_rect_asym( box, r_tl, r_tr, r_br, r_bl, thickness, col );
 }
 
 /* draw_rect's dual-color sibling: a filled body with a border band, one quad, ALWAYS square --

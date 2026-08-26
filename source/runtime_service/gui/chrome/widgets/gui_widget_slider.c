@@ -113,7 +113,7 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
 
     /* Fill bar up to t.  Round only the start (left) corners to match the track frame; keep the
        leading (right) edge facing the knob square, so a rounded leading edge never leaves a gap
-       between the fill and the handle.  Per-corner via draw_round_rect_ex (gui_symbol.c).
+       between the fill and the handle.  Per-corner via draw_round_rect_asym (gui_symbol.c).
 
        The bar lifts along its OWN role, straight off gui_item_phase -- ACCENT is the value the
        control HOLDS and its four cells are a real ramp (empty track / fill / engaged / dragged),
@@ -124,7 +124,7 @@ slider_render( gui_id_t id, gui_rect_t track_r, gui_item_state_t st, f32 t, cons
        mark -- a green -- and this line could not have been written.) */
     f32 fill_w = t * ( track_r.w - SLIDER_KNOB_W );
     if ( fill_w > 0.0f )
-        draw_round_rect_ex( ( gui_rect_t ){ track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f },
+        draw_round_rect_asym( ( gui_rect_t ){ track_r.x, track_r.y + 1.0f, fill_w, track_r.h - 2.0f },
                             ROUND_WIDGET, 0.0f, 0.0f, ROUND_WIDGET, 0.0f,
                             style_col_mix( GUI_ROLE_ACCENT, mix ) );
 

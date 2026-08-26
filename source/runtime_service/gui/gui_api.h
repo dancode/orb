@@ -913,6 +913,9 @@ typedef struct gui_api_s
     void ( *draw_round_frame       )( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 thickness, u32 col );
 
+    // TODO: draw_round_rect_outline -- a stroked rect with independent corner radii, one quad, the fragment
+    // TODO: draw_round_frame_ex -- a round frame with independent corner radii, one quad.
+
     /* The SDF box under a rotation about its centre (radians, screen space) -- rotated cards,
        tilted badges, the plate behind rotated text.  feather 0 = crisp 1 px AA; wider = a rotated
        soft shadow.  Same single quad as the upright box. */

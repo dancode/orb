@@ -649,7 +649,7 @@ page_shapes( void )
     if ( gui()->button( "reset##sh5" )) { rotation = 0.0f; }
 
     static bool show_center = false;
-    gui()->checkbox( "show center", &show_center );
+    gui()->checkbox( "center dot", &show_center );
     gui()->skip();
 
     float radians = gui_radians( rotation );
@@ -661,23 +661,23 @@ page_shapes( void )
     r = cell( 12, GRID_COLS, "ngon (tri)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ngon( c.x, c.y, rad, 3, radians, thickness, TEAL );
-    gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
+    if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
     /* ngon - quad */    
     r = cell( 13, GRID_COLS, "ngon (quad)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ngon( c.x, c.y, rad, 4, radians, thickness, TEAL );
-    gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
+    if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
     r = cell( 14, GRID_COLS, "ngon (pent)" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 5, radians, thickness, TEAL );
-    gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
+    gui()->draw_ngon( c.x, c.y, rad, 6, radians, thickness, TEAL );
+    if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
     r = cell( 15, GRID_COLS, "ngon (line)" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 2, radians, thickness, TEAL );
-    gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
+    gui()->draw_ngon( c.x, c.y, rad, 8, radians, thickness, TEAL );
+    if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
     // r = cell( 13, GRID_COLS, "ngon (hex)" );
     // c = cell_center( r ); rad = cell_radius( r );
