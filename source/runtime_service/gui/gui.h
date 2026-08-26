@@ -2227,8 +2227,15 @@ typedef union
        closed dashed ring from showing a seam where the pattern meets itself; `duty` is the
        on-fraction.  Both reach the fragment through the record (GUI_OP_DASH).  `flat_caps`
        squares off the sector's own two ends (a0, a1) the same as the plain arc's -- the dash
-       pattern's own gaps are already flat, cut coverage rather than a distance field. */
-    struct { f32 cx, cy, r, thickness, a0, a1; f32 period, duty; u32 abgr; bool flat_caps; } arc_dash;
+       pattern's own gaps are already flat, cut coverage rather than a distance field.
+
+       `dash_full_turn` is a TEMPORARY investigative switch (see draw_push_arc_dashed): fitting
+       whole cycles to the LIVE sweep is exact for a closed ring but re-snaps every dash on an
+       animated one each time the whole-cycle count changes; fitting them to a fixed full turn
+       instead holds dash width constant under animation at the cost of a partial trailing dash
+       and the closed-ring seam guarantee.  Delete this lane once one wins. */
+    struct { f32 cx, cy, r, thickness, a0, a1; f32 period, duty; u32 abgr;
+             bool flat_caps, dash_full_turn; } arc_dash;
 
     /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1).  col_b reaches the fragment
        through the record; GUI_OP_GRAD_ALONG lerps by the arc-length coordinate over the sweep

@@ -439,6 +439,14 @@ draw_push_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr )
 
 #define DRAW_TAU  6.28318530717959f
 
+/* TEMPORARY investigative switch -- see the arc_dash struct comment (gui.h).  false (default)
+   is the shipped behaviour: whole cycles fit the LIVE sweep, exact on a closed ring but
+   re-snapped in one jump whenever an animated sweep's cycle count changes.  true anchors the
+   period to a full turn instead, so dash width holds steady while a0/a1 animate, at the cost of
+   a partial trailing dash and no closed-ring seam guarantee.  Flip to compare; delete with the
+   struct lane once one wins. */
+static bool s_arc_dash_anchor_full_turn = true;
+
 void
 draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
                       f32 dash, f32 gap, bool flat_caps, u32 abgr )
@@ -446,14 +454,17 @@ draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     if ( r <= 0.0f || dash <= 0.0f )
         return;
 
-    /* Angular period from the pixel vocabulary, then snapped so N whole cycles fit the sweep. */
+    /* Angular period from the pixel vocabulary, then snapped so N whole cycles fit the span --
+       the live sweep by default, or a fixed full turn under the investigative switch above. */
     f32 sweep = a1 - a0;
     if ( sweep < 0.0f ) sweep = -sweep;
     if ( sweep > DRAW_TAU ) sweep = DRAW_TAU;
-    f32 period = ( dash + ( gap > 0.0f ? gap : dash ) ) / r;
-    f32 n      = floorf( sweep / period + 0.5f );
+    bool anchor_full = s_arc_dash_anchor_full_turn;
+    f32  fit_span    = anchor_full ? DRAW_TAU : sweep;
+    f32  period      = ( dash + ( gap > 0.0f ? gap : dash ) ) / r;
+    f32  n           = floorf( fit_span / period + 0.5f );
     if ( n < 1.0f ) n = 1.0f;
-    period = sweep / n;
+    period = fit_span / n;
 
     u32 col = draw_apply_alpha( abgr );
     f32 g   = r + thickness * 0.5f;
@@ -461,16 +472,17 @@ draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     gui_cmd_ext_t* e = draw_cmd_open( GUI_CMD_ARC_DASH, col, cx - g, cy - g, g * 2.0f, g * 2.0f, 1.0f );
     if ( !e )
         return;
-    e->arc_dash.cx        = cx;
-    e->arc_dash.cy        = cy;
-    e->arc_dash.r         = r;
-    e->arc_dash.thickness = thickness;
-    e->arc_dash.a0        = a0;
-    e->arc_dash.a1        = a1;
-    e->arc_dash.period    = period;
-    e->arc_dash.duty      = dash / ( dash + ( gap > 0.0f ? gap : dash ) );
-    e->arc_dash.abgr      = col;
-    e->arc_dash.flat_caps = flat_caps;
+    e->arc_dash.cx             = cx;
+    e->arc_dash.cy             = cy;
+    e->arc_dash.r              = r;
+    e->arc_dash.thickness      = thickness;
+    e->arc_dash.a0             = a0;
+    e->arc_dash.a1             = a1;
+    e->arc_dash.period         = period;
+    e->arc_dash.duty           = dash / ( dash + ( gap > 0.0f ? gap : dash ) );
+    e->arc_dash.abgr           = col;
+    e->arc_dash.flat_caps      = flat_caps;
+    e->arc_dash.dash_full_turn = anchor_full;
     draw_cmd_seal();
 }
 

@@ -192,12 +192,15 @@ tess_round_frame_ex( f32 x, f32 y, f32 w, f32 h,
    (GUI_OP_GRAD_ALONG); passing `abgr` states no sweep -- a ramp between one colour and itself
    is that colour, the tess_round_rect_ex rule.
    `flat_caps` squares off a stroked sector's ends (GUI_OP_FLAT_CAP) instead of the round caps
-   the field draws for free; ignored on a PIE, which has no caps. */
+   the field draws for free; ignored on a PIE, which has no caps.
+   `dash_anchor_full` is the TEMPORARY investigative switch (see the arc_dash struct comment,
+   gui.h): it stops this function's own re-fit-to-sweep snap from overriding a period the emit
+   side already anchored to a full turn. */
 static void
 tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
              gui_fx_mode_t mode, u32 grad_col, f32 dash_turns, f32 dash_duty,
              f32 spin_rate, f32 spin_phase, u32 curve, f32 curve_param, u32 abgr,
-             bool flat_caps )
+             bool flat_caps, bool dash_anchor_full )
 {
     if ( r <= 0.0f )
         return;
@@ -299,14 +302,20 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
        its boundary coordinate, which is the one axis the dash op cuts on whatever the shape.  The
        caller still speaks in turns, so convert once here: a period of `uvx` turns is that fraction
        of the full circumference at this radius.  The snap keeps whole cycles around the sweep, so
-       a closed dashed ring meets itself exactly as the retired ARC_DASH field arranged. */
+       a closed dashed ring meets itself exactly as the retired ARC_DASH field arranged.
+       Skipped under dash_anchor_full: the emit side already fit whole cycles to a full turn
+       there, and re-fitting to THIS sweep here is exactly the re-snap that switch exists to
+       avoid. */
     if ( dash_turns > 0.0f )
     {
         f32 arc_len = sweep * ra;
         f32 period  = dash_turns * TESS_TAU * ra;
-        f32 cycles  = ( period > 0.0f ) ? arc_len / period : 0.0f;
-        if ( cycles >= 1.0f )
-            period = arc_len / (f32)(i32)( cycles + 0.5f );
+        if ( !dash_anchor_full )
+        {
+            f32 cycles = ( period > 0.0f ) ? arc_len / period : 0.0f;
+            if ( cycles >= 1.0f )
+                period = arc_len / (f32)(i32)( cycles + 0.5f );
+        }
 
         s_tess.cur_ops |= GUI_OP_SELF | GUI_OP_DASH;
         s_tess.cur_prim.dash_period = period;

@@ -1336,6 +1336,7 @@ void gui_draw_arc_dashed( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
     thickness = sym_thick( thickness );
     draw_push_arc_dashed( cx, cy, r, thickness, a0, a1, dash, gap, flat_caps, col );
 }
+
 void gui_draw_arc_gradient( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
                             u32 col_a, u32 col_b, bool flat_caps )
 {

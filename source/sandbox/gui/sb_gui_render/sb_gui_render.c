@@ -802,7 +802,7 @@ page_shapes( void )
     /* arc dashed -- rotated from forward x */
     r = cell( 24, GRID_COLS, "arc_dashed" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, dash,gap, flat_caps, PLUM );
+    gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, dash, gap, flat_caps, PLUM );
     
     /* a gradiant between two colors */
     r = cell( 25, GRID_COLS, "arc_gradient" );

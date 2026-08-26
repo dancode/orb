@@ -477,7 +477,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              0.0f, 0.0f,
                              e->arc.spin_rate, e->arc.spin_phase,
                              e->arc.curve, e->arc.curve_param, e->arc.abgr,
-                             e->arc.flat_caps );
+                             e->arc.flat_caps, false );
                 break;
             }
 
@@ -489,7 +489,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              0.0f, 0.0f,
                              e->arc.spin_rate, e->arc.spin_phase,
                              e->arc.curve, e->arc.curve_param, e->arc.abgr,
-                             false );
+                             false, false );
                 break;
             }
 
@@ -501,7 +501,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              GUI_FX_ARC, e->arc_dash.abgr,
                              e->arc_dash.period / TESS_TAU, e->arc_dash.duty,
                              0.0f, 0.0f, 0u, 0.0f, e->arc_dash.abgr,
-                             e->arc_dash.flat_caps );
+                             e->arc_dash.flat_caps, e->arc_dash.dash_full_turn );
                 break;
             }
 
@@ -514,7 +514,7 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              e->arc_grad.thickness, e->arc_grad.a0, e->arc_grad.a1,
                              GUI_FX_ARC, e->arc_grad.col_b,
                              0.0f, 0.0f, 0.0f, 0.0f, 0u, 0.0f, e->arc_grad.col_a,
-                             e->arc_grad.flat_caps );
+                             e->arc_grad.flat_caps, false );
                 break;
             }
 
