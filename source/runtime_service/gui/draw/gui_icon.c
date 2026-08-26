@@ -297,5 +297,38 @@ icon_tex( gui_icon_id_t id )
     return idx ? ( idx | GUI_TEX_MODE( GUI_TEX_SDF ) ) : 0u;   /* 0 = atlas not up yet; draw skips */
 }
 
+/*==============================================================================================
+    Debug readout -- consumed by the font overlay's icon footer (gui_frame_overlay.c), same
+    per-index accessor shape as font_slot_ptr so a small, cheap-to-copy value comes back per row
+    instead of exposing icon_entry_t (and s_icons) outside this file.
+==============================================================================================*/
+
+u32
+icon_debug_count( void )
+{
+    return s_icons.count;
+}
+
+u32
+icon_debug_max( void )
+{
+    return ICON_MAX;
+}
+
+icon_debug_entry_t
+icon_debug_entry( u32 index )
+{
+    icon_debug_entry_t d = { "", 0, 0, false };
+    if ( index < s_icons.count )
+    {
+        const icon_entry_t* e = &s_icons.entries[ index ];
+        d.name = e->name;
+        d.w    = e->w;
+        d.h    = e->h;
+        d.sdf  = e->sdf;
+    }
+    return d;
+}
+
 // clang-format on
 /*============================================================================================*/

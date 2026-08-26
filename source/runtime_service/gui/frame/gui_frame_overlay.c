@@ -704,6 +704,10 @@ overlay_state( int mode )
     row names who owns it (H held, S/L ramp role, v<N> a viewport's landed DPI font) -- an
     unmarked row is evictable, a marked one is somebody's live answer.
 
+    Below that, the icon registry's own count/cap, SDF-vs-coverage split, and resident bytes,
+    then one row per icon (name, stored size, sdf or coverage) -- the icon set's much smaller,
+    so a full listing costs nothing and answers the same "why are there this many" question.
+
     Toggled by the selector menu's checkbox (no hotkey -- rarely flipped mid-chase).
 ==============================================================================================*/
 
@@ -769,6 +773,26 @@ overlay_fonts( void )
                    rd.memo_used, rd.memo_cap,
                    rd.ship_count, rd.ship_scanned ? "" : " (unscanned)",
                    rd.baker ? "yes" : "no" );
+
+        /* Icon registry footer: total/cap, SDF vs coverage split, and resident bytes, then one
+           row per icon -- the same "why are there this many" readout the font rows above give. */
+        u32 icount = icon_debug_count();
+        u32 isdf = 0, iresident = 0;
+        for ( u32 i = 0; i < icount; ++i )
+        {
+            icon_debug_entry_t e = icon_debug_entry( i );
+            if ( e.sdf ) ++isdf;
+            iresident += (u32)e.w * (u32)e.h;
+        }
+        gui_new_line( 2.0f );
+        gui_textf( "Icons %u/%u  %u sdf  %u coverage  %u kB resident",
+                   icount, icon_debug_max(), isdf, icount - isdf,
+                   ( iresident + 1023u ) / 1024u );
+        for ( u32 i = 0; i < icount; ++i )
+        {
+            icon_debug_entry_t e = icon_debug_entry( i );
+            gui_textf( "  %-10s %3ux%-3u %s", e.name, e.w, e.h, e.sdf ? "sdf" : "cov" );
+        }
 
         gui_scale_pop();
     }

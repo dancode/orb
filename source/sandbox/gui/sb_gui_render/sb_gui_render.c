@@ -591,7 +591,7 @@ page_shapes( void )
 
     static float scale = 1.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "scale", &scale, 0.5f, 4.0f, 0.1f );
+    gui()->slider_float_step( "scale", &scale, 0.5f, 6.0f, 0.1f );
     if ( gui()->button( "reset##sh3" )) { scale = 1.0f; }
 
     r = cell( 6, GRID_COLS, "rect_xf (rotated)" );
@@ -601,17 +601,23 @@ page_shapes( void )
     r = cell( 7, GRID_COLS, "icon_xf (rotated)" ); 
 
     gui_icon_id_t save = gui()->find_icon( "save" );
-    gui_vec2_t icon_size = gui()->icon_size( save );
-    gui_rect_t icon_rect = {
-        r.x + ( r.w - icon_size.x * scale ) * 0.5f,
-        r.y + ( r.h - icon_size.y * scale ) * 0.5f,
-        icon_size.x * scale,
-        icon_size.y * scale,
-    };
-    gui()->draw_icon_xf( icon_rect, save, AMBER, gui_radians( shape_rot_deg ));
-    // gui()->draw_icon_xf( r, icon, AMBER, gui_radians( shape_rot_deg ));
+    // gui_vec2_t icon_size = gui()->icon_size( save );
+    // gui_rect_t icon_rect = {
+    //     r.x + ( r.w - icon_size.x * scale ) * 0.5f,
+    //     r.y + ( r.h - icon_size.y * scale ) * 0.5f,
+    //     icon_size.x * scale,
+    //     icon_size.y * scale,
+    // };
+    // gui()->draw_icon_xf( icon_rect, save, AMBER, gui_radians( shape_rot_deg ));
+    gui()->draw_icon_xf( r, save, AMBER, gui_radians( shape_rot_deg ));
 
     r = cell( 8, GRID_COLS, "icon_xf (rotated)" ); 
+    gui_icon_id_t settings = gui()->find_icon( "settings" );
+    gui()->draw_icon_xf( r, settings, AMBER, gui_radians( shape_rot_deg ));
+
+    r = cell( 9, GRID_COLS, "icon_xf (rotated)" ); 
+    gui_icon_id_t file = gui()->find_icon( "file" );
+    gui()->draw_icon_xf( r, file, AMBER, gui_radians( shape_rot_deg ));
 
     // gui_icon_id_t cog = gui()->find_icon( "settings" );
     // gui_vec2_t cog_size = gui()->icon_size( cog );

@@ -135,6 +135,21 @@ gui_icon_id_t   icon_find         ( const char* name );
 bool            icon_atlas_init   ( void );   // enable icon registration (shared atlas owns GPU)
 void            icon_atlas_shutdown( void );  // clear the icon table
 
+/* Debug readout for the font overlay's icon footer (gui_frame_overlay.c).  Per-index accessor,
+   the same shape as font_slot_ptr, so a row costs one small by-value struct rather than exposing
+   icon_entry_t (and the registry it lives in) outside gui_icon.c. */
+typedef struct
+{
+    const char* name;    // registered lookup key ("" past icon_debug_count())
+    u32         w, h;    // STORED pixel dimensions (the field's, for an SDF icon)
+    bool        sdf;     // false = shared coverage atlas, true = the SDF atlas
+
+} icon_debug_entry_t;
+
+u32                 icon_debug_count( void );          // registered icons
+u32                 icon_debug_max  ( void );           // registry capacity (ICON_MAX)
+icon_debug_entry_t  icon_debug_entry( u32 index );      // index in [0, icon_debug_count())
+
 /* Baked SDF shape registry (draw/gui_shape.c).  Where an SDF icon is a field read as ALPHA in the
    colour stage, a shape is a field read as the fragment's DISTANCE -- so the whole op cascade
    reaches it.  The three the RENDER unit consumes -- shape_metrics at emit, shape_uv / shape_tex at

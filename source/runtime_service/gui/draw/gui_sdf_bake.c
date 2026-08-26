@@ -116,6 +116,7 @@ sdf_bake_propagate( sdf_bake_pt_t* g, u32 w, u32 h )
    `scale` converts source pixels to stored texels so the encoded field is in the units the stored
    image is sampled at -- without it a 4x source would encode a field four times too steep, and the
    spread would mean something different for every bake. */
+
 static void
 sdf_bake_encode( const f32* dist, u32 w, u32 h, u8* out, u32 ow, u32 oh, f32 spread )
 {
