@@ -693,6 +693,7 @@ page_shapes( void )
     if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
     //------------------------------------------------------------------------------------------
+    // row 3 + 4 controls
 
     panel_row_begin( 3, "shapes_row3" );
 
@@ -709,35 +710,65 @@ page_shapes( void )
     if ( gui()->button( "reset##star_size" )) { star_sides = 5; }
 
     /* star - sides */
-    static float angle_a = -45.0f;
+    static float angle_a = 270.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "angle a", &angle_a, -360.0f, 360.0f, 5.0f );
-    if ( gui()->button( "reset##arc_angle_a" )) { angle_a = -45.0f; }
+    gui()->slider_float_step( "angle a", &angle_a, 0.0f, 360.0f, 5.0f );
+    if ( gui()->button( "reset##arc_angle_a" )) { angle_a = 270.0f; }
 
-    static float angle_b = 45.0f;
+    static float angle_b = 0.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "angle b", &angle_b, -360.0f, 360.0f, 5.0f );
-    if ( gui()->button( "reset##arc_angle_b" )) { angle_b = +45.0f; }
+    gui()->slider_float_step( "angle b", &angle_b, 0.0f, 360.0f, 5.0f );
+    if ( gui()->button( "reset##arc_angle_b" )) { angle_b = 0.0f; }
 
     panel_row_end();
+   
+    panel_row_begin( 4, "shapes_row4" );
+
+    static float width = 4.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "width", &width, 0.0f, 10.0f, 0.1f );
+    if ( gui()->button( "reset##width" )) { width = 0.0f; }
+
+    static float dash = 6.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "dash", &dash, 0.0f, 12.0f, 1.0f );
+    if ( gui()->button( "reset##dash" )) { dash = 6.0f; }
+
+    static float gap = 4.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "gap", &gap, 0.0f, 12.0f, 1.0f );
+    if ( gui()->button( "reset##gap" )) { gap = 4.0f; }
+    
+    panel_row_end();
+    
+    //------------------------------------------------------------------------------------------
+    // row 3 -- stars, pies
+    //------------------------------------------------------------------------------------------
 
     /* star */
     r = cell( 18, GRID_COLS, "star" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_star( c.x, c.y, rad, star_sides, ratio, radians, thickness, AMBER );
+    gui()->draw_star( c.x, c.y, rad, star_sides, ratio, radians, width, AMBER );
     
+    /* pie -- rotated from forward x */
     r = cell( 19, GRID_COLS, "pie" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_pie( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), AMBER );
     
-    // r = cell( 24, GRID_COLS, "arc" );
-    // c = cell_center( r ); rad = cell_radius( r );
-    // gui()->draw_arc( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 270.0f ), 4.0f, TEAL );
-    // 
-    // r = cell( 25, GRID_COLS, "arc_dashed" );
-    // c = cell_center( r ); rad = cell_radius( r );
-    // gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 300.0f ), 4.0f, 6.0f, 4.0f, PLUM );
-    // 
+    /* arc -- rotated from forward x */
+    r = cell( 20, GRID_COLS, "arc" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_arc( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, TEAL );
+        
+    //------------------------------------------------------------------------------------------
+    // row 4 -- arc, arc dashed
+    //------------------------------------------------------------------------------------------
+
+    /* arc dashed -- rotated from forward x */
+    r = cell( 24, GRID_COLS, "arc_dashed" );
+    c = cell_center( r ); rad = cell_radius( r );
+    gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, dash,gap, PLUM );
+    
     // r = cell( 26, GRID_COLS, "arc_gradient" );
     // c = cell_center( r ); rad = cell_radius( r );
     // gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( -90.0f ), gui_radians( 180.0f ), 5.0f, AMBER, TEAL );
@@ -745,6 +776,8 @@ page_shapes( void )
     // r = cell( 27, GRID_COLS, "progress_arc" );
     // c = cell_center( r ); rad = cell_radius( r );
     // gui()->draw_progress_arc( c.x, c.y, rad, 0.65f, 4.0f, TEAL );
+
+    panel_row_end();
 }
 
 
