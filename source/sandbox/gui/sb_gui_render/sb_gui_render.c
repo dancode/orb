@@ -362,6 +362,9 @@ page_fills( void )
     r = cell( 9, GRID_COLS, "circle rect (border)" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius, border, TEAL ); }
 
+    r = cell( 10, GRID_COLS, "..." );
+    r = cell( 11, GRID_COLS, "..." );
+
     gui()->draw_set_border_align( 0.0f );
     panel_row_end();
 
@@ -407,6 +410,8 @@ page_fills( void )
     r = cell( 16, GRID_COLS, "rr gradient (conic)" );
     gui()->draw_round_rect_gradient( r, grad_round, AMBER, TEAL, GUI_GRAD_CONIC, gui_radians( grad_angle_deg ), grad_mix );
 
+    r = cell( 17, GRID_COLS, "..." );
+
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
@@ -450,6 +455,11 @@ page_fills( void )
     gui()->draw_round_frame( r, frame_round, INK_FAINT, TEAL, frame_border );
     gui()->draw_set_border_align( 0.0f );
 
+    r = cell( 20, GRID_COLS, "..." );
+    r = cell( 21, GRID_COLS, "..." );
+    r = cell( 22, GRID_COLS, "..." );
+    r = cell( 23, GRID_COLS, "..." );
+
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
@@ -480,6 +490,11 @@ page_fills( void )
 
     r = cell( 25, GRID_COLS, "round frame (corner)" );
     gui()->draw_round_frame_ex( r, corner_tl, corner_tr, corner_br, corner_bl, INK_FAINT, TEAL, frame_border );
+
+    r = cell( 26, GRID_COLS, "..." );
+    r = cell( 27, GRID_COLS, "..." );
+    r = cell( 28, GRID_COLS, "..." );
+    r = cell( 29, GRID_COLS, "..." );
 
     panel_row_end();
 }
@@ -579,6 +594,8 @@ page_shapes( void )
         gui()->draw_rect_cut( r, 10.0f, cut, h * 0.5f * shape_cut_round_t, shape_cut_soft, TEAL );
     }
 
+    r = cell( 5, GRID_COLS, "..." );
+
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
@@ -635,7 +652,7 @@ page_shapes( void )
 
 
     r = cell( 10, GRID_COLS, "sprite + xf" );
-
+    r = cell( 11, GRID_COLS, "..." );
 
     panel_row_end();
 
@@ -696,6 +713,7 @@ page_shapes( void )
     gui()->draw_ngon( c.x, c.y, rad, sides, radians, thickness, TEAL );
     if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
+    r = cell( 17, GRID_COLS, "..." );
 
     //------------------------------------------------------------------------------------------
     // row 3 + 4 controls
@@ -769,7 +787,11 @@ page_shapes( void )
     r = cell( 20, GRID_COLS, "arc" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_arc( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, TEAL );
-        
+    
+    /* free location */
+    r = cell( 21, GRID_COLS, "..." );
+    r = cell( 22, GRID_COLS, "..." );
+    r = cell( 23, GRID_COLS, "..." );
     //------------------------------------------------------------------------------------------
     // row 4 -- arc, arc dashed
     //------------------------------------------------------------------------------------------
@@ -789,9 +811,11 @@ page_shapes( void )
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_progress_arc( c.x, c.y, rad, progress, width, TEAL );
 
+    r = cell( 27, GRID_COLS, "..." );
+    r = cell( 28, GRID_COLS, "..." );
+
     panel_row_end();
 }
-
 
 /*==============================================================================================
     Page 3 -- symbols: the widget glyph marks (menu ticks, tree arrows, close crosses, grips).
