@@ -1002,7 +1002,7 @@ page_icons( void )
 {
     gui_rect_t r;
 
-    static const char* s_icon_names[ 7 ] = { "save", "folder", "file", "cog", "grid", "wire", "view" };
+    static const char* s_icon_names[ 7 ] = { "save", "folder", "file", "settings", "grid", "wire", "view" };
     for ( i32 i = 0; i < 7; ++i )
     {
         r = cell( i, 6, s_icon_names[ i ] );
@@ -1012,7 +1012,7 @@ page_icons( void )
 
     r = cell( 7, GRID_COLS, "draw_icon_xf (rotated)" );
     {
-        gui_icon_id_t id = gui()->find_icon( "cog" );
+        gui_icon_id_t id = gui()->find_icon( "settings" );
         if ( id != GUI_ICON_NONE ) gui()->draw_icon_xf( r, id, AMBER, gui_radians( 25.0f ) );
     }
 

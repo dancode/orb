@@ -1,0 +1,19 @@
+# Built-in icon bakes -- consumed by `image_tool icons` (source/tools/image_tool/image_tool.c).
+#
+#   <name> <source.svg> [-size <px>] [-margin <px>] [-out <path>]
+#
+# <name> is the gui icon registry key (gui()->find_icon) and the default output stem.
+# <source.svg> resolves against assets/icon_source/.  -size/-margin default to 256/16, generous
+# headroom over icon_register_sdf's out_max default of 64 -- the built-in set loads as distance
+# fields (icon_load_builtins in gui_icon_load.c), which needs the source rasterized several times
+# larger than its display size with a transparent margin for the field to fall off into.
+#
+# Nothing bakes automatically: re-run `image_tool icons config/icons.manifest` from the repo root
+# whenever source art under assets/icon_source/ changes, then rebuild -- the output PNGs under
+# assets/icon/ are checked in like any other asset.
+
+settings settings.svg
+file     file.svg
+save     save.svg
+folder   folder.svg
+

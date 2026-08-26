@@ -39,6 +39,15 @@
              -out <path>   output file for a single input (default: <input minus extension>.png)
                            or output directory for a directory input (default: the input dir)
 
+    icons -- batch-rasterize the built-in icon set from a manifest (config/icons.manifest): one
+             line per icon, run through the same SVG raster as `svg` above.  Re-run whenever the
+             source art under assets/icon_source/ changes; nothing bakes automatically.
+                 <name> <source.svg> [-size <px>] [-margin <px>] [-out <path>]
+             <name>       the gui icon registry key; also the default output stem
+             <source.svg> resolved against assets/icon_source/
+             -size, -margin  default to 256 / 16 -- generous SDF bake headroom (see `svg` above)
+             -out         override the default assets/icon/<name>.png
+
     info  -- print dimensions, grid hints, and whether the image carries transparency.
 
     Input is any stb_image format (PNG, JPG, BMP, TGA, GIF, ...) or SVG; output is always PNG.
@@ -375,6 +384,123 @@ run_svg( int argc, char** argv )
 }
 
 /*==============================================================================================
+    run_icons -- batch-bake config/icons.manifest.
+
+    Reuses svg_bake_one -- the manifest just names icons (the gui registry key) and their source
+    SVGs instead of files, and defaults -size/-margin for SDF headroom instead of svg's flat-icon
+    32/0, since the built-in set loads as distance fields by default (icon_load_builtins).
+==============================================================================================*/
+
+/* Split one already-trimmed manifest line into whitespace-separated tokens in place (NULs
+   inserted at boundaries).  No quoting -- icon names and source filenames do not need spaces. */
+static int
+icons_tokenize( char* line, char** tok, int max_tok )
+{
+    int n = 0;
+    for ( char* p = line; *p && n < max_tok; )
+    {
+        while ( *p == ' ' || *p == '\t' ) ++p;
+        if ( !*p ) break;
+        tok[ n++ ] = p;
+        while ( *p && *p != ' ' && *p != '\t' ) ++p;
+        if ( *p ) *p++ = '\0';
+    }
+    return n;
+}
+
+/* Bake one manifest line.  Prints its own errors (via svg_bake_one or its own option parsing);
+   returns false so the caller can count failures and keep going. */
+static bool
+icons_bake_line( char* line )
+{
+    char* tok[ 8 ];
+    int   n = icons_tokenize( line, tok, 8 );
+    if ( n < 2 )
+    {
+        fprintf( stderr, "image_tool: icons.manifest: bad line (need <name> <source.svg>): %s\n",
+                 line );
+        return false;
+    }
+
+    const char* name = tok[ 0 ];
+    char        in_path[ 384 ];
+    snprintf( in_path, sizeof( in_path ), "assets/icon_source/%s", tok[ 1 ] );
+
+    int  size   = 256;   // generous headroom over icon_register_sdf's out_max default of 64
+    int  margin = 16;    // an SDF bake needs an outside to fall off into
+    char out_path[ 384 ];
+    snprintf( out_path, sizeof( out_path ), "assets/icon/%s.png", name );
+
+    for ( int i = 2; i < n; ++i )
+    {
+        if ( strcmp( tok[ i ], "-size" ) == 0 && i + 1 < n )
+            size = atoi( tok[ ++i ] );
+        else if ( strcmp( tok[ i ], "-margin" ) == 0 && i + 1 < n )
+            margin = atoi( tok[ ++i ] );
+        else if ( strcmp( tok[ i ], "-out" ) == 0 && i + 1 < n )
+            snprintf( out_path, sizeof( out_path ), "%s", tok[ ++i ] );
+        else
+        {
+            fprintf( stderr, "image_tool: icons.manifest: unknown option '%s' (icon '%s')\n",
+                     tok[ i ], name );
+            return false;
+        }
+    }
+
+    if ( size <= 0 || margin < 0 || size - margin * 2 <= 0 )
+    {
+        fprintf( stderr, "image_tool: icons.manifest: -size %d with -margin %d leaves no room"
+                          " for the art (icon '%s')\n", size, margin, name );
+        return false;
+    }
+
+    return svg_bake_one( in_path, out_path, size, margin );
+}
+
+static int
+run_icons( int argc, char** argv )
+{
+    if ( argc < 1 )
+    {
+        fprintf( stderr, "usage: image_tool icons <manifest>\n" );
+        return 1;
+    }
+
+    FILE* f = fopen( argv[ 0 ], "rb" );
+    if ( !f )
+    {
+        fprintf( stderr, "image_tool: cannot open manifest '%s'\n", argv[ 0 ] );
+        return 1;
+    }
+
+    char line[ 512 ];
+    int  total = 0, baked = 0;
+
+    while ( fgets( line, sizeof( line ), f ) )
+    {
+        char* p = line;
+        while ( *p == ' ' || *p == '\t' ) ++p;
+        if ( *p == '#' || *p == '\0' || *p == '\r' || *p == '\n' )
+            continue;
+
+        size_t len = strlen( p );
+        while ( len && ( p[ len - 1 ] == '\n' || p[ len - 1 ] == '\r'
+                      || p[ len - 1 ] == ' '  || p[ len - 1 ] == '\t' ) )
+            p[ --len ] = '\0';
+        if ( !*p )
+            continue;
+
+        ++total;
+        if ( icons_bake_line( p ) )
+            ++baked;
+    }
+    fclose( f );
+
+    printf( "rasterized %d of %d icon(s) from '%s'\n", baked, total, argv[ 0 ] );
+    return baked == total ? 0 : 1;
+}
+
+/*==============================================================================================
     run_info
 ==============================================================================================*/
 
@@ -416,6 +542,7 @@ print_usage( void )
              "usage: image_tool split <sheet> <cols> <rows> [-out <dir>] [-key]\n"
              "       image_tool key   <image> [-out <path>] [-pad <px>]\n"
              "       image_tool svg   <input.svg | dir> [-size <px>] [-margin <px>] [-out <path | dir>]\n"
+             "       image_tool icons <manifest>\n"
              "       image_tool info  <image>...\n"
              "\n"
              "  split  cut a sprite sheet into cols x rows individual .png files\n"
@@ -428,6 +555,7 @@ print_usage( void )
              "         -size <px>    longest output edge, margins included (default: 32)\n"
              "         -margin <px>  transparent border per side (an SDF bake needs one)\n"
              "         -out <path | dir>  output file, or directory for a directory input\n"
+             "  icons  batch-bake config/icons.manifest -- see the file header for the format\n"
              "  info   print image dimensions and whether transparency is present\n" );
 }
 
@@ -440,6 +568,8 @@ main( int argc, char** argv )
         return run_key( argc - 2, argv + 2 );
     if ( argc >= 2 && strcmp( argv[ 1 ], "svg" ) == 0 )
         return run_svg( argc - 2, argv + 2 );
+    if ( argc >= 2 && strcmp( argv[ 1 ], "icons" ) == 0 )
+        return run_icons( argc - 2, argv + 2 );
     if ( argc >= 2 && strcmp( argv[ 1 ], "info" ) == 0 )
         return run_info( argc - 2, argv + 2 );
 

@@ -236,38 +236,49 @@ icon_load_pairs( const char* const* pairs, u32 count )
 /*==============================================================================================
     Built-in icon set -- declared upfront here and loaded in one pass at backend init.
 
-    Add engine icons by dropping a PNG under <root>/assets/icon and listing a name,path pair
-    here; look one up at draw time with gui()->find_icon( "<name>" ).  A host or the editor can
-    register its OWN icons on top of these at runtime via gui()->load_icon, or a whole set at
-    once via gui()->load_icons.
+    SDF is the default for built-ins: s_builtin_icons_sdf loads each as a distance field via
+    icon_load_file_sdf, so the set stays crisp at any draw size and can take an outline or glow
+    later with no re-bake.  Coverage (icon_load_pairs / s_builtin_icons below) is the fixed-size
+    optimization -- reach for it once a size is locked in, or for a large set where sparing the
+    SDF source's oversampling and margin matters.
+
+    The SDF source PNGs are baked from assets/icon_source/*.svg via `image_tool icons
+    config/icons.manifest` (see that file); re-run it and rebuild after editing the source SVGs,
+    nothing bakes automatically.  Add a new SDF built-in by adding a line to the manifest, baking,
+    and listing the name,path pair below; look one up at draw time with
+    gui()->find_icon( "<name>" ).  A host or the editor can register its OWN icons on top of
+    these at runtime via gui()->load_icon / load_icon_sdf, or a whole coverage set at once via
+    gui()->load_icons.
 
     "orb" -- the engine's own mark and the fallback a demo can reach for when its own icon fails
-    to load -- is authored art (assets/icon_source/orb.png) rather than one of these, loaded via
-    icon_load_file_sdf below so the badge stays resolution-independent at any draw size.
+    to load -- is authored art (assets/icon_source/orb_keyed.png) rather than manifest-baked, but
+    loads through the same icon_load_file_sdf call as the rest of this set.
 ==============================================================================================*/
 
-static const char* const s_builtin_icons[] =
+static const struct { const char* name; const char* path; } s_builtin_icons_sdf[] =
 {
-    "settings", "assets/icon/settings.png",
-    "save",     "assets/icon/save.png",
-    "folder",   "assets/icon/folder.png",
+    { "settings", "assets/icon/settings.png" },
+    { "file",     "assets/icon/file.png" },
+    { "save",     "assets/icon/save.png" },
+    { "folder",   "assets/icon/folder.png" },    
+};
 
-    // "file",   "assets/icon/file.png",
-    
-    // "grid",   "assets/icon/grid.png",
-    // "wire",   "assets/icon/wire.png",
-    // "view",   "assets/icon/view.png",
+static const char* const s_builtin_icons[] =
+{           
+    "temp",   "assets/icon/temp.png",
 };
 
 void
 icon_load_builtins( void )
 {
-    u32 total  = (u32)ARRAY_COUNT( s_builtin_icons ) / 2 + 1;   // + "orb"
+    u32 total  = (u32)ARRAY_COUNT( s_builtin_icons ) / 2 + (u32)ARRAY_COUNT( s_builtin_icons_sdf );
     u32 loaded = icon_load_pairs( s_builtin_icons, (u32)ARRAY_COUNT( s_builtin_icons ) );
+
+    for ( u32 i = 0; i < ARRAY_COUNT( s_builtin_icons_sdf ); ++i )
     {
         char path[ 576 ];
-        fmt_snprintf( path, sizeof( path ), "%s/assets/icon_source/orb_keyed.png", sys_root_dir() );
-        if ( icon_load_file_sdf( "orb", path, 0 ) != GUI_ICON_NONE )
+        fmt_snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), s_builtin_icons_sdf[ i ].path );
+        if ( icon_load_file_sdf( s_builtin_icons_sdf[ i ].name, path, 0 ) != GUI_ICON_NONE )
             ++loaded;
     }
 
