@@ -98,7 +98,7 @@ step_swatch( gui_rect_t r, f32 x, const char* label, u32 abgr )
 {
     gui_draw_rect( x, r.y + 1.0f, r.h - 2.0f, r.h - 2.0f, abgr | 0xFF000000u );
     gui_draw_round_rect( ( gui_rect_t ){ x, r.y + 1.0f, r.h - 2.0f, r.h - 2.0f },
-                         0.0f, 0.0f, 0.0f, 0.0f, 1.0f, STEP_COL_DIM );
+                         0.0f, 1.0f, STEP_COL_DIM );
     char buf[ 48 ];
     fmt_snprintf( buf, sizeof( buf ), "%s 0x%08X", label, abgr );
     gui_draw_text( x + r.h + 4.0f, r.y, STEP_COL_DIM, buf );
@@ -399,7 +399,7 @@ step_highlight_rect( gui_rect_t r, i32 vp, u32 abgr )
     draw_scope_set( hl );
     draw_push_clip_root();
     gui_draw_round_rect( ( gui_rect_t ){ r.x - 2.0f, r.y - 2.0f, r.w + 4.0f, r.h + 4.0f },
-                         0.0f, 0.0f, 0.0f, 0.0f, 2.0f, abgr );
+                         0.0f, 2.0f, abgr );
     draw_pop_clip_rect();
     draw_scope_set( save );
 }

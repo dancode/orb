@@ -285,7 +285,7 @@ ex_draw_shapes( void )
             gui()->slider_int( "Pie sweep (deg)", &p_pie, 20, 360, NULL );
 
             static i32 p_round = 8;      /* corner radius, px */
-            r = gui()->canvas( H ); gui()->draw_round_rect( ex_sym_box( r, H ), (f32)p_round, (f32)p_round, 0.0f, 0.0f, 0.0f, 0xFF4A90D0u );
+            r = gui()->canvas( H ); gui()->draw_round_rect_ex( ex_sym_box( r, H ), (f32)p_round, (f32)p_round, 0.0f, 0.0f, 0.0f, 0xFF4A90D0u );
             gui()->slider_int( "Tab corner (px)", &p_round, 0, 13, NULL );
 
             static i32 p_border = 2;     /* frame border, px */

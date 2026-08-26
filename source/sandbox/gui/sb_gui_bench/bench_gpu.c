@@ -112,7 +112,7 @@ bench_op_cell( bench_op_t op, gui_rect_t r, u32 col )
     switch ( op )
     {
         case BENCH_OP_SELF:        gui()->draw_rect( r.x, r.y, r.w, r.h, col );              break;
-        case BENCH_OP_BOX_ROUND:   gui()->draw_round_rect( r, 10.0f, 10.0f, 10.0f, 10.0f,
+        case BENCH_OP_BOX_ROUND:   gui()->draw_round_rect( r, 10.0f,
                                                            0.0f, col );                     break;
         case BENCH_OP_GRAD:        gui()->draw_gradient( r, col, c2, true );                 break;
         case BENCH_OP_GRAD_RADIAL: gui()->draw_round_rect_gradient( r, 0.0f, col, c2,

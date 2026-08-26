@@ -1206,7 +1206,7 @@ void gui_draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 col )
 
 /* shapes */
 void
-gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
+gui_draw_round_rect_ex( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
                          f32 thickness, u32 col )
 {
     /* Uniform-radius fast path: route an equal-cornered rect -- filled or stroked -- through the
@@ -1230,6 +1230,15 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
     f32 border = ( thickness <= 0.0f ) ? 0.0f : sym_thick( thickness );
     draw_push_round_rect_ex( box.x, box.y, box.w, box.h, r_tl, r_tr, r_br, r_bl, 0.0f, border,
                              col, col, 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
+}
+
+/* The common case: one rounding for all four corners.  A thin wrapper over
+   gui_draw_round_rect_ex -- everything about equal-vs-asymmetric corners lives there, this only
+   spares a caller that never wanted a tab or a notch from spelling the radius four times. */
+void
+gui_draw_round_rect( gui_rect_t box, f32 rounding, f32 thickness, u32 col )
+{
+    gui_draw_round_rect_ex( box, rounding, rounding, rounding, rounding, thickness, col );
 }
 
 /* draw_rect's dual-color sibling: a filled body with a border band, one quad, ALWAYS square --

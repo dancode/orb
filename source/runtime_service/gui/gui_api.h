@@ -914,7 +914,11 @@ typedef struct gui_api_s
     void ( *draw_round_frame       )( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border );
     void ( *draw_round_frame_ex    )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
                                       u32 col_bg, u32 col_border, f32 border );
-    void ( *draw_round_rect        )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 thickness, u32 col );
+    /* draw_round_rect / draw_round_rect_ex -- one rounding for all four corners, or all four
+       independently (the tab / notch / asymmetric card).  Filled when thickness <= 0, stroked
+       otherwise -- both are a single SDF quad regardless. */
+    void ( *draw_round_rect        )( gui_rect_t box, f32 rounding, f32 thickness, u32 col );
+    void ( *draw_round_rect_ex     )( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 thickness, u32 col );
 
     /* The SDF box under a rotation about its centre (radians, screen space) -- rotated cards,
        tilted badges, the plate behind rotated text.  feather 0 = crisp 1 px AA; wider = a rotated
@@ -2298,7 +2302,7 @@ typedef struct gui_api_s
 
             gui_comp_button_t b = gui()->comp_button( "save", r );          // logic
             u32 face = gui()->style_color( GUI_ROLE_BG, gui()->item_phase( b.state ) );  // look
-            gui()->draw_round_rect( r, 8,8,8,8, 0.0f, face );          // your paint
+            gui()->draw_round_rect( r, 8, 0.0f, face );          // your paint
 
         The two style reads that pairing needs (item_phase / style_color) sit with the rest of
         the style surface in GUI_STYLE above -- ONE vocabulary, whichever tier you build on.

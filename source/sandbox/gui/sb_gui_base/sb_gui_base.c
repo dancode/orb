@@ -58,7 +58,7 @@ tier_draw( void )
 
     gui()->draw_rect( 100.0f, 100.0f, 200.0f, 120.0f, AMBER );
     gui()->draw_round_rect( ( gui_rect_t ){ 320.0f, 100.0f, 200.0f, 120.0f },
-                            12.0f, 12.0f, 12.0f, 12.0f, 2.0f, TEAL );
+                            12.0f, 2.0f, TEAL );
     gui()->draw_gradient( ( gui_rect_t ){ 540.0f, 100.0f, 200.0f, 120.0f }, AMBER, PLUM, true );
     gui()->draw_circle( 840.0f, 160.0f, 56.0f, 3.0f, INK );
 
@@ -240,7 +240,7 @@ tier_stock( void )
        while owning its own shape.  (Hard-coding colors here instead would opt out of both.) */
     gui_comp_button_t cb    = gui()->comp_button( "t3_pill", foot );
     gui_style_phase_t    phase = gui()->item_phase( cb.state );
-    gui()->draw_round_rect( foot, 8.0f, 8.0f, 8.0f, 8.0f, 0.0f,
+    gui()->draw_round_rect( foot, 8.0f, 0.0f,
                             gui()->style_color( GUI_ROLE_BG, phase ) );
     gui()->draw_text_in( foot, GUI_ALIGN_CENTER, gui()->style_color( GUI_ROLE_TEXT_PRIMARY, phase ),
                          "comp_button" );

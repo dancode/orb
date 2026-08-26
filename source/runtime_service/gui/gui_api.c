@@ -141,6 +141,7 @@ const gui_api_t g_gui_api_struct =
     .draw_round_frame                   = gui_draw_round_frame,
     .draw_round_frame_ex                = gui_draw_round_frame_ex,
     .draw_round_rect                    = gui_draw_round_rect,
+    .draw_round_rect_ex                 = gui_draw_round_rect_ex,
     .draw_ngon                          = gui_draw_ngon,
     .draw_star                          = gui_draw_star,
     .draw_circle                        = gui_draw_circle,

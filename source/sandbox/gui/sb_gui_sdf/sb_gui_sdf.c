@@ -676,7 +676,7 @@ win_shapes( void )
             case 3: gui()->draw_pie( cx, cy, r, a0, a1, VIOLET );                         break;
             case 4: gui()->draw_line( cx - r * 0.8f, cy + r * 0.7f,
                                       cx + r * 0.8f, cy - r * 0.7f, s_sh_thick, HEAL );   break;
-            case 5: gui()->draw_round_rect( ( gui_rect_t ){ cx - r, cy - r * 0.75f,
+            case 5: gui()->draw_round_rect_ex( ( gui_rect_t ){ cx - r, cy - r * 0.75f,
                                                             r * 2.0f, r * 1.5f },
                                             s_sh_round, 2.0f, s_sh_round * 0.5f, 2.0f, 0.0f, HIT );                            break;
             case 6: gui()->draw_ngon( cx, cy, r, 6, s_time * 0.4f, 0.0f, INK_DIM ); break;
@@ -1581,7 +1581,7 @@ win_five( void )
         gui()->draw_round_rect_shadow( ( gui_rect_t ){ tab.x, tab.y + 6.0f, tab.w, tab.h },
                                        14.0f, 14.0f, 0.0f, 0.0f, 22.0f,
                                        GUI_COLOR( 0, 0, 0, 0xB0 ) );
-        gui()->draw_round_rect( tab, 14.0f, 14.0f, 0.0f, 0.0f, 0.0f,
+        gui()->draw_round_rect_ex( tab, 14.0f, 14.0f, 0.0f, 0.0f, 0.0f,
                                 GUI_COLOR( 0x2E, 0x2E, 0x38, 0xFF ) );
         dial_label( tab.x + tab.w * 0.5f, tab.y + tab.h * 0.5f, INK_DIM, "tab", 0.95f );
 
@@ -1590,7 +1590,7 @@ win_five( void )
         gui()->draw_round_rect_shadow( ( gui_rect_t ){ card.x, card.y + 8.0f, card.w, card.h },
                                        22.0f, 4.0f, 22.0f, 4.0f, 26.0f,
                                        GUI_COLOR( 0x10, 0x30, 0x60, 0xC0 ) );
-        gui()->draw_round_rect( card, 22.0f, 4.0f, 22.0f, 4.0f, 0.0f,
+        gui()->draw_round_rect_ex( card, 22.0f, 4.0f, 22.0f, 4.0f, 0.0f,
                                 GUI_COLOR( 0x26, 0x2E, 0x3C, 0xFF ) );
         dial_label( card.x + card.w * 0.5f, card.y + card.h * 0.5f, INK_DIM, "card", 0.95f );
     }
@@ -1704,7 +1704,7 @@ win_backdrops( void )
         gui()->draw_circle( r.x + r.w * 0.20f, y, 36.0f, 0.0f,
                             GUI_COLOR( 0xFF, 0x70, 0x50, 0xA0 ) );
         gui()->draw_round_rect( ( gui_rect_t ){ r.x + r.w * 0.38f, y - 30.0f, 140.0f, 60.0f },
-                                8.0f, 8.0f, 8.0f, 8.0f, 0.0f,
+                                8.0f, 0.0f,
                                 GUI_COLOR( 0x4C, 0x9E, 0xFF, 0x70 ) );
         gui()->draw_circle( r.x + r.w * 0.78f, y, 36.0f, 0.0f,
                             GUI_COLOR( 0x60, 0xE0, 0x80, 0x40 ) );
@@ -1768,8 +1768,8 @@ win_backdrops( void )
                                   na.x + na.w + 60.0f, na.y + na.h * 0.5f,
                                   nb.x - 60.0f, nb.y + nb.h * 0.5f,
                                   nb.x, nb.y + nb.h * 0.5f, 2.0f, TEAL );
-        gui()->draw_round_rect( na, 6.0f, 6.0f, 6.0f, 6.0f, 0.0f, EDGE );
-        gui()->draw_round_rect( nb, 6.0f, 6.0f, 6.0f, 6.0f, 0.0f, EDGE );
+        gui()->draw_round_rect( na, 6.0f, 0.0f, EDGE );
+        gui()->draw_round_rect( nb, 6.0f, 0.0f, EDGE );
         gui()->pop_clip();
     }
 
@@ -2049,8 +2049,8 @@ win_curves( void )
         f32        bx = nb.x,        by = nb.y + nb.h * 0.5f;
 
         gui()->draw_wire( ax, ay, bx, by, s_cv_wire_min, s_cv_wire_max, s_cv_thick, TEAL );
-        gui()->draw_round_rect( na, 6.0f, 6.0f, 6.0f, 6.0f, 0.0f, EDGE );
-        gui()->draw_round_rect( nb, 6.0f, 6.0f, 6.0f, 6.0f, 0.0f, EDGE );
+        gui()->draw_round_rect( na, 6.0f, 0.0f, EDGE );
+        gui()->draw_round_rect( nb, 6.0f, 0.0f, EDGE );
         gui()->draw_circle( ax, ay, 3.0f, 0.0f, INK );
         gui()->draw_circle( bx, by, 3.0f, 0.0f, INK );
         gui()->pop_clip();
@@ -2089,11 +2089,11 @@ win_curves( void )
             f32        bx = nb.x, by = nb.y + nb.h * 0.5f;
 
             gui()->draw_wire( ax, ay, bx, by, 30.0f, 200.0f, s_cv_thick, dest[ i ].col );
-            gui()->draw_round_rect( nb, 5.0f, 5.0f, 5.0f, 5.0f, 0.0f, EDGE );
+            gui()->draw_round_rect( nb, 5.0f, 0.0f, EDGE );
             gui()->draw_circle( bx, by, 2.5f, 0.0f, INK );
         }
 
-        gui()->draw_round_rect( na, 6.0f, 6.0f, 6.0f, 6.0f, 0.0f, EDGE );
+        gui()->draw_round_rect( na, 6.0f, 0.0f, EDGE );
         gui()->draw_circle( ax, ay, 3.5f, 0.0f, AMBER );
         gui()->pop_clip();
 
@@ -2131,7 +2131,7 @@ win_curves( void )
 
         gui_rect_t box = { r.x + 40.0f, r.y + 20.0f, 200.0f, 120.0f };
         if ( s_cv_ref )
-            gui()->draw_round_rect( box, s_cv_round, s_cv_round, s_cv_round, s_cv_round, 2.0f, INK_DIM );
+            gui()->draw_round_rect( box, s_cv_round, 2.0f, INK_DIM );
 
         gui_vec2_t loop[ 4 ] = {
             { box.x, box.y }, { box.x + box.w, box.y },
@@ -2227,7 +2227,7 @@ win_corners( void )
             gui_rect_t b = { r.x + cell * (f32)i + ( cell - side ) * 0.5f,
                              r.y + ( r.h - side ) * 0.5f - 8.0f, side, side };
             gui()->draw_set_corner_smooth( t[ i ] );
-            gui()->draw_round_rect( b, s_cs_round, s_cs_round, s_cs_round, s_cs_round, 0.0f, ACCENT );
+            gui()->draw_round_rect( b, s_cs_round, 0.0f, ACCENT );
             char lbl[ 16 ];
             snprintf( lbl, sizeof( lbl ), "%.2f", t[ i ] );
             gui()->draw_text( b.x, b.y + b.h + 4.0f, INK_DIM, lbl );
@@ -2246,8 +2246,8 @@ win_corners( void )
 
         gui()->draw_rect( r.x, r.y, r.w, r.h, PANEL );
         gui()->draw_set_corner_smooth( s_cs_smooth );
-        gui()->draw_round_rect( a, s_cs_round, s_cs_round, s_cs_round, s_cs_round, 0.0f, TEAL );
-        gui()->draw_round_rect( b, s_cs_round, s_cs_round, s_cs_round, s_cs_round, 6.0f, TEAL );
+        gui()->draw_round_rect( a, s_cs_round, 0.0f, TEAL );
+        gui()->draw_round_rect( b, s_cs_round, 6.0f, TEAL );
         gui()->draw_set_corner_smooth( save );
 
         gui()->draw_text( a.x, a.y + side + 6.0f, INK_DIM, "filled" );
@@ -2393,14 +2393,14 @@ win_fills( void )
 
         /* A pressed well: the fill, then the inset against its own inside edge. */
         gui_rect_t w0 = { r.x + 10.0f, r.y + 12.0f, w, h };
-        gui()->draw_round_rect( w0, s_fill_round, s_fill_round, s_fill_round, s_fill_round, 0.0f, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
+        gui()->draw_round_rect( w0, s_fill_round, 0.0f, GUI_COLOR( 0x10, 0x10, 0x14, 0xFF ) );
         gui()->draw_inset_shadow( w0, s_fill_depth, GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
 
         /* The mirror, side by side: a DROP shadow sits on the ground UNDER its subject, an inset
            sits against the inside of the subject's own edge. */
         gui_rect_t w1 = { r.x + 20.0f + w, r.y + 12.0f, w, h };
         gui()->draw_shadow( w1, s_fill_depth * 0.5f, GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
-        gui()->draw_round_rect( w1, s_fill_round, s_fill_round, s_fill_round, s_fill_round, 0.0f, EDGE );
+        gui()->draw_round_rect( w1, s_fill_round, 0.0f, EDGE );
 
         /* Composed: an inset over a gradient, which is the point of an op -- it modifies whatever
            the fill happened to be instead of replacing it with a shape of its own. */
@@ -2433,7 +2433,7 @@ win_fills( void )
         gui()->draw_set_rounding( s_fill_round );
         gui()->draw_drop_shadow( c, s_fill_depth, 0.0f, 0.0f,
                                  GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
-        gui()->draw_round_rect( c, s_fill_round, s_fill_round, s_fill_round, s_fill_round, 0.0f, GUI_COLOR( 0x50, 0x54, 0x60, 0x90 ) );
+        gui()->draw_round_rect( c, s_fill_round, 0.0f, GUI_COLOR( 0x50, 0x54, 0x60, 0x90 ) );
         gui()->draw_set_rounding( 0.0f );
     }
     gui()->text_wrapped( "even on all four sides, and hidden under its own caster -- the shadow "
@@ -2459,7 +2459,7 @@ win_fills( void )
         gui()->draw_set_rounding( s_fill_round );
         gui()->draw_drop_shadow( c, s_fill_depth, s_drop_x, s_drop_y,
                                  GUI_COLOR( 0x00, 0x00, 0x00, 0xC0 ) );
-        gui()->draw_round_rect( c, s_fill_round, s_fill_round, s_fill_round, s_fill_round, 0.0f, GUI_COLOR( 0x50, 0x54, 0x60, 0x90 ) );
+        gui()->draw_round_rect( c, s_fill_round, 0.0f, GUI_COLOR( 0x50, 0x54, 0x60, 0x90 ) );
         gui()->draw_set_rounding( 0.0f );
     }
     gui()->text_wrapped( "drag the sliders: no gap opens on the near side and no shadow lands "
@@ -2881,9 +2881,9 @@ win_anim_fx( void )
         for ( u32 i = 0; i < 3; ++i )
         {
             gui_rect_t b = { r.x + 30.0f + (f32)i * 180.0f, r.y + 26.0f, 120.0f, 52.0f };
-            gui()->draw_round_rect( b, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, EDGE );
+            gui()->draw_round_rect( b, 10.0f, 0.0f, EDGE );
             gui()->draw_set_border_align( k_align[ i ] );
-            gui()->draw_round_rect( b, 10.0f, 10.0f, 10.0f, 10.0f, 8.0f, TEAL );
+            gui()->draw_round_rect( b, 10.0f, 8.0f, TEAL );
             dial_label( b.x + b.w * 0.5f, b.y + b.h + 14.0f, INK_DIM, k_name[ i ], 0.9f );
         }
         gui()->draw_set_border_align( save );

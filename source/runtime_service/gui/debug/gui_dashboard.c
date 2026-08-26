@@ -173,7 +173,7 @@ static void
 dash_outline( gui_rect_t r, u32 abgr )
 {
     if ( r.w <= 0.0f || r.h <= 0.0f ) return;
-    gui_draw_round_rect( r, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, abgr );
+    gui_draw_round_rect( r, 0.0f, 1.0f, abgr );
 }
 
 /* Dashed vertical marker (high-water / band-boundary lines). */

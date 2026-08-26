@@ -351,10 +351,10 @@ page_fills( void )
     if ( gui()->button( "reset##8" )) { radius = cell_radius( r ); }
 
     r = cell( 6, GRID_COLS, "round rect" );
-    gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, 0.0f, TEAL );
+    gui()->draw_round_rect( r, round_w, 0.0f, TEAL );
 
     r = cell( 7, GRID_COLS, "round rect (border)" );
-    gui()->draw_round_rect( r, round_w, round_w, round_w, round_w, border, TEAL );
+    gui()->draw_round_rect( r, round_w, border, TEAL );
     
     r = cell( 8, GRID_COLS, "circle rect" );
     { gui_vec2_t c = cell_center( r ); gui()->draw_circle( c.x, c.y, radius, 0.0f, TEAL ); }
@@ -476,7 +476,7 @@ page_fills( void )
     if ( gui()->button( "reset##18" )) { corner_bl = TWEAK_ROUND_WIDTH; }
 
     r = cell( 24, GRID_COLS, "round rect (per-corner)" );
-    gui()->draw_round_rect( r, corner_tl, corner_tr, corner_br, corner_bl, 0.0f, TEAL );
+    gui()->draw_round_rect_ex( r, corner_tl, corner_tr, corner_br, corner_bl, 0.0f, TEAL );
 
     panel_row_end();
 }
@@ -679,12 +679,13 @@ page_shapes( void )
     gui()->draw_ngon( c.x, c.y, rad, 8, radians, thickness, TEAL );
     if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
-    static float ratio = 0.0f;
+    /* ratio -- midpoint tuning */
+    static float ratio = 1.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "ration", &ratio, 0.0f, 180.0f, 15.0f );
+    gui()->slider_float_step( "ration", &ratio, 0.0f, 1.0f, 0.1f );
     if ( gui()->button( "reset##sh5" )) { ratio = 0.0f; }
 
-    /* ratio -- midpoint */
+    /* star */
     r = cell( 16, GRID_COLS, "star" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_star( c.x, c.y, rad, 5, ratio, radians, thickness, AMBER );
@@ -899,23 +900,23 @@ page_shadow( void )
 
     r = cell( 1, GRID_COLS, "drop_shadow" );
     gui()->draw_drop_shadow( r, 14.0f, 4.0f, 6.0f, GUI_COLOR( 0x00, 0x00, 0x00, 0xA0 ) );
-    gui()->draw_round_rect( r, 8.0f, 8.0f, 8.0f, 8.0f, 0.0f, PLUM );
+    gui()->draw_round_rect( r, 8.0f, 0.0f, PLUM );
 
     r = cell( 2, GRID_COLS, "inset_shadow" );
-    gui()->draw_round_rect( r, 8.0f, 8.0f, 8.0f, 8.0f, 0.0f, INK_FAINT );
+    gui()->draw_round_rect( r, 8.0f, 0.0f, INK_FAINT );
     gui()->draw_inset_shadow( r, 12.0f, GUI_COLOR( 0x00, 0x00, 0x00, 0x90 ) );
 
     r = cell( 3, GRID_COLS, "edge_shadow" );
-    gui()->draw_round_rect( r, 4.0f, 4.0f, 4.0f, 4.0f, 0.0f, INK_FAINT );
+    gui()->draw_round_rect( r, 4.0f, 0.0f, INK_FAINT );
     gui()->draw_edge_shadow( r, GUI_EDGE_BOTTOM, r.h * 0.6f, GUI_COLOR( 0x00, 0x00, 0x00, 0xA0 ) );
 
     r = cell( 4, GRID_COLS, "glow (drawn under)" );
     gui()->draw_glow( r, 18.0f, AMBER );
-    gui()->draw_round_rect( r, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, INK );
+    gui()->draw_round_rect( r, 10.0f, 0.0f, INK );
 
     r = cell( 5, GRID_COLS, "round_rect_shadow" );
     gui()->draw_round_rect_shadow( r, 4.0f, 24.0f, 4.0f, 24.0f, 10.0f, GUI_COLOR( 0x00, 0x00, 0x00, 0x90 ) );
-    gui()->draw_round_rect( r, 4.0f, 24.0f, 4.0f, 24.0f, 0.0f, TEAL );
+    gui()->draw_round_rect_ex( r, 4.0f, 24.0f, 4.0f, 24.0f, 0.0f, TEAL );
 }
 
 /*==============================================================================================
@@ -1241,11 +1242,11 @@ page_fx_combo( void )
     {
         gui()->draw_fx_box_ex( box, fx_feather, ( u32 )fx_variant, fx_rate, depth, fx_phase,
                                rot, 0.0f, 0.0f, swell, fx_border, PLUM );
-        gui()->draw_round_rect( box, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, AMBER );
+        gui()->draw_round_rect( box, 10.0f, 0.0f, AMBER );
     }
     else if ( fx_variant == GUI_FX_BOX_INSET )
     {
-        gui()->draw_round_rect( box, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, INK_FAINT );
+        gui()->draw_round_rect( box, 10.0f, 0.0f, INK_FAINT );
         gui()->draw_fx_box_ex( box, fx_feather, ( u32 )fx_variant, fx_rate, depth, fx_phase,
                                rot, 0.0f, 0.0f, swell, fx_border, TEAL );
     }
@@ -1279,10 +1280,10 @@ page_fx_combo( void )
     r = cell( 21, GRID_COLS, "cast + swell" );
     gui()->draw_fx_box_ex( r, 18.0f, GUI_FX_BOX_SKIRT, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
                            8.0f, 0.0f, ROSE );
-    gui()->draw_round_rect( r, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, AMBER );
+    gui()->draw_round_rect( r, 10.0f, 0.0f, AMBER );
 
     r = cell( 22, GRID_COLS, "inset + pulse" );
-    gui()->draw_round_rect( r, 10.0f, 10.0f, 10.0f, 10.0f, 0.0f, INK_FAINT );
+    gui()->draw_round_rect( r, 10.0f, 0.0f, INK_FAINT );
     gui()->draw_fx_box_ex( r, 10.0f, GUI_FX_BOX_INSET, 1.0f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f,
                            0.0f, 0.0f, TEAL );
 }
