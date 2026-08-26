@@ -980,31 +980,34 @@ typedef struct gui_api_s
            gui()->path_line_to( x0, y0 ); gui()->path_line_to( x1, y1 ); ...
            gui()->path_stroke( 1.5f, GUI_STROKE_CENTER, false, col ); */
 
-    void ( *draw_line     )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 col );
-    void ( *draw_dashed_line       )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
+    void ( *draw_line )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 col );
+    void ( *draw_dashed_line )( f32 x0, f32 y0, f32 x1, f32 y1, f32 dash, f32 gap, f32 thickness, u32 col );
+
     void ( *draw_capsule  )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 col );
-    void ( *draw_capsule_outline )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness,
-                                    f32 border, u32 col );
-    void ( *draw_polyline )( const gui_vec2_t* pts, u32 count, f32 thickness,
-                             gui_stroke_align_t align, bool closed, u32 col );
-    void ( *path_clear    )( void );
-    void ( *path_line_to  )( f32 x, f32 y );
-    void ( *path_stroke   )( f32 thickness, gui_stroke_align_t align, bool closed, u32 col );
-    void ( *draw_bezier_quad       )( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
-    void ( *draw_bezier_cubic      )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
+    void ( *draw_capsule_outline )( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, f32 border, u32 col );
+
+    void ( *draw_polyline )( const gui_vec2_t* pts, u32 count, f32 thickness, gui_stroke_align_t align, bool closed, u32 col );
+
+    void ( *path_clear )( void );
+    void ( *path_line_to )( f32 x, f32 y );
+    void ( *path_stroke )( f32 thickness, gui_stroke_align_t align, bool closed, u32 col );
+
+    void ( *draw_bezier_quad )( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
+    void ( *draw_bezier_cubic )( f32 x0, f32 y0, f32 c0x, f32 c0y, f32 c1x, f32 c1y, f32 x1, f32 y1, f32 thickness, u32 col );
+    
     /* A polyline whose corners are auto-filleted to `radius`, clamped per-corner to half its
        shorter adjacent run (same rule draw_clamp_rounding applies to a rect) -- the corner
        itself is the exact bezier control point for its fillet, so there is no control point to
        pick and no way for it to come out lopsided.  `closed` joins the last point to the first,
        every vertex a corner. */
-    void ( *draw_rounded_path      )( const gui_vec2_t* pts, u32 count, f32 radius,
-                                      f32 thickness, bool closed, u32 col );
+    void ( *draw_rounded_path )( const gui_vec2_t* pts, u32 count, f32 radius, f32 thickness, bool closed, u32 col );
+
     /* Point-to-point spline through every point in `pts` -- no radius, no control point to
        pick.  Each point's curve tangent is derived from its own neighbours (Catmull-Rom), so
        moving a point re-settles the curve on both sides of it automatically (the Blueprint
        node-graph wire model).  Collinear points degenerate to a straight run with no bulge. */
-    void ( *draw_smooth_path       )( const gui_vec2_t* pts, u32 count, f32 thickness,
-                                      bool closed, u32 col );
+    void ( *draw_smooth_path )( const gui_vec2_t* pts, u32 count, f32 thickness, bool closed, u32 col );
+
     /* Node-graph wire between two pins.  Endpoint tangents are horizontal by construction --
        out of the source pin heading right, into the destination pin heading right -- because a
        pin's exit direction belongs to the port, not to wherever the other end sits (which is
@@ -1013,8 +1016,7 @@ typedef struct gui_api_s
        still read as a curve and capped at `max_tan` so a graph-spanning wire does not balloon;
        a backward wire (x1 < x0) widens past the cap to keep its doubleback from overlapping
        itself.  Both clamps are in the same already-DPI-scaled space as the pin coordinates. */
-    void ( *draw_wire              )( f32 x0, f32 y0, f32 x1, f32 y1, f32 min_tan, f32 max_tan,
-                                      f32 thickness, u32 col );
+    void ( *draw_wire )( f32 x0, f32 y0, f32 x1, f32 y1, f32 min_tan, f32 max_tan, f32 thickness, u32 col );
 
     /*===============================  patterns + gradients -- what fills a shape  ===============================*/
 
@@ -1022,10 +1024,12 @@ typedef struct gui_api_s
        (hatch and stripes are the lattice cut on one axis), so any area and any cell count is
        ONE quad, and every one lands inside the ambient rounding's boundary. */
 
-    void ( *draw_checker           )( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
+    void ( *draw_checker  )( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
+
     /* Line lattice over `box`: a `thickness` px line every `cell` px, over NOTHING -- layer it on
        your own fill.  Anchored to (origin_x, origin_y) in screen px, so a panning canvas passes
        its content origin and the lattice rides the pan.  Major/minor graph paper = two calls. */
+
     void ( *draw_grid              )( gui_rect_t box, f32 cell, f32 thickness,
                                       f32 origin_x, f32 origin_y, u32 col );
     void ( *draw_hatch             )( gui_rect_t box, f32 spacing, f32 thickness, u32 col );
