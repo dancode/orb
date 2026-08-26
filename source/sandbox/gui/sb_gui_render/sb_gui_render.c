@@ -834,10 +834,10 @@ page_symbols( void )
 
     r = cell( 0, GRID_COLS, "check_mark" );
 
-    static float check_size = 0.0f;
-    gui()->slider_float_step( "rect size", &check_size, 0, r.w, 1.0f );    
-    if ( gui()->button( "reset" )) { check_size = r.w; }
-    r.w = check_size;
+    // static float check_size = 0.0f;
+    // gui()->slider_float_step( "rect size", &check_size, 0, r.w, 1.0f );    
+    // if ( gui()->button( "reset" )) { check_size = r.w; }
+    // r.w = check_size;
 
     panel_row_end();
 
