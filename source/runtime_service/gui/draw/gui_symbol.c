@@ -18,8 +18,7 @@
     FRAGMENT through the prim record (GUI_OP_GRAD), so draw_gradient is an exact one-quad blend
     (not banded).  draw_shadow and draw_round_rect hand their shape to the FRAGMENT (GUI_CMD_FX_BOX / a
     rounded rect command, both SDF surfaces -- see the effect band in gui.h): exact edges at any
-    radius and softness, ONE quad, no batch split.  Only a STROKED per-corner outline still walks a
-    tessellated perimeter here.  Everything here is pixel-exact.
+    radius and softness, ONE quad, no batch split.  Everything here is pixel-exact.
 
     Compiled in the DRAW unit (gui_draw.c) after gui_paint.c.  Everything here is
     PARAMETER-PURE: the emitters that resolve their own look (draw_arrow,
@@ -47,32 +46,6 @@ static f32 sym_thick( f32 thickness ) { return thickness < 1.0f ? 1.0f : thickne
 /* The box's inscribed extent -- the shorter side, which is what a square mark (arrow, plus,
    spinner) sizes itself against so it stays square in a non-square cell. */
 static f32 sym_min_side( gui_rect_t box ) { return box.w < box.h ? box.w : box.h; }
-
-/* Segment count for an arc of radius r sweeping `sweep` radians: ~one segment per 6px of arc
-   length, clamped so tiny marks stay cheap (3) and big wheels stay smooth (64). */
-static u32
-sym_arc_segs( f32 r, f32 sweep )
-{
-    if ( sweep < 0.0f ) sweep = -sweep;
-    u32 n = (u32)( ( r * sweep ) / 6.0f );
-    if ( n < 3 )  n = 3;
-    if ( n > 64 ) n = 64;
-    return n;
-}
-
-/* Sample the arc (cx,cy,r) from a0 to a1 into `out` (caller-sized for segs+1 points, <= 65);
-   returns the point count.  Angles are radians in screen space (y down, so +sin goes down). */
-static u32
-sym_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, gui_vec2_t* out )
-{
-    u32 segs = sym_arc_segs( r, a1 - a0 );
-    for ( u32 i = 0; i <= segs; ++i )
-    {
-        f32 a = a0 + ( a1 - a0 ) * ( (f32)i / (f32)segs );
-        out[ i ] = sv2( cx + cosf( a ) * r, cy + sinf( a ) * r );
-    }
-    return segs + 1;
-}
 
 /* Fill a convex outline as a triangle fan from the first point (the one fill route every convex
    shape here -- polygon, pie, per-corner rounded rect -- shares).  Each triangle is one draw
@@ -200,62 +173,6 @@ draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 color )
     Shapes  (the convex-fill / polyline-stroke palette)
 ==============================================================================================*/
 
-/* Build the clockwise perimeter of a per-corner rounded rect into `out` (caller-sized; <= 4*17+4).
-   Each corner is a quarter arc (or a single sharp point when its radius is ~0), so a tab is two
-   rounded top corners + two square bottom ones, a notch the inverse.  Radii are clamped to the
-   box half-extents.  Returns the point count.  Corner arcs are capped low (UI radii are small) to
-   keep a fanned fill from exploding into hundreds of triangles. */
-static u32
-round_rect_perimeter_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, gui_vec2_t* out )
-{
-    f32 hw = b.w * 0.5f, hh = b.h * 0.5f;
-    if ( rtl > hw ) rtl = hw;  if ( rtl > hh ) rtl = hh;
-    if ( rtr > hw ) rtr = hw;  if ( rtr > hh ) rtr = hh;
-    if ( rbr > hw ) rbr = hw;  if ( rbr > hh ) rbr = hh;
-    if ( rbl > hw ) rbl = hw;  if ( rbl > hh ) rbl = hh;
-
-    f32 xl = b.x, xr = b.x + b.w, yt = b.y, yb = b.y + b.h;
-    u32 n  = 0;
-
-    /* Each corner: a single point when square, else a quarter arc about its inset centre.  Order is
-       clockwise in screen space: top-left -> top-right -> bottom-right -> bottom-left. */
-    if ( rtl < 0.5f ) out[ n++ ] = sv2( xl, yt );
-    else              n += sym_arc( xl + rtl, yt + rtl, rtl, SYM_PI,        SYM_PI * 1.5f, out + n );
-    if ( rtr < 0.5f ) out[ n++ ] = sv2( xr, yt );
-    else              n += sym_arc( xr - rtr, yt + rtr, rtr, SYM_PI * 1.5f, SYM_TAU,       out + n );
-    if ( rbr < 0.5f ) out[ n++ ] = sv2( xr, yb );
-    else              n += sym_arc( xr - rbr, yb - rbr, rbr, 0.0f,          SYM_PI * 0.5f, out + n );
-    if ( rbl < 0.5f ) out[ n++ ] = sv2( xl, yb );
-    else              n += sym_arc( xl + rbl, yb - rbl, rbl, SYM_PI * 0.5f, SYM_PI,        out + n );
-    return n;
-}
-
-/* Per-corner rounded rect, filled or stroked.  The general path for tab / notch / asymmetric
-   shapes; for a uniform radius prefer the public draw_round_rect, which delegates to the backend's
-   single-command rounded rect.
-
-   The two halves no longer share a path, and the split is the point.  FILLED is a distance-field
-   surface -- one command, four vertices, an exact antialiased boundary at any radius -- because
-   all four radii ride the record and the fragment picks by quadrant, so they cost no
-   extra geometry.  It used to fan the sampled perimeter into up to 62 separate TRIANGLE commands
-   with a polygonal, unantialiased edge.  STROKED still walks the perimeter: an outline of four
-   different radii is not a shape GUI_OP_BAND can describe (its band is derived from one), and the
-   closed antialiased polyline draws it correctly already. */
-void
-draw_round_rect_asym( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
-                      f32 thickness, u32 col )
-{
-    if ( thickness <= 0.0f )
-    {
-        draw_push_round_rect_ex( b.x, b.y, b.w, b.h, rtl, rtr, rbr, rbl, 0.0f, col, col,
-                                 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
-        return;
-    }
-    gui_vec2_t pts[ 4 * 17 + 4 ];
-    u32 n = round_rect_perimeter_ex( b, rtl, rtr, rbr, rbl, pts );
-    gui_draw_polyline( pts, n, sym_thick( thickness ), GUI_STROKE_CENTER, true, col );
-}
-
 /* Regular n-gon centred at (cx,cy), circumradius r, first vertex at angle `rot` -- generalizes
    the triangle / diamond / hexagon marks.
    A signed-distance surface now, filled and stroked both -- the sampled fan and its 64-point
@@ -289,8 +206,8 @@ draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 thickness,
    NEITHER form samples the circle any more.  Both are signed-distance surfaces the fragment
    resolves, so the boundary is exact at any radius and the geometry is fixed-cost: what used to be
    "how many segments can we afford" is not a question this function has to answer.  It matters most
-   at the SMALL end, which is where these actually get used -- sym_arc_segs gives a 10 px mark ten
-   segments, so a "circle" that size was a visible decagon.
+   at the SMALL end, which is where these actually get used -- the old ~one-segment-per-6px sampling
+   gave a 10 px mark ten segments, so a "circle" that size was a visible decagon.
 
        ring r = 10   40 verts / 180 idx  ->  32 / 48
        ring r = 100  256 verts / 1152 idx -> 32 / 48
@@ -329,8 +246,9 @@ draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col )
 /* Stroked arc from a0 to a1 (radians) -- a spinner sweep, a knob track, a radial-menu rim.
 
    A distance field now, so the curve is exact at any radius and the cost is four vertices instead
-   of the ~130 the sampled ribbon spent.  It matters most where these actually get used: sym_arc_segs
-   gave a 12 px spinner about ten segments, so the "circle" it swept was a visible decagon. */
+   of the ~130 the sampled ribbon spent.  It matters most where these actually get used: the old
+   ~one-segment-per-6px sampling gave a 12 px spinner about ten segments, so the "circle" it swept
+   was a visible decagon. */
 static void
 draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )
 {
@@ -1293,8 +1211,9 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
 {
     /* Uniform-radius fast path: route an equal-cornered rect -- filled or stroked -- through the
        backend's single rounded-rect command, which is an SDF surface (one quad, exact analytic
-       AA).  Asymmetric corners go to draw_round_rect_asym, which is a surface too when FILLED; only
-       its stroked form pays a tessellated arc and a polyline. */
+       AA).  Asymmetric corners go straight to draw_push_round_rect_ex, the backend's per-corner
+       filled surface -- there is no stroked form of an asymmetric rect yet (thickness is ignored
+       when the corners differ; see the draw_round_rect_outline gap noted on the vtable entry). */
     bool equal_corners = ( r_tl == r_tr && r_tr == r_br && r_br == r_bl );
     if ( equal_corners )
     {
@@ -1308,7 +1227,8 @@ gui_draw_round_rect( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
         draw_set_rounding( save );
         return;
     }
-    draw_round_rect_asym( box, r_tl, r_tr, r_br, r_bl, thickness, col );
+    draw_push_round_rect_ex( box.x, box.y, box.w, box.h, r_tl, r_tr, r_br, r_bl, 0.0f,
+                             col, col, 0.0f, (u32)GUI_GRAD_LINEAR, 0.0f );
 }
 
 /* draw_rect's dual-color sibling: a filled body with a border band, one quad, ALWAYS square --

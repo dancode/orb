@@ -64,13 +64,11 @@ void draw_border_progress( gui_rect_t box, f32 rounding, f32 thickness,
 void draw_inset_shadow( gui_rect_t box, f32 depth, u32 col );
 void draw_edge_shadow( gui_rect_t box, gui_edge_t edge, f32 size, u32 col );
 void draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col );
-void draw_round_rect_asym( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
-                           f32 thickness, u32 col );
 /* draw_frame / draw_round_frame -- the dual-color sibling of draw_rect / draw_round_rect: a
    filled body plus a border band in one quad.  Neither reads the ambient rounding: draw_frame
    forces it to 0 (square, like draw_rect), draw_round_frame takes it as an argument (like
-   draw_round_rect) -- one radius for all four corners, not draw_round_rect_asym's independent set.
-   Widget chrome's own bezel painter, which DOES read the ambient (draw_set_rounding), is
+   draw_round_rect) -- one radius for all four corners, not draw_round_rect's independent per-corner
+   set.  Widget chrome's own bezel painter, which DOES read the ambient (draw_set_rounding), is
    gui_draw_bezel in the stock unit -- not part of this parameter-pure surface. */
 void draw_frame      ( gui_rect_t b, u32 col_bg, u32 col_border, f32 border );
 void draw_round_frame( gui_rect_t b, f32 rounding, u32 col_bg, u32 col_border, f32 border );
