@@ -579,7 +579,7 @@ page_shapes( void )
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
-    // row 1 -- rotation, then circular shapes and the ngon family.
+    // row 1 -- rotation rect + icons + sprite (TODO) -- the SD
     //------------------------------------------------------------------------------------------
 
     panel_row_begin( 1, "shapes_row1" );
@@ -589,52 +589,59 @@ page_shapes( void )
     gui()->slider_float_step( "angle", &shape_rot_deg, -180.0f, 180.0f, 1.0f );
     if ( gui()->button( "reset##sh2" )) { shape_rot_deg = 0.0f; }
 
-    static float scale = 1.0f;
+    static float scale = 2.0f;
     gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
-    gui()->slider_float_step( "scale", &scale, 0.5f, 6.0f, 0.1f );
-    if ( gui()->button( "reset##sh3" )) { scale = 1.0f; }
+    gui()->slider_float_step( "scale", &scale, 0.5f, 2.5f, 0.1f );
+    if ( gui()->button( "reset##sh3" )) { scale = 2.0f; }
 
     r = cell( 6, GRID_COLS, "rect_xf (rotated)" );
     gui()->draw_rect_xf( r, 10.0f, 0.0f, gui_radians( shape_rot_deg ), AMBER );
-
     
     r = cell( 7, GRID_COLS, "icon_xf (rotated)" ); 
-
     gui_icon_id_t save = gui()->find_icon( "save" );
-    // gui_vec2_t icon_size = gui()->icon_size( save );
-    // gui_rect_t icon_rect = {
-    //     r.x + ( r.w - icon_size.x * scale ) * 0.5f,
-    //     r.y + ( r.h - icon_size.y * scale ) * 0.5f,
-    //     icon_size.x * scale,
-    //     icon_size.y * scale,
-    // };
-    // gui()->draw_icon_xf( icon_rect, save, AMBER, gui_radians( shape_rot_deg ));
-    gui()->draw_icon_xf( r, save, AMBER, gui_radians( shape_rot_deg ));
+    gui_vec2_t icon_size = gui()->icon_size( save );
+    gui_rect_t icon_rect = {
+        r.x + ( r.w - icon_size.x * scale ) * 0.5f,
+        r.y + ( r.h - icon_size.y * scale ) * 0.5f,
+        icon_size.x * scale,
+        icon_size.y * scale,
+    };
+    gui()->draw_icon_xf( icon_rect, save, AMBER, gui_radians( shape_rot_deg ));
 
-    r = cell( 8, GRID_COLS, "icon_xf (rotated)" ); 
+    r = cell( 8, GRID_COLS, "icon_xf (rotated)" );
     gui_icon_id_t settings = gui()->find_icon( "settings" );
-    gui()->draw_icon_xf( r, settings, AMBER, gui_radians( shape_rot_deg ));
+    gui_vec2_t settings_size = gui()->icon_size( settings );
+    gui_rect_t settings_rect = {
+        r.x + ( r.w - settings_size.x * scale ) * 0.5f,
+        r.y + ( r.h - settings_size.y * scale ) * 0.5f,
+        settings_size.x * scale,
+        settings_size.y * scale,
+    };
+    gui()->draw_icon_xf( settings_rect, settings, AMBER, gui_radians( shape_rot_deg ));
 
-    r = cell( 9, GRID_COLS, "icon_xf (rotated)" ); 
+    r = cell( 9, GRID_COLS, "icon_xf (rotated)" );
     gui_icon_id_t file = gui()->find_icon( "file" );
-    gui()->draw_icon_xf( r, file, AMBER, gui_radians( shape_rot_deg ));
-
-    // gui_icon_id_t cog = gui()->find_icon( "settings" );
-    // gui_vec2_t cog_size = gui()->icon_size( cog );
-    // gui_rect_t cog_rect = {
-    //     r.x + ( r.w - cog_size.x * scale ) * 0.5f,
-    //     r.y + ( r.h - cog_size.y * scale ) * 0.5f,
-    //     cog_size.x * scale,
-    //     cog_size.y * scale,
-    // };
-    // gui()->draw_icon_xf( cog_rect, cog, AMBER, gui_radians( shape_rot_deg ));
+    gui_vec2_t file_size = gui()->icon_size( file );
+    gui_rect_t file_rect = {
+        r.x + ( r.w - file_size.x * scale ) * 0.5f,
+        r.y + ( r.h - file_size.y * scale ) * 0.5f,
+        file_size.x * scale,
+        file_size.y * scale,
+    };
+    gui()->draw_icon_xf( file_rect, file, AMBER, gui_radians( shape_rot_deg ));
 
     panel_row_end();
 
     //------------------------------------------------------------------------------------------
+    // row 2 -- NGONS
+    //------------------------------------------------------------------------------------------
 
     panel_row_begin( 2, "shapes_row2" );
 
+    static float thickness = 0.0f;
+    gui()->next_slider_animate( TWEAK_EASE_FUNC, TWEAK_EASE_TIME );
+    gui()->slider_float_step( "thickness", &thickness, 0.0f, 10.0f, 0.1f );
+    if ( gui()->button( "reset##sh4" )) { thickness = 0.0f; }
 
     panel_row_end();
 
@@ -643,39 +650,53 @@ page_shapes( void )
     /* ngon - triangle */    
     r = cell( 12, GRID_COLS, "ngon (tri)" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 3, 0.0f, 0.0f, TEAL );
+    gui()->draw_ngon( c.x, c.y, rad, 3, 0.0f, thickness, TEAL );
 
-    r = cell( 13, GRID_COLS, "ngon (hex)" );
+    /* ngon - quad */    
+    r = cell( 13, GRID_COLS, "ngon (quad)" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 6, 0.0f, 0.0f, TEAL );
+    gui()->draw_ngon( c.x, c.y, rad, 4, 0.0f, thickness, TEAL );
 
-    r = cell( 14, GRID_COLS, "ngon (oct, stroked)" );
+    r = cell( 14, GRID_COLS, "ngon (pent)" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_ngon( c.x, c.y, rad, 8, 0.0f, 3.0f, PLUM );
+    gui()->draw_ngon( c.x, c.y, rad, 5, 0.0f, thickness, TEAL );
 
-    r = cell( 18, GRID_COLS, "star" );
+    r = cell( 15, GRID_COLS, "ngon (line)" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_star( c.x, c.y, rad, 5, 0.0f, 0.0f, 0.0f, AMBER );
+    gui()->draw_ngon( c.x, c.y, rad, 2, 0.0f, thickness, TEAL );
 
-    r = cell( 19, GRID_COLS, "pie" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_pie( c.x, c.y, rad, gui_radians( -40.0f ), gui_radians( 120.0f ), AMBER );
 
-    r = cell( 24, GRID_COLS, "arc" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 270.0f ), 4.0f, TEAL );
-
-    r = cell( 25, GRID_COLS, "arc_dashed" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 300.0f ), 4.0f, 6.0f, 4.0f, PLUM );
-
-    r = cell( 26, GRID_COLS, "arc_gradient" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( -90.0f ), gui_radians( 180.0f ), 5.0f, AMBER, TEAL );
-
-    r = cell( 27, GRID_COLS, "progress_arc" );
-    c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_progress_arc( c.x, c.y, rad, 0.65f, 4.0f, TEAL );
+    // r = cell( 13, GRID_COLS, "ngon (hex)" );
+    // c = cell_center( r ); rad = cell_radius( r );
+    // gui()->draw_ngon( c.x, c.y, rad, 6, 0.0f, 0.0f, TEAL );
+    // 
+    // r = cell( 14, GRID_COLS, "ngon (oct, stroked)" );
+    // c = cell_center( r ); rad = cell_radius( r );
+    // gui()->draw_ngon( c.x, c.y, rad, 8, 0.0f, 3.0f, PLUM );
+    // 
+    // r = cell( 18, GRID_COLS, "star" );
+    // c = cell_center( r ); rad = cell_radius( r );
+    // gui()->draw_star( c.x, c.y, rad, 5, 0.0f, 0.0f, 0.0f, AMBER );
+    // 
+    // r = cell( 19, GRID_COLS, "pie" );
+    // c = cell_center( r ); rad = cell_radius( r );
+    // gui()->draw_pie( c.x, c.y, rad, gui_radians( -40.0f ), gui_radians( 120.0f ), AMBER );
+    // 
+    // r = cell( 24, GRID_COLS, "arc" );
+    // c = cell_center( r ); rad = cell_radius( r );
+    // gui()->draw_arc( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 270.0f ), 4.0f, TEAL );
+    // 
+    // r = cell( 25, GRID_COLS, "arc_dashed" );
+    // c = cell_center( r ); rad = cell_radius( r );
+    // gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( 0.0f ), gui_radians( 300.0f ), 4.0f, 6.0f, 4.0f, PLUM );
+    // 
+    // r = cell( 26, GRID_COLS, "arc_gradient" );
+    // c = cell_center( r ); rad = cell_radius( r );
+    // gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( -90.0f ), gui_radians( 180.0f ), 5.0f, AMBER, TEAL );
+    // 
+    // r = cell( 27, GRID_COLS, "progress_arc" );
+    // c = cell_center( r ); rad = cell_radius( r );
+    // gui()->draw_progress_arc( c.x, c.y, rad, 0.65f, 4.0f, TEAL );
 }
 
 
