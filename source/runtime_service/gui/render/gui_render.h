@@ -364,8 +364,10 @@ void draw_push_fx_box_ex        ( f32 x, f32 y, f32 w, f32 h, f32 rounding, f32 
    edges.  Angles are radians in screen space (0 points +x, positive turns clockwise); a reversed
    range or a sweep past a full turn is normalized at tessellation.  One quad either way.
    draw_push_arc's thickness is unbounded: the record's tube is a plain float, so a fat arc no
-   longer falls back to a stroked polyline the way it did under the packed word's 15.875 px cap. */
-void draw_push_arc              ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr );
+   longer falls back to a stroked polyline the way it did under the packed word's 15.875 px cap.
+   `flat_caps` squares off the stroke ends instead of the round caps the field draws for free. */
+void draw_push_arc              ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
+                                  bool flat_caps, u32 abgr );
 void draw_push_pie              ( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr );
 
 /* The arc under GUI_OP_SPIN: the whole frame rotates at `rate` turns/sec on pc.time, so a
@@ -377,16 +379,17 @@ void draw_push_arc_spin         ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, 
 /* The arc cut by an angular dash pattern.  `dash` / `gap` are arc-length PIXELS at radius r (the
    draw_dashed_line vocabulary); the push converts to an angular period and quantizes it so a WHOLE
    number of cycles fits the sweep -- a closed dashed ring meets itself without a seam.  Animate the
-   pattern by rotating a0/a1 together: the dashes ride the sector's local frame (marching ants). */
+   pattern by rotating a0/a1 together: the dashes ride the sector's local frame (marching ants).
+   `flat_caps` squares off the sector's own two ends the same as draw_push_arc's. */
 void draw_push_arc_dashed       ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
-                                  f32 dash, f32 gap, u32 abgr );
+                                  f32 dash, f32 gap, bool flat_caps, u32 abgr );
 
 /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1) by ANGLE -- the gradient a 4-corner
    vertex colour cannot express.  col_b belongs to the shape, so it rides the STYLE record
    (gui_prim_t.col_b); the fragment ramps on the sector's own arc-length coordinate
-   (GUI_OP_GRAD_ALONG). */
+   (GUI_OP_GRAD_ALONG).  `flat_caps` squares off the stroke ends the same as draw_push_arc's. */
 void draw_push_arc_gradient     ( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
-                                  u32 col_a, u32 col_b );
+                                  u32 col_a, u32 col_b, bool flat_caps );
 
 /* The framebuffer-tiling pattern quads -- ONE quad each at any area and any cell (gui.h).
    CHECKER alternates col_a / col_b in cell-sized squares anchored at the box origin.  GRID draws

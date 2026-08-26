@@ -769,7 +769,7 @@ win_gauges( void )
     /* Progress ring: the stock helper + a readout.  frac and the cap travel together. */
     {
         f32 cx = cell.x + cell.w * 0.5f;
-        gui()->draw_progress_arc( cx, cy, 52.0f, s_gauge_v, 9.0f, ACCENT );
+        gui()->draw_progress_arc( cx, cy, 52.0f, s_gauge_v, 9.0f, false, ACCENT );
         char buf[ 16 ];
         snprintf( buf, sizeof( buf ), "%.0f%%", s_gauge_v * 100.0f );
         dial_label( cx, cy, INK, buf, 1.2f );
@@ -1609,18 +1609,18 @@ win_five( void )
         f32 ants = s_nv_spin ? s_time * 0.8f : 0.0f;
 
         /* Dotted ring: a closed dashed arc -- the emit-side period snap is why it has no seam. */
-        gui()->draw_arc_dashed( cell.x + 90.0f, cy, 54.0f, 0.0f, TAU, 4.0f, 4.0f, 10.0f, INK_DIM );
+        gui()->draw_arc_dashed( cell.x + 90.0f, cy, 54.0f, 0.0f, TAU, 4.0f, 4.0f, 10.0f, false, INK_DIM );
         text_xf_centered( cell.x + 90.0f, cy + 78.0f, INK_DIM, "dotted ring", 0.9f, 0.0f );
 
         /* Marching ants: rotate BOTH angles together and the pattern rides the frame. */
         gui()->draw_arc_dashed( cell.x + 250.0f, cy, 54.0f, ants, ants + TAU,
-                                2.0f, 8.0f, 8.0f, CRIT );
+                                2.0f, 8.0f, 8.0f, false, CRIT );
         text_xf_centered( cell.x + 250.0f, cy + 78.0f, INK_DIM, "marching ants", 0.9f, 0.0f );
 
         /* Tick dial: long period, thin duty -- the gauge chapter ring for free. */
         gui()->draw_arc_dashed( cell.x + 410.0f, cy, 54.0f,
                                 gui_radians( 135.0f ), gui_radians( 405.0f ),
-                                12.0f, 3.0f, 24.0f, TEAL );
+                                12.0f, 3.0f, 24.0f, false, TEAL );
         text_xf_centered( cell.x + 410.0f, cy + 78.0f, INK_DIM, "tick dial", 0.9f, 0.0f );
 
         /* The hot/cold value arc: colour sweeps by ANGLE, which no vertex colour could do. */
@@ -1629,7 +1629,7 @@ win_five( void )
             f32 a0 = gui_radians( 135.0f );
             gui()->draw_arc( cx, cy, 54.0f, a0, a0 + gui_radians( 270.0f ), 9.0f, EDGE );
             gui()->draw_arc_gradient( cx, cy, 54.0f, a0,
-                                      a0 + gui_radians( 270.0f * s_nv_val ), 9.0f, TEAL, HIT );
+                                      a0 + gui_radians( 270.0f * s_nv_val ), 9.0f, TEAL, HIT, false );
             char buf[ 16 ];
             snprintf( buf, sizeof( buf ), "%.0f%%", s_nv_val * 100.0f );
             dial_label( cx, cy, INK, buf, 1.1f );
@@ -1638,7 +1638,7 @@ win_five( void )
 
         /* And a full gradient ring -- one quad, the seam is where col_b meets col_a. */
         gui()->draw_arc_gradient( cell.x + 730.0f, cy, 54.0f, gui_radians( -90.0f ),
-                                  gui_radians( 270.0f ), 12.0f, VIOLET, AMBER );
+                                  gui_radians( 270.0f ), 12.0f, VIOLET, AMBER, false );
         text_xf_centered( cell.x + 730.0f, cy + 78.0f, INK_DIM, "gradient ring", 0.9f, 0.0f );
 
         gui()->pop_clip();

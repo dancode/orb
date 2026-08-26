@@ -487,8 +487,24 @@ fx_field_t fx_field( float2 px )
             // ARC: exact distance to the circle of radius ra, cut to the aperture, then thickened
             // by the tube.  Inside the wedge it is the annulus; outside it is the distance to the
             // nearest endpoint, which is what gives the stroke its round caps for free.
-            f.d = ( ( sc.y * q.x > sc.x * q.y ) ? length( q - sc * ra )
-                                                : abs( length( q ) - ra ) ) - rb;
+            //
+            // `u` is the tangential coordinate at the endpoint -- zero on the cap plane, positive
+            // past it -- and `v` is the plain annulus distance every ARC already computes.  Under
+            // OP_FLAT_CAP the outside region reads as the sharp-box SDF of those two coordinates
+            // instead of the point distance, which turns the free round cap into a flat one cut
+            // straight across the tube; inside the wedge the two forms agree, since `v` alone is
+            // exactly the round-cap formula's inside branch.
+            float u = sc.y * q.x - sc.x * q.y;
+            float v = abs( length( q ) - ra ) - rb;
+            if ( ( g_ops & OP_FLAT_CAP ) != 0u && u > 0.0 )
+            {
+                float2 bq = float2( u, v );
+                f.d = length( max( bq, 0.0 ) ) + min( max( bq.x, bq.y ), 0.0 );
+            }
+            else
+            {
+                f.d = ( u > 0.0 ) ? ( length( q - sc * ra ) - rb ) : v;
+            }
         }
 
         // ARC-LENGTH from the sweep's start, which is what makes GUI_OP_DASH mean the same thing

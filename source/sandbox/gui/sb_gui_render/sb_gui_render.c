@@ -154,7 +154,7 @@ panel_row_begin( i32 row, const char* id_str )
 {
     f32 x = GRID_X + ( f32 )GRID_COLS * ( CELL_W + CELL_GAP );
     f32 y = GRID_Y + ( f32 )row * ( CELL_H + CELL_GAP );
-    gui()->region_begin( id_str, x, y, TWEAK_PANEL_W, CELL_H, GUI_REGION_FG,
+    gui()->region_begin( id_str, x, y, TWEAK_PANEL_W, /* CELL_H */ 0.0f, GUI_REGION_FG,
                          GUI_VP_MAIN, GUI_WIN_NOSCROLL | GUI_WIN_NO_CLIP );
     gui()->row2( TWEAK_PANEL_COLW, 0 );
     gui()->field_label_left( 96 );
@@ -767,6 +767,9 @@ page_shapes( void )
     gui()->slider_float_step( "progress", &progress, 0.0f, 1.0f, 0.1f );
     if ( gui()->button( "reset##progress" )) { progress = 1.0f; }
 
+    static bool flat_caps = false;
+    gui()->checkbox( "flat_caps", &flat_caps );
+
     panel_row_end();
     
     //------------------------------------------------------------------------------------------
@@ -799,17 +802,17 @@ page_shapes( void )
     /* arc dashed -- rotated from forward x */
     r = cell( 24, GRID_COLS, "arc_dashed" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, dash,gap, PLUM );
+    gui()->draw_arc_dashed( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, dash,gap, flat_caps, PLUM );
     
     /* a gradiant between two colors */
     r = cell( 25, GRID_COLS, "arc_gradient" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, AMBER, TEAL );
-    
+    gui()->draw_arc_gradient( c.x, c.y, rad, gui_radians( angle_a ), gui_radians( angle_b ), width, AMBER, TEAL, flat_caps );
+
     /* arc progeess -- just arc with 1.0 normalized progress */
     r = cell( 26, GRID_COLS, "progress_arc" );
     c = cell_center( r ); rad = cell_radius( r );
-    gui()->draw_progress_arc( c.x, c.y, rad, progress, width, TEAL );
+    gui()->draw_progress_arc( c.x, c.y, rad, progress, width, flat_caps, TEAL );
 
     r = cell( 27, GRID_COLS, "..." );
     r = cell( 28, GRID_COLS, "..." );

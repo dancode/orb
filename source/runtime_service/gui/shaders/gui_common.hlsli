@@ -118,6 +118,7 @@ uint prim_base_row( uint prim )
 #define OP_SPIN         0x400000u
 #define OP_DASH         0x800000u
 #define OP_DITHER       0x1000000u
+#define OP_FLAT_CAP     0x2000000u
 
 #define FX_NONE         0u
 #define FX_BOX          1u

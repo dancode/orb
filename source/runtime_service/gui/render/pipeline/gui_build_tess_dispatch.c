@@ -476,7 +476,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              e->arc.a0, e->arc.a1, GUI_FX_ARC, e->arc.abgr,
                              0.0f, 0.0f,
                              e->arc.spin_rate, e->arc.spin_phase,
-                             e->arc.curve, e->arc.curve_param, e->arc.abgr );
+                             e->arc.curve, e->arc.curve_param, e->arc.abgr,
+                             e->arc.flat_caps );
                 break;
             }
 
@@ -487,7 +488,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              e->arc.a0, e->arc.a1, GUI_FX_PIE, e->arc.abgr,
                              0.0f, 0.0f,
                              e->arc.spin_rate, e->arc.spin_phase,
-                             e->arc.curve, e->arc.curve_param, e->arc.abgr );
+                             e->arc.curve, e->arc.curve_param, e->arc.abgr,
+                             false );
                 break;
             }
 
@@ -498,7 +500,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                              e->arc_dash.thickness, e->arc_dash.a0, e->arc_dash.a1,
                              GUI_FX_ARC, e->arc_dash.abgr,
                              e->arc_dash.period / TESS_TAU, e->arc_dash.duty,
-                             0.0f, 0.0f, 0u, 0.0f, e->arc_dash.abgr );
+                             0.0f, 0.0f, 0u, 0.0f, e->arc_dash.abgr,
+                             e->arc_dash.flat_caps );
                 break;
             }
 
@@ -510,7 +513,8 @@ tess_dispatch( const gui_cmd_t* cmds, const u16* order, u32 count, gui_id_t win 
                 tess_fx_arc( e->arc_grad.cx, e->arc_grad.cy, e->arc_grad.r,
                              e->arc_grad.thickness, e->arc_grad.a0, e->arc_grad.a1,
                              GUI_FX_ARC, e->arc_grad.col_b,
-                             0.0f, 0.0f, 0.0f, 0.0f, 0u, 0.0f, e->arc_grad.col_a );
+                             0.0f, 0.0f, 0.0f, 0.0f, 0u, 0.0f, e->arc_grad.col_a,
+                             e->arc_grad.flat_caps );
                 break;
             }
 

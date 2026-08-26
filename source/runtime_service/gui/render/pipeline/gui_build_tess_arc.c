@@ -190,11 +190,14 @@ tess_round_frame_ex( f32 x, f32 y, f32 w, f32 h,
    A non-zero `dash_turns` dashes the sector through GUI_OP_DASH, in period-turns and on-duty.
    A `grad_col` differing from `abgr` sweeps the colour toward it along the stroke
    (GUI_OP_GRAD_ALONG); passing `abgr` states no sweep -- a ramp between one colour and itself
-   is that colour, the tess_round_rect_ex rule. */
+   is that colour, the tess_round_rect_ex rule.
+   `flat_caps` squares off a stroked sector's ends (GUI_OP_FLAT_CAP) instead of the round caps
+   the field draws for free; ignored on a PIE, which has no caps. */
 static void
 tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
              gui_fx_mode_t mode, u32 grad_col, f32 dash_turns, f32 dash_duty,
-             f32 spin_rate, f32 spin_phase, u32 curve, f32 curve_param, u32 abgr )
+             f32 spin_rate, f32 spin_phase, u32 curve, f32 curve_param, u32 abgr,
+             bool flat_caps )
 {
     if ( r <= 0.0f )
         return;
@@ -276,6 +279,11 @@ tess_fx_arc( f32 pcx, f32 pcy, f32 r, f32 thickness, f32 a0, f32 a1,
     s_tess.cur_prim.param_a = ra;
     s_tess.cur_prim.param_b = rb;
     s_tess.cur_prim.param_c = ap;
+
+    /* PIE has no caps to flatten -- its edges are already sharp radial cuts -- so the flag only
+       ever reads on the stroked sector. */
+    if ( !pie && flat_caps )
+        s_tess.cur_ops |= GUI_OP_FLAT_CAP;
 
     /* GUI_OP_SPIN -- the whole frame (aperture, dashes, everything the record states) rotates at
        anim_rate turns/sec on pc.time.  The record is byte-identical every frame it runs, which is

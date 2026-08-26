@@ -263,14 +263,20 @@ draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col )
    ~one-segment-per-6px sampling gave a 12 px spinner about ten segments, so the "circle" it swept
    was a visible decagon. */
 static void
-draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )
+draw_arc_ex( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, bool flat_caps, u32 col )
 {
     thickness = sym_thick( thickness );
 
     /* Every thickness takes the SDF arc, for the same reason draw_circle's ring does: the tube is a
        plain float in the record, so the 15.875 px ceiling that used to send fat arcs down the
        stroked-polyline path is gone, and so is that path. */
-    draw_push_arc( cx, cy, r, thickness, a0, a1, col );
+    draw_push_arc( cx, cy, r, thickness, a0, a1, flat_caps, col );
+}
+
+static void
+draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col )
+{
+    draw_arc_ex( cx, cy, r, a0, a1, thickness, false, col );
 }
 
 /* Filled pie / wedge from a0 to a1 (radians): knobs, radial menus, donut segments.  A full sweep
@@ -1177,14 +1183,15 @@ draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col )
 }
 
 /* Progress arc: a ring filled clockwise from 12 o'clock by `frac` of a turn (a circular progress /
-   gauge readout). */
+   gauge readout).  `flat_caps` squares off the two ends instead of the round caps drawn by
+   default -- a flush needle at 0% / 100% rather than a stub that overshoots its own endpoint. */
 static void
-draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col )
+draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, bool flat_caps, u32 col )
 {
     if ( frac < 0.0f ) frac = 0.0f;
     if ( frac > 1.0f ) frac = 1.0f;
     f32 a0 = -SYM_PI * 0.5f;            /* start at the top */
-    draw_arc( cx, cy, r, a0, a0 + frac * SYM_TAU, thickness, col );
+    draw_arc_ex( cx, cy, r, a0, a0 + frac * SYM_TAU, thickness, flat_caps, col );
 }
 
 /*==============================================================================================
@@ -1324,16 +1331,16 @@ void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col )
 /* The self-sampled sector variants -- both bind straight to their backend primitives; the emit
    side owns the dash quantization and the gradient's reversed-range colour swap. */
 void gui_draw_arc_dashed( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
-                          f32 dash, f32 gap, u32 col )
+                          f32 dash, f32 gap, bool flat_caps, u32 col )
 {
     thickness = sym_thick( thickness );
-    draw_push_arc_dashed( cx, cy, r, thickness, a0, a1, dash, gap, col );
+    draw_push_arc_dashed( cx, cy, r, thickness, a0, a1, dash, gap, flat_caps, col );
 }
 void gui_draw_arc_gradient( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
-                            u32 col_a, u32 col_b )
+                            u32 col_a, u32 col_b, bool flat_caps )
 {
     thickness = sym_thick( thickness );
-    draw_push_arc_gradient( cx, cy, r, thickness, a0, a1, col_a, col_b );
+    draw_push_arc_gradient( cx, cy, r, thickness, a0, a1, col_a, col_b, flat_caps );
 }
 
 /* The rotated SDF box, and the per-corner soft shadow -- the two rect-family verbs the effect
@@ -1410,7 +1417,7 @@ void gui_draw_rect_cut( gui_rect_t box, f32 rounding, gui_rect_t cut, f32 cut_ro
 void gui_draw_dial_ticks( gui_rect_t box, u32 n, f32 thickness, f32 len, f32 rate, u32 col )
                                                                                { draw_dial_ticks( box, n, thickness, len, rate, col ); }
 void gui_draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col ) { draw_spinner( box, rate, thickness, col ); }
-void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, col ); }
+void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, bool flat_caps, u32 col ) { draw_progress_arc( cx, cy, r, frac, thickness, flat_caps, col ); }
 
 // clang-format on
 /*============================================================================================*/

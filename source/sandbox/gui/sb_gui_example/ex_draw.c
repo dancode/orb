@@ -375,7 +375,7 @@ ex_draw_shapes( void )
             gui()->slider_int( "Spinner weight", &p_spin, 1, 6, NULL );
 
             static f32 p_prog = 0.66f;   /* continuous 0..1 fraction */
-            r = gui()->canvas( H ); gui()->draw_progress_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, p_prog, 3.0f, acc );
+            r = gui()->canvas( H ); gui()->draw_progress_arc( r.x + r.w*0.5f, r.y + H*0.5f, H*0.4f, p_prog, 3.0f, false, acc );
             gui()->slider_float( "Progress frac", &p_prog, 0.0f, 1.0f );
 
             /* The border tracer: the indeterminate arc, travelling the outline on the shader
@@ -607,7 +607,7 @@ ex_draw_custom( void )
             f32 kr  = box.w * 0.42f;
             u32 body = st.active ? 0xFF3E5A78u : st.hover ? 0xFF35485E : 0xFF2C3A4A;
             gui()->draw_circle( kcx, kcy, kr, 0.0f, body );
-            gui()->draw_progress_arc( kcx, kcy, kr - 3.0f, knob, 3.0f, EX_AMBR );
+            gui()->draw_progress_arc( kcx, kcy, kr - 3.0f, knob, 3.0f, false, EX_AMBR );
             f32 a = ( -0.75f + knob * 1.5f ) * GUI_PI;      /* -135..+135 deg */
             gui()->draw_line( kcx, kcy, kcx + sinf( a ) * kr * 0.8f, kcy - cosf( a ) * kr * 0.8f,
                               2.0f, EX_INK );

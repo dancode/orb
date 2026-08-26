@@ -588,6 +588,14 @@ ORB_STATIC_ASSERT( sizeof( gui_prim_t ) == GUI_PRIM_BYTES,
 #define GUI_OP_DITHER     ( 1u << 24 )  /* add +-0.5/255 screen-space noise to the output, so a
                                            wide soft ramp lands on 8-bit without banding         */
 
+/* FIELD OP, numbered out of sequence because it is the newest one: ARC's tube ends square
+   instead of round.  The exact-distance ARC field always drew its stroke ends as the nearest-
+   point distance to the sector's endpoint, which is a semicircle of radius rb for free; this
+   bit swaps that fallback for the flat plane perpendicular to the tangent at each endpoint, cut
+   straight across the tube -- a butt cap instead of a round one.  Read only by FX_ARC; a PIE
+   has no caps to flatten and never sets it. */
+#define GUI_OP_FLAT_CAP   ( 1u << 25 )
+
 /*==============================================================================================
     The QUAD RECORD -- the renderer's per-shape geometry unit.
 

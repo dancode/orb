@@ -950,17 +950,18 @@ typedef struct gui_api_s
        a0/a1 together: the pattern rides the sector's frame. */
 
     void ( *draw_arc_dashed        )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
-                                      f32 dash, f32 gap, u32 col );
+                                      f32 dash, f32 gap, bool flat_caps, u32 col );
 
     /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1) by ANGLE -- the hot/cold value
        arc.  A per-vertex colour cannot express this (it varies by angle, not position); the
        fragment lerps it from the aperture it already computes. */
 
     void ( *draw_arc_gradient      )( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness,
-                                      u32 col_a, u32 col_b );
+                                      u32 col_a, u32 col_b, bool flat_caps );
 
     /* The determinate ring: an arc of `frac` (0..1) of a full turn from 12 o'clock. */
-    void ( *draw_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
+    void ( *draw_progress_arc      )( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness,
+                                      bool flat_caps, u32 col );
 
     /*=========================================  lines, curves + paths  ==========================================*/
 

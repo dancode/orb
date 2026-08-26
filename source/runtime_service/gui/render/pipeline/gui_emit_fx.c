@@ -369,7 +369,7 @@ draw_push_round_rect_ex( f32 x, f32 y, f32 w, f32 h,
 
 static void
 draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
-                 f32 spin_rate, f32 spin_phase, u32 abgr )
+                 f32 spin_rate, f32 spin_phase, u32 abgr, bool flat_caps )
 {
     u32 col = draw_apply_alpha( abgr );
     f32 g   = r + thickness * 0.5f;   /* the tessellator's own AA pad rides draw_cmd_open's `pad` */
@@ -394,14 +394,15 @@ draw_sector_cmd( u8 type, f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     e->arc.abgr         = col;
     e->arc.curve        = spinning ? s_draw.anim_curve : 0u;
     e->arc.curve_param  = spinning ? s_draw.anim_curve_param : 0.0f;
+    e->arc.flat_caps    = flat_caps;
 
     draw_cmd_seal();
 }
 
 void
-draw_push_arc( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, u32 abgr )
+draw_push_arc( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1, bool flat_caps, u32 abgr )
 {
-    draw_sector_cmd( GUI_CMD_ARC, cx, cy, r, thickness, a0, a1, 0.0f, 0.0f, abgr );
+    draw_sector_cmd( GUI_CMD_ARC, cx, cy, r, thickness, a0, a1, 0.0f, 0.0f, abgr, flat_caps );
 }
 
 /* The arc under GUI_OP_SPIN: its whole frame rotates at `rate` turns/sec on the shader clock, so
@@ -412,13 +413,13 @@ void
 draw_push_arc_spin( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
                     f32 rate, f32 phase, u32 abgr )
 {
-    draw_sector_cmd( GUI_CMD_ARC, cx, cy, r, thickness, a0, a1, rate, phase, abgr );
+    draw_sector_cmd( GUI_CMD_ARC, cx, cy, r, thickness, a0, a1, rate, phase, abgr, false );
 }
 
 void
 draw_push_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr )
 {
-    draw_sector_cmd( GUI_CMD_PIE, cx, cy, r, 0.0f, a0, a1, 0.0f, 0.0f, abgr );
+    draw_sector_cmd( GUI_CMD_PIE, cx, cy, r, 0.0f, a0, a1, 0.0f, 0.0f, abgr, false );
 }
 
 /*==============================================================================================
@@ -440,7 +441,7 @@ draw_push_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 abgr )
 
 void
 draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
-                      f32 dash, f32 gap, u32 abgr )
+                      f32 dash, f32 gap, bool flat_caps, u32 abgr )
 {
     if ( r <= 0.0f || dash <= 0.0f )
         return;
@@ -469,12 +470,13 @@ draw_push_arc_dashed( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     e->arc_dash.period    = period;
     e->arc_dash.duty      = dash / ( dash + ( gap > 0.0f ? gap : dash ) );
     e->arc_dash.abgr      = col;
+    e->arc_dash.flat_caps = flat_caps;
     draw_cmd_seal();
 }
 
 void
 draw_push_arc_gradient( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
-                        u32 col_a, u32 col_b )
+                        u32 col_a, u32 col_b, bool flat_caps )
 {
     if ( r <= 0.0f )
         return;
@@ -505,6 +507,7 @@ draw_push_arc_gradient( f32 cx, f32 cy, f32 r, f32 thickness, f32 a0, f32 a1,
     e->arc_grad.a1        = a1;
     e->arc_grad.col_a     = ca;
     e->arc_grad.col_b     = cb;
+    e->arc_grad.flat_caps = flat_caps;
     draw_cmd_seal();
 }
 

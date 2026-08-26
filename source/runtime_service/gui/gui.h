@@ -2217,21 +2217,24 @@ typedef union
        frame rotates on pc.time in the FRAGMENT, so a spinner's bytes are identical every
        frame and it re-tessellates nothing -- the pulse contract for rotation.  0 = static.
        `curve`/`curve_param` shape the revolution (gui_curve_t): STAIR is the clock-hand
-       spinner that ticks between positions rather than sweeping. */
+       spinner that ticks between positions rather than sweeping.  `flat_caps` squares off ARC's
+       stroke ends instead of the round caps it draws for free; PIE has no caps and ignores it. */
     struct { f32 cx, cy, r, thickness, a0, a1; f32 spin_rate, spin_phase; u32 abgr;
-             u32 curve; f32 curve_param; } arc;
+             u32 curve; f32 curve_param; bool flat_caps; } arc;
 
     /* The arc under an angular dash cut.  `period` is radians per dash+gap cycle -- the emit
        side quantizes it so a WHOLE number of cycles fits the sweep, which is what keeps a
        closed dashed ring from showing a seam where the pattern meets itself; `duty` is the
-       on-fraction.  Both reach the fragment through the record (GUI_OP_DASH). */
-    struct { f32 cx, cy, r, thickness, a0, a1; f32 period, duty; u32 abgr; } arc_dash;
+       on-fraction.  Both reach the fragment through the record (GUI_OP_DASH).  `flat_caps`
+       squares off the sector's own two ends (a0, a1) the same as the plain arc's -- the dash
+       pattern's own gaps are already flat, cut coverage rather than a distance field. */
+    struct { f32 cx, cy, r, thickness, a0, a1; f32 period, duty; u32 abgr; bool flat_caps; } arc_dash;
 
     /* The arc whose colour sweeps col_a (at a0) -> col_b (at a1).  col_b reaches the fragment
        through the record; GUI_OP_GRAD_ALONG lerps by the arc-length coordinate over the sweep
        -- the one gradient a 4-corner vertex colour could never express, because it varies by
-       ANGLE, not position. */
-    struct { f32 cx, cy, r, thickness, a0, a1; u32 col_a, col_b; } arc_grad;
+       ANGLE, not position.  `flat_caps` squares off the stroke ends the same as the plain arc's. */
+    struct { f32 cx, cy, r, thickness, a0, a1; u32 col_a, col_b; bool flat_caps; } arc_grad;
 
     /* A textured quad under a rotation about its CENTRE -- the text_xf treatment applied to
        one quad (tess_quad_xf).  UVs resolve at emit exactly as draw_push_icon's do: an icon

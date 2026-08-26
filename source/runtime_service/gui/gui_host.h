@@ -233,8 +233,8 @@ void gui_draw_star( f32 cx, f32 cy, f32 r, u32 points, f32 ratio, f32 rot, f32 t
 void gui_draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col );
 void gui_draw_arc( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col );
 void gui_draw_pie( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 col );
-void gui_draw_arc_dashed( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, f32 dash, f32 gap, u32 col );
-void gui_draw_arc_gradient( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col_a, u32 col_b );
+void gui_draw_arc_dashed( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, f32 dash, f32 gap, bool flat_caps, u32 col );
+void gui_draw_arc_gradient( f32 cx, f32 cy, f32 r, f32 a0, f32 a1, f32 thickness, u32 col_a, u32 col_b, bool flat_caps );
 void gui_draw_rect_xf( gui_rect_t box, f32 rounding, f32 feather, f32 rot, u32 col );
 void gui_draw_round_rect_shadow( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 feather, u32 col );
 void gui_draw_bezier_quad( f32 x0, f32 y0, f32 cx, f32 cy, f32 x1, f32 y1, f32 thickness, u32 col );
@@ -278,7 +278,7 @@ void gui_draw_rect_cut( gui_rect_t box, f32 rounding, gui_rect_t cut, f32 cut_ro
 void gui_draw_dot_spinner( gui_rect_t box, u32 n, f32 dot, f32 rate, u32 col, u32 col_tail );
 void gui_draw_dial_ticks( gui_rect_t box, u32 n, f32 thickness, f32 len, f32 rate, u32 col );
 void gui_draw_spinner( gui_rect_t box, f32 rate, f32 thickness, u32 col );
-void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, u32 col );
+void gui_draw_progress_arc( f32 cx, f32 cy, f32 r, f32 frac, f32 thickness, bool flat_caps, u32 col );
 
 /* lines + paths */
 void gui_draw_line( f32 x0, f32 y0, f32 x1, f32 y1, f32 thickness, u32 abgr );
