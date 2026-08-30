@@ -76,37 +76,54 @@ locate_vcvarsall( char* out, size_t out_size )
         "\"%ProgramFiles%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
     };
 
-    for ( int i = 0; i < ( int )( sizeof( vswhere_paths ) / sizeof( vswhere_paths[ 0 ] ) ); ++i )
-    {
-        // Ask for the latest install across any product (Community / Pro / Build Tools / Preview).
-        char cmd[ 1024 ];
-        snprintf( cmd, sizeof( cmd ),
-                  "%s -latest -products * -property installationPath",
-                  vswhere_paths[ i ] );
+    // -prerelease makes Insiders and Preview instances visible; without it they are invisible
+    // to vswhere entirely.  -requires skips an install that carries no C++ toolset, which
+    // -latest alone will happily return on a machine that also has a .NET-only VS.  The second
+    // query is the retry for a vswhere old enough to reject either switch.
+    const char* vswhere_args[] = {
+        "-latest -prerelease -products * "
+        "-requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 "
+        "-property installationPath",
+        "-latest -products * -property installationPath",
+    };
 
-        // Pipe vswhere's stdout and read the install path it prints.
-        char inst[ 512 ] = { 0 };
+    for ( int q = 0; q < ( int )( sizeof( vswhere_args ) / sizeof( vswhere_args[ 0 ] ) ); ++q )
+    {
+        for ( int i = 0; i < ( int )( sizeof( vswhere_paths ) / sizeof( vswhere_paths[ 0 ] ) ); ++i )
         {
-            FILE* pipe = platform_popen( cmd, "rt" );
-            if ( !pipe ) continue;
-            if ( fgets( inst, sizeof( inst ), pipe ) )
+            char cmd[ 1024 ];
+            snprintf( cmd, sizeof( cmd ), "%s %s", vswhere_paths[ i ], vswhere_args[ q ] );
+
+            // Pipe vswhere's stdout and read the install path it prints.
+            char inst[ 512 ] = { 0 };
             {
-                char* nl = strpbrk( inst, "\r\n" );
-                if ( nl ) *nl = '\0';
+                FILE* pipe = platform_popen( cmd, "rt" );
+                if ( !pipe ) continue;
+                if ( fgets( inst, sizeof( inst ), pipe ) )
+                {
+                    char* nl = strpbrk( inst, "\r\n" );
+                    if ( nl ) *nl = '\0';
+                }
+                platform_pclose( pipe );
             }
-            platform_pclose( pipe );
-        }
-        if ( inst[ 0 ] )
-        {
-            // vcvarsall.bat is always at <install>\VC\Auxiliary\Build\.
-            snprintf( out, out_size, "%s\\VC\\Auxiliary\\Build\\vcvarsall.bat", inst );
-            if ( platform_file_exists( out ) ) return true;
+            if ( inst[ 0 ] )
+            {
+                // vcvarsall.bat is always at <install>\VC\Auxiliary\Build\.
+                snprintf( out, out_size, "%s\\VC\\Auxiliary\\Build\\vcvarsall.bat", inst );
+                if ( platform_file_exists( out ) ) return true;
+            }
         }
     }
 #endif
 
     // vswhere missing or unhelpful -- fall back to probing well-known install locations.
+    // Dev18 (VS 2026) drops the year from the path and uses the major version instead.
     const char* common[] = {
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Insiders\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Preview\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat",
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
         "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat",
         "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat",
         "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat",
