@@ -651,7 +651,10 @@ page_shapes( void )
     gui()->draw_icon_xf( file_rect, file, AMBER, gui_radians( shape_rot_deg ));
 
 
-    r = cell( 10, GRID_COLS, "sprite + xf" );
+    r = cell( 10, GRID_COLS, "sprite" );
+    if ( s_sprite_swatch != GUI_SPRITE_NONE )
+        gui()->draw_brush( r, &( gui_brush_t ){ .kind = GUI_BRUSH_SPRITE, .sprite = s_sprite_swatch } );
+
     r = cell( 11, GRID_COLS, "..." );
 
     panel_row_end();

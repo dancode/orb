@@ -99,6 +99,7 @@ icon_atlas_shutdown( void )
 
 /* Record a packed tenant under `name`.  Both registrars end here; the caller has already chosen
    the atlas and packed into it. */
+
 static gui_icon_id_t
 icon_record( const char* name, u32 w, u32 h, u32 tenant, bool sdf )
 {

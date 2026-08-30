@@ -3,9 +3,9 @@
     runtime_service/gui/draw/gui_canvas.c -- the custom-draw / canvas vocabulary.
 
     Placement primitives for a rect the caller already holds, rather than a self-laying-out
-    control: canvas() reserves the rect (a cell like any widget); draw_rect / draw_text are the
-    raw fill/text calls; text_size / draw_text_in / draw_text_clipped measure and place text
-    within one; the icon section is the thin public surface over the runtime icon atlas
+    control: canvas() reserves the rect (a cell like any widget); draw_rect / draw_text are 
+    the raw fill/text calls; text_size / draw_text_in / draw_text_clipped measure and place
+    text within one; the icon section is the thin public surface over the runtime icon atlas
     (gui_icon.c, backend unit).  None of these consume the row template beyond canvas() and
     image() -- they act on a rect, not on cell_next's cursor -- so they compose with any
     custom layout.  The interaction half of the tier (gui_item / invisible_button) is
@@ -24,6 +24,7 @@
    widget -- full content width, `height` pixels tall (height <= 0 fills the remaining region
    height) -- so it flows in the vertical list and the pen resumes below it.  The returned rect is
    in the same screen space the draw_* calls take, and the enclosing window clips it. */
+
 gui_rect_t
 gui_canvas( f32 height )
 {
@@ -146,11 +147,12 @@ gui_draw_text_clipped( gui_rect_t r, gui_align_t align, u32 col, const char* s )
 /*==============================================================================================
     Icons -- thin public surface over the runtime icon atlas (gui_icon.c, backend unit).
 
-    register_icon / load_icon / find_icon / icon_size pass straight through; image is a layout widget that
-    reserves a box and fills it; draw_icon_in is the custom-draw placement primitive (the icon
-    analogue of draw_text_in) for a rect the caller already holds -- a table cell, a button label,
-    a canvas cut.  Both draw helpers aspect-fit the icon centered in the rect so a non-square box
-    never stretches the art, and default a 0 color to opaque white (icons are usually drawn plain).
+    register_icon / load_icon / find_icon / icon_size pass straight through; image is a layout
+    widget that reserves a box and fills it; draw_icon_in is the custom-draw placement primitive
+    (the icon analogue of draw_text_in) for a rect the caller already holds -- a table cell, 
+    a button label, a canvas cut.  Both draw helpers aspect-fit the icon centered in the rect
+    so a non-square box never stretches the art, and default a 0 color to opaque white 
+    (icons are usually drawn plain).
 ==============================================================================================*/
 
 gui_icon_id_t
@@ -254,20 +256,22 @@ gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col )
 /*==============================================================================================
     Baked SDF shapes -- authored art that behaves like a FIELD rather than like a picture.
 
-    register_shape bakes a coverage bitmap into a distance field (draw/gui_sdf_bake.c) and packs it
-    into the SDF atlas; from then on the id names a shape the effect band can reach.  draw_set_shape
-    is what aims the existing verbs at it -- while it is set, draw_shadow, draw_glow, draw_inset,
-    draw_ring, draw_pulse and draw_swell resolve their coverage from the shape's field instead of
-    from a rounded box, so a keyhole or a gear wears the same chrome a panel does with no verb of
-    its own.  Clear it with GUI_SHAPE_NONE, the draw_set_rounding contract.
+    register_shape bakes a coverage bitmap into a distance field (draw/gui_sdf_bake.c) and 
+    packs it into the SDF atlas; from then on the id names a shape the effect band can reach.  
+    
+    draw_set_shape is what aims the existing verbs at it -- while it is set, draw_shadow, 
+    draw_glow, draw_inset, draw_ring, draw_pulse and draw_swell resolve their coverage from 
+    the shape's field instead of from a rounded box, so a keyhole or a gear wears the same 
+    chrome a panel does with no verb of its own.  
+    
+    Clear it with GUI_SHAPE_NONE, the draw_set_rounding contract.
 
-    shape_reach is the one number a caller has to respect: effects travel only as far as the bake
-    padded for, and past that the stored field saturates and the effect stops.
+    shape_reach is the one number a caller has to respect: effects travel only as far as 
+    the bake padded for, and past that the stored field saturates and the effect stops.
 ==============================================================================================*/
 
 gui_shape_id_t
-gui_register_shape( const char* name, u32 w, u32 h, const u8* coverage,
-                    const gui_shape_bake_t* bake )
+gui_register_shape( const char* name, u32 w, u32 h, const u8* coverage, const gui_shape_bake_t* bake )
 {
     return shape_register( name, w, h, coverage, bake );
 }
@@ -424,9 +428,9 @@ gui_image_sprite( gui_sprite_id_t id, f32 w, f32 h, u32 tint_abgr )
 /*==============================================================================================
     draw_brush -- the widened paint floor, published.
 
-    gui()->draw_rect fills a rect with a colour; this fills one with a gui_brush_t, which is the
-    same thing plus three more answers to "with what".  It is the door a custom widget paints its
-    face through if it wants to be skinnable by whoever uses it:
+    gui()->draw_rect fills a rect with a colour; this fills one with a gui_brush_t, which is 
+    the same thing plus three more answers to "with what".  It is the door a custom widget 
+    paints its face through if it wants to be skinnable by whoever uses it:
 
         gui()->draw_brush( face, &( gui_brush_t ){ .kind   = GUI_BRUSH_NINE,
                                                    .sprite = my_button_art,

@@ -132,21 +132,24 @@ typedef enum
 
 } gui_sdf_pad_t;
 
-/* How to bake one shape.  A NULL descriptor at register_shape takes every default. */
+/* How to bake one shape. A NULL descriptor at register_shape takes every default.
+
+   spread: Texels of field either side of the outline (0 = GUI_SHAPE_SPREAD).
+   The reach every effect is bounded by, and the quantization it trades against: 
+   a byte holds 127 levels over the spread, so 8 leaves ~16 across the 1 px AA band and 
+   16 would leave 8 and band */
 
 typedef struct
 {
     u32           out_max;  // stored longest edge, texels (0 = GUI_SHAPE_SIZE_DEFAULT)
-    f32           spread;   // texels of field either side of the outline (0 = GUI_SHAPE_SPREAD).
-                            //   The reach every effect is bounded by, and the quantization it
-                            //   trades against: a byte holds 127 levels over the spread, so 8
-                            //   leaves ~16 across the 1 px AA band and 16 would leave 8 and band
-    gui_sdf_pad_t pad;      // where the margin comes from
+    f32           spread;   // texel field outside outline (the reach effects can travel).                            
+    gui_sdf_pad_t pad;      // where the margin comes from.
 
 } gui_shape_bake_t;
 
-#define GUI_SHAPE_SIZE_DEFAULT  128u
-#define GUI_SHAPE_SPREAD        8.0f
+#define GUI_SHAPE_SIZE_DEFAULT  128u        // default longest edge of the STORED field (0 = default)
+#define GUI_SHAPE_SPREAD        8.0f        // default bake margin, texels either side of the outline
+                                            // (the reach effects can travel)
 
 /* Viewport handle -- a plain i32 index into the global viewport pool, naming a render
    surface backed by an OS window.  Returned by viewport_open; passed to render,

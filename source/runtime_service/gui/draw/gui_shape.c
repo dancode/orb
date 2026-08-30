@@ -2,31 +2,33 @@
 
     runtime_service/gui/draw/gui_shape.c -- Baked SDF shapes.
 
-    Authored art turned into a distance FIELD and packed into the SDF atlas, so the effect band
-    reaches silhouettes no closed-form expression describes.  A keyhole, a gear, a badge outline
-    wearing the same border, glow, inset, swell and subtraction a rounded box wears -- which is the
-    whole point, because the record's own subtraction tops out at one rounded-box cut and no stack
-    of quads can un-paint ink.
+    Authored art turned into a distance FIELD and packed into the SDF atlas, so the effect 
+    band reaches silhouettes no closed-form expression describes.  A keyhole, a gear, a badge
+    outline wearing the same border, glow, inset, swell and subtraction a rounded box wears 
+    -- which is the whole point, because the record's own subtraction tops out at one 
+    rounded-box cut and no stack of quads can un-paint ink.
 
-    This file is resource bookkeeping only: the name table, and the mapping from gui_shape_id_t to
-    an SDF-atlas tenant plus the geometry the draw side needs.  The conversion is gui_sdf_bake.c's
-    and the draw entry is the ambient shape lane on GUI_CMD_FX_BOX (pipeline/gui_emit_fx.c).
+    This file is resource bookkeeping only: the name table, and the mapping from gui_shape_id_t
+    to an SDF-atlas tenant plus the geometry the draw side needs.  The conversion is 
+    gui_sdf_bake.c's and the draw entry is the ambient shape lane on GUI_CMD_FX_BOX 
+    (pipeline/gui_emit_fx.c).
 
-    THE SPLIT THAT MATTERS is which of the two accessors a caller reaches for, because they differ
-    in what a repack does to them:
+    THE SPLIT THAT MATTERS is which of the two accessors a caller reaches for, because they 
+    differ in what a repack does to them:
 
-        shape_metrics  DIMENSIONS -- the tenant's size and where the ink sits in it.  Stable across
-                       a repack, so the EMIT side reads it to inflate the caller's ink rect into
-                       the padded box the quad must cover.
-        shape_uv       PLACEMENT -- derived live from the tenant origin, which a repack does move.
-                       The TESSELLATOR reads it, the way sprite_get is read, and res_sdf_generation
-                       folds into the window hash to force that re-resolve.
+        shape_metrics  DIMENSIONS -- the tenant's size and where the ink sits in it.  Stable 
+                       across a repack, so the EMIT side reads it to inflate the caller's ink 
+                       rect into the padded box the quad must cover.
+
+        shape_uv       PLACEMENT -- derived live from the tenant origin, which a repack does 
+                       move. The TESSELLATOR reads it, the way sprite_get is read, and 
+                       res_sdf_generation folds into the window hash to force that re-resolve.
 
     Pixel SOURCING is out of scope, exactly as it is for icons: callers supply R8 coverage bytes
     (row-major, w*h, 0..255) from a rasterizer, a PNG, or procedural code.
 
-    Included by gui_draw.c after gui_icon_load.c -- it needs gui_sdf_bake.c ahead of it and nothing
-    else from the unit.
+    Included by gui_draw.c after gui_icon_load.c -- it needs gui_sdf_bake.c ahead of it and
+    nothing else from the unit.
 
 ==============================================================================================*/
 // clang-format off
@@ -44,12 +46,13 @@
 /* One registered shape.  UVs are NOT cached -- they are derived live from the tenant's origin
    (shape_uv), since a repack can move it.  Everything here is in stored TEXELS; the draw side
    scales by whatever rect it is asked to fill. */
+
 typedef struct
 {
     char name[ 32 ];        // lookup key (NUL-terminated, truncated to 31 chars)
     u16  w, h;              // the padded tenant: ink plus its margin on all four sides
     u16  ink_x, ink_y;      // the art's box inside that tenant
-    u16  ink_w, ink_h;
+    u16  ink_w, ink_h;      // the art's size inside that tenant
     f32  spread;            // texels of field either side of the outline the tenant ACTUALLY holds
                             //   -- the KEEP policy can cap this below what was asked for
     u32  tenant;            // handle into the SDF atlas (0 = unused)
@@ -58,9 +61,9 @@ typedef struct
 
 static struct
 {
-    shape_entry_t entries[ SHAPE_MAX ];
-    u32           count;
-    bool          ready;
+    shape_entry_t   entries[ SHAPE_MAX ];
+    u32             count;
+    bool            ready;  // true after shape_init, false after shape_shutdown
 
 } s_shapes;
 
@@ -80,7 +83,9 @@ shape_shutdown( void )
 {
     /* The tenants belong to the atlas and go with it (res_atlas_shutdown); this table owns no
        pixels of its own, so forgetting the names is the whole teardown. */
+
     memset( &s_shapes, 0, sizeof( s_shapes ) );
+    s_shapes.ready = false;
 }
 
 /*==============================================================================================

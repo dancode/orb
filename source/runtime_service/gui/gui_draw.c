@@ -1,30 +1,34 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_draw.c -- GUI_DRAW translation unit: the drawing-routine library.
+    runtime_service/gui/gui_draw.c -- the drawing-routine library.
 
-    A toolbox of ready-made drawing routines built over the render server's raw push
-    primitives: fill a rect, draw a line of text so it fits inside a given width, draw one of a
-    small built-in set of symbols (an arrow, a checkmark), and a general-purpose "canvas" for a
-    caller who wants to draw custom 2d shapes of their own. This is also where fonts and icons
-    actually load and get packed into the shared texture the render server draws from -- the
-    render server itself has no idea what a font or an icon IS, it only knows how to draw from
-    an atlas someone else filled in.
+    A toolbox of ready-made drawing routines built over the render server's raw push 
+    primitives: fill a rect, draw a line of text so it fits inside a given width, draw one
+    of a small built-in set of symbols (an arrow, a checkmark), and a general-purpose "canvas"
+    for a caller who wants to draw custom 2d shapes of their own. This is also where fonts and
+    icons actually load and get packed into the shared texture the render server draws from 
+    
+    -- the render server itself has no idea what a font or an icon IS, it only knows how to 
+       draw from an atlas someone else filled in.
 
     This unit only calls DOWN into the render server, never up into anything that knows about
-    widgets or user interaction. The one thing that goes the other direction is deliberate: while
-    the render server is turning text or icons into triangles, it asks this unit (through a
-    small documented callback) where in the shared texture a given glyph or icon actually lives.
+    widgets or user interaction. The one thing that goes the other direction is deliberate: 
+    while the render server is turning text or icons into triangles, it asks this unit 
+    (through a small documented callback) where in the shared texture a given glyph or icon 
+    actually lives.
 
     Constituents (draw/), in include order:
-        gui_glyph_internal.c / gui_glyph.c   -- glyph atlas upload + UV dispatch (the metrics half
-                                                 of fonts is the font/ leaf, below this unit)
-        gui_glyph_table.c                    -- ID-indexed glyph UV table the vertex stage reads
-        gui_icon.c / gui_icon_load.c         -- icon registry + PNG -> R8 loader
-        gui_sprite.c                         -- sprite registry + nine-slice + PNG -> RGBA loader
-                                                 (shares gui_icon_load.c's stb_image + file slurp)
-        gui_paint.c                          -- paint floor + fitted text painters
-        gui_symbol.c                         -- symbol marks + shape palette + gui_draw_* surface
-        gui_canvas.c                         -- custom-draw placement/metric/hit-test API
+
+        gui_glyph_internal.c            -- glyph atlas upload + UV dispatch (the metrics half
+        gui_glyph.c                        of fonts is the font/ leaf, below this unit)
+
+        gui_glyph_table.c               -- ID-indexed glyph UV table the vertex stage reads
+        gui_icon.c / gui_icon_load.c    -- icon registry + PNG -> R8 loader
+        gui_sprite.c                    -- sprite registry + nine-slice + PNG -> RGBA loader
+                                           (shares gui_icon_load.c's stb_image + file slurp)
+        gui_paint.c                     -- paint floor + fitted text painters
+        gui_symbol.c                    -- symbol marks + shape palette + gui_draw_* surface
+        gui_canvas.c                    -- custom-draw placement/metric/hit-test API
 
 ==============================================================================================*/
 
@@ -38,18 +42,29 @@
 #include "base/math.h"
 #include "base/utf8.h"   // codepoint stepping on the fitted-text measure seam
 
+/*==============================================================================================
+    Draw : Dependencies
+==============================================================================================*/
+
 /* This unit's world, and nothing above it (the include list IS the dependency graph).
    Drawing routines over the render server's primitives -- parameter-pure, so no
    core, style, or policy header belongs here. */
-#include "runtime_service/gui/render/gui_render.h" /* the render server's primitive surface
-                                                      (pulls gui_host.h + rhi/app APIs)     */
-#include "runtime_service/gui/render/resource/gui_res_atlas.h" /* the atlas push API fonts/icons write through */
+
+/* the render server's primitive surface */
+#include "runtime_service/gui/render/gui_render.h" 
+
+/* the atlas push API fonts/icons write through */
+#include "runtime_service/gui/render/resource/gui_res_atlas.h" 
+
+/*==============================================================================================
+    Draw : Defines
+==============================================================================================*/
+
 #include "runtime_service/gui/draw/gui_draw.h"
 #include "runtime_service/gui/debug/gui_debug.h"
 
 /*==============================================================================================
-    Unity build -- resources first (the palette and canvas draw with the active font's
-    metrics), paint floor before symbol (symbol composes fill/outline).
+    Draw : Unity build
 ==============================================================================================*/
 
 #include "runtime_service/gui/draw/gui_glyph_internal.c"
@@ -106,6 +121,7 @@ gui_draw_shutdown( void )
 /* The draw unit's fixed statics, for the decentralized memory accounting: the icon tables (the
    loaded-font registry + its resident pixels are the font/ resource's, counted there; the two
    ATLASES are the render server's and counted there). */
+
 u32
 draw_unit_mem_bytes( void )
 {

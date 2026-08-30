@@ -613,7 +613,9 @@ typedef struct gui_api_s
        re-tessellates on the frames it moves (unlike draw_pulse, which animates in the fragment
        and never re-emits).  That is a few quads, not a frame -- but a hundred spinning labels is
        a hundred runs of glyph work per frame, and a caller wanting that should say so knowingly. */
+
     void ( *draw_text_xf )( f32 x, f32 y, u32 col, const char* str, f32 scale, f32 rot );
+
 
     /* Icons -- small symbols (a folder, a gear, a checkmark, an editor glyph) packed at runtime
        into one shared R8 atlas texture so they all batch into the same draw call as text.
@@ -739,11 +741,11 @@ typedef struct gui_api_s
     void ( *draw_texture_xf )( gui_rect_t r, u32 bindless_idx, u32 tint_abgr, f32 rot );
 
     /* Sprites -- authored art (a PNG you drew, not a generated icon), packed into a sprite atlas
-       of their own so a whole skin is still ONE draw call.  The registration verbs mirror the icon ones exactly (register / load /
-       find / size), because the two kinds differ in what a texel MEANS -- an icon is coverage the
-       colour paints, a sprite is a picture the colour tints -- not in how you obtain one.
-       register_sprite takes raw RGBA8 (row-major, w*h*4, straight alpha); load_sprite decodes an
-       image file through asset_path like load_icon.
+       of their own so a whole skin is still ONE draw call.  The registration verbs mirror the icon
+       ones exactly (register / load / find / size), because the two kinds differ in what a texel
+       MEANS -- an icon is coverage the colour paints, a sprite is a picture the colour tints --
+       not in how you obtain one. register_sprite takes raw RGBA8 (row-major, w*h*4, straight alpha);
+       load_sprite decodes an image file through asset_path like load_icon.
 
        set_slice is the verb with no icon twin, and the reason sprites are their own kind: it
        declares four insets, in SOURCE pixels, that cut the art into nine pieces.  A sliced sprite
