@@ -677,7 +677,6 @@ page_shapes( void )
     gui()->skip();
 
     float radians = gui_radians( rotation );
-    panel_row_end();
 
     //------------------------------------------------------------------------------------------
 
@@ -693,7 +692,7 @@ page_shapes( void )
     gui()->draw_ngon( c.x, c.y, rad, 4, radians, thickness, TEAL );
     if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
 
-    r = cell( 14, GRID_COLS, "ngon (pent)" );
+    r = cell( 14, GRID_COLS, "ngon (hex)" );
     c = cell_center( r ); rad = cell_radius( r );
     gui()->draw_ngon( c.x, c.y, rad, 6, radians, thickness, TEAL );
     if ( show_center ) gui()->draw_circle( c.x, c.y, 2.0f, 0.0f, AMBER );
@@ -715,6 +714,7 @@ page_shapes( void )
 
     r = cell( 17, GRID_COLS, "..." );
 
+    panel_row_end();
     //------------------------------------------------------------------------------------------
     // row 3 + 4 controls
 

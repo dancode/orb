@@ -67,6 +67,7 @@ demo_volatile_pulse_cb( gui_id_t id, bool is_replay )
        (e.g. "%.1f" gaining a digit) shoves its same_line neighbours around on real frames while
        they sit frozen on idle ones: visible flicker.  Fixed field widths + the mono font keep
        this line's footprint constant while the digits still animate. */
+
     f32 delta_time = gui()->get_delta_time();
     f32 ms  = delta_time * 1000.0f;
     f32 fps = ( delta_time > 0.0f ) ? 1.0f / delta_time : 0.0f;
