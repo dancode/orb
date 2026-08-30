@@ -5,27 +5,18 @@ setlocal
 :: a plain cmd.exe or PowerShell window works -- no Dev Prompt required.
 
 :: --- Auto-setup VC environment if cl.exe is not already on PATH ---
-:: Resolve vswhere.exe path before any if-block to avoid the batch parser
-:: misreading the ) in %ProgramFiles(x86)% as closing the if block.
-set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-if not exist "%VSWHERE%" set "VSWHERE=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe"
+:: vc_vars_setup.bat handles VS discovery (vswhere, then known install roots) and
+:: covers Release, Preview and Insiders installs alike.
 
 where /q cl.exe
 if not errorlevel 1 goto :have_cl
 
-    if not exist "%VSWHERE%" (
-        echo [bootstrap] ERROR: vswhere.exe not found. Install Visual Studio 2022 or run from a Dev Prompt.
-        exit /b 1
-    )
-    for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VS_PATH=%%i"
-    if not defined VS_PATH (
-        echo [bootstrap] ERROR: No Visual Studio installation with VC tools found.
-        exit /b 1
-    )
-    call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
+    call "%~dp0vc_vars_setup.bat" x64 >nul 2>&1
     where /q cl.exe
     if errorlevel 1 (
-        echo [bootstrap] ERROR: vcvarsall.bat ran but cl.exe still not found.
+        echo [bootstrap] ERROR: could not load the MSVC x64 environment.
+        echo [bootstrap] Run vc_vars_setup.bat directly to see why, or start a
+        echo [bootstrap] "x64 Native Tools Command Prompt for VS" and retry.
         exit /b 1
     )
 
