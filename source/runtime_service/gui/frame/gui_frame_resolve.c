@@ -41,17 +41,17 @@
 // clang-format off
 
 #define FONT_RESOLVE_MEMO_MAX 24            /* > registry 16: latches + aliases hold no slot */
-#define FONT_RESOLVE_FAILED   0xFFFFFFFFu   /* memo id: no layer could serve; one attempt per generation */
+#define FONT_RESOLVE_FAILED   0xFFFFu       /* memo id: no layer could serve; one attempt per generation */
 #define FONT_RESOLVE_SHIP_MAX 64            /* shipped-scan entries (assets/font) */
 
 typedef struct
 {
     u32 name_hash;   // FNV-1a of the normalized family name (key)
     u16 size_px;     // requested size (key)
+    u16 id;          // registry id; 0 = the default slot; FONT_RESOLVE_FAILED = latch
+    u16 landed_px;   // size actually resolved; != size_px marks a degraded ALIAS (owns no slot)
     u8  traits;      // reserved, always 0 -- the rich-type (bold/italic span) future keys here
     u8  _unused;
-    u32 id;          // registry id; 0 = the default slot; FONT_RESOLVE_FAILED = latch
-    u16 landed_px;   // size actually resolved; != size_px marks a degraded ALIAS (owns no slot)
     u32 seen_gen;    // emitted frame a public font_get last requested this; 0 = internal
                      // entry (DPI / ramp / boot).  Live -- eviction-exempt -- while within
                      // one emitted frame of now; stale after that (the immediate-mode hold)
@@ -241,7 +241,7 @@ resolve_memo_insert( u32 name_hash, u32 size_px, bool touch, u32 id, u32 landed_
     m->size_px   = (u16)size_px;
     m->traits    = 0;
     m->_unused   = 0;
-    m->id        = id;
+    m->id        = (u16)id;
     m->landed_px = (u16)landed_px;
     m->seen_gen  = touch ? s_resolver.frame_gen : 0;
 }

@@ -53,9 +53,9 @@ typedef struct
     u16  w, h;          // the padded tenant: ink plus its margin on all four sides
     u16  ink_x, ink_y;  // the art's box inside that tenant
     u16  ink_w, ink_h;  // the art's size inside that tenant
+    u16  tenant;        // handle into the SDF atlas (0 = unused)
     f32  spread;        // texels of field either side of the outline the tenant ACTUALLY holds
                         //   -- the KEEP policy can cap this below what was asked for
-    u32  tenant;        // handle into the SDF atlas (0 = unused)
 
 } shape_entry_t;
 
@@ -153,7 +153,7 @@ shape_register( const char* name, u32 w, u32 h, const u8* coverage, const gui_sh
     e->ink_w  = (u16)out.ink_w;
     e->ink_h  = (u16)out.ink_h;
     e->spread = out.spread;
-    e->tenant = tenant;
+    e->tenant = (u16)tenant;
 
     return (gui_shape_id_t)( ++s_shapes.count );   /* id = (index + 1); 0 stays reserved for none */
 }

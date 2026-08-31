@@ -45,8 +45,8 @@ typedef struct
 {
     u16       name_off;        // lookup key -- offset into the shared name pool (gui_names.h)
     u16       w, h;           // source pixel dimensions
+    u16       tenant;         // handle into the sprite atlas (0 = unused)
     gui_pad_t slice;          // nine-slice insets in SOURCE pixels ({0,0,0,0} = not sliced)
-    u32       tenant;         // handle into the sprite atlas (0 = unused)
 
 } sprite_entry_t;
 
@@ -106,7 +106,7 @@ sprite_register( const char* name, u32 w, u32 h, const u8* rgba )
     e->name_off = gui_names_intern( name );
     e->w      = (u16)w;
     e->h      = (u16)h;
-    e->tenant = tenant;
+    e->tenant = (u16)tenant;
 
     return (gui_sprite_id_t)( ++s_sprites.count );   /* id = (index + 1); 0 stays reserved for none */
 }
