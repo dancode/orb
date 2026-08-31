@@ -410,6 +410,12 @@ main( int argc, char** argv )
     // --- Target registry: orb.targets first (sets g_engine_root if 'engine' declared),
     //     then built-ins (uses g_engine_root to set paths and is_external correctly). ---
 
+    // %VAR% tokens in orb.targets (include_dir uses them for SDK roots like %VULKAN_SDK%)
+    // expand against the process environment as the file is parsed, so the VC environment
+    // has to be in place before the parse. Set up later and -gen would bake whatever the
+    // launching shell happened to carry while builds used the vcvars cache value instead.
+    build_setup_vc_env();
+
     bool registry_ok = registry_load( "orb.targets", false );
     init_builtin_targets();
 

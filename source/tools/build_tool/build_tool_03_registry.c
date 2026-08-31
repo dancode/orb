@@ -576,6 +576,18 @@ registry_load( const char* path, bool is_external )
                         snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
                 }
                 if ( !reg_append_slot( cur_t->extra_include_dirs, MAX_EXTRA_INCLUDE_DIRS, abs_buf ) ) ok = false;
+
+                /* A surviving '%' means the variable is unset; a path that does not exist
+                   means it points at a stale location. Both otherwise surface as a C1083 on
+                   some header deep in the target, with nothing tying it back to this line. */
+                if ( strchr( abs_buf, '%' ) )
+                    printf( ORB_INDENT "[orb warn] %s:%d -- target '%s': include_dir names an unset"
+                                       " environment variable: %s\n",
+                            path, lineno, cur_t->name, abs_buf );
+                else if ( !platform_file_exists( abs_buf ) )
+                    printf( ORB_INDENT "[orb warn] %s:%d -- target '%s': include_dir does not exist:"
+                                       " %s\n",
+                            path, lineno, cur_t->name, abs_buf );
             }
             else if ( strcmp( key, "define" ) == 0 && val )
             {

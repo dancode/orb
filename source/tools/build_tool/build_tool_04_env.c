@@ -341,6 +341,11 @@ import_vcvars_env( const char* vcvars_path, const char* cache_path )
 void
 build_setup_vc_env( void )
 {
+    // Several command paths call this; the first one does the work and the rest are free.
+    static bool s_env_ready = false;
+    if ( s_env_ready ) return;
+    s_env_ready = true;
+
 #if defined( _WIN32 )
 
     // Fast path 1: vcvarsall already loaded for x64 -- VSCMD_ARG_TGT_ARCH is set by

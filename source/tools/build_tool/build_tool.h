@@ -103,8 +103,6 @@
 
 /* #define BUILD_SAFE_MODE */
 
-#define BUILD_SAFE_MODE
-
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
