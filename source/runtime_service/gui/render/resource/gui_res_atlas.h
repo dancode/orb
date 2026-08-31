@@ -151,9 +151,13 @@ bool res_atlas_flush_upload  ( void );   // re-upload either atlas if dirty; tru
     Tenant registration -- fonts (draw/gui_glyph_internal.c) and icons (gui_icon.c) pack through here.
 ==============================================================================================*/
 
+/* `kind` is what registered the tenant -- carried for the memory report, never read by the
+   packer.  res_tenant_kind_t and the kind/cpu-split queries over it are declared at the frontend
+   seam (render/gui_render.h), which every unity parses before this header. */
+
 /* Copy w*h R8 coverage into the atlas and return a 1-based tenant handle (0 = out of room / bad
    args).  Packs incrementally; on a full packer it attempts one repack that folds this tenant in. */
-u32  res_atlas_add           ( const u8* src, u32 w, u32 h );
+u32  res_atlas_add           ( const u8* src, u32 w, u32 h, res_tenant_kind_t kind );
 
 /* Replace tenant `handle`'s pixels.  Same w,h -> in-place re-blit; different -> full repack (tenant
    origins may move).  Returns false on a bad handle or when a resized tenant no longer fits. */
@@ -196,6 +200,8 @@ void res_sdf_occupancy       ( f32* pct, u32* tenants, u32* w, u32* h );
     against a sprite atlas that may never exist.
 ==============================================================================================*/
 
+/* Takes no kind: this atlas hosts authored art and nothing else, so every tenant is
+   RES_TENANT_SPRITE and the parameter would only ever carry the one value. */
 u32  res_sprite_add          ( const u8* rgba, u32 w, u32 h );   // 1-based tenant handle (0 = full)
 bool res_sprite_update       ( u32 handle, const u8* rgba, u32 w, u32 h );
 void res_sprite_origin       ( u32 handle, u32* ox, u32* oy );
@@ -219,7 +225,7 @@ u32  res_sprite_bytes        ( void );          // GPU bytes held (0 until creat
     verb answers the not-ready value until then, so nothing has to be ordered against it.
 ==============================================================================================*/
 
-u32  res_sdf_add             ( const u8* src, u32 w, u32 h );    // 1-based tenant handle (0 = full)
+u32  res_sdf_add             ( const u8* src, u32 w, u32 h, res_tenant_kind_t kind );  // 0 = full
 bool res_sdf_update          ( u32 handle, const u8* src, u32 w, u32 h );
 void res_sdf_remove          ( u32 handle );                     // release (see res_atlas_remove)
 void res_sdf_origin          ( u32 handle, u32* ox, u32* oy );

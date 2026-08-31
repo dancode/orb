@@ -176,6 +176,36 @@ void            res_atlas_occupancy     ( f32* pct, u32* tenants, u32* w, u32* h
 void            res_sprite_occupancy    ( f32* pct, u32* tenants, u32* w, u32* h );
 void            res_sdf_occupancy       ( f32* pct, u32* tenants, u32* w, u32* h );
 
+/* What a tenant IS.  The packing mechanism (resource/gui_res_atlas.c, which owns it) does not
+   read this -- it is carried so the memory report can attribute an atlas to whatever filled it.
+   A kind cuts ACROSS the atlases: a font page or an icon lands in coverage or in SDF depending
+   only on how it was baked, and which of those it chose is what the report exists to show.
+   Declared at the seam rather than in gui_res_atlas.h because the frontend report needs it and
+   this header is what the frontend sees. */
+typedef enum
+{
+    RES_TENANT_FONT = 0,   // a baked font page   (draw/gui_glyph_internal.c)
+    RES_TENANT_ICON,       // a registered icon   (draw/gui_icon.c)
+    RES_TENANT_SHAPE,      // an SDF-baked shape  (draw/gui_shape.c)
+    RES_TENANT_SPRITE,     // authored RGBA art   (draw/gui_sprite.c)
+    RES_TENANT_KIND_COUNT
+
+} res_tenant_kind_t;
+
+const char*     res_tenant_kind_name    ( res_tenant_kind_t kind );  // lowercase label, for the report
+
+/* Bytes of PACKED CELL area (tenant + its pad, times bpp) held by each kind, indexed by
+   res_tenant_kind_t.  The cell rather than the raw tenant, so these are the same measure the
+   occupancy percent is computed from and can be read against it.  Zero-filled for an atlas that
+   does not exist. */
+void            res_atlas_kind_bytes    ( u32 out[ RES_TENANT_KIND_COUNT ] );
+void            res_sprite_kind_bytes   ( u32 out[ RES_TENANT_KIND_COUNT ] );
+void            res_sdf_kind_bytes      ( u32 out[ RES_TENANT_KIND_COUNT ] );
+
+/* CPU heap held per atlas -- its resident mirror plus its tenants' retained source copies.  Any
+   pointer may be NULL; the three sum to res_atlas_cpu_bytes(). */
+void            res_atlas_cpu_split     ( u32* coverage, u32* sdf, u32* sprite );
+
 /*==============================================================================================
     EMIT: CPU draw list (pipeline/gui_emit_state.c)
 ==============================================================================================*/

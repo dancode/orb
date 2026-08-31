@@ -42,10 +42,11 @@ static const f32 s_dash_duty[ GUI_DASH_PATTERN_COUNT ] = { 0.12f, 0.35f, 0.5f, 0
 /* One packed tenant: its retained source pixels and its current pixel rect in the atlas. */
 typedef struct
 {
-    bool used;
-    u8*  src;         // owned copy of the source bytes (w*h*bpp), kept for re-blit on repack
-    u32  w, h;        // source pixel dimensions
-    u32  ox, oy;      // current pixel origin (top-left) in the atlas
+    bool              used;
+    u8*               src;    // owned copy of the source bytes (w*h*bpp), kept for re-blit on repack
+    u32               w, h;   // source pixel dimensions
+    u32               ox, oy; // current pixel origin (top-left) in the atlas
+    res_tenant_kind_t kind;   // what registered it -- read only by the memory report
 
 } res_tenant_t;
 
@@ -324,6 +325,37 @@ res_occupancy( const res_atlas_t* a, f32* pct, u32* tenants )
     if ( tenants ) *tenants = n;
 }
 
+/* Same packed-cell measure as res_occupancy, split by what registered each tenant.  Summing cells
+   rather than raw tenant pixels is what lets a caller read these against the occupancy percent. */
+static void
+res_kind_bytes( const res_atlas_t* a, u32 out[ RES_TENANT_KIND_COUNT ] )
+{
+    memset( out, 0, sizeof( u32 ) * RES_TENANT_KIND_COUNT );
+    if ( !a->ready )
+        return;
+
+    for ( u32 i = 0; i < GUI_RES_ATLAS_MAX_TENANTS; ++i )
+    {
+        const res_tenant_t* t = &a->tenants[ i ];
+        if ( !t->used || t->kind >= RES_TENANT_KIND_COUNT )
+            continue;
+        out[ t->kind ] += ( t->w + a->pad ) * ( t->h + a->pad ) * a->bpp;
+    }
+}
+
+const char*
+res_tenant_kind_name( res_tenant_kind_t kind )
+{
+    switch ( kind )
+    {
+        case RES_TENANT_FONT:   return "font";
+        case RES_TENANT_ICON:   return "icon";
+        case RES_TENANT_SHAPE:  return "shape";
+        case RES_TENANT_SPRITE: return "sprite";
+        default:                return "?";
+    }
+}
+
 /* Swap in a larger texture: new CPU buffer + new GPU texture BEFORE the old is destroyed, so a
    failure leaves everything as it was.  The old texture dies under the RHI's deferred-destroy
    epoch -- in-flight frames sampling it are safe.  Pixels are blank until the caller commits a
@@ -481,7 +513,7 @@ res_flush( res_atlas_t* a )
 ==============================================================================================*/
 
 static u32
-res_add( res_atlas_t* a, const u8* src, u32 w, u32 h )
+res_add( res_atlas_t* a, const u8* src, u32 w, u32 h, res_tenant_kind_t kind )
 {
     if ( !a->ready || !src || w == 0 || h == 0 )
         return 0;
@@ -523,6 +555,7 @@ res_add( res_atlas_t* a, const u8* src, u32 w, u32 h )
     t->src  = copy;
     t->w    = w;
     t->h    = h;
+    t->kind = kind;
 
     /* Fast path: one incremental pack call.  Under pressure, res_place repacks the whole set --
        growing the texture if it must -- or fails with NOTHING moved (transactional). */
@@ -669,6 +702,18 @@ res_atlas_cpu_bytes( void )
          + res_cpu_heap_bytes( &s_sdf );
 }
 
+void
+res_atlas_cpu_split( u32* coverage, u32* sdf, u32* sprite )
+{
+    if ( coverage ) *coverage = res_cpu_heap_bytes( &s_res );
+    if ( sdf )      *sdf      = res_cpu_heap_bytes( &s_sdf );
+    if ( sprite )   *sprite   = res_cpu_heap_bytes( &s_spr );
+}
+
+void res_atlas_kind_bytes ( u32 out[ RES_TENANT_KIND_COUNT ] ) { res_kind_bytes( &s_res, out ); }
+void res_sprite_kind_bytes( u32 out[ RES_TENANT_KIND_COUNT ] ) { res_kind_bytes( &s_spr, out ); }
+void res_sdf_kind_bytes   ( u32 out[ RES_TENANT_KIND_COUNT ] ) { res_kind_bytes( &s_sdf, out ); }
+
 /* Every atlas flushes here so the frame loop keeps ONE upload seam.  Not short-circuited: a dirty
    sprite or SDF atlas must upload even when the coverage atlas is clean, and the caller's "pixels
    were sent" verdict is the OR across all three. */
@@ -679,7 +724,7 @@ bool res_atlas_flush_upload( void )
     return      res_flush( &s_sdf ) || sent;
 }
 
-u32  res_atlas_add       ( const u8* src, u32 w, u32 h )              { return res_add   ( &s_res, src, w, h ); }
+u32  res_atlas_add       ( const u8* src, u32 w, u32 h, res_tenant_kind_t k ) { return res_add( &s_res, src, w, h, k ); }
 bool res_atlas_update    ( u32 h_, const u8* src, u32 w, u32 h )      { return res_update( &s_res, h_, src, w, h ); }
 void res_atlas_remove    ( u32 handle )                               { res_remove( &s_res, handle ); }
 void res_atlas_origin    ( u32 handle, u32* ox, u32* oy )             { res_origin( &s_res, handle, ox, oy ); }
@@ -760,7 +805,7 @@ res_sprite_add( const u8* rgba, u32 w, u32 h )
                                     GUI_SPR_ATLAS_DIM_CAP, GUI_SPR_ATLAS_DIM_CAP,
                                     GUI_SPR_ATLAS_BPP, false, true, "gui_sprite_atlas" ) )
         return 0;
-    return res_add( &s_spr, rgba, w, h );
+    return res_add( &s_spr, rgba, w, h, RES_TENANT_SPRITE );
 }
 
 bool res_sprite_update ( u32 handle, const u8* rgba, u32 w, u32 h ) { return res_update( &s_spr, handle, rgba, w, h ); }
@@ -788,13 +833,13 @@ u32  res_sprite_bytes      ( void ) { return s_spr.ready ? s_spr.w * s_spr.h * G
 ==============================================================================================*/
 
 u32
-res_sdf_add( const u8* src, u32 w, u32 h )
+res_sdf_add( const u8* src, u32 w, u32 h, res_tenant_kind_t kind )
 {
     if ( !s_sdf.ready && !res_init( &s_sdf, GUI_SDF_ATLAS_W, GUI_SDF_ATLAS_H,
                                     GUI_RES_ATLAS_DIM_CAP, GUI_RES_ATLAS_DIM_CAP,
                                     1u, false, true, "gui_sdf_atlas" ) )
         return 0;
-    return res_add( &s_sdf, src, w, h );
+    return res_add( &s_sdf, src, w, h, kind );
 }
 
 bool res_sdf_update ( u32 handle, const u8* src, u32 w, u32 h ) { return res_update( &s_sdf, handle, src, w, h ); }

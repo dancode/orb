@@ -134,7 +134,7 @@ shape_register( const char* name, u32 w, u32 h, const u8* coverage, const gui_sh
     /* The SDF atlas is created lazily by its first add -- an SDF font, an SDF icon, a shape.  It is
        a separate texture from the coverage atlas for one reason: the sampler is chosen per DRAW
        from the model, and a field must filter LINEAR while coverage must stay NEAREST. */
-    u32 tenant = res_sdf_add( out.field, out.full_w, out.full_h );
+    u32 tenant = res_sdf_add( out.field, out.full_w, out.full_h, RES_TENANT_SHAPE );
     free( out.field );
     if ( tenant == 0 )
     {

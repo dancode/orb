@@ -32,7 +32,10 @@ backend_memory( u32 live_viewports )
        into its size. */
     s.viewport_count    = live_viewports;
     /* Sprite and SDF atlases report 0 until something creates them. */
-    s.gpu_texture_bytes = res_atlas_bytes() + res_sprite_bytes() + res_sdf_bytes();
+    s.gpu_tex_cov_bytes = res_atlas_bytes();
+    s.gpu_tex_sdf_bytes = res_sdf_bytes();
+    s.gpu_tex_spr_bytes = res_sprite_bytes();
+    s.gpu_texture_bytes = s.gpu_tex_cov_bytes + s.gpu_tex_sdf_bytes + s.gpu_tex_spr_bytes;
 
     /* The storage-buffer tables the pipeline resolves through.  Clip is REGIONED: rewritten
        every frame, so each frame-in-flight needs a full set of window slabs to land in (one copy
@@ -105,6 +108,7 @@ backend_memory( u32 live_viewports )
        copy (fonts, icons, sprites keep a second CPU copy so a repack never goes back to disk).
        A dynamic bucket -- it exists only once an atlas / tenant does. */
     s.cpu_atlas_bytes = res_atlas_cpu_bytes();
+    res_atlas_cpu_split( &s.cpu_atlas_cov_bytes, &s.cpu_atlas_sdf_bytes, &s.cpu_atlas_spr_bytes );
 
     /* RENDER: pipeline / sampler / push state, the published prim palette the flush uploads from,
        and the palette's own working set -- the live table, its content-hash lookup, the candidate

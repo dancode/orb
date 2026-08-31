@@ -68,8 +68,9 @@ font_slot_upload( font_slot_t* slot )
     }
     else
     {
-        tenant = slot->sdf_range ? res_sdf_add  ( slot->pixels, slot->atlas_w, slot->atlas_h )
-                                 : res_atlas_add( slot->pixels, slot->atlas_w, slot->atlas_h );
+        tenant = slot->sdf_range
+               ? res_sdf_add  ( slot->pixels, slot->atlas_w, slot->atlas_h, RES_TENANT_FONT )
+               : res_atlas_add( slot->pixels, slot->atlas_w, slot->atlas_h, RES_TENANT_FONT );
         if ( tenant == 0 )
         {
             slot->upload_failed = true;

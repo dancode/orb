@@ -146,7 +146,14 @@ gui_print_mem_stats( void )
 
     gui_log( GUI_LOG_INFO, "  -- GPU device (%u live surface%s) --------",
              s.viewport_count, s.viewport_count == 1u ? "" : "s" );
-    GUI_MEM_ROW( "atlas textures",   s.gpu_texture_bytes );
+    /* Atlas textures broken out per texture, since which one grew is the whole question when this
+       total moves.  A lazily created atlas prints nothing rather than a zero row. */
+    GUI_MEM_ROW( "atlas textures",     s.gpu_texture_bytes );
+    GUI_MEM_ROW( "    coverage",       s.gpu_tex_cov_bytes );
+    if ( s.gpu_tex_sdf_bytes )
+        GUI_MEM_ROW( "    sdf",        s.gpu_tex_sdf_bytes );
+    if ( s.gpu_tex_spr_bytes )
+        GUI_MEM_ROW( "    sprite",     s.gpu_tex_spr_bytes );
     /* The tables broken out: quad/prim are claim-sized (live capacity x frame-in-flight copies,
        grown on demand), clip carries a full set of window slabs per frame-in-flight
        (window-keyed, not viewport-keyed). */
@@ -174,24 +181,45 @@ gui_print_mem_stats( void )
     gui_log( GUI_LOG_INFO, "  -- CPU heap (%u context%s) -----------------------------",
              s.context_count, s.context_count == 1u ? "" : "s" );
     GUI_MEM_ROW( "context blocks",        s.cpu_context_bytes );
+    /* Split the same way as the textures above: an atlas's mirror tracks its texture, and its
+       tenants' retained sources sit on top, so each row here runs ahead of its GPU twin. */
     GUI_MEM_ROW( "atlas mirrors + tenants", s.cpu_atlas_bytes );
+    GUI_MEM_ROW( "    coverage",          s.cpu_atlas_cov_bytes );
+    if ( s.cpu_atlas_sdf_bytes )
+        GUI_MEM_ROW( "    sdf",           s.cpu_atlas_sdf_bytes );
+    if ( s.cpu_atlas_spr_bytes )
+        GUI_MEM_ROW( "    sprite",        s.cpu_atlas_spr_bytes );
     GUI_MEM_ROW( "  CPU heap subtotal",   s.cpu_dynamic_total );
 
-    /* Atlas occupancy -- dims are live (the atlases grow under pressure); a row only prints for
-       an atlas that exists. */
+    /* Atlas occupancy -- dims are live (the atlases grow under pressure); a row only prints for an
+       atlas that exists.  Under each, the packed cell area attributed to what registered it.  That
+       attribution is the second axis of the same question: a kind cuts ACROSS the atlases (an icon
+       is a coverage tenant or an SDF one depending only on how it was baked), so a texture row
+       says which atlas grew and these say what put it there.  Cells, not raw tenant pixels, so
+       they read against the percent on the line above rather than against the mirror's bytes. */
     {
         f32 pct; u32 tn, w, h;
-        res_atlas_occupancy( &pct, &tn, &w, &h );
-        gui_log( GUI_LOG_INFO, "  %-22s %ux%u   %u tenant%s   %.0f%% full",
-                 "coverage atlas", w, h, tn, tn == 1u ? "" : "s", pct );
-        res_sprite_occupancy( &pct, &tn, &w, &h );
-        if ( w )
-            gui_log( GUI_LOG_INFO, "  %-22s %ux%u   %u tenant%s   %.0f%% full",
-                     "sprite atlas", w, h, tn, tn == 1u ? "" : "s", pct );
-        res_sdf_occupancy( &pct, &tn, &w, &h );
-        if ( w )
-            gui_log( GUI_LOG_INFO, "  %-22s %ux%u   %u tenant%s   %.0f%% full",
-                     "sdf atlas", w, h, tn, tn == 1u ? "" : "s", pct );
+        u32 kind[ RES_TENANT_KIND_COUNT ];
+
+        #define GUI_MEM_ATLAS( label, occupancy_fn, kind_fn )                             \
+            do {                                                                          \
+                ( occupancy_fn )( &pct, &tn, &w, &h );                                    \
+                if ( !w ) break;                                                          \
+                gui_log( GUI_LOG_INFO, "  %-22s %ux%u   %u tenant%s   %.0f%% full",       \
+                         ( label ), w, h, tn, tn == 1u ? "" : "s", pct );                 \
+                ( kind_fn )( kind );                                                      \
+                for ( u32 k = 0; k < RES_TENANT_KIND_COUNT; ++k )                         \
+                    if ( kind[ k ] )                                                      \
+                        gui_log( GUI_LOG_INFO, "      %-18s %10u B  (%8.1f KB)",          \
+                                 res_tenant_kind_name( (res_tenant_kind_t)k ),            \
+                                 kind[ k ], (f32)kind[ k ] / kb );                        \
+            } while ( 0 )
+
+        GUI_MEM_ATLAS( "coverage atlas", res_atlas_occupancy,  res_atlas_kind_bytes  );
+        GUI_MEM_ATLAS( "sprite atlas",   res_sprite_occupancy, res_sprite_kind_bytes );
+        GUI_MEM_ATLAS( "sdf atlas",      res_sdf_occupancy,    res_sdf_kind_bytes    );
+
+        #undef GUI_MEM_ATLAS
     }
 
     /* How full the caps behind those buckets have actually been -- the other half of the question

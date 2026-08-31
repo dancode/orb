@@ -3118,6 +3118,14 @@ typedef struct
     /* --- GPU device memory (dynamic). --- */
 
     u32 gpu_texture_bytes;      // the three resource atlases (coverage incl. assist rows, sprite, SDF)
+
+    /* That total, split by texture.  Each is w*h*bpp at the atlas's CURRENT dimensions, so a row
+       moves when an atlas grows; the SDF and sprite atlases are created lazily and read 0 until
+       something registers a tenant of theirs. */
+
+    u32 gpu_tex_cov_bytes;      // coverage atlas -- bitmap glyph pages, coverage icons, assist rows
+    u32 gpu_tex_sdf_bytes;      // SDF atlas      -- distance-field glyph pages, icons, shapes
+    u32 gpu_tex_spr_bytes;      // sprite atlas   -- authored RGBA art
     u32 gpu_table_bytes;        // the storage-buffer tables the shader resolves through, summed --
                                 //   sized by the pool caps, not by how many surfaces are open
 
@@ -3168,6 +3176,9 @@ typedef struct
     u32 context_count;          // live contexts contributing to cpu_context_bytes
     u32 cpu_atlas_bytes;        // atlas-owned heap: resident staging mirror + every tenant's retained
                                 //   source copy, summed over all three atlases
+    u32 cpu_atlas_cov_bytes;    // that total split the same way as the gpu_tex_* rows: each atlas
+    u32 cpu_atlas_sdf_bytes;    //   pays its mirror (w*h*bpp, mirroring its texture) plus the
+    u32 cpu_atlas_spr_bytes;    //   retained sources, so the CPU side runs ahead of the GPU side
     u32 cpu_dynamic_total;      // heap total: cpu_context_bytes + cpu_atlas_bytes
 
     /* --- Grand total: everything the gui system holds right now. --- */

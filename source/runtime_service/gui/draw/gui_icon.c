@@ -182,7 +182,7 @@ icon_register( const char* name, u32 w, u32 h, const u8* coverage )
 
     /* Add the coverage as a tenant of the shared atlas (incremental pack; repack-on-full handled
        inside res_atlas_add).  The shared atlas takes its own copy and owns the deferred upload. */
-    u32 tenant = res_atlas_add( coverage, w, h );
+    u32 tenant = res_atlas_add( coverage, w, h, RES_TENANT_ICON );
     if ( tenant == 0 )
     {
         gui_log( GUI_LOG_WARN, "icon atlas full -- '%s' (%ux%u) rejected", name ? name : "?", w, h );
@@ -252,7 +252,7 @@ icon_register_sdf( const char* name, u32 w, u32 h, const u8* coverage, u32 out_m
     /* The SDF atlas is created lazily by its first add -- an SDF font today, an SDF icon now.  It
        is a separate texture from the coverage atlas for one reason: the sampler is chosen per DRAW
        from the model, and a field must filter LINEAR while coverage must stay NEAREST. */
-    u32 tenant = res_sdf_add( field, ow, oh );
+    u32 tenant = res_sdf_add( field, ow, oh, RES_TENANT_ICON );
     free( field );
     if ( tenant == 0 )
     {
