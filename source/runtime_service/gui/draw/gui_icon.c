@@ -54,6 +54,7 @@
 
    - Too small, and a toolbar icon has to magnify past its own texel grid to reach its on-screen
      size, which looks soft.
+
    - Too large, and a full icon set no longer fits the SDF atlas alongside the font glyphs that
      share the same atlas page.
 
@@ -71,12 +72,14 @@
 /* One registered icon: its name, stored dimensions, and its tenant handle.  UVs are NOT cached --
    they are derived live from the tenant's origin (icon_get), since a repack can move the tenant.
 
-   `sdf` is the fork, and it is per ICON rather than a mode the whole set runs in.  The two kinds
-   are genuinely different tools and both are wanted: coverage stays right for pixel-precise art
-   (a 16 px symbol tuned to the grid, anything with 1 px detail or deliberately hard corners, which
-   a field would round off), while a field is right for anything drawn at a size other than the one
-   it was baked at, rotated, or wanting an outline.  Mixing them costs nothing because the sampling
-   model rides the VERTEX -- a coverage icon, an SDF icon and an RGBA sprite share one draw call. */
+   `sdf` is the fork, and it is per ICON rather than a mode the whole set runs in. 
+
+   The two kinds are genuinely different tools and both are wanted: coverage stays right for 
+   pixel-precise art (a 16 px symbol tuned to the grid, anything with 1 px detail or deliberately
+   hard corners, which a field would round off), while a field is right for anything drawn at a 
+   size other than the one it was baked at, rotated, or wanting an outline.  Mixing them costs 
+   nothing because the sampling model rides the VERTEX -- a coverage icon, an SDF icon and an 
+   RGBA sprite share one draw call. */
 
 typedef struct
 {

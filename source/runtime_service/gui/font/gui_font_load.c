@@ -17,12 +17,12 @@
 /*==============================================================================================
     Stage 1 -- the header.
 
-    Read the v2/v3 BASE first and only then the v4 tail, because the tail does not exist in an
-    older file and a blind sizeof read would swallow the first glyph record.  The zeroed tail is
-    exactly the legacy meaning (sdf_range 0 = coverage), so nothing downstream needs to know which
-    version it got.  v3 (pure glyph coverage) and v2 (legacy, trailing reserved band) stay
-    byte-compatible on disk -- the band, if present, just rides along as dead space in this font's
-    packed rect.
+    orb_font_glyph_t's v5 layout is not byte-compatible with 2/3/4 (orb_font.h), so this loader
+    requires exactly ORB_FONT_VERSION -- an older file's glyph records would misread at the new,
+    smaller record size, not just underfill a header tail.  The BASE/tail split below is what's
+    left of the header-only v2->v4 history: the tail (sdf_range) still reads separately from the
+    base because that is the header's on-disk shape, even though every version this loader now
+    accepts already carries it.
 
     Dimensions are BOUNDED, not just nonzero: atlas_w * atlas_h sizes a malloc and the memory
     accounting, and an unchecked product wraps u32 (65536 x 65536 = 0) -- a corrupt file must die
@@ -38,16 +38,13 @@ font_header_read( FILE* f, orb_font_header_t* hdr )
     memset( hdr, 0, sizeof( *hdr ) );
     if ( fread( hdr, ORB_FONT_HEADER_BASE_SIZE, 1, f ) != 1
          || hdr->magic   != ORB_FONT_MAGIC
-         || hdr->version  < 2u || hdr->version > ORB_FONT_VERSION
+         || hdr->version  != ORB_FONT_VERSION
          || hdr->glyph_count == 0 || hdr->glyph_count > ORB_FONT_MAX_GLYPHS
          || hdr->atlas_w == 0     || hdr->atlas_w > ORB_FONT_PAGE_MAX_W_SDF
          || hdr->atlas_h == 0     || hdr->atlas_h > 4096u
          || hdr->ascent <= hdr->descent
          || hdr->ascent - hdr->descent + hdr->line_gap <= 0 )
         return false;
-
-    if ( hdr->version < 4u )
-        return true;
 
     size_t tail = sizeof( *hdr ) - ORB_FONT_HEADER_BASE_SIZE;
     if ( fread( (u8*)hdr + ORB_FONT_HEADER_BASE_SIZE, 1, tail, f ) != tail )

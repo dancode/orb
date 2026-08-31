@@ -20,16 +20,33 @@
 #define ORB_FONT_MAGIC    0x544E464Fu
 
 /* Format versions:
+     5  orb_font_glyph_t shrank: w, h, advance became uint8_t and bearing_x, bearing_y became
+        int8_t (ORB_FONT_GLYPH_DIM_MAX / ORB_FONT_GLYPH_BEARING_MIN/MAX), and the trailing _pad
+        was dropped.  The glyph record layout breaks byte compatibility, so the loader requires
+        exactly v5 -- an older file's records would misread at the new (smaller) record size, not
+        just underfill a tail like the header-only bumps below.  The baker (dev_font_bake_write)
+        rejects any glyph that would not fit these ranges, so a v5 file never carries a truncated
+        value.
      4  Header gained `sdf_range`, so a font can be a DISTANCE FIELD instead of coverage.  The
-        header grew by one u32; everything before it is unchanged, which is what lets the loader
+        header grew by one u32; everything before it is unchanged, which is what let a v4 loader
         read the base and then the tail (see ORB_FONT_HEADER_BASE_SIZE).
      3  Glyphs are packed full-height; the atlas is pure glyph coverage, no reserved band.  The gui
         runtime draws its white texel + dash-pattern rows from a shared resource atlas
         (gui_res_atlas.c), so a font no longer carries drawing assists of its own.
-     2  (legacy, still loadable) Left the bottom 5 rows blank for gui to paint assists into at load.
-   The on-disk structure is byte-identical across 2 and 3 -- only atlas_h differs (v2 carries the
-   trailing band) -- so the loader accepts either version. */
-#define ORB_FONT_VERSION  4u
+     2  Left the bottom 5 rows blank for gui to paint assists into at load.
+   The header layout below still documents how 2/3/4 were shaped -- ORB_FONT_HEADER_BASE_SIZE is
+   the byte offset every version through 4 shared -- but font_header_read requires v5 outright, so
+   none of that compatibility is reachable any more. */
+#define ORB_FONT_VERSION  5u
+
+/* Per-glyph metric ceiling backing the u8/i8 fields below: a bitmap dimension or the horizontal
+   advance never exceeds this many pixels, and a bearing never leaves this signed range.  Text
+   that needs to scale past it bakes as an SDF instead -- one moderate-resolution bitmap scales
+   freely at draw time, so a raw coverage glyph never legitimately needs to be this large.  The
+   baker (dev_font_bake_write) rejects an oversized glyph outright; nothing narrows it. */
+#define ORB_FONT_GLYPH_DIM_MAX      255
+#define ORB_FONT_GLYPH_BEARING_MIN (-128)
+#define ORB_FONT_GLYPH_BEARING_MAX  127
 
 /* Byte size of the v2/v3 header -- magic through glyph_count.  A v4 reader loads this much, checks
    the version, and only then reads the tail, so every older file still parses with the new struct
@@ -102,15 +119,14 @@ _Static_assert( offsetof( orb_font_header_t, sdf_range ) == ORB_FONT_HEADER_BASE
 
 typedef struct
 {
-    uint32_t codepoint;     /* Unicode codepoint (32..126 for our built-in fonts) */    
+    uint32_t codepoint;     /* Unicode codepoint (32..126 for our built-in fonts) */
     uint16_t atlas_x;       /* pixel origin in atlas                     */
     uint16_t atlas_y;       /* pixel origin in atlas                     */
-    uint16_t w;             /* bitmap width in pixels (0 for whitespace) */
-    uint16_t h;             /* bitmap height in pixels                   */
-    int16_t  bearing_x;     /* cursor-to-left-edge offset in pixels      */
-    int16_t  bearing_y;     /* baseline-to-top-edge offset (positive up) */
-    uint16_t advance;       /* horizontal cursor advance in pixels       */
-    uint16_t _pad;
+    uint8_t  w;             /* bitmap width in pixels (0 for whitespace); ORB_FONT_GLYPH_DIM_MAX ceiling */
+    uint8_t  h;             /* bitmap height in pixels; ORB_FONT_GLYPH_DIM_MAX ceiling */
+    int8_t   bearing_x;     /* cursor-to-left-edge offset in pixels; ORB_FONT_GLYPH_BEARING_MIN/MAX */
+    int8_t   bearing_y;     /* baseline-to-top-edge offset (positive up); ORB_FONT_GLYPH_BEARING_MIN/MAX */
+    uint8_t  advance;       /* horizontal cursor advance in pixels; ORB_FONT_GLYPH_DIM_MAX ceiling */
 
 } orb_font_glyph_t;
 

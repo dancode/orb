@@ -498,6 +498,26 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
         return false;
     }
 
+    /* orb_font_glyph_t stores w, h and advance as uint8_t and the two bearings as int8_t -- reject
+       an oversized glyph here, before any packing work, so a truncated value can never reach the
+       file.  Text that needs to scale past this bakes as an SDF instead (one moderate-resolution
+       bitmap scales freely at draw time), so a legitimate coverage glyph never hits this. */
+    for ( u32 i = 0; i < count; ++i )
+    {
+        const dev_font_glyph_t* g = &glyphs[ i ];
+        if ( g->w > ORB_FONT_GLYPH_DIM_MAX || g->h > ORB_FONT_GLYPH_DIM_MAX
+          || g->advance > ORB_FONT_GLYPH_DIM_MAX
+          || g->bearing_x < ORB_FONT_GLYPH_BEARING_MIN || g->bearing_x > ORB_FONT_GLYPH_BEARING_MAX
+          || g->bearing_y < ORB_FONT_GLYPH_BEARING_MIN || g->bearing_y > ORB_FONT_GLYPH_BEARING_MAX )
+        {
+            set_error( "glyph U+%04X at %d px is %dx%d (bearing %d,%d, advance %d) -- exceeds the "
+                       "%d px / %d..%d bearing format ceiling; bake it as an SDF instead",
+                       g->codepoint, size_px, g->w, g->h, g->bearing_x, g->bearing_y, g->advance,
+                       ORB_FONT_GLYPH_DIM_MAX, ORB_FONT_GLYPH_BEARING_MIN, ORB_FONT_GLYPH_BEARING_MAX );
+            return false;
+        }
+    }
+
     /*------------------------------------------------------------------------------------------
         Pass 2 -- pack glyph rects into the smallest square atlas (ATLAS_MIN..ATLAS_MAX per side)
         that fits every glyph.  A fixed 512x512 canvas wastes most of its area for small fonts, so
@@ -601,7 +621,7 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
     for ( u32 i = 0; i < count; ++i )
     {
         out_glyphs[ i ].codepoint = glyphs[ i ].codepoint;
-        out_glyphs[ i ].advance   = (u16)glyphs[ i ].advance;
+        out_glyphs[ i ].advance   = (u8)glyphs[ i ].advance;
     }
 
     u32 used_h = 0;   /* bottom-most packed row + 1 -- the page is cropped to this (see below) */
@@ -618,10 +638,10 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
 
         og->atlas_x   = (u16)rects[ ri ].x;
         og->atlas_y   = (u16)rects[ ri ].y;
-        og->w         = (u16)r->w;
-        og->h         = (u16)r->h;
-        og->bearing_x = (i16)r->bearing_x;
-        og->bearing_y = (i16)r->bearing_y;
+        og->w         = (u8)r->w;
+        og->h         = (u8)r->h;
+        og->bearing_x = (i8)r->bearing_x;
+        og->bearing_y = (i8)r->bearing_y;
 
         packed_area += (u32)( r->w * r->h );
 

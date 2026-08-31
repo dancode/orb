@@ -16,13 +16,16 @@
 
 #include "runtime_service/gui/font/gui_font.h"
 
-/* A glyph record whose advance encodes its codepoint, so a lookup result identifies itself. */
+/* A glyph record whose advance encodes the codepoint's low byte, so a lookup result identifies
+   itself.  The actual match (font_slot_cp's binary search over ext[].codepoint) is unaffected --
+   codepoint stays a full u32 -- this only feeds the width-sum checks in test_font_measure_utf8,
+   which mask the expected codepoint the same way. */
 static orb_font_glyph_t
 font_case_rec( u32 cp )
 {
     orb_font_glyph_t g = { 0 };
     g.codepoint = cp;
-    g.advance   = (u16)( cp & 0xFFFFu );
+    g.advance   = (u8)( cp & 0xFFu );
     return g;
 }
 
@@ -39,7 +42,7 @@ font_case_slot( const u32* ext_cps, u32 ext_count, orb_font_glyph_t* ext_store )
     for ( u32 i = 0; i < ext_count; ++i )
         ext_store[ i ] = font_case_rec( ext_cps[ i ] );
     slot->ext       = ext_store;
-    slot->ext_count = ext_count;
+    slot->ext_count = (u16)ext_count;
     return slot;
 }
 
@@ -91,11 +94,14 @@ test_font_cp_ext_search( void )
     test_true( font_slot_cp( slot, 0x0101u )->advance == '?' );
 }
 
-/* Fill the LAST registry slot with the synthetic font (advance == codepoint & 0xFFFF, ext
-   carries e-acute / euro / the grinning-face emoji) and activate it.  Shared by the measure
+/* Fill the LAST registry slot with the synthetic font (advance == codepoint & 0xFF, ext
+   carries e-acute / euro / a slightly-smiling emoji) and activate it.  Shared by the measure
    case below and the caret cases in test_edit.c -- the readers under test all measure through
    the active-slot pointer, not a parameter.  Idempotent; the ext store is static and never
-   freed (no registry reset runs in this bed). */
+   freed (no registry reset runs in this bed).
+
+   The emoji is U+1F642, not the more obvious U+1F600: 0x1F600 & 0xFF is 0, which would give that
+   glyph zero width and make test_edit.c's midpoint-click case for it degenerate. */
 static void
 font_case_activate( void )
 {
@@ -105,9 +111,9 @@ font_case_activate( void )
         slot->lookup[ cp - ORB_FONT_CP_FIRST ] = font_case_rec( cp );
 
     static orb_font_glyph_t ext[ 3 ];
-    ext[ 0 ]        = font_case_rec( 0x00E9u );    /* e-acute, 2 bytes   */
-    ext[ 1 ]        = font_case_rec( 0x20ACu );    /* euro, 3 bytes      */
-    ext[ 2 ]        = font_case_rec( 0x1F600u );   /* emoji, 4 bytes     */
+    ext[ 0 ]        = font_case_rec( 0x00E9u );    /* e-acute, 2 bytes            */
+    ext[ 1 ]        = font_case_rec( 0x20ACu );    /* euro, 3 bytes               */
+    ext[ 2 ]        = font_case_rec( 0x1F642u );   /* slightly-smiling, 4 bytes   */
     slot->ext       = ext;
     slot->ext_count = 3;
     slot->used      = true;
@@ -125,9 +131,11 @@ test_font_measure_utf8( void )
     /* Pure ASCII: the dense fast path, one advance per byte. */
     test_true( font_text_w_n( "abc", 3 ) == (f32)( 'a' + 'b' + 'c' ) );
 
-    /* Mixed run: 2- and 3-byte sequences measure as ONE codepoint each, not per byte. */
-    test_true( font_text_w_n( "a\xC3\xA9\xE2\x82\xAC", 6 ) == (f32)( 'a' + 0x00E9 + 0x20AC ) );
-    test_true( font_text_w( "a\xC3\xA9" ) == (f32)( 'a' + 0x00E9 ) );
+    /* Mixed run: 2- and 3-byte sequences measure as ONE codepoint each, not per byte.  Expected
+       widths mask each codepoint to a byte, matching advance's u8 encoding (font_case_rec). */
+    test_true( font_text_w_n( "a\xC3\xA9\xE2\x82\xAC", 6 )
+               == (f32)( 'a' + ( 0x00E9 & 0xFF ) + ( 0x20AC & 0xFF ) ) );
+    test_true( font_text_w( "a\xC3\xA9" ) == (f32)( 'a' + ( 0x00E9 & 0xFF ) ) );
 
     /* Malformed input degrades per byte: an invalid lead and a NUL-truncated sequence each
        decode to the replacement codepoint with a 1-byte step, and measure as '?'. */
