@@ -52,14 +52,16 @@
    paging), not a bigger constant. */
 #define ORB_FONT_MAX_GLYPHS  2048u
 
-/* Max PAGE width by destination.  The gui runtime uploads a baked page into a shared atlas as ONE
-   tenant -- it is never re-packed per glyph -- so the page's shape is its permanent footprint
-   there, and a page wider than the atlas minus its gutter can never be placed at all.  Coverage
-   pages land in the 512-wide coverage atlas (1px packer pad), distance fields in the 1024-wide
-   SDF atlas (2px pad: the extrude ring); both caps take 2 off so the number stays right even if
-   the coverage atlas gains a ring.  These mirror GUI_RES_ATLAS_W / GUI_SDF_ATLAS_W
-   (gui_res_atlas.h); this header is the one contract the baker and the runtime already share,
-   which is what makes that coupling explicit rather than implied. */
+/* Max PAGE width by destination.  The gui runtime uploads a baked page into a shared atlas as
+   ONE tenant -- it is never re-packed per glyph -- so the page's shape is its permanent
+   footprint there, and the atlas has to grow to this width plus its gutter before the page can
+   be placed at all.  Coverage packs with a 1px pad, distance fields with 2px (the extrude ring);
+   both caps take 2 off so the number stays right even if coverage gains a ring.  The values
+   bound the BAKER: they keep the rung the runtime must double up to modest -- 512 wide for
+   coverage, 1024 for SDF -- well under GUI_RES_ATLAS_DIM_CAP (gui_res_atlas.h), which is where
+   a page is rejected outright.  The runtime atlases boot far smaller and grow on demand, so
+   these are not their dimensions.  This header is the one contract the baker and the runtime
+   already share, which is what makes that coupling explicit rather than implied. */
 #define ORB_FONT_PAGE_MAX_W_COVERAGE  510u
 #define ORB_FONT_PAGE_MAX_W_SDF       1022u
 

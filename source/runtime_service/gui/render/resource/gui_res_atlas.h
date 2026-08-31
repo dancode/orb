@@ -93,22 +93,25 @@
 #define GUI_RES_ATLAS_H            256u
 #endif
 
-/* The SDF atlas is WIDER, and that is a property of the data rather than a tuning knob.  A
-   distance-field glyph carries `spread` px of field on all four sides, so it costs several times
-   the area of its coverage twin, and the baker's skyline fills WIDTH first: a 16px face at spread 8
-   packs 512 wide.  A font's whole baked page arrives as ONE tenant, so a 512-wide page cannot go
-   into a 512-wide atlas at any occupancy -- the tenant plus its ring is simply larger than the
-   texture.  That failure is what these dimensions exist to prevent, and its only symptom is one
-   upload warning: the atlas stays empty and every glyph samples zero.
-   Height is modest because the baker crops the page to the rows it actually packed
-   (dev_font_bake_write), so a 16px face is ~512x153 and three fit here.  512 KiB, paid only by a
-   build that loads a distance-field font -- the instance is created lazily.  Grows like the
-   coverage atlas; only a page too large for the fully-grown atlas is rejected, loudly. */
+/* BOOT dimensions of the SDF atlas, 1 byte / pixel.  Same floor as the coverage atlas, and
+   for the ordinary build that is the whole story: the built-in icon set (icon_load_builtins)
+   is four 64x64 fields, ~16 KiB.  The instance is created lazily by the first res_sdf_add, so
+   a build with no distance-field content pays nothing at all.
+
+   A font page needs far more room and reaches it by GROWTH.  A distance-field glyph carries
+   `spread` px of field on all four sides, so it costs several times the area of its coverage
+   twin, and the baker's skyline fills WIDTH first: a 16px face at spread 8 packs 512 wide.
+   Height stays modest -- the baker crops the page to the rows it actually packed
+   (dev_font_bake_write), so that face is ~512x153.  A baked page arrives as ONE tenant and is
+   never re-packed per glyph, so the atlas doubles until the page plus its 2px ring fits.
+   ORB_FONT_PAGE_MAX_W_SDF bounds a page at 1022 wide, well inside GUI_RES_ATLAS_DIM_CAP; only
+   a page too large for the fully-grown atlas is rejected, loudly.
+   #ifndef-guarded so a stress target can shrink them (orb.targets `define`). */
 #ifndef GUI_SDF_ATLAS_W
-#define GUI_SDF_ATLAS_W            1024u
+#define GUI_SDF_ATLAS_W            256u
 #endif
 #ifndef GUI_SDF_ATLAS_H
-#define GUI_SDF_ATLAS_H            512u
+#define GUI_SDF_ATLAS_H            256u
 #endif
 
 /* Growth caps, by what a texel costs: the R8 atlases (coverage, SDF) may double up to
