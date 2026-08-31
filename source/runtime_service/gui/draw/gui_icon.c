@@ -57,10 +57,12 @@
    - Too large, and a full icon set no longer fits the SDF atlas alongside the font glyphs that
      share the same atlas page.
 
-   64x64 costs 4 KB of atlas space, so a 1024x512 atlas page has room for roughly 128 icons this
-   size alongside the fonts. */
+   62 rather than a round 64 so that the field plus its 2px extrude ring (gui_res_atlas.c: the
+   SDF atlas pads by two and seats the tenant one in) packs as a 64x64 cell, which tiles the
+   atlas exactly -- 16 icons fill a 256x256 boot atlas edge to edge, 128 a grown 1024x512.  A
+   caller naming its own out_max gets no such alignment, and does not need it. */
 
-#define ICON_SDF_SIZE_DEFAULT   64u
+#define ICON_SDF_SIZE_DEFAULT   62u
 
 /*==============================================================================================
     State

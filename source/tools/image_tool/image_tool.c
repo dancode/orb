@@ -426,7 +426,7 @@ icons_bake_line( char* line )
     char        in_path[ 384 ];
     snprintf( in_path, sizeof( in_path ), "assets/icon_source/%s", tok[ 1 ] );
 
-    int  size   = 256;   // generous headroom over icon_register_sdf's out_max default of 64
+    int  size   = 256;   // generous headroom over icon_register_sdf's out_max default of 62
     int  margin = 16;    // an SDF bake needs an outside to fall off into
     char out_path[ 384 ];
     snprintf( out_path, sizeof( out_path ), "assets/icon/%s.png", name );
