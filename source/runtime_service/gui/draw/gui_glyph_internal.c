@@ -78,7 +78,7 @@ font_slot_upload( font_slot_t* slot )
         }
     }
 
-    slot->atlas_tenant  = tenant;
+    slot->atlas_tenant  = (u16)tenant;     /* bounded by GUI_RES_ATLAS_MAX_TENANTS (320) */
     slot->tenant_sdf    = slot->sdf_range != 0;
     slot->needs_upload  = false;
     slot->upload_failed = false;

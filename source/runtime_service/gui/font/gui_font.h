@@ -27,11 +27,13 @@
 // clang-format off
 
 /* Capacity of the loaded-font registry.  Slot 0 is the default; loaded fonts occupy 1..MAX-1. */
+
 #define GUI_FONT_REGISTRY_MAX 16
 
 /* The active-font measurement surface, resolved once at load -- pure type metrics, what layout and
    measurement code read.  Nothing here names a GPU resource (atlas-sampling parameters belong to
    the shared resource atlas and are read render-side). */
+
 typedef struct
 {
     f32  line_h;   // total line advance
@@ -43,40 +45,21 @@ typedef struct
 /* One registry entry: a loaded proportional .orb_font.  Pure data -- it owns its resident glyph
    pixels; atlas_tenant is a bare handle into the shared resource atlas (0 = none), filled
    render-side after the pixels are uploaded; no GPU type appears here. */
+
 typedef struct
 {
     font_metrics_t      metrics;            // resolved metrics; the active pointer aims here
-    bool                used;               // slot occupied
-    u32                 atlas_tenant;       // handle into the shared resource atlas (render-filled)
-    bool                tenant_sdf;         // atlas the tenant was created in (render-filled) -- a
-                                            // handle only indexes its own atlas, so a reload that
-                                            // changes kind must release before re-adding
     i32                 ascent;             // pixels above baseline (positive)
     i32                 descent;            // pixels below baseline (negative)
-    orb_font_glyph_t    lookup[ ORB_FONT_CP_COUNT ];  // codepoints 32..126; advance == 0 = missing
 
-    /* Extended glyph records -- everything a -range bake carries beyond ASCII.  Sorted by codepoint
-       for binary search (font_slot_cp); owned here like `pixels` (malloc'd by the loader, freed on
-       reload / registry reset).  NULL/0 for an ASCII-only font, which keeps the dense lookup[] the
-       entire fast path. */
-    orb_font_glyph_t*   ext;                // sorted extended records (owned here); NULL if none
-    u32                 ext_count;          // records in ext[]
-
-    u8*                 pixels;             // resident R8 glyph bitmap (owned here); NULL until loaded
-    u32                 atlas_w;            // pixel width  of `pixels` (the packed .orb_font atlas)
-    u32                 atlas_h;            // pixel height of `pixels`
-    bool                needs_upload;       // pixels (re)loaded; the render side must pack them into the atlas
-    bool                upload_failed;      // the upload could not place the page (atlas growth capped):
-                                            // glyphs draw invisible (no tenant) and the render side stops
-                                            // retrying until a reload clears this
-
-    /* What the bytes in `pixels` MEAN: 0 = coverage, > 0 = a distance field with that spread in
-       pixels (orb_font.h, sdf_range).  It is a property of the LOADED FILE, so it is resolved once
-       here at parse time; the render side reads it to pick which atlas the glyphs pack into and
-       which sampling model their draws carry.  Metrics are identical either way -- an SDF glyph is
-       a larger bitmap with a compensating bearing, and the advance never moves -- so layout,
-       measurement and hit-testing never learn this exists. */
-    u32                 sdf_range;          // 0 = coverage bitmap; > 0 = distance field, spread px
+    u16                 atlas_tenant;       // handle into the shared resource atlas (render-filled) --
+                                            // capped at GUI_RES_ATLAS_MAX_TENANTS (320)
+    u16                 sdf_range;          // 0 = coverage bitmap; > 0 = distance field, spread px --
+                                            // bounded by ORB_FONT_PAGE_MAX_W_SDF at load (font_header_read)
+    u16                 atlas_w;            // pixel width  of `pixels` (the packed .orb_font atlas) --
+                                            // bounded by ORB_FONT_PAGE_MAX_W_SDF at load
+    u16                 atlas_h;            // pixel height of `pixels` -- bounded by 4096 at load
+    u16                 ext_count;          // records in ext[] -- bounded by ORB_FONT_MAX_GLYPHS (2048)
 
     /* Identity for debug readouts (the font overlay): the loaded file's family root, pool-interned
        (font_slot_name reads it back).  The "_NNpx" size token and any trailing tags that
@@ -85,6 +68,26 @@ typedef struct
        pooled entry per distinct pixel size it is ever asked for.  Purely informational -- nothing
        resolves or compares against it. */
     u16                 name_off;
+
+    bool                used;               // slot occupied
+    bool                tenant_sdf;         // atlas the tenant was created in (render-filled) -- a
+                                            // handle only indexes its own atlas, so a reload that
+                                            // changes kind must release before re-adding
+    bool                needs_upload;       // pixels (re)loaded; the render side must pack them into the atlas
+    bool                upload_failed;      // the upload could not place the page (atlas growth capped):
+                                            // glyphs draw invisible (no tenant) and the render side stops
+                                            // retrying until a reload clears this
+
+    orb_font_glyph_t    lookup[ ORB_FONT_CP_COUNT ];  // codepoints 32..126; advance == 0 = missing
+
+    /* Extended glyph records -- everything a -range bake carries beyond ASCII.  Sorted by codepoint
+       for binary search (font_slot_cp); owned here like `pixels` (malloc'd by the loader, freed on
+       reload / registry reset).  NULL/0 for an ASCII-only font, which keeps the dense lookup[] the
+       entire fast path. */
+
+    orb_font_glyph_t*   ext;                // sorted extended records (owned here); NULL if none
+
+    u8*                 pixels;             // resident R8 glyph bitmap (owned here); NULL until loaded
 
 } font_slot_t;
 

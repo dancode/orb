@@ -50,7 +50,13 @@ font_header_read( FILE* f, orb_font_header_t* hdr )
         return true;
 
     size_t tail = sizeof( *hdr ) - ORB_FONT_HEADER_BASE_SIZE;
-    return fread( (u8*)hdr + ORB_FONT_HEADER_BASE_SIZE, 1, tail, f ) == tail;
+    if ( fread( (u8*)hdr + ORB_FONT_HEADER_BASE_SIZE, 1, tail, f ) != tail )
+        return false;
+
+    /* The spread lives in the same baked-page space as atlas_w -- it cannot outreach the page that
+       holds it -- so that bound also caps font_slot_t.sdf_range (u16) from truncating a corrupt
+       file's value. */
+    return hdr->sdf_range <= ORB_FONT_PAGE_MAX_W_SDF;
 }
 
 /*==============================================================================================
@@ -161,16 +167,16 @@ font_slot_load( font_slot_t* slot, const char* path )
 
     free( slot->pixels );
     slot->pixels    = pixels;
-    slot->atlas_w   = hdr.atlas_w;
-    slot->atlas_h   = hdr.atlas_h;
-    slot->sdf_range = hdr.sdf_range;   /* 0 for every pre-v4 font: coverage, as before */
+    slot->atlas_w   = (u16)hdr.atlas_w;    /* bounded by ORB_FONT_PAGE_MAX_W_SDF, font_header_read */
+    slot->atlas_h   = (u16)hdr.atlas_h;    /* bounded by 4096, font_header_read */
+    slot->sdf_range = (u16)hdr.sdf_range;  /* bounded by ORB_FONT_PAGE_MAX_W_SDF, font_header_read; 0 for every pre-v4 font */
 
     slot->ascent  = hdr.ascent;
     slot->descent = hdr.descent;
     memcpy( slot->lookup, lookup, sizeof( lookup ) );
     free( slot->ext );
     slot->ext       = ext;
-    slot->ext_count = ext_count;
+    slot->ext_count = (u16)ext_count;      /* bounded by ORB_FONT_MAX_GLYPHS, font_header_read */
 
     /* Identity for debug readouts: the family root, pool-interned.  font_ship_name_parse strips
        the "_NNpx" size token and any trailing tags the same way the resolver's shipped-file scan
