@@ -43,7 +43,7 @@
    (sprite_get), since an atlas repack can move the tenant. */
 typedef struct
 {
-    u32       name_off;        // lookup key -- offset into the shared name pool (gui_names.h)
+    u16       name_off;        // lookup key -- offset into the shared name pool (gui_names.h)
     u16       w, h;           // source pixel dimensions
     gui_pad_t slice;          // nine-slice insets in SOURCE pixels ({0,0,0,0} = not sliced)
     u32       tenant;         // handle into the sprite atlas (0 = unused)

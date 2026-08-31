@@ -2,36 +2,100 @@
 
     runtime_service/gui/gui_names.c -- GUI_NAMES translation unit: the shared name pool.
 
-    Storage for the one gui_str_pool_t every resource registry's lookup-key string interns
-    into (gui_names.h).  Depends on nothing but the generic pool primitive, so it sits at the
+    Storage and implementation for the one string pool every GUI resource registry's lookup-key
+    string interns into (gui_names.h).  Depends on nothing but the C runtime, so it sits at the
     bottom of the stack next to gui_rect.c / gui_log.c and is reached the same way -- through
     the public gui.h chain -- rather than by each consumer including it directly.
 
+    Names live in one bump-allocated buffer and an entry keeps the u16 BYTE OFFSET returned by
+    gui_names_intern instead of a char[N] copy.  Interning deduplicates by scanning the existing
+    bytes for an identical string first; the pool stays small, so the linear scan is cheap.
+
+    The u16 offset caps the pool at 64 KB: gui_names_intern refuses (returns GUI_NAMES_NONE) once
+    the next entry would land at or past that ceiling, same as an allocator OOM.  s_names.top
+    itself stays u32 so the ceiling check has room to compare past it without wrapping.
+
+    There is no way to reclaim a single entry's bytes out of the middle of the buffer, so only a
+    registry whose entries GROW -- append, full reset at shutdown, never reassigned to different
+    content one at a time -- is a safe client.  A registry that overwrote an entry in place would
+    slowly orphan the old string forever.
+
+    A grow allocates a bigger buffer, copies the old bytes forward, and frees the old one.
+    Existing offsets stay valid across a grow because they are byte offsets, not pointers.
+
 ==============================================================================================*/
+
+#include <stdlib.h>
+#include <string.h>
 
 #include "orb.h"
 
-#include "runtime_service/gui/gui_str_pool.h"
 #include "runtime_service/gui/gui_names.h"
 
-static gui_str_pool_t s_names;
+static struct
+{
+    char* buf;    // bump-allocated backing storage; NULL until the first intern
+    u32   cap;    // bytes allocated at buf
+    u32   top;    // bytes used; the offset the next new entry would land at
 
-u32
+} s_names;
+
+#define GUI_NAMES_FIRST_CAP 256u    // initial buffer size; doubles from here
+
+u16
 gui_names_intern( const char* s )
 {
-    return gui_str_pool_intern( &s_names, s );
+    if ( !s ) s = "";
+    u32 len = (u32)strlen( s );
+
+    for ( u32 i = 0; i < s_names.top; )
+    {
+        u32 entry_len = (u32)strlen( s_names.buf + i );
+        if ( entry_len == len && memcmp( s_names.buf + i, s, len ) == 0 )
+            return (u16)i;
+        i += entry_len + 1u;
+    }
+
+    if ( s_names.top >= GUI_NAMES_NONE )
+        return GUI_NAMES_NONE;    // 64 KB u16-offset ceiling reached
+
+    u32 need = len + 1u;
+    if ( s_names.top + need > s_names.cap )
+    {
+        u32 new_cap = s_names.cap ? s_names.cap * 2u : GUI_NAMES_FIRST_CAP;
+        while ( new_cap < s_names.top + need )
+            new_cap *= 2u;
+        char* nb = (char*)malloc( new_cap );
+        if ( !nb )
+            return GUI_NAMES_NONE;
+        if ( s_names.buf )
+        {
+            memcpy( nb, s_names.buf, s_names.top );
+            free( s_names.buf );
+        }
+        s_names.buf = nb;
+        s_names.cap = new_cap;
+    }
+
+    u32 off = s_names.top;
+    memcpy( s_names.buf + off, s, need );
+    s_names.top += need;
+    return (u16)off;
 }
 
 const char*
-gui_names_cstr( u32 off )
+gui_names_cstr( u16 off )
 {
-    return gui_str_pool_cstr( &s_names, off );
+    return ( off == GUI_NAMES_NONE || !s_names.buf ) ? "" : s_names.buf + off;
 }
 
 void
 gui_names_reset( void )
 {
-    gui_str_pool_reset( &s_names );
+    free( s_names.buf );
+    s_names.buf = NULL;
+    s_names.cap = 0;
+    s_names.top = 0;
 }
 
 /*============================================================================================*/

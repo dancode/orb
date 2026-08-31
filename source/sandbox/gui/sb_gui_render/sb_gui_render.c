@@ -626,7 +626,8 @@ page_shapes( void )
         icon_size.x * scale,
         icon_size.y * scale,
     };
-    gui()->draw_icon_xf( icon_rect, save, AMBER, gui_radians( shape_rot_deg ));
+    // gui()->draw_icon_xf( icon_rect, save, AMBER, gui_radians( shape_rot_deg ));
+    gui()->draw_icon_in( icon_rect, save, AMBER );
 
     r = cell( 8, GRID_COLS, "icon_xf (rotated)" );
     gui_icon_id_t settings = gui()->find_icon( "settings" );

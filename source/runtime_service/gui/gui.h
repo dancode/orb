@@ -123,13 +123,13 @@ typedef enum
 {
     GUI_SDF_PAD_GROW = 0,   /* out_max is the INK's longest edge; the tenant comes out 2 * spread
                                larger.  The default: the caller states the art size it wants and
-                               the bake pays for the reach out of atlas area.                    */
+                               the bake pays for the reach out of atlas area. */
     GUI_SDF_PAD_KEEP,       /* out_max is the TENANT's longest edge and the source is used
                                UNCROPPED -- the import path for art authored with its own spacing.
                                The margin is measured rather than made, and a short one caps the
                                effective spread (reported back, so shape_reach cannot overstate). */
     GUI_SDF_PAD_INSET,      /* out_max is the TENANT's longest edge; the ART shrinks inside it to
-                               make room.  Costs ink resolution, spends no extra atlas.          */
+                               make room.  Costs ink resolution, spends no extra atlas. */
 
 } gui_sdf_pad_t;
 

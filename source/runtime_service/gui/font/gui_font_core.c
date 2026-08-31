@@ -255,7 +255,7 @@ font_registry_reset( void )
 /* Intern a family-root name for a registry slot (gui_font_load.c, after font_ship_name_parse
    strips the size token) into the shared pool.  A dedicated accessor rather than reaching
    across for gui_names_intern directly, matching font_alloc_slot / font_slot_ptr. */
-u32
+u16
 font_name_intern( const char* s )
 {
     return gui_names_intern( s );

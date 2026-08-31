@@ -80,7 +80,7 @@
 
 typedef struct
 {
-    u32  name_off;  // lookup key -- offset into the shared name pool (gui_names.h)
+    u16  name_off;  // lookup key -- offset into the shared name pool (gui_names.h)
     u16  w, h;      // STORED pixel dimensions (the field's, for an SDF icon)
     u16  tenant;    // packed: bits [0,15) = atlas handle (0 = unused), bit 15 = sdf flag
 

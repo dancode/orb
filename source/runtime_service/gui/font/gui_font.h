@@ -84,7 +84,7 @@ typedef struct
        number, so leaving it out of this string keeps one DPI-baked family from minting a new
        pooled entry per distinct pixel size it is ever asked for.  Purely informational -- nothing
        resolves or compares against it. */
-    u32                 name_off;
+    u16                 name_off;
 
 } font_slot_t;
 
@@ -156,7 +156,7 @@ void            font_registry_reset     ( void );       // clear the registry + 
 /* The name pool behind font_slot_t.name_off (gui_font_load.c interns into it; the font overlay
    reads back through font_slot_name).  A dedicated pair rather than exposing the pool itself,
    matching font_alloc_slot / font_slot_ptr. */
-u32             font_name_intern        ( const char* s );    // intern a family-root name; returns its offset
+u16             font_name_intern        ( const char* s );    // intern a family-root name; returns its offset
 const char*     font_slot_name          ( u32 id );           // "" for an unused or out-of-range slot
 
 /* Decentralized memory accounting -- the registry, summed into cpu_frontend_bytes. */

@@ -49,7 +49,7 @@
 
 typedef struct
 {
-    u32  name_off;      // lookup key -- offset into the shared name pool (gui_names.h)
+    u16  name_off;      // lookup key -- offset into the shared name pool (gui_names.h)
     u16  w, h;          // the padded tenant: ink plus its margin on all four sides
     u16  ink_x, ink_y;  // the art's box inside that tenant
     u16  ink_w, ink_h;  // the art's size inside that tenant

@@ -64,7 +64,7 @@ typedef struct
     u16  size_px;    // parsed from "_<N>px"
     u8   tagged;     // filename carries tags after the size token
     u8   sdf;        // "_sdf" tag present -- never auto-resolved (SDF is an authored choice)
-    u32  name_off;   // filename inside assets/font/ -- offset into the shared name pool (gui_names.h)
+    u16  name_off;   // filename inside assets/font/ -- offset into the shared name pool (gui_names.h)
 
 } font_ship_entry_t;
 
