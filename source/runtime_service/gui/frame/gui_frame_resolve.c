@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/frame/gui_frame_resolve.c -- THE FONT RESOLVER: (family, size) -> id.
+    gui/frame/gui_frame_resolve.c -- THE FONT RESOLVER: (family, size) -> id.
 
     Every managed font in the GUI comes through here: the boot font, the DPI engine's
     per-monitor sizes, the type ramp's SMALL/LARGE roles, and the public font_get.  A font is

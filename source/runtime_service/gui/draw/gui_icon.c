@@ -2,19 +2,21 @@
 
     runtime_service/gui/draw/gui_icon.c -- Runtime icon set.
 
-    Raw monochrome bitmaps registered at runtime (icon_register) and packed into the shared resource
-    atlas (gui_res_atlas.c) as tenants, so icons draw from the same texture -- and batch in the same
-    draw call -- as text and solid fills.  This file is resource bookkeeping only: the name table and
-    the mapping from gui_icon_id_t to a shared-atlas tenant.  The draw entry point, draw_push_icon,
-    lives in pipeline/gui_emit_shape.c and reads icon_get (UVs) + icon_atlas_idx (bindless slot) below.
+    Raw monochrome bitmaps registered at runtime (icon_register) and packed into the shared 
+    resource atlas (gui_res_atlas.c) as tenants, so icons draw from the same texture -- and 
+    batch in the same draw call -- as text and solid fills.  
+    
+    This file is resource bookkeeping only: the name table and the mapping from gui_icon_id_t
+    to a shared-atlas tenant.  
+    
+    The draw entry point, draw_push_icon, lives in pipeline/gui_emit_shape.c and reads 
+    icon_get (UVs) + icon_atlas_idx (bindless slot) below.
 
-    Pixel SOURCING is intentionally out of scope: callers supply raw R8 coverage bytes (row-major,
-    w*h, 0..255).  Whoever has the bytes -- procedural code today, the asset/image pipeline later --
-    feeds them in.  The shared atlas owns the resident copy and the deferred GPU upload, so
-    registration stays safe to call mid-frame (the upload lands at the next frame_begin flush).
-
-    Included by gui_draw.c after the glyph pair, both being tenants of the same atlas.  The atlas
-    itself is the render server's (gui_res_atlas.c, another TU), reached through its header.
+    Pixel SOURCING is intentionally out of scope: callers supply raw R8 coverage bytes 
+    (row-major, w*h, 0..255).  The bytes can be procedural code, the asset/image pipeliner.
+    
+    The shared atlas owns the resident copy and the deferred GPU upload, so registration 
+    stays safe to call mid-frame (the upload lands at the next frame_begin flush).
 
 ==============================================================================================*/
 // clang-format off
@@ -23,20 +25,42 @@
     Sizes
 ==============================================================================================*/
 
-#define ICON_MAX       256u     // max distinct icons
+#define ICON_MAX                256u     // max distinct icons
 
-/* The stored field's half-range for an SDF icon, in TEXELS (gui_sdf_bake.c).  It bounds two things
-   and neither is the antialiasing -- the fragment recovers that from fwidth() and does not care
-   what the spread is.  What it bounds is how wide a GUI_OP_TEXT_EDGE outline can grow before the
-   field saturates, and the quantization: 127 levels over the spread, so 4 px gives ~32 levels
-   across the one-pixel AA band.  An icon wants an outline, not a halo, so it stays narrow -- a
-   baked SHAPE, which wears the whole effect cascade, pads far wider (gui_shape.c). */
-#define ICON_SDF_SPREAD        4.0f
+/* An SDF icon stores how far a point sits from the icon's edge in texels of the STORED field 
+   (baked by gui_sdf_bake.c). ICON_SDF_SPREAD is the largest distance that encoding can hold 
+   before it saturates (clamps to fully-inside or fully-outside, with no distance left to read).
 
-/* Longest edge of the stored field when the caller does not name one.  Large enough that a toolbar
-   icon never magnifies past its own texel grid, small enough that a full set fits the SDF atlas
-   (1024x512): 64x64 is 4 KB, so ~128 icons share the page with the fonts. */
-#define ICON_SDF_SIZE_DEFAULT  64u
+   That spread controls two different things:
+
+   1. How wide an outline can grow.  A GUI_OP_TEXT_EDGE outline is drawn by walking outward from
+      the edge through the field, and it can only walk as far as the field still has distance to
+      give -- past the spread, everything reads as "far away" with no further detail.  Icons only
+      ever want a thin outline, not a soft halo, so a narrow spread is what they want here. (This
+      is why the baked SHAPE in gui_shape.c, which drives a much bigger effect cascade, picks a
+      far wider spread than this one.)
+
+   2. How fine the antialiasing looks.  The field is one byte per texel, giving 127 distinct
+      distance levels split across the spread on either side of the edge.  Antialiasing happens
+      in roughly a 1-pixel-wide band around the edge (the fragment shader measures that band
+      itself, via fwidth() -- it does not read this constant).  A spread of 4 texels puts about
+      32 of those 127 levels inside that 1-pixel band, which is enough to look smooth.  A wider
+      spread would spread the same 127 levels thinner and the edge would start to visibly band. */
+
+#define ICON_SDF_SPREAD         4.0f
+
+/* Longest edge of the STORED field, in texels, used when a caller registers an SDF icon without
+   naming a size (see icon_register_sdf).  Picked as a balance:
+
+   - Too small, and a toolbar icon has to magnify past its own texel grid to reach its on-screen
+     size, which looks soft.
+   - Too large, and a full icon set no longer fits the SDF atlas alongside the font glyphs that
+     share the same atlas page.
+
+   64x64 costs 4 KB of atlas space, so a 1024x512 atlas page has room for roughly 128 icons this
+   size alongside the fonts. */
+
+#define ICON_SDF_SIZE_DEFAULT   64u
 
 /*==============================================================================================
     State
@@ -51,14 +75,41 @@
    a field would round off), while a field is right for anything drawn at a size other than the one
    it was baked at, rotated, or wanting an outline.  Mixing them costs nothing because the sampling
    model rides the VERTEX -- a coverage icon, an SDF icon and an RGBA sprite share one draw call. */
+
 typedef struct
 {
     char name[ 32 ];        // lookup key (NUL-terminated, truncated to 31 chars)
     u16  w, h;              // STORED pixel dimensions (the field's, for an SDF icon)
-    u32  tenant;            // handle into its atlas (0 = unused)
-    bool sdf;               // false = shared coverage atlas, true = the SDF atlas
+    u16  tenant;            // packed: bits [0,15) = atlas handle (0 = unused), bit 15 = sdf flag
 
 } icon_entry_t;
+
+/* `tenant` packs the atlas handle and the sdf flag into one u16 instead of a u32 handle plus a
+   separate bool -- GUI_RES_ATLAS_MAX_TENANTS is 320, so 15 bits of handle is generous headroom,
+   and folding the flag into the spare top bit costs nothing where a standalone bool would have
+   cost a full 4 bytes once struct alignment padded it out.  Go through these three helpers rather
+   than hand-rolling the mask/shift at each call site. */
+
+#define ICON_SDF_BIT      0x8000u
+#define ICON_TENANT_MASK  0x7fffu
+
+static inline u16
+icon_pack_tenant( u32 tenant, bool sdf )
+{
+    return (u16)( tenant | ( sdf ? ICON_SDF_BIT : 0u ) );
+}
+
+static inline u32
+icon_tenant_value( u16 packed )
+{
+    return packed & ICON_TENANT_MASK;
+}
+
+static inline bool
+icon_tenant_sdf( u16 packed )
+{
+    return ( packed & ICON_SDF_BIT ) != 0;
+}
 
 typedef struct
 {
@@ -90,19 +141,23 @@ icon_atlas_shutdown( void )
 }
 
 /*==============================================================================================
+
     icon_register / icon_register_sdf -- pack one icon and return its id (0 on failure).
 
-    Two entry points over one body.  They differ in which atlas the tenant lands in and what its
-    bytes MEAN, which is the only thing about an icon that forks -- everything downstream (lookup,
-    UV derivation, the draw quad) is shared, because the sampling model travels in the vertex.
-==============================================================================================*/
+    Two entry points over one body.  They differ in which atlas the tenant lands in and what 
+    its bytes MEAN, which is the only thing about an icon that forks.
+    
+    Everything downstream (lookup, UV derivation, the draw quad) is shared, because the 
+    sampling model travels in the vertex.
 
-/* Record a packed tenant under `name`.  Both registrars end here; the caller has already chosen
-   the atlas and packed into it. */
+==============================================================================================*/
 
 static gui_icon_id_t
 icon_record( const char* name, u32 w, u32 h, u32 tenant, bool sdf )
 {
+    /* Record a packed tenant under `name`. Both registrars end here; the caller has 
+       already chosen the atlas and packed into it. */
+
     icon_entry_t* e = &s_icons.entries[ s_icons.count ];
     memset( e, 0, sizeof( *e ) );
     if ( name )
@@ -114,8 +169,7 @@ icon_record( const char* name, u32 w, u32 h, u32 tenant, bool sdf )
     }
     e->w      = (u16)w;
     e->h      = (u16)h;
-    e->tenant = tenant;
-    e->sdf    = sdf;
+    e->tenant = icon_pack_tenant( tenant, sdf );
 
     return (gui_icon_id_t)( ++s_icons.count );   /* id = (index + 1); 0 stays reserved for none */
 }
@@ -249,15 +303,15 @@ icon_get( gui_icon_id_t id, f32* u0, f32* v0, f32* u1, f32* v1, u32* w, u32* h )
        the tenant is a property of the icon, and the two are not the same size. */
     u32 ox, oy;
     f32 iw, ih;
-    if ( e->sdf )
+    if ( icon_tenant_sdf( e->tenant ) )
     {
-        res_sdf_origin( e->tenant, &ox, &oy );
+        res_sdf_origin( icon_tenant_value( e->tenant ), &ox, &oy );
         iw = res_sdf_inv_w();
         ih = res_sdf_inv_h();
     }
     else
     {
-        res_atlas_origin( e->tenant, &ox, &oy );
+        res_atlas_origin( icon_tenant_value( e->tenant ), &ox, &oy );
         iw = res_atlas_inv_w();
         ih = res_atlas_inv_h();
     }
@@ -291,7 +345,7 @@ icon_tex( gui_icon_id_t id )
     const icon_entry_t* e = icon_entry( id );
     if ( !e )
         return 0u;
-    if ( !e->sdf )
+    if ( !icon_tenant_sdf( e->tenant ) )
         return res_atlas_idx();
 
     u32 idx = res_sdf_idx();
@@ -326,7 +380,7 @@ icon_debug_entry( u32 index )
         d.name = e->name;
         d.w    = e->w;
         d.h    = e->h;
-        d.sdf  = e->sdf;
+        d.sdf  = icon_tenant_sdf( e->tenant );
     }
     return d;
 }
