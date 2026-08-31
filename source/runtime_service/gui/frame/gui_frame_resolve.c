@@ -64,7 +64,7 @@ typedef struct
     u16  size_px;    // parsed from "_<N>px"
     u8   tagged;     // filename carries tags after the size token
     u8   sdf;        // "_sdf" tag present -- never auto-resolved (SDF is an authored choice)
-    char name[ 96 ]; // filename inside assets/font/
+    u32  name_off;   // filename inside assets/font/ -- offset into the shared name pool (gui_names.h)
 
 } font_ship_entry_t;
 
@@ -297,7 +297,7 @@ resolve_ship_cb( const char* filename, const char* full_path, void* ud )
     e->size_px   = (u16)px;
     e->tagged    = tagged ? 1 : 0;
     e->sdf       = sdf ? 1 : 0;
-    fmt_snprintf( e->name, sizeof( e->name ), "%s", filename );
+    e->name_off  = gui_names_intern( filename );
     return true;
 }
 
@@ -335,7 +335,8 @@ resolve_ship_find( u32 stem_hash, u32 size_px )
 static void
 resolve_ship_path( const font_ship_entry_t* e, char* out, int out_size )
 {
-    fmt_snprintf( out, (size_t)out_size, "%s/assets/font/%s", sys_root_dir(), e->name );
+    fmt_snprintf( out, (size_t)out_size, "%s/assets/font/%s", sys_root_dir(),
+                  gui_names_cstr( e->name_off ) );
 }
 
 /*==============================================================================================
@@ -647,6 +648,19 @@ font_resolve_clear( void )
     }
 }
 
+/* True shutdown only -- unlike font_resolve_clear (also called mid-session on a family change,
+   which must never disturb the shipped-file listing), this drops the ship-scan itself so a
+   later gui_init rescans fresh rather than trusting a listing whose name_off values are about
+   to point into a name pool (gui_names.h) that gui_shutdown resets right after this call.
+   Call once, from gui_shutdown, after font_resolve_clear. */
+void
+font_resolve_shutdown( void )
+{
+    memset( s_resolver.ship, 0, sizeof( s_resolver.ship ) );
+    s_resolver.ship_count   = 0;
+    s_resolver.ship_scanned = false;
+}
+
 /* Install / replace the runtime baker.  Failure latches and stale degraded aliases are
    dropped -- the new baker may bake what the ladder had to substitute -- and the generation
    moves so the DPI engine re-resolves every viewport.  Exact loads are kept.  NULL uninstalls. */
@@ -709,11 +723,13 @@ font_resolve_debug_flags( u32 id, char* out, int out_size )
         out[ n++ ] = 'L';
     out[ n ] = 0;
 
-    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v ) 
+    {
         if ( s_resolver.pin[ FONT_PIN_VP0 + v ] == id && n < out_size - 3 )
         {
             n += fmt_snprintf( out + n, (size_t)( out_size - n ), "v%u", v );
         }
+    }
 }
 
 // clang-format on

@@ -246,8 +246,28 @@ font_registry_reset( void )
         free( s_fonts[ i ].ext );
     }
     memset( s_fonts, 0, sizeof( s_fonts ) );
+    /* The shared name pool (gui_names.h) is reset once, at true gui_shutdown -- not here, since
+       the font registry is only one of several registries interning into it. */
     s_active    = NULL;
     s_active_id = 0;
+}
+
+/* Intern a family-root name for a registry slot (gui_font_load.c, after font_ship_name_parse
+   strips the size token) into the shared pool.  A dedicated accessor rather than reaching
+   across for gui_names_intern directly, matching font_alloc_slot / font_slot_ptr. */
+u32
+font_name_intern( const char* s )
+{
+    return gui_names_intern( s );
+}
+
+/* The registry slot's display name (the font overlay's identity column) -- "" for an unused or
+   out-of-range slot. */
+const char*
+font_slot_name( u32 id )
+{
+    const font_slot_t* s = font_slot_ptr( id );
+    return ( s && s->used ) ? gui_names_cstr( s->name_off ) : "";
 }
 
 /*==============================================================================================

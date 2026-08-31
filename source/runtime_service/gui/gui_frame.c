@@ -105,6 +105,7 @@ void           font_resolve_frame_tick( void );
 bool           font_resolve_evict_stale( void );   /* also called upward by gui_res_atlas.c */
 void           font_resolve_pin       ( u32 pin_slot, u32 id );
 void           font_resolve_clear     ( void );
+void           font_resolve_shutdown  ( void );   /* drops the ship-scan listing; shutdown-only */
 
 /* Resolver debug readout, consumed by the font overlay -- gui_frame_overlay.c precedes
    gui_frame_resolve.c in this unit, so the ledger's window is declared here. */

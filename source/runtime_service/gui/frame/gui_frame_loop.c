@@ -184,7 +184,9 @@ gui_shutdown( void )
         viewport_destroy( v );
     gui_type_clear();         /* drop the ramp roles + bracket stack (unpins the role ids) */
     font_resolve_clear();     /* release the resolver's minted font slots + atlas tenants */
+    font_resolve_shutdown();  /* drop the ship-scan listing -- true teardown only */
     gui_draw_shutdown();      /* draw unit resources (fonts + icons) leave the atlas first */
+    gui_names_reset();        /* the one shared name pool -- every registry above is empty now */
     backend_exit();       /* shared pipeline / sampler / atlas */
 
     /* Free all context blocks. */

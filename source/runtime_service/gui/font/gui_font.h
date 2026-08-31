@@ -78,9 +78,13 @@ typedef struct
        measurement and hit-testing never learn this exists. */
     u32                 sdf_range;          // 0 = coverage bitmap; > 0 = distance field, spread px
 
-    /* Identity for debug readouts (the font overlay): the loaded file's basename, ".orb_font"
-       stripped.  Purely informational -- nothing resolves or compares against it. */
-    char                name[ 64 ];
+    /* Identity for debug readouts (the font overlay): the loaded file's family root, pool-interned
+       (font_slot_name reads it back).  The "_NNpx" size token and any trailing tags that
+       font_ship_name_parse strips are not kept here -- metrics.size already carries the size as a
+       number, so leaving it out of this string keeps one DPI-baked family from minting a new
+       pooled entry per distinct pixel size it is ever asked for.  Purely informational -- nothing
+       resolves or compares against it. */
+    u32                 name_off;
 
 } font_slot_t;
 
@@ -148,6 +152,12 @@ font_slot_t*    font_slot_ptr           ( u32 id );     // registry slot by id (
 font_slot_t*    font_active_slot        ( void );       // active slot (render's glyph dispatch reads it)
 void            font_slot_clear         ( u32 id );     // free + zero one slot (active re-aims at 0); id 0 refused
 void            font_registry_reset     ( void );       // clear the registry + active pointers (shutdown)
+
+/* The name pool behind font_slot_t.name_off (gui_font_load.c interns into it; the font overlay
+   reads back through font_slot_name).  A dedicated pair rather than exposing the pool itself,
+   matching font_alloc_slot / font_slot_ptr. */
+u32             font_name_intern        ( const char* s );    // intern a family-root name; returns its offset
+const char*     font_slot_name          ( u32 id );           // "" for an unused or out-of-range slot
 
 /* Decentralized memory accounting -- the registry, summed into cpu_frontend_bytes. */
 u32 font_unit_mem_bytes( void );

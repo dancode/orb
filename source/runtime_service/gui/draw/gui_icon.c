@@ -78,9 +78,9 @@
 
 typedef struct
 {
-    char name[ 32 ];        // lookup key (NUL-terminated, truncated to 31 chars)
-    u16  w, h;              // STORED pixel dimensions (the field's, for an SDF icon)
-    u16  tenant;            // packed: bits [0,15) = atlas handle (0 = unused), bit 15 = sdf flag
+    u32  name_off;  // lookup key -- offset into the shared name pool (gui_names.h)
+    u16  w, h;      // STORED pixel dimensions (the field's, for an SDF icon)
+    u16  tenant;    // packed: bits [0,15) = atlas handle (0 = unused), bit 15 = sdf flag
 
 } icon_entry_t;
 
@@ -137,6 +137,8 @@ icon_atlas_init( void )
 void
 icon_atlas_shutdown( void )
 {
+    /* The shared name pool (gui_names.h) is reset once, at true gui_shutdown -- not here,
+       since icons are only one of several registries interning into it. */
     memset( &s_icons, 0, sizeof( s_icons ) );
 }
 
@@ -160,13 +162,7 @@ icon_record( const char* name, u32 w, u32 h, u32 tenant, bool sdf )
 
     icon_entry_t* e = &s_icons.entries[ s_icons.count ];
     memset( e, 0, sizeof( *e ) );
-    if ( name )
-    {
-        u32 i = 0;
-        for ( ; i < sizeof( e->name ) - 1 && name[ i ]; ++i )
-            e->name[ i ] = name[ i ];
-        e->name[ i ] = '\0';
-    }
+    e->name_off = gui_names_intern( name );
     e->w      = (u16)w;
     e->h      = (u16)h;
     e->tenant = icon_pack_tenant( tenant, sdf );
@@ -283,10 +279,8 @@ icon_find( const char* name )
 {
     if ( !name )
         return GUI_ICON_NONE;
-    /* Compare within the stored capacity: names register truncated to 31 chars, so a longer
-       query must match by the same rule or a registered icon becomes unfindable by its own name. */
     for ( u32 i = 0; i < s_icons.count; ++i )
-        if ( strncmp( s_icons.entries[ i ].name, name, sizeof( s_icons.entries[ i ].name ) - 1 ) == 0 )
+        if ( strcmp( gui_names_cstr( s_icons.entries[ i ].name_off ), name ) == 0 )
             return (gui_icon_id_t)( i + 1 );
     return GUI_ICON_NONE;
 }
@@ -377,7 +371,7 @@ icon_debug_entry( u32 index )
     if ( index < s_icons.count )
     {
         const icon_entry_t* e = &s_icons.entries[ index ];
-        d.name = e->name;
+        d.name = gui_names_cstr( e->name_off );
         d.w    = e->w;
         d.h    = e->h;
         d.sdf  = icon_tenant_sdf( e->tenant );

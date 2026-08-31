@@ -49,13 +49,13 @@
 
 typedef struct
 {
-    char name[ 32 ];        // lookup key (NUL-terminated, truncated to 31 chars)
-    u16  w, h;              // the padded tenant: ink plus its margin on all four sides
-    u16  ink_x, ink_y;      // the art's box inside that tenant
-    u16  ink_w, ink_h;      // the art's size inside that tenant
-    f32  spread;            // texels of field either side of the outline the tenant ACTUALLY holds
-                            //   -- the KEEP policy can cap this below what was asked for
-    u32  tenant;            // handle into the SDF atlas (0 = unused)
+    u32  name_off;      // lookup key -- offset into the shared name pool (gui_names.h)
+    u16  w, h;          // the padded tenant: ink plus its margin on all four sides
+    u16  ink_x, ink_y;  // the art's box inside that tenant
+    u16  ink_w, ink_h;  // the art's size inside that tenant
+    f32  spread;        // texels of field either side of the outline the tenant ACTUALLY holds
+                        //   -- the KEEP policy can cap this below what was asked for
+    u32  tenant;        // handle into the SDF atlas (0 = unused)
 
 } shape_entry_t;
 
@@ -81,8 +81,9 @@ shape_init( void )
 static void
 shape_shutdown( void )
 {
-    /* The tenants belong to the atlas and go with it (res_atlas_shutdown); this table owns no
-       pixels of its own, so forgetting the names is the whole teardown. */
+    /* The tenants belong to the atlas and go with it (res_atlas_shutdown); the shared name pool
+       (gui_names.h) is reset once, at true gui_shutdown, since shapes are only one of several
+       registries interning into it -- so forgetting the entries is the whole teardown here. */
 
     memset( &s_shapes, 0, sizeof( s_shapes ) );
     s_shapes.ready = false;
@@ -144,12 +145,7 @@ shape_register( const char* name, u32 w, u32 h, const u8* coverage, const gui_sh
 
     shape_entry_t* e = &s_shapes.entries[ s_shapes.count ];
     memset( e, 0, sizeof( *e ) );
-    if ( name )
-    {
-        size_t n = strlen( name );
-        if ( n >= sizeof( e->name ) ) n = sizeof( e->name ) - 1;
-        memcpy( e->name, name, n );
-    }
+    e->name_off = gui_names_intern( name );
     e->w      = (u16)out.full_w;
     e->h      = (u16)out.full_h;
     e->ink_x  = (u16)out.ink_x;
@@ -181,7 +177,7 @@ shape_find( const char* name )
     if ( !name )
         return GUI_SHAPE_NONE;
     for ( u32 i = 0; i < s_shapes.count; ++i )
-        if ( strncmp( s_shapes.entries[ i ].name, name, sizeof( s_shapes.entries[ i ].name ) - 1 ) == 0 )
+        if ( strcmp( gui_names_cstr( s_shapes.entries[ i ].name_off ), name ) == 0 )
             return (gui_shape_id_t)( i + 1 );
     return GUI_SHAPE_NONE;
 }

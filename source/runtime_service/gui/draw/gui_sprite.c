@@ -43,7 +43,7 @@
    (sprite_get), since an atlas repack can move the tenant. */
 typedef struct
 {
-    char      name[ 32 ];     // lookup key (NUL-terminated, truncated to 31 chars)
+    u32       name_off;        // lookup key -- offset into the shared name pool (gui_names.h)
     u16       w, h;           // source pixel dimensions
     gui_pad_t slice;          // nine-slice insets in SOURCE pixels ({0,0,0,0} = not sliced)
     u32       tenant;         // handle into the sprite atlas (0 = unused)
@@ -68,6 +68,8 @@ static sprite_set_t s_sprites;
 void
 sprite_registry_shutdown( void )
 {
+    /* The shared name pool (gui_names.h) is reset once, at true gui_shutdown -- not here, since
+       sprites are only one of several registries interning into it. */
     memset( &s_sprites, 0, sizeof( s_sprites ) );
 }
 
@@ -101,13 +103,7 @@ sprite_register( const char* name, u32 w, u32 h, const u8* rgba )
 
     sprite_entry_t* e = &s_sprites.entries[ s_sprites.count ];
     memset( e, 0, sizeof( *e ) );
-    if ( name )
-    {
-        u32 i = 0;
-        for ( ; i < sizeof( e->name ) - 1 && name[ i ]; ++i )
-            e->name[ i ] = name[ i ];
-        e->name[ i ] = '\0';
-    }
+    e->name_off = gui_names_intern( name );
     e->w      = (u16)w;
     e->h      = (u16)h;
     e->tenant = tenant;
@@ -133,10 +129,8 @@ sprite_find( const char* name )
 {
     if ( !name )
         return GUI_SPRITE_NONE;
-    /* Compare within the stored capacity: names register truncated to 31 chars, so a longer
-       query must match by the same rule or a registered sprite becomes unfindable by its own name. */
     for ( u32 i = 0; i < s_sprites.count; ++i )
-        if ( strncmp( s_sprites.entries[ i ].name, name, sizeof( s_sprites.entries[ i ].name ) - 1 ) == 0 )
+        if ( strcmp( gui_names_cstr( s_sprites.entries[ i ].name_off ), name ) == 0 )
             return (gui_sprite_id_t)( i + 1 );
     return GUI_SPRITE_NONE;
 }

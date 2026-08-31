@@ -172,19 +172,35 @@ font_slot_load( font_slot_t* slot, const char* path )
     slot->ext       = ext;
     slot->ext_count = ext_count;
 
-    /* Identity for debug readouts: the file's basename, ".orb_font" stripped. */
+    /* Identity for debug readouts: the family root, pool-interned.  font_ship_name_parse strips
+       the "_NNpx" size token and any trailing tags the same way the resolver's shipped-file scan
+       does; metrics.size (set below) already carries the size as a number, so keeping it out of
+       this string is what keeps the name pool bounded (gui_font.h, font_slot_t.name_off). */
     {
         const char* base = path;
         for ( const char* p = path; *p; ++p )
             if ( *p == '/' || *p == '\\' )
                 base = p + 1;
-        u32 n = 0;
-        for ( ; base[ n ] && n < sizeof( slot->name ) - 1; ++n )
-            slot->name[ n ] = base[ n ];
-        slot->name[ n ] = 0;
-        char* dot = strrchr( slot->name, '.' );
-        if ( dot && strcmp( dot, ".orb_font" ) == 0 )
-            *dot = 0;
+
+        char stem[ 64 ];
+        if ( font_ship_name_parse( base, stem, sizeof( stem ), NULL, NULL, NULL ) )
+        {
+            slot->name_off = font_name_intern( stem );
+        }
+        else
+        {
+            /* No "_NNpx" token -- e.g. a dev-loaded font outside the shipped naming convention.
+               Fall back to the whole basename, extension stripped. */
+            char whole[ 96 ];
+            u32  n = 0;
+            for ( ; base[ n ] && n < sizeof( whole ) - 1; ++n )
+                whole[ n ] = base[ n ];
+            whole[ n ] = 0;
+            char* dot = strrchr( whole, '.' );
+            if ( dot && strcmp( dot, ".orb_font" ) == 0 )
+                *dot = 0;
+            slot->name_off = font_name_intern( whole );
+        }
     }
 
     slot->used          = true;

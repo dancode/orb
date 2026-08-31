@@ -755,13 +755,14 @@ overlay_fonts( void )
             char flags[ 16 ];
             font_resolve_debug_flags( id, flags, sizeof( flags ) );
 
+            const char* fname = font_slot_name( id );
             gui_textf( "%c%2u %3upx %4u gl %4ux%-4u %-4s %s%s%s",
                        id == font_active_id() ? '*' : ' ', id,
                        (u32)( s->metrics.size + 0.5f ),
                        (u32)ORB_FONT_CP_COUNT + s->ext_count,
                        s->atlas_w, s->atlas_h,
                        flags,
-                       s->name[ 0 ] ? s->name : "(unnamed)",
+                       fname[ 0 ] ? fname : "(unnamed)",
                        s->sdf_range     ? " sdf" : "",
                        s->upload_failed ? " !"   : "" );
         }
