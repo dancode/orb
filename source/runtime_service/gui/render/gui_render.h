@@ -173,7 +173,7 @@ bool shape_metrics ( gui_shape_id_t id, u32* ink_x, u32* ink_y, u32* ink_w, u32*
 
 /* re-uploads if dirty; true when pixels were sent */
 
-bool            res_atlas_flush_upload  ( void );   
+bool            res_atlas_flush_upload  ( void );
 
 /* Occupancy diagnostics (mem stats print): percent of the packable region covered, live tenant
    count, current dimensions (the atlases grow under pressure; 0-dims = never created). */

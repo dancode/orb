@@ -176,7 +176,9 @@ icon_record( const char* name, u32 w, u32 h, u32 tenant, bool sdf )
     e->h      = (u16)h;
     e->tenant = icon_pack_tenant( tenant, sdf );
 
-    return (gui_icon_id_t)( ++s_icons.count );   /* id = (index + 1); 0 stays reserved for none */
+    /* id = (index + 1); 0 stays reserved for none */
+
+    return (gui_icon_id_t)( ++s_icons.count );   
 }
 
 gui_icon_id_t
@@ -201,16 +203,18 @@ icon_register( const char* name, u32 w, u32 h, const u8* coverage )
 }
 
 /*==============================================================================================
+
     icon_register_sdf -- convert coverage to a distance field and pack it into the SDF atlas.
 
-    `out_max` is the longest edge of the STORED field (0 takes ICON_SDF_SIZE_DEFAULT).  It is never
-    allowed above the source's longest edge: upsampling invents no detail, it only spends atlas.
-    The source SHOULD be several times larger than that -- see gui_icon_sdf.c for why the whole
-    point is transforming at high resolution and storing the field low.
+    `out_max` is the longest edge of the STORED field (0 takes ICON_SDF_SIZE_DEFAULT). 
+    It is never allowed above the source's longest edge: upsampling invents no detail, it only 
+    spends atlas. The source SHOULD be several times larger than that -- see gui_icon_sdf.c 
+    for why the whole point is transforming at high resolution and storing the field low.
 
     Note what the id then means downstream: nothing.  A caller draws an SDF icon with the same
     draw_icon_in it always used, and gets resolution independence, free rotation through the
     transform path, and GUI_OP_TEXT_EDGE outlines, without naming any of it.
+
 ==============================================================================================*/
 
 gui_icon_id_t

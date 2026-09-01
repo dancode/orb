@@ -683,9 +683,11 @@ void res_atlas_shutdown( void )
     res_destroy( &s_sdf );
 }
 
+/*============================================================================================*/
 /* Resident CPU heap one atlas owns: the staging mirror plus every tenant's retained source copy.
    Summed across the three instances for the memory accounting (gui_render_mem.c) -- the instance
    RECORDS are statics counted there by sizeof; this is the malloc'd side. */
+
 static u32
 res_cpu_heap_bytes( const res_atlas_t* a )
 {
@@ -715,6 +717,7 @@ void res_atlas_kind_bytes ( u32 out[ RES_TENANT_KIND_COUNT ] ) { res_kind_bytes(
 void res_sprite_kind_bytes( u32 out[ RES_TENANT_KIND_COUNT ] ) { res_kind_bytes( &s_spr, out ); }
 void res_sdf_kind_bytes   ( u32 out[ RES_TENANT_KIND_COUNT ] ) { res_kind_bytes( &s_sdf, out ); }
 
+/*============================================================================================*/
 /* Every atlas flushes here so the frame loop keeps ONE upload seam.  Not short-circuited: a dirty
    sprite or SDF atlas must upload even when the coverage atlas is clean, and the caller's "pixels
    were sent" verdict is the OR across all three. */
@@ -731,17 +734,28 @@ bool res_atlas_update    ( u32 h_, const u8* src, u32 w, u32 h )              { 
 void res_atlas_remove    ( u32 handle )                                       { res_remove( &s_res, handle ); }
 void res_atlas_origin    ( u32 handle, u32* ox, u32* oy )                     { res_origin( &s_res, handle, ox, oy ); }
 
-/* Dimension accessors read the INSTANCE (the atlas grows), falling back to the boot constants
-   while a lazily-created atlas does not exist yet -- a caller asking a not-yet-created atlas for
-   its UV scale must not get 1/0.  The coverage atlas is created at boot, so it has no fallback. */
+/*==============================================================================================
 
-u32  res_atlas_idx        ( void ) { return s_res.atlas.atlas_idx; }
-f32  res_atlas_inv_w      ( void ) { return 1.0f / (f32)s_res.w; }
+   Dimension Accessors:
+   
+   Reads the INSTANCE (the atlas grows), and falling back to the boot constants while a lazily
+   created atlas does not exist yet -- a caller asking a not-yet-created atlas for its UV 
+   scale must not get 1/0. 
+   
+   The coverage atlas is created at boot, so it has no fallback.
+
+==============================================================================================*/
+
+u32  res_atlas_idx        ( void ) { return s_res.atlas.atlas_idx; }    // bindless texture index 
+f32  res_atlas_inv_w      ( void ) { return 1.0f / (f32)s_res.w; }      // 
 f32  res_atlas_inv_h      ( void ) { return 1.0f / (f32)s_res.h; }
 u32  res_atlas_generation ( void ) { return s_res.generation; }
 u32  res_atlas_bytes      ( void ) { return s_res.w * s_res.h; }
 
-void res_atlas_size( u32* w, u32* h ) { *w = s_res.w; *h = s_res.h; }
+void res_atlas_size( u32* w, u32* h ) 
+{ 
+    *w = s_res.w; *h = s_res.h; 
+}
 
 void res_atlas_occupancy( f32* pct, u32* tenants, u32* w, u32* h )
 {
