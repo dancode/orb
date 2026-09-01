@@ -10,6 +10,7 @@
     Usage:
         font_tool <input.ttf | "Font Name"> <size_px> [output.orb_font] [-sdf[=spread]] [-range=<spec>]
         font_tool info [<file.orb_font> | <dir>]...     -- print .orb_font header internals
+        font_tool manifest <fonts.manifest>             -- bake every line of a manifest
 
     Input may be a path, a bare filename, or an installed font name; dev_font_resolve searches
     assets/font_source/ then the OS fonts.  With no output argument the path is derived as
@@ -618,6 +619,7 @@ usage_print( void )
     fprintf( stderr,
         "usage: font_tool <input.ttf | \"Font Name\"> <size_px> [output.orb_font] [-sdf[=spread]] [-range=<spec>]\n"
         "       font_tool info [<file.orb_font> | <dir>]...   (print header internals)\n"
+        "       font_tool manifest <fonts.manifest>           (bake every line of a manifest)\n"
         "       input may be a path, a bare filename, or an installed font name\n"
         "       output defaults to assets/font/<name>_<size>px[_<range>][_sdf].orb_font\n"
         "       -sdf bakes a distance field (default spread %d px) instead of coverage\n"
@@ -744,55 +746,45 @@ out_path_resolve( const cli_t* cli, const char* ttf_abs, const char* font_dir,
 }
 
 /*==============================================================================================
-    main
+    bake_one -- resolve, rasterize and write a single font per an already-parsed cli_t.
+
+    Shared by the single-shot command line and the `manifest` subcommand below, so a manifest
+    bake goes through the exact same path a direct invocation does.  Caller has already called
+    dev_font_init() and set up s_range_count/s_range_suffix (via -range or the ASCII default).
 ==============================================================================================*/
 
-int
-main( int argc, char** argv )
+static bool
+bake_one( const cli_t* cli )
 {
-    /* Subcommand: `info` prints .orb_font header internals (read-only diagnostic). */
-    if ( argc >= 2 && strcmp( argv[ 1 ], "info" ) == 0 )
-        return run_info( argc - 2, argv + 2 );
-
-    cli_t cli;
-    if ( !cli_parse( argc, argv, &cli ) )
-        return 1;
-
-    /* No -range on the command line: exactly the ASCII contract, as every bake before the flag. */
-    if ( s_range_count == 0 )
-        s_range_count = dev_font_range_parse( NULL, s_ranges, DEV_FONT_RANGE_MAX );
-
     uint32_t cp_total = range_codepoint_count();
     if ( cp_total > ORB_FONT_MAX_GLYPHS )
     {
         fprintf( stderr, "error: -range spans %u codepoints, format cap is %u\n",
                  cp_total, ORB_FONT_MAX_GLYPHS );
-        return 1;
+        return false;
     }
 
     /* dev_font owns both ends of the file system: it resolves a bare filename or friendly name
        ("Cascadia Mono") against assets/font_source/ and the OS fonts -- the same search the runtime
        stb baker does -- and it names the output dir.  Final (FreeType) bakes land in assets/font/,
        parallel to the assets/font_cache/ the runtime uses, so the two paths cannot drift. */
-    dev_font_init( NULL );
-
     char ttf_abs[ FONT_PATH_MAX ];
-    if ( !dev_font_resolve( cli.ttf_arg, ttf_abs, sizeof( ttf_abs ) ) )
+    if ( !dev_font_resolve( cli->ttf_arg, ttf_abs, sizeof( ttf_abs ) ) )
     {
         fprintf( stderr, "error: %s\n", dev_font_last_error() );
-        return 1;
+        return false;
     }
 
     char font_dir[ FONT_PATH_MAX ];
     if ( !dev_font_dir( font_dir, sizeof( font_dir ) ) )
     {
         fprintf( stderr, "error: dev_font not initialized\n" );
-        return 1;
+        return false;
     }
 
     char out_path[ FONT_PATH_MAX ];
-    if ( !out_path_resolve( &cli, ttf_abs, font_dir, out_path, sizeof( out_path ) ) )
-        return 1;
+    if ( !out_path_resolve( cli, ttf_abs, font_dir, out_path, sizeof( out_path ) ) )
+        return false;
     path_make_parent_dir( out_path );
 
     /*------------------------------------------------------------------------------------------
@@ -805,7 +797,7 @@ main( int argc, char** argv )
     if ( FT_Init_FreeType( &ft ) )
     {
         fprintf( stderr, "error: FT_Init_FreeType failed\n" );
-        return 1;
+        return false;
     }
 
     FT_Face face;
@@ -813,10 +805,10 @@ main( int argc, char** argv )
     {
         fprintf( stderr, "error: cannot load font '%s'\n", ttf_abs );
         FT_Done_FreeType( ft );
-        return 1;
+        return false;
     }
 
-    FT_Set_Pixel_Sizes( face, 0, (FT_UInt)cli.size_px );   /* 0 width means "same as height" */
+    FT_Set_Pixel_Sizes( face, 0, (FT_UInt)cli->size_px );   /* 0 width means "same as height" */
 
     /* Global metrics -- FreeType uses 26.6 fixed point, >> 6 converts to integer pixels. */
     int32_t ascent   = (int32_t)( face->size->metrics.ascender  >> 6 );
@@ -826,8 +818,8 @@ main( int argc, char** argv )
     uint32_t count = 0;
     bool     ok    = rasterize_coverage( face, &count );
 
-    if ( ok && cli.sdf_range )
-        ok = rasterize_sdf( ft, face, count, (int)cli.sdf_range, cli.size_px );
+    if ( ok && cli->sdf_range )
+        ok = rasterize_sdf( ft, face, count, (int)cli->sdf_range, cli->size_px );
 
     FT_Done_Face( face );
     FT_Done_FreeType( ft );
@@ -839,7 +831,7 @@ main( int argc, char** argv )
     if ( ok )
     {
         ok = dev_font_bake_write( out_path, s_glyphs, count, ascent, descent, line_gap,
-                                  cli.size_px, cli.sdf_range, ttf_abs );
+                                  cli->size_px, cli->sdf_range, ttf_abs );
         if ( !ok )
             fprintf( stderr, "error: %s\n", dev_font_last_error() );
     }
@@ -847,7 +839,172 @@ main( int argc, char** argv )
     for ( uint32_t i = 0; i < count; ++i )
         free( s_glyphs[ i ].bitmap );
 
-    return ok ? 0 : 1;
+    return ok;
+}
+
+/*==============================================================================================
+    manifest subcommand -- bake every line of a fonts.manifest in one process.
+
+    Reads the same format the ship pipeline's cook stage does (dev_ship.c ship_cook): one line
+    per bake, "<family> <size_px> [-sdf[=n]] [-range=<spec>]", '#' starts a comment, a leading
+    '"' opens a quoted family name (for names containing spaces).  Unlike ship_cook, which fails
+    the whole ship on the first bad line, this bakes every line and reports failures at the end --
+    a dev iterating locally wants to see every missing font in one pass, not fix them one at a
+    time behind a full ship_tool run.
+==============================================================================================*/
+
+/* Splits one manifest line in place: `p` becomes unusable, `*family_out` and `*rest_out` point
+   into it.  `*rest_out` is the text after the family token (leading blanks not yet stripped). */
+static bool
+manifest_split_family( char* p, char** family_out, char** rest_out )
+{
+    if ( *p == '"' )
+    {
+        char* q = strchr( p + 1, '"' );
+        if ( !q )
+        {
+            fprintf( stderr, "error: unterminated quote: %s\n", p );
+            return false;
+        }
+        *q          = '\0';
+        *family_out = p + 1;
+        *rest_out   = q + 1;
+    }
+    else
+    {
+        char* q = p;
+        while ( *q && *q != ' ' && *q != '\t' ) ++q;
+        if ( *q ) *q++ = '\0';
+        *family_out = p;
+        *rest_out   = q;
+    }
+    return true;
+}
+
+static int
+run_manifest( const char* path )
+{
+    FILE* f = fopen( path, "rb" );
+    if ( !f )
+    {
+        fprintf( stderr, "error: cannot open manifest '%s'\n", path );
+        return 1;
+    }
+
+    dev_font_init( NULL );
+
+    char line[ 512 ];
+    int  baked  = 0;
+    int  failed = 0;
+
+    while ( fgets( line, sizeof( line ), f ) )
+    {
+        char* p = line;
+        while ( *p == ' ' || *p == '\t' ) ++p;
+        if ( *p == '#' || *p == '\0' || *p == '\r' || *p == '\n' )
+            continue;
+
+        size_t len = strlen( p );
+        while ( len && ( p[ len - 1 ] == '\n' || p[ len - 1 ] == '\r'
+                      || p[ len - 1 ] == ' '  || p[ len - 1 ] == '\t' ) )
+            p[ --len ] = '\0';
+        if ( !len )
+            continue;
+
+        char* family;
+        char* rest;
+        if ( !manifest_split_family( p, &family, &rest ) )
+        {
+            ++failed;
+            continue;
+        }
+        while ( *rest == ' ' || *rest == '\t' ) ++rest;
+
+        char* size_tok = rest;
+        while ( *rest && *rest != ' ' && *rest != '\t' ) ++rest;
+        if ( *rest ) *rest++ = '\0';
+        while ( *rest == ' ' || *rest == '\t' ) ++rest;
+
+        /* Remaining whitespace-split flag tokens feed cli_parse verbatim, same as a hand-typed
+           command line -- so -sdf/-range parse identically here and at the single-shot CLI. */
+        char  prog[]  = "font_tool";
+        char* argv_line[ 8 ];
+        int   argc_line = 0;
+        argv_line[ argc_line++ ] = prog;      // cli_parse ignores argv[0]
+        argv_line[ argc_line++ ] = family;
+        argv_line[ argc_line++ ] = size_tok;
+
+        while ( *rest && argc_line < 8 )
+        {
+            argv_line[ argc_line++ ] = rest;
+            while ( *rest && *rest != ' ' && *rest != '\t' ) ++rest;
+            if ( *rest ) *rest++ = '\0';
+            while ( *rest == ' ' || *rest == '\t' ) ++rest;
+        }
+
+        /* s_range_count/s_range_suffix persist across bakes in this process -- reset them so a
+           line without -range does not inherit the previous line's span. */
+        s_range_count     = 0;
+        s_range_suffix[0] = '\0';
+
+        cli_t cli;
+        if ( !cli_parse( argc_line, argv_line, &cli ) )
+        {
+            fprintf( stderr, "error: bad manifest line: %s %s\n", family, size_tok );
+            ++failed;
+            continue;
+        }
+
+        if ( s_range_count == 0 )
+            s_range_count = dev_font_range_parse( NULL, s_ranges, DEV_FONT_RANGE_MAX );
+
+        printf( "[font_tool] %s %dpx%s -> assets/font/\n",
+                family, cli.size_px, s_range_suffix[0] ? s_range_suffix : "" );
+
+        if ( bake_one( &cli ) )
+            ++baked;
+        else
+            ++failed;
+    }
+    fclose( f );
+
+    printf( "[font_tool] %d baked, %d failed\n", baked, failed );
+    return failed ? 1 : 0;
+}
+
+/*==============================================================================================
+    main
+==============================================================================================*/
+
+int
+main( int argc, char** argv )
+{
+    /* Subcommand: `info` prints .orb_font header internals (read-only diagnostic). */
+    if ( argc >= 2 && strcmp( argv[ 1 ], "info" ) == 0 )
+        return run_info( argc - 2, argv + 2 );
+
+    /* Subcommand: `manifest` bakes every line of a fonts.manifest in this one process. */
+    if ( argc >= 2 && strcmp( argv[ 1 ], "manifest" ) == 0 )
+    {
+        if ( argc != 3 )
+        {
+            fprintf( stderr, "usage: font_tool manifest <fonts.manifest>\n" );
+            return 1;
+        }
+        return run_manifest( argv[ 2 ] );
+    }
+
+    cli_t cli;
+    if ( !cli_parse( argc, argv, &cli ) )
+        return 1;
+
+    /* No -range on the command line: exactly the ASCII contract, as every bake before the flag. */
+    if ( s_range_count == 0 )
+        s_range_count = dev_font_range_parse( NULL, s_ranges, DEV_FONT_RANGE_MAX );
+
+    dev_font_init( NULL );
+
+    return bake_one( &cli ) ? 0 : 1;
 }
 
 /*============================================================================================*/

@@ -119,7 +119,7 @@ icon_tenant_sdf( u16 packed )
 typedef struct
 {
     icon_entry_t  entries[ ICON_MAX ];      // id - 1 indexes here
-    u32           count;
+    u32           count;                    // number of registered icons (0..ICON_MAX) 
     bool          ready;                    // registration enabled (shared atlas stood up)
 
 } icon_set_t;
@@ -127,8 +127,12 @@ typedef struct
 static icon_set_t s_icons;
 
 /*==============================================================================================
-    icon_atlas_init / icon_atlas_shutdown -- the icon layer holds no GPU resource of its own; it
-    only gates registration.  The shared resource atlas (res_atlas_init/shutdown) owns the texture.
+
+    icon_atlas_init / icon_atlas_shutdown -- the icon layer holds no GPU resource of its own;
+    it only gates registration. 
+    
+    The shared resource atlas (res_atlas_init/shutdown) owns the texture.
+
 ==============================================================================================*/
 
 bool

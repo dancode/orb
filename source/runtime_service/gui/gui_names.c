@@ -48,16 +48,18 @@ gui_names_intern( const char* s )
     if ( !s ) s = "";
     u32 len = (u32)strlen( s );
 
+    /* search for existing matching entry */
     for ( u32 i = 0; i < s_names.top; )
     {
-        u32 entry_len = (u32)strlen( s_names.buf + i );
+        u32  entry_len = (u32)strlen( s_names.buf + i );
         if ( entry_len == len && memcmp( s_names.buf + i, s, len ) == 0 )
-            return (u16)i;
+             return (u16)i;
         i += entry_len + 1u;
     }
 
+    /* 64 KB u16-offset ceiling reached */
     if ( s_names.top >= GUI_NAMES_NONE )
-        return GUI_NAMES_NONE;    // 64 KB u16-offset ceiling reached
+         return GUI_NAMES_NONE;    
 
     u32 need = len + 1u;
     if ( s_names.top + need > s_names.cap )
@@ -70,6 +72,7 @@ gui_names_intern( const char* s )
             return GUI_NAMES_NONE;
         if ( s_names.buf )
         {
+            ORB_ASSERT( new_cap >= s_names.top );    // loop above guarantees this
             memcpy( nb, s_names.buf, s_names.top );
             free( s_names.buf );
         }
