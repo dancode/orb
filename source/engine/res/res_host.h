@@ -93,7 +93,7 @@ res_host_on_pre_init( const char* name, const mod_desc_t* desc, void* user )
     UNUSED( name );
     UNUSED( user );
     if ( desc && desc->res_table )
-        res_register_table( ( const res_table_t* )desc->res_table );
+         res_register_table( ( const res_table_t* )desc->res_table );
 }
 
 static inline void

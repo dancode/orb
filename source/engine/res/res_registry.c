@@ -332,9 +332,7 @@ res_count( void )
 void
 res_each( res_each_fn fn, void* user )
 {
-    if ( !fn )
-        return;
-
+    if ( !fn ) return;
     for ( u32 i = 0; i < g_res.slot_count; ++i ) 
     {
         fn( g_res.slots[ i ].id, g_res.pool + g_res.slots[ i ].name_off, user );

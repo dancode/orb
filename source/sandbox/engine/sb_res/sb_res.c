@@ -336,9 +336,11 @@ test_mod_lifecycle( void )
     res_wire_mod_callbacks();
     res_wire_mod_callbacks(); /* second wire is a no-op, not a double subscription */
 
-    bool ok = mod_static_load( "sys", sys_get_mod_desc() ) /* mod itself depends on sys */
-              && mod_static_load( "res", res_get_mod_desc() ) &&
+    /* note: mod itself depends on sys */
+    bool ok = mod_static_load( "sys",  sys_get_mod_desc() ) && 
+              mod_static_load( "res",  res_get_mod_desc() ) &&
               mod_static_load( "fake", fake_get_mod_desc() );
+
     sb_check( ok, "static loads succeed" );
     sb_check( res_count() == 0, "load is passive: nothing registered before init_all" );
 
