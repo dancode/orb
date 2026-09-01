@@ -13,6 +13,7 @@
     #include "engine/res/res_host.h"
 #endif
 
+// clang-format off
 /*==============================================================================================
     Errors
 ==============================================================================================*/
@@ -95,9 +96,9 @@ res_probe( rid_t id )
     u32 b    = ( u32 )id & mask;
     for ( ;; )
     {
-        u16 slot1 = g_res.hash[ b ];
+        u16  slot1 = g_res.hash[ b ];
         if ( slot1 == 0 || g_res.slots[ slot1 - 1 ].id == id )
-            return b;
+             return b; /* empty or matched -- a valid slot */
         b = ( b + 1 ) & mask;
     }
 }
@@ -106,7 +107,7 @@ res_probe( rid_t id )
 static const res_slot_t*
 res_find( rid_t id )
 {
-    if ( id == RID_INVALID || g_res.count == 0 )
+    if ( id == RID_INVALID || g_res.slot_count == 0 )
          return NULL;
 
     u16 slot1 = g_res.hash[ res_probe( id ) ];
@@ -121,37 +122,40 @@ res_find( rid_t id )
 ==============================================================================================*/
 
 /* Make room for one more slot, rebuilding the hash table at the new size. */
+
 static bool
 res_reserve_slot( void )
 {
-    if ( g_res.count < g_res.slot_cap )
-        return true;
+    if ( g_res.slot_count < g_res.slot_cap )
+         return true;
 
     /* Both caps are powers of two, so doubling keeps slot_cap one as well -- the probe mask
        below depends on that. The ceiling is reached, never overshot. */
-    u32 slot_cap = g_res.slot_cap ? g_res.slot_cap * 2 : RES_INIT_ENTRIES;
+
+    u32  slot_cap = g_res.slot_cap ? g_res.slot_cap * 2 : RES_INIT_ENTRIES;
     if ( slot_cap > RES_MAX_ENTRIES )
     {
-        res_set_error( "register: catalogue full (%d entries) -- the u16 bucket index is spent",
-                       RES_MAX_ENTRIES );
-        return false;
+         res_set_error( "register: catalogue full (%d entries) -- the u16 bucket index is spent", 
+                        RES_MAX_ENTRIES );
+         return false;
     }
 
     /* Both blocks land before any of the registry is repointed: committing a wider slot_cap
        against the old, narrower table would let the load factor pass 50% and hang a probe. */
+
     u32  hash_size = slot_cap * 2;
-    u16* hash      = ( u16* )calloc( hash_size, sizeof( u16 ) );
-    if ( !hash )
+    u16* hash = ( u16* )calloc( hash_size, sizeof( u16 ) );
+    if ( hash == NULL ) 
     {
-        res_set_error( "register: out of memory growing to %u buckets", ( unsigned )hash_size );
+        res_set_error( "register: out of memory growing to %u buckets", hash_size );
         return false;
     }
 
     res_slot_t* slots = ( res_slot_t* )realloc( g_res.slots, slot_cap * sizeof( res_slot_t ) );
-    if ( !slots )
+    if ( slots == NULL )
     {
         free( hash );
-        res_set_error( "register: out of memory growing to %u slots", ( unsigned )slot_cap );
+        res_set_error( "register: out of memory growing to %u slots", slot_cap );
         return false;
     }
 
@@ -162,32 +166,35 @@ res_reserve_slot( void )
     g_res.slot_cap  = slot_cap;
 
     /* Reinsert every live slot. Ids are unique, so each probe lands on an empty bucket. */
-    for ( u32 i = 0; i < g_res.count; ++i )
+
+    for ( u32 i = 0; i < g_res.slot_count; ++i )
     {
         u32 b = ( u32 )g_res.slots[ i ].id & ( hash_size - 1 );
-        while ( g_res.hash[ b ] )
+        while ( g_res.hash[ b ] ) {
             b = ( b + 1 ) & ( hash_size - 1 );
+        }
         g_res.hash[ b ] = ( u16 )( i + 1 );
     }
     return true;
 }
 
 /* Make room for `need` more bytes of name text. */
+
 static bool
 res_reserve_pool( u32 need )
 {
-    if ( g_res.pool_top + need <= g_res.pool_cap )
-        return true;
+    if ( g_res.pool_top + need <= g_res.pool_cap ) 
+         return true;
 
     u32 pool_cap = g_res.pool_cap ? g_res.pool_cap * 2 : RES_INIT_POOL;
-    while ( g_res.pool_top + need > pool_cap )
-        pool_cap *= 2;
-
+    while ( g_res.pool_top + need > pool_cap ) 
+    { 
+        pool_cap *= 2; 
+    }
     char* pool = ( char* )realloc( g_res.pool, pool_cap );
-    if ( !pool )
+    if (  pool == NULL )
     {
-        res_set_error( "register: out of memory growing the name pool to %u bytes",
-                       ( unsigned )pool_cap );
+        res_set_error( "register: out of memory growing the name pool to %u bytes", pool_cap );
         return false;
     }
     g_res.pool     = pool;
@@ -201,16 +208,18 @@ res_reserve_pool( u32 need )
 
 /* Canonical form of `name` into out[RES_NAME_MAX + 1]. Returns the length, or 0 having
    reported why. Both entry points fold here so they refuse the same inputs. */
+
 static u32
 res_canon_checked( const char* name, char* out )
 {
-    u32 len = res_canon( name, out, RES_NAME_MAX + 1 );
+    u32  len = res_canon( name, out, RES_NAME_MAX + 1 );
     if ( len == 0 )
         res_set_error( "register: name is empty or longer than %d bytes", RES_NAME_MAX );
     return len;
 }
 
 /* Insert an already-canonical name under `id`. Returns id, or RID_INVALID having reported. */
+
 static rid_t
 res_insert( rid_t id, const char* canon, u32 len )
 {
@@ -223,28 +232,34 @@ res_insert( rid_t id, const char* canon, u32 len )
     /* Present. Same name: idempotent hit -- this is every name of a hot-reloaded module's
        table on its second and later loads. Different name: collision, so the first
        registration stands and both names are reported for the build to fix. */
+
     const res_slot_t* hit = res_find( id );
     if ( hit )
     {
+        /* Matched */
         if ( strcmp( g_res.pool + hit->name_off, canon ) == 0 )
             return id;
 
         res_set_error( "rid collision 0x%08x: '%s' (registered) vs '%s' (rejected)",
-                       ( unsigned )id, g_res.pool + hit->name_off, canon );
+                        id, g_res.pool + hit->name_off, canon );
         return RID_INVALID;
     }
 
+    /* Ensure slot and pool have enough space */
     if ( !res_reserve_slot() || !res_reserve_pool( len + 1 ) )
         return RID_INVALID;
 
-    /* Copy the canonical text; the caller's buffer may not outlive this call. */
-    res_slot_t* s = &g_res.slots[ g_res.count ];
+    /* Create resources slot */
+    res_slot_t* s = &g_res.slots[ g_res.slot_count ];
     s->id         = id;
     s->name_off   = g_res.pool_top;
+
+    /* Copy name into pool -- ensure it lives beyond the caller's buffer */
     memcpy( g_res.pool + g_res.pool_top, canon, len + 1 );
     g_res.pool_top += len + 1;
 
-    g_res.hash[ res_probe( id ) ] = ( u16 )( ++g_res.count ); /* store index + 1 */
+    /* Store resource slot id in hash (index + 1)*/
+    g_res.hash[ res_probe( id ) ] = ( u16 )( ++g_res.slot_count ); 
     return id;
 }
 
@@ -252,21 +267,27 @@ rid_t
 res_register_id( rid_t id, const char* name )
 {
     char canon[ RES_NAME_MAX + 1 ];
+
     u32  len = res_canon_checked( name, canon );
-    return len ? res_insert( id, canon, len ) : RID_INVALID;
+    if ( len == 0 )
+         return RID_INVALID;
+    
+    return res_insert( id, canon, len );
 }
 
 rid_t
 res_register( const char* name )
 {
     char canon[ RES_NAME_MAX + 1 ];
+
     u32  len = res_canon_checked( name, canon );
     if ( len == 0 )
         return RID_INVALID;
 
-    /* Hash the folded text rather than the raw name: identical result, since res_hash_name
-       folds as it goes, but it reads a short buffer already in cache instead of walking the
-       caller's string a second time. */
+    /* Hash the folded text rather than the raw name: identical result, since 
+       res_hash_name folds as it goes, but it reads a short buffer already in 
+       cache instead of walking the caller's string a second time. */
+
     return res_insert( res_hash_name( canon ), canon, len );
 }
 
@@ -305,7 +326,7 @@ res_exists( rid_t id )
 u32
 res_count( void )
 {
-    return g_res.count;
+    return g_res.slot_count;
 }
 
 void
@@ -313,8 +334,12 @@ res_each( res_each_fn fn, void* user )
 {
     if ( !fn )
         return;
-    for ( u32 i = 0; i < g_res.count; ++i )
+
+    for ( u32 i = 0; i < g_res.slot_count; ++i ) 
+    {
         fn( g_res.slots[ i ].id, g_res.pool + g_res.slots[ i ].name_off, user );
+    }
 }
 
 /*============================================================================================*/
+// clang-format on

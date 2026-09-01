@@ -54,7 +54,7 @@ typedef struct res_registry_s
 
     u32         hash_size;    // power of two, always 2 * slot_cap
     u32         slot_cap;     // slots allocated
-    u32         count;        // slots in use
+    u32         slot_count;   // slots in use
     u32         pool_cap;     // pool bytes allocated
     u32         pool_top;     // pool bytes in use
 
@@ -65,7 +65,7 @@ static char             g_res_error[ 640 ];     // fits a collision report: two 
 
 ORB_STATIC_ASSERT(( RES_INIT_ENTRIES & ( RES_INIT_ENTRIES - 1 )) == 0, "RES_INIT_ENTRIES must be a power of two" );
 ORB_STATIC_ASSERT(( RES_MAX_ENTRIES  & ( RES_MAX_ENTRIES  - 1 )) == 0, "RES_MAX_ENTRIES must be a power of two" );
-ORB_STATIC_ASSERT( RES_MAX_ENTRIES < 65535,                            "slot index + 1 must fit a u16 bucket" );
+ORB_STATIC_ASSERT( RES_MAX_ENTRIES <= 65535, "slot index + 1 must fit a u16 bucket" );
 
 /*==============================================================================================
     Implementation Includes (Unity Build)

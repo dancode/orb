@@ -52,9 +52,9 @@ void            res_exit             ( void );
     DLL image that is about to be unloaded.
 ==============================================================================================*/
 
-rid_t           res_register         ( const char* name );                 /* RID_INVALID on failure */
-rid_t           res_register_id      ( rid_t id, const char* name );       /* RID_INVALID on failure */
-u32             res_register_table   ( const res_table_t* table );         /* names now registered */
+rid_t           res_register         ( const char* name );              // RID_INVALID on failure
+rid_t           res_register_id      ( rid_t id, const char* name );    // RID_INVALID on failure
+u32             res_register_table   ( const res_table_t* table );      // names now registered
 
 /*==============================================================================================
     Lookup
@@ -64,7 +64,7 @@ u32             res_register_table   ( const res_table_t* table );         /* na
     it in a struct.  Ids are the durable handle; the text is a view.
 ==============================================================================================*/
 
-const char*     res_name             ( rid_t id );                         /* canonical; NULL if unknown */
+const char*     res_name             ( rid_t id );                      // canonical; NULL if unknown
 bool            res_exists           ( rid_t id );
 u32             res_count            ( void );
 void            res_each             ( res_each_fn fn, void* user );

@@ -50,8 +50,8 @@ typedef u32 rid_t;
     bucket -- the doubling keeps every table size a power of two, which the probe mask needs.
 ==============================================================================================*/
 
-#define RES_INIT_ENTRIES      256                        // first slot allocation; doubles from here
-#define RES_INIT_POOL         4096                       // first name-pool allocation, in bytes
+#define RES_INIT_ENTRIES      64                         // first slot allocation; doubles from here
+#define RES_INIT_POOL         1024                       // first name-pool allocation, in bytes
 #define RES_MAX_ENTRIES       32768                      // distinct names, hard u16 bucket ceiling
 #define RES_NAME_MAX          255                        // canonical name length, excl. NUL
 
