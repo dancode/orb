@@ -191,9 +191,20 @@ Phase 0 -- res library skeleton                                          [DONE 2
      DLLs compute identical ids with no link dep; same width and hash family as sid_t / ref).
      Zero reserved as RID_INVALID.
      Canonical form = ASCII lowercase, '\\' -> '/'; nothing else rewritten (res_canon_char).
-   - Static storage: 8192 entries, 256 KB copied-name pool, 16384-bucket linear-probe
-     table (index+1, 0 = empty).  Zero-initialised statics ARE the empty catalogue; no init
-     call is required.  Caps live in res.h.
+   - Storage: three heap blocks that double as they fill, on the sid model -- an 8-byte slot
+     (u32 id, u32 pool offset), a copied name pool, and a linear-probe table of u16 slot
+     indices (index+1, 0 = empty) held at twice slot_cap so the load factor stays under 50%
+     and a probe always terminates.  12 bytes per entry plus its name text; a catalogue is
+     never larger than it needs.  All three start NULL and THAT is the empty catalogue --
+     no init call is required, the first registration allocates.
+     res is statically linked and never hot-reloads, so the blocks are held for the life of
+     the program; the res module's exit deliberately does not release them (decision 5).
+     Slots hold a pool OFFSET, not a pointer, so a pool realloc needs no fixup -- but a
+     const char* from res_name is a view that a later registration can move, the same rule
+     sid_cstr follows.  u16 buckets cap the catalogue at RES_MAX_ENTRIES (32768 -- the
+     largest power of two whose index+1 fits a bucket, and the doubling needs powers of two
+     for the probe mask).  That is far past what any project here will catalogue, and
+     exceeding it is a clean registration failure, verified not to hang.
    - API: res_register / res_register_id / res_register_table, res_name / res_exists /
      res_count / res_each / res_canon, res_last_error, res_init / res_exit (reset only).
      res_register_id takes a caller-supplied id for the cooked-header feed (Phase 6) and
@@ -208,11 +219,14 @@ Phase 0 -- res library skeleton                                          [DONE 2
      init and every hot-reload swap.  mod_system_init resets the lists.
    - orb.targets: target res (02_ENGINE, host_only), target sb_res, both added to the
      solutions that carry the engine floor.  "res" added to host_common's reserved names.
-   - Proof: sb_res, 48 checks, 0 failed.  Covers same-name-same-id, canonical folding,
+   - Proof: sb_res, 58 checks, 0 failed.  Covers same-name-same-id, canonical folding,
      re-registration idempotency + count stability, held-id survival, pool copy vs a
      scribbled source buffer, forced collision refused with both names in the error,
      unknown/invalid id clean miss, bad input refused, and a fake mod_desc carrying a
      res_table registered by mod_init_all's pre_init pass then surviving mod_system_exit.
+     Growth is exercised with 5000 names -- several doublings of both blocks -- checking
+     that every id still resolves to its own name after the rehashes and pool moves, that
+     re-registering the whole set adds nothing, and that a reset releases and reallocates.
    - NOT done here, first item of Phase 1: run_host.c does not yet load res or call
      res_wire_mod_callbacks(), and no host/run target deps on res in orb.targets.  Hosts
      adopt when the generated table exists to register.

@@ -44,6 +44,15 @@ sb_check( bool ok, const char* what )
     }
 }
 
+/* Visitor for res_each: counts the entries it is handed. */
+static void
+count_visitor( rid_t id, const char* name, void* user )
+{
+    UNUSED( id );
+    UNUSED( name );
+    ( *( u32* )user )++;
+}
+
 /*==============================================================================================
     Identity
 ==============================================================================================*/
@@ -129,6 +138,77 @@ test_pool_copies( void )
     sb_check( name && strcmp( name, "shader/gui_quad" ) == 0,
               "name text is the original, not the scribble" );
     sb_check( name != buf, "name pointer is not the caller's buffer" );
+}
+
+/*==============================================================================================
+    Growth
+
+    Storage starts unallocated and doubles as it fills.  A rehash rebuilds every bucket and a
+    pool realloc moves the name text, so the property that matters is that an id registered
+    before a growth still resolves afterwards, and to the name it was given.
+==============================================================================================*/
+
+#define SB_GROWTH_NAMES    5000
+#define SB_GROWTH_FMT      "growth/level_%04u/mesh"
+
+static void
+test_growth( void )
+{
+    printf( "  growth\n" );
+    res_init();
+
+    sb_check( res_count() == 0, "catalogue is empty before the first registration" );
+
+    /* Several doublings past both RES_INIT_ENTRIES and RES_INIT_POOL. */
+    static rid_t ids[ SB_GROWTH_NAMES ];
+    char         name[ 64 ];
+    u32          registered = 0;
+
+    for ( u32 i = 0; i < SB_GROWTH_NAMES; ++i )
+    {
+        snprintf( name, sizeof( name ), SB_GROWTH_FMT, i );
+        ids[ i ] = res_register( name );
+        if ( ids[ i ] != RID_INVALID )
+            registered++;
+    }
+    sb_check( registered == SB_GROWTH_NAMES, "every name registered" );
+    sb_check( res_count() == SB_GROWTH_NAMES, "no name was dropped or folded into another" );
+
+    /* Read the whole set back: the rehash reinserted every slot, and pool offsets still
+       address the right text after the block moved underneath them. */
+    u32 intact = 0;
+    for ( u32 i = 0; i < SB_GROWTH_NAMES; ++i )
+    {
+        snprintf( name, sizeof( name ), SB_GROWTH_FMT, i );
+        const char* got = res_name( ids[ i ] );
+        if ( got && strcmp( got, name ) == 0 )
+            intact++;
+    }
+    sb_check( intact == SB_GROWTH_NAMES, "every name reads back intact after growth" );
+
+    /* The first name registered has survived the most reallocs of any. */
+    const char* oldest = res_name( ids[ 0 ] );
+    sb_check( oldest && strcmp( oldest, "growth/level_0000/mesh" ) == 0,
+              "the oldest name survives every growth" );
+
+    /* Re-registration is still a no-op at scale, not a second copy of the set. */
+    for ( u32 i = 0; i < SB_GROWTH_NAMES; ++i )
+    {
+        snprintf( name, sizeof( name ), SB_GROWTH_FMT, i );
+        res_register( name );
+    }
+    sb_check( res_count() == SB_GROWTH_NAMES, "re-registering the grown set adds nothing" );
+
+    u32 visited = 0;
+    res_each( count_visitor, &visited );
+    sb_check( visited == SB_GROWTH_NAMES, "res_each visits every entry once after growth" );
+
+    /* res_init releases the storage and leaves a catalogue that still works. */
+    res_init();
+    sb_check( res_count() == 0, "res_init empties the catalogue" );
+    sb_check( res_name( ids[ 0 ] ) == NULL, "an id from before the reset no longer resolves" );
+    sb_check( res_register( "growth/after_reset" ) != RID_INVALID,
+              "storage reallocates after a reset" );
 }
 
 /*==============================================================================================
@@ -247,14 +327,6 @@ fake_get_mod_desc( void )
 }
 
 static void
-count_visitor( rid_t id, const char* name, void* user )
-{
-    UNUSED( id );
-    UNUSED( name );
-    ( *( u32* )user )++;
-}
-
-static void
 test_mod_lifecycle( void )
 {
     printf( "  mod lifecycle\n" );
@@ -306,6 +378,7 @@ main( int argc, char** argv )
     test_identity();
     test_idempotent();
     test_pool_copies();
+    test_growth();
     test_collision();
     test_misses();
     test_mod_lifecycle();

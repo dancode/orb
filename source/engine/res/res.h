@@ -40,14 +40,20 @@ typedef u32 rid_t;
 /*==============================================================================================
     Limits
 
-    Static storage sized at compile time; the registry never allocates.
+    Storage grows on demand and holds no more than the catalogue needs, so the two INIT sizes
+    are only where doubling starts -- a first allocation small enough that a host with a
+    handful of names pays almost nothing.  A catalogue costs 12 bytes per entry (an 8-byte
+    slot plus the two hash buckets it is budgeted) on top of its name text.
+
+    RES_MAX_ENTRIES is a hard ceiling, not a budget, and exceeding it is a clean registration
+    failure.  It is the largest power of two whose slot index plus one still fits the u16 hash
+    bucket -- the doubling keeps every table size a power of two, which the probe mask needs.
 ==============================================================================================*/
 
-#define RES_MAX_ENTRIES       8192                       /* distinct names */
-#define RES_NAME_POOL_SIZE    ( 16 * 1024 )              /* bytes of copied name text */
-#define RES_NAME_MAX          255                        /* canonical name length, excl. NUL */
-#define RES_HASH_SIZE         16384                      /* power of two, >= 2x RES_MAX_ENTRIES */
-#define RES_HASH_MASK         ( RES_HASH_SIZE - 1 )
+#define RES_INIT_ENTRIES      256                        // first slot allocation; doubles from here
+#define RES_INIT_POOL         4096                       // first name-pool allocation, in bytes
+#define RES_MAX_ENTRIES       32768                      // distinct names, hard u16 bucket ceiling
+#define RES_NAME_MAX          255                        // canonical name length, excl. NUL
 
 /*==============================================================================================
     Canonical form
@@ -108,13 +114,13 @@ res_hash_name( const char* s )
 
 typedef struct res_entry_s
 {
-    const char* name;        // logical name as written at the reference site
+    const char* name;               // logical name as written at the reference site
 
 } res_entry_t;
 
 typedef struct res_table_s
 {
-    const res_entry_t* entries;    // count entries, any order, duplicates allowed
+    const res_entry_t* entries;     // count entries, any order, duplicates allowed
     u32                count;
 
 } res_table_t;

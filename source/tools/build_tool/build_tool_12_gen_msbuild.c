@@ -99,6 +99,7 @@ msbuild_emit_prologue( FILE* f, const char* guid, const char* cfg_type )
         /std:c11           -> LanguageStandard_C stdc11
         /Zi (Debug)        -> DebugInformationFormat ProgramDatabase
         /Od (Debug)        -> Optimization Disabled
+        /GF (Debug)        -> StringPooling true  (Release gets it free from /O2)
         /MDd (Debug)       -> RuntimeLibrary MultiThreadedDebugDLL
         /O2 (Release)      -> Optimization MaxSpeed
         /MD  (Release)     -> RuntimeLibrary MultiThreadedDLL
@@ -132,6 +133,8 @@ write_msbuild_clcompile_group( FILE* f, config_t config, target_info_t* target )
     {
         fprintf( f, "      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>\n" );
         fprintf( f, "      <Optimization>Disabled</Optimization>\n" );
+        // /GF: Release inherits string pooling from /O2, Debug has to ask for it.
+        fprintf( f, "      <StringPooling>true</StringPooling>\n" );
         fprintf( f, "      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>\n" );
     }
     else

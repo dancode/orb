@@ -15,7 +15,8 @@
     API Struct
 ==============================================================================================*/
 
-const res_api_t g_res_api_struct = {
+const res_api_t g_res_api_struct = 
+{
     /* Lookup */
     .name   = res_name,
     .exists = res_exists,
@@ -36,8 +37,9 @@ const res_api_t g_res_api_struct = {
 
     res is a leaf with no dependencies and no per-instance state.  The catalogue is usable
     from program start (zero-initialised statics are the empty catalogue), so init only
-    publishes the vtable through the standard mod gateway.  exit leaves the catalogue
-    intact: it is cumulative by design and there is nothing to release.
+    publishes the vtable through the standard mod gateway.  exit deliberately does NOT call
+    res_exit: the catalogue is cumulative and outlives the modules that named into it, so its
+    storage is held for the lifetime of the program.
 ==============================================================================================*/
 
 static bool

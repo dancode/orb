@@ -26,7 +26,9 @@
 /*==============================================================================================
     Lifecycle
 
-    Both reset the catalogue to empty.  Neither is required for normal use.
+    Both reset the catalogue to empty and release its storage; the next registration allocates
+    again.  Neither is required for normal use -- the catalogue is meant to live as long as the
+    program, and the res module's own exit deliberately leaves it standing.
 ==============================================================================================*/
 
 void            res_init             ( void );
@@ -56,6 +58,10 @@ u32             res_register_table   ( const res_table_t* table );         /* na
 
 /*==============================================================================================
     Lookup
+
+    res_name points into the name pool, which moves when a later registration grows it (the
+    same rule sid_cstr follows).  Print it, copy it, or hold it across nothing -- do not stash
+    it in a struct.  Ids are the durable handle; the text is a view.
 ==============================================================================================*/
 
 const char*     res_name             ( rid_t id );                         /* canonical; NULL if unknown */

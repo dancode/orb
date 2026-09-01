@@ -1196,6 +1196,8 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     add         sb_vulkan_stress   	# multi-context sync stress exe
     add         sb_quad_pull   		# bufferless quad-record proof (pull vs VB A/B)
 
+    add         sb_res              # resource id testing
+
     add         sb_host_runtime   	# runtime test
     add         sb_host_editor  	# editor test
     add         sb_host_game   		# game test

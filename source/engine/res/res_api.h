@@ -22,15 +22,15 @@
 typedef struct res_api_s
 {
     /* Lookup */
-    const char*  ( *name           )( rid_t id );                  /* NULL if unregistered */
+    const char*  ( *name           )( rid_t id );                   /* NULL if unregistered */
     bool         ( *exists         )( rid_t id );
     u32          ( *count          )( void );
     void         ( *each           )( res_each_fn fn, void* user );
 
     /* Registration (content feed) */
-    rid_t        ( *register_name  )( const char* name );          /* RID_INVALID on failure */
+    rid_t        ( *register_name  )( const char* name );           /* RID_INVALID on failure */
     rid_t        ( *register_id    )( rid_t id, const char* name );
-    u32          ( *register_table )( const res_table_t* table );  /* names now registered */
+    u32          ( *register_table )( const res_table_t* table );   /* names now registered */
 
     /* Diagnostics */
     const char*  ( *last_error     )( void );
