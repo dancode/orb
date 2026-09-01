@@ -20,8 +20,10 @@
     content one at a time -- is a safe client.  A registry that overwrote an entry in place would
     slowly orphan the old string forever.
 
-    A grow reallocates the buffer to a bigger capacity. Existing offsets stay valid across a
-    grow because they are byte offsets, not pointers.
+    A grow reallocates the buffer to the next multiple of GUI_NAMES_GROW that fits.  Capacity
+    climbs in fixed 512 B steps rather than doubling: the whole pool tops out at 64 KB, so the
+    handful of extra reallocs costs less than the overshoot a doubling curve would hold.
+    Existing offsets stay valid across a grow because they are byte offsets, not pointers.
 
 ==============================================================================================*/
 
@@ -40,7 +42,7 @@ static struct
 
 } s_names;
 
-#define GUI_NAMES_FIRST_CAP 256u    // initial buffer size; doubles from here
+#define GUI_NAMES_GROW 512u    // capacity is always a multiple of this; grows in fixed steps
 
 u16
 gui_names_intern( const char* s )
@@ -64,15 +66,14 @@ gui_names_intern( const char* s )
     u32 need = len + 1u;
     if ( s_names.top + need > s_names.cap )
     {
-        u32 new_cap = s_names.cap ? s_names.cap * 2u : GUI_NAMES_FIRST_CAP;
-        while ( new_cap < s_names.top + need )
-            new_cap *= 2u;
+        u32 want    = s_names.top + need;
+        u32 new_cap = (( want + ( GUI_NAMES_GROW - 1u )) / GUI_NAMES_GROW ) * GUI_NAMES_GROW;
 
-        char* nb = (char*)realloc( s_names.buf, new_cap );
-        if ( !nb )
+        char* new_buf = (char*)realloc( s_names.buf, new_cap );
+        if ( !new_buf )
             return GUI_NAMES_NONE;
 
-        s_names.buf = nb;
+        s_names.buf = new_buf;
         s_names.cap = new_cap;
     }
 

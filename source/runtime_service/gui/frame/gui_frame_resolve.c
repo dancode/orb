@@ -40,9 +40,9 @@
 ==============================================================================================*/
 // clang-format off
 
-#define FONT_RESOLVE_MEMO_MAX 24            /* > registry 16: latches + aliases hold no slot */
-#define FONT_RESOLVE_FAILED   0xFFFFu       /* memo id: no layer could serve; one attempt per generation */
-#define FONT_RESOLVE_SHIP_MAX 64            /* shipped-scan entries (assets/font) */
+#define FONT_RESOLVE_MEMO_MAX 24        // > registry 16: latches + aliases hold no slot
+#define FONT_RESOLVE_FAILED   0xFFFFu   // memo id: no layer could serve; one attempt per generation
+#define FONT_RESOLVE_SHIP_MAX 64        // shipped-scan entries (assets/font)
 
 typedef struct
 {
@@ -55,7 +55,6 @@ typedef struct
     u32 seen_gen;    // emitted frame a public font_get last requested this; 0 = internal
                      // entry (DPI / ramp / boot).  Live -- eviction-exempt -- while within
                      // one emitted frame of now; stale after that (the immediate-mode hold)
-
 } font_memo_t;
 
 typedef struct

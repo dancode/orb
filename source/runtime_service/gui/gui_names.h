@@ -31,9 +31,9 @@
 
 #define GUI_NAMES_NONE 0xffffu                  // intern failure (64 KB pool ceiling hit)
 
-u16         gui_names_intern( const char* s );  // dedup-intern; returns a stable byte offset
-const char* gui_names_cstr  ( u16 off );        // "" for GUI_NAMES_NONE / an unset offset
-void        gui_names_reset ( void );           // free the pool -- gui_shutdown only, once
+u16         gui_names_intern ( const char* s ); // dedup-intern; returns a stable byte offset
+const char* gui_names_cstr   ( u16 off );       // "" for GUI_NAMES_NONE / an unset offset
+void        gui_names_reset  ( void );          // free the pool -- gui_shutdown only, once
 
 /*============================================================================================*/
 #endif    // GUI_NAMES_H
