@@ -20,8 +20,8 @@
     content one at a time -- is a safe client.  A registry that overwrote an entry in place would
     slowly orphan the old string forever.
 
-    A grow allocates a bigger buffer, copies the old bytes forward, and frees the old one.
-    Existing offsets stay valid across a grow because they are byte offsets, not pointers.
+    A grow reallocates the buffer to a bigger capacity. Existing offsets stay valid across a
+    grow because they are byte offsets, not pointers.
 
 ==============================================================================================*/
 
@@ -57,9 +57,9 @@ gui_names_intern( const char* s )
         i += entry_len + 1u;
     }
 
-    /* 64 KB u16-offset ceiling reached */
+    /* storage overflow -- 64 KB u16-offset ceiling reached */
     if ( s_names.top >= GUI_NAMES_NONE )
-         return GUI_NAMES_NONE;    
+         return GUI_NAMES_NONE;
 
     u32 need = len + 1u;
     if ( s_names.top + need > s_names.cap )
@@ -67,15 +67,11 @@ gui_names_intern( const char* s )
         u32 new_cap = s_names.cap ? s_names.cap * 2u : GUI_NAMES_FIRST_CAP;
         while ( new_cap < s_names.top + need )
             new_cap *= 2u;
-        char* nb = (char*)malloc( new_cap );
+
+        char* nb = (char*)realloc( s_names.buf, new_cap );
         if ( !nb )
             return GUI_NAMES_NONE;
-        if ( s_names.buf )
-        {
-            ORB_ASSERT( new_cap >= s_names.top );    // loop above guarantees this
-            memcpy( nb, s_names.buf, s_names.top );
-            free( s_names.buf );
-        }
+
         s_names.buf = nb;
         s_names.cap = new_cap;
     }
@@ -83,7 +79,8 @@ gui_names_intern( const char* s )
     u32 off = s_names.top;
     memcpy( s_names.buf + off, s, need );
     s_names.top += need;
-    return (u16)off;
+
+    return ( u16 )off; /* string pool offset */
 }
 
 const char*

@@ -189,7 +189,7 @@ icon_register( const char* name, u32 w, u32 h, const u8* coverage )
 
     /* Add the coverage as a tenant of the shared atlas (incremental pack; repack-on-full handled
        inside res_atlas_add).  The shared atlas takes its own copy and owns the deferred upload. */
-    u32 tenant = res_atlas_add( coverage, w, h, RES_TENANT_ICON );
+    u32  tenant = res_atlas_add( coverage, w, h, RES_TENANT_ICON );
     if ( tenant == 0 )
     {
         gui_log( GUI_LOG_WARN, "icon atlas full -- '%s' (%ux%u) rejected", name ? name : "?", w, h );

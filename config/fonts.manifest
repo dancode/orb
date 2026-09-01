@@ -3,21 +3,29 @@
 #   <family> <size_px> [-sdf[=n]] [-range=<spec>]
 #
 # <family> is a font_tool input: a TTF in assets/font_source, or an OS-installed face name
-# (wrap names containing spaces in double quotes).  Flags pass through to font_tool verbatim.
+# (wrap names containing spaces in double quotes).  A family in an assets/font_source
+# subdirectory must include its extension (e.g. jetbrains/JetBrainsMonoNL-Regular.ttf) --
+# a bare name only auto-tries .ttf/.otf/.ttc when it has no directory component.  Flags pass
+# through to font_tool verbatim.
 # Each line bakes one .orb_font into assets/font/ (FreeType quality), which the stage step
 # ships wholesale.  The gui font resolver finds these by filename, so a size listed here is
 # available to shipped builds (which install no runtime baker).
 
-JetBrainsMonoNL-Regular 12
-JetBrainsMonoNL-Regular 16
-JetBrainsMonoNL-Regular 20
-JetBrainsMonoNL-Regular 24
-JetBrainsMonoNL-Regular 32
-Roboto-Regular 12
-Roboto-Regular 16
-Roboto-Regular 20
-Roboto-Regular 24
-Roboto-Regular 32
+# assets/font_source/
+
+jetbrains/JetBrainsMonoNL-Regular.ttf 12
+jetbrains/JetBrainsMonoNL-Regular.ttf 16
+jetbrains/JetBrainsMonoNL-Regular.ttf 20
+jetbrains/JetBrainsMonoNL-Regular.ttf 24
+jetbrains/JetBrainsMonoNL-Regular.ttf 32
+roboto/Roboto-Regular.ttf 12
+roboto/Roboto-Regular.ttf 16
+roboto/Roboto-Regular.ttf 20
+roboto/Roboto-Regular.ttf 24
+roboto/Roboto-Regular.ttf 32
+
+# windows installed 
+
 CascadiaMono 12
 CascadiaMono 16
 CascadiaMono 20
