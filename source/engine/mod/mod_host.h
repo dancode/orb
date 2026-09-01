@@ -160,13 +160,16 @@ const char*     mod_last_error              ( void );
 
     Callbacks installed AFTER some modules are already initialised do not retroactively
     fire for those modules — install them once at host startup, before mod_init_all().
+
+    Each hook holds a small list of subscribers (ref, res, ...) fired in registration order.
+    Re-adding the same fn is a no-op; the add returns false only when the list is full.
 ==============================================================================================*/
 
 typedef void ( *mod_event_fn )( const char* name, const mod_desc_t* desc, void* user );
 
 void            mod_set_log_fn              ( log_fn_t fn );
-void            mod_set_pre_init_cb         ( mod_event_fn fn, void* user );
-void            mod_set_post_exit_cb        ( mod_event_fn fn, void* user );
+bool            mod_add_pre_init_cb         ( mod_event_fn fn, void* user );
+bool            mod_add_post_exit_cb        ( mod_event_fn fn, void* user );
 
 /*==============================================================================================
     Module identity and unload hooks

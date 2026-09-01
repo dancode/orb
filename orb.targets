@@ -58,6 +58,14 @@ target ref
     unit        ref.c
     flag        host_only
 
+target res
+
+    type        static
+    root        source/engine/res
+    folder      02_ENGINE
+    unit        res.c
+    flag        host_only
+
 target prof
 
     type        static
@@ -511,6 +519,14 @@ target sb_prof
     folder      09_SANDBOX/ENGINE
     unit        sb_prof.c
     dep         sys prof
+
+target sb_res
+
+    type        exe
+    root        source/sandbox/engine/sb_res
+    folder      09_SANDBOX/ENGINE
+    unit        sb_res.c
+    dep         mod sys res
 
 target sb_fs
 
@@ -1030,7 +1046,7 @@ solution orb_editor
 	#			--- LIBRARIES ---
 
     add         base
-    add         sys ref prof mod app core job net fs pack
+    add         sys ref res prof mod app core job net fs pack
 
     add         run			# runtime host
     add         rhi   		# vulkan render library
@@ -1143,7 +1159,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     startup     sb_vulkan
 
     add         base
-    add         sys ref prof mod app core job net fs pack
+    add         sys ref res prof mod app core job net fs pack
 
     add         run
     add         rhi   				# vulkan render library
@@ -1193,7 +1209,7 @@ solution orb_sandbox_engine			# developing engine libraries
 
     add         base
 
-    add         sys ref prof mod app core job net fs pack
+    add         sys ref res prof mod app core job net fs pack
     add         rhi
     add         asset
     add         input
@@ -1209,6 +1225,7 @@ solution orb_sandbox_engine			# developing engine libraries
     add         sb_app
     add         sb_net
     add         sb_prof
+    add         sb_res
     add         sb_fs
 
 	# 			--- SANDBOX : RUNTIME SERVICES --
@@ -1251,7 +1268,7 @@ solution orb_all
 # 	nav 		source
 
     add         base
-    add         sys ref prof mod app core job net fs pack
+    add         sys ref res prof mod app core job net fs pack
 
     add         run
     add         rhi
@@ -1274,6 +1291,7 @@ solution orb_all
     add         sb_job
     add         sb_app
     add         sb_prof
+    add         sb_res
     add         sb_fs
 
     add         sb_asset_test

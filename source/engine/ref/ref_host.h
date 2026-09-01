@@ -204,8 +204,8 @@ ref_host_on_post_exit( const char* name, const mod_desc_t* desc, void* user )
 static inline void
 ref_wire_mod_callbacks( void )
 {
-    mod_set_pre_init_cb ( ref_host_on_pre_init,  NULL );
-    mod_set_post_exit_cb( ref_host_on_post_exit, NULL );
+    mod_add_pre_init_cb ( ref_host_on_pre_init,  NULL );
+    mod_add_post_exit_cb( ref_host_on_post_exit, NULL );
 }
 
 /*==============================================================================================

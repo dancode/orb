@@ -56,7 +56,7 @@ host_args_parse( int argc, char** argv, launch_params_t* out )
    'render' would silently alias the render module and the host would then cast the
    wrong api struct.  Reject up front with a clear message instead. */
 static const char* k_reserved_modules[] = {
-    "mod", "sys", "ref", "prof", "pack", "fs", "core", "job", "net", "app", "run",
+    "mod", "sys", "ref", "res", "prof", "pack", "fs", "core", "job", "net", "app", "run",
     "rhi", "draw", "gui", "asset", "input", "ahi",
     "render", "audio", "physics", "game", "example",
 };

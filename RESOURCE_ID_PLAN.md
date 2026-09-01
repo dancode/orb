@@ -2,7 +2,8 @@
 
 # Resource Catalogue (res) + Package Manifest -- Plan
 
-Status: PROPOSED (2026-08-31).  Successor to the reference half of ASSET_SYSTEM_PLAN.md.
+Status: IN PROGRESS -- Phase 0 landed 2026-09-01.  Successor to the reference half of
+ASSET_SYSTEM_PLAN.md.
 That plan built the RUNTIME half -- fs mounts, zip bundles, the asset registry, the cook
 track, packaging -- and left one question unanswered: what does an application actually
 reference?  Today ship_tool answers it by copying whole directories (dev_ship.c:623-625).
@@ -183,20 +184,44 @@ three are never harvested and cannot ship.
 ## Phases
 --------------------------------------------------------------------------------
 
-Phase 0 -- res library skeleton                                          [NOT STARTED]
-   - source/engine/res/: res.h / res_api.h / res_host.h + res.c unity entry.
-   - rid_t (u64 hash of the canonical name; verify width against collision math before
-     committing -- 32 bits carries real birthday risk well before 10k names).
-   - Copying name pool; open-addressing table keyed by the hash; register / find / name /
-     count / exists.  Static storage, fixed caps in res.h.
-   - mod_desc, registered like ref; res_wire_mod_callbacks() for hosts.
-   - Proof (sb_res, new sandbox under source/sandbox/engine): same name -> same id twice;
-     id survives a simulated re-registration (hot-reload idempotency); a name registered
-     from a freed buffer still reads back correctly (pool copied); two names hashing equal
-     is detected and reported; unknown id resolves to a clean miss, not a crash.
+Phase 0 -- res library skeleton                                          [DONE 2026-09-01]
+   - source/engine/res/: res.h / res_api.h / res_host.h; res.c unity entry including
+     res_registry.c (pool, table, register/lookup) and res_api.c (vtable + mod_desc).
+   - rid_t = u32 FNV-1a of the canonical name (res_hash_name, header-inline so tools and
+     DLLs compute identical ids with no link dep; same width and hash family as sid_t / ref).
+     Zero reserved as RID_INVALID.
+     Canonical form = ASCII lowercase, '\\' -> '/'; nothing else rewritten (res_canon_char).
+   - Static storage: 8192 entries, 256 KB copied-name pool, 16384-bucket linear-probe
+     table (index+1, 0 = empty).  Zero-initialised statics ARE the empty catalogue; no init
+     call is required.  Caps live in res.h.
+   - API: res_register / res_register_id / res_register_table, res_name / res_exists /
+     res_count / res_each / res_canon, res_last_error, res_init / res_exit (reset only).
+     res_register_id takes a caller-supplied id for the cooked-header feed (Phase 6) and
+     is how the collision path is exercised.
+   - Cumulative: no post_exit hook; mod exit leaves names in place (decision 5).
+   - Landed early from Phase 1: RID( "name" ) in res.h.  The "" lit prefix makes anything
+     but a string literal a compile error, which is the one-door guarantee.
+   - Mod system: mod_desc_t.res_table (const res_table_t*) + MOD_RES_TABLE( name ) beside
+     ref_register; pre_init / post_exit hooks are now small subscriber lists
+     (mod_add_pre_init_cb / mod_add_post_exit_cb, max 4, dedupe by fn) so ref and res both
+     listen.  res_wire_mod_callbacks() registers each module's table at pre_init -- first
+     init and every hot-reload swap.  mod_system_init resets the lists.
+   - orb.targets: target res (02_ENGINE, host_only), target sb_res, both added to the
+     solutions that carry the engine floor.  "res" added to host_common's reserved names.
+   - Proof: sb_res, 48 checks, 0 failed.  Covers same-name-same-id, canonical folding,
+     re-registration idempotency + count stability, held-id survival, pool copy vs a
+     scribbled source buffer, forced collision refused with both names in the error,
+     unknown/invalid id clean miss, bad input refused, and a fake mod_desc carrying a
+     res_table registered by mod_init_all's pre_init pass then surviving mod_system_exit.
+   - NOT done here, first item of Phase 1: run_host.c does not yet load res or call
+     res_wire_mod_callbacks(), and no host/run target deps on res in orb.targets.  Hosts
+     adopt when the generated table exists to register.
 
 Phase 1 -- RID macro + build-time harvester                              [NOT STARTED]
-   - RID( "name" ) and RES_TREE( "prefix" ) in res.h.
+   - Wire res into the engine floor: run_host.c (res_wire_mod_callbacks + mod_static_load
+     "res" between ref and prof), and add res to the dep lines of run, host_*, and every
+     sandbox that lists the floor.
+   - RES_TREE( "prefix" ) in res.h (RID already landed in Phase 0).
    - res_tool (source/tools/res_tool/, links base+sys, house pattern alongside font_tool /
      shader_tool / asset_tool): scans a target's declared unit sources for the two tokens,
      unions along the dep graph, emits obj/<target>/<target>_res_table.c.
@@ -271,8 +296,14 @@ Phase 7 -- ship_tool consumes the manifest                               [NOT ST
 ## Open decisions
 --------------------------------------------------------------------------------
 
-1. rid_t width.  64-bit hash assumed.  Confirm against the collision math and against how
-   the id is stored in cooked headers.
+1. rid_t width.  SETTLED: u32 (same width and hash family as sid_t).  The build-time
+   collision check -- not the hash width -- is what guarantees uniqueness: the harvester
+   (Phase 1) proves the complete name set is collision-free and fails the build on any clash,
+   so a collision is a one-time rename at build, never a shipped bug.  Width only sets how
+   often the check trips: ~0.01% at 1k names, ~1% at 10k -- fine at this engine's scale
+   (u64 would only earn its keep past ~100k logical names).  Cooked headers store the id as
+   a little-endian u32.  NOTE: this makes the Phase 1 collision check load-bearing, not a
+   backstop -- it must land with the harvester, not after.
 2. Name grammar for content-root layering: does a project name-space itself by prefix
    ("game/..." vs "engine/...") or do roots layer anonymously with priority?  Anonymous
    layering allows clean overrides; prefixes make provenance obvious in source.  Anonymous

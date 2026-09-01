@@ -107,10 +107,61 @@
 
 ==============================================================================================*/
 
-static mod_event_fn g_pre_init_fn   = NULL;
-static void*        g_pre_init_user = NULL;
-static mod_event_fn g_post_exit_fn  = NULL;
-static void*        g_post_exit_user = NULL;
+/* Lifecycle event subscribers (pre_init / post_exit). Several host systems listen at once --
+   ref pushes/pops reflection frames, res registers resource tables -- so each hook is a small
+   fixed list rather than a single slot. Fired in registration order. */
+
+#define MAX_EVENT_CBS 4
+
+typedef struct mod_event_sub_s
+{
+    mod_event_fn fn;      // subscriber callback
+    void*        user;    // opaque pointer handed back to fn
+} mod_event_sub_t;
+
+static mod_event_sub_t g_pre_init_subs [ MAX_EVENT_CBS ];
+static int32_t         g_pre_init_count;
+static mod_event_sub_t g_post_exit_subs[ MAX_EVENT_CBS ];
+static int32_t         g_post_exit_count;
+
+static void
+events_fire_pre_init( const char* name, const mod_desc_t* desc )
+{
+    for ( int32_t i = 0; i < g_pre_init_count; ++i )
+        g_pre_init_subs[ i ].fn( name, desc, g_pre_init_subs[ i ].user );
+}
+
+static void
+events_fire_post_exit( const char* name, const mod_desc_t* desc )
+{
+    for ( int32_t i = 0; i < g_post_exit_count; ++i )
+        g_post_exit_subs[ i ].fn( name, desc, g_post_exit_subs[ i ].user );
+}
+
+/* Append fn to a subscriber list; re-adding the same fn is a no-op (host re-init). */
+static bool
+events_add( mod_event_sub_t* subs, int32_t* count, mod_event_fn fn, void* user )
+{
+    if ( !fn )
+        return false;
+
+    for ( int32_t i = 0; i < *count; ++i )
+    {
+        if ( subs[ i ].fn == fn )
+        {
+            subs[ i ].user = user;
+            return true;
+        }
+    }
+
+    if ( *count >= MAX_EVENT_CBS )
+        return false;
+
+    subs[ *count ].fn   = fn;
+    subs[ *count ].user = user;
+    ( *count )++;
+    return true;
+}
 
 /* Output sink for the bootstrap logger (ms_log). 
    NULL until the host calls mod_set_log_fn(). */
@@ -139,6 +190,8 @@ mod_system_init( void )
     g_api_func         = mod_get_api;
     g_current_module   = -1;
     g_unload_hook_count = 0;
+    g_pre_init_count   = 0;
+    g_post_exit_count  = 0;
 
     sys_exe_dir( g_root, sizeof( g_root ) );
     ms_log( "[module] system init (root: %s)", g_root );
@@ -318,8 +371,7 @@ mod_unload( const char* name )
     }
 
     /* post_exit: fires after exit() has run, before the slot is destroyed. */
-    if ( g_post_exit_fn )
-        g_post_exit_fn( m->name, m->mod_desc, g_post_exit_user );
+    events_fire_post_exit( m->name, m->mod_desc );
 
     slot_destroy( m );
     ms_log( "[module] unloaded '%s'", name );
@@ -340,15 +392,12 @@ mod_init_all( void )
        (reflection, profilers) see deps before dependents, so any cross-module references
        they record resolve cleanly. Modules already INITIALIZED are skipped (re-entry
        after a late mod_dynamic_load). */
-    if ( g_pre_init_fn )
+    for ( int k = 0; k < g_init_count; ++k )
     {
-        for ( int k = 0; k < g_init_count; ++k )
-        {
-            mod_info_t* m = &g_modules[ g_init_order[ k ] ];
-            if ( m->status != MODULE_STATUS_LOADED )
-                continue;
-            g_pre_init_fn( m->name, m->mod_desc, g_pre_init_user );
-        }
+        mod_info_t* m = &g_modules[ g_init_order[ k ] ];
+        if ( m->status != MODULE_STATUS_LOADED )
+            continue;
+        events_fire_pre_init( m->name, m->mod_desc );
     }
 
     /* Pass 2 — run init() in the same order. */
@@ -545,18 +594,26 @@ mod_set_log_fn( log_fn_t fn )
     g_mod_log_fn = fn;
 }
 
-void
-mod_set_pre_init_cb( mod_event_fn fn, void* user )
+bool
+mod_add_pre_init_cb( mod_event_fn fn, void* user )
 {
-    g_pre_init_fn   = fn;
-    g_pre_init_user = user;
+    if ( !events_add( g_pre_init_subs, &g_pre_init_count, fn, user ) )
+    {
+        set_error( "pre_init subscriber table full (max %d)", MAX_EVENT_CBS );
+        return false;
+    }
+    return true;
 }
 
-void
-mod_set_post_exit_cb( mod_event_fn fn, void* user )
+bool
+mod_add_post_exit_cb( mod_event_fn fn, void* user )
 {
-    g_post_exit_fn   = fn;
-    g_post_exit_user = user;
+    if ( !events_add( g_post_exit_subs, &g_post_exit_count, fn, user ) )
+    {
+        set_error( "post_exit subscriber table full (max %d)", MAX_EVENT_CBS );
+        return false;
+    }
+    return true;
 }
 
 /*==============================================================================================

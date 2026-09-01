@@ -115,17 +115,25 @@ typedef struct mod_desc_s
 
     const void* ref_register; /* void (*)( const ref_reg_api_t* ) or NULL */
 
+    /* Optional resource table -- opaque to the mod system. Points at the module's generated
+       res_table_t (via MOD_RES_TABLE) listing every resource name the module's sources
+       reference; NULL when it references none. The res library registers the table from its
+       pre_init hook, so a hot-reloaded DLL re-finds the same ids on every swap. */
+
+    const void* res_table; /* const res_table_t* or NULL */
+
 } mod_desc_t;
 
 /*==============================================================================================
     MOD_API_FUNC / MOD_REFLECT_FUNC — Wire a module's exports into its mod_desc_t.
 
-    MOD_API_FUNC( name )     — points func_api at the generated g_<name>_api_struct.
-    MOD_REFLECT_FUNC( name ) — points ref_register at the generated <name>_ref_register.
+    MOD_API_FUNC( name )     -- points func_api at the generated g_<name>_api_struct.
+    MOD_REFLECT_FUNC( name ) -- points ref_register at the generated <name>_ref_register.
+    MOD_RES_TABLE( name )    -- points res_table at the generated g_<name>_res_table.
 
-    Both macros cast to const void* so mod_export.h stays independent of ref.h and the
-    generated headers. The function pointers always live in the same image as the desc
-    (exe for statics, DLL for dynamics) — no symbol lookup needed in either build mode.
+    All three macros cast to const void* so mod_export.h stays independent of ref.h, res.h
+    and the generated headers. The pointers always live in the same image as the desc
+    (exe for statics, DLL for dynamics) -- no symbol lookup needed in either build mode.
 
     Usage:
 
@@ -136,12 +144,14 @@ typedef struct mod_desc_s
             .func_api      = MOD_API_FUNC( <name> ),
             .func_api_size = sizeof( <name>_api_t ),
             .ref_register   = MOD_REFLECT_FUNC( <name> ),
+            .res_table     = MOD_RES_TABLE( <name> ),
             ...
         };
 ==============================================================================================*/
 
 #define MOD_API_FUNC( name )     ( ( const void* )( &g_##name##_api_struct ) )
 #define MOD_REFLECT_FUNC( name ) ( ( const void* )( name##_ref_register ) )
+#define MOD_RES_TABLE( name )    ( ( const void* )( &g_##name##_res_table ) )
 
 /* DLL entry-point typedef resolved via LoadLibrary / dlopen. */
 typedef mod_desc_t* ( *get_mod_desc_fn )( void );
