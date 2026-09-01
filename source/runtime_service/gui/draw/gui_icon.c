@@ -169,7 +169,7 @@ icon_record( const char* name, u32 w, u32 h, u32 tenant, bool sdf )
     /* Record a packed tenant under `name`. Both registrars end here; the caller has 
        already chosen the atlas and packed into it. */
 
-    icon_entry_t* e = &s_icons.entries[ s_icons.count ];
+    icon_entry_t* e = &s_icons.entries[ s_icons.count ]; 
     memset( e, 0, sizeof( *e ) );
     e->name_off = gui_names_intern( name );
     e->w      = (u16)w;
@@ -183,12 +183,14 @@ gui_icon_id_t
 icon_register( const char* name, u32 w, u32 h, const u8* coverage )
 {
     if ( !s_icons.ready || !coverage || w == 0 || h == 0 )
-        return GUI_ICON_NONE;
+         return GUI_ICON_NONE;
+
     if ( s_icons.count >= ICON_MAX )
-        return GUI_ICON_NONE;
+         return GUI_ICON_NONE;
 
     /* Add the coverage as a tenant of the shared atlas (incremental pack; repack-on-full handled
        inside res_atlas_add).  The shared atlas takes its own copy and owns the deferred upload. */
+
     u32  tenant = res_atlas_add( coverage, w, h, RES_TENANT_ICON );
     if ( tenant == 0 )
     {
@@ -215,9 +217,10 @@ gui_icon_id_t
 icon_register_sdf( const char* name, u32 w, u32 h, const u8* coverage, u32 out_max )
 {
     if ( !s_icons.ready || !coverage || w == 0 || h == 0 )
-        return GUI_ICON_NONE;
+         return GUI_ICON_NONE;
+
     if ( s_icons.count >= ICON_MAX )
-        return GUI_ICON_NONE;
+         return GUI_ICON_NONE;
 
     u32 longest = ( w > h ) ? w : h;
     if ( out_max == 0 )       out_max = ICON_SDF_SIZE_DEFAULT;

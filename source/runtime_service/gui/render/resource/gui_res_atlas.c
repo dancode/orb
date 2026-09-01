@@ -636,6 +636,7 @@ res_update( res_atlas_t* a, u32 handle, const u8* src, u32 w, u32 h )
 /* Release a tenant: free its retained source and abandon its rect in place.  The stale pixels stay
    blitted (nothing references them) and the skyline keeps the hole until the next repack reclaims
    it.  No generation bump -- no surviving tenant's origin moved, so no baked UV went stale. */
+
 static void
 res_remove( res_atlas_t* a, u32 handle )
 {
@@ -717,6 +718,7 @@ void res_sdf_kind_bytes   ( u32 out[ RES_TENANT_KIND_COUNT ] ) { res_kind_bytes(
 /* Every atlas flushes here so the frame loop keeps ONE upload seam.  Not short-circuited: a dirty
    sprite or SDF atlas must upload even when the coverage atlas is clean, and the caller's "pixels
    were sent" verdict is the OR across all three. */
+
 bool res_atlas_flush_upload( void )
 {
     bool sent = res_flush( &s_res );
@@ -725,9 +727,9 @@ bool res_atlas_flush_upload( void )
 }
 
 u32  res_atlas_add       ( const u8* src, u32 w, u32 h, res_tenant_kind_t k ) { return res_add( &s_res, src, w, h, k ); }
-bool res_atlas_update    ( u32 h_, const u8* src, u32 w, u32 h )      { return res_update( &s_res, h_, src, w, h ); }
-void res_atlas_remove    ( u32 handle )                               { res_remove( &s_res, handle ); }
-void res_atlas_origin    ( u32 handle, u32* ox, u32* oy )             { res_origin( &s_res, handle, ox, oy ); }
+bool res_atlas_update    ( u32 h_, const u8* src, u32 w, u32 h )              { return res_update( &s_res, h_, src, w, h ); }
+void res_atlas_remove    ( u32 handle )                                       { res_remove( &s_res, handle ); }
+void res_atlas_origin    ( u32 handle, u32* ox, u32* oy )                     { res_origin( &s_res, handle, ox, oy ); }
 
 /* Dimension accessors read the INSTANCE (the atlas grows), falling back to the boot constants
    while a lazily-created atlas does not exist yet -- a caller asking a not-yet-created atlas for

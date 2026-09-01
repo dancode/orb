@@ -160,18 +160,24 @@ bool shape_metrics ( gui_shape_id_t id, u32* ink_x, u32* ink_y, u32* ink_w, u32*
                      u32* full_w, u32* full_h, f32* spread );
 
 /*==============================================================================================
+    
     Shared resource atlas (resource/gui_res_atlas.c)
 
-    THE one R8 texture core UI draws from: fonts, icons and the solid/dash assists all pack into it,
-    so they share a bindless slot and batch into one draw per clip/viewport scope.  Past this seam
-    only the deferred-upload flush is needed; everything else (packing, sampling accessors) is
-    backend-internal and reached through the source-contract accessors above.
+    THE one R8 texture core UI draws from: fonts, icons and the solid/dash assists all pack 
+    into it, so they share a bindless slot and batch into one draw per clip/viewport scope.
+    
+    Past this seam only the deferred-upload flush is needed; everything else (packing, sampling
+    accessors) is backend-internal and reached through the source-contract accessors above.
+
 ==============================================================================================*/
 
-bool            res_atlas_flush_upload  ( void );   // re-upload if dirty; true when pixels were sent
+/* re-uploads if dirty; true when pixels were sent */
+
+bool            res_atlas_flush_upload  ( void );   
 
 /* Occupancy diagnostics (mem stats print): percent of the packable region covered, live tenant
    count, current dimensions (the atlases grow under pressure; 0-dims = never created). */
+
 void            res_atlas_occupancy     ( f32* pct, u32* tenants, u32* w, u32* h );
 void            res_sprite_occupancy    ( f32* pct, u32* tenants, u32* w, u32* h );
 void            res_sdf_occupancy       ( f32* pct, u32* tenants, u32* w, u32* h );
@@ -182,6 +188,7 @@ void            res_sdf_occupancy       ( f32* pct, u32* tenants, u32* w, u32* h
    only on how it was baked, and which of those it chose is what the report exists to show.
    Declared at the seam rather than in gui_res_atlas.h because the frontend report needs it and
    this header is what the frontend sees. */
+
 typedef enum
 {
     RES_TENANT_FONT = 0,   // a baked font page   (draw/gui_glyph_internal.c)
