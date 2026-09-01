@@ -60,7 +60,7 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
        so new and re-opened windows always land on top with no two starting at the same z. */
 
     gui_window_t* win;
-    if ( g_ctx->win.count < g_ctx->win.max )
+    if ( g_ctx->win.count < GUI_MAX_WINDOWS )
     {
         win = &g_ctx->win.pool[ g_ctx->win.count++ ];   /* free slot: append */
     }
@@ -79,24 +79,24 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
                window.  This is the correctness fence.
              - viewport != 0: owns an OS floater/native surface; the viewport reconcile tears that
                surface down once no record targets it, so retiring it here would drop a live window.
-           When NOTHING is evictable, more than max_windows windows are genuinely live on the main
-           surface this frame -- the true "raise max_windows" case -- so fall back to scratch + a
+           When NOTHING is evictable, more than GUI_MAX_WINDOWS windows are genuinely live on the
+           main surface this frame -- the true "raise the cap" case -- so fall back to scratch + a
            break-once assert (same treatment as the backend render-slot overflow). */
-        u32 victim  = g_ctx->win.max;   /* == none found */
+        u32 victim  = GUI_MAX_WINDOWS;   /* == none found */
         u32 oldest  = g_ctx->retained.frame;
         for ( u32 i = 0; i < g_ctx->win.count; ++i )
         {
             gui_window_t* c = &g_ctx->win.pool[ i ];
             if ( c->last_frame == g_ctx->retained.frame || c->viewport != 0 )
                 continue;
-            if ( victim == g_ctx->win.max || c->last_frame < oldest )
+            if ( victim == GUI_MAX_WINDOWS || c->last_frame < oldest )
             {
                 victim = i;
                 oldest = c->last_frame;
             }
         }
 
-        if ( victim != g_ctx->win.max )
+        if ( victim != GUI_MAX_WINDOWS )
         {
             win = &g_ctx->win.pool[ victim ];   /* retire the oldest dormant window in place */
         }
@@ -104,10 +104,10 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
         {
             GUI_WARN_ONCE( "more than %u windows live on the main surface this frame -- "
                            "extra windows share one transient scratch slot and lose persisted "
-                           "state.  Raise gui_config.max_windows.\n", g_ctx->win.max );
-            ORB_ASSERT_MSG_ONCE( false, "gui window pool overflow -- more than max_windows windows "
-                                        "live at once; extras fall back to a shared scratch slot. "
-                                        "Raise gui_config.max_windows" );
+                           "state.  Raise GUI_MAX_WINDOWS (core/gui_core.h).\n", GUI_MAX_WINDOWS );
+            ORB_ASSERT_MSG_ONCE( false, "gui window pool overflow -- more than GUI_MAX_WINDOWS "
+                                        "windows live at once; extras fall back to a shared scratch "
+                                        "slot.  Raise GUI_MAX_WINDOWS (core/gui_core.h)" );
             win = &g_ctx->win.scratch;   /* all slots live: transient, not persisted */
         }
     }
@@ -141,20 +141,10 @@ window_get( gui_id_t id, f32 x, f32 y, f32 w, f32 h )
 gui_window_t*                  /* non-static: a cross-unit seam (core/gui_ctx.h) */
 window_find( gui_id_t id )
 {
-    return window_find_in( g_ctx, id );
-}
-
-/* window_find against an EXPLICIT context rather than whichever is bound -- gui_viewport_update
-   needs this: a tear-off request enqueued while a secondary context was bound (window_begin_ex,
-   native_popin_request) must resolve against THAT context's window pool, since by the time the
-   reconcile runs later in the frame g_ctx has typically rebound to the primary. */
-gui_window_t*                  /* non-static: a cross-unit seam (core/gui_ctx.h) */
-window_find_in( gui_context_t* ctx, gui_id_t id )
-{
-    if ( id == GUI_ID_NONE || !ctx ) return NULL;
-    for ( u32 i = 0; i < ctx->win.count; ++i )
-        if ( ctx->win.pool[ i ].id == id )
-            return &ctx->win.pool[ i ];
+    if ( id == GUI_ID_NONE ) return NULL;
+    for ( u32 i = 0; i < g_ctx->win.count; ++i )
+        if ( g_ctx->win.pool[ i ].id == id )
+            return &g_ctx->win.pool[ i ];
     return NULL;
 }
 
@@ -313,10 +303,6 @@ surface_z_overlay( u32 depth )
 void
 surface_hover_nominate( gui_id_t id, gui_rect_t r, u32 z, i32 viewport )
 {
-    /* Deaf context: not listening for input this frame, skip hover nomination. */
-    if ( !g_ctx->listening )
-        return;
-
     /* Surface gate first: the cursor must be in the OS window hosting this candidate's viewport. */
     if ( viewport != s_io.mouse_viewport )
         return;

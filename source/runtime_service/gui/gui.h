@@ -22,17 +22,15 @@
 
         frame_begin -> ctx_begin / widgets / ctx_end -> frame_end -> render.
 
-    A context (gui_context_t, addressed by a plain i32 handle) owns one bundle of retained
-    UI state -- windows, docks, nav, scroll links. GUI_CTX_DEFAULT (0) is always live after
-    init(); ctx_create() opens a secondary context for an isolated sub-UI (e.g. an in-game
-    menu separate from the editor). A context renders into one or more viewports -- OS
-    windows, each backed by its own RHI surface.
+    The context (gui_context_t) is the one bundle of retained UI state -- windows, docks, nav,
+    scroll links -- live from init() to shutdown().  It renders into one or more viewports --
+    OS windows, each backed by its own RHI surface.
 
     The unit roster is the `unit` list under `target gui` in orb.targets.
 
     A GUI value lives in one of three places, which decides how long it survives:
     1. Ambient singular state -- one shared copy for the whole app (e.g. s_interaction, s_io).
-    2. Per-context retained state -- One gui_context_t, survives across frames (g_ctx).
+    2. Retained state -- the gui_context_t, survives across frames (g_ctx).
     3. Frame scratch -- wiped clean at the start of every frame (e.g. s_build, s_scope).
 
     Two caches exist purely to make an idle screen cheap to redraw:
@@ -167,41 +165,6 @@ typedef struct
 
 typedef u32 gui_dock_id_t;
 #define GUI_DOCK_NONE  0u
-
-/* Context handle -- a plain i32 index into the internal context pool.
-   GUI_CTX_DEFAULT (0) is always valid after init().
-   GUI_CTX_INVALID (-1) signals a failed ctx_create or an unset handle. */
-
-#define GUI_CTX_DEFAULT  0
-#define GUI_CTX_INVALID  (-1)
-
-/*==============================================================================================
-    GUI_FRAME -- context configuration
-
-    Context configuration -- sizes the per-context resource pools at creation time.
-    Pass to ctx_create(); zero fields (and a NULL cfg) mean "the internal maximum" -- the
-    compile-time caps the library was built with.  The default context (slot 0) always uses
-    those maxima; a config only ever scales a secondary context DOWN.
-    max_dock_nodes == 0 in an explicit cfg is valid and disables docking for that context.
-==============================================================================================*/
-
-typedef struct
-{
-    u32  max_windows;    // persisted window pool
-    u32  state_slots;    // keyed state pool: tiny-class slot count; the small class gets
-                         //   3/4 of it, the big class is fixed (GUI_STATE_BIG_SLOTS)
-    u32  popup_depth;    // max popup nesting
-    u32  max_dock_nodes; // dock-tree node pool; 0 = no docking (NULL cfg keeps the default)
-
-} gui_ctx_config_t;
-
-/* NOTE: render surfaces are NOT sized here -- viewports are a single global table shared by
-   every context (OS windows and RHI contexts are a genuinely global, small, fixed-size resource;
-   see s_vp_pool, core/gui_ctx.h), not a per-context pool. */
-
-/* Pre-built config -- a deliberately small profile for lightweight in-game UI contexts */
-#define GUI_CTX_CONFIG_GAME_UI \
-    ( ( gui_ctx_config_t ){ 8, 64, 4, 0 } )
 
 /*==============================================================================================
     Shared leaf types -- spans, easing, callback typedefs
@@ -3104,9 +3067,8 @@ typedef enum
                     for the whole run whether one window is open or fifty; summed exhaustively
                     in render/gui_render_mem.c (the accounting contract lives there).
 
-    - CPU heap:     One malloc block per live context (header + state / popup / window /
-                    viewport / dock pools).  Dynamic: grows only when a secondary context is
-                    created.
+    - CPU heap:     The atlases' resident mirrors and retained tenant sources.  Dynamic: grows
+                    with what is loaded into them.
 
     Every bucket is exact (a sizeof of the backing array, a summed malloc size, or a live-count
     multiply of a fixed region), so the grand total is the true resident footprint -- not a
@@ -3172,14 +3134,12 @@ typedef struct
 
     /* --- CPU dynamic memory (heap). --- */
 
-    u32 cpu_context_bytes;      // sum over live contexts of the single ctx block (header + all pools)
-    u32 context_count;          // live contexts contributing to cpu_context_bytes
     u32 cpu_atlas_bytes;        // atlas-owned heap: resident staging mirror + every tenant's retained
                                 //   source copy, summed over all three atlases
     u32 cpu_atlas_cov_bytes;    // that total split the same way as the gpu_tex_* rows: each atlas
     u32 cpu_atlas_sdf_bytes;    //   pays its mirror (w*h*bpp, mirroring its texture) plus the
     u32 cpu_atlas_spr_bytes;    //   retained sources, so the CPU side runs ahead of the GPU side
-    u32 cpu_dynamic_total;      // heap total: cpu_context_bytes + cpu_atlas_bytes
+    u32 cpu_dynamic_total;      // heap total: cpu_atlas_bytes
 
     /* --- Grand total: everything the gui system holds right now. --- */
 

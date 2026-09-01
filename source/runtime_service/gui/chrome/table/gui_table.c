@@ -45,8 +45,7 @@
                                 sequentially on one thread).
       - gui_table_persist_t  : persistent per-table state (col widths, fit measures, display
                                 order, visibility, sort, scroll), a big-class tenant of the keyed
-                                state pool (GUI_STATE) -- per-context like all keyed state, so two
-                                bound contexts never share a same-titled table's state.  The type
+                                state pool (GUI_STATE).  The type
                                 and the machinery over it (track resolve, pair-resize drag, sort
                                 cycle + order sort, row span) are the table ENGINE:
                                 flow/gui_table_engine.c.

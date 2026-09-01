@@ -28,8 +28,8 @@
     self-measurement lag.  Hover tooltips resolve against the same snapshot the bars were drawn
     from, so they always agree.
 
-    Emitted internally (debug_overlays_emit, gui_frame_overlay.c) at the default context's
-    ctx_end while debug_enable is on; the F10 hotkey owns the open flag and the window's X
+    Emitted internally (debug_overlays_emit, gui_frame_overlay.c) at ctx_end while
+    debug_enable is on; the F10 hotkey owns the open flag and the window's X
     button writes it back to false.  Included by gui_debug.c; the frame unit's overlay driver
     opens it across the boundary through debug/gui_debug.h.  Compiled out unless GUI_PIPELINE_DASHBOARD
     (gui_render.h); dash_window stays a no-op stub then.

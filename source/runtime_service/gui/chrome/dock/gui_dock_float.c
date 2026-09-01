@@ -91,8 +91,6 @@ dock_float_hit( gui_id_t drag_id, i32 vp, gui_dock_node_t** out_node, gui_id_t* 
 {
     *out_node = NULL;
     *out_win  = GUI_ID_NONE;
-    if ( !g_ctx->dock.pool )
-        return false;   /* pool disabled -- no groups can form */
 
     u32  best_z = 0;
     bool found  = false;
@@ -263,8 +261,6 @@ gui_window_tab( const char* title, const char* onto_title )
 {
     if ( !title || !onto_title )
         return;
-    if ( !g_ctx->dock.pool )
-        return;   /* tab groups ride the dock-node pool */
 
     gui_id_t wid = id_hash( title );
     gui_id_t tid = id_hash( onto_title );

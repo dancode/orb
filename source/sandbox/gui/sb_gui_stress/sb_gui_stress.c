@@ -80,7 +80,7 @@
 #define STRESS_TABLE_MAX   5000    // test 3 row cap
 #define STRESS_STORM_MAX   1200    // test 4 primitive cap (~30 verts/prim avg vs the 32K vert pool)
 #define STRESS_CHURN_MAX   600     // test 5 damper cap
-#define STRESS_TINY_SLOTS  512     // mirrors GUI_DEFAULT_STATE_SLOTS
+#define STRESS_TINY_SLOTS  512     // mirrors GUI_STATE_TINY_SLOTS
 #define STRESS_DOCK_MAX    12      // test 6 docked-window cap
 #define STRESS_MUT_MAX     100     // test 7 row cap (big-class slots are 32 -- overflows them)
 #define STRESS_SWARM_MAX   24      // test 8 block cap (GUI_MAX_VOLATILE is 16 -- deliberate overflow)
@@ -797,7 +797,7 @@ main( int argc, char** argv )
 
         if ( gui()->frame_begin( dt ) )
         {
-            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            gui()->ctx_begin();
             build_frame();
             gui()->ctx_end();
         }

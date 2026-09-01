@@ -15,8 +15,8 @@
     The keyed per-widget state pool that these ids address is the companion service in
     core/gui_state.c, included immediately after this file.
 
-    Included by gui_core.c after core/gui_ctx.c, which defines g_ctx (for the per-context id
-    salt) and the id-stack storage (s_id_stack[], s_id_sp) the verbs below operate on.
+    Included by gui_core.c after core/gui_ctx.c, which defines the id-stack storage
+    (s_id_stack[], s_id_sp) the verbs below operate on.
 
 ==============================================================================================*/
 // clang-format off
@@ -28,10 +28,7 @@
 gui_id_t                       /* non-static: a cross-unit seam (core/gui_core.h) */
 id_hash( const char* str )
 {
-    /* Seed FNV-1a with the context's id salt so the same string hashes to a distinct id per context.
-       g_ctx->retained.id_salt is 0 for the default context -> the standard 0x811C9DC5 basis -> ids are
-       byte-identical to the unsalted hash, so single-context behavior is unchanged. */
-    u32 h = 0x811C9DC5u ^ g_ctx->retained.id_salt;
+    u32 h = 0x811C9DC5u;
     for ( ; *str; ++str )
         h = ( h ^ (u8)*str ) * 0x01000193u;
     return h ? h : 1u;    /* never return GUI_ID_NONE (0) */

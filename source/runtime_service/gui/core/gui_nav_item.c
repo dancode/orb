@@ -173,11 +173,11 @@ nav_item_stamp_label( gui_id_t id, const char* label )
     /* Dormant-frame append: nav_item_register skipped this item (keyboard disengaged), but a
        LABELED item is a type-ahead candidate and type-ahead must be able to engage nav from
        cold -- so the labeled subset always registers.  Mirror the item_state early-outs that
-       would have prevented the registration (disabled / deaf / replay / wrong nav window). */
+       would have prevented the registration (disabled / replay / wrong nav window). */
     if ( !g_ctx->nav.reg_all )
     {
         if ( s_scope.win != g_ctx->nav.win ) return;
-        if ( ( s_scope.flags & GUI_ITEM_DISABLED ) || !g_ctx->listening || s_replay_mode ) return;
+        if ( ( s_scope.flags & GUI_ITEM_DISABLED ) || s_replay_mode ) return;
         if ( g_ctx->nav.item_count >= GUI_NAV_ITEMS_MAX ) return;
 
         gui_nav_item_t* nit = &g_ctx->nav.items[ g_ctx->nav.item_count++ ];

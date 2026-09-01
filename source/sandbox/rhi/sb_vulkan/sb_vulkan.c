@@ -185,7 +185,7 @@ main( int argc, char** argv )
 
         if ( gui()->frame_begin( dt ) )
         {
-            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            gui()->ctx_begin();
 
             gui()->window_set_next_pos ( 20, 20, GUI_COND_ONCE );
             gui()->window_set_next_size( 300, 190, GUI_COND_ONCE );

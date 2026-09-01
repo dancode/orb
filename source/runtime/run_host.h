@@ -47,7 +47,7 @@
                        (capped, time-scaled); run()->clock() has richer timing.
     on_gui           : UI emission; called only when gui is loaded AND the frame is dirty
                        (gui()->frame_begin returned true — clean retained frames skip it).
-                       Runs inside the default context's build, after the chrome shell.
+                       Runs inside the gui build, after the chrome shell.
     on_close_request : main-window X pressed; return true to allow the quit, false to veto
                        ("unsaved changes" flows). NULL = close immediately.  run_host_quit()
                        is programmatic and final — it does not consult this.

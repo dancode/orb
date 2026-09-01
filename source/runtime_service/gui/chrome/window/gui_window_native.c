@@ -298,7 +298,6 @@ native_popin_request( gui_window_t* win )
     s_vp_request.win_id  = s_build.win.id;
     s_vp_request.from_vp = win ? win->viewport : 0u;
     s_vp_request.title   = s_build.win.title;
-    s_vp_request.owner   = g_ctx;   /* this window's context, for the reconcile's lookup */
 }
 
 /*==============================================================================================

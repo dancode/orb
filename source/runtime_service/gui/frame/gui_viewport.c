@@ -129,8 +129,8 @@ viewport_trim_count( void )
         --s_vp_count;
 }
 
-/* Reassign every window on viewport from_vp, in any context, to to_vp, landing each inside the
-   destination's work area.  A floater-hosted window sits native-pinned at (0,0) at the floater's
+/* Reassign every window on viewport from_vp to to_vp, landing each inside the destination's
+   work area.  A floater-hosted window sits native-pinned at (0,0) at the floater's
    full size; carried verbatim onto the primary surface that buries its title bar under the
    caption band / main menu bar.  Size-then-position clamp, mirroring the merge-back placement;
    NO_BOUNDARY_CLAMP windows keep their externally-managed rect. */
@@ -142,59 +142,45 @@ viewport_migrate_windows( i32 from_vp, i32 to_vp )
     f32 dh  = vp_h( to_vp );
     f32 top = vp_work_top( to_vp );
 
-    for ( u32 c = 0; c < s_ctx_pool_count; ++c )
+    for ( u32 i = 0; i < g_ctx->win.count; ++i )
     {
-        gui_context_t* ctx = s_ctx_pool[ c ];
-        if ( !ctx )
+        gui_window_t* win = &g_ctx->win.pool[ i ];
+        if ( win->viewport != from_vp )
+            continue;
+        win->viewport = to_vp;
+
+        if ( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP )
             continue;
 
-        for ( u32 i = 0; i < ctx->win.count; ++i )
-        {
-            gui_window_t* win = &ctx->win.pool[ i ];
-            if ( win->viewport != from_vp )
-                continue;
-            win->viewport = to_vp;
+        f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
+        if ( win->w > dw )    win->w = dw;
+        if ( win->h > max_h ) win->h = max_h;
 
-            if ( win->flags & GUI_WIN_NO_BOUNDARY_CLAMP )
-                continue;
-
-            f32 max_h = dh - top; if ( max_h < 0.0f ) max_h = 0.0f;
-            if ( win->w > dw )    win->w = dw;
-            if ( win->h > max_h ) win->h = max_h;
-
-            f32 max_x = dw - win->w; if ( max_x < 0.0f ) max_x = 0.0f;
-            f32 max_y = dh - win->h; if ( max_y < top  ) max_y = top;
-            win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );
-            win->y = win->y < top  ? top  : ( win->y > max_y ? max_y : win->y );
-        }
+        f32 max_x = dw - win->w; if ( max_x < 0.0f ) max_x = 0.0f;
+        f32 max_y = dh - win->h; if ( max_y < top  ) max_y = top;
+        win->x = win->x < 0.0f ? 0.0f : ( win->x > max_x ? max_x : win->x );
+        win->y = win->y < top  ? top  : ( win->y > max_y ? max_y : win->y );
     }
 }
 
-/* True if any window, in any context, is currently assigned to viewport vp.  When
-   out_max_last_frame is non-NULL, also writes the highest last_frame among them (0 if none). */
+/* True if any window is currently assigned to viewport vp.  When out_max_last_frame is
+   non-NULL, also writes the highest last_frame among them (0 if none). */
 
 static bool
 viewport_has_windows( i32 vp, u32* out_max_last_frame )
 {
     bool any    = false;
     u32  max_lf = 0u;
-    for ( u32 c = 0; c < s_ctx_pool_count; ++c )
+    for ( u32 i = 0; i < g_ctx->win.count; ++i )
     {
-        gui_context_t* ctx = s_ctx_pool[ c ];
-        if ( !ctx )
+        gui_window_t* win = &g_ctx->win.pool[ i ];
+        if ( win->viewport != vp )
             continue;
 
-        for ( u32 i = 0; i < ctx->win.count; ++i )
-        {
-            gui_window_t* win = &ctx->win.pool[ i ];
-            if ( win->viewport != vp )
-                continue;
+        any = true;
 
-            any = true;
-
-            if ( win->last_frame > max_lf )
-                max_lf = win->last_frame;
-        }
+        if ( win->last_frame > max_lf )
+            max_lf = win->last_frame;
     }
     if ( out_max_last_frame )
         *out_max_last_frame = max_lf;
@@ -604,11 +590,7 @@ viewport_service_mergeback( gui_window_t* win )
                       tolerates a transient single-frame hide.
 
    Runs after the tear-off / merge-back step, so a window just moved this frame already carries
-   last_frame == gui_frame_index() on its new surface and never reads as abandoned.
-
-   "abandoned" is judged via viewport_has_windows, which scans every context, not just the
-   bound one -- so a floater a secondary context is still using is never destroyed out from
-   under it. */
+   last_frame == gui_frame_index() on its new surface and never reads as abandoned. */
 static void
 viewport_teardown_owned( void )
 {
@@ -657,14 +639,11 @@ gui_viewport_update( void )
                   "frame_end() and render()." );
 
     /* (1) Tear-off / merge-back: a window whose title was dragged off its host surface (enqueued by
-       window_begin_ex) changes which surface hosts it.  Resolved against the REQUEST's owner
-       context (stamped at enqueue time), not whichever context happens to be bound now -- by this
-       point in the frame every ctx_begin/ctx_end has closed and g_ctx has typically rebound to the
-       primary, which would silently miss (or worse, mis-hit) a secondary context's window. */
+       window_begin_ex) changes which surface hosts it. */
     if ( s_vp_request.active )
     {
         s_vp_request.active     = false;
-        gui_window_t* win     = window_find_in( s_vp_request.owner, s_vp_request.win_id );
+        gui_window_t* win     = window_find( s_vp_request.win_id );
         bool            has_home = s_vp_request.has_home;
         s_vp_request.has_home   = false;   /* one-shot: never leak into a later drag tear-off */
         if ( win && s_vp_request.from_vp == 0 )

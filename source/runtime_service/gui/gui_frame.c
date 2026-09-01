@@ -29,7 +29,6 @@
     frame/gui_frame_font.c       -- font API (load/use/push/pop/active_id) + the font -> layout bridge (gui_style_apply)
     frame/gui_frame_dpi.c        -- the DPI response engine: per-viewport bake resolve / land / poll (monitor scale -> font retarget)
     frame/gui_pane.c             -- the pane bracket: pane_tag + gui_pane_begin/end stamp BOTH servers
-    frame/gui_context.c          -- public multi-context lifecycle + the context block allocation
     frame/gui_viewport.c         -- surface record lifecycle (viewport_create/destroy) + viewport open/resize/
                                       close + gui-owned floater lifecycle (spawn/update/render_floaters)
     frame/gui_boot.c             -- THE BOOT PATH: boot + boot_poll + the boot_present pair + boot_pace
@@ -78,10 +77,7 @@
 /* Frame-unit internal seams -- both ends live in THIS translation unit, so the declarations
    live here rather than in any unit header (the frame unit owns no header of its own: its
    public face IS gui.h / gui_api.h / gui_host.h).  Forward-declared because the frame group's
-   include order has callers (gui_frame_loop.c) before definers (gui_context.c, gui_viewport.c). */
-
-gui_context_t* ctx_alloc_slot ( const gui_ctx_config_t* c, u32 slots, i32 slot );           /* gui_context.c */
-void           ctx_pool_init  ( void );                                                     /* gui_context.c */
+   include order has callers (gui_frame_loop.c) before definers (gui_viewport.c). */
 
 bool           viewport_create ( i32 vp, rhi_texture_t target, i32 win_id );             /* gui_viewport.c */
 void           viewport_destroy( i32 vp );                                               /* gui_viewport.c */
@@ -207,10 +203,8 @@ void           gui_type_clear      ( void );                                    
 // (dpi_managed / dpi_base_family) to know which family is managed and whether to act.
 #include "runtime_service/gui/frame/gui_frame_type.c"
 
-// The pane bracket -- the go-between verb stamping BOTH servers; and the public
-// multi-context lifecycle -- context destruction tears down GPU surfaces, orchestrator work.
+// The pane bracket -- the go-between verb stamping BOTH servers.
 #include "runtime_service/gui/frame/gui_pane.c"
-#include "runtime_service/gui/frame/gui_context.c"
 
 // Viewport lifecycle + gui-owned floater surfaces -- separated from gui_frame_loop.c because it is
 // a distinct concern (OS window / rhi context ownership) from the frame lifecycle proper.  Included

@@ -14,12 +14,12 @@
         ambient records   s_interaction, s_replay_mode, s_build, s_scope
         bracketing        the item-flag stack + its verbs, the id-scope stack storage (verbs in
                           core/gui_id.c), the popup nesting counter
-        context pool      s_ctx_pool + ctx_bind -- the whole multi-context seam
+        the context       g_ctx_store + ctx_reset -- the one retained-state instance
         viewport table    s_vp_pool + the win_id -> slot and drawable-size lookups
         pointer           rect_hit, the hardware-cursor request / flush
         arbitration       the interact_* verbs over hover / active, the focus edit latch
         frame drivers     interact_new_frame (once per APP frame), ctx_new_frame (once per
-                          CONTEXT), and the frame-clock / redraw doors over the retained record
+                          build), and the frame-clock / redraw doors over the retained record
 
     Included by gui_core.c after core/gui_io.c, so s_io is in scope.
 
@@ -29,10 +29,9 @@
 /*==============================================================================================
     Ambient records
 
-    One pointer, one keyboard, one mouse, so none of this is per-viewport or per-context: a
-    single set of globals every context nominates into during its emit.  Contexts build
-    sequentially on one thread, so the frame scratch is shared for the same reason -- each
-    context in turn targets whichever records are live.
+    One pointer, one keyboard, one mouse, so none of this is per-viewport: a single set of
+    globals every window nominates into during its emit.  The build runs on one thread, so the
+    frame scratch is a single set too.
 ==============================================================================================*/
 
 /* Hover / active / focus, persisting across frames.  Tier: ambient singular -- one physical user,
@@ -199,7 +198,7 @@ static u32      s_id_sp;
 /*==============================================================================================
     Popup nesting depth (frame scratch)
 
-    The open popup SET persists per context (g_ctx->popup.open / open_count, ordered parent ->
+    The open popup SET persists in the context (g_ctx->popup.open / open_count, ordered parent ->
     child).  This counter is its per-frame half: the nesting depth while emitting.  popup_open
     writes a request at this depth and popup_begin matches its id against it, so the two counters
     balance through the normal push/pop and no slot is reused or lost.  The stack contract itself
@@ -215,44 +214,38 @@ void popup_begin_depth_push( void ) { ++s_popup_begin_count; }
 void popup_begin_depth_pop( void )  { if ( s_popup_begin_count ) --s_popup_begin_count; }
 
 /*==============================================================================================
-    Context pool -- the whole multi-context seam
+    The context -- the one retained-state instance
 
-    A context is the emission session code binds once and emits ALL its windows into; it owns the
-    state that must persist between frames for that UI (gui_context_t, core/gui_ctx.h).  Slot 0 is
-    the default context -- bound at init, freed only at shutdown, never torn down by ctx_destroy;
-    slots 1..N come from ctx_create and share the same single-malloc block layout.  The storage is
-    the server's; the PUBLIC lifecycle and the block ALLOCATION (which sizes chrome's records, so
-    it needs whole-stack type visibility) live in frame/gui_context.c.
+    gui_context_t (core/gui_ctx.h) holds everything that must persist between frames: the keyed
+    state pool, window records, nav cursor, popup stack, dock nodes.  It is a plain static;
+    every pool inside it is a fixed array, so nothing here is allocated or freed.  Every retained
+    access spells it out (g_ctx->retained, g_ctx->nav, g_ctx->win) so persistent state reads as
+    distinct from the s_* frame scratch at every call site.
 
-    Binding copies nothing, and every retained access spells the bound context out (g_ctx->retained,
-    g_ctx->nav, g_ctx->win) so per-context state reads as distinct from the global s_* scratch at
-    every call site.
-
-    The frame clock (g_ctx->retained.frame) advances per CONTEXT at ctx_begin, not per app frame:
-    a context not rebuilt on a given frame must not tick, or its live keyed-state entries would
-    read as cold and be reclaimed -- losing scroll / open state -- while it is merely hidden.
+    The frame clock (g_ctx->retained.frame) advances at ctx_begin -- once per build, not per
+    app frame.  A clean (skipped) frame does not tick it, so keyed-state entries stay warm
+    across idle frames instead of reading as cold and being reclaimed.
 ==============================================================================================*/
 
-gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];
-u32            s_ctx_pool_count;   /* live slot count; always >= 1 after init */
-gui_context_t* g_ctx = NULL;       /* the bound context (extern'd in core/gui_ctx.h) */
+gui_context_t g_ctx_store;   /* reached as g_ctx (core/gui_ctx.h) */
 
-/* Bind the active context; NULL rebinds the default. */
+/* Return the context to its zero state.  Called once from gui_init so a shutdown / init pair
+   starts clean; the static is already zero on first run. */
 
 void
-ctx_bind( gui_context_t* ctx )
+ctx_reset( void )
 {
-    g_ctx = ctx ? ctx : s_ctx_pool[ 0 ];
+    memset( &g_ctx_store, 0, sizeof( g_ctx_store ) );
 }
 
 /*==============================================================================================
     Viewport table -- The one shared real surface set
 
-    Not per-context: OS windows and RHI contexts are global, small, fixed-size resource.
-    The gui concern is which gui window is assigned into which slot resource slot.  
-    
+    OS windows and RHI contexts are a global, small, fixed-size resource.  The gui concern is
+    which gui window is assigned into which resource slot.
+
     - Viewport [0] is the main swapchain, the rest are floaters.
-    - A plain zero-init global (not part of any context's malloc block)
+    - A plain zero-init global, separate from the context.
     - The open/close lifecycle over it is frame/gui_viewport.c's.
 
 ==============================================================================================*/
@@ -264,7 +257,6 @@ i32            s_vp_count;
    win_id matches, else GUI_VP_INVALID -- the window closed between the event and this frame, so
    the pending mouse coordinates belong to no live viewport and must not be aliased onto one (in
    particular never onto 0; that would read as a genuine hover of the main viewport).
-   Context-independent -- there is only one table.  
 
    Forward-declared in core/gui_ctx.h; called by the mouse-input path in core/gui_io.c. */
 
@@ -477,13 +469,12 @@ void item_mark_edited( void ) { s_interaction.focused_id_edited = true; }
 /*==============================================================================================
     Frame drivers
 
-    Two resets, at two rates.  interact_new_frame turns over the GLOBAL records once per APP
-    frame (one mouse, one keyboard, one hover window); ctx_new_frame turns over the frame scratch
-    and ticks the retained clock once per CONTEXT.  Calling the global one per context would let
-    the second ctx_begin clobber the hover_win / active_id the first resolved.
+    Two resets, at two points.  interact_new_frame turns over the interaction records at
+    frame_begin (input arrives whether or not a build follows); ctx_new_frame turns over the
+    frame scratch and ticks the retained clock at ctx_begin, which a clean frame skips.
 ==============================================================================================*/
 
-/* Once per app frame, from gui_frame_begin, before any ctx_begin. */
+/* Once per app frame, from gui_frame_begin, before ctx_begin. */
 void
 interact_new_frame( void )
 {
@@ -497,8 +488,8 @@ interact_new_frame( void )
     s_interaction.hover_id = GUI_ID_NONE;
 
     /* Promote the window the cursor was over last frame, then start a fresh nomination.
-       hover_win lags the cursor by one frame -- all contexts contribute nominations during
-       emission; the front-most (highest z) winner is promoted at the NEXT frame_begin. */
+       hover_win lags the cursor by one frame -- windows nominate during emission; the
+       front-most (highest z) winner is promoted at the NEXT frame_begin. */
     s_interaction.hover_win        = s_interaction.next_hover_win;
     s_interaction.next_hover_win   = GUI_ID_NONE;
     s_interaction.next_hover_win_z = 0;
@@ -529,10 +520,9 @@ interact_new_frame( void )
     s_interaction.mouse_cursor = APP_CURSOR_ARROW;
 }
 
-/* Once per context, from ctx_begin (frame/gui_frame_loop.c).  Touches no global s_interaction
-   field -- those are the reset above.  The layout-stack reset and the per-frame STYLE reset are
-   the flow and style units' own; ctx_begin pairs all three, since this server knows nothing of
-   either. */
+/* Once per build, from ctx_begin (frame/gui_frame_loop.c).  Touches no s_interaction field --
+   those are the reset above.  The layout-stack reset and the per-frame STYLE reset are the flow
+   and style units' own; ctx_begin pairs all three, since this server knows nothing of either. */
 void
 ctx_new_frame( void )
 {
@@ -571,7 +561,7 @@ ctx_new_frame( void )
     s_build.next_val            = GUI_ITEM_NONE;
     s_scope.flags               = GUI_ITEM_NONE;
 
-    /* The interaction clip starts at the full display, and the context's clock ticks. */
+    /* The interaction clip starts at the full display, and the build clock ticks. */
 
     s_scope.clip = ( gui_rect_t ){ 0.0f, 0.0f, (f32)s_io.display_w, (f32)s_io.display_h };
     ++g_ctx->retained.frame;
@@ -580,14 +570,14 @@ ctx_new_frame( void )
 /*==============================================================================================
     Frame clock + redraw request -- the read / request doors over the retained record.
 
-    Layers above the server read the monotonic per-context build counter for emit-gating and raise
-    the bound context's dirty flag through these, rather than reaching into g_ctx->retained.  The
-    owner still touches the fields directly: the bump is in ctx_new_frame above, the anim / item
-    writes are in their own files, and the frame loop keeps the clear + read.
+    Layers above the server read the monotonic build counter for emit-gating and raise the
+    dirty flag through these, rather than reaching into g_ctx->retained.  The owner still
+    touches the fields directly: the bump is in ctx_new_frame above, the anim / item writes are
+    in their own files, and the frame loop keeps the clear + read.
 ==============================================================================================*/
 
 u32  gui_frame_index( void ) { return g_ctx->retained.frame; }
-void redraw_request ( void ) { if ( g_ctx ) g_ctx->retained.wants_redraw = true; }
+void redraw_request ( void ) { g_ctx->retained.wants_redraw = true; }
 
 // clang-format on
 /*============================================================================================*/

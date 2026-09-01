@@ -140,7 +140,7 @@ main( int argc, char** argv )
            demo window toggled open through it. */
         if ( gui()->frame_begin( dt ) )
         {
-            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            gui()->ctx_begin();
 
             ex_frame();
 

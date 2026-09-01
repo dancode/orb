@@ -7,7 +7,7 @@
     its interaction state through this one recipe, so they all share the same feel:
 
         latch      -- record the item as "the last item" for the IsItem* queries / context menus
-        gate       -- disabled flag, deaf context, volatile replay: return inert without arbitrating
+        gate       -- disabled flag, volatile replay: return inert without arbitrating
         arbitrate  -- hover via the exclusive-ownership rules (one mouse: occlusion by hover_win,
                       modal-while-dragging via active_id), press captures active / focus
         resolve    -- click = press + release on the same item; auto-repeat replaces it when
@@ -134,15 +134,6 @@ item_state( gui_id_t id, gui_rect_t r, gui_item_kind_t kind )
     if ( s_scope.flags & GUI_ITEM_DISABLED )
     {
         s_scope.last_status = st;      /* a disabled item is still the last item, reported inert */
-        return st;
-    }
-
-    /* Deaf context: not listening this frame -- render but return inert state.
-       last_id/rect are latched above so item-query calls still work. */
-
-    if ( !g_ctx->listening )
-    {
-        s_scope.last_status = st;
         return st;
     }
 

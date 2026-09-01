@@ -20,7 +20,7 @@
     Usage (host):
         if ( gui()->frame_begin( dt ) )   // returns frame_dirty; emit only when true
         {
-            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            gui()->ctx_begin();
             ex_frame();                       // menu bar + every open demo window
             gui()->ctx_end();
         }

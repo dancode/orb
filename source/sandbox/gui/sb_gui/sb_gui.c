@@ -364,15 +364,15 @@ main( int argc, char** argv )
         /* The GUI emit and render frame loop */
 
         if ( gui()->frame_begin( dt ) ) {
-             gui()->ctx_begin( GUI_CTX_DEFAULT );
+             gui()->ctx_begin();
 
              show_example_main_menu_bar();
             
              if ( show_demo )
                   show_demo_window( &show_demo );
 
-             /* Closing the default context also auto-emits the debug overlays (perf/state/dashboard)
-                last in its build.  Clean frames skip this whole scope; frame_end below replays the
+             /* ctx_end also auto-emits the debug overlays (perf/state/dashboard) last in the
+                build.  Clean frames skip this whole scope; frame_end below replays the
                 registered volatile_cb callbacks (see demo_volatile_pulse_cb above) internally. */
              
              gui()->ctx_end();

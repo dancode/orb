@@ -50,8 +50,7 @@
 ==============================================================================================*/
 
 /* The keyboard-focused window (click / window_set_nav / Ctrl+Tab / Alt) lives in
-   g_ctx->nav.focused_win (core/gui_ctx.h) -- per-context, so two bound contexts never stomp each
-   other's focus.  It is the sole authority for where the keyboard goes: NONE means no window has
+   g_ctx->nav.focused_win (core/gui_ctx.h).  It is the sole authority for where the keyboard goes: NONE means no window has
    focus and the keyboard falls through to the app (no front-most fallback -- a defocused window does
    not silently keep it).  Focus is acquired only by a click, Ctrl+Tab, or window_set_nav. */
 
@@ -999,14 +998,6 @@ nav_finish( void )
 void
 nav_new_frame( void )
 {
-    /* A deaf (non-listening) context takes no input.  s_io and the interaction record are shared by
-       every context (core/gui_ctx.c), so a passive context must not read -- much less key_claim
-       -- the keyboard from them, or it would steal keys from whichever context IS listening this
-       frame (and, with per-key claim, starve it of the press entirely).  The nav-driver peer of the
-       widget-level deaf gate (core/gui_item.c) and the hover-nomination gate (core/gui_surface.c). */
-    if ( !g_ctx->listening )
-        return;
-
     /* One-shot: only an adoption made THIS frame (recovery below, or a resolver in nav_finish)
        chases the cursor into view during the emission that follows. */
     g_ctx->nav.scroll_chase = false;

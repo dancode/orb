@@ -575,7 +575,6 @@ window_apply_tearoff_gesture( gui_window_t* win, gui_id_t id, const char* title,
             s_vp_request.win_id  = id;
             s_vp_request.from_vp = win->viewport;
             s_vp_request.title   = title;
-            s_vp_request.owner   = g_ctx;   /* this window's context, for the reconcile's lookup */
         }
     }
 
@@ -863,7 +862,6 @@ window_begin_ex( gui_id_t id, const char* title, f32 x, f32 y, f32 w, f32 h, gui
         s_vp_request.from_vp  = 0;
         s_vp_request.title    = title;
         s_vp_request.has_home = true;   /* spawn reads restore geometry + maximized from the record */
-        s_vp_request.owner    = g_ctx;  /* this window's context, for the reconcile's lookup */
 
         win->last_frame      = gui_frame_index();
         s_build.win.hidden   = true;
@@ -1224,7 +1222,7 @@ gui_window_begin( const char* title, gui_win_flags_t flags )
        record will inherit. */
     f32 x = 60.0f, y = 60.0f;
     const gui_next_win_t* next_win = gui_next_win_peek();
-    if ( !window_find( id ) && !next_win->has_pos && g_ctx->win.count < g_ctx->win.max )
+    if ( !window_find( id ) && !next_win->has_pos && g_ctx->win.count < GUI_MAX_WINDOWS )
     {
         /* The pool-full guard keeps a scratch-hosted overflow window (window_find never sees it,
            so it reads as appearing EVERY frame) from advancing the cascade and walking across
@@ -1271,8 +1269,7 @@ gui_viewport_shell( i32 vp, const char* title, gui_win_flags_t flags )
     Called from gui_dpi_poll (frame/gui_frame_font.c) when a viewport's bake changed: metrics and
     text on that surface just grew by `ratio`, so a rect sized for the old scale now clips its
     own content and covers less of the screen.  Multiply that surface's persisted free-window
-    rects by the same ratio.  Windows are per-context but a viewport is global, so every live
-    context's pool is visited (the same rule as the viewport-close migration in
+    rects by the same ratio (the same walk as the viewport-close migration in
     frame/gui_viewport.c).
 
     Docked windows need no special case: the node owns their geometry (splits are RATIOS, so the
@@ -1297,24 +1294,17 @@ windows_dpi_rescale( i32 vp, f32 ratio )
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS || s_vp_pool[ vp ].owned )
         return;
 
-    for ( u32 c = 0; c < s_ctx_pool_count; ++c )
+    for ( u32 i = 0; i < g_ctx->win.count; ++i )
     {
-        gui_context_t* ctx = s_ctx_pool[ c ];
-        if ( !ctx )
+        gui_window_t* win = &g_ctx->win.pool[ i ];
+        if ( win->id == 0 || win->viewport != vp )
             continue;
 
-        for ( u32 i = 0; i < ctx->win.count; ++i )
-        {
-            gui_window_t* win = &ctx->win.pool[ i ];
-            if ( win->id == 0 || win->viewport != vp )
-                continue;
-
-            win->x *= ratio;        win->y *= ratio;
-            win->w *= ratio;        win->h *= ratio;
-            win->norm.x *= ratio;   win->norm.y *= ratio;    /* saved min/max restore rect  */
-            win->norm.w *= ratio;   win->norm.h *= ratio;
-            win->reopen.w *= ratio; win->reopen.h *= ratio;  /* closed-floater respawn size */
-        }
+        win->x *= ratio;        win->y *= ratio;
+        win->w *= ratio;        win->h *= ratio;
+        win->norm.x *= ratio;   win->norm.y *= ratio;    /* saved min/max restore rect  */
+        win->norm.w *= ratio;   win->norm.h *= ratio;
+        win->reopen.w *= ratio; win->reopen.h *= ratio;  /* closed-floater respawn size */
     }
 }
 

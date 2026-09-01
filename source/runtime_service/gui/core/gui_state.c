@@ -23,9 +23,9 @@
     type's size as the get for the same id, which the GUI_STATE_PEEK sugar guarantees.
 
     The home bucket is picked by multiply-shift range reduction ((id * count) >> 32) and the
-    probe wraps by increment, so table counts need NOT be powers of two -- the class partition
-    is tunable per class.  A slot untouched for more than one frame is a tombstone the next
-    insert on its chain reclaims; no sweep or free list is needed.
+    probe wraps by increment, so table counts (GUI_STATE_*_SLOTS, core/gui_core.h) need NOT be
+    powers of two.  A slot untouched for more than one frame is a tombstone the next insert on
+    its chain reclaims; no sweep or free list is needed.
 
     Zero-on-create is part of the contract: a tenant's fields must make 0 the natural default
     (a "no sort" is 0, not -1), since a reclaimed or fresh slot always starts zeroed.
@@ -57,12 +57,12 @@ state_class_for( u32 size )
 {
     if ( size <= GUI_STATE_TINY_CAP )
         return ( state_class_t ){ (u8*)g_ctx->retained.state_tiny,
-                                  (u32)sizeof( gui_state_tiny_slot_t ), g_ctx->retained.tiny_count };
+                                  (u32)sizeof( gui_state_tiny_slot_t ), GUI_STATE_TINY_SLOTS  };
     if ( size <= GUI_STATE_CAP )
         return ( state_class_t ){ (u8*)g_ctx->retained.state,
-                                  (u32)sizeof( gui_state_slot_t ),      g_ctx->retained.state_count };
+                                  (u32)sizeof( gui_state_slot_t ),      GUI_STATE_SMALL_SLOTS };
     return     ( state_class_t ){ (u8*)g_ctx->retained.state_big,
-                                  (u32)sizeof( gui_state_big_slot_t ),  g_ctx->retained.big_count };
+                                  (u32)sizeof( gui_state_big_slot_t ),  GUI_STATE_BIG_SLOTS   };
 }
 
 /* Home bucket by multiply-shift range reduction: maps the full 32-bit id range uniformly onto

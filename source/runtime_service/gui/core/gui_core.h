@@ -34,14 +34,12 @@
     depths that are NOT embedded in a shared type stay private to their owning .c file.)
 ==============================================================================================*/
 
-/* Per-context default pool sizes -- used to wire the static default context (slot 0).
-   Secondary contexts may use different sizes passed via gui_ctx_config_t. */
+/* Retained pool capacities -- the fixed array bounds embedded in the one gui_context_t
+   (core/gui_ctx.h).  Raise here and rebuild; nothing sizes these at run time. */
 
-#define GUI_DEFAULT_MAX_WINDOWS     32      // default persisted window pool (32)
-#define GUI_DEFAULT_STATE_SLOTS     512     // default keyed state pool capacity
-
-#define GUI_DEFAULT_POPUP_DEPTH     8       // default max nested popups
-#define GUI_DEFAULT_DOCK_NODES      48      // default dock-tree nodes
+#define GUI_MAX_WINDOWS             32      // persisted window records
+#define GUI_POPUP_DEPTH             8       // max nested popups
+#define GUI_DOCK_NODES              48      // dock-tree node pool
 
 #define GUI_KEY_COUNT               128     // gui_io_t key arrays; must cover the full app_key_t range
 
@@ -55,6 +53,11 @@
                                             //   scroll link + user_w/h + the anchor tail-follow pair)
 #define GUI_STATE_BIG_CAP           160     // big-class payload bytes (max tenant: gui_table_persist_t --
                                             //   per-column widths + fit measures + display order)
+/* Keyed state pool capacities, one per class.  Counts need not be powers of two: the probe picks
+   its home bucket by multiply-shift range reduction and wraps by increment (gui_state.c). */
+
+#define GUI_STATE_TINY_SLOTS        512     // tiny class -- the hot one-or-two-word renters
+#define GUI_STATE_SMALL_SLOTS       384     // small class -- regions, scroll links, anim4, carets
 #define GUI_STATE_BIG_SLOTS         32      // big-class capacity (tables are the main tenant)
 
 /*==============================================================================================
@@ -112,9 +115,9 @@ typedef enum
 /*==============================================================================================
     Ambient interaction state -- the one live hover / active / focus, persisting across frames.
 
-    One pointer, one keyboard, one mouse, so none of it is per-viewport or per-context: a single
-    global shared by every context, into which listening contexts nominate hover / active during
-    their emit.  Tier: ambient singular -- one set for the whole app (the three state tiers are
+    One pointer, one keyboard, one mouse, so none of it is per-viewport: a single global that
+    every window nominates hover / active into during its emit.  Tier: ambient singular -- one
+    set for the whole app (the three state tiers are
     named at their definitions in core/gui_ctx.c).  Field story lives with that definition site.
     interact/ stays the only WRITER of the arbitration fields; everything else reads.
 ==============================================================================================*/
@@ -261,34 +264,21 @@ typedef struct
 
 typedef struct
 {
-    /* Per-context id namespace seed.  XOR'd into id_hash's FNV basis, so the same string hashes to a
-       distinct id in each context and every id_combine built on it inherits the offset.  Keeps the
-       ambient hover / active / focus ids -- compared globally across contexts -- from confusing a
-       widget in one viewport with an identically-named widget in another.  0 is the default
-       context's namespace and leaves id_hash byte-identical to the unsalted hash. */
-
-    u32 id_salt;
-
-    u32  frame;           // monotonic frame index, bumped each ctx_begin this context is built
+    u32  frame;           // monotonic frame index, bumped at each ctx_begin
     bool wants_redraw;    // set by gui_anim_f32 while mid-transition; cleared at ctx_begin
 
-    /* The three class tables, all pointing into the context alloc.  Counts need not be powers
-       of two: the probe picks its home bucket by multiply-shift range reduction and wraps by
-       increment (gui_state.c), so the partition can be tuned freely (small = 3/4 of tiny). */
+    /* The three class tables (gui_state.c picks one by the requested payload size). */
 
-    gui_state_tiny_slot_t* state_tiny;  // tiny class (state_slots slots)
-    u32                    tiny_count;
-    gui_state_slot_t*      state;       // small class (3/4 of state_slots)
-    u32                    state_count;
-    gui_state_big_slot_t*  state_big;   // big class (GUI_STATE_BIG_SLOTS)
-    u32                    big_count;
+    gui_state_tiny_slot_t state_tiny[ GUI_STATE_TINY_SLOTS  ];
+    gui_state_slot_t      state     [ GUI_STATE_SMALL_SLOTS ];
+    gui_state_big_slot_t  state_big [ GUI_STATE_BIG_SLOTS   ];
 
 } gui_retained_t;
 
 /* Frame clock + redraw request (core/gui_ctx.c) -- the read / request doors layers above the
    server use instead of reaching into g_ctx->retained, so the record's shape stays the server's.
-   gui_frame_index() is the monotonic per-context build counter (bumped at ctx_begin), read for
-   emit-gating; redraw_request() raises the bound context's dirty flag. */
+   gui_frame_index() is the monotonic build counter (bumped at ctx_begin), read for
+   emit-gating; redraw_request() raises the dirty flag. */
 u32  gui_frame_index( void );
 void redraw_request ( void );
 

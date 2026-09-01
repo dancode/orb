@@ -29,8 +29,8 @@
       - Requests LATCH and apply only at frame seams -- capture at the build, release / cursor /
         order at the next draw_reset -- so a frame is never half live, half frozen.  Every
         latched request raises s_step_pending, which frame_begin folds into frame_dirty
-        (STEP_FRAME_PENDING): per-context wants_redraw is NOT reliable for this, since any later
-        ctx_begin of the same frame wipes it and the request would stall behind the emit skip.
+        (STEP_FRAME_PENDING): wants_redraw is NOT reliable for this, since ctx_begin clears it
+        and the request would stall behind the emit skip.
 
       - The capture copies band-0 segments only (the debug band is the stepper's own tooling and
         must never appear in its own replay), compacting commands/hashes/owners contiguously and

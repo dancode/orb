@@ -112,7 +112,7 @@ dock_free_viewport_tree( i32 vp )
 void
 gui_dock_clear( i32 vp )
 {
-    if ( !g_ctx->dock.pool || vp < 0 || vp >= GUI_MAX_VIEWPORTS )
+    if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return;
     dock_free_viewport_tree( vp );
     redraw_request();   /* wholesale layout discard, typically driven from between frames */

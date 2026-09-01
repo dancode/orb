@@ -40,8 +40,8 @@
 /*==============================================================================================
     Node pool
 
-    Fixed per-context array so child / parent pointers stay valid across frames (no compaction).  A
-    free slot has id == 0; alloc reuses the first freed hole or appends, and never returns id 0.
+    Fixed array so child / parent pointers stay valid across frames (no compaction).  A free slot
+    has id == 0; alloc reuses the first freed hole or appends, and never returns id 0.
 ==============================================================================================*/
 
 /* dock_ref/dock_at convert between a live pointer and its pool index (gui_dock_ref_t).  The pool
@@ -62,13 +62,12 @@ dock_at( gui_dock_ref_t ref )
 static gui_dock_node_t*
 dock_node_alloc( i32 viewport )
 {
-    if ( !g_ctx->dock.pool ) return NULL;   /* docking disabled for this context */
     gui_dock_node_t* n = NULL;
     for ( u32 i = 0; i < g_ctx->dock.count; ++i )      /* reuse a freed hole first */
         if ( g_ctx->dock.pool[ i ].id == 0 ) { n = &g_ctx->dock.pool[ i ]; break; }
     if ( !n )
     {
-        if ( g_ctx->dock.count >= g_ctx->dock.max )
+        if ( g_ctx->dock.count >= GUI_DOCK_NODES )
             return NULL;
         n = &g_ctx->dock.pool[ g_ctx->dock.count++ ];
     }
@@ -210,8 +209,6 @@ dock_hidden_refresh_node( gui_dock_node_t* n )
 void
 dock_hidden_refresh( void )
 {
-    if ( !g_ctx->dock.pool )
-        return;
     for ( i32 vp = 0; vp < s_vp_count; ++vp )
         dock_hidden_refresh_node( dock_at( s_vp_pool[ vp ].dock_root ) );
 

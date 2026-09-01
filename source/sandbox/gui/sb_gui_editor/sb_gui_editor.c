@@ -197,7 +197,7 @@ main( int argc, char** argv )
                displayed, and the Scene window's unchanged hash lets the gui go clean after. */
             if ( scene_render )
                 ed_viewport_flip();
-            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            gui()->ctx_begin();
             ed_shell_build();
             gui()->ctx_end();
         }

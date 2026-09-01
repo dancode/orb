@@ -186,8 +186,8 @@ typedef struct gui_api_s
     f32                 ( *dpi_scale )          ( void );
 
     /* Full memory footprint currently held by gui, in bytes: GPU buffers + atlases, the fixed CPU
-       backend buffers, and the per-context heap blocks -- see gui_mem_stats_t (gui.h) for the
-       bucket breakdown.  print_mem_stats() dumps the same breakdown to stdout as a table. */
+       statics, and the atlas heap -- see gui_mem_stats_t (gui.h) for the bucket breakdown.
+       print_mem_stats() dumps the same breakdown to stdout as a table. */
 
     gui_mem_stats_t     ( *mem_stats       )    ( void );
     void                ( *print_mem_stats )    ( void );
@@ -224,21 +224,19 @@ typedef struct gui_api_s
     /* Frame lifecycle -- the four calls that run every single frame, in order, no matter which
        host is driving gui. BOTH host paths call these verbs; they are what a runtime host
        (run_host_main) uses to drive gui as a service, and what the boot loop below wraps. A
-       frame is four explicit phases -- this is a multi-context system and the API does not hide
-       it; even a single-context host names its one context:
+       frame is four explicit phases:
 
          if ( frame_begin(dt) )        -- global: snapshot app input, compute frame_dirty, reset the
-         {                                draw list on dirty frames.  Binds NO context; call once at
-                                          the top of the frame.  Returns frame_dirty: emit the UI
-                                          build only when true -- on a false (clean) frame skip the
-                                          context scopes entirely; render() replays the preserved
-                                          geometry verbatim and frame_end patches the volatile
-                                          widgets (gui()->volatile_cb) internally.
-           ctx_begin(GUI_CTX_DEFAULT) -- bind a context and run its per-frame init; emit its
-              ... emit windows ...        windows immediately after.
-           ctx_end()                    -- close it, rebinding the previously-bound context.  Closing
-         }                                the DEFAULT context also auto-emits the debug overlays
-                                          when debug_enable is on.
+         {                                draw list on dirty frames.  Call once at the top of the
+                                          frame.  Returns frame_dirty: emit the UI build only when
+                                          true -- on a false (clean) frame skip the build scope
+                                          entirely; render() replays the preserved geometry
+                                          verbatim and frame_end patches the volatile widgets
+                                          (gui()->volatile_cb) internally.
+           ctx_begin()                 -- open the build: per-build init; emit the windows
+              ... emit windows ...        immediately after.
+           ctx_end()                    -- close the build.  Also auto-emits the debug overlays
+         }                                when debug_enable is on.
          frame_end()                   -- seal the build (latches emit cost; asserts ctx balance).
                                           Call on clean frames too -- it runs the volatile replay.
 
@@ -460,48 +458,20 @@ typedef struct gui_api_s
     void ( *viewport_update          )( void );
     void ( *viewport_render_floaters )( void );
 
-    /* Multi-context -- lets one gui instance run more than one independent UI at once, each with
-       its own windows, nav, popups, keyed widget state, and id namespace, so identically-named
-       widgets in two contexts never collide. Most hosts only ever use the primary context
-       (GUI_CTX_DEFAULT / 0), which is always live after init(); a secondary context is for
-       something like a separate in-game overlay that must not share state with the editor UI.
-
-       ctx_create()       -- allocate a fresh secondary context, sized to `cfg` (NULL / zero fields =
-                             the internal maxima the library was compiled with).
-                             Each gets a unique id_salt so same-named widgets in different contexts
-                             never alias.  Returns GUI_CTX_INVALID on pool exhaustion.  Between frames.
-       ctx_destroy()      -- free a secondary context; rebinds the default if it was current.  Never
-                             destroys GUI_CTX_DEFAULT.  Call between frames.
-       ctx_bind()         -- make ctx the current context with no per-frame init: a mid-build "switch
-                             retained state" escape hatch.  ctx_begin/ctx_end are the normal scope;
-                             reach for ctx_bind only to peek at another context's state mid-frame.
-                             GUI_CTX_DEFAULT (0) or any invalid handle rebinds the default.
-       ctx_set_listening() -- set whether a context receives hover/click/nav input.  The default context
-                             starts listening; secondary contexts start deaf.  Multiple contexts may
-                             listen simultaneously; a deaf context renders but returns inert widget state.
-                             Call between frames.
-       ctx_begin()/ctx_end() -- bind a context for the frame and run its per-frame init, then close it.
-                             A balanced scope: ctx_end rebinds whatever ctx_begin found bound.  ctx_begin
-                             always runs the full frame init (hover promotion, nav, popup stale-close)
-                             regardless of the listening flag, and leaves g_ctx pointing at the context,
-                             so emit its windows IMMEDIATELY after the call.
+    /* The build bracket -- ctx_begin runs the per-build init (scratch reset, style reseed, popup
+       stale-close, modal fences, nav turnover) and ctx_end closes the build (dock upkeep, the
+       debug overlays when debug is on).  Emit every window between the two.
 
        FRAME CONTRACT:
-         if ( frame_begin(dt) )         -- once: input poll; true = emit this frame (frame_dirty).
+         if ( frame_begin(dt) )   -- once: input poll; true = emit this frame (frame_dirty).
          {
-           ctx_begin(GUI_CTX_DEFAULT) -- bind + init the default context; emit its windows.
-           ctx_end()                    -- close it (auto-emits debug overlays when debug is on).
-           ctx_begin(ctx2)              -- a second context, if any; emit its windows.
-           ctx_end()
+           ctx_begin()            -- per-build init; emit the windows.
+           ctx_end()              -- close the build (auto-emits debug overlays when debug is on).
          }
-         frame_end()                    -- seal the build; volatile replay on clean frames.
-       A single-context host runs exactly one ctx_begin(GUI_CTX_DEFAULT)/ctx_end pair. */
+         frame_end()              -- seal the build; volatile replay on clean frames.
+       Exactly one ctx_begin/ctx_end pair per emitted frame. */
 
-    i32  ( *ctx_create        )( const gui_ctx_config_t* cfg );
-    void ( *ctx_destroy       )( i32 ctx );
-    void ( *ctx_bind          )( i32 ctx );
-    void ( *ctx_set_listening )( i32 ctx, bool listen );
-    void ( *ctx_begin         )( i32 ctx );
+    void ( *ctx_begin         )( void );
     void ( *ctx_end           )( void );
 
     /* Host input -- the one entry point for OS events. The host drains its own app event ring
@@ -1501,7 +1471,7 @@ typedef struct gui_api_s
        GUI STATE DIRTIES ITSELF -- YOUR STATE IS YOURS TO DECLARE.  Every gui verb that mutates
        something displayed raises this flag internally: window_set_open, popup_open, the dock verbs
        (dock_window / undock / clear / load / maximize / inset), viewport open / close / resize,
-       ctx_set_listening, set_keyboard_focus, window_set_nav, set_edit_cursor_end, theme / style /
+       set_keyboard_focus, window_set_nav, set_edit_cursor_end, theme / style /
        font changes, scroll, and every anim step.  So request_redraw is for exactly ONE residual
        case: the HOST mutating its own model between or during builds.  Stock widgets never need it
        (they re-read state in the same frame).
@@ -2429,7 +2399,7 @@ typedef struct gui_api_s
 
     /* Window state-transition animation (maximize / minimize / restore).  On by default: the window
        tweens between rects through the gui() animation service.  Off snaps instantly.  A global
-       preference, not per-context. */
+       preference. */
     void ( *window_anim_enable     )( bool on );
     bool ( *window_anim_is_enabled )( void );
 

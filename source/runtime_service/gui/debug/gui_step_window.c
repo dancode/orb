@@ -21,8 +21,8 @@
     frame's restore -- see gui_render.h), so each mutating branch raises wants_redraw or the
     clean-frame emit skip would sit on the stale request (the deferred-update rule).
 
-    Emitted internally (debug_overlays_emit, gui_frame_overlay.c) at the default context's
-    ctx_end while debug_enable is on.  The F8 hotkey only shows/hides this window -- opening it
+    Emitted internally (debug_overlays_emit, gui_frame_overlay.c) at ctx_end while
+    debug_enable is on.  The F8 hotkey only shows/hides this window -- opening it
     leaves the scene live; the Capture button freezes and Release lets go.  The X button only
     hides the window -- hiding does NOT release an active freeze (Release does).
     The , . step hotkeys keep working alongside (they scrub with key repeat; the buttons do not).

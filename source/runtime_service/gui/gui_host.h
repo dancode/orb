@@ -91,13 +91,9 @@ void gui_set_idle_skip( bool on );
 bool gui_idle_skip( void );
 void gui_render( i32 vp, rhi_cmd_t cmd );
 
-/* multi-context */
+/* the build bracket */
 
-i32  gui_ctx_create       ( const gui_ctx_config_t* cfg );
-void gui_ctx_destroy      ( i32 ctx );
-void gui_ctx_bind         ( i32 ctx );
-void gui_ctx_set_listening( i32 ctx, bool listen );
-void gui_ctx_begin        ( i32 ctx );
+void gui_ctx_begin        ( void );
 void gui_ctx_end          ( void );
 
 /* viewport management */

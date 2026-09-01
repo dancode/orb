@@ -99,7 +99,7 @@ main( int argc, char** argv )
         PROF_ZONE_BEGIN( "host/ui" );
         if ( gui()->frame_begin( dt ) )
         {
-            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            gui()->ctx_begin();
             gui_timeline_window();
             tl_workload_window();
             gui()->ctx_end();

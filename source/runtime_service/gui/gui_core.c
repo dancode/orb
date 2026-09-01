@@ -114,20 +114,20 @@
 
 /*==============================================================================================
     Decentralized memory accounting -- this unit's fixed statics, read by gui_ui_memory
-    (gui_ui_mem.c).  The per-context retained state is heap (counted as context blocks by
-    gui_mem_stats); what lives here is the ambient records, the io snapshot, the bracketing
-    stacks, and the context pool's pointer array.
+    (gui_ui_mem.c): the context (every retained pool, by value), the ambient records, the io
+    snapshot, and the bracketing stacks.
 ==============================================================================================*/
 
 u32
 core_unit_mem_bytes( void )
 {
     /* s_layout_stack lives in the flow unit -- counted by flow_unit_mem_bytes. */
-    return (u32)( sizeof( s_interaction ) + sizeof( s_build ) + sizeof( s_scope )
+    return (u32)( sizeof( g_ctx_store )
+                + sizeof( s_interaction ) + sizeof( s_build ) + sizeof( s_scope )
                 + sizeof( s_io ) + sizeof( s_click_elapsed )
                 + sizeof( s_click_x ) + sizeof( s_click_y )
                 + sizeof( s_item_flag_stack )
-                + sizeof( s_id_stack ) + sizeof( s_ctx_pool ) );
+                + sizeof( s_id_stack ) );
 }
 
 /*============================================================================================*/

@@ -7,12 +7,9 @@
     loading/selection and the font -> layout bridge (gui_style_apply) live in gui_frame_font.c;
     the between-frames commit of deferred font reloads (gui_font_flush_deferred) is a frame_begin
     step and stays here.  Viewport open/resize/close and the gui-owned floater surfaces
-    (spawn/update/render_floaters) live in gui_viewport.c, included just after this file; the
-    multi-context lifecycle (ctx_create/destroy/bind/set_listening) and the context block
-    allocation live in gui_context.c, a sibling in this unit -- the storage they operate on is
-    the interact server's (s_ctx_pool, core/gui_ctx.c), but tearing a context down is
-    orchestrator work.  The perf / state HUD overlays and the frame-timing helpers the lifecycle
-    here calls live in gui_frame_overlay.c, included just before this file.
+    (spawn/update/render_floaters) live in gui_viewport.c, included just after this file.  The
+    perf / state HUD overlays and the frame-timing helpers the lifecycle here calls live in
+    gui_frame_overlay.c, included just before this file.
 
     Included by the gui_frame.c unit root (the frame orchestrator), which the gui.c module
     face then names in its vtable.
@@ -25,8 +22,8 @@
 ==============================================================================================*/
 
 /* Boot-path seams -- defined in gui_boot.c (same TU, included after this file): teardown of the
-   boot-owned window/context from gui_shutdown, and the auto chrome-shell emit at the default
-   context's ctx_begin.  Both no-op when the host did not boot(). */
+   boot-owned window/context from gui_shutdown, and the auto chrome-shell emit at ctx_begin.
+   Both no-op when the host did not boot(). */
 
 static void boot_shutdown( void );
 static void boot_shell_emit( void );
@@ -52,8 +49,8 @@ static void boot_shell_emit( void );
     while ( 0 )
 
 /* True between a successful init() and shutdown().  Guards the public entry points that would
-   otherwise fault on state init() creates (the context pool, the pipeline, the atlas) rather
-   than report the missing init. */
+   otherwise fault on state init() creates (the pipeline, the atlas) rather than report the
+   missing init. */
 static bool s_gui_ready = false;
 
 /* Where the current frame stands.  Build, seal, sync, render is a strict sequence -- each step
@@ -109,9 +106,10 @@ gui_init( gui_font_family_t family, u32 size_px )
 
     gui_theme_set( "dark" );
 
-    /* wire default context's static backing arrays; sets g_ctx */
+    /* Retained state starts from zero -- a shutdown / init pair must not inherit windows,
+       popups, or keyed state from the previous run. */
 
-    ctx_pool_init();
+    ctx_reset();
 
     /* init: shared pipeline / sampler / atlas + optional layers */
 
@@ -168,7 +166,7 @@ void
 gui_shutdown( void )
 {
     /* Idempotent: a host that tears down after a FAILED init (or twice) would otherwise
-       double-free the atlas and the context blocks. */
+       double-free the atlas. */
     if ( !s_gui_ready )
         return;
     s_gui_ready   = false;
@@ -178,8 +176,7 @@ gui_shutdown( void )
     dbg_shutdown();
     #endif
 
-    /* Destroy GPU surfaces once -- the one global s_vp_pool (including any gui-owned floaters),
-       not per context: a viewport is a real OS window / RHI context, never context-owned. */
+    /* Destroy GPU surfaces -- the one global s_vp_pool, including any gui-owned floaters. */
     for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
         viewport_destroy( v );
     gui_type_clear();         /* drop the ramp roles + bracket stack (unpins the role ids) */
@@ -188,15 +185,6 @@ gui_shutdown( void )
     gui_draw_shutdown();      /* draw unit resources (fonts + icons) leave the atlas first */
     gui_names_reset();        /* the one shared name pool -- every registry above is empty now */
     backend_exit();       /* shared pipeline / sampler / atlas */
-
-    /* Free all context blocks. */
-    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
-    {
-        if ( !s_ctx_pool[ i ] ) continue;
-        free( s_ctx_pool[ i ]->_alloc );
-        s_ctx_pool[ i ] = NULL;
-    }
-    g_ctx = NULL;
 
     /* Boot-owned surface last: the viewport GPU buffers above are gone, now release the
        swapchain context and OS window boot() created.  No-op on the explicit path. */
@@ -207,13 +195,9 @@ gui_shutdown( void )
     Frame API
 ==============================================================================================*/
 
-/* Context save stack -- ctx_begin pushes the context bound on entry, ctx_end pops and rebinds it,
-   so begin/end nests as a balanced scope exactly like window_begin/window_end.  Reset to empty each
-   frame in frame_begin, so an unbalanced previous frame cannot leak a binding into this one. */
-
-#define GUI_CTX_STACK_DEPTH 8
-static gui_context_t* s_ctx_save_stack[ GUI_CTX_STACK_DEPTH ];
-static u32            s_ctx_save_sp;
+/* True while a ctx_begin is open (no matching ctx_end yet).  Reset in frame_begin, so an
+   unbalanced previous frame cannot leak into this one. */
+static bool s_ctx_open;
 
 /* True when the current frame has any input change, in-flight animation, or render delta from last
    frame.  Computed in frame_begin after io_frame_begin; exposed via gui_frame_dirty().  When false
@@ -243,10 +227,10 @@ pal_style_note( void )
     pal_style_set( vars, (u32)GUI_VAR_COUNT );
 }
 
-/* Once-per-frame latch for the internal debug-overlay emit at the default context's ctx_end. */
+/* Once-per-frame latch for the internal debug-overlay emit at ctx_end. */
 static bool s_overlays_emitted = false;
 
-/* Once-per-frame latch for the boot-path chrome-shell emit at the default context's ctx_begin. */
+/* Once-per-frame latch for the boot-path chrome-shell emit at ctx_begin. */
 static bool s_shell_emitted = false;
 
 /*============================================================================================*/
@@ -265,19 +249,14 @@ gui_font_flush_deferred( void )
 }
 
 /*============================================================================================*/
-/* Global frame phase: input poll + draw-list reset.  Always reads display dimensions from the
-   PRIMARY context (slot 0): the OS window and its viewports belong to the default context
-   regardless of which context is active for input this frame.
-
-   This is the global half of the frame; it binds NO context.  Returns true when this frame must
-   emit widgets (frame_dirty): open the context scopes and build only then, and always close with
-   frame_end -- on a clean (false) frame it replays the volatile widgets internally and render()
-   reuses the preserved geometry.  See the FRAME CONTRACT note in gui_api.h. */
+/* Global frame phase: input poll + draw-list reset.  Returns true when this frame must emit
+   widgets (frame_dirty): open the ctx_begin/ctx_end scope and build only then, and always close
+   with frame_end -- on a clean (false) frame it replays the volatile widgets internally and
+   render() reuses the preserved geometry.  See the FRAME CONTRACT note in gui_api.h. */
 
 bool
 gui_frame_begin( f32 dt )
 {
-    /* No init means no context pool -- every step below dereferences g_ctx. */
     GUI_CONTRACT( s_gui_ready, "frame_begin() before a successful init() -- check what init() "
                                "returned." );
     if ( !s_gui_ready )
@@ -290,10 +269,10 @@ gui_frame_begin( f32 dt )
                   "whatever frame_begin returned." );
     s_frame_phase = GUI_FRAME_BUILD;
 
-    s_ctx_save_sp      = 0;       /* fresh context scope stack; a leaked binding cannot survive a frame */
-    s_any_redraw       = false;   /* re-accumulated at each ctx_end from that context's animations */
-    s_overlays_emitted = false;   /* debug overlays emit once, at the default context's ctx_end */
-    s_shell_emitted    = false;   /* boot chrome shell emits once, at the default context's ctx_begin */
+    s_ctx_open         = false;   /* a leaked ctx_begin cannot survive a frame */
+    s_any_redraw       = false;   /* re-accumulated at ctx_end from the build's animations */
+    s_overlays_emitted = false;   /* debug overlays emit once, at ctx_end */
+    s_shell_emitted    = false;   /* boot chrome shell emits once, at ctx_begin */
 
     gui_type_frame_reset();       /* repair a leaked type-ramp scope before anything reads the
                                      active font -- a ramp font left active reads as a host
@@ -354,8 +333,8 @@ gui_frame_begin( f32 dt )
                  || g_ctx->retained.wants_redraw
                  || build_any_changed()
                  || STEP_FRAME_PENDING();   /* a latched stepper request (seek/capture/release)
-                                               must reach its serving emit; per-context
-                                               wants_redraw can be wiped by a later ctx_begin */
+                                               must reach its serving emit; wants_redraw is
+                                               cleared at ctx_begin */
 
     /* Debug overlay capture runs every emit, so any active layer forces a full build. */
     #ifdef GUI_DEBUG_OVERLAY
@@ -469,9 +448,9 @@ gui_frame_end( void )
     /* Build cost concludes here: latch emit_ms for the perf overlay (render is timed separately). */
     perf_frame_end();
 
-    /* A leftover context scope means a ctx_begin without its ctx_end -- catch it at the seam rather
-       than letting the stale binding bleed into render or the next frame. */
-    ORB_ASSERT( s_ctx_save_sp == 0 );
+    /* A ctx_begin without its ctx_end -- catch it at the seam rather than letting the open build
+       bleed into render or the next frame. */
+    ORB_ASSERT( !s_ctx_open );
 
     /* Focus departure: if focused_id changed during this frame (a click moved focus, or Enter /
        Escape cleared it), latch the departing widget and its edit flag for one frame so
@@ -502,14 +481,11 @@ gui_frame_end( void )
 }
 
 /*============================================================================================*/
-/* Per-context frame phase: bind `ctx_handle` and run a full frame init for it.  Pushes the context
-   bound on entry so the matching ctx_end restores it.  Every context gets the full init (nav, popup
-   check, per-frame scratch reset) regardless of its `listening` flag; the flag only gates widget
-   interaction (hover nomination and widget hit-tests).  Emit this context's windows immediately
-   after the call -- it leaves g_ctx bound to ctx_handle -- and close with ctx_end. */
+/* Open the build: the per-build init (scratch reset, style reseed, popup stale-close, modal
+   fences, nav turnover).  Emit the windows immediately after the call and close with ctx_end. */
 
 void
-gui_ctx_begin( i32 ctx_handle )
+gui_ctx_begin( void )
 {
     /* With no font the metric readers resolve to the internal fallback: layout keeps its shape and
        nothing crashes, but every glyph draws blank.  This is the first point where "no font" is
@@ -524,23 +500,12 @@ gui_ctx_begin( i32 ctx_handle )
     GUI_CONTRACT( s_frame_phase == GUI_FRAME_BUILD,
                   "ctx_begin() outside the build -- emit between frame_begin() and frame_end()." );
 
-    if ( ctx_handle < 0 || ctx_handle >= (i32)s_ctx_pool_count || !s_ctx_pool[ ctx_handle ] )
-         ctx_handle = GUI_CTX_DEFAULT;
-
-    /* Push the context bound on entry; ctx_end restores it.  Count truthfully past the cap so a
-       too-deep nesting still balances against ctx_end (the saved slot just aliases the top). */
-    {
-        if ( s_ctx_save_sp < GUI_CTX_STACK_DEPTH )
-             s_ctx_save_stack[ s_ctx_save_sp ] = g_ctx;
-
-        ++s_ctx_save_sp;
-    }
-
-    gui_context_t* c = s_ctx_pool[ ctx_handle ];
-    ctx_bind( c );
+    GUI_CONTRACT( !s_ctx_open, "ctx_begin() twice in one frame -- one ctx_begin/ctx_end pair per "
+                               "frame." );
+    s_ctx_open = true;
 
     g_ctx->retained.wants_redraw = false;    /* cleared before the build; set again by any animating widget */
-    ctx_new_frame();                    /* per-context scratch reset + frame clock bump (no global interaction touch) */
+    ctx_new_frame();                    /* scratch reset + frame clock bump (no global interaction touch) */
     layout_new_frame();                 /* fresh layout stack (the flow unit's) -- no region is open
                                            until a window_begin/child_begin; paired here */
     style_new_frame();                  /* fresh style stacks, re-seeded from the theme -- the orchestrator
@@ -552,11 +517,11 @@ gui_ctx_begin( i32 ctx_handle )
     nav_new_frame();                    /* commit last frame's nav move + read this frame's nav keys */
 
     /* Boot-path chrome: when boot() owns a borderless main window, its shell is emitted here --
-       first in the default context's build, so the caption band it publishes is live for every
-       window after it.  Once per frame (mirrors the s_overlays_emitted latch at ctx_end); a
-       no-op for explicit-path hosts, who emit viewport_shell themselves. */
+       first in the build, so the caption band it publishes is live for every window after it.
+       Once per frame (mirrors the s_overlays_emitted latch at ctx_end); a no-op for
+       explicit-path hosts, who emit viewport_shell themselves. */
 
-    if ( g_ctx == s_ctx_pool[ 0 ] && !s_shell_emitted )
+    if ( !s_shell_emitted )
     {
         s_shell_emitted = true;
         boot_shell_emit();
@@ -564,40 +529,33 @@ gui_ctx_begin( i32 ctx_handle )
 }
 
 /*============================================================================================*/
-/* Close the context opened by the matching ctx_begin, rebinding the context that was current before
-   it.  The symmetric partner to ctx_begin -- it removes the need to hand-restore the default with
-   ctx_bind after emitting a secondary context's windows.
-
-   Two internal duties run here, while the closing context is still bound (the exact point a host
-   used to hand-place them, last in the context's build):
-     - fold this context's animation state into the frame-wide s_any_redraw for boot_pace
-     - emit the debug overlays (perf/state/dashboard) into the DEFAULT context when debug is on */
+/* Close the build opened by ctx_begin.  Two internal duties run here, the exact point a host
+   used to hand-place them, last in the build:
+     - fold the build's animation state into the frame-wide s_any_redraw for boot_pace
+     - emit the debug overlays (perf/state/dashboard) when debug is on */
 
 void
 gui_ctx_end( void )
 {
-    if ( s_ctx_save_sp == 0 )
-        return;   /* unbalanced ctx_end -- ignore rather than underflow */
+    if ( !s_ctx_open )
+        return;   /* unbalanced ctx_end -- ignore */
 
-    /* Once per frame: a host that re-opens the default context in the same frame must not get a
-       second (duplicate-window) overlay emit. */
-    if ( gui_debug_is_enabled() && g_ctx == s_ctx_pool[ 0 ] && !s_overlays_emitted )
+    /* Once per frame. */
+    if ( gui_debug_is_enabled() && !s_overlays_emitted )
     {
         s_overlays_emitted = true;
         debug_overlays_emit();
     }
 
     /* End-of-build dock bookkeeping: recompute each pane's hidden state (all its tabbed windows
-       stopped emitting) now that every window's begin has run for this context; a transition sets
-       wants_redraw so the collapsed / revived tiling lands next frame (gui_dock_core.c). */
+       stopped emitting) now that every window's begin has run; a transition sets wants_redraw so
+       the collapsed / revived tiling lands next frame (gui_dock_core.c). */
     dock_hidden_refresh();
 
     /* Captured after the overlay emit so an overlay's own animation (if any) counts too. */
     s_any_redraw |= g_ctx->retained.wants_redraw;
 
-    --s_ctx_save_sp;
-    u32 i = s_ctx_save_sp < GUI_CTX_STACK_DEPTH ? s_ctx_save_sp : GUI_CTX_STACK_DEPTH - 1;
-    ctx_bind( s_ctx_save_stack[ i ] );   /* NULL (no prior context) rebinds the default */
+    s_ctx_open = false;
 }
 
 /*============================================================================================*/

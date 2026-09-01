@@ -159,8 +159,7 @@ boot_shutdown( void )
     s_poll_last = 0.0;
 }
 
-/* Auto chrome shell -- called from gui_ctx_begin -- NOT IN USER SPACE
-   when the DEFAULT context binds (once per frame). 
+/* Auto chrome shell -- called from gui_ctx_begin (once per frame) -- NOT IN USER SPACE.
    viewport_shell no-ops on an OS-chrome window. */
 
 static void

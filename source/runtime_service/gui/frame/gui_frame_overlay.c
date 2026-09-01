@@ -594,8 +594,6 @@ overlay_memory( void )
         gui_separator();
 
         overlay_mem_head( OVL_MEM_HEAP_COL, "CPU HEAP", ms.cpu_dynamic_total );
-        fmt_snprintf( det, sizeof( det ), "%u live", ms.context_count );
-        overlay_mem_row( "contexts", det, ms.cpu_context_bytes );
         overlay_mem_row( "atlas cpu", "", ms.cpu_atlas_bytes );
         gui_separator();
 
@@ -687,7 +685,6 @@ overlay_state( int mode )
                 gui_id_t top_popup = g_ctx->popup.open[ g_ctx->popup.open_count - 1u ].id;
                 gui_textf( "Top pop %s", overlay_id_str( top_popup ) );
             }
-            gui_textf( "Ctx salt 0x%08X", g_ctx->retained.id_salt );
         }
 
         gui_scale_pop();
@@ -831,8 +828,8 @@ gui_frame_set_hooks( gui_clock_fn clock, gui_sleep_fn sleep_ms, gui_wait_events_
     dashboard, render mode, retained/idle skip) live here, driven by hotkeys read from the
     frame's own IO snapshot.
     - debug_hotkeys() runs from frame_begin, after io_frame_begin.
-    - debug_overlays_emit() runs from ctx_end, while the DEFAULT context is still bound -- last
-      in its build, so overlays draw on top and their cost counts like any other widget.
+    - debug_overlays_emit() runs from ctx_end -- last in the build, so overlays draw on top and
+      their cost counts like any other widget.
 
     Every hotkey is gated behind a master ARM, so the broad single-letter keys stay inert during
     normal use:
@@ -1457,9 +1454,8 @@ debug_selector_menu( void )
 }
 
 /*============================================================================================*/
-/* Emit the debug overlays into the currently bound (default) context. Called from ctx_end before
-   it rebinds -- last in the default context's build, drawing on top of everything else emitted,
-   exactly where a host used to hand-place these. */
+/* Emit the debug overlays.  Called from ctx_end -- last in the build, drawing on top of
+   everything else emitted, exactly where a host used to hand-place these. */
 
 static void
 debug_overlays_emit( void )

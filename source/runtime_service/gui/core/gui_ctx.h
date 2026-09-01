@@ -5,27 +5,14 @@
     runtime_service/gui/core/gui_ctx.h -- retained-mode storage for the interact server.
 
     Defines every record the interact server keeps between frames: windows, the nav cursor,
-    viewports, scroll offsets, and the gui_context_t that groups them. The behavior that reads
-    and updates these records (window dragging, docking, popups) lives elsewhere in chrome/ and
-    frame/ -- this header only defines the storage shape.
-
-    Two record types (the popup stack, dock-tree nodes) appear here only as pointers; their full
-    definitions live in chrome/gui_chrome.h, which also allocates them.
+    viewports, scroll offsets, popups, dock nodes, and the gui_context_t that groups them. The
+    behavior that reads and updates these records (window dragging, docking, popups) lives
+    elsewhere in chrome/ and frame/ -- this header only defines the storage shape.
 
     Include order: after core/gui_core.h (gui_context_t embeds gui_retained_t).
 
 ==============================================================================================*/
 // clang-format off
-
-/* Defined in chrome/gui_chrome.h. gui_context_t stores pointers to these but never reads
-   their fields. */
-
-typedef struct gui_popup_t     gui_popup_t;
-typedef struct gui_dock_node_t gui_dock_node_t;
-
-/* Forward declaration so earlier records can hold a gui_context_t* before the real struct
-   is defined below (avoids MSVC C4115 when the tag first appears inside a parameter list). */
-struct gui_context_t;
 
 /*==============================================================================================
     Scroll link -- persisted scroll state for one scrollable region (flow/gui_scroll.c)
@@ -105,8 +92,7 @@ typedef struct gui_window_t
 /* Accessors for the window pool (core/gui_surface.c). */
 
 gui_window_t* window_get ( gui_id_t id, f32 x, f32 y, f32 w, f32 h );     // find or create
-gui_window_t* window_find( gui_id_t id );                                // find in the bound context, or NULL
-gui_window_t* window_find_in( struct gui_context_t* ctx, gui_id_t id );  // find in a specific context, or NULL
+gui_window_t* window_find( gui_id_t id );                                // find, or NULL
 void          window_apply_next( gui_window_t* win, bool appearing );
 i32           window_spawn_viewport( void );                             // viewport a NEW record inherits
 
@@ -136,11 +122,6 @@ typedef struct
     const char* title;      // window title, for the new floater's OS window
     bool        has_home;   // re-opening a closed floater: use its saved restore rect
 
-    /* The context win_id belongs to, captured when the request is queued. The context bound
-       when it is later resolved may be different, so this must be saved rather than looked up again. */
-
-    struct gui_context_t* owner;
-
 } gui_vp_request_t;
 
 const gui_next_win_t* gui_next_win_peek( void );    // core/gui_surface.c -- read-only queue peek
@@ -151,7 +132,7 @@ extern gui_vp_request_t s_vp_request;               // core/gui_surface.c
 
     Tracks which widget the keyboard cursor is on -- the keyboard equivalent of mouse hover,
     moved by arrow keys and Tab instead of the mouse -- plus the menu-bar state machine built on
-    top of it. Each gui_context_t has its own copy (g_ctx->nav).
+    top of it. Lives in gui_context_t (g_ctx->nav).
 ==============================================================================================*/
 
 /* One navigable widget, recorded in emission order as it is drawn each frame. Arrow-key and Tab
@@ -300,6 +281,41 @@ typedef struct
 
 } gui_win_ctx_t;
 
+/*==============================================================================================
+    Popup stack entry (gui_context_t popup.open; driver in chrome/popup/gui_popup.c)
+
+    A popup is a top-level overlay begun while a parent window is still open but laid out,
+    clipped, and painted independent of it.  The open set is a stack ordered parent -> child.
+    The parent state a popup_end restores (window context, scopes, layout frame) is chrome's
+    own record, kept in a parallel array indexed by the same depth (gui_popup.c).
+==============================================================================================*/
+
+typedef struct gui_popup_t
+{
+    gui_id_t    id;             // popup window id; matches s_build.win.id / hover_win
+    bool        modal;          // blocks input behind it + dims the background
+    f32         anchor_x;       // open point -- where a non-modal popup is placed
+    f32         anchor_y;       //
+    u32         open_frame;     // frame popup_open ran -- "appearing" detection
+    u32         begun_frame;    // last frame popup_begin ran -- drives stale-close
+    gui_rect_t  rect;           // on-screen rect last frame -- drives click-outside
+
+} gui_popup_t;
+
+/*==============================================================================================
+    Dock node (behavior in chrome/dock/)
+
+    One node of a viewport's dock tree.  A node is either a LEAF (split == GUI_DOCK_SPLIT_NONE),
+    which tabs one or more windows into a single region, or an INTERNAL split (GUI_DOCK_SPLIT_X /
+    _Y), which divides its rect between two children at `ratio` with a draggable splitter between
+    them.  Nodes live in a fixed pool (gui_context_t dock.pool) so child / parent pool indices
+    (gui_dock_ref_t) stay valid across frames; a freed slot has id == 0.
+
+    rect / content are resolved every frame by dock_node_layout from the viewport extent down:
+    rect is the node's whole box, content is the leaf's body below its tab strip (where the
+    active window draws).
+==============================================================================================*/
+
 /* Index into gui_context_t's dock-node pool (not the same as gui_dock_id_t, the stable handle
    callers use). The pool never compacts, so an index stays valid across frames just like a
    pointer would, but takes 2 bytes instead of 8. dock_ref()/dock_at() (gui_dock_core.c) convert
@@ -307,6 +323,58 @@ typedef struct
 
 typedef u16 gui_dock_ref_t;
 #define GUI_DOCK_REF_NONE ( (gui_dock_ref_t)0xFFFFu )
+
+#define GUI_DOCK_TABS_MAX           8       // windows co-docked (tabbed) in one leaf node
+#define GUI_DOCK_NAME_CAP           28      // bytes of a tab's display name, copied at dock time
+
+typedef enum
+{
+    GUI_DOCK_SPLIT_NONE = 0,    /* leaf -- tabs windows; child[] unused                 */
+    GUI_DOCK_SPLIT_X,           /* internal -- vertical split, children side by side    */
+    GUI_DOCK_SPLIT_Y,           /* internal -- horizontal split, children top / bottom  */
+
+} gui_dock_split_t;
+
+typedef struct gui_dock_node_t     /* tagged: gui_win_ctx_t above forward-references it */
+{
+    gui_id_t    id;                          /* stable node handle; 0 = free pool slot            */
+    i32         viewport;                    /* surface this tree belongs to                      */
+    u8          split;                       /* gui_dock_split_t: NONE = leaf, else internal     */
+    f32         ratio;                       /* child[0]'s fraction of the split axis (0.5 default) */
+
+    gui_dock_ref_t parent;       /* owning split, or GUI_DOCK_REF_NONE for the tree root  */
+    gui_dock_ref_t child[ 2 ];   /* internal only (GUI_DOCK_REF_NONE on a leaf)           */
+
+    /* Leaf payload: the windows tabbed into this node.  Names are copied at dock time so the tab
+       bar is self-sufficient (no dependence on a window emitting this frame or its title lifetime). */
+
+    gui_id_t    tabs [ GUI_DOCK_TABS_MAX ];
+    char        names[ GUI_DOCK_TABS_MAX ][ GUI_DOCK_NAME_CAP ];
+    u32         tab_count;
+    u32         active_tab;                   /* index of the visible tab                          */
+
+    gui_rect_t rect;                       /* whole node box, resolved this frame               */
+    gui_rect_t content;                    /* leaf body below the tab strip (active window's rect) */
+
+    /* Floating tab group (gui_dock_float.c): a leaf living OUTSIDE any viewport tree -- windows
+       tabbed onto one shared free-floating frame, no split panes.  Not reachable from dock_root,
+       so dock_node_layout never touches it: `rect` doubles as its PERSISTED geometry (moved by the
+       strip drag, sized by the edge resize), and `z` stacks it among the free windows (a tree node
+       draws at z 0 behind them).  Always GUI_DOCK_SPLIT_NONE with parent GUI_DOCK_REF_NONE. */
+    bool floating;
+    u32  z;
+
+    /* Hidden pane: every window tabbed into this leaf stopped emitting (menu-hidden, X-closed);
+       on a split, both children are hidden.  Refreshed at ctx_end (dock_hidden_refresh,
+       gui_dock_core.c) from the windows' last_frame stamps; dock_node_layout collapses a hidden
+       child to a zero-extent slice so the visible sibling absorbs its space -- tree structure and
+       ratio stay untouched, so a window that re-emits gets its exact pane back.  Derived state:
+       recomputed every build, never serialized.  A floating group is refreshed too (visited
+       directly in the pool, since no dock_root reaches it) -- chiefly for the active-tab handoff;
+       its hidden flag has no layout consumer. */
+    bool hidden;
+
+} gui_dock_node_t;
 
 /*==============================================================================================
     Viewport -- The gui render surface (managed in frame/gui_viewport.c)
@@ -316,8 +384,8 @@ typedef u16 gui_dock_ref_t;
     The viewport has GPU render buffers, a color targets, and the OS window hosting it, 
     its drawable size and reserved chrome bands, and its dock tree. etc.
     
-    Slot [0] is the main swapchain; the rest are floating windows torn off from it. 
-    Viewports are global (s_vp_pool) not per-context (every gui_context_t shares the table).
+    Slot [0] is the main swapchain; the rest are floating windows torn off from it.
+    Viewports live in their own global table (s_vp_pool), not inside gui_context_t.
 ==============================================================================================*/
 
 typedef struct
@@ -457,12 +525,10 @@ i32 vp_resolve( i32 vp );
 
 /*==============================================================================================
     The global viewport table (lifecycle owned by frame/gui_viewport.c; defined in
-    core/gui_ctx.c next to s_ctx_pool)
+    core/gui_ctx.c)
 
-    Every gui_context_t shares this one table rather than keeping its own -- OS windows and RHI
-    contexts are a small, genuinely global resource (sized to APP_WIN_MAX). A context only
-    differs in which of its own windows assign into which slot. [0] is always the main
-    swapchain.
+    OS windows and RHI contexts are a small, fixed-size resource (sized to APP_WIN_MAX); window
+    records name the slot they draw into. [0] is always the main swapchain.
 ==============================================================================================*/
 
 extern gui_viewport_t s_vp_pool[ APP_WIN_MAX ];
@@ -475,28 +541,22 @@ extern i32            s_vp_count;                   /* used count; iterate [0, c
 static i32 ORB_UNUSED_FN viewport_index_for_window( i32 win_id );
 
 /*==============================================================================================
-    gui_context_t -- one UI's persistent state ("bind it, then emit into it")
+    gui_context_t -- the UI's persistent state: everything that must survive between frames.
 
-    Code binds one context (ctx_bind) and emits all of that UI's windows into it; the context
-    holds everything that must survive between frames for that UI. Switching contexts is just
-    reassigning the g_ctx pointer -- no copying.
-
-    Some state stays global instead of living here: input (s_io), since there is one physical
-    mouse/keyboard, and per-frame build scratch (s_build), reused by whichever context is
-    building. `listening` controls whether a bound context responds to input this frame; when
-    false it still renders, but hover/click/nav are inert.
+    One static instance (g_ctx_store below, reached as g_ctx).  Input (s_io) and the per-frame
+    build scratch (s_build) stay outside it: input is a physical resource with no per-frame
+    lifetime question, and scratch is wiped at every ctx_begin.
 ==============================================================================================*/
 
-typedef struct gui_context_t
+typedef struct
 {
-    gui_retained_t   retained;      // id salt, frame clock, keyed state pool (ptr into alloc)
+    gui_retained_t   retained;      // frame clock + keyed state pool
     gui_nav_state_t  nav;           // nav cursor location + menu-bar mode
 
     struct                          /* the open-popup stack */
     {
-        gui_popup_t* open;          // open popup set, ordered parent -> child; ptr into alloc
-        u32          open_count;    // live open count
-        u32          depth;         // capacity (max nesting depth)
+        gui_popup_t  open[ GUI_POPUP_DEPTH ];   // open popup set, ordered parent -> child
+        u32          open_count;                // live open count
     } popup;
 
     struct                          /* GUI_WIN_MODAL fence (window_modal_apply) */
@@ -507,36 +567,26 @@ typedef struct gui_context_t
 
     struct                          /* persisted window records (core/gui_surface.c) */
     {
-        gui_window_t* pool;         // persisted window records; ptr into alloc
+        gui_window_t  pool[ GUI_MAX_WINDOWS ];  // persisted window records
         u32           count;        // live records in the pool
-        u32           max;          // capacity
         gui_window_t  scratch;      // fallback used when the pool is full
         u32           z_counter;    // paint-order counter; each raise takes the next value
         u32           cascade;      // next cascade offset for a window with no saved position
     } win;
 
-    /* Render surfaces live in s_vp_pool, not here -- see above. A viewport is a real OS window /
-       RHI context, a genuinely global resource; contexts only differ in which of their own
-       windows (win.pool) assign into which global slot. */
+    /* Render surfaces live in s_vp_pool, not here -- see above. */
 
     struct                          /* dock-tree node pool (dock/) */
     {
-        gui_dock_node_t* pool;      // dock-tree nodes; NULL when max == 0
+        gui_dock_node_t  pool[ GUI_DOCK_NODES ];    // dock-tree nodes; a free slot has id == 0
         u32              count;     // high-water slot count used
         u32              id_seq;    // next node id to hand out; 0 = none yet
-        u32              max;       // capacity; 0 = docking disabled
     } dock;
-
-    bool  listening;    // true: this context receives hover/click/nav input this frame
-    void* _alloc;       // single allocation backing this struct + all pool arrays above;
-                         // freed at teardown (shutdown for slot 0, ctx_destroy for others)
-    u32   _alloc_size;  // size of _alloc, for gui_mem_stats()
 
 } gui_context_t;
 
 /* Scratch for "what is being emitted right now", reset every frame as the widget tree is
-   walked. One global instance is enough because contexts build one at a time on a single
-   thread. */
+   walked.  One global instance: the build runs on a single thread. */
 typedef struct
 {
     gui_win_ctx_t win;                  // the window currently between window_begin / window_end
@@ -558,21 +608,21 @@ typedef struct
 /*============================================================================================*/
 /* exported context data */
 
-extern gui_context_t* g_ctx;            // core/gui_ctx.c -- the bound context
+/* The one context, defined in core/gui_ctx.c.  Every reader spells it g_ctx-> so retained state
+   reads as distinct from the s_* frame scratch at each call site; the macro makes that a direct
+   static access rather than a pointer load. */
+
+extern gui_context_t  g_ctx_store;
+#define g_ctx ( &g_ctx_store )
+
 extern gui_build_t    s_build;          // core/gui_ctx.c -- frame-build scratch
 
 /*==============================================================================================
-    Context pool + lifecycle (storage here in core/gui_ctx.c; the public create/destroy API
-    lives in frame/gui_context.c, since sizing the allocation needs chrome's record types too)
+    Context lifecycle (core/gui_ctx.c)
 ==============================================================================================*/
 
-#define GUI_CTX_POOL_MAX  8             /* slot 0 = default + up to 7 secondary contexts */
-
-extern gui_context_t* s_ctx_pool[ GUI_CTX_POOL_MAX ];   /* allocated context data */
-extern u32            s_ctx_pool_count;                 /* live slot count; always >= 1 after init */
-
-void           ctx_bind      ( gui_context_t* ctx );    /* NULL rebinds the default           */
-void           ctx_new_frame ( void );                  /* per-context scratch reset          */
+void           ctx_reset     ( void );                  /* zero the context (gui_init)        */
+void           ctx_new_frame ( void );                  /* per-build scratch reset            */
 
 void           interact_new_frame( void );         /* once per APP frame (frame_begin)   */
 void           cursor_flush  ( void );                  /* push last frame's cursor to the OS */

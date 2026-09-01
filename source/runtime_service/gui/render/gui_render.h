@@ -1005,8 +1005,8 @@ void                gui_render_set_time     ( f32 seconds );
        applies at the next cache_build_frame, release and the cursor at the next frame's
        draw_reset -- a frame is never half live, half frozen.  Every latched request self-raises
        step_pending(), which frame_begin folds into frame_dirty (STEP_FRAME_PENDING) so the
-       serving emit always runs -- per-context wants_redraw is NOT reliable for this (any later
-       ctx_begin wipes it).  count is the frozen band-0 command total (0 while live); seek
+       serving emit always runs -- wants_redraw is NOT reliable for this (ctx_begin clears
+       it).  count is the frozen band-0 command total (0 while live); seek
        clamps to it. */
     void step_capture( void );
     void step_release( void );

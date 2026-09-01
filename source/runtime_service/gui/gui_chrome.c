@@ -111,7 +111,7 @@ chrome_unit_mem_bytes( void )
     b += (u32)sizeof( s_select );   /* window text selection (chrome/window/gui_select.c) */
     b += (u32)( sizeof( s_dock_drag ) + sizeof( s_dock_tab_drag ) + sizeof( s_dock_float_req ) );
     b += (u32)( sizeof( s_menubar_sink ) + sizeof( s_menubar_saved_clip )
-              + sizeof( s_tooltip_save ) );
+              + sizeof( s_tooltip_save ) + sizeof( s_popup_saved ) );
     b += (u32)( sizeof( s_box ) + sizeof( s_box_sp ) );   /* the box decorator's nesting stack */
     return b;
 }

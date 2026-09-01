@@ -4,9 +4,9 @@
 
     A popup is a transient window rendered on top of everything that auto-closes on an outside
     click (regular) or blocks input + dims the background (modal).  The popup layer is thin: the
-    open set is a stack (g_ctx->popup.open in gui_ctx.c), and rendering is delegated wholesale to the
-    window path (window_begin_ex / window_end).  Occlusion, z-sort, clipping, scroll, and chrome
-    all come from the window machinery unchanged.
+    open set is a stack (g_ctx->popup.open, core/gui_ctx.h), and rendering is delegated wholesale
+    to the window path (window_begin_ex / window_end).  Occlusion, z-sort, clipping, scroll, and
+    chrome all come from the window machinery unchanged.
 
     Lifecycle (mirrors Dear ImGui's OpenPopupStack / BeginPopupStack split):
         popup_open(id)         -- record id into the open stack at the current nesting depth
@@ -56,6 +56,11 @@
 
 /* Tooltip offset from the cursor so the pointer does not cover its own hint. */
 #define GUI_TOOLTIP_OFFSET  16.0f
+
+/* The parent state each open popup restores at popup_end, indexed by nesting depth -- parallel
+   to g_ctx->popup.open, kept here because gui_overlay_save_t embeds flow and render records the
+   context header cannot see. */
+static gui_overlay_save_t s_popup_saved[ GUI_POPUP_DEPTH ];
 
 /* Background dim painted behind a modal (semi-transparent black). */
 #define GUI_POPUP_MODAL_DIM  GUI_COLOR( 0, 0, 0, 120 )
@@ -156,7 +161,7 @@ static void
 popup_open_id( gui_id_t id, f32 ax, f32 ay )
 {
     u32 depth = popup_begin_depth();
-    if ( depth >= g_ctx->popup.depth ) return;
+    if ( depth >= GUI_POPUP_DEPTH ) return;
 
     gui_popup_t* p = &g_ctx->popup.open[ depth ];
     p->id          = id;
@@ -235,7 +240,7 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
         flags |= GUI_WIN_DEBUG_BAND;
 
     /* Open at this depth?  The early-out that makes a closed popup free. */
-    if ( depth >= g_ctx->popup.depth || g_ctx->popup.open_count <= depth
+    if ( depth >= GUI_POPUP_DEPTH || g_ctx->popup.open_count <= depth
          || g_ctx->popup.open[ depth ].id != id )
         return false;
 
@@ -298,7 +303,7 @@ popup_begin_common_id( gui_id_t id, const char* title, gui_win_flags_t flags, bo
     gui_window_set_next_pos( px, py, GUI_COND_ALWAYS );
 
     /* Detach from the parent window: from here the popup lays out + clips as a top-level overlay. */
-    p->saved = overlay_detach();
+    s_popup_saved[ depth ] = overlay_detach();
 
     /* Modal: dim the whole display one z below the modal (skipped on the off-screen appearing
        frame so there is no one-frame dim-without-modal flash).  Drawn after detach so it sits
@@ -351,7 +356,7 @@ gui_popup_end( void )
 
     u32 depth = popup_begin_depth() - 1u;
     gui_window_end();                     /* finalize the popup window (pops its own clip) */
-    overlay_reattach( g_ctx->popup.open[ depth ].saved );
+    overlay_reattach( s_popup_saved[ depth ] );
     popup_begin_depth_pop();
 }
 
@@ -408,7 +413,7 @@ gui_tooltip_begin( void )
 {
     gui_window_t* win = window_get( GUI_TOOLTIP_ID, s_io.mouse_x, s_io.mouse_y,
                                       GUI_POPUP_SEED_W, GUI_POPUP_SEED_H );
-    win->z        = surface_z_overlay( g_ctx->popup.depth );   /* above every popup */
+    win->z        = surface_z_overlay( GUI_POPUP_DEPTH );   /* above every popup */
     win->overlay  = true;
     win->viewport = s_build.win.viewport;   /* track the parent's current surface (see popup_begin) */
 

@@ -169,7 +169,7 @@ main( int argc, char** argv )
         f64 t_emit = sys_tick_seconds();
         if ( gui()->frame_begin( dt ) )
         {
-            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            gui()->ctx_begin();
             bench_frame();
             gui()->ctx_end();
         }

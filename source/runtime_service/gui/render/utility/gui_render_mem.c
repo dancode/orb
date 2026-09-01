@@ -5,7 +5,7 @@
     Fills the backend-owned buckets of gui_mem_stats_t (gui.h): the GPU device memory the
     backend created, and every fixed CPU static the backend unity TU defines -- the resident
     footprint the image pays whether one window is open or fifty.  The frontend (gui_mem_stats,
-    core/gui_ctx.c) adds the per-context heap blocks and the totals.  backend_pool_report at the
+    gui_ui_mem.c) adds the frontend statics and the totals.  backend_pool_report at the
     foot is the other half of the same question: not how much the pools COST, but how full they
     have been, which is what a raised or lowered cap should be argued from.
 

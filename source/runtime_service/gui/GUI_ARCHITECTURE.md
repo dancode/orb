@@ -28,14 +28,13 @@ There are only three real things:
 - **INTERACT SERVER** (`core/`, unit `gui_core.c`): io routing + dedicated retained-mode
   storage -- the id namespace, the keyed state pool, the ambient interaction record, the item
   protocol, the pane/z contest, anim utilities. ALL retained record types live in its storage
-  header `core/gui_ctx.h` (window, nav state, viewport, scroll link, the context aggregate);
-  the two records only chrome reads (popup entry, dock node) stay shaped in chrome behind
-  forward declarations. Knows nothing of style, themes, or drawing.
+  header `core/gui_ctx.h` (window, nav state, viewport, scroll link, popup entry, dock node,
+  and the one static `gui_context_t` that embeds every pool by value). Knows nothing of style,
+  themes, or drawing.
 - **FRAME ORCHESTRATOR** (`frame/` + root `gui_frame.c`): boots both servers, owns
-  viewports/app/sys wiring, pumps io into the interact server, hands each surface's GPU
-  pieces (vb/ib/target) to the render server at flush, and allocates the context blocks (it
-  alone sees every record's size). Owns NO unit header -- its public face is gui.h /
-  gui_api.h / gui_host.h.
+  viewports/app/sys wiring, pumps io into the interact server, and hands each surface's GPU
+  pieces (vb/ib/target) to the render server at flush. Owns NO unit header -- its public face
+  is gui.h / gui_api.h / gui_host.h.
 - **MODULE FACE** (root `gui.c`): the separate, logic-free unit that assembles the module
   vtable (`g_gui_api_struct`) + `mod_desc_t`, and defines the app/rhi API pointer storage the
   module init fetches. It carries no orchestration -- only the module's public identity.
@@ -342,7 +341,7 @@ while ( app pump )                                // host pumps OS events itself
     bool gui_ran = gui()->frame_begin( dt );      // false = clean frame, SKIP the build
     if ( gui_ran )
     {
-        gui()->ctx_begin( GUI_CTX_DEFAULT );
+        gui()->ctx_begin();
         ...emit...                                // host_main emits viewport_shell + services
         gui()->ctx_end();
     }
@@ -376,7 +375,7 @@ unchanged without it.
 gui()->boot( &desc )                    // window + rhi ctx + font + hooks + viewport_open
 while ( gui()->boot_poll( &dt ) )       // pumps OS, routes rhi + gui events; false = quit
 {
-    if ( gui()->frame_begin( dt ) ) { gui()->ctx_begin(...); ...emit...; gui()->ctx_end(); }
+    if ( gui()->frame_begin( dt ) ) { gui()->ctx_begin(); ...emit...; gui()->ctx_end(); }
     gui()->frame_end();
     gui()->boot_present_begin( NULL );  // opens main surface frame; bool gates host passes
     gui()->boot_present_end();          // gui()->render + present + render floaters

@@ -255,7 +255,7 @@ ex_data_debug( void )
         gui_mem_stats_t ms = gui()->mem_stats();
         gui()->textf( "GPU: %u KB (%u viewports)", ms.gpu_total / 1024, ms.viewport_count );
         gui()->textf( "CPU static (.bss): %u KB", ms.cpu_static_total / 1024 );
-        gui()->textf( "CPU heap: %u KB (%u contexts)", ms.cpu_dynamic_total / 1024, ms.context_count );
+        gui()->textf( "CPU heap: %u KB", ms.cpu_dynamic_total / 1024 );
         gui()->textf( "TOTAL: %u KB", ms.total_bytes / 1024 );
 
         gui()->row_cols_n( 0, 2 );

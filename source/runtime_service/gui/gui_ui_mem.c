@@ -32,7 +32,7 @@ gui_ui_memory( void )
     u32 b = 0;
 
     /* core/ -- THE INTERACT SERVER is its own unit (gui_core.c) and accounts for its
-       own statics (ambient records, io snapshot, id/flag stacks, context pool) via its seam. */
+       own statics (the context, ambient records, io snapshot, id/flag stacks) via its seam. */
     b += core_unit_mem_bytes();
 
     /* style/ -- THE STYLE UNIT is its own unit (gui_style.c) and accounts for its
@@ -65,13 +65,11 @@ gui_ui_memory( void )
        with what is loaded).  It moved down from the draw unit so both servers can measure text. */
     b += font_unit_mem_bytes();
 
-    /* frame/ + root -- lifecycle stacks, DPI response state, boot/present state. */
-    b += (u32)( sizeof( s_ctx_save_stack ) + sizeof( s_font_stack ) + sizeof( s_dpi )
+    /* frame/ + root -- font stack, DPI response state, boot/present state. */
+    b += (u32)( sizeof( s_font_stack ) + sizeof( s_dpi )
               + sizeof( s_boot ) + sizeof( s_present ) );
 
-    /* core/gui_ctx.c -- the one global viewport table (s_vp_pool).  A fixed static now, not part
-       of any context's per-context heap block, so it is counted here rather than under
-       cpu_context_bytes below. */
+    /* core/gui_ctx.c -- the one global viewport table (s_vp_pool). */
     b += (u32)sizeof( s_vp_pool );
 
     /* debug/ -- the perf/state HUD accumulators (always compiled; runtime-gated) live in THIS
@@ -87,10 +85,9 @@ gui_ui_memory( void )
     Memory Stats
 
     A full accounting of the gui system's resident footprint, split by where it lives (GPU device
-    memory / fixed CPU .bss / per-context CPU heap).  The backend fills its own buckets through
-    backend_memory (GPU buffers + the fixed backend buffers); this unit owns the aggregation,
-    counting the live GPU surfaces to scale the geometry buffers and summing the per-context
-    malloc blocks (core's pool, reached through the gui_ctx.h externs) for the heap total.
+    memory / fixed CPU .bss / CPU heap).  The backend fills its own buckets through backend_memory
+    (GPU buffers + the fixed backend buffers); this unit owns the aggregation, counting the live
+    GPU surfaces to scale the geometry buffers.  The only heap the gui holds is the atlases'.
     See gui_mem_stats_t (gui.h) for the bucket meanings.
 ==============================================================================================*/
 
@@ -104,23 +101,14 @@ gui_mem_stats( void )
         if ( s_vp_pool[ v ].live )
             ++live_viewports;
 
-    /* Backend fills GPU + CPU .bss; this unit adds the frontend statics, the CPU-heap context
-       blocks, and the totals. */
+    /* Backend fills GPU + CPU .bss; this unit adds the frontend statics and the totals. */
     gui_mem_stats_t s = backend_memory( live_viewports );
 
     s.cpu_frontend_bytes = gui_ui_memory();
     s.cpu_static_total  += s.cpu_frontend_bytes;
 
-    /* CPU heap: one malloc block per live context (recorded at allocation as _alloc_size), plus
-       the atlas-owned heap the backend already filled in (cpu_atlas_bytes). */
-    for ( u32 i = 0; i < s_ctx_pool_count; ++i )
-    {
-        gui_context_t* ctx = s_ctx_pool[ i ];
-        if ( !ctx ) continue;
-        s.cpu_context_bytes += ctx->_alloc_size;
-        ++s.context_count;
-    }
-    s.cpu_dynamic_total = s.cpu_context_bytes + s.cpu_atlas_bytes;
+    /* CPU heap: the atlas-owned heap the backend already filled in (cpu_atlas_bytes). */
+    s.cpu_dynamic_total = s.cpu_atlas_bytes;
 
     s.total_bytes = s.gpu_total + s.cpu_static_total + s.cpu_dynamic_total;
     return s;
@@ -178,9 +166,7 @@ gui_print_mem_stats( void )
     GUI_MEM_ROW( "frontend statics",   s.cpu_frontend_bytes );
     GUI_MEM_ROW( "  CPU static subtotal", s.cpu_static_total );
 
-    gui_log( GUI_LOG_INFO, "  -- CPU heap (%u context%s) -----------------------------",
-             s.context_count, s.context_count == 1u ? "" : "s" );
-    GUI_MEM_ROW( "context blocks",        s.cpu_context_bytes );
+    gui_log( GUI_LOG_INFO, "  -- CPU heap ------------------------------------------" );
     /* Split the same way as the textures above: an atlas's mirror tracks its texture, and its
        tenants' retained sources sit on top, so each row here runs ahead of its GPU twin. */
     GUI_MEM_ROW( "atlas mirrors + tenants", s.cpu_atlas_bytes );

@@ -92,7 +92,7 @@ main( int argc, char** argv )
     {
         if ( gui()->frame_begin( dt ) )
         {
-            gui()->ctx_begin( GUI_CTX_DEFAULT );
+            gui()->ctx_begin();
             launch_ui_frame( vp0 );
             gui()->ctx_end();
         }

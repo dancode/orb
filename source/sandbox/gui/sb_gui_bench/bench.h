@@ -51,7 +51,7 @@
 
 typedef struct bench_case_s bench_case_t;
 
-/* A scene emitter runs once per frame inside the default context.  `frame` counts from zero at
+/* A scene emitter runs once per frame inside the gui build.  `frame` counts from zero at
    each phase change, so a deliberately-animated scene derives its motion from it and stays
    deterministic (never from wall time). */
 typedef void ( *bench_emit_fn )( const bench_case_t* c, u32 frame );

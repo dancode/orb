@@ -47,7 +47,7 @@
     [job tick]                job()->tick()
     [host update]             desc->on_update( dt )     -- game logic, every frame, no widgets
     [gui emit]                gated on gui()->frame_begin's dirty bool (retained-cache skip):
-                              ctx_begin( DEFAULT ) -> chrome shell (borderless) ->
+                              ctx_begin -> chrome shell (borderless) ->
                               desc->on_gui( dt ) -> ctx_end; frame_end seals either way.
     [gui platform sync]       gui()->viewport_update() -- when gui loaded
     [render]                  see Render paths below
@@ -814,7 +814,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
         /* frame_begin snaps the IO state from the events drained above and returns frame_dirty:
            false = nothing changed, the retained geometry re-presents and the whole build is
-           skipped (on_gui does not run).  On dirty frames the default context's build opens,
+           skipped (on_gui does not run).  On dirty frames the build opens,
            the chrome shell goes first when the window is borderless (it publishes the caption
            band -- read it via viewport_caption_h(0)), then on_gui emits the host's windows.
            frame_end seals the frame either way (clean frames replay volatile widgets there). */
@@ -836,7 +836,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
             if ( gui()->frame_begin( dt ) )
             {
-                gui()->ctx_begin( GUI_CTX_DEFAULT );
+                gui()->ctx_begin();
 
                 /* Borderless shell -- draws the caption and sizing borders over the host's windows. */
                 if ( borderless && s_vp0 != GUI_VP_INVALID )

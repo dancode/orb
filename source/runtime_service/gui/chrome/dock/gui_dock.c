@@ -48,7 +48,6 @@ gui_dockspace_inset( i32 vp, f32 top )
 gui_dock_id_t
 gui_dockspace_over_viewport( i32 vp, gui_dockspace_flags_t flags )
 {
-    if ( !g_ctx->dock.pool ) return GUI_DOCK_NONE;   /* pool disabled for this context (max_dock_nodes == 0) */
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return GUI_DOCK_NONE;
 
@@ -210,7 +209,6 @@ gui_dock_split( gui_dock_id_t node_id, gui_dir_t dir, f32 ratio, gui_dock_id_t* 
 gui_dock_id_t
 gui_dock_split_root( i32 vp, gui_dir_t dir, f32 ratio )
 {
-    if ( !g_ctx->dock.pool ) return GUI_DOCK_NONE;
     if ( vp < 0 || vp >= GUI_MAX_VIEWPORTS )
         return GUI_DOCK_NONE;
 

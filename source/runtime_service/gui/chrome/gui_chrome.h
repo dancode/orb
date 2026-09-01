@@ -6,11 +6,10 @@
 
     The stock recipes: window policy, keyboard nav, popups, docking -- policy over the
     mechanism units below.  The RETAINED RECORDS chrome drives (gui_window_t, the nav state,
-    the viewport) live in the interact server's storage header (core/gui_ctx.h): the
-    server owns retained-mode storage, chrome owns the behavior over it.  Two records whose
-    shape only chrome reads stay HERE behind core's forward declarations -- the popup stack
-    entry (it embeds the cross-unit overlay save) and the dock-tree node; frame's allocator
-    (frame/gui_context.c) sizes them with full visibility.
+    the viewport, the popup stack entry, the dock node) live in the interact server's storage
+    header (core/gui_ctx.h): the server owns retained-mode storage, chrome owns the behavior
+    over it.  The one record that stays HERE is the popup overlay save, since it embeds flow
+    and render types core cannot see.
 
     Implementation: the six folders under chrome/ (widgets, table, window, dock, popup,
     nav); unit root gui_chrome.c.
@@ -20,15 +19,13 @@
 // clang-format off
 
 /*==============================================================================================
-    Popup stack entry (gui_context_t popup.open; driver in chrome/popup/gui_popup.c)
+    Popup overlay save (chrome/popup/gui_popup.c)
 
-    A popup is a top-level overlay begun while a parent window is still open but laid out,
-    clipped, and painted independent of it.  gui_overlay_save_t is the parent context popup_end
-    restores: whole-struct copies of the window context, the interaction scope, and the draw
-    scope, plus the parent's top layout frame (its pen must survive the popup's region pop).
-    Because the copies are wholesale, nothing here is maintained field-by-field -- a field added
-    to any of those records rides the seam automatically.  The open set is a stack ordered
-    parent -> child, held in gui_context_t.
+    The parent state popup_end restores: whole-struct copies of the window context, the
+    interaction scope, and the draw scope, plus the parent's top layout frame (its pen must
+    survive the popup's region pop).  Because the copies are wholesale, nothing here is
+    maintained field-by-field -- a field added to any of those records rides the seam
+    automatically.  One per popup depth, parallel to g_ctx->popup.open (core/gui_ctx.h).
 ==============================================================================================*/
 
 typedef struct
@@ -41,82 +38,6 @@ typedef struct
     layout_frame_t   parent_frame;  // the parent's top frame, restored after the popup
 
 } gui_overlay_save_t;
-
-struct gui_popup_t              /* typedef'd gui_popup_t in core/gui_ctx.h (opaque to core) */
-{
-    gui_id_t            id;                 // popup window id (salted; matches s_build.win.id / hover_win)
-    bool                modal;              // blocks input behind it + dims the background
-    f32                 anchor_x;           // open point -- where a non-modal popup is placed
-    f32                 anchor_y;           //
-    u32                 open_frame;         // frame popup_open ran -- "appearing" detection
-    u32                 begun_frame;        // last frame popup_begin ran -- drives stale-close
-    gui_rect_t          rect;               // on-screen rect last frame -- drives click-outside
-    gui_overlay_save_t  saved;              // parent context to restore at popup_end
-};
-
-/*==============================================================================================
-    Dock node (behavior in gui_dock.c)
-
-    One node of a viewport's dock tree.  A node is either a LEAF (split == GUI_DOCK_SPLIT_NONE),
-    which tabs one or more windows into a single region, or an INTERNAL split (GUI_DOCK_SPLIT_X /
-    _Y), which divides its rect between two children at `ratio` with a draggable splitter between
-    them.  Nodes live in a fixed per-context pool (gui_context_t dock.pool) so child / parent pool
-    indices (gui_dock_ref_t, core/gui_ctx.h) stay valid across frames; a freed slot has id == 0.
-
-    rect / content are resolved every frame by dock_node_layout from the viewport extent down: rect is
-    the node's whole box, content is the leaf's body below its tab strip (where the active window draws).
-==============================================================================================*/
-
-#define GUI_DOCK_TABS_MAX           8       // windows co-docked (tabbed) in one leaf node
-#define GUI_DOCK_NAME_CAP           28      // bytes of a tab's display name, copied at dock time
-
-typedef enum
-{
-    GUI_DOCK_SPLIT_NONE = 0,    /* leaf -- tabs windows; child[] unused                 */
-    GUI_DOCK_SPLIT_X,           /* internal -- vertical split, children side by side    */
-    GUI_DOCK_SPLIT_Y,           /* internal -- horizontal split, children top / bottom  */
-
-} gui_dock_split_t;
-
-struct gui_dock_node_t          /* typedef'd gui_dock_node_t in core/gui_ctx.h (opaque to core) */
-{
-    gui_id_t    id;                          /* stable node handle; 0 = free pool slot            */
-    i32         viewport;                    /* surface this tree belongs to                      */
-    u8          split;                       /* gui_dock_split_t: NONE = leaf, else internal     */
-    f32         ratio;                       /* child[0]'s fraction of the split axis (0.5 default) */
-
-    gui_dock_ref_t parent;       /* owning split, or GUI_DOCK_REF_NONE for the tree root  */
-    gui_dock_ref_t child[ 2 ];   /* internal only (GUI_DOCK_REF_NONE on a leaf)           */
-
-    /* Leaf payload: the windows tabbed into this node.  Names are copied at dock time so the tab
-       bar is self-sufficient (no dependence on a window emitting this frame or its title lifetime). */
-
-    gui_id_t    tabs [ GUI_DOCK_TABS_MAX ];
-    char        names[ GUI_DOCK_TABS_MAX ][ GUI_DOCK_NAME_CAP ];
-    u32         tab_count;
-    u32         active_tab;                   /* index of the visible tab                          */
-
-    gui_rect_t rect;                       /* whole node box, resolved this frame               */
-    gui_rect_t content;                    /* leaf body below the tab strip (active window's rect) */
-
-    /* Floating tab group (gui_dock_float.c): a leaf living OUTSIDE any viewport tree -- windows
-       tabbed onto one shared free-floating frame, no split panes.  Not reachable from dock_root,
-       so dock_node_layout never touches it: `rect` doubles as its PERSISTED geometry (moved by the
-       strip drag, sized by the edge resize), and `z` stacks it among the free windows (a tree node
-       draws at z 0 behind them).  Always GUI_DOCK_SPLIT_NONE with parent GUI_DOCK_REF_NONE. */
-    bool floating;
-    u32  z;
-
-    /* Hidden pane: every window tabbed into this leaf stopped emitting (menu-hidden, X-closed);
-       on a split, both children are hidden.  Refreshed at ctx_end (dock_hidden_refresh,
-       gui_dock_core.c) from the windows' last_frame stamps; dock_node_layout collapses a hidden
-       child to a zero-extent slice so the visible sibling absorbs its space -- tree structure and
-       ratio stay untouched, so a window that re-emits gets its exact pane back.  Derived state:
-       recomputed every build, never serialized.  A floating group is refreshed too (visited
-       directly in the pool, since no dock_root reaches it) -- chiefly for the active-tab handoff;
-       its hidden flag has no layout consumer. */
-    bool hidden;
-};
 
 /*==============================================================================================
     Frame steps + upward seams -- the few chrome definitions the frame unit calls UP into
