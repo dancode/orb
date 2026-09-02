@@ -297,12 +297,11 @@ test_misses( void )
     (g_host_res_table) along, so counts below are measured relative to that.
 ==============================================================================================*/
 
-/* Hand-written, so the ids are RID_INVALID: the registry hashes them on registration. */
 static const res_entry_t s_fake_entries[] = {
-    {"fake/font/mono/16", RID_INVALID},
-    {"fake/icon/save",    RID_INVALID},
-    {"fake/icon/load",    RID_INVALID},
-    {"FAKE/ICON/SAVE",    RID_INVALID}, /* duplicate spelled differently: must not add an entry  */
+    { "fake/font/mono/16" },
+    { "fake/icon/save" },
+    { "fake/icon/load" },
+    { "FAKE/ICON/SAVE" }, /* duplicate spelled differently: must not add an entry  */
 };
 
 static const res_table_t g_fake_res_table = {
@@ -403,8 +402,7 @@ test_mod_lifecycle( void )
     is the property the whole design rests on: what CAN be loaded is known at build time.
     The names the fake module registers are spelled only as plain strings in its table,
     never through RID(), so the harvest must NOT contain them.  The one RES_TREE() in
-    test_identity arrives as "ui/icon/", slash included, and every entry carries the id
-    the build computed, which the runtime's hash must agree with.
+    test_identity arrives as "ui/icon/", slash included.
 ==============================================================================================*/
 
 static void
@@ -415,17 +413,6 @@ test_harvest( void )
 
     sb_check( g_host_res_table.entries != NULL && g_host_res_table.count > 0,
               "the build generated a non-empty table for this exe" );
-
-    /* The tool's hash and the runtime's are the same function, or the tables would be
-       registering names under ids nothing can look up. */
-    u32 ids_agree = 0;
-    for ( u32 i = 0; i < g_host_res_table.count; ++i )
-    {
-        const res_entry_t* e = &g_host_res_table.entries[ i ];
-        if ( e->id != RID_INVALID && e->id == res_hash_name( e->name ) )
-            ids_agree++;
-    }
-    sb_check( ids_agree == g_host_res_table.count, "every generated id is the runtime hash of its name" );
 
     /* Registering the generated table by hand behaves like any other table. */
     u32 registered = res_register_table( &g_host_res_table );

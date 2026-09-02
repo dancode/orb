@@ -308,14 +308,10 @@ res_register_table( const res_table_t* table )
     if ( !table || !table->entries )
         return 0;
 
-    /* A precomputed id goes through the verifying path; RID_INVALID means hash it here. */
     u32 ok = 0;
     for ( u32 i = 0; i < table->count; ++i )
     {
-        const res_entry_t* e  = &table->entries[ i ];
-        rid_t              id = ( e->id != RID_INVALID ) ? res_register_id( e->id, e->name )
-                                                         : res_register( e->name );
-        if ( id != RID_INVALID )
+        if ( res_register( table->entries[ i ].name ) != RID_INVALID )
             ok++;
     }
     return ok;

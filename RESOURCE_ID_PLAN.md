@@ -242,10 +242,13 @@ Phase 1 -- RID macro + build-time harvester                              [DONE 2
      they can never share an id -- a flag-based tree marker had let them merge into one
      entry.  No flag field exists; res_name() of a tree id is self-describing.  Phase 2
      expands trees against the content root.
-   - res_entry_t = { name, id }: the id the build computed, verified on registration
-     (res_register_id refuses an id that does not hash from its name), the same id + name
-     shape the cooked-header feed carries in Phase 6, so both feeds register through one
-     path.  RID_INVALID in a hand-written table means hash at registration.
+   - res_entry_t = { name } only, 8 bytes.  The id is a pure function of the name, and a
+     RID() site and the table hash through the same res_hash_name in the same binary, so
+     storing the build's id would be derived data with a second source of truth.  (An
+     iteration tried it for tool/runtime hash-drift detection; build_tool's include
+     tracking already rebuilds res_tool on a res.h change, so it bought nothing.)
+     res_register_id, the cooked-header feed's door, does verify that an incoming id
+     hashes from its name -- that id arrives from outside the binary.
    - WHO OWNS A TABLE.  A table belongs to an IMAGE.  Every dynamic module gets
      g_<name>_res_table (its descriptor opts in with MOD_RES_TABLE( name ); none has yet).
      Every executable whose link closure contains res gets g_host_res_table -- a FIXED
@@ -272,8 +275,8 @@ Phase 1 -- RID macro + build-time harvester                              [DONE 2
      literals, decodes escapes.  On a #define line a non-literal argument is the macro's
      own definition and is skipped; anywhere else it is a build error ("argument must be
      a string literal"), because a name reaching the door through a macro or variable is
-     invisible to the harvest.  Output is sorted by id and canonical, one { name, id }
-     entry per canonical name with a first-site file:line comment; an image with no
+     invisible to the harvest.  Output is sorted by id and canonical, one entry per
+     canonical name with an id + first-site file:line comment; an image with no
      references gets { .entries = NULL, .count = 0 }.
    - build_tool: step 6.5 in build_target (after reflect, inside the rebuild path -- a
      name added anywhere in the closure already makes the target stale through a unit,
@@ -297,12 +300,12 @@ Phase 1 -- RID macro + build-time harvester                              [DONE 2
      scanned across its closure) holds exactly font/cascadiamono/16 and nothing from
      Roboto, JetBrains or CascadiaCode; sb_gui logs the name as resolving at boot through
      the descriptor path.  (The "referenced icons" half of the proof waits for Phase 5,
-     when gui itself spells icon names through RID.)  sb_res: 75 checks, 0 failed --
+     when gui itself spells icon names through RID.)  sb_res: 74 checks, 0 failed --
      a new harvest test shows this exe's own table holds exactly the five names spelled
      through the doors in sb_res.c (four RID() leaves and one RES_TREE() subtree, stored
      as "ui/icon/"), including one only ever queried and never registered by hand, and
-     nothing a plain string mentions; every generated id equals the runtime hash of its
-     name, and a forged id is refused.  res_tool over a scratch file with the collision
+     nothing a plain string mentions; res_register_id refuses a forged id.  res_tool
+     over a scratch file with the collision
      pair, three malformed names and a RID( MACRO ) reports all five errors in one run,
      exits 1 and writes no table; a second scratch file confirms comments and strings
      are inert, adjacent literals concatenate, a literal RID inside a #define is

@@ -127,20 +127,14 @@ res_hash_name( const char* s )
     An image's declared name set, emitted by the build from the RID() / RES_TREE() tokens in
     its sources -- for a DLL module its own units, for an executable its units plus every
     statically linked library -- and pointed at from mod_desc_t.res_table (MOD_RES_TABLE).
-    The res library registers the table when the module's pre_init hook fires.  Entries are
-    plain literals living in the image; the registry copies them.
-
-    Each entry carries the id the build computed for it, the same shape as the id + name
-    pairs cooked content headers feed in.  Registration verifies that the id is the name's
-    hash, so a table produced by a different res_hash_name than this runtime's is refused
-    rather than silently registered under ids nothing will look up.  RID_INVALID means the
-    id was not precomputed and is hashed at registration (hand-written tables).
+    The res library registers the table when the module's pre_init hook fires, hashing each
+    name then -- an id is a pure function of the name, so the table carries nothing else.
+    Entries are plain literals living in the image; the registry copies them.
 ==============================================================================================*/
 
 typedef struct res_entry_s
 {
     const char* name;               // canonical logical name; trailing '/' = subtree
-    rid_t       id;                 // res_hash_name( name ), or RID_INVALID to hash on registration
 
 } res_entry_t;
 

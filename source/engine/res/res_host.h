@@ -50,7 +50,7 @@ void            res_exit             ( void );
     mentioned it, so ids held elsewhere stay resolvable across module unloads.
 
     res_register_id takes a caller-supplied id for feeds that carry precomputed ids beside
-    their names (generated tables, cooked content headers).  An id is always the name's
+    their names (cooked content headers).  An id is always the name's
     hash, so the call verifies that and refuses a pair that does not agree -- the feed was
     produced by a different hash than this runtime's.  Two different names arriving under
     one id is a collision: the call fails, both names are reported through
