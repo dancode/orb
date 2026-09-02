@@ -2,8 +2,8 @@
 
 # Resource Catalogue (res) + Package Manifest -- Plan
 
-Status: IN PROGRESS -- Phases 0 and 1 landed 2026-09-01.  Successor to the reference half
-of ASSET_SYSTEM_PLAN.md.
+Status: IN PROGRESS -- Phases 0, 1 and 2 landed 2026-09-01.  Successor to the reference
+half of ASSET_SYSTEM_PLAN.md.
 That plan built the RUNTIME half -- fs mounts, zip bundles, the asset registry, the cook
 track, packaging -- and left one question unanswered: what does an application actually
 reference?  Today ship_tool answers it by copying whole directories (dev_ship.c:623-625).
@@ -326,13 +326,74 @@ Phase 1 -- RID macro + build-time harvester                              [DONE 2
      next rebuild; nothing references g_<name>_res_table until a module opts in with
      MOD_RES_TABLE, which is itself a source change, so this cannot bite.
 
-Phase 2 -- Content root + name resolution                                [NOT STARTED]
-   - content/ root convention; name -> source file -> cooked relative path (WITH extension),
-     recorded in the generated table.
-   - Build-time content-root layering: an ordered root list, project shadowing engine
-     (override axis 1 of decision 14).
-   - Proof: a name resolves to the expected cooked path; a project root shadows an engine
-     name; a name with no backing file is a build error naming the referencing file:line.
+Phase 2 -- Content root + name resolution                                [DONE 2026-09-01]
+   - CONTENT ROOT = <tree>/content/, for the engine and for every child project.  build_tool
+     derives the ordered root list from what it already knows -- the cwd's content/, then
+     <engine_root>/content when orb.targets declares `engine` -- and passes it to res_tool
+     as repeated -root flags, highest priority first (build_gen_res_table).  No orb.targets
+     vocabulary (decision 16).  A root that does not exist is still passed: res_tool records
+     it so its later appearance makes every table stale.
+   - res_entry_t = { name, path }.  `path` is the cooked file relative to the content root,
+     WITH its extension, spelled as the source file is spelled on disk -- the name folds to
+     lowercase, the path does not, so a case-sensitive filesystem opens it.  A subtree entry
+     has "" (a directory, not a file).  Runtime: res_path( rid ) in res_api_t / res_host.h
+     (NULL unknown, "" none); the registry slot gains path_off with pool byte 0 reserved as
+     the empty string; a by-name registration (res_register, the cooked-header feed) has no
+     path, a table arriving later fills it in, and two tables disagreeing keep the first and
+     report through res_last_error -- two images built against different content.
+   - RESOLUTION (res_tool): each directory is listed once from the OS and cached (Win32
+     FindFirstFile / POSIX opendir); a name walks its segments through a root one listing at
+     a time, matching case-insensitively, which is what yields the on-disk spelling.  A leaf
+     is exactly one file whose stem folds to the last segment -- two files (save.png beside
+     save.jpg) is an error, a directory of that name alone is an error pointing at
+     RES_TREE.  A subtree is the directory in every root that has it, expanded recursively,
+     higher roots first, first root winning per name; the subtree's own entry stays.
+     '.'-prefixed entries are not content.  Errors are per site with file:line, all
+     reported in one run, and no table is written.
+   - COOKED EXTENSION: engine/res/res_cook.h, header-only and tools-only, is the single
+     source -> cooked mapping (png/... -> tex, ttf/otf -> orb_font, hlsl -> oshd, else
+     verbatim).  asset_tool's dispatch predicates and job_dst_rel now read it, so the path
+     res_tool records is by construction the file asset_tool writes.
+   - RECIPES (decision 9, brought forward): a .recipe is a text file with a `kind <word>`
+     line; the kind decides the cooked extension (font -> orb_font).  No kind, or an
+     unknown one, is a build error.  content/font/CascadiaMono/16.recipe exists, so
+     sb_gui's name has a backing file; the bake itself is Phase 6, and asset_tool copies a
+     recipe verbatim until then.
+   - STALENESS: content is the one input the compiler never sees.  res_tool writes every
+     directory it listed and every recipe it read to <obj>/_res_deps.txt ('!' prefix for a
+     root that did not exist), and build_target's up-to-date test E replays it: a directory's
+     mtime moves on add / remove / rename beneath it.  Equal timestamps count as stale there
+     (mtimes are whole seconds; an edit in the same second as the previous link was
+     otherwise missed -- observed once, then fixed).
+   - TABLE ORDER: sorted by canonical name, so every RES_TREE closure is a contiguous run and
+     a lookup can binary-search -- the tree layout open decision 7 asks of static artifacts,
+     obtained from the sort rather than a directory table.  The collision check sorts a copy
+     by id.  Expanded entries are commented "in <subtree>" with the RES_TREE site.
+   - Fixtures: content/sandbox/res/ (see its README.md) backs sb_res, whose names moved
+     from ui/icon/* to sandbox/res/* so real icon content (Phase 5) never mixes with test
+     files.  Load.png is deliberately capitalised; sub/deep.txt is a copy-kind file in a
+     nested directory; tree_only.png is spelled by no source line.
+   - Proof: sb_res, 109 checks, 0 failed.  New `paths` test covers a table path, "" for a
+     by-name registration and a subtree, fill-in by a later table, first-path-wins with the
+     ignored path reported, and paths surviving pool growth.  The harvest test now checks
+     the generated table is exactly 5 explicit + 2 expanded names, every leaf with a path
+     (.tex / .orb_font / .txt), Load.tex case-preserved, and a child composed at runtime
+     from the tree id (res_hash_child) resolving to a path no source spelled.  sb_gui's
+     table records font/cascadiamono/16 -> font/CascadiaMono/16.orb_font and the demo
+     still boots logging the name as resolving.  res_tool over scratch roots: a project
+     .tex shadows the engine .png under one name, a project file wins inside a merged
+     subtree with no false ambiguity, an engine-only name is found, a case-folded name
+     (UI/Icon/Only_Eng vs Only_Proj.PNG) resolves with on-disk spelling; a second file
+     with five bad sites (directory-only leaf, missing file, ambiguous pair, subtree with
+     no directory, recipe without kind) reports all five with file:line and writes no
+     table; no -root gives a per-name error; a missing root lands as a '!' dep line.
+     build_tool: adding a png under sb_res's RES_TREE directory rebuilt sb_res with the new
+     entry and no source change, touching a recipe rebuilt, an unchanged tree skipped.
+     Child project: `build_tool -target my_project -res-table` from samples/my_project
+     passes its own (absent) content/ and then G:/orb/content, and the deps file records
+     them as "!.../my_project/content" and ".../orb/content".  Full modular Debug build
+     (36 targets recompiled), -gen and -doctor green.
+   - Not exercised: -monolithic, and the POSIX directory listing (written, not compiled).
 
 Phase 3 -- Format header reference section                               [NOT STARTED]
    - Reserve a child-rid table section in the three cooked format contracts (orb_font.h v5,
@@ -397,10 +458,10 @@ Phase 7 -- ship_tool consumes the manifest                               [NOT ST
    (u64 would only earn its keep past ~100k logical names).  Cooked headers store the id as
    a little-endian u32.  NOTE: this makes the Phase 1 collision check load-bearing, not a
    backstop -- it must land with the harvester, not after.
-2. Name grammar for content-root layering: does a project name-space itself by prefix
-   ("game/..." vs "engine/...") or do roots layer anonymously with priority?  Anonymous
-   layering allows clean overrides; prefixes make provenance obvious in source.  Anonymous
-   is assumed above.
+2. Name grammar for content-root layering.  SETTLED in Phase 2: anonymous layering.  Roots
+   are an ordered list (project, then engine) and shadow name by name; nothing in a name
+   says which root it came from.  The generated table's site comment is where provenance
+   shows, not the name.
 3. RES_TREE granularity: whole subtree, or subtree plus a type filter?  Start with whole
    subtree and tighten only if a real site over-includes badly.  (Encoding is settled:
    a subtree is a name with a trailing slash, see Phase 1.)

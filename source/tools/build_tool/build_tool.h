@@ -702,11 +702,14 @@ bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
 bool build_cook_shaders( build_context_t* ctx, target_info_t* target );
 
 /*  Harvests the resource names (RID / RES_TREE tokens) the target's image references
-    into <obj_dir>/<name>_res_table.c, which build_target_compile then compiles in.
-    The scan covers the target's own units plus those of every dependency it links
-    statically, so an executable's table is the complete name set of the program.
+    into <obj_dir>/<name>_res_table.c, which build_target_compile then compiles in,
+    each resolved to its cooked file under the content roots (this project's content/,
+    then the engine's for a child project). The scan covers the target's own units plus
+    those of every dependency it links statically, so an executable's table is the
+    complete name set of the program. Also writes <obj_dir>/_res_deps.txt, the content
+    directories and recipes the table depends on, for the up-to-date check.
     res_tool must already be built (the caller resolves and builds it). Fails the
-    build on a malformed name or a rid collision, naming both sites. */
+    build on a malformed name, a name with no file, or a rid collision, naming the site. */
 
 bool build_gen_res_table( target_info_t* target, const char* obj_dir, const target_info_t* res_tool );
 

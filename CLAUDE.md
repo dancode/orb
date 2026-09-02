@@ -104,6 +104,9 @@ source/host/          -- executable entry points: game, editor, tool, sandbox
 source/sandbox/       -- test executables for each engine layer
 source/project/       -- game-specific code (sample_game)
 third_party/          -- vendored libraries (freetype-2.14.3)
+content/              -- source content root: a resource name (RID( "ui/icon/save" )) is a file's
+                         path here minus its extension; the build resolves it (res_tool) and a
+                         child project's content/ shadows it name by name. See RESOURCE_ID_PLAN.md.
 ```
 
 Engine libraries (`mod`, `sys`, `ref`, `res`, `prof`, `pack`, `fs`, `job`, `net`, `core`, `app`)

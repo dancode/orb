@@ -228,7 +228,10 @@ build_cook_shaders( build_context_t* ctx, target_info_t* target )
 
     Runs only when the target is being rebuilt (after the up-to-date check): a name added
     anywhere in the closure either changes one of this target's units or headers, or
-    rebuilds a dep's .lib, and each of those already makes the target stale.
+    rebuilds a dep's .lib, and each of those already makes the target stale.  A CONTENT
+    change is the one input the compiler never sees, so res_tool also writes the content
+    directories and recipes the table was computed from to <obj_dir>/_res_deps.txt, and the
+    up-to-date check replays that list (test E in build_target).
 ==============================================================================================*/
 
 // Appends the absolute unit paths of t, then of its link deps, to `f`. visited[] is indexed
@@ -299,10 +302,27 @@ build_gen_res_table( target_info_t* target, const char* obj_dir, const target_in
     if ( g_engine_root[ 0 ] )
         snprintf( engine_inc, sizeof( engine_inc ), " -inc %s/source", g_engine_root );
 
+    // Content roots in the same order, highest priority first: this project's content/,
+    // then the engine's when this is a child project -- so a project file shadows the
+    // engine's under the same name. A root that does not exist yet is passed anyway:
+    // res_tool records it in the deps file and its appearance makes the table stale.
+    char roots[ PATH_MAX * 2 + 32 ];
+    {
+        char content_root[ PATH_MAX ];
+        if ( !platform_fullpath( content_root, "content", sizeof( content_root ) ) )
+            snprintf( content_root, sizeof( content_root ), "content" );
+        int n = snprintf( roots, sizeof( roots ), " -root %s", content_root );
+        if ( g_engine_root[ 0 ] )
+            snprintf( roots + n, sizeof( roots ) - ( size_t )n, " -root %s/content", g_engine_root );
+    }
+
+    char deps_path[ PATH_MAX ];
+    snprintf( deps_path, sizeof( deps_path ), "%s" PATH_SEP "_res_deps.txt", obj_dir );
+
     const char* silent = ( g_out_flags & ORB_OUT_REFLECT ) ? "" : " -silent";
-    char cmd[ PATH_MAX * 4 ];
-    snprintf( cmd, sizeof( cmd ), "bin" PATH_SEP "%s.exe -list %s -out %s -name %s -inc %s%s%s",
-              res_tool->name, list_path, out_path, symbol, src_root, engine_inc, silent );
+    char cmd[ PATH_MAX * 8 ];
+    snprintf( cmd, sizeof( cmd ), "bin" PATH_SEP "%s.exe -list %s -out %s -deps %s -name %s -inc %s%s%s%s",
+              res_tool->name, list_path, out_path, deps_path, symbol, src_root, engine_inc, roots, silent );
     if ( build_run_cmd( cmd ) != 0 )
     {
         printf( ORB_INDENT "[orb error] '%s' resource table failed -- see the res_tool errors above\n",
@@ -529,6 +549,49 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
             platform_unmap_file( &inc_map );
         }
         // Empty file (size == 0): no headers recorded, nothing to check, stay up to date.
+    }
+
+    // E. Content check. res_tool wrote every content directory it listed and every recipe
+    //    it read into <obj_dir>/_res_deps.txt. A directory's mtime moves when a file is
+    //    added, removed or renamed inside it, which is exactly the change that alters the
+    //    resource table without touching any source. A line starting with '!' is a content
+    //    root that did not exist when the table was generated: it going stale means the
+    //    root now exists.
+    //    Equal timestamps count as stale here, unlike tests A-D: mtimes are whole seconds,
+    //    and a content edit made in the same second the previous link finished would
+    //    otherwise leave a table missing that edit until some source changed. The cost is
+    //    one extra rebuild in that second; the next link lands later and the check settles.
+    if ( up_to_date && target_wants_res_table( target ) )
+    {
+        char deps_path[ PATH_MAX ];
+        snprintf( deps_path, sizeof( deps_path ), "%s" PATH_SEP "_res_deps.txt", obj_dir );
+
+        platform_mapped_file_t dep_map;
+        if ( !platform_map_file( deps_path, &dep_map ) )
+        {
+            // No file = no recorded content set = assume stale.
+            up_to_date = false;
+        }
+        else
+        {
+            const char* p   = dep_map.data;
+            const char* end = dep_map.data + dep_map.size;
+            char dep[ PATH_MAX ];
+            while ( up_to_date && mmap_next_line( &p, end, dep, sizeof( dep ) ) )
+            {
+                if ( !dep[ 0 ] ) continue;
+                if ( dep[ 0 ] == '!' )
+                {
+                    if ( platform_file_exists( dep + 1 ) )
+                        up_to_date = false;
+                    continue;
+                }
+                platform_mtime_t d_mtime = platform_get_mtime( dep );
+                if ( d_mtime == 0 || d_mtime >= out_mtime )
+                    up_to_date = false;
+            }
+            platform_unmap_file( &dep_map );
+        }
     }
 
     // Declared here so cleanup: can access them regardless of which goto fires.

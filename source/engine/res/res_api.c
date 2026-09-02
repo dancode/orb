@@ -18,6 +18,7 @@
 const res_api_t g_res_api_struct = {
     /* Lookup */
     .name   = res_name,
+    .path   = res_path,
     .exists = res_exists,
     .count  = res_count,
     .each   = res_each,

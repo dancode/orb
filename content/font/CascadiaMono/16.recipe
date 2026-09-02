@@ -1,0 +1,8 @@
+# Recipe: content with no source file of its own.  The name "font/CascadiaMono/16" is this
+# file's path under content/ minus the extension; "kind" is what it cooks to, which decides
+# the cooked file name (font -> font/CascadiaMono/16.orb_font).  The remaining lines are the
+# bake inputs (see config/fonts.manifest for the font_tool flags they stand for).
+
+kind    font
+face    CascadiaMono
+size    16

@@ -1,0 +1,6 @@
+# sb_res fixture: a recipe resolves to the cooked file its kind produces
+# ("sandbox/res/font/mono/16" -> sandbox/res/font/mono/16.orb_font).
+
+kind    font
+face    CascadiaMono
+size    16

@@ -1,14 +1,16 @@
 /*==============================================================================================
 
-    res_tool.c - Resource reference harvester (build-time)
+    res_tool.c - Resource reference harvester + name resolver (build-time)
 
     Usage:
-        res_tool -list <units.txt> -out <table.c> -name <symbol> [-inc <dir>]... [-silent]
+        res_tool -list <units.txt> -out <table.c> -name <symbol>
+                 [-inc <dir>]... [-root <dir>]... [-deps <file>] [-silent]
 
     Reads a list of translation units (one path per line; '#' starts a comment), follows
     every #include "..." reachable from them -- unity fragments and headers alike -- and
-    collects the names spelled through RID( "..." ) and RES_TREE( "..." ).  Writes them as
-    a C table of canonical names:
+    collects the names spelled through RID( "..." ) and RES_TREE( "..." ).  Each name is
+    then resolved against the content roots to the file it stands for, and the set is
+    written as a C table of canonical names and cooked relative paths:
 
         const res_table_t g_<symbol>_res_table;
 
@@ -17,15 +19,36 @@
     image's own units plus those of every statically linked dependency; see
     build_gen_res_table in build_tool_09_exec.c.
 
-    A RES_TREE prefix is recorded with a trailing slash, exactly as the macro hashes it, so
-    "ui/icon/" (the subtree) and "ui/icon" (a leaf) are two entries with two ids.
+    RESOLUTION.  A name is the path of its source file under a content root, minus the
+    extension: "ui/icon/save" is <root>/ui/icon/save.<ext> for exactly one <ext>.  Matching
+    is case-insensitive segment by segment (the name is canonical lowercase; the file is
+    spelled however the author spelled it), and the recorded path keeps the on-disk spelling
+    so it opens on a case-sensitive filesystem too.  The cooked extension comes from the
+    source extension through engine/res/res_cook.h -- the same table asset_tool writes files
+    with -- and a .recipe file names its cooked kind on a "kind <word>" line.  Roots are
+    searched in the order given and the first that holds the name wins, so a project's
+    content/ shadows the engine's name by name, whatever the two extensions are.
 
-    The tool is also where the catalogue's uniqueness guarantee is proven: every harvested
-    name is hashed exactly as the runtime does (res_hash_name, header-inline) and two
-    different names landing on one rid_t fail the build, naming both sites.  A malformed
-    name (empty segment, leading or trailing separator, whitespace, non-ASCII) and a RID()
-    whose argument is not a string literal fail the same way.  Every error is reported
-    before the tool exits non-zero, so one run shows the whole list.
+    A RES_TREE prefix is recorded with a trailing slash, exactly as the macro hashes it, so
+    "ui/icon/" (the subtree) and "ui/icon" (a leaf) are two entries with two ids.  The
+    subtree names a directory: it carries no path itself, and every file beneath it in any
+    root becomes an entry of its own, so a child composed at runtime (res_hash_child) finds
+    a path in the catalogue.  Two roots holding the same subtree merge, first root winning
+    per name.
+
+    Errors, each reported at the RID / RES_TREE site before the tool exits non-zero so one
+    run shows the whole list: a name with no file under any root; a name matching two files
+    in one directory (save.png beside save.jpg); a leaf name that is only a directory (use
+    RES_TREE); a subtree with no directory; a recipe with no usable "kind" line; a malformed
+    name (empty segment, leading or trailing separator, whitespace, non-ASCII); a RID()
+    whose argument is not a string literal; and two names hashing to one rid_t (the
+    catalogue's uniqueness guarantee is proven here, with the same res_hash_name the runtime
+    uses).
+
+    -deps writes every directory listed and every recipe read, one path per line, so
+    build_tool can tell when a content change (a file added, renamed, or removed; a recipe
+    edited) has made the image's table stale even though no source changed.  A root that
+    did not exist is written with a leading '!': the table is stale the moment it appears.
 
     Include resolution tries the including file's directory first and then each -inc root,
     in order -- the same search the compiler performs for a quoted include.  Angle-bracket
@@ -33,8 +56,9 @@
     cannot hold engine resource names.  Conditional compilation is not evaluated, so both
     arms of a platform #ifdef are scanned; an over-inclusion there is harmless.
 
-    Standalone C11: reads files with stdio, links nothing.  It includes engine/res/res.h for
-    the hash and the canonical fold only, so the ids it computes are the runtime's.
+    Standalone C11: reads files with stdio and lists directories with the OS API, links
+    nothing.  It includes engine/res/res.h for the hash and the canonical fold only, so the
+    ids it computes are the runtime's.
 
 ==============================================================================================*/
 
@@ -43,6 +67,16 @@
 #include <string.h>
 
 #include "engine/res/res.h"
+#include "engine/res/res_cook.h"
+
+#if defined( _WIN32 )
+    #define WIN32_LEAN_AND_MEAN
+    #define NOMINMAX
+    #include <windows.h>
+#else
+    #include <dirent.h>
+    #include <sys/stat.h>
+#endif
 
 // clang-format off
 /*==============================================================================================
@@ -51,7 +85,7 @@
 
 #define RT_MAX_PATH         1024
 #define RT_MAX_INC_DIRS     16
-#define RT_MAX_ERRORS       64
+#define RT_MAX_ROOTS        8
 #define RT_TOOL             "res_tool"
 
 /*==============================================================================================
@@ -65,26 +99,72 @@ typedef struct rt_file_s
 
 } rt_file_t;
 
+/*==============================================================================================
+    Harvested entry
+
+    One per canonical name.  An explicit entry comes from a RID / RES_TREE site; an expanded
+    entry is a file found beneath a RES_TREE directory and points back at that site through
+    `via`.  `path` is filled by resolution and stays "" for a subtree.
+==============================================================================================*/
+
 typedef struct rt_entry_s
 {
     char*    name;      // canonical name (res_canon_char applied); trailing '/' = subtree
     char*    spelled;   // name as written at the first site that mentioned it
+    char*    path;      // cooked file relative to its root, on-disk spelling; "" = none
     rid_t    id;        // res_hash_name( name )
-    int      file;      // index into g_files of the first site
-    int      line;      // line of the first site
+    int      file;      // index into g_files of the site
+    int      line;      // line of the site
+    int      via;       // index of the subtree entry this was expanded from, or -1
+    int      root;      // index into g_roots of the root that resolved it, or -1
+    bool     tree;      // a subtree (name ends in '/')
 
 } rt_entry_t;
 
-static rt_file_t*  g_files;
-static int         g_file_count;
-static int         g_file_cap;
+/*==============================================================================================
+    Listed directory
+==============================================================================================*/
+
+typedef struct rt_dirent_s
+{
+    char*    name;      // entry name as spelled on disk
+    bool     is_dir;
+
+} rt_dirent_t;
+
+typedef struct rt_dir_s
+{
+    char*         path;     // normalized path, as opened
+    char*         key;      // dedupe key (see path_key)
+    rt_dirent_t*  ents;
+    int           count;
+    bool          exists;
+
+} rt_dir_t;
+
+static rt_file_t*  g_files;             // files to scan, in discovery order; also the work queue
+static int         g_file_count;        // index of the next file to scan; g_file_count == g_file_cap means done
+static int         g_file_cap;          // capacity of g_files
 
 static rt_entry_t* g_entries;
 static int         g_entry_count;
 static int         g_entry_cap;
+static int*        g_entry_hash;        // open addressing over entry ids -> entry index + 1
+static int         g_entry_hash_size;   // power of two
+
+static rt_dir_t*   g_dirs;
+static int         g_dir_count;
+static int         g_dir_cap;
 
 static const char* g_inc_dirs[ RT_MAX_INC_DIRS ];
 static int         g_inc_dir_count;
+
+static const char* g_roots[ RT_MAX_ROOTS ];
+static int         g_root_count;
+
+static char**      g_deps;              // paths the table depends on, for -deps
+static int         g_dep_count;
+static int         g_dep_cap;
 
 static int         g_error_count;
 
@@ -143,6 +223,50 @@ path_basename( const char* s )
         if ( *c == '/' || *c == '\\' )
             p = c + 1;
     return p;
+}
+
+/* Extension of a file name (past the last '.'), or "" when it has none.  A leading dot is
+   not an extension: ".gitkeep" has stem ".gitkeep". */
+static const char*
+name_ext( const char* name )
+{
+    const char* dot = NULL;
+    for ( const char* p = name + ( name[ 0 ] == '.' ? 1 : 0 ); *p; ++p )
+        if ( *p == '.' )
+            dot = p;
+    return dot ? dot + 1 : name + strlen( name );
+}
+
+/* True when the on-disk spelling `disk` folds to the canonical `canon` over n bytes and
+   ends there. */
+static bool
+name_folds_to( const char* disk, const char* canon, size_t n )
+{
+    for ( size_t i = 0; i < n; ++i )
+        if ( disk[ i ] == 0 || res_canon_char( disk[ i ] ) != canon[ i ] )
+            return false;
+    return disk[ n ] == 0;
+}
+
+/*==============================================================================================
+
+    ...
+
+==============================================================================================*/
+
+static void
+dep_add( const char* path, bool missing )
+{
+    if ( g_dep_count == g_dep_cap )
+    {
+        g_dep_cap = g_dep_cap ? g_dep_cap * 2 : 64;
+        g_deps    = ( char** )rt_xrealloc( g_deps, ( size_t )g_dep_cap * sizeof( char* ) );
+    }
+    size_t n = strlen( path );
+    char*  d = ( char* )rt_xrealloc( NULL, n + 2 );
+    d[ 0 ]   = missing ? '!' : 0;
+    memcpy( d + ( missing ? 1 : 0 ), path, n + 1 );
+    g_deps[ g_dep_count++ ] = d;
 }
 
 /*==============================================================================================
@@ -216,7 +340,9 @@ path_normalize( const char* in, char* out, size_t cap )
 
         if ( o + len + 2 >= cap )
             break;
+
         memcpy( out + o, seg, len );
+
         o += len;
         out[ o++ ] = '/';
     }
@@ -231,11 +357,14 @@ path_dirname( const char* path, char* out, size_t cap )
 {
     size_t n = strlen( path );
     while ( n > 0 && path[ n - 1 ] != '/' )
-        n--;
+         n--;
+
     if ( n > 1 )
-        n--;    /* drop the separator, keep a bare "/" root */
+         n--;       /* drop the separator, keep a bare "/" root */
+
     if ( n >= cap )
-        n = cap - 1;
+         n = cap - 1;
+
     memcpy( out, path, n );
     out[ n ] = 0;
     if ( n == 0 )
@@ -250,14 +379,15 @@ path_key( const char* norm, char* out, size_t cap )
 {
     size_t n = strlen( norm );
     if ( n >= cap )
-        n = cap - 1;
+         n = cap - 1;
+
     for ( size_t i = 0; i < n; ++i )
     {
         char c = norm[ i ];
-#if defined( _WIN32 )
+    #if defined( _WIN32 )
         if ( c >= 'A' && c <= 'Z' )
-            c = ( char )( c + 32 );
-#endif
+             c = ( char )( c + 32 );
+    #endif
         out[ i ] = c;
     }
     out[ n ] = 0;
@@ -269,6 +399,7 @@ file_exists( const char* path )
     FILE* f = fopen( path, "rb" );
     if ( !f )
         return false;
+
     fclose( f );
     return true;
 }
@@ -294,6 +425,109 @@ file_read( const char* path, size_t* out_size )
     buf[ got ] = 0;
     *out_size = got;
     return buf;
+}
+
+/*==============================================================================================
+    Directory listing
+
+    Each directory is read from the OS once and cached, keyed like a scanned file.  Entries
+    whose name starts with '.' are not content ("." and ".." included, along with .gitkeep
+    and tool caches).  Every directory listed -- present or not -- is a dependency of the
+    table, because a change in what it holds can change the table.
+==============================================================================================*/
+
+static void
+dir_push_ent( rt_dir_t* d, const char* name, bool is_dir )
+{
+    if ( name[ 0 ] == '.' )
+        return;
+    d->ents = ( rt_dirent_t* )rt_xrealloc( d->ents, ( size_t )( d->count + 1 ) * sizeof( rt_dirent_t ) );
+    d->ents[ d->count ].name   = rt_strdup( name, strlen( name ) );
+    d->ents[ d->count ].is_dir = is_dir;
+    d->count++;
+}
+
+static void
+dir_read( rt_dir_t* d )
+{
+#if defined( _WIN32 )
+    char pattern[ RT_MAX_PATH + 4 ];
+    snprintf( pattern, sizeof( pattern ), "%s/*", d->path );
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA( pattern, &fd );
+    if ( h == INVALID_HANDLE_VALUE )
+        return;
+    d->exists = true;
+    do {
+        dir_push_ent( d, fd.cFileName, ( fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ) != 0 );
+    } while ( FindNextFileA( h, &fd ) );
+    FindClose( h );
+#else
+    DIR* dir = opendir( d->path );
+    if ( !dir )
+        return;
+    d->exists = true;
+    struct dirent* e;
+    while ( ( e = readdir( dir ) ) != NULL )
+    {
+        char        full[ RT_MAX_PATH ];
+        struct stat st;
+        snprintf( full, sizeof( full ), "%s/%s", d->path, e->d_name );
+        bool is_dir = ( stat( full, &st ) == 0 ) && S_ISDIR( st.st_mode );
+        dir_push_ent( d, e->d_name, is_dir );
+    }
+    closedir( dir );
+#endif
+}
+
+static const rt_dir_t*
+dir_list( const char* raw_path )
+{
+    char norm[ RT_MAX_PATH ];
+    char key[ RT_MAX_PATH ];
+    path_normalize( raw_path, norm, sizeof( norm ) );
+    path_key( norm, key, sizeof( key ) );
+
+    for ( int i = 0; i < g_dir_count; ++i )
+        if ( strcmp( g_dirs[ i ].key, key ) == 0 )
+            return &g_dirs[ i ];
+
+    if ( g_dir_count == g_dir_cap )
+    {
+        g_dir_cap = g_dir_cap ? g_dir_cap * 2 : 64;
+        g_dirs    = ( rt_dir_t* )rt_xrealloc( g_dirs, ( size_t )g_dir_cap * sizeof( rt_dir_t ) );
+    }
+    rt_dir_t* d = &g_dirs[ g_dir_count++ ];
+    memset( d, 0, sizeof( *d ) );
+    d->path = rt_strdup( norm, strlen( norm ) );
+    d->key  = rt_strdup( key, strlen( key ) );
+    dir_read( d );
+    dep_add( d->path, !d->exists );
+    return d;
+}
+
+/* The entry of `d` whose on-disk name folds to canonical `seg` (n bytes) and is/is not a
+   directory as asked; NULL when none.  `second` receives a further match, which is an
+   ambiguity on a case-sensitive filesystem (Save.png beside save.png). */
+static const rt_dirent_t*
+dir_find( const rt_dir_t* d, const char* seg, size_t n, bool want_dir, const rt_dirent_t** second )
+{
+    const rt_dirent_t* found = NULL;
+    if ( second )
+        *second = NULL;
+    for ( int i = 0; i < d->count; ++i )
+    {
+        const rt_dirent_t* e = &d->ents[ i ];
+        if ( e->is_dir != want_dir || !name_folds_to( e->name, seg, n ) )
+             continue;
+
+        if ( found == NULL ) 
+             found = e;
+
+        else if ( second && !*second )
+            *second = e;
+    }
+    return found;
 }
 
 /*==============================================================================================
@@ -359,6 +593,7 @@ include_add( const char* from_path, const char* inc )
 
 /* Why a name is malformed, or NULL when it is acceptable. max is the longest canonical form
    allowed, one less for a subtree since the slash the macro appends counts too. */
+
 static const char*
 name_check( const char* s, size_t max )
 {
@@ -382,6 +617,70 @@ name_check( const char* s, size_t max )
     }
     return NULL;
 }
+
+/* Index of the entry named `canon`, or -1.  Keyed by id; a hash collision between two
+   different names keeps both, side by side, for check_collisions to report. */
+
+static int
+entry_find( const char* canon, rid_t id )
+{
+    if ( g_entry_hash_size == 0 )
+        return -1;
+    u32 mask = ( u32 )g_entry_hash_size - 1;
+    for ( u32 b = ( u32 )id & mask;; b = ( b + 1 ) & mask )
+    {
+        int slot1 = g_entry_hash[ b ];
+        if ( slot1 == 0 )
+            return -1;
+        if ( strcmp( g_entries[ slot1 - 1 ].name, canon ) == 0 )
+            return slot1 - 1;
+    }
+}
+
+static void
+entry_hash_insert( int index )
+{
+    u32 mask = ( u32 )g_entry_hash_size - 1;
+    u32 b    = ( u32 )g_entries[ index ].id & mask;
+    while ( g_entry_hash[ b ] )
+        b = ( b + 1 ) & mask;
+    g_entry_hash[ b ] = index + 1;
+}
+
+/* Append an entry (the caller has checked it is new).  Returns its index. */
+
+static int
+entry_push( const char* canon, size_t n, const char* spelled, bool tree, int file, int line, int via )
+{
+    if ( g_entry_count == g_entry_cap )
+    {
+        g_entry_cap = g_entry_cap ? g_entry_cap * 2 : 64;
+        g_entries   = ( rt_entry_t* )rt_xrealloc( g_entries, ( size_t )g_entry_cap * sizeof( rt_entry_t ) );
+    }
+    if ( ( g_entry_count + 1 ) * 2 > g_entry_hash_size )
+    {
+        g_entry_hash_size = g_entry_hash_size ? g_entry_hash_size * 2 : 256;
+        g_entry_hash      = ( int* )rt_xrealloc( g_entry_hash, ( size_t )g_entry_hash_size * sizeof( int ) );
+        memset( g_entry_hash, 0, ( size_t )g_entry_hash_size * sizeof( int ) );
+        for ( int i = 0; i < g_entry_count; ++i )
+            entry_hash_insert( i );
+    }
+
+    rt_entry_t* e = &g_entries[ g_entry_count ];
+    e->name    = rt_strdup( canon, n );
+    e->spelled = rt_strdup( spelled, strlen( spelled ) );
+    e->path    = rt_strdup( "", 0 );
+    e->id      = res_hash_name( canon );
+    e->file    = file;
+    e->line    = line;
+    e->via     = via;
+    e->root    = -1;
+    e->tree    = tree;
+    entry_hash_insert( g_entry_count );
+    return g_entry_count++;
+}
+
+/* A RID / RES_TREE site. */
 
 static void
 entry_add( const char* spelled, bool tree, int file, int line )
@@ -412,21 +711,9 @@ entry_add( const char* spelled, bool tree, int file, int line )
         return;
     }
 
-    for ( int i = 0; i < g_entry_count; ++i )
-        if ( strcmp( g_entries[ i ].name, canon ) == 0 )
-            return;
-
-    if ( g_entry_count == g_entry_cap )
-    {
-        g_entry_cap = g_entry_cap ? g_entry_cap * 2 : 64;
-        g_entries   = ( rt_entry_t* )rt_xrealloc( g_entries, ( size_t )g_entry_cap * sizeof( rt_entry_t ) );
-    }
-    rt_entry_t* e = &g_entries[ g_entry_count++ ];
-    e->name    = rt_strdup( canon, n );
-    e->spelled = rt_strdup( spelled, strlen( spelled ) );
-    e->id      = res_hash_name( canon );
-    e->file    = file;
-    e->line    = line;
+    if ( entry_find( canon, res_hash_name( canon ) ) >= 0 )
+        return;
+    entry_push( canon, n, spelled, tree, file, line, -1 );
 }
 
 /*==============================================================================================
@@ -713,14 +1000,384 @@ lex_file( int file )
 }
 
 /*==============================================================================================
+    Resolution
+
+    Walks a name's directory segments through a root one listing at a time, matching each
+    segment case-insensitively against what the directory actually holds, so the path that
+    comes out is spelled as the filesystem spells it.
+==============================================================================================*/
+
+/* Site an entry is reported at: its own for an explicit one, the RES_TREE's for an expanded one. */
+static const rt_entry_t*
+entry_site( const rt_entry_t* e )
+{
+    return e->via >= 0 ? &g_entries[ e->via ] : e;
+}
+
+static void
+resolve_error( const rt_entry_t* e, const char* fmt, ... )
+{
+    const rt_entry_t* site = entry_site( e );
+    char msg[ 2048 ];
+    va_list args;
+    va_start( args, fmt );
+    vsnprintf( msg, sizeof( msg ), fmt, args );
+    va_end( args );
+    rt_error( g_files[ site->file ].path, site->line, "%s( \"%s\" ): %s",
+              site->tree ? "RES_TREE" : "RID", site->spelled, msg );
+}
+
+/* The directory `canon_dir` ("" for the root itself, no trailing slash) beneath `root`.
+   On success `abs` is the path to open and `rel` its spelling relative to the root ("" or
+   "A/B", no trailing slash).  Returns false when any segment is missing. */
+static bool
+dir_resolve( const char* root, const char* canon_dir, char* abs, size_t abs_cap, char* rel, size_t rel_cap )
+{
+    snprintf( abs, abs_cap, "%s", root );
+    rel[ 0 ] = 0;
+
+    const char* p = canon_dir;
+    while ( *p )
+    {
+        const char* seg = p;
+        while ( *p && *p != '/' )
+            p++;
+        size_t n = ( size_t )( p - seg );
+        if ( *p == '/' )
+            p++;
+
+        const rt_dir_t* d = dir_list( abs );
+        if ( !d->exists )
+            return false;
+        const rt_dirent_t* e = dir_find( d, seg, n, true, NULL );
+        if ( !e )
+            return false;
+
+        size_t al = strlen( abs ), rl = strlen( rel );
+        snprintf( abs + al, abs_cap - al, "/%s", e->name );
+        snprintf( rel + rl, rel_cap - rl, "%s%s", rl ? "/" : "", e->name );
+    }
+    return dir_list( abs )->exists;
+}
+
+/* The cooked kind a recipe file declares on its "kind <word>" line, or RES_KIND_COPY with
+   `why` set when the file is unreadable or names no cookable kind. */
+static res_kind_t
+recipe_kind( const char* abs_path, const char** why )
+{
+    size_t n    = 0;
+    char*  text = file_read( abs_path, &n );
+    dep_add( abs_path, false );
+    if ( !text )
+    {
+        *why = "recipe cannot be read";
+        return RES_KIND_COPY;
+    }
+
+    res_kind_t kind = RES_KIND_COPY;
+    bool       seen = false;
+    for ( char* line = text; *line; )
+    {
+        char* end = line;
+        while ( *end && *end != '\n' )
+            end++;
+        char* next = *end ? end + 1 : end;
+        *end = 0;
+        while ( *line == ' ' || *line == '\t' )
+            line++;
+        if ( *line && *line != '#' && strncmp( line, "kind", 4 ) == 0 && ( line[ 4 ] == ' ' || line[ 4 ] == '\t' ) )
+        {
+            char* word = line + 4;
+            while ( *word == ' ' || *word == '\t' )
+                word++;
+            char* we = word;
+            while ( *we && *we != ' ' && *we != '\t' && *we != '\r' )
+                we++;
+            *we  = 0;
+            kind = res_kind_from_name( word );
+            seen = true;
+            break;
+        }
+        line = next;
+    }
+    free( text );
+
+    if ( !seen )
+        *why = "recipe has no \"kind <word>\" line";
+    else if ( kind == RES_KIND_COPY )
+        *why = "recipe names an unknown kind (font, image, shader)";
+    return kind;
+}
+
+/* Cooked relative path for source file `disk_name` in relative directory `rel_dir`.  False
+   with `why` set when the file is a recipe that cannot say what it cooks to. */
+static bool
+cooked_path( const char* root_abs_dir, const char* rel_dir, const char* disk_name, char* out, size_t cap, const char** why )
+{
+    const char* ext   = name_ext( disk_name );
+    size_t      stem  = ( size_t )( ext - disk_name );          /* includes the '.' when there is one */
+    res_kind_t  kind  = res_kind_from_ext( ext );
+    const char* cext  = NULL;
+
+    if ( kind == RES_KIND_RECIPE )
+    {
+        char abs[ RT_MAX_PATH ];
+        snprintf( abs, sizeof( abs ), "%s/%s", root_abs_dir, disk_name );
+        kind = recipe_kind( abs, why );
+        if ( kind == RES_KIND_COPY )
+            return false;
+    }
+    cext = res_kind_cooked_ext( kind );
+    if ( !cext )
+        cext = ext;                                             /* verbatim copy keeps its own */
+
+    if ( *ext == 0 )
+        snprintf( out, cap, "%s%s%s", rel_dir, *rel_dir ? "/" : "", disk_name );
+    else
+        snprintf( out, cap, "%s%s%.*s%s", rel_dir, *rel_dir ? "/" : "", ( int )stem, disk_name, cext );
+    return true;
+}
+
+typedef enum leaf_result_e
+{
+    LEAF_NONE,          // nothing of that name in this root
+    LEAF_FOUND,         // path filled
+    LEAF_AMBIGUOUS,     // two files claim the name; `first` and `second` name them
+    LEAF_DIR_ONLY,      // only a directory of that name exists
+    LEAF_BAD_RECIPE,    // the file is a recipe with no usable kind; `why` says what
+
+} leaf_result_t;
+
+typedef struct leaf_hit_s
+{
+    char        path[ RT_MAX_PATH ];   // cooked relative path
+    const char* first;                 // on-disk names for an ambiguity report
+    const char* second;
+    const char* why;
+
+} leaf_hit_t;
+
+/* Resolve leaf `canon` ("a/b/c") within one root. */
+static leaf_result_t
+leaf_resolve( const char* root, const char* canon, leaf_hit_t* hit )
+{
+    const char* leaf = strrchr( canon, '/' );
+    char        dir[ RES_NAME_MAX + 1 ];
+    if ( leaf )
+    {
+        memcpy( dir, canon, ( size_t )( leaf - canon ) );
+        dir[ leaf - canon ] = 0;
+        leaf++;
+    }
+    else
+    {
+        dir[ 0 ] = 0;
+        leaf     = canon;
+    }
+
+    char abs[ RT_MAX_PATH ], rel[ RT_MAX_PATH ];
+    if ( !dir_resolve( root, dir, abs, sizeof( abs ), rel, sizeof( rel ) ) )
+        return LEAF_NONE;
+
+    /* Every file whose stem folds to the leaf.  Two of them is an ambiguity whatever their
+       extensions: the name must stand for exactly one file. */
+    const rt_dir_t*    d      = dir_list( abs );
+    const rt_dirent_t* found  = NULL;
+    const rt_dirent_t* second = NULL;
+    size_t             n      = strlen( leaf );
+    for ( int i = 0; i < d->count; ++i )
+    {
+        const rt_dirent_t* e = &d->ents[ i ];
+        if ( e->is_dir )
+            continue;
+        const char* ext = name_ext( e->name );
+        size_t stem = ( size_t )( ext - e->name );
+        if ( *ext )
+            stem--;                                             /* drop the '.' */
+        if ( stem != n )
+            continue;
+        bool same = true;
+        for ( size_t k = 0; k < n && same; ++k )
+            same = ( res_canon_char( e->name[ k ] ) == leaf[ k ] );
+        if ( !same )
+            continue;
+        if ( !found )
+            found = e;
+        else if ( !second )
+            second = e;
+    }
+
+    if ( !found )
+        return dir_find( d, leaf, n, true, NULL ) ? LEAF_DIR_ONLY : LEAF_NONE;
+    if ( second )
+    {
+        hit->first  = found->name;
+        hit->second = second->name;
+        return LEAF_AMBIGUOUS;
+    }
+    if ( !cooked_path( abs, rel, found->name, hit->path, sizeof( hit->path ), &hit->why ) )
+        return LEAF_BAD_RECIPE;
+    return LEAF_FOUND;
+}
+
+/* Every file beneath `abs` (relative spelling `rel`, canonical prefix `canon_dir` with its
+   trailing slash) in root `root` becomes an entry expanded from subtree `via`, unless the
+   name is already present -- an explicit site, or an earlier root.  Recurses into
+   subdirectories. */
+static void
+tree_expand( int via, int root, const char* abs, const char* rel, const char* canon_dir )
+{
+    const rt_dir_t* d = dir_list( abs );
+    for ( int i = 0; i < d->count; ++i )
+    {
+        const rt_dirent_t* e = &d->ents[ i ];
+        char canon[ RES_NAME_MAX + 1 ];
+        char sub_abs[ RT_MAX_PATH ], sub_rel[ RT_MAX_PATH ];
+
+        const char* ext  = name_ext( e->name );
+        size_t      stem = e->is_dir ? strlen( e->name ) : ( size_t )( ext - e->name ) - ( *ext ? 1 : 0 );
+        size_t      dl   = strlen( canon_dir );
+        if ( dl + stem + 1 > RES_NAME_MAX )
+        {
+            resolve_error( &g_entries[ via ], "'%s%s' is longer than RES_NAME_MAX", canon_dir, e->name );
+            continue;
+        }
+        memcpy( canon, canon_dir, dl );
+        for ( size_t k = 0; k < stem; ++k )
+            canon[ dl + k ] = res_canon_char( e->name[ k ] );
+        canon[ dl + stem ] = 0;
+
+        snprintf( sub_abs, sizeof( sub_abs ), "%s/%s", abs, e->name );
+        snprintf( sub_rel, sizeof( sub_rel ), "%s%s%s", rel, *rel ? "/" : "", e->name );
+
+        if ( e->is_dir )
+        {
+            canon[ dl + stem ]     = '/';
+            canon[ dl + stem + 1 ] = 0;
+            tree_expand( via, root, sub_abs, sub_rel, canon );
+            continue;
+        }
+
+        /* Already named: by a RID site, by an earlier (shadowing) root, or -- when it came
+           from this same subtree in this same root -- by a second file with the same stem
+           in one directory, which the name cannot stand for. */
+        int existing = entry_find( canon, res_hash_name( canon ) );
+        if ( existing >= 0 )
+        {
+            if ( g_entries[ existing ].via == via && g_entries[ existing ].root == root )
+                resolve_error( &g_entries[ via ], "'%s' is claimed by two files, '%s' and '%s'",
+                               canon, path_basename( g_entries[ existing ].path ), e->name );
+            continue;
+        }
+
+        const char* why = NULL;
+        char        path[ RT_MAX_PATH ];
+        if ( !cooked_path( abs, rel, e->name, path, sizeof( path ), &why ) )
+        {
+            resolve_error( &g_entries[ via ], "%s: %s", sub_rel, why );
+            continue;
+        }
+        int idx = entry_push( canon, dl + stem, canon, false, g_entries[ via ].file, g_entries[ via ].line, via );
+        free( g_entries[ idx ].path );
+        g_entries[ idx ].path = rt_strdup( path, strlen( path ) );
+        g_entries[ idx ].root = root;
+    }
+}
+
+static void
+resolve_all( void )
+{
+    int explicit_count = g_entry_count;    /* expansion appends; only the sites are walked */
+
+    if ( g_root_count == 0 && explicit_count > 0 )
+    {
+        for ( int i = 0; i < explicit_count; ++i )
+            resolve_error( &g_entries[ i ], "no content root was given (-root), so no name can resolve" );
+        return;
+    }
+
+    /* Leaves first, each taking the first root that holds it. */
+    for ( int i = 0; i < explicit_count; ++i )
+    {
+        rt_entry_t* e = &g_entries[ i ];
+        if ( e->tree )
+            continue;
+
+        leaf_hit_t    hit    = { 0 };
+        leaf_result_t result = LEAF_NONE;
+        bool          dir_only = false;
+        int           root     = -1;
+        for ( int r = 0; r < g_root_count && result == LEAF_NONE; ++r )
+        {
+            result = leaf_resolve( g_roots[ r ], e->name, &hit );
+            root   = r;
+            if ( result == LEAF_DIR_ONLY )
+            {
+                dir_only = true;
+                result   = LEAF_NONE;    /* a lower root may still hold the file */
+            }
+        }
+
+        switch ( result )
+        {
+            case LEAF_FOUND:
+                free( e->path );
+                e->path = rt_strdup( hit.path, strlen( hit.path ) );
+                e->root = root;
+                break;
+            case LEAF_AMBIGUOUS:
+                resolve_error( e, "matches two files, '%s' and '%s' -- a name stands for exactly one",
+                               hit.first, hit.second );
+                break;
+            case LEAF_BAD_RECIPE:
+                resolve_error( e, "%s", hit.why );
+                break;
+            default:
+                if ( dir_only )
+                    resolve_error( e, "'%s' is a directory, not a file -- RES_TREE( \"%s\" ) names its contents",
+                                   e->name, e->spelled );
+                else
+                    resolve_error( e, "no source file '%s.*' under any content root (%s%s)", e->name,
+                                   g_roots[ 0 ], g_root_count > 1 ? ", ..." : "" );
+                break;
+        }
+    }
+
+    /* Subtrees: every root that holds the directory contributes, higher roots first, so a
+       project file shadows the engine's under the same name. */
+    for ( int i = 0; i < explicit_count; ++i )
+    {
+        rt_entry_t* e = &g_entries[ i ];
+        if ( !e->tree )
+            continue;
+
+        char canon_dir[ RES_NAME_MAX + 1 ];
+        snprintf( canon_dir, sizeof( canon_dir ), "%s", e->name );
+        canon_dir[ strlen( canon_dir ) - 1 ] = 0;              /* strip the subtree slash */
+
+        int found = 0;
+        for ( int r = 0; r < g_root_count; ++r )
+        {
+            char abs[ RT_MAX_PATH ], rel[ RT_MAX_PATH ];
+            if ( !dir_resolve( g_roots[ r ], canon_dir, abs, sizeof( abs ), rel, sizeof( rel ) ) )
+                continue;
+            found++;
+            tree_expand( i, r, abs, rel, g_entries[ i ].name );    /* g_entries may move: index, not e */
+        }
+        if ( found == 0 )
+            resolve_error( &g_entries[ i ], "no directory '%s' under any content root (%s%s)", canon_dir,
+                           g_roots[ 0 ], g_root_count > 1 ? ", ..." : "" );
+    }
+}
+
+/*==============================================================================================
     Collision check
 
-    Sorted by id, so two names on one hash sit side by side.  The sort also fixes the output
-    order, which keeps the generated file byte-stable across runs.
+    Sorted by id, so two names on one hash sit side by side.
 ==============================================================================================*/
 
 static int
-entry_cmp( const void* a, const void* b )
+entry_cmp_id( const void* a, const void* b )
 {
     const rt_entry_t* ea = ( const rt_entry_t* )a;
     const rt_entry_t* eb = ( const rt_entry_t* )b;
@@ -732,26 +1389,42 @@ entry_cmp( const void* a, const void* b )
 static void
 check_collisions( void )
 {
-    if ( g_entry_count > 1 )
-        qsort( g_entries, ( size_t )g_entry_count, sizeof( rt_entry_t ), entry_cmp );
+    if ( g_entry_count < 2 )
+        return;
+
+    /* Sorting the live array would break the `via` indices, so a copy is sorted. */
+    rt_entry_t* sorted = ( rt_entry_t* )rt_xrealloc( NULL, ( size_t )g_entry_count * sizeof( rt_entry_t ) );
+    memcpy( sorted, g_entries, ( size_t )g_entry_count * sizeof( rt_entry_t ) );
+    qsort( sorted, ( size_t )g_entry_count, sizeof( rt_entry_t ), entry_cmp_id );
 
     for ( int i = 1; i < g_entry_count; ++i )
     {
-        const rt_entry_t* a = &g_entries[ i - 1 ];
-        const rt_entry_t* b = &g_entries[ i ];
+        const rt_entry_t* a = &sorted[ i - 1 ];
+        const rt_entry_t* b = &sorted[ i ];
         if ( a->id == b->id )
         {
-            rt_error( g_files[ b->file ].path, b->line,
+            const rt_entry_t* sa = entry_site( a );
+            const rt_entry_t* sb = entry_site( b );
+            rt_error( g_files[ sb->file ].path, sb->line,
                       "rid collision 0x%08x: '%s' (here) vs '%s' (%s:%d) -- rename one of them",
-                      ( unsigned )b->id, b->spelled, a->spelled,
-                      g_files[ a->file ].path, a->line );
+                      ( unsigned )b->id, b->name, a->name, g_files[ sa->file ].path, sa->line );
         }
     }
+    free( sorted );
 }
 
 /*==============================================================================================
     Output
+
+    Entries are written in canonical-name order, which makes every subtree a contiguous run
+    of the table and keeps the generated file byte-stable across runs.
 ==============================================================================================*/
+
+static int
+entry_cmp_name( const void* a, const void* b )
+{
+    return strcmp( ( ( const rt_entry_t* )a )->name, ( ( const rt_entry_t* )b )->name );
+}
 
 static bool
 write_table( const char* out_path, const char* symbol )
@@ -763,11 +1436,17 @@ write_table( const char* out_path, const char* symbol )
         return false;
     }
 
+    int expanded = 0;
+    for ( int i = 0; i < g_entry_count; ++i )
+        expanded += ( g_entries[ i ].via >= 0 );
+
     fprintf( f, "/*  %s_res_table.c -- generated by res_tool; do not edit.\n\n", symbol );
     fprintf( f, "    Every resource name this image references through RID() or RES_TREE(),\n" );
-    fprintf( f, "    harvested from %d source file(s).  A trailing slash marks a subtree.\n", g_file_count );
-    fprintf( f, "    Registered with the resource catalogue when the image's module descriptor\n" );
-    fprintf( f, "    comes online (MOD_RES_TABLE).  */\n\n" );
+    fprintf( f, "    harvested from %d source file(s), with the cooked file each resolves to\n", g_file_count );
+    fprintf( f, "    under the content root (%d found beneath declared subtrees).  A trailing\n", expanded );
+    fprintf( f, "    slash marks a subtree, which has no file of its own.  Registered with the\n" );
+    fprintf( f, "    resource catalogue when the image's module descriptor comes online\n" );
+    fprintf( f, "    (MOD_RES_TABLE).  */\n\n" );
     fprintf( f, "#include \"engine/res/res.h\"\n\n" );
 
     if ( g_entry_count == 0 )
@@ -777,28 +1456,55 @@ write_table( const char* out_path, const char* symbol )
         return true;
     }
 
-    /* Location comments line up in one column so the table reads as a list. */
-    int width = 0;
+    /* The site comments are written from a sorted copy; `via` still indexes g_entries. */
+    rt_entry_t* sorted = ( rt_entry_t* )rt_xrealloc( NULL, ( size_t )g_entry_count * sizeof( rt_entry_t ) );
+    memcpy( sorted, g_entries, ( size_t )g_entry_count * sizeof( rt_entry_t ) );
+    qsort( sorted, ( size_t )g_entry_count, sizeof( rt_entry_t ), entry_cmp_name );
+
+    /* Columns line up so the table reads as a list. */
+    int name_w = 0, path_w = 0;
     for ( int i = 0; i < g_entry_count; ++i )
     {
-        int w = ( int )strlen( g_entries[ i ].name );
-        if ( w > width )
-            width = w;
+        int w = ( int )strlen( sorted[ i ].name );
+        if ( w > name_w ) name_w = w;
+        w = ( int )strlen( sorted[ i ].path );
+        if ( w > path_w ) path_w = w;
     }
 
     fprintf( f, "static const res_entry_t s_%s_res_entries[] = {\n", symbol );
     for ( int i = 0; i < g_entry_count; ++i )
     {
-        const rt_entry_t* e   = &g_entries[ i ];
-        int               pad = width - ( int )strlen( e->name );
-        fprintf( f, "    { \"%s\" },%*s/* 0x%08x  %s:%d */\n", e->name, pad + 4, "",
-                 ( unsigned )e->id, path_basename( g_files[ e->file ].path ), e->line );
+        const rt_entry_t* e    = &sorted[ i ];
+        const rt_entry_t* site = entry_site( e );
+        int               np   = name_w - ( int )strlen( e->name );
+        int               pp   = path_w - ( int )strlen( e->path );
+        fprintf( f, "    { \"%s\",%*s\"%s\" },%*s/* 0x%08x  ", e->name, np + 1, "", e->path, pp + 4, "",
+                 ( unsigned )e->id );
+        if ( e->via >= 0 )
+            fprintf( f, "in %s  ", g_entries[ e->via ].name );
+        fprintf( f, "%s:%d */\n", path_basename( g_files[ site->file ].path ), site->line );
     }
     fprintf( f, "};\n\n" );
     fprintf( f, "const res_table_t g_%s_res_table = {\n", symbol );
     fprintf( f, "    .entries = s_%s_res_entries,\n", symbol );
     fprintf( f, "    .count   = %d,\n", g_entry_count );
     fprintf( f, "};\n" );
+    fclose( f );
+    free( sorted );
+    return true;
+}
+
+static bool
+write_deps( const char* deps_path )
+{
+    FILE* f = fopen( deps_path, "wb" );
+    if ( !f )
+    {
+        rt_error( NULL, 0, "cannot write '%s'", deps_path );
+        return false;
+    }
+    for ( int i = 0; i < g_dep_count; ++i )
+        fprintf( f, "%s\n", g_deps[ i ] );
     fclose( f );
     return true;
 }
@@ -810,11 +1516,13 @@ write_table( const char* out_path, const char* symbol )
 static int
 usage( void )
 {
-    printf( "usage: " RT_TOOL " -list <units.txt> -out <table.c> -name <symbol> [-inc <dir>]... [-silent]\n" );
+    printf( "usage: " RT_TOOL " -list <units.txt> -out <table.c> -name <symbol> [-inc <dir>]... [-root <dir>]... [-deps <file>] [-silent]\n" );
     printf( "  -list   file naming one translation unit per line; '#' starts a comment\n" );
     printf( "  -out    generated C file defining g_<symbol>_res_table\n" );
     printf( "  -name   symbol base name (the target name, or 'host' for an executable)\n" );
     printf( "  -inc    quoted-include search root; repeatable, searched in order\n" );
+    printf( "  -root   content root; repeatable, the first that holds a name wins\n" );
+    printf( "  -deps   file to write the directories and recipes the table depends on\n" );
     printf( "  -silent suppress the summary line\n" );
     return 0;
 }
@@ -824,6 +1532,7 @@ main( int argc, char** argv )
 {
     const char* list_path = NULL;
     const char* out_path  = NULL;
+    const char* deps_path = NULL;
     const char* symbol    = NULL;
     bool        silent    = false;
 
@@ -831,6 +1540,7 @@ main( int argc, char** argv )
     {
         if      ( strcmp( argv[ i ], "-list"   ) == 0 && arg_has_value( argc, argv, i ) ) list_path = argv[ ++i ];
         else if ( strcmp( argv[ i ], "-out"    ) == 0 && arg_has_value( argc, argv, i ) ) out_path  = argv[ ++i ];
+        else if ( strcmp( argv[ i ], "-deps"   ) == 0 && arg_has_value( argc, argv, i ) ) deps_path = argv[ ++i ];
         else if ( strcmp( argv[ i ], "-name"   ) == 0 && arg_has_value( argc, argv, i ) ) symbol    = argv[ ++i ];
         else if ( strcmp( argv[ i ], "-inc"    ) == 0 && arg_has_value( argc, argv, i ) )
         {
@@ -842,6 +1552,17 @@ main( int argc, char** argv )
             char* norm = ( char* )rt_xrealloc( NULL, RT_MAX_PATH );
             path_normalize( argv[ ++i ], norm, RT_MAX_PATH );
             g_inc_dirs[ g_inc_dir_count++ ] = norm;
+        }
+        else if ( strcmp( argv[ i ], "-root"   ) == 0 && arg_has_value( argc, argv, i ) )
+        {
+            if ( g_root_count == RT_MAX_ROOTS )
+            {
+                fprintf( stderr, "[" RT_TOOL "] too many -root dirs (max %d)\n", RT_MAX_ROOTS );
+                return 1;
+            }
+            char* norm = ( char* )rt_xrealloc( NULL, RT_MAX_PATH );
+            path_normalize( argv[ ++i ], norm, RT_MAX_PATH );
+            g_roots[ g_root_count++ ] = norm;
         }
         else if ( strcmp( argv[ i ], "-silent" ) == 0 ) silent = true;
         else if ( strcmp( argv[ i ], "-help" ) == 0 || strcmp( argv[ i ], "-h" ) == 0 ) return usage();
@@ -897,6 +1618,12 @@ main( int argc, char** argv )
     for ( int i = 0; i < g_file_count; ++i )
         lex_file( i );
 
+    /* Every root is a dependency even when no name reaches into it: a root that appears
+       later must make the table stale. */
+    for ( int r = 0; r < g_root_count; ++r )
+        dir_list( g_roots[ r ] );
+
+    resolve_all();
     check_collisions();
 
     if ( g_error_count )
@@ -908,9 +1635,17 @@ main( int argc, char** argv )
 
     if ( !write_table( out_path, symbol ) )
         return 1;
+    if ( deps_path && !write_deps( deps_path ) )
+        return 1;
 
     if ( !silent )
-        printf( "[" RT_TOOL "] %s: %d name(s) from %d file(s)\n", symbol, g_entry_count, g_file_count );
+    {
+        int expanded = 0;
+        for ( int i = 0; i < g_entry_count; ++i )
+            expanded += ( g_entries[ i ].via >= 0 );
+        printf( "[" RT_TOOL "] %s: %d name(s) from %d file(s), %d from subtrees, %d root(s)\n", symbol,
+                g_entry_count, g_file_count, expanded, g_root_count );
+    }
     return 0;
 }
 

@@ -49,6 +49,7 @@
 #include <string.h>
 #include "base/base.h"
 #include "engine/sys/sys_host.h"
+#include "engine/res/res_cook.h"
 #include "runtime_service/asset/loaders/asset_tex.h"
 
 /* stb_image: memory-only decode. The converter uses it to pre-decode a source image to RGBA8
@@ -104,26 +105,26 @@ ext_is( const char* ext, const char* want )
     return *ext == 0 && *want == 0;
 }
 
+/* Dispatch predicates over the shared source-extension table (engine/res/res_cook.h), the
+   same one res_tool records cooked paths with, so a cooked file is always where the table
+   says it is.  Image formats mirror ASSET_IMAGE_EXTS on the runtime side (minus ".tex", the
+   output); .hlsli headers are not shaders and copy verbatim. */
 static bool
 ext_is_font( const char* ext )
 {
-    return ext_is( ext, "ttf" ) || ext_is( ext, "otf" );
+    return res_kind_from_ext( ext ) == RES_KIND_FONT;
 }
 
-/* Source image formats the built-in converter pre-decodes into a cooked .tex. Mirrors
-   ASSET_IMAGE_EXTS on the runtime side (minus ".tex", which is the output, not an input). */
 static bool
 ext_is_image( const char* ext )
 {
-    return ext_is( ext, "png" ) || ext_is( ext, "jpg" ) || ext_is( ext, "jpeg" ) ||
-           ext_is( ext, "bmp" ) || ext_is( ext, "tga" ) || ext_is( ext, "psd" ) ||
-           ext_is( ext, "gif" ) || ext_is( ext, "hdr" );
+    return res_kind_from_ext( ext ) == RES_KIND_IMAGE;
 }
 
 static bool
 ext_is_hlsl( const char* ext )
 {
-    return ext_is( ext, "hlsl" );   /* .hlsli headers are NOT dispatched; they copy verbatim */
+    return res_kind_from_ext( ext ) == RES_KIND_SHADER;
 }
 
 /* shader_profile_from_name -- derive the dxc target profile from the stage tag the naming
@@ -390,18 +391,17 @@ path_parent( char* out, size_t cap, const char* full )
 }
 
 /* job_dst_rel -- map a source relative path to its cooked output relative path: fonts become
-   .orb_font, source images become .tex, everything else keeps its name (verbatim copy). */
+   .orb_font, source images become .tex, shaders .oshd (the stage tag survives: foo.vs.oshd),
+   everything else keeps its name (verbatim copy).  A .recipe copies verbatim here until the
+   recipe cook lands; res_tool already records what it will cook to. */
 static void
 job_dst_rel( char* out, size_t cap, const char* src_rel )
 {
     const char* ext  = path_ext( src_rel );
+    const char* cext = res_kind_cooked_ext( res_kind_from_ext( ext ) );
     int         keep = ( int )( ext - src_rel ); /* chars up to and including the '.' */
-    if ( ext_is_font( ext ) )
-        snprintf( out, cap, "%.*sorb_font", keep, src_rel );
-    else if ( ext_is_image( ext ) )
-        snprintf( out, cap, "%.*stex", keep, src_rel );
-    else if ( ext_is_hlsl( ext ) )
-        snprintf( out, cap, "%.*soshd", keep, src_rel );   /* stage tag survives: foo.vs.oshd */
+    if ( cext )
+        snprintf( out, cap, "%.*s%s", keep, src_rel, cext );
     else
         snprintf( out, cap, "%s", src_rel );
 }
