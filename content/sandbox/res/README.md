@@ -7,7 +7,7 @@ carries it.
 | File                   | Proves                                                              |
 |------------------------|---------------------------------------------------------------------|
 | `icon/save.png`        | a leaf resolves to its cooked path (`.png` -> `.tex`)               |
-| `icon/Load.png`        | the recorded path keeps the on-disk spelling (`Load.tex`)           |
+| `icon/Load.png`        | source spelling is folded away: the cooked path is `icon/load.tex`  |
 | `icon/never.png`       | a name only ever queried at runtime still needs a file              |
 | `icon/tree_only.png`   | a file no source names is listed by expanding the subtree           |
 | `icon/sub/deep.txt`    | subtree expansion recurses; a copy-kind file keeps its extension    |

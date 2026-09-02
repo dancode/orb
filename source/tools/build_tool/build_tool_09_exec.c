@@ -571,13 +571,18 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     //    and a content edit made in the same second the previous link finished would
     //    otherwise leave a table missing that edit until some source changed. The cost is
     //    one extra rebuild in that second; the next link lands later and the check settles.
+    //    A newer res_tool.exe is stale too: how a table is spelled lives in the tool.
     if ( up_to_date && target_wants_res_table( target ) )
     {
         char deps_path[ PATH_MAX ];
         snprintf( deps_path, sizeof( deps_path ), "%s" PATH_SEP "_res_deps.txt", obj_dir );
 
         platform_mapped_file_t dep_map;
-        if ( !platform_map_file( deps_path, &dep_map ) )
+        if ( platform_get_mtime( "bin" PATH_SEP "res_tool.exe" ) >= out_mtime )
+        {
+            up_to_date = false;
+        }
+        else if ( !platform_map_file( deps_path, &dep_map ) )
         {
             // No file = no recorded content set = assume stale.
             up_to_date = false;

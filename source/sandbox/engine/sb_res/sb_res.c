@@ -541,8 +541,8 @@ test_harvest( void )
     /* Resolution: name -> source file under content/ -> cooked path with its extension. */
     sb_check( str_eq( res_path( RID( "sandbox/res/icon/save" ) ), "sandbox/res/icon/save.tex" ),
               "a png leaf resolves to its .tex cooked path" );
-    sb_check( str_eq( res_path( RID( "sandbox/res/icon/load" ) ), "sandbox/res/icon/Load.tex" ),
-              "the cooked path keeps the file's on-disk spelling (Load.png)" );
+    sb_check( str_eq( res_path( RID( "sandbox/res/icon/load" ) ), "sandbox/res/icon/load.tex" ),
+              "the cooked path is canonical lowercase however the source is spelled (Load.png)" );
     sb_check( str_eq( res_path( RID( "sandbox/res/font/mono/16" ) ), "sandbox/res/font/mono/16.orb_font" ),
               "a recipe resolves to the cooked file its kind produces" );
 

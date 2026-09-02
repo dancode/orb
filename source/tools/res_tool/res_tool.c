@@ -21,13 +21,15 @@
 
     RESOLUTION.  A name is the path of its source file under a content root, minus the
     extension: "ui/icon/save" is <root>/ui/icon/save.<ext> for exactly one <ext>.  Matching
-    is case-insensitive segment by segment (the name is canonical lowercase; the file is
-    spelled however the author spelled it), and the recorded path keeps the on-disk spelling
-    so it opens on a case-sensitive filesystem too.  The cooked extension comes from the
-    source extension through engine/res/res_cook.h -- the same table asset_tool writes files
-    with -- and a .recipe file names its cooked kind on a "kind <word>" line.  Roots are
-    searched in the order given and the first that holds the name wins, so a project's
-    content/ shadows the engine's name by name, whatever the two extensions are.
+    is case-insensitive segment by segment (the name is canonical lowercase; the source file
+    is spelled however the author spelled it).  The recorded path is CANONICAL: the name
+    plus the cooked extension, lowercase with '/' separators, because that is the path the
+    cooker writes -- source spelling never reaches the cooked tree or the runtime.  The
+    cooked extension comes from the source extension through engine/res/res_cook.h -- the
+    same table asset_tool writes files with -- and a .recipe file names its cooked kind on a
+    "kind <word>" line.  Roots are searched in the order given and the first that holds the
+    name wins, so a project's content/ shadows the engine's name by name, whatever the two
+    extensions are.
 
     A RES_TREE prefix is recorded with a trailing slash, exactly as the macro hashes it, so
     "ui/icon/" (the subtree) and "ui/icon" (a leaf) are two entries with two ids.  The
@@ -111,7 +113,7 @@ typedef struct rt_entry_s
 {
     char*    name;      // canonical name (res_canon_char applied); trailing '/' = subtree
     char*    spelled;   // name as written at the first site that mentioned it
-    char*    path;      // cooked file relative to its root, on-disk spelling; "" = none
+    char*    path;      // cooked file relative to its root, canonical lowercase; "" = none
     rid_t    id;        // res_hash_name( name )
     int      file;      // index into g_files of the site
     int      line;      // line of the site
@@ -1003,8 +1005,8 @@ lex_file( int file )
     Resolution
 
     Walks a name's directory segments through a root one listing at a time, matching each
-    segment case-insensitively against what the directory actually holds, so the path that
-    comes out is spelled as the filesystem spells it.
+    segment case-insensitively against what the directory actually holds.  The on-disk
+    spelling is used only to open files here; the recorded cooked path is canonical.
 ==============================================================================================*/
 
 /* Site an entry is reported at: its own for an explicit one, the RES_TREE's for an expanded one. */
@@ -1109,8 +1111,10 @@ recipe_kind( const char* abs_path, const char** why )
     return kind;
 }
 
-/* Cooked relative path for source file `disk_name` in relative directory `rel_dir`.  False
-   with `why` set when the file is a recipe that cannot say what it cooks to. */
+/* Cooked relative path for source file `disk_name` in relative directory `rel_dir`: the
+   directory and stem folded to canonical form (lowercase, '/'), plus the cooked extension --
+   the path asset_tool's job_dst_rel writes.  False with `why` set when the file is a recipe
+   that cannot say what it cooks to. */
 static bool
 cooked_path( const char* root_abs_dir, const char* rel_dir, const char* disk_name, char* out, size_t cap, const char** why )
 {
@@ -1135,6 +1139,9 @@ cooked_path( const char* root_abs_dir, const char* rel_dir, const char* disk_nam
         snprintf( out, cap, "%s%s%s", rel_dir, *rel_dir ? "/" : "", disk_name );
     else
         snprintf( out, cap, "%s%s%.*s%s", rel_dir, *rel_dir ? "/" : "", ( int )stem, disk_name, cext );
+
+    for ( char* p = out; *p; ++p )
+        *p = res_canon_char( *p );
     return true;
 }
 

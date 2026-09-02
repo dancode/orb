@@ -166,8 +166,9 @@ res_hash_child( rid_t tree, const char* leaf )
     name then -- an id is a pure function of the name, so the table carries no id.
 
     What it does carry is the answer the build alone can give: the cooked file each name
-    resolves to, relative to the content root and WITH its extension, spelled as the source
-    file is spelled on disk (the name is folded to lowercase; the path is not).  A subtree
+    resolves to, relative to the content root and WITH its extension.  The path is canonical
+    like the name -- lowercase, '/' separators -- because the cooker writes it that way
+    whatever the source file was called; it is the name plus the cooked extension.  A subtree
     entry has an empty path -- it is a directory, not a file -- and every file beneath it in
     the content root is listed as its own entry, so a runtime-composed child of a RES_TREE()
     resolves to a path too.  Entries are plain literals living in the image; the registry
