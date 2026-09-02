@@ -237,6 +237,29 @@ add_job( target_info_t* t )
         }
     }
 
+    // Implicit res tool dep -- same treatment as the reflect tool above.
+    if ( target_wants_res_table( t ) )
+    {
+        target_info_t* rt = find_res_tool();
+        if ( rt )
+        {
+            if ( dep_count >= MAX_LOCAL_DEPS )
+            {
+                printf( ORB_INDENT "[orb error] '%s' dep table full (MAX_LOCAL_DEPS=%d);"
+                        " res tool dep cannot be registered -- raise MAX_LOCAL_DEPS\n",
+                        t->name, MAX_LOCAL_DEPS );
+                return -1;
+            }
+            int di = add_job( rt );
+            if ( di >= 0 )
+            {
+                bool dup = false;
+                for ( int d = 0; d < dep_count; ++d ) if ( dep_indices[ d ] == di ) { dup = true; break; }
+                if ( !dup ) dep_indices[ dep_count++ ] = di;
+            }
+        }
+    }
+
     // Re-fetch j: nested add_job() calls may have appended to g_sched.jobs[]
     // but the array is fixed-size so &g_sched.jobs[idx] is still valid.
     j = &g_sched.jobs[ idx ];

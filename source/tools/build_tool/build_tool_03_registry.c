@@ -56,7 +56,7 @@
             flag        <token1> [token2] ...               (space-separated list of boolean flags)
                             reflect                         -- run reflect_tool before compile
                             host_only                       -- engine service; dynamic targets may not dep this
-                            is_tool | is_build_tool | is_reflect_tool
+                            is_tool | is_build_tool | is_reflect_tool | is_res_tool
 
         RUN / ALIAS (F5 for DLL projects):
             A game module builds a .dll, which VS cannot launch. 'run' names the host exe
@@ -335,7 +335,7 @@ registry_load( const char* path, bool is_external )
     if ( !platform_map_file( path, &mf ) )
     {
         if ( !is_external )
-            printf( ORB_INDENT "[orb warn] '%s' not found -- only built-in targets (build_tool, reflect_tool) available.\n", path );
+            printf( ORB_INDENT "[orb warn] '%s' not found -- only built-in targets (build_tool, reflect_tool, res_tool) available.\n", path );
         return true;
     }
 
@@ -549,6 +549,7 @@ registry_load( const char* path, bool is_external )
                     else if ( strcmp( tok, "is_tool"         ) == 0 ) cur_t->is_tool        = true;
                     else if ( strcmp( tok, "is_build_tool"   ) == 0 ) cur_t->is_build_tool  = true;
                     else if ( strcmp( tok, "is_reflect_tool" ) == 0 ) cur_t->is_reflect_tool = true;
+                    else if ( strcmp( tok, "is_res_tool"     ) == 0 ) cur_t->is_res_tool     = true;
                     else
                         printf( ORB_INDENT "[orb warn] %s:%d -- target '%s': unknown flag '%s'\n",
                                 path, lineno, cur_t->name, tok );

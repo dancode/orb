@@ -2,8 +2,8 @@
 
 # Resource Catalogue (res) + Package Manifest -- Plan
 
-Status: IN PROGRESS -- Phase 0 landed 2026-09-01.  Successor to the reference half of
-ASSET_SYSTEM_PLAN.md.
+Status: IN PROGRESS -- Phases 0 and 1 landed 2026-09-01.  Successor to the reference half
+of ASSET_SYSTEM_PLAN.md.
 That plan built the RUNTIME half -- fs mounts, zip bundles, the asset registry, the cook
 track, packaging -- and left one question unanswered: what does an application actually
 reference?  Today ship_tool answers it by copying whole directories (dev_ship.c:623-625).
@@ -227,25 +227,92 @@ Phase 0 -- res library skeleton                                          [DONE 2
      Growth is exercised with 5000 names -- several doublings of both blocks -- checking
      that every id still resolves to its own name after the rehashes and pool moves, that
      re-registering the whole set adds nothing, and that a reset releases and reallocates.
-   - NOT done here, first item of Phase 1: run_host.c does not yet load res or call
-     res_wire_mod_callbacks(), and no host/run target deps on res in orb.targets.  Hosts
-     adopt when the generated table exists to register.
+   - Host wiring (run_host.c, orb.targets dep lines) was left to Phase 1 so it landed with
+     a generated table to register.
 
-Phase 1 -- RID macro + build-time harvester                              [NOT STARTED]
-   - Wire res into the engine floor: run_host.c (res_wire_mod_callbacks + mod_static_load
-     "res" between ref and prof), and add res to the dep lines of run, host_*, and every
-     sandbox that lists the floor.
-   - RES_TREE( "prefix" ) in res.h (RID already landed in Phase 0).
-   - res_tool (source/tools/res_tool/, links base+sys, house pattern alongside font_tool /
-     shader_tool / asset_tool): scans a target's declared unit sources for the two tokens,
-     unions along the dep graph, emits obj/<target>/<target>_res_table.c.
-   - build_tool invokes it per target before compile -- a derived step modelled on
-     build_cook_shaders (build_tool_09_exec.c:97).  NO new orb.targets syntax: the scanner
-     reads the unit and dep lines that already exist.
-   - Collision check runs here, over the complete set, and fails the build.
-   - Proof: sb_gui's generated table lists CascadiaMono/16 and the referenced icons, and
-     does NOT list Roboto or JetBrains.  A deliberate hash collision fails the build with
-     both names named.
+Phase 1 -- RID macro + build-time harvester                              [DONE 2026-09-01]
+   - Engine floor: run_host.c calls res_wire_mod_callbacks() beside ref's and loads "res"
+     between ref and prof; run.c includes res_host.h.  orb.targets: res added to run's
+     deps and to every host / sandbox floor line ("mod sys ref res prof pack fs ...").
+   - RES_TREE( "prefix" ) in res.h: same one-door literal rule.  A SUBTREE IS A NAME WITH A
+     TRAILING SLASH: the macro appends it ( res_hash_name( "" lit "/" ) ) and the scanner
+     records the same spelling, so the author never writes it and a stray slash on either
+     macro stays a build error.  "ui/icon/" and the leaf "ui/icon" are different resources
+     (a file and a directory can coexist under the content root) and hash differently, so
+     they can never share an id -- a flag-based tree marker had let them merge into one
+     entry.  No flag field exists; res_name() of a tree id is self-describing.  Phase 2
+     expands trees against the content root.
+   - res_entry_t = { name, id }: the id the build computed, verified on registration
+     (res_register_id refuses an id that does not hash from its name), the same id + name
+     shape the cooked-header feed carries in Phase 6, so both feeds register through one
+     path.  RID_INVALID in a hand-written table means hash at registration.
+   - WHO OWNS A TABLE.  A table belongs to an IMAGE.  Every dynamic module gets
+     g_<name>_res_table (its descriptor opts in with MOD_RES_TABLE( name ); none has yet).
+     Every executable whose link closure contains res gets g_host_res_table -- a FIXED
+     symbol, declared in res_host.h and carried by res's OWN mod_desc_t, since an exe has
+     no descriptor of its own.  So loading "res" is what registers the exe's names, the
+     same pre_init path a DLL's table takes, and an exe linked without the harvest fails at
+     link time on the unresolved symbol rather than at runtime on a missing name.  Static
+     libraries never own a table: their tokens are harvested into whichever image links
+     them.  (build_tool_02_data.c: target_wants_res_table / res_table_symbol.)
+   - res_tool (source/tools/res_tool/res_tool.c): a BUILTIN target like reflect_tool, not
+     an orb.targets entry, so a child project that only imports the engine still resolves
+     it; flag is_res_tool, find_res_tool().  Standalone C11 over stdio -- it links nothing
+     (the plan said base+sys; a source scanner needs neither, and reflect_tool is the
+     closer sibling).  It includes res.h for res_hash_name / res_canon_char only, so the
+     ids it computes are the runtime's.
+       CLI:  res_tool -list <units.txt> -out <table.c> -name <symbol> [-inc <dir>]... [-silent]
+     build_tool owns the graph: build_gen_res_table (build_tool_09_exec.c) writes the
+     unit list of the target plus its transitive link deps -- NOT mono_deps, which keep
+     their own tables -- to obj/<t>/_res_units.txt.  res_tool owns the scan: it follows
+     #include "..." from each unit (including-file dir first, then each -inc root, in
+     compiler order), so unity fragments and headers are covered; <angle> and unresolved
+     includes are skipped as system/SDK; both arms of a platform #ifdef are scanned.  A
+     comment- and string-aware lexer finds RID / RES_TREE tokens, concatenates adjacent
+     literals, decodes escapes.  On a #define line a non-literal argument is the macro's
+     own definition and is skipped; anywhere else it is a build error ("argument must be
+     a string literal"), because a name reaching the door through a macro or variable is
+     invisible to the harvest.  Output is sorted by id and canonical, one { name, id }
+     entry per canonical name with a first-site file:line comment; an image with no
+     references gets { .entries = NULL, .count = 0 }.
+   - build_tool: step 6.5 in build_target (after reflect, inside the rebuild path -- a
+     name added anywhere in the closure already makes the target stale through a unit,
+     a header, or a dep .lib), the implicit tool dep on the serial path and as a graph
+     dep in the scheduler, the generated .c appended in build_target_compile and
+     generated first in -compile-only, ProjectDependencies + a "generated" filter entry
+     in the NMake projects, a PreBuildEvent + ClCompile in the MSBuild projects (via the
+     new `-res-table` command, which generates one target's table and nothing else),
+     compile_commands.json entry, -graph / -list / -doctor awareness.  NO new orb.targets
+     vocabulary.  NOTE: the old build_tool.exe rejects an orb.targets naming res_tool
+     before it can -bootstrap; bootstrap_build_tool.bat compiles it directly.
+   - VALIDATION IN THE SCANNER, not the registry: empty name, > RES_NAME_MAX, whitespace
+     / control / non-ASCII / double quote, leading or trailing separator, empty segment.
+     Backslashes are accepted and fold (sb_res proves the fold on purpose).
+   - COLLISION CHECK: per image, over the complete closure, sorted-adjacent compare;
+     fails the build naming both names and both file:line sites.  Verified with a real
+     FNV-1a 32 pair found by brute force -- "collide/2ae/40b" and "collide/346/339" both
+     hash to 0x00533a8f -- which sb_res now also uses for the runtime collision test
+     (res_register_id no longer accepts a forged id, so forcing one is impossible).
+   - Proof: sb_gui's generated table (build/obj/sb_gui/sb_gui_res_table.c, 393 files
+     scanned across its closure) holds exactly font/cascadiamono/16 and nothing from
+     Roboto, JetBrains or CascadiaCode; sb_gui logs the name as resolving at boot through
+     the descriptor path.  (The "referenced icons" half of the proof waits for Phase 5,
+     when gui itself spells icon names through RID.)  sb_res: 75 checks, 0 failed --
+     a new harvest test shows this exe's own table holds exactly the five names spelled
+     through the doors in sb_res.c (four RID() leaves and one RES_TREE() subtree, stored
+     as "ui/icon/"), including one only ever queried and never registered by hand, and
+     nothing a plain string mentions; every generated id equals the runtime hash of its
+     name, and a forged id is refused.  res_tool over a scratch file with the collision
+     pair, three malformed names and a RID( MACRO ) reports all five errors in one run,
+     exits 1 and writes no table; a second scratch file confirms comments and strings
+     are inert, adjacent literals concatenate, a literal RID inside a #define is
+     harvested, a header reached by #include is scanned, and case / backslash spellings
+     fold to one entry.  Forced rebuild of the render DLL exercises the dynamic path
+     (an empty g_render_res_table).  Full modular Debug build green; -gen, -doctor,
+     -graph green.  Not exercised: a -monolithic build.
+   - Modules that were already up to date when this landed carry no table until their
+     next rebuild; nothing references g_<name>_res_table until a module opts in with
+     MOD_RES_TABLE, which is itself a source change, so this cannot bite.
 
 Phase 2 -- Content root + name resolution                                [NOT STARTED]
    - content/ root convention; name -> source file -> cooked relative path (WITH extension),
@@ -323,9 +390,12 @@ Phase 7 -- ship_tool consumes the manifest                               [NOT ST
    layering allows clean overrides; prefixes make provenance obvious in source.  Anonymous
    is assumed above.
 3. RES_TREE granularity: whole subtree, or subtree plus a type filter?  Start with whole
-   subtree and tighten only if a real site over-includes badly.
-4. Where res_tool's scan sits relative to reflect_tool.  Separate tool assumed (they answer
-   different questions), but they walk the same sources and could share a pass later.
+   subtree and tighten only if a real site over-includes badly.  (Encoding is settled:
+   a subtree is a name with a trailing slash, see Phase 1.)
+4. Where res_tool's scan sits relative to reflect_tool.  SETTLED in Phase 1: separate
+   builtin tool.  They do not even walk the same set -- reflect_tool scans a target's root
+   directory, res_tool follows #include from the unit closure -- so a shared pass would be
+   the union of two different questions.
 5. Whether gui's loader hook is a raw byte reader or a typed one per resource class.  Raw
    is smaller; typed lets gui skip a copy for atlas uploads.
 6. Transient runtime resources (render targets, procedural atlases) stay OUT of the rid

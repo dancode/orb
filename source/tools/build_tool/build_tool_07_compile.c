@@ -292,9 +292,9 @@ cc_run_compile_cmd( compile_cmd_t* cc, target_info_t* target, const char* config
 
     build_target_compile()
 
-    Full unity compile: all target units + generated reflect file. When include tracking
-    is active the compiler is asked for per-unit dependency files, which are collected
-    into _includes.txt for the next incremental up-to-date check.
+    Full unity compile: all target units + generated reflect file + generated resource
+    table. When include tracking is active the compiler is asked for per-unit dependency
+    files, which are collected into _includes.txt for the next incremental up-to-date check.
 
 ==============================================================================================*/
 
@@ -322,7 +322,9 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
 
     // Collect all source paths first -- common to both the per-unit and batch paths.
     // Use '/' as separator: accepted by cl.exe, link.exe, gcc, and clang on all platforms.
-    char sources[ TARGET_MAX_SLOTS + 1 ][ PATH_MAX ];
+    // Units fill at most TARGET_MAX_SLOTS - 1 entries (the last slot is the terminator);
+    // the two generated files take the rest.
+    char sources[ TARGET_MAX_SLOTS + 2 ][ PATH_MAX ];
     int  n_sources = 0;
     {
         char rel[ PATH_MAX ], abs_p[ PATH_MAX ];
@@ -337,6 +339,14 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
             snprintf( rel, sizeof( rel ), "%s/%s.generated.c", gen_dir, rname );
+            if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
+                snprintf( abs_p, sizeof( abs_p ), "%s", rel );
+            snprintf( sources[ n_sources++ ], PATH_MAX, "%s", abs_p );
+        }
+        if ( target_wants_res_table( target ) )
+        {
+            // Written by build_gen_res_table into the obj dir just before this compile.
+            snprintf( rel, sizeof( rel ), "%s/%s_res_table.c", obj_dir, target->name );
             if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
             snprintf( sources[ n_sources++ ], PATH_MAX, "%s", abs_p );
@@ -474,6 +484,22 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
         snprintf( refl_cmd, sizeof( refl_cmd ), "bin" PATH_SEP "%s.exe -src %s -out %s -name %s%s",
                   refl_tool->name, target->root_dir, gen_dir, rname, silent );
         if ( build_run_cmd( refl_cmd ) != 0 )
+            return false;
+    }
+
+    // Resource table: same shape as reflection -- the tool is our responsibility, the
+    // generated .c must exist before the compiler runs.
+    if ( target_wants_res_table( target ) )
+    {
+        target_info_t* res_tool = find_res_tool();
+        if ( !res_tool )
+        {
+            printf( ORB_INDENT "[orb error] '%s' no res_tool is registered\n", target->name );
+            return false;
+        }
+        if ( build_target( ctx, res_tool, NULL, NULL ) == false )
+            return false;
+        if ( !build_gen_res_table( target, obj_dir, res_tool ) )
             return false;
     }
 

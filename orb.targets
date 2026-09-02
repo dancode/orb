@@ -148,7 +148,7 @@ target run
     root        source/runtime
     folder      03_RUNTIME
     unit        run.c
-    dep         mod sys ref prof job net app core   # engine floor: run.c loads all of these in run_host_main
+    dep         mod sys ref res prof job net app core   # engine floor: run.c loads all of these in run_host_main
 
 # ==============================================================================
 # 03_RUNTIME_SERVICE
@@ -347,7 +347,7 @@ target sample_game_ship				# single-exe ship shape: build with -monolithic; proj
     folder      06_PROJECT
     unit        host_game_main.c
     define      HOST_PROJECT=sample_game
-    dep         base mod sys ref prof pack fs job net app core run
+    dep         base mod sys ref res prof pack fs job net app core run
     dep         host_common rhi draw console gui dev_font
     mono_dep    render game sample_game
 
@@ -358,7 +358,7 @@ target template_game				# source template for -create <name> -type project
     root        source/project/template_game
     folder      06_PROJECT
     unit        main.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     dep         rhi draw
     mono_dep    render
 
@@ -432,7 +432,7 @@ target host_game
     root        source/host/game
     folder      08_HOST
     unit        host_game_main.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     dep         host_common rhi draw gui console dev_font base
     mono_dep    render game
 
@@ -442,7 +442,7 @@ target host_editor
     root        source/host/editor
     folder      08_HOST
     unit        host_editor_main.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     dep         host_common rhi draw gui console editor editor_viewport dev_font base
     mono_dep    render game
 
@@ -652,7 +652,7 @@ target sb_vulkan						# vulkan development and testing
     folder      09_SANDBOX/RHI
     unit        sb_vulkan.c
     unit        sb_vulkan_boot.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     dep         rhi draw gui dev_font base
     mono_dep    render
   # flag        reflect
@@ -689,7 +689,7 @@ target sb_gui
     root        source/sandbox/gui/sb_gui
     folder      09_SANDBOX/GUI
     unit        sb_gui.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     dep         rhi draw gui base
     mono_dep    render
 
@@ -789,7 +789,7 @@ target sb_gui_editor					# game-engine editor shell over the gui library
     root        source/sandbox/gui/sb_gui_editor
     folder      09_SANDBOX/GUI
     unit        sb_gui_editor.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     dep         rhi draw gui dev_font base
     mono_dep    render
 
@@ -820,7 +820,7 @@ target sb_gui_style						# style + look bench: editor, gallery, C exporter, font
     root        source/sandbox/gui/sb_gui_style
     folder      09_SANDBOX/GUI
     unit        sb_gui_style.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     dep         rhi draw gui dev_font base
     mono_dep    render
 
@@ -861,7 +861,7 @@ target sb_host_runtime
     root        source/sandbox/host/sb_host_runtime
     folder      09_SANDBOX/HOST
     unit        sb_host_runtime.c
-    dep         mod sys ref job net app core   # static engine
+    dep         mod sys ref res job net app core   # static engine
     dep         prof pack fs run rhi draw   # static runtime + services
     mono_dep    render
 
@@ -871,7 +871,7 @@ target sb_host_tool
     root        source/sandbox/host/sb_host_tool
     folder      09_SANDBOX/HOST
     unit        sb_host_tool.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     mono_dep    render rhi draw
 
 target sb_host_server
@@ -880,7 +880,7 @@ target sb_host_server
     root        source/sandbox/host/sb_host_server
     folder      09_SANDBOX/HOST
     unit        sb_host_server.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     mono_dep    render rhi draw example
 
 target sb_host_editor
@@ -889,7 +889,7 @@ target sb_host_editor
     root        source/sandbox/host/sb_host_editor
     folder      09_SANDBOX/HOST
     unit        sb_host_editor.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     dep         rhi draw gui base
     mono_dep    render
 
@@ -899,7 +899,7 @@ target sb_host_game
     root        source/sandbox/host/sb_host_game
     folder      09_SANDBOX/HOST
     unit        sb_host_game.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     dep         rhi draw input
     mono_dep    render
 
@@ -909,7 +909,7 @@ target sb_host_runtime_proj			# BYPASS PROOF: drives run_project.h directly -- n
     root        source/sandbox/host/sb_host_runtime_proj
     folder      09_SANDBOX/HOST
     unit        sb_host_runtime_proj.c
-    dep         mod sys ref prof pack fs job net app core run
+    dep         mod sys ref res prof pack fs job net app core run
     dep         rhi draw
     mono_dep    render
 
@@ -1197,6 +1197,7 @@ solution orb_sandbox_vulkan			# developing rendering / vulkan
     add         sb_quad_pull   		# bufferless quad-record proof (pull vs VB A/B)
 
     add         sb_res              # resource id testing
+    add         res_tool            # resource harvester (generates every exe's res table)
 
     add         sb_host_runtime   	# runtime test
     add         sb_host_editor  	# editor test
@@ -1229,6 +1230,7 @@ solution orb_sandbox_engine			# developing engine libraries
     add         sb_prof
     add         sb_res
     add         sb_fs
+    add         res_tool
 
 	# 			--- SANDBOX : RUNTIME SERVICES --
 
@@ -1248,6 +1250,7 @@ solution orb_build
     out         build/proj
     add         build_tool
     add         reflect_tool
+    add         res_tool
     add         font_tool
     add         asset_tool
     add         shader_tool
@@ -1319,6 +1322,7 @@ solution orb_all
     add         sample_game sample_game_play sample_game_ship
     add         template_game
 
+    add         res_tool
     add         font_tool
     add         asset_tool
     add         shader_tool
@@ -1354,7 +1358,7 @@ solution orb_all_mono
 #     folder      06_PROJECT
 #     unit        host_game_main.c
 #     define      HOST_PROJECT=<name>
-#     dep         mod ref sys core job app net host_common
+#     dep         mod ref res sys core job app net host_common
 #     dep         run prof rhi draw fs pack
 #     mono_dep    render game <name>
 #

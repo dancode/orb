@@ -271,7 +271,18 @@ res_register_id( rid_t id, const char* name )
     u32  len = res_canon_checked( name, canon );
     if ( len == 0 )
          return RID_INVALID;
-    
+
+    /* The id is a pure function of the name, so a caller-supplied one that disagrees was
+       computed by some other hash -- a stale tool, a foreign cooker -- and registering it
+       would file the name under an id no RID() site can produce. */
+    rid_t expect = res_hash_name( canon );
+    if ( id != expect )
+    {
+        res_set_error( "register '%s': id 0x%08x does not hash from the name (expected 0x%08x)",
+                       canon, id, expect );
+        return RID_INVALID;
+    }
+
     return res_insert( id, canon, len );
 }
 
@@ -297,10 +308,14 @@ res_register_table( const res_table_t* table )
     if ( !table || !table->entries )
         return 0;
 
+    /* A precomputed id goes through the verifying path; RID_INVALID means hash it here. */
     u32 ok = 0;
     for ( u32 i = 0; i < table->count; ++i )
     {
-        if ( res_register( table->entries[ i ].name ) != RID_INVALID )
+        const res_entry_t* e  = &table->entries[ i ];
+        rid_t              id = ( e->id != RID_INVALID ) ? res_register_id( e->id, e->name )
+                                                         : res_register( e->name );
+        if ( id != RID_INVALID )
             ok++;
     }
     return ok;

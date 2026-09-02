@@ -750,8 +750,9 @@ write_natvis_item_group( FILE* f )
     MSBuild target generators -- all three produce identical filters content.
 
     target == NULL means a navigation project: every file is <ClInclude> and no
-    reflect-generated items are appended. Otherwise is_unit_file() selects the tag
-    per entry and reflect items are appended when target->has_reflect is set.
+    generated items are appended. Otherwise is_unit_file() selects the tag per entry,
+    reflect items are appended when target->has_reflect is set, and the resource table
+    when the target carries one.
 
     Caller must populate g_files[]/g_filters[] via scan_directory_recursive() first.
 ==============================================================================================*/
@@ -773,7 +774,8 @@ write_vcxproj_filters_file( const char* filters_path, target_info_t* target )
                  ( unsigned int )i );
         fprintf( f, "    </Filter>\n" );
     }
-    if ( target && target->has_reflect )
+    bool wants_res = target && target_wants_res_table( target );
+    if ( target && ( target->has_reflect || wants_res ) )
     {
         fprintf( f, "    <Filter Include=\"generated\">\n" );
         fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
@@ -807,6 +809,13 @@ write_vcxproj_filters_file( const char* filters_path, target_info_t* target )
                  s_ctx.root_prefix, g_build_dir, g_gen_dir, rname );
         fprintf( f, "      <Filter>generated</Filter>\n" );
         fprintf( f, "    </ClInclude>\n" );
+    }
+    if ( wants_res )
+    {
+        fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s\\%s_res_table.c\">\n",
+                 s_ctx.root_prefix, g_build_dir, g_int_dir, target->name, target->name );
+        fprintf( f, "      <Filter>generated</Filter>\n" );
+        fprintf( f, "    </ClCompile>\n" );
     }
     fprintf( f, "  </ItemGroup>\n" );
 
@@ -915,6 +924,18 @@ build_gen_proj_target( target_info_t* target )
         fprintf( f, "    </ClCompile>\n" );
         fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\" />\n", s_ctx.root_prefix, g_build_dir,
                  g_gen_dir, rname );
+    }
+
+    // The generated resource table lives in the obj dir and appears after the first build;
+    // listed so the image's harvested name set is one click away in Solution Explorer.
+    if ( target_wants_res_table( target ) )
+    {
+        const char* item_mono = s_ctx.is_monolithic ? " -monolithic" : "";
+        fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s\\%s_res_table.c\">\n", s_ctx.root_prefix, g_build_dir,
+                 g_int_dir, target->name, target->name );
+        fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
+                 s_ctx.cd_root, s_ctx.build_tool_exe, target->name, item_mono );
+        fprintf( f, "    </ClCompile>\n" );
     }
 
     fprintf( f, "  </ItemGroup>\n" );
@@ -1086,7 +1107,8 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
             fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, target->name,
                      target->name, guid );
 
-            if ( target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect || !target->is_build_tool )
+            if ( target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect ||
+                 target_wants_res_table( target ) || !target->is_build_tool )
             {
                 // Every entry below must name a project actually in this solution: VS silently
                 // ignores dangling dep GUIDs, but msbuild.exe on the .sln hard-fails with
@@ -1146,6 +1168,21 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
                             char refl_guid[ 64 ];
                             guid_from_name( g_targets[ k ].name, refl_guid );
                             fprintf( f, "\t\t%s = %s\n", refl_guid, refl_guid );
+                            break;
+                        }
+                    }
+                }
+
+                // Implicit dep: images with a resource table depend on the res tool when present.
+                if ( target_wants_res_table( target ) )
+                {
+                    for ( int k = 0; k < g_target_count; ++k )
+                    {
+                        if ( g_targets[ k ].is_res_tool && sln_has_target( sln, g_targets[ k ].name ) )
+                        {
+                            char res_guid[ 64 ];
+                            guid_from_name( g_targets[ k ].name, res_guid );
+                            fprintf( f, "\t\t%s = %s\n", res_guid, res_guid );
                             break;
                         }
                     }

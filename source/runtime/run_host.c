@@ -5,7 +5,7 @@
     Boot sequence:
 
         1. mod_system_init()                        -- registry online
-        2. ref_wire_mod_callbacks()                 -- install hooks; no code fires yet
+        2. ref/res/core_wire_mod_callbacks()        -- install hooks; no code fires yet
         3. mod_static_load( <engine root libraries> )   -- PASSIVE: engine floor registered
         4. load_all( desc->modules )                -- PASSIVE: every entry registered
            mod_dynamic_load_dir( project )          -- PASSIVE: optional project DLL (desc->project_name)
@@ -394,6 +394,13 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
 
     ref_wire_mod_callbacks();
 
+    /* Wire the resource catalogue the same way: each module's generated name table (the
+       exe's own rides on res's descriptor) registers from the pre_init hook, so every
+       RID() an image spells resolves from mod_init_all onward, and a hot-reloaded DLL
+       re-finds its ids on every swap. */
+
+    res_wire_mod_callbacks();
+
     /* Wire core into the module lifecycle the same way: cvar callback registrations get
        stamped with their owning module id, and module-owned callbacks are dropped by the
        unload hook before a DLL is released (hot reload / unload / shutdown). */
@@ -410,6 +417,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
        device, etc.) -- those stay opt-in in k_modules[]. */
     if ( !mod_static_load( "sys",  sys_get_mod_desc() )  ||
          !mod_static_load( "ref",  ref_get_mod_desc() )  ||
+         !mod_static_load( "res",  res_get_mod_desc() )  ||
          !mod_static_load( "prof", prof_get_mod_desc() ) ||
          !mod_static_load( "pack", pack_get_mod_desc() ) ||
          !mod_static_load( "fs",   fs_get_mod_desc() )   ||

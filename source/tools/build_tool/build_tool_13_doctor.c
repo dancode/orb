@@ -812,6 +812,21 @@ doctor_check_filesystem( void )
             doc_fix( "built-ins register it automatically -- check for 'is_reflect_tool' flag misuse" );
         }
     }
+
+    /* Resource tables: every dynamic module and every exe linking res needs res_tool. */
+    int res_targets = 0;
+    for ( int i = 0; i < g_target_count; ++i )
+        if ( !g_targets[ i ].is_external && target_wants_res_table( &g_targets[ i ] ) ) ++res_targets;
+    if ( res_targets )
+    {
+        if ( find_res_tool() )
+            doc_ok( "res_tool registered (%d local target(s) carry a resource table)", res_targets );
+        else
+        {
+            doc_fail( "%d target(s) carry a resource table but no res_tool is registered", res_targets );
+            doc_fix( "built-ins register it automatically -- check for 'is_res_tool' flag misuse" );
+        }
+    }
 }
 
 /*==============================================================================================

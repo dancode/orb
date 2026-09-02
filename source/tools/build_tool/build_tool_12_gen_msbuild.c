@@ -307,22 +307,34 @@ build_gen_proj_target_msbuild( target_info_t* target )
     // cd /d also changes drive letter so projects on any drive work correctly.
     // NOTE: avoid "if not exist ... (cmd) && next" -- cmd.exe absorbs the && into
     // the if clause. Using build_tool.exe unconditionally avoids that trap entirely.
-    if ( target->has_reflect )
+    // The resource table rides the same pre-build event: build_tool -res-table builds
+    // res_tool if needed, computes the image's unit closure, and runs the harvest --
+    // the closure comes from orb.targets, which only build_tool can read.
+    bool wants_res = target_wants_res_table( target );
+    if ( target->has_reflect || wants_res )
     {
-        const char* rname = target->reflect_name ? target->reflect_name : target->name;
-
-        char root_dir_norm[ PATH_MAX ];
-        snprintf( root_dir_norm, sizeof( root_dir_norm ), "%s", target->root_dir );
-        for ( char* p = root_dir_norm; *p; ++p )
-            if ( *p == '/' ) *p = '\\';
-
         fprintf( f, "  <ItemDefinitionGroup>\n" );
         fprintf( f, "    <PreBuildEvent>\n" );
-        fprintf( f, "      <Message>reflect_tool: building tool and generating %s.generated.c/.h</Message>\n", rname );
+        fprintf( f, "      <Message>build_tool: generating %s%s%s for %s</Message>\n",
+                 target->has_reflect ? "reflection" : "",
+                 ( target->has_reflect && wants_res ) ? " + " : "",
+                 wants_res ? "resource table" : "", target->name );
         fprintf( f, "      <Command>" );
         fprintf( f, "cd /d \"$(ProjectDir)%s\"", s_ctx.cd_root );
-        fprintf( f, " &amp;&amp; %s -config $(Configuration) -target reflect_tool", s_ctx.build_tool_exe );
-        fprintf( f, " &amp;&amp; bin\\reflect_tool.exe -src %s -out %s\\%s -name %s", root_dir_norm, g_build_dir, g_gen_dir, rname );
+        if ( target->has_reflect )
+        {
+            const char* rname = target->reflect_name ? target->reflect_name : target->name;
+
+            char root_dir_norm[ PATH_MAX ];
+            snprintf( root_dir_norm, sizeof( root_dir_norm ), "%s", target->root_dir );
+            for ( char* p = root_dir_norm; *p; ++p )
+                if ( *p == '/' ) *p = '\\';
+
+            fprintf( f, " &amp;&amp; %s -config $(Configuration) -target reflect_tool", s_ctx.build_tool_exe );
+            fprintf( f, " &amp;&amp; bin\\reflect_tool.exe -src %s -out %s\\%s -name %s", root_dir_norm, g_build_dir, g_gen_dir, rname );
+        }
+        if ( wants_res )
+            fprintf( f, " &amp;&amp; %s -config $(Configuration) -target %s -res-table", s_ctx.build_tool_exe, target->name );
         fprintf( f, "</Command>\n" );
         fprintf( f, "    </PreBuildEvent>\n" );
         fprintf( f, "  </ItemDefinitionGroup>\n" );
@@ -355,6 +367,11 @@ build_gen_proj_target_msbuild( target_info_t* target )
         fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\" />\n",
                  s_ctx.root_prefix, g_build_dir, g_gen_dir, rname );
     }
+
+    // Generated resource table (written into the obj dir by the pre-build event above).
+    if ( wants_res )
+        fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s\\%s_res_table.c\" />\n",
+                 s_ctx.root_prefix, g_build_dir, g_int_dir, target->name, target->name );
     fprintf( f, "  </ItemGroup>\n" );
 
     write_natvis_item_group( f );

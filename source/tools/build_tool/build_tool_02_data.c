@@ -14,7 +14,7 @@
 
         init_builtin_targets()
 
-        --  registers build_tool and reflect_tool into g_targets[].
+        --  registers build_tool, reflect_tool and res_tool into g_targets[].
             If g_engine_root is set, paths and is_external are derived from it;
             otherwise CWD-relative paths are used (engine-root build).
 
@@ -24,12 +24,15 @@
         'engine <path>' directive in orb.targets. Used by init_builtin_targets()
         and the compile/gen modules to auto-add engine header search paths.
 
-    Why build_tool and reflect_tool are hard-coded here and not in orb.targets:
+    Why build_tool, reflect_tool and res_tool are hard-coded here and not in orb.targets:
 
         - build_tool.exe needs to be able to bootstrap itself (-bootstrap flag) even
           if orb.targets is missing or malformed.
         - reflect_tool is an immediate dependency of the bootstrap path (core etc.
           need it), so it must always be resolvable.
+        - res_tool is an implicit dependency of every executable that links the res
+          library and of every dynamic module, including those of a child project that
+          only imports the engine's targets, so it must resolve the same way.
         - Every other target can be added or edited in orb.targets without touching
           or recompiling build_tool.c.
 
@@ -90,9 +93,10 @@ pool_str( const char* s )
 /*==============================================================================================
     --- Built-in Target Registration ---
 
-    Registers the two targets that must always be present:
+    Registers the three targets that must always be present:
         build_tool   -- the build orchestrator (this executable).
         reflect_tool -- the reflection code-generator.
+        res_tool     -- the resource-reference harvester.
 
     Called once in main() after registry_load(), so g_engine_root is already set.
 ==============================================================================================*/
@@ -107,15 +111,18 @@ init_builtin_targets( void )
 
     char bt_root[ PATH_MAX ];
     char rt_root[ PATH_MAX ];
+    char rs_root[ PATH_MAX ];
     if ( is_external )
     {
         snprintf( bt_root, sizeof( bt_root ), "%s/source/tools/build_tool",  g_engine_root );
         snprintf( rt_root, sizeof( rt_root ), "%s/source/tools/reflect_tool", g_engine_root );
+        snprintf( rs_root, sizeof( rs_root ), "%s/source/tools/res_tool",     g_engine_root );
     }
     else
     {
         snprintf( bt_root, sizeof( bt_root ), "source/tools/build_tool" );
         snprintf( rt_root, sizeof( rt_root ), "source/tools/reflect_tool" );
+        snprintf( rs_root, sizeof( rs_root ), "source/tools/res_tool" );
     }
 
     // build_tool: the build orchestrator itself.
@@ -156,6 +163,21 @@ init_builtin_targets( void )
         t->units[ 0 ]      = "reflect_tool.c";
         t->is_tool         = true;
         t->is_reflect_tool = true;
+        t->is_external     = is_external;
+    }
+
+    // res_tool: the resource-reference harvester (RID / RES_TREE tokens -> res tables).
+    {
+        target_info_t* t = &g_targets[ g_target_count++ ];
+        memset( t, 0, sizeof( *t ) );
+        t->name            = "res_tool";
+        t->type            = TARGET_EXECUTABLE;
+        t->has_type        = true;
+        t->root_dir        = pool_str( rs_root );
+        t->virtual_folder  = "08_TOOL";
+        t->units[ 0 ]      = "res_tool.c";
+        t->is_tool         = true;
+        t->is_res_tool     = true;
         t->is_external     = is_external;
     }
 }
@@ -265,6 +287,69 @@ find_reflect_tool( void )
         if ( g_targets[ i ].is_reflect_tool )
             return &g_targets[ i ];
     return NULL;
+}
+
+static target_info_t*
+find_res_tool( void )
+{
+    for ( int i = 0; i < g_target_count; ++i )
+        if ( g_targets[ i ].is_res_tool )
+            return &g_targets[ i ];
+    return NULL;
+}
+
+/*==============================================================================================
+    --- Resource Table Policy ---
+
+    A generated resource table (<name>_res_table.c, see build_gen_res_table) belongs to an
+    IMAGE: a DLL module always gets one, under g_<name>_res_table, which its descriptor
+    points at through MOD_RES_TABLE; an executable gets one, under g_host_res_table, when
+    the res library is anywhere in its link closure -- res's own descriptor carries that
+    symbol, so an exe linking res cannot link without it. Static libraries never get a
+    table of their own; their names are harvested into whichever image links them.
+==============================================================================================*/
+
+// True when `name` is reachable from t through link deps. visited[] is indexed like g_targets[].
+static bool
+deps_closure_has( const target_info_t* t, const char* name, bool visited[ MAX_TARGETS ] )
+{
+    for ( int i = 0; t->deps[ i ]; ++i )
+    {
+        if ( strcmp( t->deps[ i ], name ) == 0 )
+            return true;
+        const target_info_t* dep = find_target( t->deps[ i ] );
+        if ( !dep )
+            continue;
+        int idx = ( int )( dep - g_targets );
+        if ( visited[ idx ] )
+            continue;
+        visited[ idx ] = true;
+        if ( deps_closure_has( dep, name, visited ) )
+            return true;
+    }
+    return false;
+}
+
+static bool
+target_wants_res_table( const target_info_t* t )
+{
+    if ( t->alias_for )
+        return false;
+    if ( t->type == TARGET_DYNAMIC_LIB )
+        return true;
+    if ( t->type != TARGET_EXECUTABLE )
+        return false;
+
+    bool visited[ MAX_TARGETS ] = { 0 };
+    return deps_closure_has( t, "res", visited );
+}
+
+// Symbol base of the target's table: g_<sym>_res_table. Executables share one fixed name
+// because the res library, not the exe, is what declares and registers it.
+static const char*
+res_table_symbol( const target_info_t* t )
+{
+    return ( t->type == TARGET_EXECUTABLE ) ? "host" : t->name;
 }
 
 /*============================================================================================*/

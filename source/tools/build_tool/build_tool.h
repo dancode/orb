@@ -467,6 +467,13 @@ typedef struct target_info_s
 
     bool            is_reflect_tool;
 
+    /*  If true, this is the resource-reference harvester (res_tool). Every dynamic
+        target, and every executable whose dep closure links the res library, gets its
+        generated <name>_res_table.c from whichever target carries this flag; see
+        target_wants_res_table() in build_tool_02_data.c. */
+
+    bool            is_res_tool;
+
     /*  If true, this target is a host-only engine service (sys, core, mod, app, ref).
         Dynamic targets may not list it as a dep -- globals and state live exclusively
         in the host exe. DLLs access these services through the module API vtable.
@@ -693,6 +700,15 @@ bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
     forcing a recompile of C code that did not change. */
 
 bool build_cook_shaders( build_context_t* ctx, target_info_t* target );
+
+/*  Harvests the resource names (RID / RES_TREE tokens) the target's image references
+    into <obj_dir>/<name>_res_table.c, which build_target_compile then compiles in.
+    The scan covers the target's own units plus those of every dependency it links
+    statically, so an executable's table is the complete name set of the program.
+    res_tool must already be built (the caller resolves and builds it). Fails the
+    build on a malformed name or a rid collision, naming both sites. */
+
+bool build_gen_res_table( target_info_t* target, const char* obj_dir, const target_info_t* res_tool );
 
 /*  Links or archives the target's objects into the final artifact: lib.exe
     for static libs, link.exe (with /DLL or as an exe) for the rest. PDB paths

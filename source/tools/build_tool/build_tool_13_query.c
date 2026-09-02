@@ -60,6 +60,7 @@ cmd_print_help( void )
     printf( ORB_INDENT "  %-28s%s\n", "-force",                 "Skip the up-to-date check; always compile + link." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-deps",               "Build only the named target; skip dep recursion. (VS -managed)" );
     printf( ORB_INDENT "  %-28s%s\n", "-compile-only",          "Compile all unity units for -target; no link. (VS Ctrl+F7)" );
+    printf( ORB_INDENT "  %-28s%s\n", "-res-table",             "Generate only -target's resource table (obj/<t>/<t>_res_table.c)." );
     printf( ORB_INDENT "  %-28s%s\n", "-file <path>",           "Compile one file with target's full flag set; no link." );
     printf( ORB_INDENT "  %-28s%s\n", "-j N",                   "Worker thread count (default: auto-detect from CPU count)." );
     printf( "\n" );
@@ -140,6 +141,11 @@ deps_visit( deps_topo_t* topo, target_info_t* t )
         target_info_t* rt = find_reflect_tool();
         if ( rt && !deps_visit( topo, rt ) ) return false;
     }
+    if ( target_wants_res_table( t ) )
+    {
+        target_info_t* rt = find_res_tool();
+        if ( rt && !deps_visit( topo, rt ) ) return false;
+    }
 
     topo->visited[ idx ] = 2;  // done
     if ( topo->count < DEPS_MAX_TOPO )
@@ -147,7 +153,7 @@ deps_visit( deps_topo_t* topo, target_info_t* t )
     return true;
 }
 
-// Gathers all direct deps of t (link + tool + implicit reflect) into out_deps[]/out_kind[].
+// Gathers all direct deps of t (link + tool + implicit reflect/res tools) into out_deps[]/out_kind[].
 static int
 deps_collect( const target_info_t* t, target_info_t* out_deps[], const char* out_kind[], int max )
 {
@@ -162,15 +168,17 @@ deps_collect( const target_info_t* t, target_info_t* out_deps[], const char* out
         target_info_t* d = find_target( t->tool_deps[ i ] );
         if ( d ) { out_deps[ n ] = d; out_kind[ n++ ] = "tool"; }
     }
-    if ( t->has_reflect && n < max )
+    target_info_t* implicit[ 2 ] = {
+        t->has_reflect              ? find_reflect_tool() : NULL,
+        target_wants_res_table( t ) ? find_res_tool()     : NULL,
+    };
+    for ( int k = 0; k < 2; ++k )
     {
-        target_info_t* rt = find_reflect_tool();
-        if ( rt )
-        {
-            bool dup = false;
-            for ( int d = 0; d < n; ++d ) if ( out_deps[ d ] == rt ) { dup = true; break; }
-            if ( !dup ) { out_deps[ n ] = rt; out_kind[ n++ ] = "tool"; }
-        }
+        target_info_t* rt = implicit[ k ];
+        if ( !rt || n >= max ) continue;
+        bool dup = false;
+        for ( int d = 0; d < n; ++d ) if ( out_deps[ d ] == rt ) { dup = true; break; }
+        if ( !dup ) { out_deps[ n ] = rt; out_kind[ n++ ] = "tool"; }
     }
     return n;
 }

@@ -15,8 +15,7 @@
     API Struct
 ==============================================================================================*/
 
-const res_api_t g_res_api_struct = 
-{
+const res_api_t g_res_api_struct = {
     /* Lookup */
     .name   = res_name,
     .exists = res_exists,
@@ -40,6 +39,10 @@ const res_api_t g_res_api_struct =
     publishes the vtable through the standard mod gateway.  exit deliberately does NOT call
     res_exit: the catalogue is cumulative and outlives the modules that named into it, so its
     storage is held for the lifetime of the program.
+
+    The descriptor's res_table is the executable's generated table (g_host_res_table): the
+    host image has no descriptor of its own, so its names ride on this one and register
+    through the same pre_init hook as every DLL module's table.
 ==============================================================================================*/
 
 static bool
@@ -69,6 +72,7 @@ res_get_mod_desc( void )
         .init          = res_mod_init,
         .exit          = res_mod_exit,
         .reload        = NULL,
+        .res_table     = MOD_RES_TABLE( host ),
     };
     return &desc;
 }

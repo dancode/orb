@@ -29,7 +29,7 @@ typedef struct res_api_s
 
     /* Registration (content feed) */
     rid_t        ( *register_name  )( const char* name );           /* RID_INVALID on failure */
-    rid_t        ( *register_id    )( rid_t id, const char* name );
+    rid_t        ( *register_id    )( rid_t id, const char* name );   /* id must hash from name */
     u32          ( *register_table )( const res_table_t* table );   /* names now registered */
 
     /* Diagnostics */

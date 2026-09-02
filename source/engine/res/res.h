@@ -59,8 +59,10 @@ typedef u32 rid_t;
     Canonical form
 
     A name is compared and hashed in canonical form: ASCII lowercase with '/' separators.
-    Backslashes fold to '/'.  Nothing else is rewritten -- a leading or trailing slash or a
-    doubled separator is a different name, and the build-time scanner is where that gets
+    Backslashes fold to '/'.  Nothing else is rewritten.  A TRAILING slash means the name is
+    a subtree ("ui/icon/": everything beneath it), which is a different resource from the
+    leaf "ui/icon" and hashes differently, so the two can never share an id.  A leading
+    slash or a doubled separator is malformed, and the build-time scanner is where that gets
     flagged, not here.  The fold is a single-char function so the hash below and the pool
     copy in res.c can never disagree.
 ==============================================================================================*/
@@ -104,17 +106,41 @@ res_hash_name( const char* s )
 #define RID( lit )            res_hash_name( "" lit )
 
 /*==============================================================================================
+    RES_TREE( "prefix" ) -- the escape hatch for names composed at runtime
+
+    Declares that every name beneath "prefix" may be loaded: code that builds names from a
+    directory listing or an enum-indexed table names the subtree once here instead of each
+    leaf.  The macro appends the subtree's trailing slash itself -- RES_TREE( "ui/icon" )
+    is the resource "ui/icon/" -- and the scanner records the same spelling, so the author
+    never writes the slash and a stray one on either macro stays a build error.  The build
+    expands the subtree against the content root; the leaves never appear in source.
+
+    Evaluates to the subtree's own rid_t, so it can also be held as a group handle.  Same
+    rule as RID(): string literal only.
+==============================================================================================*/
+
+#define RES_TREE( lit )       res_hash_name( "" lit "/" )
+
+/*==============================================================================================
     Resource tables
 
-    A module's declared name set, emitted by the build from the RID() tokens in its sources
-    and pointed at from mod_desc_t.res_table (MOD_RES_TABLE).  The res library registers the
-    table when the module's pre_init hook fires.  Entries are plain literals living in the
-    module image; the registry copies them.
+    An image's declared name set, emitted by the build from the RID() / RES_TREE() tokens in
+    its sources -- for a DLL module its own units, for an executable its units plus every
+    statically linked library -- and pointed at from mod_desc_t.res_table (MOD_RES_TABLE).
+    The res library registers the table when the module's pre_init hook fires.  Entries are
+    plain literals living in the image; the registry copies them.
+
+    Each entry carries the id the build computed for it, the same shape as the id + name
+    pairs cooked content headers feed in.  Registration verifies that the id is the name's
+    hash, so a table produced by a different res_hash_name than this runtime's is refused
+    rather than silently registered under ids nothing will look up.  RID_INVALID means the
+    id was not precomputed and is hashed at registration (hand-written tables).
 ==============================================================================================*/
 
 typedef struct res_entry_s
 {
-    const char* name;               // logical name as written at the reference site
+    const char* name;               // canonical logical name; trailing '/' = subtree
+    rid_t       id;                 // res_hash_name( name ), or RID_INVALID to hash on registration
 
 } res_entry_t;
 

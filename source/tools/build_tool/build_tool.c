@@ -261,6 +261,7 @@ main( int argc, char** argv )
     bool  should_bootstrap    = false;
     bool  should_create       = false;
     bool  should_doctor       = false;
+    bool  should_res_table    = false;
     bool  saw_quiet           = false;
     bool  saw_verbose         = false;
     char* create_name         = NULL;
@@ -310,6 +311,7 @@ main( int argc, char** argv )
         if ( str_icmp( argv[ i ], "-shipping"         ) == 0 ) { ctx.config = CONFIG_RELEASE; ctx.is_shipping = true; }
         if ( str_icmp( argv[ i ], "-clang"            ) == 0 ) { ctx.compiler = COMPILE_CLANG; }
         if ( str_icmp( argv[ i ], "-compile-only"     ) == 0 ) { ctx.compile_only = true; }
+        if ( str_icmp( argv[ i ], "-res-table"        ) == 0 ) { should_res_table = true; }
         if ( str_icmp( argv[ i ], "-force"            ) == 0 ) { ctx.force_rebuild = true; }
         if ( str_icmp( argv[ i ], "-no-deps"          ) == 0 ) { ctx.skip_deps = true; }
         
@@ -545,6 +547,38 @@ main( int argc, char** argv )
             if ( aliased )
                 target = aliased;
         }
+    }
+
+    // --- Command: RES-TABLE (MSBuild pre-build event) ---
+    //
+    // Generates the target's resource table only, building res_tool first if needed. The
+    // native MSBuild projects compile sources themselves, so this is how their pre-build
+    // event gets obj/<target>/<target>_res_table.c written before cl.exe runs.
+
+    if ( should_res_table )
+    {
+        if ( !target ) { printf( ORB_INDENT "[orb error] -res-table requires -target\n" ); return 1; }
+        if ( !target_wants_res_table( target ) )
+        {
+            printf( ORB_INDENT "[orb error] '%s' carries no resource table (not a dynamic module or an exe linking res)\n",
+                    target->name );
+            return 1;
+        }
+        target_info_t* res_tool = find_res_tool();
+        if ( !res_tool ) { printf( ORB_INDENT "[orb error] no res_tool is registered\n" ); return 1; }
+        if ( !build_target( &ctx, res_tool, NULL, NULL ) ) return 1;
+
+        char obj_dir[ PATH_MAX ];
+        snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
+        ensure_dir( g_build_dir );
+        ensure_dir( obj_dir );
+        if ( !build_gen_res_table( target, obj_dir, res_tool ) )
+        {
+            printf( ORB_BANNER "%s[ %s: FAILED ]%s\n", g_clr_red, target_upper, g_clr_reset );
+            return 1;
+        }
+        printf( "\n" );
+        return 0;
     }
 
     // --- Command: COMPILE-ONLY (VS Ctrl+F7) ---

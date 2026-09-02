@@ -13,6 +13,8 @@
       4. Directory creation     -- ensure every write destination exists.
       5. Locked-file management -- rename any in-use .exe aside before relinking.
       6. Reflection codegen     -- invoke reflect_tool if has_reflect is set.
+      6.5 Resource table        -- invoke res_tool over the image's unit closure (exes linking
+                                   res, and every dynamic module); emits <name>_res_table.c.
       7. Compile + link         -- call 06_compile and 07_link; restore .exe on failure.
       8. Config+mode stamp      -- touch _<config>_<mode>.stamp; delete the other 3 combos.
 
@@ -211,6 +213,105 @@ build_cook_shaders( build_context_t* ctx, target_info_t* target )
     return true;
 }
 
+/*==============================================================================================
+    --- Resource Table ---
+
+    The image's name set is the union of the RID() / RES_TREE() tokens in its own units and
+    in every library it links statically, so the scan input is the unit list of the target's
+    whole link closure.  build_tool owns the graph and writes that list to
+    <obj_dir>/_res_units.txt; res_tool owns the scan (it follows #include from each unit,
+    so unity fragments and headers are covered) and writes <obj_dir>/<name>_res_table.c.
+
+    Monolithic-only deps are deliberately NOT folded in: a module linked as a static lib
+    under -monolithic still registers its own g_<name>_res_table through its own descriptor,
+    exactly as its DLL form does, so the exe's table must not absorb it.
+
+    Runs only when the target is being rebuilt (after the up-to-date check): a name added
+    anywhere in the closure either changes one of this target's units or headers, or
+    rebuilds a dep's .lib, and each of those already makes the target stale.
+==============================================================================================*/
+
+// Appends the absolute unit paths of t, then of its link deps, to `f`. visited[] is indexed
+// like g_targets[] and keeps a diamond in the graph from listing a unit twice.
+static void
+res_list_units( FILE* f, const target_info_t* t, bool visited[ MAX_TARGETS ] )
+{
+    for ( int i = 0; t->units[ i ]; ++i )
+    {
+        char rel[ PATH_MAX ], abs_p[ PATH_MAX ];
+        snprintf( rel, sizeof( rel ), "%s/%s", t->root_dir, t->units[ i ] );
+        if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
+            snprintf( abs_p, sizeof( abs_p ), "%s", rel );
+        fprintf( f, "%s\n", abs_p );
+    }
+    for ( int i = 0; t->deps[ i ]; ++i )
+    {
+        const target_info_t* dep = find_target( t->deps[ i ] );
+        if ( !dep )
+            continue;
+        int idx = ( int )( dep - g_targets );
+        if ( visited[ idx ] )
+            continue;
+        visited[ idx ] = true;
+        res_list_units( f, dep, visited );
+    }
+}
+
+bool
+build_gen_res_table( target_info_t* target, const char* obj_dir, const target_info_t* res_tool )
+{
+    const char* symbol = res_table_symbol( target );
+
+    char list_path[ PATH_MAX ];
+    snprintf( list_path, sizeof( list_path ), "%s" PATH_SEP "_res_units.txt", obj_dir );
+    char out_path[ PATH_MAX ];
+    snprintf( out_path, sizeof( out_path ), "%s" PATH_SEP "%s_res_table.c", obj_dir, target->name );
+
+    FILE* lf = fopen( list_path, "w" );
+    if ( !lf )
+    {
+        printf( ORB_INDENT "[orb error] '%s' cannot write %s\n", target->name, list_path );
+        return false;
+    }
+    fprintf( lf, "# res_tool inputs for '%s': its units and those of its link closure\n", target->name );
+    {
+        bool visited[ MAX_TARGETS ] = { 0 };
+        visited[ ( int )( target - g_targets ) ] = true;
+        res_list_units( lf, target, visited );
+    }
+    fclose( lf );
+
+    if ( g_out_flags & ORB_OUT_REFLECT )
+    {
+        const char* lp = sched_log_path();
+        FILE*       f  = lp ? fopen( lp, "a" ) : NULL;
+        fprintf( f ? f : stdout, ORB_INDENT "[orb res] %s -> g_%s_res_table\n", target->name, symbol );
+        if ( f ) fclose( f );
+    }
+
+    // Quoted-include roots, in the compiler's order: the project source root, then the
+    // engine's when this is a child project.
+    char src_root[ PATH_MAX ];
+    if ( !platform_fullpath( src_root, "source", sizeof( src_root ) ) )
+        snprintf( src_root, sizeof( src_root ), "source" );
+
+    char engine_inc[ PATH_MAX + 8 ] = { 0 };
+    if ( g_engine_root[ 0 ] )
+        snprintf( engine_inc, sizeof( engine_inc ), " -inc %s/source", g_engine_root );
+
+    const char* silent = ( g_out_flags & ORB_OUT_REFLECT ) ? "" : " -silent";
+    char cmd[ PATH_MAX * 4 ];
+    snprintf( cmd, sizeof( cmd ), "bin" PATH_SEP "%s.exe -list %s -out %s -name %s -inc %s%s%s",
+              res_tool->name, list_path, out_path, symbol, src_root, engine_inc, silent );
+    if ( build_run_cmd( cmd ) != 0 )
+    {
+        printf( ORB_INDENT "[orb error] '%s' resource table failed -- see the res_tool errors above\n",
+                target->name );
+        return false;
+    }
+    return true;
+}
+
 bool
 build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, uint64_t* out_elapsed_ms )
 {
@@ -218,6 +319,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     if ( out_elapsed_ms ) *out_elapsed_ms = 0;
 
     target_info_t* refl_tool = NULL;    // Located in step 0; reused in step 6.
+    target_info_t* res_tool  = NULL;    // Located in step 0 when the target carries a table; reused in step 6.5.
 
     // --- 0. Dependency Resolution ---
 
@@ -280,6 +382,21 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
                     target->name );
             return false;
         }
+    }
+
+    // Implicit res tool dep -- same two paths as reflection: built here on the serial
+    // path, pre-wired as a graph dep by the scheduler.
+    if ( target_wants_res_table( target ) )
+    {
+        res_tool = find_res_tool();
+        if ( !res_tool )
+        {
+            printf( ORB_INDENT "[orb error] '%s' needs a resource table but no is_res_tool target is registered\n",
+                    target->name );
+            return false;
+        }
+        if ( !ctx->skip_tool_deps && !build_target( ctx, res_tool, NULL, NULL ) )
+            return false;
     }
 
     // --- 1. Per-Target Mutex Lock ---
@@ -485,6 +602,14 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
             result = false;
             goto cleanup;
         }
+    }
+
+    // --- 6.5 Resource Table ---
+
+    if ( res_tool && !build_gen_res_table( target, obj_dir, res_tool ) )
+    {
+        result = false;
+        goto cleanup;
     }
 
     // --- 7. Compile & Link ---
