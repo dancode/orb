@@ -88,9 +88,8 @@ static orb_font_glyph_t s_out_glyphs [ ORB_FONT_MAX_GLYPHS ];
 static struct
 {
     char build_dir      [ DEV_PATH_MAX ];
-    char font_source_dir[ DEV_PATH_MAX ];   // assets/font_source -- source .ttf inputs
-    char font_cache_dir [ DEV_PATH_MAX ];   // assets/font_cache  -- quick stb bakes (dev_font_get)
-    char font_dir       [ DEV_PATH_MAX ];   // assets/font        -- final orb bakes (font_tool)
+    char font_source_dir[ DEV_PATH_MAX ];   // assets/font       -- raw .ttf sources, mirroring content/font
+    char font_cache_dir [ DEV_PATH_MAX ];   // assets/font_cache -- quick stb bakes (dev_font_get)
     bool initialized;
 
 } g_rt;
@@ -239,10 +238,10 @@ scan_dir_for_name( const char* dir, const char* want_norm, char* out, int out_si
 
 /* Resolve a bare filename, a friendly font name, or a full path to an absolute TTF path that
    exists on disk.  For bare requests the search order is:
-       1. assets/font_source/    -- exact name, then + .ttf / .otf / .ttc
+       1. assets/font/           -- exact name, then + .ttf / .otf / .ttc
        2. OS system font dir      -- exact filename, then + .ttf / .otf / .ttc
        3. by friendly name        -- OS font registry (Windows), then a normalized-stem scan of
-                                     font_source/ and the system font dir (portable)
+                                     assets/font/ and the system font dir (portable)
    A request that already contains a separator is used as-is. */
 
 static bool
@@ -257,8 +256,8 @@ resolve_ttf( const char* ttf_path, char* out, int size )
             return true;
         }
 
-        /* Otherwise treat it as font_source/-relative, e.g. "Roboto/Roboto-Bold.ttf" for a face
-           organized into a subdirectory. */
+        /* Otherwise treat it as assets/font-relative, e.g. "roboto/Roboto-Bold.ttf": the family
+           directory mirrors content/font/<family>/. */
         snprintf( out, (size_t)size, "%s" PATH_SEP "%s", g_rt.font_source_dir, ttf_path );
         if ( sys_file_time( out ) > 0 ) return true;
 
@@ -270,7 +269,7 @@ resolve_ttf( const char* ttf_path, char* out, int size )
        common face extensions so a bare family name resolves to a file. */
     static const char* ext[] = { "", ".ttf", ".otf", ".ttc" };
 
-    /* 1. assets/font_source/ */
+    /* 1. assets/font/ */
     for ( int i = 0; i < 4; ++i )
     {
         snprintf( out, (size_t)size, "%s" PATH_SEP "%s%s", g_rt.font_source_dir, ttf_path, ext[ i ] );
@@ -294,7 +293,7 @@ resolve_ttf( const char* ttf_path, char* out, int size )
     if ( scan_dir_for_name( g_rt.font_source_dir, want, out, size ) ) return true;
     if ( scan_dir_for_name( s_sys_font_dir,       want, out, size ) ) return true;
 
-    set_error( "font '%s' not found in assets/font_source/, system fonts, or by name", ttf_path );
+    set_error( "font '%s' not found in assets/font/, system fonts, or by name", ttf_path );
     return false;
 }
 
@@ -872,16 +871,14 @@ dev_font_init( const dev_font_settings_t* settings )
         auto_detect_build_dir( g_rt.build_dir, sizeof( g_rt.build_dir ) );
 
     snprintf( g_rt.font_source_dir, sizeof( g_rt.font_source_dir ),
-              "%s" PATH_SEP "assets" PATH_SEP "font_source", g_rt.build_dir );
+              "%s" PATH_SEP "assets" PATH_SEP "font", g_rt.build_dir );
     snprintf( g_rt.font_cache_dir, sizeof( g_rt.font_cache_dir ),
               "%s" PATH_SEP "assets" PATH_SEP "font_cache", g_rt.build_dir );
-    snprintf( g_rt.font_dir, sizeof( g_rt.font_dir ),
-              "%s" PATH_SEP "assets" PATH_SEP "font", g_rt.build_dir );
 
     g_rt.initialized = true;
 
-    printf( "[dev_font] init  build=%s  source=%s  cache=%s  font=%s\n",
-            g_rt.build_dir, g_rt.font_source_dir, g_rt.font_cache_dir, g_rt.font_dir );
+    printf( "[dev_font] init  build=%s  source=%s  cache=%s\n",
+            g_rt.build_dir, g_rt.font_source_dir, g_rt.font_cache_dir );
     return true;
 }
 
@@ -897,8 +894,8 @@ dev_font_shutdown( void )
     font_tool lives next to the calling exe in bin/ and resolves the same inputs this library
     does (it links dev_font itself), so handing it the already-resolved absolute TTF path plus
     an explicit output path makes the child bake exactly what the caller asked for.  Output
-    goes to assets/font_cache/ with an "_ft" tag -- never assets/font/, which is the shipped
-    set and is staged wholesale by the ship pipeline.
+    goes to assets/font_cache/ with an "_ft" tag: a cache entry, never content.  Shipped bakes
+    are recipes the build cooks into build/content.
 ==============================================================================================*/
 
 #if OS_WINDOWS
@@ -1269,14 +1266,6 @@ dev_font_source_dir( char* out_path, int out_path_size )
 {
     if ( !g_rt.initialized ) return false;
     snprintf( out_path, (size_t)out_path_size, "%s", g_rt.font_source_dir );
-    return true;
-}
-
-bool
-dev_font_dir( char* out_path, int out_path_size )
-{
-    if ( !g_rt.initialized ) return false;
-    snprintf( out_path, (size_t)out_path_size, "%s", g_rt.font_dir );
     return true;
 }
 

@@ -3,28 +3,35 @@
     tools/ship_tool/ship_tool.c -- Ship-pipeline batch tool.
 
     Thin CLI front-end over the dev_ship library (developer/dev_ship): runs the
-    build -> cook -> stage -> package -> deploy pipeline that turns a project into a
+    build -> verify -> stage -> package -> deploy pipeline that turns a project into a
     standalone, non-development release layout.  This is the batch-job heart of shipping --
     the editor's Deploy window spawns this exe with the same arguments a build script
     would use.
 
     Usage:
-        ship_tool <project> [-config <Debug|Release>] [-out <dir>] [-modular] [-no-engine]
-                            [-deploy <dir>] [-only <build|cook|stage|package|deploy>]
+        ship_tool <project> [-config <Debug|Release>] [-out <dir>] [-target] [-modular]
+                            [-no-engine] [-deploy <dir>] [-verify]
+                            [-only <build|verify|stage|package|deploy>]
                             [-skip-build] [-pdb] [-clean]
 
         <project>     project name; the monolithic ship exe target is <project>_ship
                       (see the PATTERN block in orb.targets)
+        -target       <project> is an exe target itself (ship_tool sb_gui -target): shipped
+                      under its own name, -monolithic by default, with its mono_dep DLLs
+                      when -modular
         -config       build configuration (default: Release)
         -out          staging root (default: build/ship/<project>)
         -modular      ship host_game.exe + module DLLs instead of the monolithic
                       single exe (the "final correct" default)
         -no-engine    light shape: ship only the project's game DLL -- no host, engine
-                      DLLs, or assets; the recipient supplies the engine (dev sharing)
+                      DLLs, or content; the recipient supplies the engine (dev sharing)
         -engine       engine root supplying build_tool (and, with-engine, host + DLLs +
-                      assets); default: read from the project's .orb_engine, else <root>
+                      content); default: read from the project's .orb_engine, else <root>
         -deploy       destination directory to mirror the staged build into; without
                       it the deploy stage is a no-op (the staged dir is the deliverable)
+        -verify       run only the content-set check (same as -only verify): every name
+                      the image spells resolves and is cooked, no stem is claimed twice
+                      under content/, and what nothing references is listed
         -only         run a single pipeline stage instead of the full sequence
         -skip-build   stage prebuilt bin/ output; do not invoke build_tool
         -pdb          include .pdb files in the staged layout
@@ -52,8 +59,9 @@ static int
 usage( void )
 {
     fprintf( stderr,
-             "usage: ship_tool <project> [-config <Debug|Release>] [-out <dir>] [-modular] [-no-engine]\n"
-             "                 [-deploy <dir>] [-only <build|cook|stage|package|deploy>]\n"
+             "usage: ship_tool <project> [-config <Debug|Release>] [-out <dir>] [-target] [-modular]\n"
+             "                 [-no-engine] [-deploy <dir>] [-verify]\n"
+             "                 [-only <build|verify|stage|package|deploy>]\n"
              "                 [-skip-build] [-pdb] [-clean]\n" );
     return 1;
 }
@@ -131,6 +139,13 @@ main( int argc, char** argv )
                 return usage();
             }
         }
+        else if ( strcmp( argv[ i ], "-verify" ) == 0 )
+        {
+            only      = DEV_SHIP_VERIFY;
+            have_only = true;
+        }
+        else if ( strcmp( argv[ i ], "-target" ) == 0 )
+            desc.flags |= DEV_SHIP_TARGET;
         else if ( strcmp( argv[ i ], "-modular" ) == 0 )
             desc.flags |= DEV_SHIP_MODULAR;
         else if ( strcmp( argv[ i ], "-no-engine" ) == 0 )

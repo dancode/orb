@@ -1,7 +1,7 @@
 @echo off
 REM ship_sample_game.bat -- run the full ship pipeline for sample_game.
 REM
-REM Thin wrapper over ship_tool: build -> cook -> stage -> package -> deploy,
+REM Thin wrapper over ship_tool: build -> verify -> stage -> package -> deploy,
 REM staging into build\ship\sample_game (monolithic Release by default).
 REM Extra arguments pass straight through to ship_tool, e.g.:
 REM

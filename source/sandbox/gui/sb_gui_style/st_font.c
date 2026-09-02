@@ -1,18 +1,17 @@
 /*==============================================================================================
 
-    sandbox/gui/sb_gui_style/st_font.c -- Font Tool window: find / bake / preview / export a face.
+    sandbox/gui/sb_gui_style/st_font.c -- Font Tool window: find / bake / preview a face.
 
     The FACE half of a look (the Style Editor next door owns the other half).  Unity-included by
     sb_gui_style.c; see st.h for the window contract.
 
-    Two bakers are exercised side by side (the engine ships both):
-      * quick stb bake  -- dev_font_get(): rasterized at runtime with stb_truetype into
-                           assets/font_cache/.  Instant, disposable, "I want an stb font".
-      * final orb bake  -- font_tool.exe: FreeType quality, written to assets/font/.  This is
-                           the shippable asset, invoked here as a child process ("I want an orb font").
+    The bake here is the quick stb one -- dev_font_get(): rasterized at runtime with stb_truetype
+    into assets/font_cache/.  Instant, disposable, "I want to see this face at this size".  A
+    shippable bake is not made from this window: it is a recipe (content/font/<family>/<size>
+    .recipe) the build cooks with font_tool when some image names it with RID().
 
-    Search scope is a checkbox: local only (assets/font_source/) or Windows too (the OS font
-    registry, resolving "Cascadia Mono" -> C:\Windows\Fonts\CascadiaMono.ttf without copying it in).
+    Search scope is a checkbox: local only (assets/font/) or Windows too (the OS font registry,
+    resolving "Cascadia Mono" -> C:\Windows\Fonts\CascadiaMono.ttf without copying it in).
 
 ==============================================================================================*/
 
@@ -27,20 +26,20 @@
 
 typedef struct
 {
-    /* Picker listing: font_source/ files first (indices 0..local_count), then installed faces
+    /* Picker listing: assets/font/ files first (indices 0..local_count), then installed faces
        (indices local_count..count, sorted) when allow_windows is on. */
     char names[ FT_LIST_MAX ][ FT_NAME_MAX ];
     int  count;
-    int  local_count;        /* number of leading entries that are project (font_source) fonts */
+    int  local_count;        /* number of leading entries that are project (assets/font) fonts */
     int  sel;
     bool scanned;
     bool list_has_windows;   /* scope the current listing was built with (detects toggle) */
-    bool list_has_local;     /* ditto, for the font_source/ toggle */
+    bool list_has_local;     /* ditto, for the assets/font toggle */
 
     /* Request the user is working on. */
     char request[ FT_NAME_MAX ];   /* font name or filename to resolve */
     bool allow_windows;            /* false = local only; true = also the OS font registry */
-    bool allow_local;              /* false = skip assets/font_source/ in the picker listing */
+    bool allow_local;              /* false = skip assets/font/ in the picker listing */
     i32  size_px;
 
     /* Live stb preview. */
@@ -50,12 +49,9 @@ typedef struct
     i32  preview_size;
     char sample_text[ 256 ];
 
-    /* Status lines for the two actions. */
+    /* Status line for the bake. */
     char bake_status  [ 256 ];
     bool bake_ok;
-    char export_status[ 512 ];
-    bool export_ok;
-    char export_path  [ 512 ];   /* just the .orb_font path parsed out of export_status, for copy-to-clipboard */
 
     /* Atlas preview toggle. */
     bool show_atlas;
@@ -68,9 +64,9 @@ static font_tool_t s_ft;
 /*============================================================================================*/
 /* Resolution honoring the local/Windows scope checkbox.                                       */
 /*                                                                                             */
-/* dev_font_resolve() always walks font_source -> system dir -> OS registry.  When the user    */
-/* asks for local only we must NOT fall through to Windows, so we probe assets/font_source/     */
-/* ourselves and stop there.  With the box ticked we defer to the full resolver.               */
+/* dev_font_resolve() always walks assets/font -> system dir -> OS registry.  When the user     */
+/* asks for local only we must NOT fall through to Windows, so we probe assets/font/ ourselves */
+/* and stop there.  With the box ticked we defer to the full resolver.                         */
 /*============================================================================================*/
 
 static bool
@@ -79,7 +75,7 @@ ft_resolve( const char* request, bool allow_windows, char* out, int out_size )
     if ( allow_windows )
         return dev_font_resolve( request, out, out_size );
 
-    /* Local only: exact name in font_source/, then the common face extensions. */
+    /* Local only: exact name in assets/font/, then the common face extensions. */
     char src[ 512 ];
     if ( !dev_font_source_dir( src, sizeof( src ) ) )
         return false;
@@ -95,7 +91,7 @@ ft_resolve( const char* request, bool allow_windows, char* out, int out_size )
 }
 
 /*============================================================================================*/
-/* Scan assets/font_source/ for the local picker.                                              */
+/* Scan assets/font/ for the local picker.                                                     */
 /*============================================================================================*/
 
 /* Append one name to the list (both scans share this).  Returns false once the list is full so
@@ -125,7 +121,7 @@ ft_name_cmp( const void* a, const void* b )
     return (unsigned char)*x - (unsigned char)*y;
 }
 
-/* True if `name` ends in one of the face extensions font_source/ is scanned for (case-
+/* True if `name` ends in one of the face extensions assets/font/ is scanned for (case-
    insensitive, matching sys_file_glob's Windows FindFirstFile semantics). */
 
 static bool
@@ -142,11 +138,11 @@ ft_has_font_ext( const char* name )
     return false;
 }
 
-/* sys_dir_walk() callback for assets/font_source/: recurses into subdirectories so variants of a
-   family (weights, italics) can live in their own folder instead of crowding font_source/ flat.
-   The listed/request name is the path relative to font_source/ (e.g. "geist/Geist-Bold.ttf"),
-   which both keeps same-stem files in different folders distinct and is what ft_resolve() and
-   dev_font_resolve()'s font_source/-relative fallback expect. */
+/* sys_dir_walk() callback for assets/font/: recurses into subdirectories, since a family's faces
+   live in their own folder (assets/font/geist/, mirroring content/font/geist/).  The listed/
+   request name is the path relative to assets/font/ (e.g. "geist/Geist-Bold.ttf"), which both
+   keeps same-stem files in different folders distinct and is what ft_resolve() and
+   dev_font_resolve()'s assets/font-relative fallback expect. */
 static bool
 ft_local_cb( const char* filename, const char* full_path, void* ud )
 {
@@ -178,9 +174,8 @@ ft_scan( void )
 {
     s_ft.count = 0;
 
-    /* Local .ttf/.otf/.ttc under assets/font_source/, recursing into subdirectories so a family's
-       variants can be grouped in their own folder (listed first, sorted), when the scope box is
-       ticked. */
+    /* Local .ttf/.otf/.ttc under assets/font/, recursing into the family folders (listed first,
+       sorted), when the scope box is ticked. */
     if ( s_ft.allow_local )
     {
         char src[ 512 ];
@@ -232,7 +227,7 @@ ft_bake_preview( void )
     {
         snprintf( s_ft.bake_status, sizeof( s_ft.bake_status ),
                   s_ft.allow_windows ? "Not found: %s"
-                                     : "Not in font_source/: %s  (tick Windows to search installed fonts)",
+                                     : "Not in assets/font/: %s  (tick Windows to search installed fonts)",
                   s_ft.request );
         s_ft.bake_ok = false;
         return;
@@ -283,75 +278,6 @@ ft_bake_preview( void )
 }
 
 /*============================================================================================*/
-/* Action: final FreeType bake via font_tool.exe (writes assets/font/).                        */
-/*                                                                                             */
-/* font_tool lives next to us in bin/; it resolves the same inputs we do (shared dev_font) and  */
-/* defaults its output to assets/font/<name>_<size>px.orb_font, creating the dir if needed.     */
-/*============================================================================================*/
-
-static void
-ft_export_final( void )
-{
-    if ( !s_ft.request[ 0 ] )
-    {
-        snprintf( s_ft.export_status, sizeof( s_ft.export_status ), "Enter a font name or file." );
-        s_ft.export_ok = false;
-        return;
-    }
-
-    char exe_dir[ 512 ];
-    sys_exe_dir( exe_dir, sizeof( exe_dir ) );
-
-    char cmd[ 1024 ];
-    snprintf( cmd, sizeof( cmd ), "\"%s" PATH_SEP "font_tool.exe\" \"%s\" %d",
-              exe_dir, s_ft.request, s_ft.size_px );
-
-    char                 out[ 1024 ] = { 0 };
-    sys_process_result_t res         = { 0 };
-    bool launched = sys_process_run_capture( cmd, NULL, out, sizeof( out ), NULL, &res );
-
-    if ( !launched || !res.started )
-    {
-        snprintf( s_ft.export_status, sizeof( s_ft.export_status ),
-                  "Could not launch font_tool.exe (expected in %s)", exe_dir );
-        s_ft.export_ok = false;
-        return;
-    }
-
-    /* font_tool prints its output path on success and an "error:" line on failure; surface its
-       last line of output alongside the exit code so the bench shows what the tool reported. */
-    const char* tail = out;
-    for ( const char* p = out; *p; ++p )
-        if ( ( *p == '\n' || *p == '\r' ) && p[ 1 ] && p[ 1 ] != '\n' && p[ 1 ] != '\r' )
-            tail = p + 1;
-
-    s_ft.export_path[ 0 ] = '\0';
-
-    if ( res.exit_code == 0 )
-    {
-        snprintf( s_ft.export_status, sizeof( s_ft.export_status ), "font_tool ok: %s", tail );
-
-        /* Pull the path back out of font_tool's own "... -> 'path'" trailer (see font_tool.c's
-           final printf) so the copy button doesn't need to re-derive the output path itself. */
-        const char* arrow = strstr( tail, " -> '" );
-        if ( arrow )
-        {
-            const char* path_start = arrow + 5;
-            const char* quote_end  = strrchr( path_start, '\'' );
-            if ( quote_end && quote_end > path_start )
-                snprintf( s_ft.export_path, sizeof( s_ft.export_path ), "%.*s",
-                          (int)( quote_end - path_start ), path_start );
-        }
-    }
-    else
-    {
-        snprintf( s_ft.export_status, sizeof( s_ft.export_status ),
-                  "font_tool failed (exit %d): %s", res.exit_code, tail );
-    }
-    s_ft.export_ok = ( res.exit_code == 0 );
-}
-
-/*============================================================================================*/
 /* Window                                                                                      */
 /*============================================================================================*/
 
@@ -387,12 +313,12 @@ st_font_window( void )
     
     gui()->checkbox( "Include internal fonts", &s_ft.allow_local );
     gui()->same_line( -1 );
-    gui()->help_marker( "On:  list assets/font_source/ (the project's shipped fonts) in the picker.\n"
+    gui()->help_marker( "On:  list assets/font/ (the raw faces behind content/font/) in the picker.\n"
                         "Off: skip them -- handy for browsing/testing the Windows registry alone." );
-    
+
     gui()->checkbox( "Include Windows fonts", &s_ft.allow_windows );
     gui()->same_line( -1 );
-    gui()->help_marker( "Off: list/search assets/font_source/ only.\n"
+    gui()->help_marker( "Off: list/search assets/font/ only.\n"
                         "On:  also list installed fonts by friendly name from the OS font registry\n"
                         "     (e.g. \"Cascadia Mono\" -> C:\\Windows\\Fonts\\CascadiaMono.ttf)." );
     
@@ -408,7 +334,7 @@ st_font_window( void )
         gui()->scale_push( GUI_SCALE_DENSE );
         for ( int i = 0; i < s_ft.count; i++ )
         {
-            /* Project (font_source) fonts lead the list in a distinct tint; installed Windows
+            /* Project (assets/font) fonts lead the list in a distinct tint; installed Windows
                faces follow in default color. */
             bool project = ( i < s_ft.local_count );
             if ( project )
@@ -436,37 +362,22 @@ st_font_window( void )
     
     /* --- Actions -------------------------------------------------------------- */
     gui()->separator_text( "Bake" );
-    
-    /* Two half-width buttons at normal height.  next_item_fit(1.0) makes each button fill its
-       0.5 cell (a plain button would shrink to its label); button_fill is NOT used here -- it
-       sizes its HEIGHT to the view bottom, which feeds back into the scroll extent when content
-       follows it (status + preview below), growing the region without bound every scrolled frame. */
 
-    gui()->row2( 0.5f, 0.5f );
-
-    // if ( gui()->button_fill( "Bake & Preview (stb)" ) )
-    gui()->next_item_fit( 1.0f );
+    /* button_fill is NOT used here -- it sizes its HEIGHT to the view bottom, which feeds back
+       into the scroll extent when content follows it (status + preview below), growing the
+       region without bound every scrolled frame. */
     if ( gui()->button( "Bake & Preview (stb)" ) )
         ft_bake_preview();
-    
-    // if ( gui()->button_fill( "Export final (font_tool)" ) )
-    gui()->next_item_fit( 1.0f );
-    if ( gui()->button( "Export final (font_tool)" ) )
-        ft_export_final();
-    
+    gui()->same_line( -1 );
+    gui()->help_marker( "A quick stb bake into assets/font_cache/ for previewing.  A shipped bake is a\n"
+                        "recipe under content/font/<family>/ that the build cooks when an image names it." );
+
     gui()->stack();
     if ( s_ft.bake_status[ 0 ] )
     {
         if ( s_ft.bake_ok ) gui()->text_disabled( s_ft.bake_status );
         else                gui()->text_colored( GUI_COLOR( 0xFF, 0x60, 0x60, 0xFF ), s_ft.bake_status );
     }
-    if ( s_ft.export_status[ 0 ] )
-    {
-        if ( s_ft.export_ok ) gui()->text_wrapped( s_ft.export_status );
-        else                  gui()->text_colored( GUI_COLOR( 0xFF, 0x60, 0x60, 0xFF ), s_ft.export_status );
-    }
-    if ( s_ft.export_path[ 0 ] && gui()->button( "Copy Path" ) )
-        app()->clipboard_set( s_ft.export_path );
     
     /* --- Preview -------------------------------------------------------------- */
     if ( s_ft.preview_ready )

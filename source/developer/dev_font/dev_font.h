@@ -153,14 +153,9 @@ bool        dev_font_bake_write( const char* out_path, const dev_font_glyph_t* g
 
 const char* dev_font_last_error( void );
 
-/* Absolute path of the font_source/ directory (where dev_font_get searches for bare filenames).
-   Returns false if dev_font_init() has not been called. */
+/* Absolute path of the assets/font/ directory (the raw TTF sources; where dev_font_get searches
+   for bare filenames).  Returns false if dev_font_init() has not been called. */
 bool        dev_font_source_dir( char* out_path, int out_path_size );
-
-/* Absolute path of the assets/font/ directory -- where final (FreeType) bakes land, parallel to
-   the assets/font_cache/ that dev_font_get uses for quick stb bakes. font_tool defaults its output
-   here. Returns false if dev_font_init() has not been called. */
-bool        dev_font_dir( char* out_path, int out_path_size );
 
 /*============================================================================================*/
 #endif  /* DEV_FONT_H */

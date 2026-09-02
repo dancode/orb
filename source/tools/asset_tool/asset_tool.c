@@ -347,7 +347,7 @@ cook_image( const char* src_path, const char* dst_path )
 typedef struct recipe_s
 {
     res_kind_t kind;
-    char       face[ 256 ];     // font_tool input: a TTF under assets/font_source or an OS face name
+    char       face[ 256 ];     // font_tool input: a TTF under assets/font or an OS face name
     int        size;            // pixel size
     int        sdf;             // 0 = coverage bake; > 0 = distance field with this spread
     char       range[ 128 ];    // font_tool -range spec; "" = the ASCII default

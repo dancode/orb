@@ -267,7 +267,6 @@ main( int argc, char** argv )
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
      // .wait      = sys_wait_for_os_events_ms,
-     // .clear     = { 0.4f, 0.4f, 0.4f, 1.00f },
         .clear     = { 0.1f, 0.1f, 0.1f, 1.00f },
         .debug     = true,
     } );

@@ -10,12 +10,16 @@
     Usage:
         font_tool <input.ttf | "Font Name"> <size_px> [output.orb_font] [-sdf[=spread]] [-range=<spec>]
         font_tool info [<file.orb_font> | <dir>]...     -- print .orb_font header internals
-        font_tool manifest <fonts.manifest>             -- bake every line of a manifest
 
     Input may be a path, a bare filename, or an installed font name; dev_font_resolve searches
-    assets/font_source/ then the OS fonts.  With no output argument the path is derived as
-    assets/font/<stem>_<size>px[_<range>][_sdf].orb_font.  The atlas is R8, sized to the smallest
-    power-of-two square that fits every packed glyph.
+    assets/font/ then the OS fonts.  With no output argument the path is derived as
+    <stem>_<size>px[_<range>][_sdf].orb_font in the current directory.  The atlas is R8, sized
+    to the smallest power-of-two square that fits every packed glyph.
+
+    This is the rasterizer behind every shipped bake, not the way one is made: the build
+    cooks content/font/<family>/<size>.recipe through asset_tool, which spawns this tool
+    with an explicit output under build/content.  Running it by hand is for inspecting a
+    face or a flag.
 
     -range=<spec>   Bakes past the default ASCII span (U+0020..U+007E, 95 glyphs).  Comma-separated
                     preset names (ascii, latin1, latin, greek, cyrillic) and/or explicit LO-HI
@@ -158,8 +162,9 @@ range_codepoint_count( void )
     info subcommand -- read .orb_font headers and print their internals as a table.
 
     Read-only diagnostic companion to the bake path: `font_tool info [<file.orb_font> | <dir>]...`.
-    With no argument it lists the engine font dir (assets/font); a .orb_font argument prints that
-    one file; any other argument is treated as a directory and globbed for *.orb_font.
+    With no argument it walks the cooked mirror (<root>/build/content) for every bake the build
+    made; a .orb_font argument prints that one file; any other argument is treated as a directory
+    and globbed for *.orb_font.
 ==============================================================================================*/
 
 typedef struct { int count; } info_ctx_t;
@@ -221,6 +226,24 @@ info_glob_cb( const char* filename, const char* full_path, void* userdata )
     return true;
 }
 
+/* sys_dir_walk callback for the no-argument default: only .orb_font files, labelled by their
+   path under the cooked mirror. */
+typedef struct { info_ctx_t* ctx; const char* root; } info_walk_t;
+
+static bool
+info_walk_cb( const char* filename, const char* full_path, void* userdata )
+{
+    (void)filename;
+    info_walk_t* w = (info_walk_t*)userdata;
+    if ( !path_has_orb_font_ext( full_path ) )
+        return true;
+    const char* rel = full_path + strlen( w->root );
+    while ( *rel == '/' || *rel == '\\' ) ++rel;
+    info_print_file( rel, full_path );
+    ++w->ctx->count;
+    return true;
+}
+
 static int
 run_info( int npaths, char** paths )
 {
@@ -233,10 +256,11 @@ run_info( int npaths, char** paths )
 
     if ( npaths == 0 )
     {
-        /* No argument -- default to the engine's font output dir (assets/font). */
+        /* No argument -- every bake the build cooked, under <root>/build/content. */
         char dir[ FONT_PATH_MAX ];
-        if ( dev_font_dir( dir, sizeof( dir ) ) )
-            sys_file_glob( dir, "*.orb_font", info_glob_cb, &ctx );
+        snprintf( dir, sizeof( dir ), "%s" OUT_SEP "build" OUT_SEP "content", sys_root_dir() );
+        info_walk_t w = { &ctx, dir };
+        sys_dir_walk( dir, info_walk_cb, &w );
     }
     else
     {
@@ -618,9 +642,8 @@ usage_print( void )
     fprintf( stderr,
         "usage: font_tool <input.ttf | \"Font Name\"> <size_px> [output.orb_font] [-sdf[=spread]] [-range=<spec>]\n"
         "       font_tool info [<file.orb_font> | <dir>]...   (print header internals)\n"
-        "       font_tool manifest <fonts.manifest>           (bake every line of a manifest)\n"
         "       input may be a path, a bare filename, or an installed font name\n"
-        "       output defaults to assets/font/<name>_<size>px[_<range>][_sdf].orb_font\n"
+        "       output defaults to ./<name>_<size>px[_<range>][_sdf].orb_font\n"
         "       -sdf bakes a distance field (default spread %d px) instead of coverage\n"
         "       -range bakes beyond ASCII: presets ascii|latin1|latin|greek|cyrillic\n"
         "              and/or LO-HI codepoint spans, comma-separated (default: ascii)\n",
@@ -704,23 +727,19 @@ cli_parse( int argc, char** argv, cli_t* cli )
     return true;
 }
 
-/* Where the atlas lands.  An output argument with a directory component is used as-is; a bare
-   filename is redirected into assets/font/; no argument derives <stem>_<size>px there.  The
-   _<range> and _sdf tags keep the bakes of one face at one size from overwriting each other --
-   they are different assets, and a build may well want several.  A missing extension is added. */
+/* Where the atlas lands.  An output argument is used as-is (relative to the current directory
+   when it has no directory component); no argument derives <stem>_<size>px in the current
+   directory.  The _<range> and _sdf tags keep the bakes of one face at one size from overwriting
+   each other -- they are different assets, and a build may well want several.  A missing
+   extension is added. */
 static bool
-out_path_resolve( const cli_t* cli, const char* ttf_abs, const char* font_dir,
-                  char* buf, size_t cap )
+out_path_resolve( const cli_t* cli, const char* ttf_abs, char* buf, size_t cap )
 {
     int n;
 
     if ( cli->out_arg )
     {
-        bool has_dir = ( path_base( cli->out_arg ) != cli->out_arg );
-
-        n = has_dir ? snprintf( buf, cap, "%s", cli->out_arg )
-                    : snprintf( buf, cap, "%s" OUT_SEP "%s", font_dir, cli->out_arg );
-
+        n = snprintf( buf, cap, "%s", cli->out_arg );
         if ( n > 0 && n < (int)cap && !path_has_orb_font_ext( buf ) )
             n += snprintf( buf + n, cap - (size_t)n, ".orb_font" );
     }
@@ -731,8 +750,8 @@ out_path_resolve( const cli_t* cli, const char* ttf_abs, const char* font_dir,
         for ( size_t i = stem_len; i-- > 0; )
             if ( base[ i ] == '.' ) { stem_len = i; break; }
 
-        n = snprintf( buf, cap, "%s" OUT_SEP "%.*s_%dpx%s%s.orb_font",
-                      font_dir, (int)stem_len, base, cli->size_px,
+        n = snprintf( buf, cap, "%.*s_%dpx%s%s.orb_font",
+                      (int)stem_len, base, cli->size_px,
                       s_range_suffix, cli->sdf_range ? "_sdf" : "" );
     }
 
@@ -747,9 +766,8 @@ out_path_resolve( const cli_t* cli, const char* ttf_abs, const char* font_dir,
 /*==============================================================================================
     bake_one -- resolve, rasterize and write a single font per an already-parsed cli_t.
 
-    Shared by the single-shot command line and the `manifest` subcommand below, so a manifest
-    bake goes through the exact same path a direct invocation does.  Caller has already called
-    dev_font_init() and set up s_range_count/s_range_suffix (via -range or the ASCII default).
+    Caller has already called dev_font_init() and set up s_range_count/s_range_suffix (via
+    -range or the ASCII default).
 ==============================================================================================*/
 
 static bool
@@ -763,10 +781,9 @@ bake_one( const cli_t* cli )
         return false;
     }
 
-    /* dev_font owns both ends of the file system: it resolves a bare filename or friendly name
-       ("Cascadia Mono") against assets/font_source/ and the OS fonts -- the same search the runtime
-       stb baker does -- and it names the output dir.  Final (FreeType) bakes land in assets/font/,
-       parallel to the assets/font_cache/ the runtime uses, so the two paths cannot drift. */
+    /* dev_font resolves a bare filename or friendly name ("Cascadia Mono") against assets/font/
+       and the OS fonts -- the same search the runtime stb baker does, so a face spelled in a
+       family.txt means the same file to both bakers. */
     char ttf_abs[ FONT_PATH_MAX ];
     if ( !dev_font_resolve( cli->ttf_arg, ttf_abs, sizeof( ttf_abs ) ) )
     {
@@ -774,15 +791,8 @@ bake_one( const cli_t* cli )
         return false;
     }
 
-    char font_dir[ FONT_PATH_MAX ];
-    if ( !dev_font_dir( font_dir, sizeof( font_dir ) ) )
-    {
-        fprintf( stderr, "error: dev_font not initialized\n" );
-        return false;
-    }
-
     char out_path[ FONT_PATH_MAX ];
-    if ( !out_path_resolve( cli, ttf_abs, font_dir, out_path, sizeof( out_path ) ) )
+    if ( !out_path_resolve( cli, ttf_abs, out_path, sizeof( out_path ) ) )
         return false;
     path_make_parent_dir( out_path );
 
@@ -842,136 +852,6 @@ bake_one( const cli_t* cli )
 }
 
 /*==============================================================================================
-    manifest subcommand -- bake every line of a fonts.manifest in one process.
-
-    Reads the same format the ship pipeline's cook stage does (dev_ship.c ship_cook): one line
-    per bake, "<family> <size_px> [-sdf[=n]] [-range=<spec>]", '#' starts a comment, a leading
-    '"' opens a quoted family name (for names containing spaces).  Unlike ship_cook, which fails
-    the whole ship on the first bad line, this bakes every line and reports failures at the end --
-    a dev iterating locally wants to see every missing font in one pass, not fix them one at a
-    time behind a full ship_tool run.
-==============================================================================================*/
-
-/* Splits one manifest line in place: `p` becomes unusable, `*family_out` and `*rest_out` point
-   into it.  `*rest_out` is the text after the family token (leading blanks not yet stripped). */
-static bool
-manifest_split_family( char* p, char** family_out, char** rest_out )
-{
-    if ( *p == '"' )
-    {
-        char* q = strchr( p + 1, '"' );
-        if ( !q )
-        {
-            fprintf( stderr, "error: unterminated quote: %s\n", p );
-            return false;
-        }
-        *q          = '\0';
-        *family_out = p + 1;
-        *rest_out   = q + 1;
-    }
-    else
-    {
-        char* q = p;
-        while ( *q && *q != ' ' && *q != '\t' ) ++q;
-        if ( *q ) *q++ = '\0';
-        *family_out = p;
-        *rest_out   = q;
-    }
-    return true;
-}
-
-static int
-run_manifest( const char* path )
-{
-    FILE* f = fopen( path, "rb" );
-    if ( !f )
-    {
-        fprintf( stderr, "error: cannot open manifest '%s'\n", path );
-        return 1;
-    }
-
-    dev_font_init( NULL );
-
-    char line[ 512 ];
-    int  baked  = 0;
-    int  failed = 0;
-
-    while ( fgets( line, sizeof( line ), f ) )
-    {
-        char* p = line;
-        while ( *p == ' ' || *p == '\t' ) ++p;
-        if ( *p == '#' || *p == '\0' || *p == '\r' || *p == '\n' )
-            continue;
-
-        size_t len = strlen( p );
-        while ( len && ( p[ len - 1 ] == '\n' || p[ len - 1 ] == '\r'
-                      || p[ len - 1 ] == ' '  || p[ len - 1 ] == '\t' ) )
-            p[ --len ] = '\0';
-        if ( !len )
-            continue;
-
-        char* family;
-        char* rest;
-        if ( !manifest_split_family( p, &family, &rest ) )
-        {
-            ++failed;
-            continue;
-        }
-        while ( *rest == ' ' || *rest == '\t' ) ++rest;
-
-        char* size_tok = rest;
-        while ( *rest && *rest != ' ' && *rest != '\t' ) ++rest;
-        if ( *rest ) *rest++ = '\0';
-        while ( *rest == ' ' || *rest == '\t' ) ++rest;
-
-        /* Remaining whitespace-split flag tokens feed cli_parse verbatim, same as a hand-typed
-           command line -- so -sdf/-range parse identically here and at the single-shot CLI. */
-        char  prog[]  = "font_tool";
-        char* argv_line[ 8 ];
-        int   argc_line = 0;
-        argv_line[ argc_line++ ] = prog;      // cli_parse ignores argv[0]
-        argv_line[ argc_line++ ] = family;
-        argv_line[ argc_line++ ] = size_tok;
-
-        while ( *rest && argc_line < 8 )
-        {
-            argv_line[ argc_line++ ] = rest;
-            while ( *rest && *rest != ' ' && *rest != '\t' ) ++rest;
-            if ( *rest ) *rest++ = '\0';
-            while ( *rest == ' ' || *rest == '\t' ) ++rest;
-        }
-
-        /* s_range_count/s_range_suffix persist across bakes in this process -- reset them so a
-           line without -range does not inherit the previous line's span. */
-        s_range_count     = 0;
-        s_range_suffix[0] = '\0';
-
-        cli_t cli;
-        if ( !cli_parse( argc_line, argv_line, &cli ) )
-        {
-            fprintf( stderr, "error: bad manifest line: %s %s\n", family, size_tok );
-            ++failed;
-            continue;
-        }
-
-        if ( s_range_count == 0 )
-            s_range_count = dev_font_range_parse( NULL, s_ranges, DEV_FONT_RANGE_MAX );
-
-        printf( "[font_tool] %s %dpx%s -> assets/font/\n",
-                family, cli.size_px, s_range_suffix[0] ? s_range_suffix : "" );
-
-        if ( bake_one( &cli ) )
-            ++baked;
-        else
-            ++failed;
-    }
-    fclose( f );
-
-    printf( "[font_tool] %d baked, %d failed\n", baked, failed );
-    return failed ? 1 : 0;
-}
-
-/*==============================================================================================
     main
 ==============================================================================================*/
 
@@ -981,17 +861,6 @@ main( int argc, char** argv )
     /* Subcommand: `info` prints .orb_font header internals (read-only diagnostic). */
     if ( argc >= 2 && strcmp( argv[ 1 ], "info" ) == 0 )
         return run_info( argc - 2, argv + 2 );
-
-    /* Subcommand: `manifest` bakes every line of a fonts.manifest in this one process. */
-    if ( argc >= 2 && strcmp( argv[ 1 ], "manifest" ) == 0 )
-    {
-        if ( argc != 3 )
-        {
-            fprintf( stderr, "usage: font_tool manifest <fonts.manifest>\n" );
-            return 1;
-        }
-        return run_manifest( argv[ 2 ] );
-    }
 
     cli_t cli;
     if ( !cli_parse( argc, argv, &cli ) )

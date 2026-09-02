@@ -1,5 +1,6 @@
 # The typeface behind every bake in this directory, as a font_tool input: a TTF under
-# assets/font_source (path relative to it) or an OS-installed face name.  The build reads
+# assets/font (path relative to it; assets/font/<family>/ mirrors this directory) or an
+# OS-installed face name.  The build reads
 # this when it cooks a recipe here that has no "face" line of its own, and the gui's runtime
 # baker reads it for sizes no recipe covers, so both bakes come from this one spelling.
 

@@ -40,11 +40,13 @@
                            or output directory for a directory input (default: the input dir)
 
     icons -- batch-rasterize the built-in icon set from a manifest (config/icons.manifest): one
-             line per icon, run through the same SVG raster as `svg` above.  Re-run whenever the
-             source art under assets/icon_source/ changes; nothing bakes automatically.
+             line per icon, run through the same SVG raster as `svg` above.  This is the IMPORT
+             step: it turns a raw source under assets/ui/icon/ into content under
+             content/ui/icon/ (the two trees mirror each other).  Re-run whenever the source art
+             changes; nothing bakes automatically.
                  <name> <source.svg> [-size <px>] [-margin <px>] [-out <path>]
              <name>       the gui icon registry key; also the default output stem
-             <source.svg> resolved against assets/icon_source/
+             <source.svg> resolved against assets/ui/icon/
              -size, -margin  default to 256 / 16 -- generous SDF bake headroom (see `svg` above)
              -out         override the default content/ui/icon/<name>.png
 
@@ -424,7 +426,7 @@ icons_bake_line( char* line )
 
     const char* name = tok[ 0 ];
     char        in_path[ 384 ];
-    snprintf( in_path, sizeof( in_path ), "assets/icon_source/%s", tok[ 1 ] );
+    snprintf( in_path, sizeof( in_path ), "assets/ui/icon/%s", tok[ 1 ] );
 
     int  size   = 256;   // generous headroom over icon_register_sdf's out_max default of 62
     int  margin = 16;    // an SDF bake needs an outside to fall off into

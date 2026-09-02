@@ -1146,7 +1146,7 @@ page_text( void )
 /*==============================================================================================
     Page 10 -- icons, sprites and baked shapes: the atlas-backed art kinds, all of which batch
     into the same draw call as text and fills.  The built-in icon set (save/folder/file/gear/
-    grid/wire/view) loads from PNGs under assets/icons at gui boot; a blank cell here means that
+    grid/wire/view) loads from PNGs under content/ui/icon at gui boot; a blank cell here means that
     file is missing on disk, not that the draw call failed -- find_icon returns GUI_ICON_NONE and
     the cell is skipped rather than drawing a broken quad.
 ==============================================================================================*/

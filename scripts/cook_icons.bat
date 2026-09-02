@@ -1,8 +1,8 @@
 @echo off
-:: cook_icons.bat -- bake the built-in icon set from config\icons.manifest into assets\icon\*.png.
+:: cook_icons.bat -- import the built-in icon set: config\icons.manifest rasterizes the SVGs
+:: under assets\ui\icon\ into content\ui\icon\*.png (checked in).
 ::
-:: Source SVGs live in assets\icon_source\; nothing bakes automatically, so re-run this whenever
-:: they change (then rebuild so the gui backend picks up the new PNGs at next init). Requires
+:: Nothing bakes automatically, so re-run this whenever the source art changes. Requires
 :: bin\image_tool.exe (build_tool -config Debug).
 setlocal
 cd /d "%~dp0.."

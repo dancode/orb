@@ -2,13 +2,13 @@
 
 # Resource Names (res) + Package Manifest -- Plan
 
-Status: IN PROGRESS.  Phases 0-4 landed 2026-09-01/02 as a runtime catalogue; REDUCED on
-2026-09-02 to a header-only marker plus a build-time tool (see "The reduction" below).
-Phases 5 and 6 landed 2026-09-02.  Phase 7 (the packager) is next.
+Status: ALL PHASES LANDED 2026-09-02.  Phases 0-4 were built as a runtime catalogue and
+REDUCED the same day to a header-only marker plus a build-time tool (see "The reduction"
+below); Phases 5, 6 and 7 (the packager) followed.
 Successor to the reference half of ASSET_SYSTEM_PLAN.md.  That plan built the RUNTIME half
 -- fs mounts, zip bundles, the asset registry, the cook track, packaging -- and left one
-question unanswered: what does an application actually reference?  Today ship_tool answers
-it by copying whole directories (dev_ship.c:623-625).  This plan answers it by scanning.
+question unanswered: what does an application actually reference?  ship_tool used to answer
+it by copying whole directories; it now answers it from the build's scan (Phase 7).
 
 --------------------------------------------------------------------------------
 ## Goal
@@ -221,24 +221,26 @@ piece.
 
       | Tier            | Tracked   | Read by              | Holds                          |
       |-----------------|-----------|----------------------|--------------------------------|
-      | assets/         | no        | tools only           | raw sources: TTFs, SVGs; tool   |
-      |                 |           |                      | caches (font_cache)             |
+      | assets/         | no        | tools only           | raw sources: TTFs, SVGs, laid   |
+      |                 |           |                      | out as a MIRROR of content/;    |
+      |                 |           |                      | tool caches (font_cache)        |
       | content/        | yes       | engine and cooker    | source-form content: PNGs,      |
       |                 |           |                      | .hlsl, .recipe, family.txt      |
       | build/content   | generated | engine (mounted      | cooked forms: .orb_font, .oshd, |
       |                 |           | above content/)      | .tex                            |
 
     Two pipelines cross those tiers and must not be confused.  IMPORT moves a raw source
-    into content/ (image_tool icons rasterizes assets/icon_source/*.svg into content/ui/icon/
+    into content/ (image_tool icons rasterizes assets/ui/icon/*.svg into content/ui/icon/
     from config/icons.manifest, by hand, checked in); it decides what content EXISTS.
     PACKAGE filters content/ plus build/content into a shipped set; RID() and the per-target
-    manifest decide what SHIPS.  asset_tool belongs to neither: it cooks content/ into
-    build/content and never reads assets/ except through a recipe's face.  Nothing reads
-    assets/ at runtime except the dev-only font baker's cache.  Follow-on, not done: assets/
-    should MIRROR content/ (assets/font/jetbrains/*.ttf beside content/font/jetbrains/) so a
-    raw source and the content it becomes sit at the same path, and the old output
-    directories assets/font and assets/icon -- font_tool's default output, dev_ship's cook
-    target, the style editor's final bake -- retire with dev_ship's cook loop in Phase 7.
+    manifest decide what SHIPS (dev_ship, Phase 7).  asset_tool belongs to neither: it cooks
+    content/ into build/content and never reads assets/ except through a recipe's face.
+    Nothing reads assets/ at runtime except the dev-only font baker's cache.  assets/ MIRRORS
+    content/ (since Phase 7): a raw source and the content it becomes sit at the same path --
+    assets/font/jetbrains/JetBrainsMonoNL-Regular.ttf beside content/font/jetbrains/, assets/
+    ui/icon/save.svg beside content/ui/icon/save.png -- so a family.txt face is a path under
+    assets/font that reads like its own directory.  assets/font_cache stays a cache.  The old
+    OUTPUT directories under assets/ (font, icon) are gone: no tool writes there.
 
 --------------------------------------------------------------------------------
 ## Where it sits
@@ -257,6 +259,9 @@ piece.
     content/font/<family>/family.txt    -- the family's typeface (decision 9); recipes inherit it,
                                            gui_font_family.c reads it for the runtime baker
     source/runtime_service/gui/gui_res.h -- how gui reads a name + ext through fs
+    source/developer/dev_ship/dev_ship.c -- the packager: image manifests + mono_dep modules,
+                                           closed over reference sections, verified and staged
+                                           into <out>/content (ship_tool is its CLI)
 
 Reading the layering as a sentence: res says how ui/icon/save is spelled and proves it has a
 file; fs says where its bytes are today; the asset service says whether it is loaded and who
@@ -390,8 +395,8 @@ Phase 5 -- GUI adoption (the real surface)                               [DONE 2
      (family.txt) and the table is gone.
    - Left alone, on purpose: rhi's path-taking shader loaders and draw_material's optional
      cooked pair under bin/shaders (scripts/cook_shaders.bat) -- a dev-only affordance with
-     an embedded fallback, not content.  dev_ship still cooks config/fonts.manifest into
-     assets/font (Phase 7 replaces it with the manifest walk).
+     an embedded fallback, not content.  dev_ship kept cooking config/fonts.manifest into
+     assets/font until Phase 7 replaced it with the manifest walk.
    - Proof: full Debug build; sb_gui_test passes (the .orb_font contract now runs over bytes);
      sb_gui's manifest is the acceptance-test set (its font, gui's five icons, gui's two
      shaders), build/content holds font/cascadiamono/16.orb_font and shader/gui_quad.{vs,ps}.oshd,
@@ -443,24 +448,51 @@ Phase 6 -- Recipes + content-declared edges                              [DONE 2
      asset_tool, the same face and size baked through font_tool directly, and the build's
      own build/content/font/jetbrains/16.orb_font share one SHA-256.
 
-Phase 7 -- ship_tool consumes the manifest                               [NOT STARTED]
-   - Replace the three hardcoded trees (dev_ship.c:623-625) with the target's manifest,
-     walked transitively through cooked-file references (res_ref_locate / res_ref_next over
-     each cooked file), resolved to files.
-   - Delete config/fonts.manifest, dev_ship's font cook loop (ship_cook) and font_tool's
-     `manifest` subcommand: the recipe set plus RID() is the whole of what they said.
-   - Retire the assets/font and assets/icon output directories: font_tool's default output,
-     the style editor's final bake, dev_ship's stage step.  Then lay assets/ out as a mirror
-     of content/ (decision 17) and point family.txt faces and image_tool's icon source at
-     the mirrored paths.
-   - A `-verify` mode (or a small manifest_tool) re-runs the content-set check on demand:
-     every manifest name cooked and present, collisions over the complete tree, orphans.
-   - Read mono_dep for the module list, retiring the TODO at dev_ship.c:226.
-   - Generalize past projects so `ship_tool -target sb_gui` works.
-   - Fix the stale comment at dev_ship.c:620-622: missing cooked shaders are NOT fine for
-     gui, which hard-fails; only draw has a fallback.
-   - Proof: a staged sb_gui package contains exactly the acceptance-test file set and runs
-     from a clean directory with no engine tree present.
+Phase 7 -- ship_tool consumes the manifest                               [DONE 2026-09-02]
+   - The content set is derived (dev_ship.c, "The content set").  The ship IMAGE is the exe
+     target plus the modules its mono_dep line in orb.targets names -- read from the file,
+     the mirrored s_runtime_modules[] table is gone -- and the set is the union of their
+     resource manifests (build/obj/<t>/<t>_res_manifest.txt, first column), each name
+     resolved the way res_tool resolved it (first content root holding exactly one file
+     with that stem; the project's content/ shadows the engine's), represented by its cooked
+     file under build/content when its source cooks (.hlsl -> .oshd, .recipe -> its kind's
+     extension; images stay loose), and closed over every cooked file's reference section
+     (res_ref_locate / res_ref_next).  Errors name the offender and what asked for it: no
+     source, two sources, not cooked, corrupt section, non-canonical.
+   - Pipeline is build -> VERIFY -> stage -> package -> deploy.  The cook stage is gone with
+     config/fonts.manifest, ship_cook and font_tool's `manifest` subcommand: the build cooks
+     what the manifests name, so there is nothing left for a ship to cook.  verify (also
+     `ship_tool <x> -verify`) resolves the whole set, then walks the complete content roots
+     for a stem claimed by two files in one directory (fails) and for files no image of the
+     ship references (listed; they simply do not ship).
+   - stage copies the set to <out>/content/<name>.<ext>: a cooked file lands where its
+     recipe or .hlsl would, so the shipped exe's one content/ mount (sys_root_dir() is one
+     above bin/) finds every name with no path change and the absent build/content mount
+     is harmless.  The staged config/ and bin/shaders trees are gone with the stale comment
+     that called missing shaders fine.
+   - `ship_tool <exe> -target` ships any exe target under its own name: -monolithic by
+     default, the exe plus its mono_dep DLLs with -modular.  A project ship is unchanged in
+     shape; its module list now comes from <project>_ship's mono_dep (host_game's for a
+     child project, plus the project).
+   - assets/ mirrors content/ (decision 17): assets/font_source -> assets/font, assets/
+     icon_source -> assets/ui/icon; dev_font resolves faces under assets/font, image_tool
+     icons reads assets/ui/icon, family.txt faces are unchanged (already family-relative).
+     The old output directories assets/font (bakes) and assets/icon were moved aside to
+     assets/_retired/ (untracked; delete at leisure).  font_tool's default output is the
+     current directory and `font_tool info` with no argument walks build/content; the style
+     editor's "Export final" button and dev_font_dir are gone.
+   - Proof: full modular Debug build, -gen and -doctor green (the one warning is the
+     pre-existing 'run' descriptor note); sb_res 78/0, sb_gui_test 35/0.
+     `ship_tool sb_gui -target -config Debug -clean` ran the whole pipeline: build_tool
+     cooked the two gui shaders and the boot font, verify reported "sb_gui + 1 module: 8
+     files referenced, 3 cooked, 0 collisions, 37 unreferenced", and the staged package is
+     exactly bin/sb_gui.exe, sb_gui.bat, manifest.txt and content/{font/cascadiamono/
+     16.orb_font, shader/gui_quad.{vs,ps}.oshd, ui/icon/{file,folder,save,settings,temp}
+     .png} -- the acceptance-test set and nothing else.  Copied to a directory outside the
+     engine tree, sb_gui.exe booted from it: both shaders loaded from .oshd, "loaded 5/5
+     built-in icons", "loaded font 'font/cascadiamono/16'", window up.  The -modular stage
+     path ships sb_gui.exe + render.dll + the same content; `ship_tool sample_game -verify`
+     resolves sample_game_ship + 3 modules (9 files, 4 cooked, 0 collisions).
 
 --------------------------------------------------------------------------------
 ## Open decisions

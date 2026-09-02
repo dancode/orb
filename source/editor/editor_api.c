@@ -219,7 +219,7 @@ editor_game_window( void )
         s_show_game = false;
 }
 
-/* Deploy -- configure and launch the ship pipeline (build -> cook -> stage -> package ->
+/* Deploy -- configure and launch the ship pipeline (build -> verify -> stage -> package ->
    deploy) for the bound project.  At its heart a batch job: the window only assembles a
    ship_tool command line and spawns it detached (own console shows the pipeline log),
    exactly the Play Standalone pattern.  The editor keeps no handle and no pipeline state. */
