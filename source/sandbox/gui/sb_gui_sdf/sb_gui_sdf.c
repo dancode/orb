@@ -1084,11 +1084,14 @@ win_depth( void )
 
         /* Capsule toggle: a rounding-equals-half-height rect IS a capsule; the knob is a disc.
            The ease is sandbox-side (a frame-rate-friendly approach), the shapes are two quads. */
+
         gui_rect_t tr = { cell.x + 360.0f, cell.y + 30.0f, 58.0f, 26.0f };
         gui_item_state_t st = gui()->item( "toggle", tr );
         if ( st.clicked )
             s_toggle_on = !s_toggle_on;
+
         f32 target = s_toggle_on ? 1.0f : 0.0f;
+
         s_toggle_pos += ( target - s_toggle_pos ) * 0.25f;
         if ( fabsf( target - s_toggle_pos ) > 0.01f )
             keep_awake();

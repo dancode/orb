@@ -81,17 +81,49 @@ res_canon_char( char c )
     Header-only so DLL modules and offline tools (the build-time scanner, the cooker) compute
     the identical id with no link dependency on res.  A zero result is remapped to 1 so that
     RID_INVALID can never be produced by a real name.
+
+    FNV-1a is a running state, so the id of a name is also the hash state after its bytes:
+    res_hash_child continues from a subtree's id over a leaf and lands on the same id
+    res_hash_name gives the joined name, with no string built.  That is what makes a
+    RES_TREE() handle usable at runtime: names composed from a listing or an enum index
+    resolve from the tree id and the leaf text alone.
+
+    The zero remap is the one seam in that identity.  A subtree whose raw state is 0 hands
+    out id 1, and continuing from 1 diverges from continuing from 0, so the scanner refuses
+    such a subtree name at build time (a one-in-2^32 rename).  Subtrees composed at runtime
+    carry the same odds unchecked.
 ==============================================================================================*/
+
+#define RES_HASH_BASIS        2166136261u                // FNV-1a 32 offset basis
+#define RES_HASH_PRIME        16777619u                  // FNV-1a 32 prime
+
+/* Raw FNV-1a state after folding `s` onto `h`; no zero remap. */
+static inline u32
+res_hash_step( u32 h, const char* s )
+{
+    while ( *s )
+    {
+        h ^= ( u32 )( u8 )res_canon_char( *s++ );
+        h *= RES_HASH_PRIME;
+    }
+    return h;
+}
 
 static inline rid_t
 res_hash_name( const char* s )
 {
-    u32 h = 2166136261u;                                 /* FNV-1a 32 offset basis */
-    while ( *s )
-    {
-        h ^= ( u32 )( u8 )res_canon_char( *s++ );
-        h *= 16777619u;                                  /* FNV-1a 32 prime */
-    }
+    u32 h = res_hash_step( RES_HASH_BASIS, s );
+    return h ? ( rid_t )h : ( rid_t )1;
+}
+
+/* rid_t of `leaf` beneath the subtree `tree`: res_hash_child( RES_TREE( "ui/icon" ), "save" )
+   == RID( "ui/icon/save" ).  `leaf` may itself hold separators, and a trailing slash on it
+   yields a nested subtree id.  This is the runtime counterpart of RID(): the scanner cannot
+   see the leaf, so the subtree must have been declared through RES_TREE(). */
+static inline rid_t
+res_hash_child( rid_t tree, const char* leaf )
+{
+    u32 h = res_hash_step( ( u32 )tree, leaf );
     return h ? ( rid_t )h : ( rid_t )1;
 }
 

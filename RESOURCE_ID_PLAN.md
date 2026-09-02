@@ -242,6 +242,15 @@ Phase 1 -- RID macro + build-time harvester                              [DONE 2
      they can never share an id -- a flag-based tree marker had let them merge into one
      entry.  No flag field exists; res_name() of a tree id is self-describing.  Phase 2
      expands trees against the content root.
+   - res_hash_child( tree, leaf ) in res.h: FNV-1a is a running state, so a subtree's id IS
+     the hash state after "prefix/", and continuing over a leaf yields RID of the joined
+     name with no string built.  This is what lets a RES_TREE() handle resolve
+     runtime-composed names (enum-indexed tables, directory listings); it is the runtime
+     counterpart of RID() and needs no registry.  The only seam is the zero remap: a
+     subtree whose raw state is 0 hands out id 1, from which continuation diverges, so
+     res_tool refuses such a RES_TREE name at build time (one in 2^32; a rename).
+     Directory interning falls out of this for free -- a directory's id is its hash
+     prefix state -- so the catalogue stores no directory table; see "Directories" below.
    - res_entry_t = { name } only, 8 bytes.  The id is a pure function of the name, and a
      RID() site and the table hash through the same res_hash_name in the same binary, so
      storing the build's id would be derived data with a second source of truth.  (An
@@ -404,6 +413,21 @@ Phase 7 -- ship_tool consumes the manifest                               [NOT ST
 6. Transient runtime resources (render targets, procedural atlases) stay OUT of the rid
    space -- they are not packageable and conflating them is where Unreal's model gets heavy.
    Confirm nothing in rhi wants a rid.
+7. Directories.  Splitting names into an interned directory table plus a leaf was weighed
+   and settled as follows.  It is NOT a byte saving: decision 8 makes the cooked path
+   name + extension, so the manifest never carries a path column and the split saves ~20%
+   of a pool that is tens of KB at 10k names.  What a directory node buys is structure --
+   containment and subtree enumeration -- and the runtime half of that is already free:
+   a directory's id is its FNV prefix state (res_hash_child), and a subtree is a name
+   with a trailing slash.  So the runtime catalogue stays a flat hash keyed by rid; a
+   parent-rid + leaf slot layout is deferred until a consumer enumerates subtrees at
+   runtime (the editor's content browser is the likely one).  The STATIC artifacts --
+   the Phase 2 manifest and the Phase 7 package index -- are complete when written and
+   should use a tree layout: directories in pre-order with a subtree end index, files
+   sorted by (directory, leaf), so any RES_TREE closure is a contiguous range and a
+   lookup is a binary search.  A directory-to-mount hint, if one is ever wanted, lives
+   in the manifest or the asset service, never in fs (decision 13).  In ship, a bundle
+   index keyed by rid needs no name text at all; names go to a debug sidecar.
 
 --------------------------------------------------------------------------------
 ## Notes / constraints honored

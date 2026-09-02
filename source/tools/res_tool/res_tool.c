@@ -62,8 +62,6 @@ typedef struct rt_file_s
 {
     char*    path;      // normalized path, as opened
     char*    key;       // dedupe key: normalized, case-folded on Windows
-    char*    text;      // contents (NUL-terminated), NULL until scanned
-    size_t   size;      // byte length of text
 
 } rt_file_t;
 
@@ -404,6 +402,16 @@ entry_add( const char* spelled, bool tree, int file, int line )
         canon[ n++ ] = '/';
     canon[ n ] = 0;
 
+    /* A subtree id doubles as the hash state res_hash_child continues from, and the zero
+       remap in res_hash_name breaks that for exactly one state.  Refuse it here so every
+       declared subtree composes correctly at runtime. */
+    if ( tree && res_hash_step( RES_HASH_BASIS, canon ) == 0 )
+    {
+        rt_error( g_files[ file ].path, line,
+                  "RES_TREE( \"%s\" ): subtree hashes to the reserved state 0; rename it", spelled );
+        return;
+    }
+
     for ( int i = 0; i < g_entry_count; ++i )
         if ( strcmp( g_entries[ i ].name, canon ) == 0 )
             return;
@@ -625,18 +633,20 @@ lex_include( lex_t* lx )
         include_add( g_files[ lx->file ].path, inc );
 }
 
+/* Scan one queued file.  g_files is addressed by index throughout, never through a cached
+   pointer: an #include found here appends to the queue, and that growth may move the array. */
 static void
 lex_file( int file )
 {
-    rt_file_t* f = &g_files[ file ];
-    f->text      = file_read( f->path, &f->size );
-    if ( !f->text )
+    size_t size = 0;
+    char*  text = file_read( g_files[ file ].path, &size );
+    if ( !text )
     {
-        rt_error( NULL, 0, "cannot read '%s'", f->path );
+        rt_error( NULL, 0, "cannot read '%s'", g_files[ file ].path );
         return;
     }
 
-    lex_t lx = { .s = f->text, .n = f->size, .i = 0, .line = 1, .file = file, .bol = true, .directive = false };
+    lex_t lx = { .s = text, .n = size, .i = 0, .line = 1, .file = file, .bol = true, .directive = false };
 
     for ( ;; )
     {
@@ -699,8 +709,7 @@ lex_file( int file )
         lx.i++;
     }
 
-    free( f->text );
-    f->text = NULL;
+    free( text );
 }
 
 /*==============================================================================================

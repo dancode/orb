@@ -84,6 +84,19 @@ test_identity( void )
     sb_check( RES_TREE( "ui/icon" ) != res_hash_name( "ui/icon" ),
               "a subtree and its leaf are different ids" );
 
+    /* A subtree id is the hash state after its bytes, so a leaf composed at runtime hashes
+       from the tree id alone.  Every id here other than the one RES_TREE() goes through
+       res_hash_name so no extra name is harvested into this executable's table. */
+    rid_t tree = RES_TREE( "ui/icon" );
+    rid_t ui   = res_hash_name( "ui/" );
+    sb_check( res_hash_child( tree, "save" ) == a, "child of a subtree == RID of the joined name" );
+    sb_check( res_hash_child( tree, "SAVE" ) == a, "child leaf folds like a name" );
+    sb_check( res_hash_child( tree, "load" ) == res_hash_name( "ui/icon/load" ),
+              "different leaf -> different child" );
+    sb_check( res_hash_child( ui, "icon/save" ) == a, "leaf may carry separators" );
+    sb_check( res_hash_child( ui, "icon/" ) == tree, "leaf with a slash is a nested subtree" );
+    sb_check( res_hash_child( tree, "" ) == tree, "empty leaf is the subtree itself" );
+
     /* Registration returns the same id the macro computes, and the stored name is canonical. */
     rid_t r = res_register( "UI\\Icon\\Save" );
     sb_check( r == a, "register returns the hashed id" );
