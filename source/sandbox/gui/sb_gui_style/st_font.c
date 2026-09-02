@@ -238,6 +238,8 @@ ft_bake_preview( void )
         return;
     }
 
+    /* The bake lives in assets/font_cache, outside the content mounts, so it is handed to gui
+       as bytes (font_load_mem) rather than by name. */
     char path[ 512 ];
     if ( !dev_font_get( abs, s_ft.size_px, path, sizeof( path ) ) )
     {
@@ -246,11 +248,20 @@ ft_bake_preview( void )
         return;
     }
 
+    sys_file_data_t bake = sys_file_read_entire( path );
+    if ( !bake.ok )
+    {
+        snprintf( s_ft.bake_status, sizeof( s_ft.bake_status ), "cannot read %s", path );
+        s_ft.bake_ok = false;
+        return;
+    }
+
     if ( !s_ft.preview_ready )
     {
-        u32 id = gui()->font_load( path );
+        u32 id = gui()->font_load_mem( bake.data, bake.size, s_ft.request );
         if ( !id )
         {
+            sys_file_free( &bake );
             snprintf( s_ft.bake_status, sizeof( s_ft.bake_status ), "font_load failed for %s", path );
             s_ft.bake_ok = false;
             return;
@@ -260,8 +271,9 @@ ft_bake_preview( void )
     }
     else
     {
-        gui()->font_load_into( s_ft.preview_id, path );
+        gui()->font_load_into_mem( s_ft.preview_id, bake.data, bake.size, s_ft.request );
     }
+    sys_file_free( &bake );
 
     snprintf( s_ft.preview_name, sizeof( s_ft.preview_name ), "%s", s_ft.request );
     s_ft.preview_size = s_ft.size_px;

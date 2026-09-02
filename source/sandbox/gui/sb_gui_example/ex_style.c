@@ -381,22 +381,17 @@ ex_style_shape_tags( void )
 static void
 ex_style_fonts( void )
 {
-    /* Load two extra faces once, exe-relative like the built-in presets.  font_load activates
+    /* Load two extra faces once, by resource name like the boot font.  font_load activates
        the new font, so remember + restore the active id around the loads. */
     static bool s_loaded  = false;
     static u32  s_id_cas  = 0;
     static u32  s_id_rob  = 0;
     if ( !s_loaded )
     {
-        u32  prev = gui()->font_active_id();
-        char dir[ 512 ];
-        char path[ 576 ];
-        sys_exe_dir( dir, (int)sizeof( dir ) );
+        u32 prev = gui()->font_active_id();
 
-        snprintf( path, sizeof( path ), "%s/../assets/font/CascadiaMono_16px.orb_font", dir );
-        s_id_cas = gui()->font_load( path );
-        snprintf( path, sizeof( path ), "%s/../assets/font/Roboto-Regular_16px.orb_font", dir );
-        s_id_rob = gui()->font_load( path );
+        s_id_cas = gui()->font_load( RID( "font/cascadiamono/16" ) );
+        s_id_rob = gui()->font_load( RID( "font/roboto/16" ) );
 
         gui()->font_use( prev );
         s_loaded = true;
@@ -414,7 +409,7 @@ ex_style_fonts( void )
         if ( s_id_cas ) { gui()->radio_button( "cascadia", &face, 1 ); gui()->same_line( -1.0f ); }
         if ( s_id_rob )   gui()->radio_button( "roboto",   &face, 2 );
         if ( !s_id_cas && !s_id_rob )
-            gui()->text_disabled( "(extra .orb_font loads failed -- check assets/font/)" );
+            gui()->text_disabled( "(extra font loads failed -- are the font recipes cooked?)" );
 
         u32 face_id = face == 1 ? s_id_cas : face == 2 ? s_id_rob : 0;
 
@@ -469,7 +464,7 @@ ex_style_font_sizes( void )
     u32 size_id[ 4 ];
 
     for ( i32 i = 0; i < 4; ++i )
-        size_id[ i ] = gui()->font_get_builtin( GUI_FONT_JETBRAINS, k_sizes[ i ] );
+        size_id[ i ] = gui()->font_get( "jetbrains", k_sizes[ i ] );
 
     if ( ex_begin( "Font Sizes", 500, 680, GUI_WIN_NONE ) )
     {

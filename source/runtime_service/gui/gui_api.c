@@ -28,12 +28,11 @@ const gui_api_t g_gui_api_struct =
     .init                               = gui_init,
     .shutdown                           = gui_shutdown,
     .font_load                          = gui_font_load,
+    .font_load_mem                      = gui_font_load_mem,
     .font_get                           = gui_font_get,
-    .font_get_builtin                   = gui_font_get_builtin,
     .dpi_set                            = gui_dpi_set,
     .dpi_mode                           = gui_dpi_mode,
     .dpi_scale                          = gui_dpi_scale,
-    .asset_path                         = gui_asset_path,
     .boot                               = gui_boot,
     .mem_stats                          = gui_mem_stats,
     .print_mem_stats                    = gui_print_mem_stats,
@@ -65,6 +64,7 @@ const gui_api_t g_gui_api_struct =
     /*===============================================  GUI_DRAW  ================================================*/
 
     .font_load_into                     = gui_font_load_into,
+    .font_load_into_mem                 = gui_font_load_into_mem,
     .font_use                           = gui_font_use,
     .push_font                          = gui_push_font,
     .pop_font                           = gui_pop_font,
@@ -628,6 +628,7 @@ gui_mod_init( void* state, get_api_fn get_api )
 
     if ( !MOD_FETCH_RHI ) return false;
     if ( !MOD_FETCH_APP ) return false;
+    if ( !MOD_FETCH_FS  ) return false;
     return true;
 }
 
@@ -637,6 +638,7 @@ gui_mod_reload( void* state, get_api_fn get_api )
     UNUSED( state );
     if ( !MOD_FETCH_RHI ) return false;
     if ( !MOD_FETCH_APP ) return false;
+    if ( !MOD_FETCH_FS  ) return false;
     return true;
 }
 
@@ -656,8 +658,8 @@ static mod_desc_t s_gui_mod_desc = {
     .state_size    = 0,
     .func_api_size = sizeof( gui_api_t ),
     .func_api      = &g_gui_api_struct,
-    .dep_count     = 2,
-    .deps          = { "rhi", "app" },
+    .dep_count     = 3,
+    .deps          = { "rhi", "app", "fs" },
     .init          = gui_mod_init,
     .reload        = gui_mod_reload,
     .exit          = gui_mod_exit,

@@ -2,8 +2,8 @@
 // is cmd_draw of 6 * N bare vertices; this stage computes quad = SV_VertexID / 6 and corner =
 // SV_VertexID % 6 (VertexIndex includes firstVertex under Vulkan, and every draw's firstVertex
 // is a multiple of 6), fetches the 16-byte quad record (gui.h, gui_quad_t) from the bindless
-// array in ONE load, and expands the covering corner itself.  Cooked to
-// bin/shaders/gui_quad.vs.oshd.
+// array in ONE load, and expands the covering corner itself.  The resource name is
+// "shader/gui_quad.vs"; the build cooks it to build/content/shader/gui_quad.vs.oshd.
 //
 // What the expansion does per quad, keyed by the record's flags (gui.h, GUI_QUAD_RULE_*):
 //   EXACT    the stored half-extents, rotated by the quad's own (cos, sin)

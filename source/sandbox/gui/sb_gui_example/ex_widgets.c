@@ -869,10 +869,10 @@ ex_widgets_toolbar( void )
             ex_tb_wire( buf, 32 ); ic_wire = gui()->register_icon( "tb_wire", 32, 32, buf );
             ex_tb_view( buf, 32 ); ic_view = gui()->register_icon( "tb_view", 32, 32, buf );
 
-            /* Demonstrate the from-disk icon path: decode assets/icon/folder_icon.png to R8
-               coverage and register it exactly like the procedural icons above.  load_icon resolves
-               the path itself (asset_path, engine-relative like the built-in fonts). */
-            ic_dl = gui()->load_icon( "folder", "assets/icon/audio2.png" );
+            /* Demonstrate the from-content icon path: decode the folder icon's PNG to R8 coverage
+               and register it exactly like the procedural icons above.  The image is a resource
+               name, read through the fs mounts; RID() puts it in this executable's manifest. */
+            ic_dl = gui()->load_icon( "ex_folder", RID( "ui/icon/folder" ) );
         }
 
         static bool grid_snap   = true;

@@ -2,7 +2,7 @@
 // the A/B differs only in how vertices reach the rasterizer.  Deliberately near-trivial: the
 // proof measures the VERTEX stage, so the fragment must cost the same tiny amount on both arms.
 // It does consume all three interpolants -- a dead input would let the compiler hollow out the
-// very vertex work under measurement.  Cooked to bin/shaders/qp.ps.oshd.
+// very vertex work under measurement.  Resource name "sandbox/quad_pull/qp.ps".
 
 struct ps_in_t
 {

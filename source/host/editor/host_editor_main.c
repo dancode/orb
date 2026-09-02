@@ -29,6 +29,7 @@
 
 #include "engine/sys/sys_host.h"
 #include "engine/mod/mod_host.h"
+#include "engine/res/res.h"
 #include "engine/core/core_host.h"
 #include "engine/app/app_api.h"
 
@@ -153,11 +154,11 @@ static const run_module_entry_t k_modules[] = {
 
 /* Runtime font baker for the gui font resolver: resolve + bake through dev_font, initialized
    lazily on the first size the gui asks for.  A failed init latches -- one attempt, and gui
-   degrades every request to the nearest shipped size.  Serves the FreeType-refined cache when
+   degrades every request to the nearest resident size.  Serves the FreeType-refined cache when
    one is fresh, else the fast stb bake, and kicks a background refine so the NEXT run gets
-   the fine bake for free. */
+   the fine bake for free.  Hands gui the bake's bytes (gui_font_bake_fn), never a path. */
 static bool
-editor_gui_font_bake( const char* family, u32 size_px, char* out, int n, void* user )
+editor_gui_font_bake( const char* face, u32 size_px, void** out_data, u32* out_size, void* user )
 {
     (void)user;
     static bool inited, failed;
@@ -166,14 +167,14 @@ editor_gui_font_bake( const char* family, u32 size_px, char* out, int n, void* u
         failed = !dev_font_init( NULL );
         inited = !failed;
     }
-    if ( failed || !dev_font_get_ex( family, (int)size_px, DEV_FONT_FINE_IF_CACHED, NULL, out, n ) )
+    if ( failed || !dev_font_get_bytes( face, (int)size_px, DEV_FONT_FINE_IF_CACHED, NULL, out_data, out_size ) )
         return false;
-    dev_font_refine_kick( family, (int)size_px, NULL );   /* no-op when the fine cache is fresh */
+    dev_font_refine_kick( face, (int)size_px, NULL );   /* no-op when the fine cache is fresh */
     return true;
 }
 
 static const run_gui_desc_t k_gui_desc = {
-    .font       = GUI_FONT_ROBOTO,
+    .font       = RID( "font/roboto/16" ),
     .clear      = { 0.10f, 0.10f, 0.12f, 1.00f },
     .debug      = true,       /* P/O/F10 overlays, I idle skip, etc. */
     .font_baker = editor_gui_font_bake,

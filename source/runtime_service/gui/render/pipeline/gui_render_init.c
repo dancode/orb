@@ -26,7 +26,7 @@
 
 ==============================================================================================*/
 
-#include "engine/sys/sys_host.h"  // sys_exe_dir -- locate the cooked .oshd shaders
+#include "runtime_service/gui/gui_res.h"   // the cooked .oshd pair, read by resource name through fs
 
 // clang-format off
 /*==============================================================================================
@@ -404,41 +404,45 @@ static struct
 /*==============================================================================================
     render_load_shaders -- loads the cooked shader pair, the only way the gui gets a pipeline.
 
-    bin/shaders/gui_quad.{vs,ps}.oshd are cooked from shaders/gui_quad.{vs,ps}.hlsl by the build
-    itself (see the 'shader' lines on the gui target in orb.targets). That makes the .hlsl files
-    the single source of truth for what the GPU runs -- there's no embedded SPIR-V array and no
-    separate GLSL copy that could drift out of sync with them. The cooked containers also carry
-    shader reflection data, which is what lets pipeline_create check the push-constant range
-    below against what the actual compiled shader expects.
+    The shaders are the resources "shader/gui_quad.vs" and "shader/gui_quad.ps": content/shader/
+    gui_quad.{vs,ps}.hlsl, marked with RID() below so the build resolves them and cooks them to
+    build/content/shader/gui_quad.{vs,ps}.oshd, the cooked mirror the host mounts above content/.
+    That makes the .hlsl files the single source of truth for what the GPU runs -- there's no
+    embedded SPIR-V array and no separate GLSL copy that could drift out of sync with them.  The
+    cooked containers also carry shader reflection data, which is what lets pipeline_create check
+    the push-constant range below against what the actual compiled shader expects.
 
-    Loading is all-or-nothing: a missing shader file is a hard failure that reports the path, so
-    an out-of-date or missing build shows up immediately at init instead of silently drawing a
-    frame from stale bytes.
+    Loading is all-or-nothing: a shader no mount serves is a hard failure that names it, so an
+    out-of-date build or a host that forgot to mount build/content shows up immediately at init
+    instead of silently drawing a frame from stale bytes.
 ==============================================================================================*/
+
+static rhi_shader_t
+render_load_shader( const char* res, const char* debug_name )
+{
+    fs_blob_t blob = gui_res_read( res, ".oshd" );
+    if ( !blob.ok )
+    {
+        gui_log( GUI_LOG_ERROR, "gui shader '%s' not found -- no %s.oshd in the content mounts "
+                                "(build the gui target to cook it; the host mounts build/content)",
+                 res, res );
+        return ( rhi_shader_t ){ RHI_NULL_HANDLE };
+    }
+    rhi_shader_t sh = rhi()->shader_load_oshd_memory( blob.data, blob.size, debug_name );
+    fs()->free( &blob );
+    return sh;
+}
 
 static bool
 render_load_shaders( rhi_shader_t* out_vert, rhi_shader_t* out_frag )
 {
-    char dir[ 512 ];
-    sys_exe_dir( dir, ( int )sizeof( dir ) );
-
-    char vs_path[ 576 ], ps_path[ 576 ];
-    fmt_snprintf( vs_path, sizeof( vs_path ), "%s/shaders/gui_quad.vs.oshd", dir );
-    fmt_snprintf( ps_path, sizeof( ps_path ), "%s/shaders/gui_quad.ps.oshd", dir );
-
-    rhi_shader_t vert = rhi()->shader_load_oshd( vs_path, "gui_quad_vert(oshd)" );
+    rhi_shader_t vert = render_load_shader( RID( "shader/gui_quad.vs" ), "gui_quad_vert(oshd)" );
     if ( !rhi_handle_valid( vert ) )
-    {
-        gui_log( GUI_LOG_ERROR, "gui shaders not found -- expected %s (build the gui target to cook them)",
-                 vs_path );
         return false;
-    }
 
-    rhi_shader_t frag = rhi()->shader_load_oshd( ps_path, "gui_quad_frag(oshd)" );
+    rhi_shader_t frag = render_load_shader( RID( "shader/gui_quad.ps" ), "gui_quad_frag(oshd)" );
     if ( !rhi_handle_valid( frag ) )
     {
-        gui_log( GUI_LOG_ERROR, "gui shaders not found -- expected %s (build the gui target to cook them)",
-                 ps_path );
         rhi()->shader_destroy( vert );
         return false;
     }

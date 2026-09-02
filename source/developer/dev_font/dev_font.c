@@ -1095,6 +1095,28 @@ dev_font_get( const char* ttf_path, int size_px, char* out_path, int out_path_si
     return dev_font_get_ex( ttf_path, size_px, DEV_FONT_FAST, NULL, out_path, out_path_size );
 }
 
+bool
+dev_font_get_bytes( const char* ttf_path, int size_px, dev_font_quality_t quality,
+                    const char* range_spec, void** out_data, u32* out_size )
+{
+    *out_data = NULL;
+    *out_size = 0;
+
+    char path[ DEV_PATH_MAX ];
+    if ( !dev_font_get_ex( ttf_path, size_px, quality, range_spec, path, sizeof( path ) ) )
+        return false;
+
+    sys_file_data_t fd = sys_file_read_entire( path );
+    if ( !fd.ok )
+    {
+        set_error( "cannot read baked font '%s'", path );
+        return false;
+    }
+    *out_data = fd.data;    /* malloc'd by sys; the caller frees it */
+    *out_size = fd.size;
+    return true;
+}
+
 /*==============================================================================================
     Background refine -- worker threads running fine_spawn.
 

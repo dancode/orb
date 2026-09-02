@@ -1,7 +1,9 @@
-# Recipe: content with no source file of its own.  The name "font/CascadiaMono/16" is this
+# Recipe: content with no source file of its own.  The name "font/cascadiamono/16" is this
 # file's path under content/ minus the extension; "kind" is what it cooks to, which decides
-# the cooked file name (font -> font/CascadiaMono/16.orb_font).  The remaining lines are the
-# bake inputs (see config/fonts.manifest for the font_tool flags they stand for).
+# the cooked file name (font -> font/cascadiamono/16.orb_font).  The remaining lines are the
+# bake inputs: face is a font_tool input (a TTF under assets/font_source or an OS-installed
+# face name), size is the pixel size; optional "sdf <spread>" bakes a distance field and
+# optional "range <spec>" bakes past ASCII (see font_tool -range).
 
 kind    font
 face    CascadiaMono

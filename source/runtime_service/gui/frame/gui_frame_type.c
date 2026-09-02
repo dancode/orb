@@ -14,9 +14,9 @@
     type_pop rows and the scale_push_font ride-along.
 
     gui ships no bake at "body plus 2px", so the sizes come from the font resolver
-    (gui_frame_resolve.c): shipped bakes serve exact sizes, the host-installed baker
+    (gui_frame_resolve.c): cooked bakes serve exact sizes, the host-installed baker
     (font_baker_set -> dev_font_get is the canonical wiring) fills the gaps.  A role demands
-    its EXACT size -- a resolver answer laddered to a neighbour (no baker, size not shipped)
+    its EXACT size -- a resolver answer laddered to a neighbour (no baker, size not cooked)
     reads as "role off" so the ramp never silently aliases a role to the body font.  Under a
     host-driven font (the same lineage guard the DPI engine uses) both role ids stay 0 and
     the bracket is a saved no-op.
@@ -47,10 +47,10 @@ static struct
    neighbour would change layout-vs-glyph agreement subtly, so the role turns off instead. */
 
 static u32
-type_font_exact( gui_font_family_t fam, u32 size_px )
+type_font_exact( const char* fam, u32 size_px )
 {
     u32 landed = 0;
-    u32 id     = font_resolve( fam, NULL, size_px, false, &landed );
+    u32 id     = font_resolve( fam, size_px, false, &landed );
     return ( id && landed == size_px ) ? id : 0;
 }
 

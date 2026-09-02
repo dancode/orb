@@ -43,9 +43,9 @@ content roots, fails with file:line when one has no file, and writes the image's
 a manifest for the packager.  Content-declared references (a material's textures) come from
 cooked-file headers, written by the cooker.  The packager walks both.
 
-Nothing about this runs at runtime.  The program loads by name, through fs or through a
-plain file open, exactly as it would without the marker.  RID() is an annotation the build
-reads, not a dependency the program carries.
+Nothing about this runs at runtime.  The program loads by name through fs, exactly as it
+would without the marker.  RID() is an annotation the build reads, not a dependency the
+program carries.
 
 --------------------------------------------------------------------------------
 ## The reduction (2026-09-02)
@@ -167,13 +167,19 @@ piece.
     over the complete tree, orphans.  Runtime failure -- a name with no file, a load that
     fails -- remains underneath both as an ordinary load error; nothing validates at startup.
 
-12. TWO LOADING TIERS, ONE SHAPE.  Services that already sit on core (the asset service,
-    game, editor, hosts) read bytes through fs; packs are what fs exists for and the
-    dependency costs nothing there.  Self-contained libraries (gui) take a host-installed
-    reader callback with a plain-file default rooted at content/, following the
-    font_baker_set precedent, so they keep working alone and read from a pack the moment the
-    host installs an fs-backed reader at boot.  Archive access is an opt-in the host makes
-    once, never a dependency a library carries.
+12. ONE LOADING TIER: EVERY CONTENT BYTE COMES THROUGH fs.  (Rewritten 2026-09-02; the first
+    cut gave gui a host-installed reader callback with a plain-file default.)  fs sits below
+    core with deps on sys and pack only, and it IS the source-agnostic reader -- a directory,
+    a cooked mirror, a pack, later a socket, all behind eight functions that know bytes and
+    paths and nothing above them.  A library depending on it is depending downward on a
+    narrow, stable vtable, which is what the module system's dep list is for; a callback is
+    for a dependency that would point UP (dev_font above gui, the font baker) or that varies
+    per host (the log sink).  So gui declares fs as a module dep and reads every bake, icon,
+    sprite and shader as name + extension through the mounts (gui_res.h); it holds no root.
+    Only the HOST mounts, once, at boot: run_host mounts <root>/build/content (the cooked
+    mirror, priority 10) over <root>/content (loose, 0); the gui boot path does the same on a
+    sandbox's behalf and unmounts at shutdown.  Files the running machine produces -- the
+    pipeline cache, the dev font bake cache, logs -- are not content and stay on sys.
 
 13. orb.targets STAYS ABOUT COMPILING.  It gains no asset configuration.
 
@@ -182,6 +188,19 @@ piece.
 15. THREE-WAY SPLIT, UNCHANGED.  res says how a name is spelled and how the build finds it.
     engine/fs says WHERE the bytes are (paths, mounts, priority) and learns nothing about
     resources.  runtime_service/asset says WHAT IS LOADED and who holds it (aid_t).
+
+16. THE BUILD COOKS WHAT THE MANIFEST NAMES.  (2026-09-02.)  A marked name whose source
+    needs a cooked form -- a stage-tagged .hlsl (-> .oshd), a .recipe (-> what its kind line
+    says; a font bake) -- is cooked by build_tool into <build>/content/<name>.<cooked ext>,
+    the mirror the host mounts above content/, so the runtime asks for the name and the cooked
+    file wins.  build_cook_content runs per image over its manifest, before the up-to-date
+    check (an edited shader recooks with no C change) and again after res_tool writes a fresh
+    manifest (a newly marked name cooks on the build that introduced it); asset_tool does the
+    cooking and reads the stage tag or the recipe itself.  This replaced the 'shader' lines in
+    orb.targets -- decision 13 now holds literally -- and it is what makes "only RID'd font
+    sizes ship" produce the bakes: content/font/cascadiamono/16.recipe cooks because sb_gui
+    marks the name, and no other size does.  Images stay loose (gui decodes PNG itself; the
+    asset service's .tex preference is a ship-time cook, Phase 7).
 
 --------------------------------------------------------------------------------
 ## Where it sits
@@ -193,6 +212,9 @@ piece.
       res_cook.h   -- source extension -> cooked extension        (header-only, tools)
     source/tools/res_tool/res_tool.c   -- scanner + resolver + manifest writer (builtin target)
     build/obj/<target>/<target>_res_manifest.txt, _res_units.txt, _res_deps.txt
+    build/content/<name>.<cooked ext>   -- the cooked mirror build_cook_content writes from the
+                                           manifest (build_tool_09_exec.c); mounted above content/
+    source/runtime_service/gui/gui_res.h -- how gui reads a name + ext through fs
 
 Reading the layering as a sentence: res says how ui/icon/save is spelled and proves it has a
 file; fs says where its bytes are today; the asset service says whether it is loaded and who
@@ -215,17 +237,19 @@ manifest and never parses a content format.
 ## Acceptance test (the case that discriminates)
 --------------------------------------------------------------------------------
 
-sb_gui boots with a CHOSEN font, not a default: .font = GUI_FONT_CASCADIA_MONO,
-.font_size = 16.  The engine knows four families (gui_font_family.c).
+sb_gui boots with a CHOSEN font, not a default: .font = RID( "font/cascadiamono/16" ).  The
+engine has recipes for four families under content/font (cascadiamono, cascadiacode,
+jetbrains, roboto) and gui_font_family.c knows the typeface behind each for the baker.
 
 A correct package for sb_gui contains CascadiaMono at 16px and NOT Roboto, JetBrains, or
 CascadiaCode.  Every rejected approach fails here: grepping the app finds no string; grepping
 the library finds all four; whole-directory staging ships all four.
 
-Under this design the app names "font/cascadiamono/16" through the marker, so the other
-three are never harvested and cannot ship.  Today: build/obj/sb_gui/sb_gui_res_manifest.txt
-holds exactly that one name, resolved to font/cascadiamono/16.recipe, from 389 scanned
-files.
+Under this design the app names "font/cascadiamono/16" through the marker -- and the name IS
+the request gui boots from, so there is no second spelling to drift -- so the other three are
+never harvested and cannot ship.  Today: build/obj/sb_gui/sb_gui_res_manifest.txt holds that
+font plus what gui itself always names (its five built-in icons under ui/icon and its two
+shaders under shader/), resolved against content/, and build/content holds their cooked forms.
 
 --------------------------------------------------------------------------------
 ## Phases
@@ -298,21 +322,39 @@ Phases 0-4 -- catalogue, harvester, resolution, format sections, asset on rid   
      res_wire_mod_callbacks and mod_static( res ) in every host; res_hash_child (a string
      concatenation now); the generated <t>_res_table.c and its compile/gen/json entries.
 
-Phase 5 -- GUI adoption (the real surface)                               [NOT STARTED]
-   - gui's loading functions take a name (const char*), not a path with an extension and a
-     root; the caller marks literals with RID().  Convert the three fopen sites
-     (gui_font_load.c, gui_icon_load.c, vk_shader_load.c) to a host-installed byte reader
-     (decision 12) whose default opens name + ext beneath sys_root_dir/content; run_host
-     installs an fs-backed reader so packs work.
-   - DELETE s_builtin_icons_sdf[] / s_builtin_icons[] (gui_icon_load.c) -- the C table
-     config/icons.manifest duplicates by hand; icon names become RID() literals or a
-     RES_TREE( "ui/icon" ).
-   - Font resolution stops globbing assets/font and composing filenames; it names
-     "font/<family>/<size>" directly.  s_family[] retires.
-   - Fixes in passing: shaders resolve against sys_exe_dir while fonts and icons resolve
-     against sys_root_dir, and ex_style.c open-codes a third variant.  One root after this.
-   - Proof: sb_gui renders identically; its manifest is exactly the acceptance-test set
-     (font + the icons it draws); gui still links no service above it.
+Phase 5 -- GUI adoption (the real surface)                               [DONE 2026-09-02]
+   - gui depends on fs (decision 12, rewritten) and reads every content byte as a resource
+     name + extension through the mounts (gui_res.h).  No root, no sys_root_dir, no
+     sys_exe_dir, no fopen anywhere in gui.  Hosts mount content/ and build/content once;
+     the gui boot path mounts them for the sandboxes.
+   - Fonts: a font is the name "font/<family>/<size>".  init / boot take the name itself
+     (.font = RID( "font/cascadiamono/16" )); gui_font_family_t and font_size are gone; the
+     resolver composes "font/<family>/<N>" for the DPI retarget and type ramp, reads the
+     cooked bake through fs, else asks the baker, else settles for a resident size.  The
+     directory scan of assets/font, the filename parser (font_ship_name_parse) and the
+     nearest-shipped ladder are gone: the mounts are never enumerated.  The baker callback
+     returns BYTES, not a path (gui_font_bake_fn; dev_font_get_bytes is the adapter), so
+     gui never opens a file outside the mounts.  font_load / font_load_into take names;
+     _mem twins take bytes (the style editor's live bake preview, the unit tests).
+   - Icons and sprites: load_icon / load_icons / load_icon_sdf / load_sprite take a resource
+     name; the built-in table names RID( "ui/icon/settings" ) etc., so every image linking
+     gui carries the five built-ins in its manifest.  content/ui/icon/ holds the PNGs
+     (tracked; assets/ is gitignored) and image_tool icons writes there.
+   - Shaders: gui_quad.{vs,ps}.hlsl moved to content/shader/, named RID( "shader/gui_quad.vs" )
+     / .ps in gui_render_init.c and read as .oshd through fs into the rhi's in-memory .oshd
+     loader.  sb_quad_pull's three shaders moved to content/sandbox/quad_pull/ the same way.
+     The 'shader' lines left orb.targets (decision 16).
+   - Deviation from the plan as written: s_family[] did not retire outright.  The family
+     directory -> typeface table (font_family_face) survives because the runtime baker needs
+     "JetBrains Mono NL", not "jetbrains"; it goes when recipes carry the face (Phase 6).
+   - Left alone, on purpose: rhi's path-taking shader loaders and draw_material's optional
+     cooked pair under bin/shaders (scripts/cook_shaders.bat) -- a dev-only affordance with
+     an embedded fallback, not content.  dev_ship still cooks config/fonts.manifest into
+     assets/font (Phase 7 replaces it with the manifest walk).
+   - Proof: full Debug build; sb_gui_test passes (the .orb_font contract now runs over bytes);
+     sb_gui's manifest is the acceptance-test set (its font, gui's five icons, gui's two
+     shaders), build/content holds font/cascadiamono/16.orb_font and shader/gui_quad.{vs,ps}.oshd,
+     and sb_gui renders from them.
 
 Phase 6 -- Recipes + content-declared edges                              [NOT STARTED]
    - config/fonts.manifest and config/icons.manifest decompose into per-name recipe files
@@ -345,8 +387,9 @@ Phase 7 -- ship_tool consumes the manifest                               [NOT ST
    when the first cooker writes one; every reader today only steps over the section.
 2. RES_TREE granularity: whole subtree, or subtree plus a type filter?  Start with whole
    subtree and tighten only if a real site over-includes badly.
-3. gui's reader hook: raw bytes, or typed per resource class?  Raw is smaller; typed lets
-   gui skip a copy for atlas uploads.  Decide in Phase 5.
+3. DECIDED 2026-09-02: there is no reader hook.  gui reads through fs directly (decision 12)
+   and parses from the blob; the one extra copy (blob -> the slot's resident pixels) is the
+   same copy the fread path made.
 4. Transient runtime resources (render targets, procedural atlases) stay OUT of the name
    space -- they are not packageable.  Confirm nothing in rhi wants a name.
 5. DECIDED 2026-09-02: '.' is legal in a name and is an ordinary byte.  A file's extension

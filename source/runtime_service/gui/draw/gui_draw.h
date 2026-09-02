@@ -134,7 +134,7 @@ void        font_slot_release       ( u32 id );                     // free font
 
 gui_icon_id_t   icon_register     ( const char* name, u32 w, u32 h, const u8* coverage );
 
-gui_icon_id_t   icon_load_file    ( const char* name, const char* path );  // decode PNG/... -> R8 coverage -> icon_register
+gui_icon_id_t   icon_load_res     ( const char* name, const char* res );   // image resource -> R8 coverage -> icon_register
 
 /* The distance-field pair.  Same coverage input; the bytes are transformed (draw/gui_sdf_bake.c)
    and land in the SDF atlas instead, so the icon becomes resolution independent and takes an
@@ -142,14 +142,14 @@ gui_icon_id_t   icon_load_file    ( const char* name, const char* path );  // de
    several times that and should carry a transparent margin. */
 
 gui_icon_id_t   icon_register_sdf ( const char* name, u32 w, u32 h, const u8* coverage, u32 out_max );
-gui_icon_id_t   icon_load_file_sdf( const char* name, const char* path, u32 out_max );
+gui_icon_id_t   icon_load_res_sdf ( const char* name, const char* res, u32 out_max );
 
-/* Batch loader over icon_load_file: a flat array of name,path string pairs (count = total
-   strings, must be even -- asserts on odd), paths root-relative; already-registered names are
-   skipped (idempotent).  Returns how many of the named icons are available. */
+/* Batch loader over icon_load_res: a flat array of name,resource string pairs (count = total
+   strings, must be even -- asserts on odd); already-registered names are skipped (idempotent).
+   Returns how many of the named icons are available. */
 
 u32             icon_load_pairs     ( const char* const* pairs, u32 count );
-void            icon_load_builtins  ( void );                                // register the engine's built-in icon set from disk
+void            icon_load_builtins  ( void );                                // register the engine's built-in icon set from content
 gui_icon_id_t   icon_find           ( const char* name );
 bool            icon_atlas_init     ( void );   // enable icon registration (shared atlas owns GPU)
 void            icon_atlas_shutdown ( void );   // clear the icon table
@@ -188,7 +188,7 @@ f32                 shape_reach       ( gui_shape_id_t id, gui_rect_t r );  // e
 gui_sprite_id_t sprite_register        ( const char* name, u32 w, u32 h, const u8* rgba );
 
 // decode PNG/... -> RGBA8
-gui_sprite_id_t sprite_load_file       ( const char* name, const char* path );                  
+gui_sprite_id_t sprite_load_res        ( const char* name, const char* res );
 gui_sprite_id_t sprite_find            ( const char* name );
 
 // insets in SOURCE px

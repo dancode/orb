@@ -2,7 +2,7 @@
 
     sandbox/gui/sb_gui/sb_gui.c -- ImGui Demo Replication
 
-    Loads sys + app + rhi + draw (static), opens a window, then exercises the pipeline.
+    Loads sys + fs + app + rhi + draw (static), opens a window, then exercises the pipeline.
 
     Just the Dear ImGui demo window and the volatile-widget pulse that rides along with it.  The
     feature demos this file used to also carry now live with the feature they demonstrate:
@@ -22,6 +22,8 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
+#include "engine/pack/pack_host.h"
+#include "engine/fs/fs_host.h"
 #include "engine/res/res.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
@@ -220,6 +222,8 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( pack );
+    mod_static( fs );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -240,37 +244,26 @@ main( int argc, char** argv )
     core()->log_set_min_level( LOG_LEVEL_INFO );
     core_log_fn( LOG_LEVEL_DEBUG, "sb_gui", "debug log: modules loaded successfully" );
 
-    /* The font this demo boots with, named through the RID() marker.  gui still takes the
-       family enum + size below; marking the name here is what puts cascadiamono/16 -- and
-       none of the other three families -- into this executable's resource manifest
-       (build/obj/sb_gui/sb_gui_res_manifest.txt), which is the set a package for sb_gui must
-       ship.  The build resolved the literal against content/ or failed. */
-    {
-        char msg[ 128 ];
-        snprintf( msg, sizeof( msg ), "boot font resource: %s", RID( "font/cascadiamono/16" ) );
-        core_log_fn( LOG_LEVEL_INFO, "sb_gui", msg );
-    }
-
     /* ------------------------------------------------------------------------------ */
     /* One-call setup: gui owns the main window + render context end to end (boot path).
        os_chrome keeps the stock Win32 frame this demo has always had -- flip it off for a
        borderless window with the gui chrome shell auto-emitted each frame.  The frame hooks
-       are the OS services gui cannot reach itself (it links only app + rhi); .debug arms
-       the gui hotkey driver (see debug_enable in gui_api.h). */
+       are the OS services gui cannot reach itself (it links only app + rhi + fs); .debug arms
+       the gui hotkey driver (see debug_enable in gui_api.h).  The boot font is a resource
+       name: RID() puts cascadiamono/16 -- and no other family -- into this executable's
+       manifest (build/obj/sb_gui/sb_gui_res_manifest.txt), the build cooks its recipe, and
+       boot mounts content/ + build/content so gui reads the bake through fs. */
 
     int      ret_code    = 1;
     bool     draw_used   = false;
     bool     draw_inited = false;
-
-    RID( "font/cascadiamono/16" );   /* mark the font resource for the manifest */
 
     i32 vp = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui",
         .x         = 64, .y = 64,
         .w         = 1920 + 320, .h = 1080 + 180,
         .os_chrome = false,
-        .font      = GUI_FONT_CASCADIA_MONO,
-        .font_size = 16,
+        .font      = RID( "font/cascadiamono/16" ),
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
      // .wait      = sys_wait_for_os_events_ms,

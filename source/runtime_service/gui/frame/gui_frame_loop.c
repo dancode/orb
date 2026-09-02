@@ -85,8 +85,36 @@ rhi_context_any_live( void )
 
 /*============================================================================================*/
 
+/* Split a boot font name -- "font/<family>/<size>" -- into its family directory and pixel
+   size.  False for any other shape (the family must fit GUI_FONT_FAMILY_MAX, the size must be
+   all digits). */
+static bool
+font_name_split( const char* name, char* family, size_t family_cap, u32* out_size_px )
+{
+    if ( !name || strncmp( name, "font/", 5 ) != 0 )
+        return false;
+    const char* fam  = name + 5;
+    const char* slash = strchr( fam, '/' );
+    if ( !slash || slash == fam || (size_t)( slash - fam ) >= family_cap )
+        return false;
+    const char* digits = slash + 1;
+    if ( !*digits )
+        return false;
+    u32 px = 0;
+    for ( const char* p = digits; *p; ++p )
+    {
+        if ( *p < '0' || *p > '9' || px > 0xFFFFu )
+            return false;
+        px = px * 10u + (u32)( *p - '0' );
+    }
+    memcpy( family, fam, (size_t)( slash - fam ) );
+    family[ slash - fam ] = '\0';
+    *out_size_px = px;
+    return px != 0;
+}
+
 bool
-gui_init( gui_font_family_t family, u32 size_px )
+gui_init( const char* font )
 {
     /* Both produce a gui that runs but paints nothing: a second init strands the first one's GPU
        resources, and an init with no device has nothing to build the pipeline from. */
@@ -124,20 +152,31 @@ gui_init( gui_font_family_t family, u32 size_px )
         return false;
     }
 
-    /* Optional managed boot font (gui.h); non-fatal on failure -- init still succeeds, just
-       without text, mirroring the debug-overlay init a few lines below.  The resolver loads the
-       family at the requested size into slot 0 (a shipped bake, the installed baker, or the
-       nearest shipped neighbour) but does not rescale layout itself, so gui_style_apply() is
-       called explicitly here; its own font_valid() guard makes this correct either way -- a real
-       font rescales s_style, GUI_FONT_NONE (or a failed resolve) leaves it at the zero-font
-       values gui_theme_set seeded above until the caller's own font_load() activates one. */
+    /* Optional managed boot font, by name (gui.h, font configuration); non-fatal on failure --
+       init still succeeds, just without text, mirroring the debug-overlay init a few lines
+       below.  The resolver loads the family at the named size into slot 0 (the cooked bake
+       through fs, else the installed baker) but does not rescale layout itself, so
+       gui_style_apply() is called explicitly here; its own font_valid() guard makes this
+       correct either way -- a real font rescales s_style, a NULL name (or a failed resolve)
+       leaves it at the zero-font values gui_theme_set seeded above until the caller's own
+       font_load() activates one. */
 
-    if ( family != GUI_FONT_NONE )
+    if ( font && *font )
     {
-        u32 landed = 0;
-        font_resolve_boot( family, size_px ? size_px : 16, &landed );
-        if ( landed )
-            gui_dpi_base_set( family, landed );   /* DPI retargeting manages this family */
+        char family[ GUI_FONT_FAMILY_MAX ];
+        u32  size_px = 0;
+        if ( !font_name_split( font, family, sizeof( family ), &size_px ) )
+        {
+            gui_log( GUI_LOG_WARN, "init: boot font '%s' is not of the form font/<family>/<size> "
+                                   "-- continuing without a managed font", font );
+        }
+        else
+        {
+            u32 landed = 0;
+            font_resolve_boot( family, size_px, &landed );
+            if ( landed )
+                gui_dpi_base_set( family, landed );   /* DPI retargeting manages this family */
+        }
     }
 
     gui_style_apply();
@@ -181,7 +220,6 @@ gui_shutdown( void )
         viewport_destroy( v );
     gui_type_clear();         /* drop the ramp roles + bracket stack (unpins the role ids) */
     font_resolve_clear();     /* release the resolver's minted font slots + atlas tenants */
-    font_resolve_shutdown();  /* drop the ship-scan listing -- true teardown only */
     gui_draw_shutdown();      /* draw unit resources (fonts + icons) leave the atlas first */
     gui_names_reset();        /* the one shared name pool -- every registry above is empty now */
     backend_exit();       /* shared pipeline / sampler / atlas */
@@ -489,7 +527,7 @@ gui_ctx_begin( void )
 {
     /* With no font the metric readers resolve to the internal fallback: layout keeps its shape and
        nothing crashes, but every glyph draws blank.  This is the first point where "no font" is
-       knowably wrong -- init() with GUI_FONT_NONE is legal, the host may load its own by now. */
+       knowably wrong -- init( NULL ) is legal, the host may load its own by now. */
 
     GUI_CONTRACT( font_valid(),
                   "ctx_begin() with no loaded font -- all text draws blank; font_load() one." );

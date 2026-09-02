@@ -7,14 +7,16 @@
 
       0. Dependency resolution  -- recurse into link deps and tool deps first.
       1. Per-target mutex lock  -- serialize concurrent invocations on the same target.
-      1.5 Shader cook           -- asset_tool over every 'shader' line, into bin/shaders.
       2. Path preparation       -- obj_dir, gen_dir, out_path.
-      3. Up-to-date check       -- four freshness tests (A-D); short-circuit if clean.
+      2.5 Content cook (pre)    -- asset_tool over the cookable names in the previous
+                                   manifest (shaders, recipes), into <build>/content.
+      3. Up-to-date check       -- five freshness tests (A-E); short-circuit if clean.
       4. Directory creation     -- ensure every write destination exists.
       5. Locked-file management -- rename any in-use .exe aside before relinking.
       6. Reflection codegen     -- invoke reflect_tool if has_reflect is set.
       6.5 Resource manifest     -- invoke res_tool over the image's unit closure (every exe
-                                   and dynamic module); writes <name>_res_manifest.txt.
+                                   and dynamic module); writes <name>_res_manifest.txt, then
+                                   the content cook runs again over the fresh manifest.
       7. Compile + link         -- call 06_compile and 07_link; restore .exe on failure.
       8. Config+mode stamp      -- touch _<config>_<mode>.stamp; delete the other 3 combos.
 
@@ -82,83 +84,173 @@ platform_embed_manifest( const char* exe_path, const char* manifest_src )
 #endif
 
 /*==============================================================================================
-    --- Shader Cook ---
+    --- Content Cook ---
 
-    Every 'shader' line on a target names a stage-tagged .hlsl under its root, and the cook
-    turns it into bin/shaders/<stem>.oshd -- the reflected container the runtime loads.  The
-    cooker is asset_tool, which reads the stage tag out of the filename (gui.vs.hlsl -> vs_6_0)
-    and forwards to shader_tool; both must therefore be listed as tool deps by any target that
-    declares shaders, which is also what orders them ahead of it under the parallel scheduler.
+    The image's resource manifest (below) lists every content file its code names.  Some of
+    those need a cooked form before the runtime can load them: a stage-tagged .hlsl becomes an
+    .oshd container, a .recipe becomes the file its "kind" line says (a font bake).  This step
+    cooks each such entry into the cooked mirror, <build>/content/<name>.<cooked ext>, the tree
+    the host mounts above content/ so the cooked file wins by name.  Images and other loose
+    content are not cooked here; the runtime reads them from content/ as they are.
 
-    Staleness is a plain mtime compare against the .oshd: the source, its sibling .hlsli files,
-    and the two cooker executables (the container format lives in them, so a rebuilt cooker
-    recooks).  It deliberately does NOT consult the target's artifact: a shader and the C code
-    that draws with it change on their own schedules, and coupling them would either recompile
-    the world after a one-line shader edit or leave a stale .oshd next to a fresh .lib.
+    The cooker is asset_tool, which reads a shader's stage tag out of its filename and forwards
+    to shader_tool, or parses a recipe and forwards to font_tool.  Any target whose closure
+    names a shader or a recipe must therefore carry 'tool_dep asset_tool shader_tool font_tool'
+    (gui does, which covers every image that links it) -- that is what orders the cookers
+    ahead of it under the parallel scheduler.
+
+    Staleness is a plain mtime compare against the cooked file: the source, a shader's sibling
+    .hlsli files, and the cooker executables (the container format lives in them, so a rebuilt
+    cooker recooks).  It deliberately does NOT consult the target's artifact: content and the
+    C code that loads it change on their own schedules, and coupling them would either
+    recompile the world after a one-line shader edit or leave a stale .oshd next to a fresh
+    .lib.  So this runs twice per build_target: before the up-to-date check, over the manifest
+    the previous build wrote (an edited shader recooks with no C change), and again after a
+    fresh manifest is written (a newly marked name cooks on the build that introduced it).
 ==============================================================================================*/
 
-bool
-build_cook_shaders( build_context_t* ctx, target_info_t* target )
+// Content roots, highest priority first: this project's content/, then the engine's when this
+// is a child project. Returns the count.
+static int
+res_content_roots( char roots[ 2 ][ PATH_MAX ] )
 {
-    if ( !target->shaders[ 0 ] )
+    int n = 0;
+    if ( !platform_fullpath( roots[ n ], "content", PATH_MAX ) )
+        snprintf( roots[ n ], PATH_MAX, "content" );
+    ++n;
+    if ( g_engine_root[ 0 ] )
+        snprintf( roots[ n++ ], PATH_MAX, "%s/content", g_engine_root );
+    return n;
+}
+
+// The cooked extension (no dot) a recipe produces, read from its "kind" line; "" when the file
+// cannot be read or names no cooking kind. Mirrors res_kind_from_name in engine/res/res_cook.h.
+static void
+recipe_cooked_ext( const char* recipe_path, char* out, size_t cap )
+{
+    out[ 0 ] = '\0';
+    FILE* f  = fopen( recipe_path, "rb" );
+    if ( !f )
+        return;
+    char line[ 512 ];
+    while ( fgets( line, sizeof( line ), f ) )
+    {
+        const char* p = line;
+        while ( *p == ' ' || *p == '\t' ) ++p;
+        if ( strncmp( p, "kind", 4 ) != 0 || ( p[ 4 ] != ' ' && p[ 4 ] != '\t' ) )
+            continue;
+        p += 4;
+        while ( *p == ' ' || *p == '\t' ) ++p;
+        char word[ 32 ];
+        int  n = 0;
+        while ( *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && n < ( int )sizeof( word ) - 1 )
+            word[ n++ ] = *p++;
+        word[ n ] = '\0';
+        if      ( strcmp( word, "font"   ) == 0 ) snprintf( out, cap, "orb_font" );
+        else if ( strcmp( word, "image"  ) == 0 ) snprintf( out, cap, "tex" );
+        else if ( strcmp( word, "shader" ) == 0 ) snprintf( out, cap, "oshd" );
+        break;
+    }
+    fclose( f );
+}
+
+bool
+build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj_dir )
+{
+    if ( !target_wants_res_manifest( target ) )
         return true;
 
-    if ( !platform_file_exists( "bin" PATH_SEP "asset_tool.exe" ) )
+    char man_path[ PATH_MAX ];
+    snprintf( man_path, sizeof( man_path ), "%s" PATH_SEP "%s_res_manifest.txt", obj_dir, target->name );
+
+    platform_mapped_file_t map;
+    if ( !platform_map_file( man_path, &map ) )
+        return true;    // no manifest yet: the post-manifest pass cooks
+    if ( map.size == 0 )
+        return true;
+
+    char roots[ 2 ][ PATH_MAX ];
+    int  root_count = res_content_roots( roots );
+
+    bool        ok  = true;
+    const char* p   = map.data;
+    const char* end = map.data + map.size;
+    char        line[ PATH_MAX * 2 ];
+    while ( ok && mmap_next_line( &p, end, line, sizeof( line ) ) )
     {
-        printf( ORB_INDENT "[orb error] '%s' declares shaders but bin/asset_tool.exe is missing"
-                           " -- add 'tool_dep asset_tool shader_tool' to the target\n", target->name );
-        return false;
-    }
+        if ( !line[ 0 ] || line[ 0 ] == '#' )
+            continue;
 
-    ensure_dir( "bin" PATH_SEP "shaders" );
+        // Columns: name, source file under its content root, [in <subtree>]. Neither of the
+        // first two carries spaces (a name is printable ASCII without them), so whitespace
+        // tokenizes the row.
+        char* name = line;
+        char* rel  = name;
+        while ( *rel && *rel != ' ' && *rel != '\t' ) ++rel;
+        if ( !*rel ) continue;
+        *rel++ = '\0';
+        while ( *rel == ' ' || *rel == '\t' ) ++rel;
+        char* tail = rel;
+        while ( *tail && *tail != ' ' && *tail != '\t' ) ++tail;
+        *tail = '\0';
+        if ( !*rel || name[ strlen( name ) - 1 ] == '/' )
+            continue;    // a subtree row; its leaves follow as rows of their own
 
-    for ( int i = 0; target->shaders[ i ]; ++i )
-    {
-        char src[ PATH_MAX ];
-        snprintf( src, sizeof( src ), "%s" PATH_SEP "%s", target->root_dir, target->shaders[ i ] );
+        const char* dot = strrchr( rel, '.' );
+        if ( !dot ) continue;
+        const char* src_ext = dot + 1;
 
-        /* The output name is the source's, with .hlsl traded for .oshd -- the stage tag stays
-           part of the stem, so gui.vs.hlsl and gui.ps.hlsl land as a distinguishable pair. */
-        const char* base = target->shaders[ i ];
-        for ( const char* p = base; *p; ++p )
-            if ( *p == '/' || *p == '\\' )
-                base = p + 1;
-
-        char stem[ PATH_MAX ];
-        snprintf( stem, sizeof( stem ), "%s", base );
-        char* dot = strrchr( stem, '.' );
-        if ( !dot || strcmp( dot, ".hlsl" ) != 0 )
+        char cooked_ext[ 16 ] = "";
+        char src[ PATH_MAX ]  = "";
+        for ( int r = 0; r < root_count && !src[ 0 ]; ++r )
         {
-            printf( ORB_INDENT "[orb error] '%s' shader '%s' is not a .hlsl\n",
-                    target->name, target->shaders[ i ] );
-            return false;
+            char cand[ PATH_MAX ];
+            snprintf( cand, sizeof( cand ), "%s/%s", roots[ r ], rel );
+            if ( platform_get_mtime( cand ) != 0 )
+                snprintf( src, sizeof( src ), "%s", cand );
         }
-        *dot = '\0';
+        if ( !src[ 0 ] )
+            continue;    // res_tool would have failed the manifest; a stale row is not ours to report
+
+        bool is_shader = str_icmp( src_ext, "hlsl" ) == 0;
+        if ( is_shader )
+            snprintf( cooked_ext, sizeof( cooked_ext ), "oshd" );
+        else if ( str_icmp( src_ext, "recipe" ) == 0 )
+            recipe_cooked_ext( src, cooked_ext, sizeof( cooked_ext ) );
+        if ( !cooked_ext[ 0 ] )
+            continue;    // loose content: the runtime reads it from content/ as it is
+
+        if ( !platform_file_exists( "bin" PATH_SEP "asset_tool.exe" ) )
+        {
+            printf( ORB_INDENT "[orb error] '%s' names '%s', which needs cooking, but bin/asset_tool.exe is"
+                               " missing -- add 'tool_dep asset_tool shader_tool font_tool' to the target\n",
+                    target->name, name );
+            ok = false;
+            break;
+        }
 
         char dst[ PATH_MAX ];
-        snprintf( dst, sizeof( dst ), "bin" PATH_SEP "shaders" PATH_SEP "%s.oshd", stem );
+        snprintf( dst, sizeof( dst ), "%s" PATH_SEP "content" PATH_SEP "%s.%s", g_build_dir, name, cooked_ext );
+        for ( char* c = dst; *c; ++c )
+            if ( *c == '/' ) *c = PATH_SEP[ 0 ];
 
         platform_mtime_t src_mtime = platform_get_mtime( src );
-        if ( src_mtime == 0 )
-        {
-            printf( ORB_INDENT "[orb error] '%s' shader source not found: %s\n", target->name, src );
-            return false;
-        }
 
-        /* A newer cooker makes every .oshd stale: a format bump in shader_tool changes the
-           cooked bytes without touching any shader source. */
+        // A newer cooker makes every cooked file stale: a format bump changes the cooked bytes
+        // without touching any source.
         {
             platform_mtime_t m = platform_get_mtime( "bin" PATH_SEP "asset_tool.exe" );
             if ( m > src_mtime ) src_mtime = m;
-            m = platform_get_mtime( "bin" PATH_SEP "shader_tool.exe" );
+            m = platform_get_mtime( is_shader ? "bin" PATH_SEP "shader_tool.exe" : "bin" PATH_SEP "font_tool.exe" );
             if ( m > src_mtime ) src_mtime = m;
         }
 
-        /* Shared .hlsli code beside the source counts toward staleness: dxc resolves #include
-           relative to the including file, so an edit to a sibling include changes the cooked
-           bytes without touching the .hlsl's own mtime.  The whole directory is folded in rather
-           than the actual include graph -- shader dirs hold a handful of files, and one spurious
-           recook costs less than a parser. */
+        // Shared .hlsli code beside a shader counts toward staleness: dxc resolves #include
+        // relative to the including file, so an edit to a sibling include changes the cooked
+        // bytes without touching the .hlsl's own mtime. The whole directory is folded in rather
+        // than the actual include graph -- shader dirs hold a handful of files, and one spurious
+        // recook costs less than a parser.
+        if ( is_shader )
         {
             char dir[ PATH_MAX ];
             snprintf( dir, sizeof( dir ), "%s", src );
@@ -188,12 +280,16 @@ build_cook_shaders( build_context_t* ctx, target_info_t* target )
             }
         }
 
-        /* Keyed on the OUTPUT, not on this target.  Two targets built from one source tree can
-           declare the same shader, and under the parallel scheduler they reach this at the same
-           moment; so can two build_tool invocations.  The staleness test is inside the lock with
-           the cook, so the loser of the race sees the winner's fresh .oshd and skips instead of
-           writing the same file underneath it -- which is what a shared cook temp turns into. */
-        void* cook_lock = build_lock_target( stem );
+        // Keyed on the OUTPUT, not on this target. Every image linking gui names the gui
+        // shaders, and under the parallel scheduler two of them reach this at the same moment;
+        // so can two build_tool invocations. The staleness test is inside the lock with the
+        // cook, so the loser of the race sees the winner's fresh file and skips instead of
+        // writing the same bytes underneath it.
+        char key[ 256 ];
+        snprintf( key, sizeof( key ), "cook_%s", name );
+        for ( char* c = key; *c; ++c )
+            if ( *c == '/' || *c == '.' ) *c = '_';
+        void* cook_lock = build_lock_target( key );
 
         if ( !ctx->force_rebuild && platform_get_mtime( dst ) >= src_mtime )
         {
@@ -201,11 +297,18 @@ build_cook_shaders( build_context_t* ctx, target_info_t* target )
             continue;
         }
 
+        {
+            char dst_dir[ PATH_MAX ];
+            snprintf( dst_dir, sizeof( dst_dir ), "%s", dst );
+            char* sep = strrchr( dst_dir, PATH_SEP[ 0 ] );
+            if ( sep ) { *sep = '\0'; ensure_dir( dst_dir ); }
+        }
+
         if ( g_out_flags & ORB_OUT_REFLECT )
         {
             const char* lp = sched_log_path();
             FILE*       lf = lp ? fopen( lp, "a" ) : NULL;
-            fprintf( lf ? lf : stdout, ORB_INDENT "[orb shader] %s\n", stem );
+            fprintf( lf ? lf : stdout, ORB_INDENT "[orb cook] %s\n", name );
             if ( lf ) fclose( lf );
         }
 
@@ -215,12 +318,13 @@ build_cook_shaders( build_context_t* ctx, target_info_t* target )
         build_unlock_target( cook_lock );
         if ( ret != 0 )
         {
-            printf( ORB_INDENT "[orb error] '%s' shader cook failed: %s\n", target->name, src );
-            return false;
+            printf( ORB_INDENT "[orb error] '%s' content cook failed: %s\n", target->name, src );
+            ok = false;
         }
     }
 
-    return true;
+    platform_unmap_file( &map );
+    return ok;
 }
 
 /*==============================================================================================
@@ -317,12 +421,11 @@ build_gen_res_manifest( target_info_t* target, const char* obj_dir, const target
     // res_tool records it in the deps file and its appearance makes the manifest stale.
     char roots[ PATH_MAX * 2 + 32 ];
     {
-        char content_root[ PATH_MAX ];
-        if ( !platform_fullpath( content_root, "content", sizeof( content_root ) ) )
-            snprintf( content_root, sizeof( content_root ), "content" );
-        int n = snprintf( roots, sizeof( roots ), " -root %s", content_root );
-        if ( g_engine_root[ 0 ] )
-            snprintf( roots + n, sizeof( roots ) - ( size_t )n, " -root %s/content", g_engine_root );
+        char root_dirs[ 2 ][ PATH_MAX ];
+        int  root_count = res_content_roots( root_dirs );
+        int  n          = 0;
+        for ( int r = 0; r < root_count; ++r )
+            n += snprintf( roots + n, sizeof( roots ) - ( size_t )n, " -root %s", root_dirs[ r ] );
     }
 
     char deps_path[ PATH_MAX ];
@@ -436,29 +539,30 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     void* target_lock = build_lock_target( target->name );
     bool  result      = true;
 
-    // --- 1.5 Shader Cook ---
-    //
-    // Inside the lock for the same reason everything else is -- two invocations must not
-    // write one .oshd at once -- but ahead of the up-to-date check, because the cooked file
-    // is an input to the RUNTIME and not to the compiler: a shader edit must re-cook without
-    // dragging a recompile behind it, and an unchanged shader must not make the target look
-    // stale. Idempotent, and one mtime compare per declared shader when there is nothing to do.
-    //
-    // Returns directly rather than through cleanup: nothing has been renamed yet, and the
-    // variables that label reads are not declared until after the up-to-date check.
-
-    if ( !build_cook_shaders( ctx, target ) )
-    {
-        build_unlock_target( target_lock );
-        return false;
-    }
-
     // --- 2. Path Preparation ---
 
     char obj_dir[ PATH_MAX ];
     snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
     char gen_dir[ PATH_MAX ];
     snprintf( gen_dir, sizeof( gen_dir ), "%s" PATH_SEP "%s", g_build_dir, g_gen_dir );
+
+    // --- 2.5 Content Cook (pre) ---
+    //
+    // Inside the lock for the same reason everything else is -- two invocations must not
+    // write one cooked file at once -- but ahead of the up-to-date check, because a cooked
+    // file is an input to the RUNTIME and not to the compiler: a shader edit must re-cook
+    // without dragging a recompile behind it, and an unchanged shader must not make the
+    // target look stale. Works from the manifest the previous build wrote; idempotent, and one
+    // mtime compare per cookable name when there is nothing to do.
+    //
+    // Returns directly rather than through cleanup: nothing has been renamed yet, and the
+    // variables that label reads are not declared until after the up-to-date check.
+
+    if ( !build_cook_content( ctx, target, obj_dir ) )
+    {
+        build_unlock_target( target_lock );
+        return false;
+    }
 
     const char* ext = ( target->type == TARGET_STATIC_LIB )    ? ".lib"
                     : ( target->type == TARGET_DYNAMIC_LIB )   ? ( ctx->is_monolithic ? ".lib" : ".dll" )
@@ -682,9 +786,13 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         }
     }
 
-    // --- 6.5 Resource Manifest ---
+    // --- 6.5 Resource Manifest + Content Cook (post) ---
+    //
+    // The fresh manifest may name content the previous one did not; cook it now so the image
+    // that introduced a name runs against its cooked form on this same build.
 
-    if ( res_tool && !build_gen_res_manifest( target, obj_dir, res_tool ) )
+    if ( res_tool && ( !build_gen_res_manifest( target, obj_dir, res_tool )
+                       || !build_cook_content( ctx, target, obj_dir ) ) )
     {
         result = false;
         goto cleanup;

@@ -767,9 +767,8 @@ overlay_fonts( void )
         /* The resolver ledger behind the slots. */
         font_resolve_debug_t rd = font_resolve_debug();
         gui_new_line( 2.0f );
-        gui_textf( "memo %u/%u  shipped %u%s  baker %s",
+        gui_textf( "memo %u/%u  baker %s",
                    rd.memo_used, rd.memo_cap,
-                   rd.ship_count, rd.ship_scanned ? "" : " (unscanned)",
                    rd.baker ? "yes" : "no" );
 
         /* Icon registry footer: total/cap, SDF vs coverage split, and resident bytes, then one

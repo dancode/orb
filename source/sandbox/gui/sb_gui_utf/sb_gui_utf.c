@@ -15,11 +15,10 @@
     Strings in this SOURCE are ASCII by project rule, so every extended character is spelled
     as \x UTF-8 bytes with the readable form in a comment beside it.
 
-    ASSETS.  assets/font is generated and not tracked; every panel degrades to its bake
-    command when the font is missing:
-
-        bin\font_tool.exe CascadiaMono 16 "-range=latin,greek,cyrillic,0x20AC"
-        bin\font_tool.exe CascadiaMono 32 -sdf "-range=latin1,0x20AC"
+    ASSETS.  The two -range fonts are resource names marked with RID(); the build cooks their
+    recipes under content/font/cascadiamono (16.latin-greek-cyrillic, 32.latin1.sdf) into
+    build/content and gui reads the bakes through fs.  Every panel names its recipe when the
+    font is missing anyway.
 
 ==============================================================================================*/
 
@@ -31,6 +30,9 @@
 #include "base/utf8.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
+#include "engine/res/res.h"
+#include "engine/pack/pack_host.h"
+#include "engine/fs/fs_host.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
@@ -52,26 +54,24 @@
 static f32 s_time;
 
 /*==============================================================================================
-    The two -range bakes under test.  Loaded by path like every generated asset; each window
-    says how to bake its font when it is missing rather than quietly showing ASCII.
+    The two -range bakes under test, by resource name; each window names the recipe behind its
+    font when it is missing rather than quietly showing ASCII.
 ==============================================================================================*/
 
-#define EURO_ASSET  "CascadiaMono_16px_latin-greek-cyrillic-0x20ac.orb_font"
-#define SDF_ASSET   "CascadiaMono_32px_latin1-0x20ac_sdf.orb_font"
-#define EURO_BAKE   "bin\\font_tool.exe CascadiaMono 16 \"-range=latin,greek,cyrillic,0x20AC\""
-#define SDF_BAKE    "bin\\font_tool.exe CascadiaMono 32 -sdf \"-range=latin1,0x20AC\""
+#define EURO_ASSET  RID( "font/cascadiamono/16.latin-greek-cyrillic" )
+#define SDF_ASSET   RID( "font/cascadiamono/32.latin1.sdf" )
+#define EURO_BAKE   "content/font/cascadiamono/16.latin-greek-cyrillic.recipe (cooked by the build)"
+#define SDF_BAKE    "content/font/cascadiamono/32.latin1.sdf.recipe (cooked by the build)"
 
 static u32 s_font_euro;   /* 0 = missing: windows fall back to the built-in ASCII face */
 static u32 s_font_sdf;
 
+/* A bake by resource name; font_load ACTIVATES what it loads, so the caller's font is put back. */
 static u32
-font_try( const char* asset )
+font_try( const char* name )
 {
-    char path[ 576 ];
-    snprintf( path, sizeof( path ), "%s/assets/font/%s", sys_root_dir(), asset );
-
     u32 prev = gui()->font_active_id();
-    u32 id   = gui()->font_load( path );
+    u32 id   = gui()->font_load( name );
     gui()->font_use( prev );
     return id;
 }
@@ -345,6 +345,8 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( pack );
+    mod_static( fs );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -367,7 +369,7 @@ main( int argc, char** argv )
         .title     = "ORB -- extended characters",
         .w         = 1100, .h = 900,
         .os_chrome = true,
-        .font      = GUI_FONT_CASCADIA_MONO,
+        .font      = RID( "font/cascadiamono/16" ),
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,

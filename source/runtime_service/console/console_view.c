@@ -434,10 +434,8 @@ console_frame( f32 dt )
     if ( s_open && !s_mono_tried )
     {
         s_mono_tried = true;
-        char path[ 512 ];
-        gui()->asset_path( "assets/font/JetBrainsMonoNL-Regular_16px.orb_font", path, sizeof( path ) );
         const u32 prev = gui()->font_active_id();
-        s_mono_font = gui()->font_load( path );   /* 0 on failure: console falls back to the theme font */
+        s_mono_font = gui()->font_load( RID( "font/jetbrains/16" ) );   /* 0 on failure: console falls back to the theme font */
         gui()->font_use( prev );
     }
 

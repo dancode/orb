@@ -9,8 +9,9 @@
 # larger than its display size with a transparent margin for the field to fall off into.
 #
 # Nothing bakes automatically: re-run `image_tool icons config/icons.manifest` from the repo root
-# whenever source art under assets/icon_source/ changes, then rebuild -- the output PNGs under
-# assets/icon/ are checked in like any other asset.
+# whenever source art under assets/icon_source/ changes.  The output PNGs land under
+# content/ui/icon/ and are checked in: each is the resource "ui/icon/<name>" that
+# gui_icon_load.c marks with RID(), which is how the build resolves it and a package ships it.
 
 settings settings.svg
 file     file.svg

@@ -68,9 +68,20 @@ static struct
 
 /*==============================================================================================
 
-    Boot Init -- Convenience composition of the public init sequence  
+    Boot Init -- Convenience composition of the public init sequence
 
 ==============================================================================================*/
+
+/* The default content mounts: the cooked mirror wins over loose content by name. */
+static void
+boot_mount_content( void )
+{
+    char path[ 576 ];
+    fmt_snprintf( path, sizeof( path ), "%s/build/content", sys_root_dir() );
+    fs()->mount( "", path, 10 );
+    fmt_snprintf( path, sizeof( path ), "%s/content", sys_root_dir() );
+    fs()->mount( "", path, 0 );
+}
 
 i32
 gui_boot( const gui_boot_desc_t* desc )
@@ -96,9 +107,17 @@ gui_boot( const gui_boot_desc_t* desc )
          return GUI_VP_INVALID;
     }
 
+    /* The content mounts a runtime host makes at boot (run_host_main), made here on the
+       sandbox's behalf: loose content/ beneath the cooked mirror build/content, both under
+       the engine root.  gui reads every bake, icon and shader through them (gui_res.h); the
+       "" prefix is the boot path's, unmounted at shutdown. */
+
+    boot_mount_content();
+
     /* the gui requires a valid rhi context to initialize the drawing atlas */
 
-    if ( !gui_init( desc->font, desc->font_size ) ) {
+    if ( !gui_init( desc->font ) ) {
+         fs()->unmount( "" );
          rhi()->context_destroy( rctx );
          app()->window_close( win );
          return GUI_VP_INVALID;
@@ -154,6 +173,7 @@ boot_shutdown( void )
 
     rhi()->context_destroy( s_boot.rhi_ctx );
     app()->window_close( s_boot.win_id );
+    fs()->unmount( "" );    /* the content mounts boot() made */
     memset( &s_boot, 0, sizeof( s_boot ) );
     memset( &s_present, 0, sizeof( s_present ) );
     s_poll_last = 0.0;

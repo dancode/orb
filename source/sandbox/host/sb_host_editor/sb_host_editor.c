@@ -27,6 +27,7 @@
 
 #include "engine/sys/sys_host.h"
 #include "engine/mod/mod_host.h"
+#include "engine/res/res.h"
 #include "engine/core/core_host.h"
 #include "engine/app/app_api.h"
 
@@ -223,7 +224,7 @@ static const run_module_entry_t k_modules[] = {
 };
 
 static const run_gui_desc_t k_gui_desc = {
-    .font  = GUI_FONT_ROBOTO,
+    .font  = RID( "font/roboto/16" ),
     .clear = { 0.10f, 0.10f, 0.12f, 1.00f },
     .debug = true,            /* P/O/F10 overlays, I idle skip, etc. */
 };

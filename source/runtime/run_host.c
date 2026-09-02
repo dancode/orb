@@ -424,6 +424,19 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         return 1;
     }
 
+    /* Content mounts -- the one place the runtime says where bytes live.  Every service reads
+       content by resource name through fs (gui's bakes, icons and shaders; the asset service's
+       images and shaders), so a name resolves against the cooked mirror build/content first and
+       loose content/ beneath it, both under the engine root.  A shipped build mounts its pack
+       here instead. */
+    {
+        char path[ 576 ];
+        snprintf( path, sizeof( path ), "%s/build/content", sys_root_dir() );
+        fs()->mount( "", path, 10 );
+        snprintf( path, sizeof( path ), "%s/content", sys_root_dir() );
+        fs()->mount( "", path, 0 );
+    }
+
     /* Engine extented -- Load all the modules dynamically passed in to the host from the .exe */
     if ( !load_all( desc->modules ))
     {
@@ -589,7 +602,7 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
                 if ( gd && gd->font_baker )
                     gui()->font_baker_set( gd->font_baker, gd->font_baker_user );
 
-                if ( !gui()->init( gd ? gd->font : GUI_FONT_NONE, gd ? gd->font_size : 0 ) )
+                if ( !gui()->init( gd ? gd->font : NULL ) )
                 {
                     fprintf( stderr, "[host] gui init failed\n" );
                     run_host_shutdown();

@@ -13,8 +13,9 @@
               (qp_vert_t layout) and the vertex stage transforms what arrives, exactly
               like today's gui pipeline.
 
-    Both run through the real cook path -- the 'shader' lines on this target produce
-    bin/shaders/qp_*.oshd and pipeline_create validates the layouts against their reflection.
+    Both run through the real cook path -- the three shaders are resource names under
+    content/sandbox/quad_pull, marked with RID() so the build cooks them into build/content,
+    read here through fs, and pipeline_create validates the layouts against their reflection.
     The fragment stage is shared and near-trivial, and the quads are tiny (1-2 px half-extent),
     so the vertex stage dominates and the A/B isolates the pulled-fetch cost.
 
@@ -40,7 +41,10 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
+#include "engine/res/res.h"
 #include "engine/sys/sys_host.h"
+#include "engine/pack/pack_host.h"
+#include "engine/fs/fs_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
 #include "runtime_service/rhi/rhi_host.h"
@@ -224,27 +228,31 @@ upload_vb( u32 count )
     GPU setup
 ==============================================================================================*/
 
+/* A cooked shader by resource name: `res` + ".oshd" through the fs mounts (the cooked mirror
+   build/content the build wrote), parsed by the rhi's in-memory .oshd loader. */
 static rhi_shader_t
-load_oshd( const char* stem, const char* dbg )
+load_oshd( const char* res, const char* dbg )
 {
-    char dir[ 512 ];
-    sys_exe_dir( dir, (int)sizeof( dir ) );
+    char path[ RES_PATH_MAX ];
+    res_path( path, sizeof( path ), res, ".oshd" );
 
-    char path[ 640 ];
-    snprintf( path, sizeof( path ), "%s/shaders/%s.oshd", dir, stem );
-
-    rhi_shader_t sh = rhi()->shader_load_oshd( path, dbg );
-    if ( !rhi_handle_valid( sh ) )
+    fs_blob_t blob = fs()->read( path );
+    if ( !blob.ok )
+    {
         fprintf( stderr, "[sb_quad_pull] shader not found: %s (build sb_quad_pull to cook it)\n", path );
+        return ( rhi_shader_t ){ RHI_NULL_HANDLE };
+    }
+    rhi_shader_t sh = rhi()->shader_load_oshd_memory( blob.data, blob.size, dbg );
+    fs()->free( &blob );
     return sh;
 }
 
 static bool
 gpu_init( void )
 {
-    rhi_shader_t vs_pull = load_oshd( "qp_pull.vs", "qp_pull_vert" );
-    rhi_shader_t vs_vb   = load_oshd( "qp_vb.vs",   "qp_vb_vert" );
-    rhi_shader_t ps      = load_oshd( "qp.ps",      "qp_frag" );
+    rhi_shader_t vs_pull = load_oshd( RID( "sandbox/quad_pull/qp_pull.vs" ), "qp_pull_vert" );
+    rhi_shader_t vs_vb   = load_oshd( RID( "sandbox/quad_pull/qp_vb.vs" ),   "qp_vb_vert" );
+    rhi_shader_t ps      = load_oshd( RID( "sandbox/quad_pull/qp.ps" ),      "qp_frag" );
     if ( !rhi_handle_valid( vs_pull ) || !rhi_handle_valid( vs_vb ) || !rhi_handle_valid( ps ) )
         return false;
 
@@ -545,6 +553,8 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( pack );
+    mod_static( fs );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -559,6 +569,16 @@ main( int argc, char** argv )
     mod_set_log_fn( core_log_fn );
     app_set_log_fn( core_log_fn );
     core()->log_set_min_level( LOG_LEVEL_WARN );
+
+    /* The content mounts a runtime host makes: the cooked mirror (where the build put the
+       .oshd pair) above loose content/, both under the engine root. */
+    {
+        char path[ 576 ];
+        snprintf( path, sizeof( path ), "%s/build/content", sys_root_dir() );
+        fs()->mount( "", path, 10 );
+        snprintf( path, sizeof( path ), "%s/content", sys_root_dir() );
+        fs()->mount( "", path, 0 );
+    }
 
     if ( !rhi()->init() )
     {

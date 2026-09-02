@@ -164,17 +164,15 @@ gui_register_icon( const char* name, u32 w, u32 h, const u8* coverage )
 }
 
 gui_icon_id_t
-gui_load_icon( const char* name, const char* path )
+gui_load_icon( const char* name, const char* res )
 {
-    char resolved[ 576 ];
-    fmt_snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), path );
-    return icon_load_file( name, resolved );
+    return icon_load_res( name, res );   // `res` is a resource name, read through the fs mounts
 }
 
 u32
 gui_load_icons( const char* const* pairs, u32 count )
 {
-    return icon_load_pairs( pairs, count );   // resolves each path against the root itself
+    return icon_load_pairs( pairs, count );
 }
 
 /* The distance-field twins.  Same inputs plus the stored-field size; everything downstream of the
@@ -188,11 +186,9 @@ gui_register_icon_sdf( const char* name, u32 w, u32 h, const u8* coverage, u32 o
 }
 
 gui_icon_id_t
-gui_load_icon_sdf( const char* name, const char* path, u32 out_max )
+gui_load_icon_sdf( const char* name, const char* res, u32 out_max )
 {
-    char resolved[ 576 ];
-    fmt_snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), path );
-    return icon_load_file_sdf( name, resolved, out_max );
+    return icon_load_res_sdf( name, res, out_max );
 }
 
 gui_icon_id_t
@@ -396,11 +392,9 @@ gui_register_sprite( const char* name, u32 w, u32 h, const u8* rgba )
 }
 
 gui_sprite_id_t
-gui_load_sprite( const char* name, const char* path )
+gui_load_sprite( const char* name, const char* res )
 {
-    char resolved[ 576 ];
-    fmt_snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), path );
-    return sprite_load_file( name, resolved );
+    return sprite_load_res( name, res );
 }
 
 gui_sprite_id_t gui_find_sprite( const char* name )                     { return sprite_find( name ); }

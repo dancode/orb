@@ -23,6 +23,9 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
+#include "engine/res/res.h"
+#include "engine/pack/pack_host.h"
+#include "engine/fs/fs_host.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
@@ -56,14 +59,15 @@ st_begin( const char* title, f32 w, f32 h )
 }
 
 /* Runtime font baker for the gui font resolver -- dev_font is already initialized by main.
-   Fine (FreeType) cache when fresh, else the fast stb bake + a background refine. */
+   Fine (FreeType) cache when fresh, else the fast stb bake + a background refine; gui takes
+   the bake's bytes and frees them. */
 static bool
-st_gui_font_bake( const char* family, u32 size_px, char* out, int n, void* user )
+st_gui_font_bake( const char* face, u32 size_px, void** out_data, u32* out_size, void* user )
 {
     (void)user;
-    if ( !dev_font_get_ex( family, (int)size_px, DEV_FONT_FINE_IF_CACHED, NULL, out, n ) )
+    if ( !dev_font_get_bytes( face, (int)size_px, DEV_FONT_FINE_IF_CACHED, NULL, out_data, out_size ) )
         return false;
-    dev_font_refine_kick( family, (int)size_px, NULL );
+    dev_font_refine_kick( face, (int)size_px, NULL );
     return true;
 }
 
@@ -175,6 +179,8 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( pack );
+    mod_static( fs );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -222,7 +228,7 @@ main( int argc, char** argv )
         .title     = "sb_gui_style",
         .w         = 1920, .h = 1024,
         .os_chrome = true,
-        .font      = GUI_FONT_CASCADIA_MONO,
+        .font      = RID( "font/cascadiamono/16" ),
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
         .wait      = sys_wait_for_os_events_ms,

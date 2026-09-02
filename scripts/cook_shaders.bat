@@ -1,12 +1,13 @@
 @echo off
-:: cook_shaders.bat -- cook the engine's HLSL shaders into bin\shaders\*.oshd.
+:: cook_shaders.bat -- cook the draw service's HLSL shaders into bin\shaders\*.oshd.
 ::
-:: The gui pair does not need this script: build_tool cooks it while building the gui target
-:: ('shader' lines in orb.targets), and the gui has no embedded fallback to run from.  The draw
-:: shaders still do -- draw prefers a cooked file when present and falls back to its embedded
-:: SPIR-V arrays when absent.  Requires bin\asset_tool.exe and bin\shader_tool.exe (build_tool -config
-:: Debug) plus dxc.exe from %%VULKAN_SDK%%.  asset_tool derives each dxc profile from the
-:: .vs/.ps stage tag in the filename and forwards to shader_tool.
+:: The gui pair does not need this script: gui names its shaders with RID() and the build cooks
+:: them from the resource manifest into build\content\shader, where gui reads them through fs.
+:: The draw shaders are the remaining optional cook: draw prefers a cooked pair next to the exe
+:: when present and falls back to its embedded SPIR-V arrays when absent.  Requires
+:: bin\asset_tool.exe and bin\shader_tool.exe (build_tool -config Debug) plus dxc.exe from
+:: %%VULKAN_SDK%%.  asset_tool derives each dxc profile from the .vs/.ps stage tag in the
+:: filename and forwards to shader_tool.
 setlocal
 cd /d "%~dp0.."
 
@@ -17,8 +18,6 @@ if not exist bin\asset_tool.exe (
 if not exist bin\shaders mkdir bin\shaders
 
 set FAILED=0
-call :cook source\runtime_service\gui\shaders\gui.vs.hlsl          bin\shaders\gui.vs.oshd
-call :cook source\runtime_service\gui\shaders\gui.ps.hlsl          bin\shaders\gui.ps.oshd
 call :cook source\runtime_service\draw\shaders\draw_solid.vs.hlsl  bin\shaders\draw_solid.vs.oshd
 call :cook source\runtime_service\draw\shaders\draw_solid.ps.hlsl  bin\shaders\draw_solid.ps.oshd
 call :cook source\runtime_service\draw\shaders\draw_tex.vs.hlsl    bin\shaders\draw_tex.vs.oshd

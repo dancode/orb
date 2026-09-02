@@ -1,0 +1,6 @@
+# Extended-script bake for sb_gui_utf: Latin, Greek, Cyrillic and the euro sign.
+
+kind    font
+face    CascadiaMono
+size    16
+range   latin,greek,cyrillic,0x20AC

@@ -15,6 +15,7 @@
 #include <ctype.h>
 
 #include "console_api.h"
+#include "engine/res/res.h"          /* RID -- the console's monospace font by resource name */
 #include "engine/core/core_api.h"
 #include "engine/app/app_api.h"
 #include "runtime_service/gui/gui_api.h"

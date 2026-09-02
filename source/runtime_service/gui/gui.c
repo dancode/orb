@@ -6,15 +6,16 @@
     When other code calls gui()->draw_rect(...) or any other function on the module,
     it is going through a table of function pointers this file assembles. This file carries
     no logic of its own: the frame orchestration lives in the separate gui_frame.c unit, and
-    every widget / layout / render path lives in its own carved unit (GUI_ARCHITECTURE.md). 
-    
+    every widget / layout / render path lives in its own carved unit (GUI_ARCHITECTURE.md).
+
     This unit's whole job is to build that function table (g_gui_api_struct) and the small
     descriptor that tells the module system how to load, hot-reload, and unload this module.
 
-    It includes every other unit's header since building the function table means naming 
-    every function in it. This file owns the storage for the pointers to the sibling app/rhi
-    module APIs this module depends on -- fetched once when the module loads, and read 
-    everywhere else in the GUI through a shared accessor rather than refetched per unit.
+    It includes every other unit's header since building the function table means naming
+    every function in it. This file owns the storage for the pointers to the sibling app, fs
+    and rhi module APIs this module depends on -- fetched once when the module loads, and read
+    everywhere else in the GUI through a shared accessor rather than refetched per unit.  fs
+    is how gui reads every content byte (gui_res.h); app and rhi are the window and the GPU.
 
 ==============================================================================================*/
 
@@ -40,9 +41,11 @@
    extern accessors. THIS is the one TU that defines the pointer storage. */
 
 #include "engine/app/app_api.h"
+#include "engine/fs/fs_api.h"
 #include "runtime_service/rhi/rhi_api.h"
 
 MOD_USE_APP;
+MOD_USE_FS;
 MOD_USE_RHI;
 
 /*============================================================================================*/

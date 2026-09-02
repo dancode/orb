@@ -42,7 +42,7 @@
     Managed only while the host's init() lineage is active: poll and land act when the active
     font is the one the landing last activated (slot 0 at init).  A host that font_use()s /
     font_load()s its own font takes over; management resumes when the managed font is active
-    again.  A GUI_FONT_NONE boot disables the mechanism entirely.
+    again.  A boot with no managed font (init( NULL )) disables the mechanism entirely.
 
 ==============================================================================================*/
 
@@ -50,7 +50,7 @@ static struct
 {
     gui_dpi_mode_t    mode;         // OFF / AUTO / MANUAL
     f32               manual;       // MANUAL-mode factor
-    gui_font_family_t base_family;  // init() family; GUI_FONT_NONE = unmanaged
+    char              base_family[ GUI_FONT_FAMILY_MAX ];  // init() family directory; "" = unmanaged
     u32               base_size;    // the size init() landed -- scale 1.0 by definition
     u32               landed_size;  // size whose metrics are in s_style now
     u32               landed_id;    // font id the landing last activated (lineage guard)
@@ -91,22 +91,23 @@ dpi_scale_landed( void )
 static bool
 dpi_managed( void )
 {
-    return s_dpi.base_family != GUI_FONT_NONE && font_active_id() == s_dpi.landed_id;
+    return s_dpi.base_family[ 0 ] && font_active_id() == s_dpi.landed_id;
 }
 
-static gui_font_family_t
+static const char*
 dpi_base_family( void )
 {
     return s_dpi.base_family;
 }
 
-/* Seed the managed lineage after init() loads the boot font into slot 0.  landed_px is what
-   the boot resolve actually landed (the wanted size, or the nearest shipped neighbour). */
+/* Seed the managed lineage after init() loads the boot font into slot 0.  `fam` is the family
+   directory the boot name carried (NULL or "" = unmanaged); landed_px is what the boot resolve
+   loaded. */
 
 void
-gui_dpi_base_set( gui_font_family_t fam, u32 landed_px )
+gui_dpi_base_set( const char* fam, u32 landed_px )
 {
-    s_dpi.base_family = fam;
+    fmt_snprintf( s_dpi.base_family, sizeof( s_dpi.base_family ), "%s", fam ? fam : "" );
     s_dpi.base_size   = landed_px;
     s_dpi.landed_size = landed_px;
     s_dpi.landed_id   = 0;
@@ -114,8 +115,8 @@ gui_dpi_base_set( gui_font_family_t fam, u32 landed_px )
         s_vp_pool[ v ].dpi_size_px = landed_px;   /* surfaces open post-init inherit via viewport_create */
     gui_type_clear();      /* ramp roles resolved against the old lineage are stale */
     font_resolve_clear();  /* the memo's minted sizes belong to the old family -- release them */
-    if ( fam != GUI_FONT_NONE && landed_px )
-        font_resolve_adopt_default( fam, landed_px );   /* the base size answers slot 0, not a duplicate */
+    if ( s_dpi.base_family[ 0 ] && landed_px )
+        font_resolve_adopt_default( s_dpi.base_family, landed_px );   /* the base size answers slot 0, not a duplicate */
 }
 
 void
@@ -150,7 +151,7 @@ gui_dpi_scale( void )
 bool
 gui_dpi_vp_resolve( i32 v )
 {
-    if ( s_dpi.base_family == GUI_FONT_NONE )
+    if ( !s_dpi.base_family[ 0 ] )
         return false;
 
     /* A host-driven font is active (font_use / push_font / a custom load): not ours to move. */
@@ -176,7 +177,7 @@ gui_dpi_vp_resolve( i32 v )
        one the nearest shipped size -- either way the memo answers the next poll for free.
        A request no layer could serve (landed 0) keeps the current stamp. */
     u32 landed = 0;
-    u32 id     = font_resolve( s_dpi.base_family, NULL, want_px, false, &landed );
+    u32 id     = font_resolve( s_dpi.base_family, want_px, false, &landed );
     if ( landed == 0 )
         return false;
     if ( landed == vp->dpi_size_px )
@@ -196,7 +197,7 @@ gui_dpi_vp_resolve( i32 v )
 void
 gui_dpi_land( i32 viewport )
 {
-    if ( s_dpi.base_family == GUI_FONT_NONE || viewport < 0 || viewport >= GUI_MAX_VIEWPORTS )
+    if ( !s_dpi.base_family[ 0 ] || viewport < 0 || viewport >= GUI_MAX_VIEWPORTS )
         return;
 
     /* A host-driven font is active (font_use / push_font / a custom load): not ours to move. */
@@ -209,7 +210,7 @@ gui_dpi_land( i32 viewport )
 
     /* A stamped size is always a memo hit -- vp_resolve stamped what the resolver landed. */
     u32 landed = 0;
-    u32 id     = font_resolve( s_dpi.base_family, NULL, size, false, &landed );
+    u32 id     = font_resolve( s_dpi.base_family, size, false, &landed );
     if ( landed != size )
         return;   /* the answer moved underneath (family change mid-frame): keep the landed scale */
 
@@ -245,7 +246,7 @@ gui_dpi_land( i32 viewport )
 bool
 gui_dpi_poll( void )
 {
-    if ( s_dpi.base_family == GUI_FONT_NONE )
+    if ( !s_dpi.base_family[ 0 ] )
         return false;
 
     /* A host-driven font is active (font_use / push_font / a custom load): not ours to move. */

@@ -48,7 +48,7 @@ void gui_log_set_fn( gui_log_fn fn, void* user );
 
 void gui_font_baker_set( gui_font_bake_fn fn, void* user );
 
-bool gui_init( gui_font_family_t family, u32 size_px );
+bool gui_init( const char* font );
 void gui_shutdown( void );
 
 gui_mem_stats_t gui_mem_stats( void );
@@ -64,19 +64,15 @@ gui_render_stats_t gui_render_stats( void );
 
 /* font lifecycle (load-into-registry half lives with GUI_DRAW below) */
 
-u32  gui_font_load( const char* path );
+u32  gui_font_load( const char* name );
+u32  gui_font_load_mem( const void* data, u32 size, const char* name );
 u32  gui_font_get( const char* family, u32 size_px );
-u32  gui_font_get_builtin( gui_font_family_t fam, u32 size_px );
 
 /* DPI response -- monitor-scale font retargeting (see dpi_set in gui_api.h) */
 
 void           gui_dpi_set  ( gui_dpi_mode_t mode, f32 scale );
 gui_dpi_mode_t gui_dpi_mode ( void );
 f32            gui_dpi_scale( void );
-
-/* asset_path -- resolve a path relative to the engine's assets/ root (see gui_api.h) */
-
-void gui_asset_path( const char* relative, char* out, int out_size );
 
 /* frame -- frame_begin returns frame_dirty: emit the UI build only when true.  frame_set_hooks
    hands gui the OS clock / sleep / wait callbacks it cannot reach itself (typically
@@ -128,7 +124,8 @@ app_event_result_t gui_event( const app_event_t* ev );
 /*===============================================  GUI_DRAW  ================================================*/
 
 /* font registry */
-bool gui_font_load_into     ( u32 id, const char* path );
+bool gui_font_load_into     ( u32 id, const char* name );
+bool gui_font_load_into_mem ( u32 id, const void* data, u32 size, const char* name );
 void gui_font_use           ( u32 id );
 void gui_push_font          ( u32 id );
 void gui_pop_font           ( void );
@@ -150,11 +147,11 @@ void gui_volatile_end( void );
 
 /* icons -- runtime icon atlas */
 gui_icon_id_t gui_register_icon( const char* name, u32 w, u32 h, const u8* coverage );
-gui_icon_id_t gui_load_icon( const char* name, const char* path );
+gui_icon_id_t gui_load_icon( const char* name, const char* res );
 u32 gui_load_icons( const char* const* pairs, u32 count );
 gui_icon_id_t gui_register_icon_sdf( const char* name, u32 w, u32 h, const u8* coverage,
                                      u32 out_max );
-gui_icon_id_t gui_load_icon_sdf( const char* name, const char* path, u32 out_max );
+gui_icon_id_t gui_load_icon_sdf( const char* name, const char* res, u32 out_max );
 gui_icon_id_t gui_find_icon( const char* name );
 gui_vec2_t gui_icon_size( gui_icon_id_t id );
 void gui_image( gui_icon_id_t id, f32 w, f32 h, u32 col );
@@ -177,7 +174,7 @@ void gui_draw_texture_xf( gui_rect_t r, u32 bindless_idx, u32 tint_abgr, f32 rot
 
 /* sprites -- authored RGBA art + the nine-slice that lets it fill any rect */
 gui_sprite_id_t gui_register_sprite( const char* name, u32 w, u32 h, const u8* rgba );
-gui_sprite_id_t gui_load_sprite( const char* name, const char* path );
+gui_sprite_id_t gui_load_sprite( const char* name, const char* res );
 gui_sprite_id_t gui_find_sprite( const char* name );
 bool gui_sprite_set_slice( gui_sprite_id_t id, gui_pad_t slice );
 gui_pad_t gui_sprite_slice( gui_sprite_id_t id );

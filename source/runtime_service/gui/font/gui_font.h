@@ -22,7 +22,7 @@
 ==============================================================================================*/
 
 #include "tools/font_tool/orb_font.h"   /* orb_font_glyph_t + the .orb_font on-disk record */
-#include "runtime_service/gui/gui.h"    /* gui_font_family_t -- the curated family enum    */
+#include "runtime_service/gui/gui.h"    /* GUI_FONT_FAMILY_MAX, the public font types      */
 
 // clang-format off
 
@@ -61,12 +61,9 @@ typedef struct
     u16                 atlas_h;            // pixel height of `pixels` -- bounded by 4096 at load
     u16                 ext_count;          // records in ext[] -- bounded by ORB_FONT_MAX_GLYPHS (2048)
 
-    /* Identity for debug readouts (the font overlay): the loaded file's family root, pool-interned
-       (font_slot_name reads it back).  The "_NNpx" size token and any trailing tags that
-       font_ship_name_parse strips are not kept here -- metrics.size already carries the size as a
-       number, so leaving it out of this string keeps one DPI-baked family from minting a new
-       pooled entry per distinct pixel size it is ever asked for.  Purely informational -- nothing
-       resolves or compares against it. */
+    /* Identity for debug readouts (the font overlay): the resource name the bake was loaded
+       under ("font/cascadiamono/16"), pool-interned (font_slot_name reads it back).  Purely
+       informational -- nothing resolves or compares against it. */
     u16                 name_off;
 
     bool                used;               // slot occupied
@@ -96,27 +93,32 @@ typedef struct
     slot's metrics + advance table and stores its resident R8 glyph pixels, then flags it
     needs_upload for the render side to pack into the atlas.  No GPU, no atlas call here; metrics
     are ready on return, the pixels reach the GPU at the render side's next frame_begin sync.
+
+    The by-name forms read `name` + ".orb_font" through the fs mounts (gui_res.h); the _mem
+    forms parse bytes the caller holds (the runtime baker's output, a test fixture) and take
+    `name` only as the slot's identity for the debug overlay.
 ==============================================================================================*/
 
-u32             font_load          ( const char* path );          // parse into a new id + activate; 0 = fail
-bool            font_load_into     ( u32 id, const char* path );  // parse into an existing id (0 = default); false = bad id / load fail
+u32             font_load          ( const char* name );          // parse into a new id + activate; 0 = fail
+u32             font_load_mem      ( const void* data, u32 size, const char* name );
+bool            font_load_into     ( u32 id, const char* name );  // parse into an existing id (0 = default); false = bad id / load fail
+bool            font_load_into_mem ( u32 id, const void* data, u32 size, const char* name );
 
 /*==============================================================================================
-    Curated families (gui_font_family_t, gui.h) -- per-family identity strings the resolver
-    composes requests from.  A family names a typeface; sizes are requested, never enumerated.
+    Families -- a family is the directory under content/font a bake lives in ("cascadiamono").
+    The resolver composes "font/<family>/<size>" from it; the runtime baker needs the typeface
+    behind it, which for the curated families is a different spelling (an OS face name or a TTF
+    under assets/font_source).  Until recipes carry the face (RESOURCE_ID_PLAN Phase 6), this
+    small table maps the curated directories to their faces; an unknown family passes through
+    unchanged, which is right for a directory named after a face dev_font can already resolve.
 ==============================================================================================*/
 
-const char*        font_family_bake_source( gui_font_family_t fam ); // runtime baker request name; NULL = NONE / no source
-const char*        font_family_ship_stem  ( gui_font_family_t fam ); // shipped .orb_font filename stem; NULL = NONE
+const char*        font_family_face( const char* family );   // baker source for a family directory; never NULL
 
-/* Name utilities shared by the resolver's shipped-bake scan and its memo keying (unit-tested in
-   sb_gui_test).  Normalize: lowercase alphanumeric-only, so "Cascadia Mono" == "CascadiaMono" ==
-   "cascadia_mono".  Parse: split "<stem>_<N>px[<tags>].orb_font" into stem + size + tag facts;
-   false for names carrying no "_<N>px" size token. */
+/* Memo keying: lowercase alphanumeric-only copy, so "Cascadia Mono" == "CascadiaMono" ==
+   "cascadia_mono" (unit-tested in sb_gui_test). */
 
 void               font_name_normalize ( const char* s, char* out, int out_size );
-bool               font_ship_name_parse( const char* filename, char* stem, int stem_size,
-                                         u32* size_px, bool* tagged, bool* sdf );
 
 /*==============================================================================================
     Metric readers -- the active font's measurement surface.  Pure sizes + math over the loaded

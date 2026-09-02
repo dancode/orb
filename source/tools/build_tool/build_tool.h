@@ -413,14 +413,6 @@ typedef struct target_info_s
 
     const char*     units[ TARGET_MAX_SLOTS ];
 
-    /*  Shader sources, relative to root_dir like units. Each is cooked into
-        bin/shaders/<stem>.oshd before this target compiles, by asset_tool (which
-        derives the dxc profile from the .vs/.ps stage tag in the name). A target
-        declaring these must also carry 'tool_dep asset_tool shader_tool', which is
-        what orders the cookers ahead of it under the parallel scheduler. */
-
-    const char*     shaders[ TARGET_MAX_SLOTS ];
-
     /*  Link Dependencies: Other targets that produce .libs this target must link against.
         Drives both the linker's input list and the parallel scheduler's topological order. */
 
@@ -693,13 +685,16 @@ bool build_target_compile_single( build_context_t* ctx, target_info_t* target,
 
 bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
 
-/*  Cooks every shader the target declares into bin/shaders/<stem>.oshd, skipping
-    any whose .oshd is already newer than its source. Runs ahead of the artifact's
-    up-to-date check rather than inside it: the cooked file is an input to the
-    RUNTIME, not to the compiler, so editing a shader must re-cook without also
-    forcing a recompile of C code that did not change. */
+/*  Cooks every name in the target's resource manifest that needs a cooked form (a
+    stage-tagged .hlsl -> .oshd, a .recipe -> the file its kind line names) into the
+    cooked mirror <build>/content/<name>.<ext>, skipping any already newer than its
+    source and cookers. Reads the manifest at <obj_dir>; a missing manifest is not an
+    error (the first build cooks after res_tool writes one). Runs ahead of the
+    artifact's up-to-date check and again after the manifest is regenerated: a cooked
+    file is an input to the RUNTIME, not to the compiler, so editing a shader must
+    re-cook without also forcing a recompile of C code that did not change. */
 
-bool build_cook_shaders( build_context_t* ctx, target_info_t* target );
+bool build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj_dir );
 
 /*  Harvests the resource names (RID / RES_TREE tokens) the target's image references
     into <obj_dir>/<name>_res_manifest.txt, each resolved against the content roots (this

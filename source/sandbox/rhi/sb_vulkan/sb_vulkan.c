@@ -18,6 +18,9 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
+#include "engine/res/res.h"
+#include "engine/pack/pack_host.h"
+#include "engine/fs/fs_host.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
@@ -42,6 +45,8 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( pack );
+    mod_static( fs );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -117,9 +122,19 @@ main( int argc, char** argv )
     }
 
     /* ------------------------------------------------------------------------------ */
-    /* Setup GUI -- the render-status overlay (see the file header). */
+    /* Setup GUI -- the render-status overlay (see the file header).  This sandbox takes the
+       explicit init path rather than gui()->boot(), so it makes the content mounts a runtime
+       host would: the cooked mirror above loose content/, both under the engine root. */
 
-    if ( !gui()->init( GUI_FONT_JETBRAINS, 16 ) )
+    {
+        char path[ 576 ];
+        snprintf( path, sizeof( path ), "%s/build/content", sys_root_dir() );
+        fs()->mount( "", path, 10 );
+        snprintf( path, sizeof( path ), "%s/content", sys_root_dir() );
+        fs()->mount( "", path, 0 );
+    }
+
+    if ( !gui()->init( RID( "font/jetbrains/16" ) ) )
     {
         fprintf( stderr, "[sb_vulkan] gui->init failed\n" );
         sb_vk_boot_destroy( &boot );

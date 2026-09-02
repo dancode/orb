@@ -1,0 +1,7 @@
+# Distance-field Latin-1 bake (plus the euro sign) for sb_gui_utf.
+
+kind    font
+face    CascadiaMono
+size    32
+sdf     8
+range   latin1,0x20AC

@@ -2,8 +2,9 @@
 // all.  The pipeline binds nothing; the draw is cmd_draw of 6 * N bare vertices, and this stage
 // computes which quad and which corner it is from SV_VertexID, fetches the 48-byte quad record
 // (gui.h, gui_quad_t) from the bindless storage-buffer array, and expands the corner position
-// itself.  Cooked to bin/shaders/qp_pull.vs.oshd by the 'shader' lines on the sb_quad_pull
-// target; qp_vb.vs.hlsl is the classic vertex-buffer stage it is measured against.
+// itself.  Resource name "sandbox/quad_pull/qp_pull.vs", cooked by the build because
+// sb_quad_pull marks it with RID(); qp_vb.vs.hlsl is the classic vertex-buffer stage it is
+// measured against.
 //
 // The push constant block mirrors qp_push_t in sb_quad_pull.c; keep the three shaders and the
 // C struct in step.

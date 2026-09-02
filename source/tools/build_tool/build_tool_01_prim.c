@@ -154,7 +154,7 @@ mmap_next_line( const char** p, const char* end, char* buf, size_t buf_size )
 
     Usually keyed by target name, but the key is really the OUTPUT.  Two targets that share a
     source tree can declare the same generated file, and those must serialize against each other
-    rather than against everything else their target builds -- see build_cook_shaders.
+    rather than against everything else their target builds -- see build_cook_content.
 ==============================================================================================*/
 
 void*

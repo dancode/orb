@@ -28,6 +28,9 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
+#include "engine/res/res.h"
+#include "engine/pack/pack_host.h"
+#include "engine/fs/fs_host.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
@@ -232,8 +235,8 @@ static bool
 load_icons( void )
 {
     static const char* const s_my_icons[] = {
-        "save", "assets/icon/save.png",
-        // "assets/my_project/icon/play.png",
+        "save", RID( "ui/icon/save" ),
+        // "play", RID( "my_project/icon/play" ),
     };
 
     u32 count = ARRAY_COUNT( s_my_icons );
@@ -1473,6 +1476,8 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( pack );
+    mod_static( fs );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -1495,7 +1500,7 @@ main( int argc, char** argv )
         .title      = "ORB -- gui render matrix",
         .w          = 1920, .h = 1024,
         .os_chrome  = true,
-        .font       = GUI_FONT_CASCADIA_MONO,
+        .font       = RID( "font/cascadiamono/16" ),
         .clock      = sys_tick_seconds,
         .sleep      = sys_sleep_milliseconds,
         .wait       = sys_wait_for_os_events_ms,

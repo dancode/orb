@@ -49,7 +49,8 @@
 #include "base/math.h"    // f32_lerp -- from/to interpolation for the animation service
 #include "base/math_ease.h"    // f32_ease_* shapers -- the easing curves the animation service applies
 
-#include "engine/sys/sys_host.h"    // sys_root_dir -- disk assets (load_icon, asset_path) resolve root-relative
+#include "engine/sys/sys_host.h"    // sys_root_dir -- the boot path's default content mounts (gui_boot.c)
+#include "runtime_service/gui/gui_res.h"    // content bytes by resource name through fs
 
 /* The orchestrator's world -- everything, in stack order (each carved unit includes only
    the headers at or below its layer; this unit sits on top and includes them all). */
@@ -82,7 +83,7 @@
 bool           viewport_create ( i32 vp, rhi_texture_t target, i32 win_id );             /* gui_viewport.c */
 void           viewport_destroy( i32 vp );                                               /* gui_viewport.c */
 
-void           gui_dpi_base_set( gui_font_family_t fam, u32 landed_px );                      /* gui_frame_dpi.c */
+void           gui_dpi_base_set( const char* fam, u32 landed_px );                            /* gui_frame_dpi.c */
 bool           gui_dpi_poll    ( void );                                                      /* gui_frame_dpi.c */
 
 /* The public DPI trio (gui_host.h), forward-declared for the same include-order reason: the
@@ -91,17 +92,16 @@ void           gui_dpi_set     ( gui_dpi_mode_t mode, f32 scale );              
 gui_dpi_mode_t gui_dpi_mode    ( void );                                                      /* gui_frame_dpi.c */
 f32            gui_dpi_scale   ( void );                                                      /* gui_frame_dpi.c */
 
-u32            font_resolve           ( gui_font_family_t fam, const char* name, u32 size_px,
+u32            font_resolve           ( const char* family, u32 size_px,
                                         bool held, u32* out_landed_px );                      /* gui_frame_resolve.c */
-void           font_resolve_boot      ( gui_font_family_t fam, u32 size_px, u32* out_landed_px );
-void           font_resolve_adopt_default( gui_font_family_t fam, u32 landed_px );
+void           font_resolve_boot      ( const char* family, u32 size_px, u32* out_landed_px );
+void           font_resolve_adopt_default( const char* family, u32 landed_px );
 bool           font_resolve_fresh_take( void );
 u32            font_resolve_generation( void );
 void           font_resolve_frame_tick( void );
 bool           font_resolve_evict_stale( void );   /* also called upward by gui_res_atlas.c */
 void           font_resolve_pin       ( u32 pin_slot, u32 id );
 void           font_resolve_clear     ( void );
-void           font_resolve_shutdown  ( void );   /* drops the ship-scan listing; shutdown-only */
 
 /* Resolver debug readout, consumed by the font overlay -- gui_frame_overlay.c precedes
    gui_frame_resolve.c in this unit, so the ledger's window is declared here. */
@@ -109,8 +109,6 @@ typedef struct
 {
     u32  memo_used;      // request -> id ledger entries in use
     u32  memo_cap;
-    u32  ship_count;     // parsed shipped bakes under assets/font
-    bool ship_scanned;   // the lazy directory scan has run
     bool baker;          // a runtime baker is installed
 
 } font_resolve_debug_t;

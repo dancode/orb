@@ -215,14 +215,16 @@ typedef bool ( *gui_edit_key_fn )( u32 key, bool ctrl, bool shift, bool repeat, 
    installed for the duration of the call. */
 typedef void ( *gui_style_source_fn )( void* user );
 
-/* Runtime font baker (see font_baker_set) -- resolve "this typeface at this pixel size" to a
-   baked .orb_font on disk.  gui asks it for the type-ramp sizes (GUI_VAR_TYPE_SMALL / _LARGE)
-   it has no shipped bake for; `family` is a source name a baker like dev_font_get resolves (a file in
-   assets/font_source or an OS-installed face name), size_px is final (DPI already applied).
-   Write the absolute path into out_path and return true; false = cannot bake (gui records the
-   failure once per size and leaves that role at the body size). */
-typedef bool ( *gui_font_bake_fn )( const char* family, u32 size_px,
-                                    char* out_path, int out_path_size, void* user );
+/* Runtime font baker (see font_baker_set) -- bake "this typeface at this pixel size" to
+   .orb_font BYTES.  gui asks it for any size no cooked bake answers (the DPI retarget, the
+   type-ramp sizes GUI_VAR_TYPE_SMALL / _LARGE, font_get); `face` is a source name a baker like
+   dev_font_get resolves (a file in assets/font_source or an OS-installed face name), size_px is
+   final (DPI already applied).  Return true with *out_data pointing at a malloc'd buffer of
+   *out_size bytes -- gui parses it and frees it with free() -- or false = cannot bake (gui
+   records the failure once per size and degrades that request).  Bytes rather than a path so
+   gui never opens a file outside the fs mounts. */
+typedef bool ( *gui_font_bake_fn )( const char* face, u32 size_px,
+                                    void** out_data, u32* out_size, void* user );
 
 /* A style SET -- one installed copy of gui_style_t, the whole schema.  Set 0 is chrome's and always
    exists; gui()->style_set_create() takes another, and style_set_push / _pop bracket the UI
@@ -2818,25 +2820,20 @@ typedef i32 ( *gui_table_sort_cmp_fn )( i32 a, i32 b, i32 col, bool descending, 
 // clang-format on
 /*==============================================================================================
     GUI_FRAME -- font configuration
+
+    A font is a resource NAME: "font/<family>/<size>", the path of its bake under content/ minus
+    the extension ("font/cascadiamono/16" is content/font/cascadiamono/16.recipe, cooked to
+    build/content/font/cascadiamono/16.orb_font).  The family is the directory and the size is
+    the last segment, so a name is also a REQUEST the resolver can vary: from the boot font's
+    name it composes "font/cascadiamono/19" for a DPI retarget or a type-ramp role and asks the
+    mounts for that bake, then the host-installed baker, then settles for a resident size.
+
+    Mark the names you write in source with RID() so the build resolves them and the package
+    ships them (engine/res/res.h).  The curated families -- cascadiamono, cascadiacode, jetbrains,
+    roboto -- have recipes under content/font; any other family directory works the same way.
 ==============================================================================================*/
-/* Curated font families -- the "it just works" font selection.  A family names a typeface, not
-   a file: the resolver finds a bake at any requested size (a shipped .orb_font, a cached bake,
-   or the host-installed runtime baker), so no size matrix exists here.  A face outside this
-   list is reached by source name through font_get() with identical behavior.  GUI_FONT_NONE
-   boots no managed font; the caller is then responsible for its own font_load() before the
-   first frame renders. */
 
-typedef enum
-{
-    GUI_FONT_NONE = 0,        // no managed font; the caller loads its own via font_load()
-    GUI_FONT_JETBRAINS,       // JetBrains Mono NL (OS-installed)
-    GUI_FONT_ROBOTO,          // Roboto Regular (assets/font_source)
-    GUI_FONT_CASCADIA_MONO,   // Cascadia Mono (ships with Windows 11)
-    GUI_FONT_CASCADIA_CODE,   // Cascadia Code (ships with Windows 11)
-
-    GUI_FONT_FAMILY_COUNT
-
-} gui_font_family_t;
+#define GUI_FONT_FAMILY_MAX   48      // bytes of a family name (the "font/<family>/" middle), incl. NUL
 
 /*==============================================================================================
     GUI_FRAME -- DPI response mode
@@ -2880,8 +2877,8 @@ typedef struct
                                     // with the gui chrome shell auto-emitted
 
     bool               debug;       // arm the debug hotkey driver (debug_enable)
-    gui_font_family_t  font;        // managed boot family; GUI_FONT_NONE = caller font_load()s
-    u32                font_size;   // requested boot size, px; 0 = 16
+    const char*        font;        // managed boot font name, e.g. RID( "font/cascadiamono/16" );
+                                    // NULL = no managed font, the caller font_load()s its own
 
     gui_clock_fn       clock;       // system clock function callback
     gui_sleep_fn       sleep;       // system sleep function callback

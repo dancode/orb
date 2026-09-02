@@ -4,15 +4,22 @@
 
     Every managed font in the GUI comes through here: the boot font, the DPI engine's
     per-monitor sizes, the type ramp's SMALL/LARGE roles, and the public font_get.  A font is
-    a REQUEST -- a family plus a pixel size -- and this file turns requests into loaded
-    registry ids through a layered search:
+    a REQUEST -- a family (the directory under content/font) plus a pixel size -- and this file
+    turns requests into loaded registry ids through a layered search:
 
         (a) resident  -- the memo already holds this (family, size); free.
-        (b) shipped   -- an exact-size bake under assets/font/ (lazy one-time directory scan).
+        (b) cooked    -- the bake "font/<family>/<size>.orb_font" read through the fs mounts
+                         (gui_res.h): a size some RID() named, cooked by the build.
         (c) baker     -- the host-installed runtime baker (font_baker_set; dev_font_get is the
-                         canonical wiring) bakes the exact size on demand.
-        (d) ladder    -- nearest resident or shipped size in the same family, ties toward the
-                         LARGER bake; failing even that, the default font (id 0).
+                         canonical wiring) bakes the exact size on demand and hands back bytes.
+        (d) ladder    -- nearest RESIDENT size in the same family, ties toward the LARGER bake;
+                         failing even that, the default font (id 0).
+
+    The mounts are never enumerated -- a pack cannot be listed, and the set of bakes that exist
+    is exactly the set of names the code marked -- so layer (d) knows only what is already
+    loaded.  In a shipped build without a baker that is the boot size and whatever else was
+    RID'd and requested; the DPI retarget degrades to the boot bake, which is the readable
+    fallback, and the type ramp stays off for sizes with no bake.
 
     A resolve never hard-fails and never activates: the active font and the draw stamp are
     restored around every load, so no resolution can read as a host takeover to the DPI
@@ -25,14 +32,13 @@
     an entry requested this frame or the previous emitted frame is LIVE and eviction-exempt.
     Stop requesting it and it goes stale -- still resident (unloading is lazy; a stale font
     costs nothing), but its slot is reclaimable the moment a load needs one, and requesting
-    it again reloads from the bake cache.  The DPI engine and type ramp PIN their live ids
-    per frame instead of stamping.  Under registry pressure one stale, unpinned owner is
-    released (slot + atlas tenant) and the load retried.  A degraded answer (landed !=
-    wanted) is recorded as an ALIAS of the owning entry's slot -- it releases nothing -- and
-    a request no layer could serve latches a failure sentinel so it costs one attempt, not
-    one per frame.  Installing a baker drops latches and stale aliases and bumps a
-    generation counter, which tells the DPI engine to re-resolve: early degraded answers
-    self-heal once a baker arrives.
+    it again reloads.  The DPI engine and type ramp PIN their live ids per frame instead of
+    stamping.  Under registry pressure one stale, unpinned owner is released (slot + atlas
+    tenant) and the load retried.  A degraded answer (landed != wanted) is recorded as an
+    ALIAS of the owning entry's slot -- it releases nothing -- and a request no layer could
+    serve latches a failure sentinel so it costs one attempt, not one per frame.  Installing a
+    baker drops latches and stale aliases and bumps a generation counter, which tells the DPI
+    engine to re-resolve: early degraded answers self-heal once a baker arrives.
 
     Included by gui_frame.c after gui_frame_font.c (its loads ride the same deferred-upload
     flush) and before gui_frame_dpi.c / gui_frame_type.c, its two internal clients.
@@ -42,7 +48,6 @@
 
 #define FONT_RESOLVE_MEMO_MAX 24        // > registry 16: latches + aliases hold no slot
 #define FONT_RESOLVE_FAILED   0xFFFFu   // memo id: no layer could serve; one attempt per generation
-#define FONT_RESOLVE_SHIP_MAX 64        // shipped-scan entries (assets/font)
 
 typedef struct
 {
@@ -56,16 +61,6 @@ typedef struct
                      // entry (DPI / ramp / boot).  Live -- eviction-exempt -- while within
                      // one emitted frame of now; stale after that (the immediate-mode hold)
 } font_memo_t;
-
-typedef struct
-{
-    u32  stem_hash;  // normalized filename stem
-    u16  size_px;    // parsed from "_<N>px"
-    u8   tagged;     // filename carries tags after the size token
-    u8   sdf;        // "_sdf" tag present -- never auto-resolved (SDF is an authored choice)
-    u16  name_off;   // filename inside assets/font/ -- offset into the shared name pool (gui_names.h)
-
-} font_ship_entry_t;
 
 /* Pin slots -- ids the eviction pass may never touch while their owner has them live.
    Slot 0 (the default font) is implicitly pinned; publicly requested memo entries protect
@@ -87,10 +82,6 @@ static struct
     u32               memo_count;
     u32               pin [ FONT_PIN_COUNT ];           // eviction-exempt ids (0 = pin free)
 
-    font_ship_entry_t ship[ FONT_RESOLVE_SHIP_MAX ];    // parsed assets/font/ listing
-    u32               ship_count;
-    bool              ship_scanned;                     // lazy one-time sys_file_glob
-
     u32               generation;                       // baker installs bump this (dpi re-poll signal)
     u32               frame_gen;                        // emitted-frame counter (font_resolve_frame_tick)
     bool              fresh;                            // a resolve loaded pixels since the last take
@@ -98,7 +89,7 @@ static struct
 } s_resolver = { .frame_gen = 1 };                      // gen 0 = "never requested" in seen_gen
 
 /*==============================================================================================
-    Small helpers -- hashing, canonical names, pin/liveness tests.
+    Small helpers -- hashing, names, pin/liveness tests.
 ==============================================================================================*/
 
 static u32
@@ -113,27 +104,21 @@ resolve_hash_str( const char* s )
     return h ? h : 1u;
 }
 
-/* Hash of a request's canonical family name: the baker source string for a curated family
-   (so an enum request and a string request for the same face share one memo lineage), the raw
-   string otherwise. */
+/* Hash of a request's family, normalized so two spellings of one directory share a lineage. */
 static u32
-resolve_name_hash( gui_font_family_t fam, const char* name )
+resolve_name_hash( const char* family )
 {
-    const char* src = fam != GUI_FONT_NONE ? font_family_bake_source( fam ) : name;
-    char        norm[ 96 ];
-    font_name_normalize( src ? src : "", norm, sizeof( norm ) );
+    char norm[ 96 ];
+    font_name_normalize( family ? family : "", norm, sizeof( norm ) );
     return resolve_hash_str( norm );
 }
 
-/* Hash the shipped-bake scan matches on: the ship stem for a curated family, the raw string
-   otherwise -- a string request finds shipped files only by their actual file stem. */
-static u32
-resolve_ship_hash( gui_font_family_t fam, const char* name )
+/* The resource name a request resolves to: "font/<family>/<size>".  False when it does not fit. */
+static bool
+resolve_name( char* out, size_t cap, const char* family, u32 size_px )
 {
-    const char* src = fam != GUI_FONT_NONE ? font_family_ship_stem( fam ) : name;
-    char        norm[ 96 ];
-    font_name_normalize( src ? src : "", norm, sizeof( norm ) );
-    return resolve_hash_str( norm );
+    int n = fmt_snprintf( out, (int)cap, "font/%s/%u", family, size_px );
+    return n > 0 && (size_t)n < cap;
 }
 
 static bool
@@ -249,19 +234,19 @@ resolve_memo_insert( u32 name_hash, u32 size_px, bool touch, u32 id, u32 landed_
     Loading -- the one guarded path every resolver load takes.
 ==============================================================================================*/
 
-/* font_load ACTIVATES what it loads, so the active font and the draw stamp are restored around
-   it -- a resolver load must never move the ambient state the DPI lineage guard and draw_reset
-   read.  A load refused by a FULL registry (not a parse failure) evicts one owner and retries
-   once. */
+/* font_load_mem ACTIVATES what it loads, so the active font and the draw stamp are restored
+   around it -- a resolver load must never move the ambient state the DPI lineage guard and
+   draw_reset read.  A load refused by a FULL registry (not a parse failure) evicts one owner
+   and retries once. */
 static u32
-resolve_load( const char* path )
+resolve_load( const void* data, u32 size, const char* name )
 {
     u32 prev      = font_active_id();
     u32 prev_draw = draw_get_font();
 
-    u32 id = font_load( path );
+    u32 id = font_load_mem( data, size, name );
     if ( id == 0 && font_alloc_slot() == 0 && resolve_evict_one() )
-        id = font_load( path );
+        id = font_load_mem( data, size, name );
 
     font_use( prev );
     draw_set_font( prev_draw );
@@ -272,70 +257,81 @@ resolve_load( const char* path )
 }
 
 /*==============================================================================================
-    Layer (b) -- the shipped-bake scan of assets/font/.
+    Layers (b) and (c) -- where a bake's bytes come from.
+
+    Both hand back a buffer the caller releases with resolve_bytes_free: layer (b) is an fs
+    blob, layer (c) a malloc'd buffer from the baker (gui_font_bake_fn).  `name` is the
+    resource name the bytes stand for, kept as the slot's identity.
 ==============================================================================================*/
 
-static bool
-resolve_ship_cb( const char* filename, const char* full_path, void* ud )
+typedef struct
 {
-    (void)full_path; (void)ud;
-    if ( s_resolver.ship_count >= FONT_RESOLVE_SHIP_MAX )
-        return false;
+    void*     data;
+    u32       size;
+    bool      ok;
+    bool      from_fs;    // release through fs()->free rather than free()
+    fs_blob_t blob;
 
-    char stem[ 96 ];
-    u32  px;
-    bool tagged, sdf;
-    if ( !font_ship_name_parse( filename, stem, sizeof( stem ), &px, &tagged, &sdf ) )
-        return true;   /* size-less name: not resolvable, skip */
+} resolve_bytes_t;
 
-    char norm[ 96 ];
-    font_name_normalize( stem, norm, sizeof( norm ) );
-
-    font_ship_entry_t* e = &s_resolver.ship[ s_resolver.ship_count++ ];
-    e->stem_hash = resolve_hash_str( norm );
-    e->size_px   = (u16)px;
-    e->tagged    = tagged ? 1 : 0;
-    e->sdf       = sdf ? 1 : 0;
-    e->name_off  = gui_names_intern( filename );
-    return true;
-}
-
-static void
-resolve_ship_scan( void )
+/* Layer (b): the cooked bake through the mounts.  Quiet on a miss -- most requests that reach
+   this layer are runtime-composed sizes no RID() named, and the layers below are the answer. */
+static resolve_bytes_t
+resolve_bytes_cooked( const char* name )
 {
-    if ( s_resolver.ship_scanned )
-        return;
-    s_resolver.ship_scanned = true;
-
-    char dir[ 576 ];
-    fmt_snprintf( dir, sizeof( dir ), "%s/assets/font", sys_root_dir() );
-    sys_file_glob( dir, "*.orb_font", resolve_ship_cb, NULL );
-}
-
-/* The shipped file serving (stem, size), or NULL.  Untagged coverage beats tagged; SDF files
-   never answer. */
-static const font_ship_entry_t*
-resolve_ship_find( u32 stem_hash, u32 size_px )
-{
-    resolve_ship_scan();
-
-    const font_ship_entry_t* best = NULL;
-    for ( u32 i = 0; i < s_resolver.ship_count; ++i )
+    resolve_bytes_t r = { 0 };
+    r.blob = gui_res_read( name, ".orb_font" );
+    if ( r.blob.ok )
     {
-        const font_ship_entry_t* e = &s_resolver.ship[ i ];
-        if ( e->stem_hash != stem_hash || e->size_px != size_px || e->sdf )
-            continue;
-        if ( !best || ( best->tagged && !e->tagged ) )
-            best = e;
+        r.data    = r.blob.data;
+        r.size    = r.blob.size;
+        r.ok      = true;
+        r.from_fs = true;
     }
-    return best;
+    return r;
+}
+
+/* Layer (c): the installed baker, asked for the family's typeface at the exact size. */
+static resolve_bytes_t
+resolve_bytes_baked( const char* family, u32 size_px )
+{
+    resolve_bytes_t r = { 0 };
+    if ( !s_resolver.baker )
+        return r;
+    void* data = NULL;
+    u32   size = 0;
+    if ( s_resolver.baker( font_family_face( family ), size_px, &data, &size, s_resolver.baker_user )
+         && data && size )
+    {
+        r.data = data;
+        r.size = size;
+        r.ok   = true;
+    }
+    else
+    {
+        free( data );
+    }
+    return r;
 }
 
 static void
-resolve_ship_path( const font_ship_entry_t* e, char* out, int out_size )
+resolve_bytes_free( resolve_bytes_t* r )
 {
-    fmt_snprintf( out, (size_t)out_size, "%s/assets/font/%s", sys_root_dir(),
-                  gui_names_cstr( e->name_off ) );
+    if ( r->from_fs )
+        fs()->free( &r->blob );
+    else
+        free( r->data );
+    memset( r, 0, sizeof( *r ) );
+}
+
+/* Layers (b) then (c) for one (family, size): the bake's bytes, or ok=false. */
+static resolve_bytes_t
+resolve_bytes( const char* family, u32 size_px, const char* name )
+{
+    resolve_bytes_t r = resolve_bytes_cooked( name );
+    if ( !r.ok )
+        r = resolve_bytes_baked( family, size_px );
+    return r;
 }
 
 /*==============================================================================================
@@ -343,16 +339,14 @@ resolve_ship_path( const font_ship_entry_t* e, char* out, int out_size )
 ==============================================================================================*/
 
 u32
-font_resolve( gui_font_family_t fam, const char* name, u32 size_px,
-              bool touch, u32* out_landed_px )
+font_resolve( const char* family, u32 size_px, bool touch, u32* out_landed_px )
 {
     if ( out_landed_px )
         *out_landed_px = 0;
-    if ( size_px == 0 || size_px > 0xFFFFu
-         || ( fam == GUI_FONT_NONE && ( !name || !*name ) ) )
+    if ( size_px == 0 || size_px > 0xFFFFu || !family || !*family )
         return 0;
 
-    u32 hash = resolve_name_hash( fam, name );
+    u32 hash = resolve_name_hash( family );
 
     /* (a) resident memo -- exact key hit answers immediately (latch answers "default").  A
        public request re-stamps the entry: the per-frame font_get call IS the hold. */
@@ -376,16 +370,15 @@ font_resolve( gui_font_family_t fam, const char* name, u32 size_px,
         return 0;
     }
 
-    u32 ship_hash = resolve_ship_hash( fam, name );
-
-    /* (b) shipped bake at the exact size. */
+    /* (b) the cooked bake, (c) the baker -- either way the exact size. */
+    char name[ RES_NAME_MAX + 1 ];
+    if ( resolve_name( name, sizeof( name ), family, size_px ) )
     {
-        const font_ship_entry_t* e = resolve_ship_find( ship_hash, size_px );
-        if ( e )
+        resolve_bytes_t bytes = resolve_bytes( family, size_px, name );
+        if ( bytes.ok )
         {
-            char path[ 576 ];
-            resolve_ship_path( e, path, sizeof( path ) );
-            u32 id = resolve_load( path );
+            u32 id = resolve_load( bytes.data, bytes.size, name );
+            resolve_bytes_free( &bytes );
             if ( id )
             {
                 resolve_memo_insert( hash, size_px, touch, id, size_px );
@@ -396,31 +389,11 @@ font_resolve( gui_font_family_t fam, const char* name, u32 size_px,
         }
     }
 
-    /* (c) the installed baker -- exact size on demand. */
-    {
-        const char* source = fam != GUI_FONT_NONE ? font_family_bake_source( fam ) : name;
-        if ( s_resolver.baker && source )
-        {
-            char path[ 576 ];
-            if ( s_resolver.baker( source, size_px, path, sizeof( path ), s_resolver.baker_user ) )
-            {
-                u32 id = resolve_load( path );
-                if ( id )
-                {
-                    resolve_memo_insert( hash, size_px, touch, id, size_px );
-                    if ( out_landed_px )
-                        *out_landed_px = size_px;
-                    return id;
-                }
-            }
-        }
-    }
-
-    /* (d) ladder -- nearest in-family size, resident answers preferred over loading a shipped
-       neighbour, ties toward the LARGER size (a step too big stays readable). */
+    /* (d) ladder -- nearest RESIDENT in-family size, ties toward the LARGER size (a step too
+       big stays readable). */
     {
         u32 best_size = 0;
-        u32 best_id   = 0;   /* 0 = the winning size is a shipped file not yet resident */
+        u32 best_id   = 0;
 
         for ( u32 i = 0; i < s_resolver.memo_count; ++i )
         {
@@ -438,42 +411,12 @@ font_resolve( gui_font_family_t fam, const char* name, u32 size_px,
             }
         }
 
-        resolve_ship_scan();
-        for ( u32 i = 0; i < s_resolver.ship_count; ++i )
-        {
-            const font_ship_entry_t* e = &s_resolver.ship[ i ];
-            if ( e->stem_hash != ship_hash || e->sdf || e->size_px == size_px )
-                continue;
-            u32 c  = e->size_px;
-            u32 d  = c > size_px ? c - size_px : size_px - c;
-            u32 bd = best_size > size_px ? best_size - size_px : size_px - best_size;
-            if ( !best_size || d < bd || ( d == bd && c > best_size ) )
-            {
-                best_size = c;
-                best_id   = 0;   /* load below */
-            }
-        }
-
-        if ( best_size && best_id == 0 )
-        {
-            const font_ship_entry_t* e = resolve_ship_find( ship_hash, best_size );
-            if ( e )
-            {
-                char path[ 576 ];
-                resolve_ship_path( e, path, sizeof( path ) );
-                best_id = resolve_load( path );
-                if ( best_id )
-                    resolve_memo_insert( hash, best_size, false, best_id, best_size );
-            }
-            if ( !best_id )
-                best_size = 0;
-        }
-
         if ( best_size )
         {
             resolve_memo_insert( hash, size_px, touch, best_id, best_size );
-            GUI_WARN_ONCE( "font resolver: no exact bake at %upx -- nearest is %upx "
-                           "(install a font baker for exact sizes)", size_px, best_size );
+            GUI_WARN_ONCE( "font resolver: no bake for '%s' at %upx -- nearest resident is %upx "
+                           "(mark RID( \"font/%s/%u\" ) or install a font baker for exact sizes)",
+                           family, size_px, best_size, family, size_px );
             if ( out_landed_px )
                 *out_landed_px = best_size;
             return best_id;
@@ -483,93 +426,60 @@ font_resolve( gui_font_family_t fam, const char* name, u32 size_px,
     /* Nothing in-family at any size: latch, warn, fall to the default font. */
     resolve_memo_insert( hash, size_px, touch, FONT_RESOLVE_FAILED, 0 );
     GUI_WARN_ONCE( "font resolver: no bake for '%s' at %upx -- falling back to the default font",
-                   fam != GUI_FONT_NONE ? ( font_family_bake_source( fam )
-                                                ? font_family_bake_source( fam ) : "?" )
-                                            : name,
-                   size_px );
+                   family, size_px );
     return 0;
 }
 
 /*==============================================================================================
-    font_resolve_boot -- resolve a PATH and load it into slot 0 (the boot font).
+    font_resolve_boot -- load a family at a size into slot 0 (the boot font).
 
-    gui_init's slot-0 load: same layers minus the memo (nothing is resident yet), landing in
-    the default slot via font_load_into so the whole default-font machinery (style landing,
-    DPI base) keeps its slot-0 anchor.  The landed (family, size) is memoized to id 0 so later
-    resolves of the base size answer the boot slot instead of loading a duplicate.
+    gui_init's slot-0 load: layers (b) and (c) minus the memo (nothing is resident yet), landing
+    in the default slot via font_load_into_mem so the whole default-font machinery (style
+    landing, DPI base) keeps its slot-0 anchor.  There is no nearest-size fallback here: the
+    mounts cannot be enumerated, and the boot size is the one name every host marks with
+    RID(), so it is cooked by construction.  The landed (family, size) is memoized to id 0 by
+    gui_dpi_base_set (font_resolve_adopt_default) so later resolves of the base size answer the
+    boot slot instead of loading a duplicate.
 ==============================================================================================*/
 
 void
-font_resolve_boot( gui_font_family_t fam, u32 size_px, u32* out_landed_px )
+font_resolve_boot( const char* family, u32 size_px, u32* out_landed_px )
 {
     if ( out_landed_px )
         *out_landed_px = 0;
-    if ( fam == GUI_FONT_NONE || size_px == 0 )
+    if ( !family || !*family || size_px == 0 )
         return;
 
-    u32  hash      = resolve_name_hash( fam, NULL );
-    u32  ship_hash = resolve_ship_hash( fam, NULL );
-    char path[ 576 ];
-    u32  landed = 0;
+    char name[ RES_NAME_MAX + 1 ];
+    if ( !resolve_name( name, sizeof( name ), family, size_px ) )
+        return;
 
-    const font_ship_entry_t* e = resolve_ship_find( ship_hash, size_px );
-    if ( e )
-    {
-        resolve_ship_path( e, path, sizeof( path ) );
-        landed = size_px;
-    }
-    else if ( s_resolver.baker && font_family_bake_source( fam )
-              && s_resolver.baker( font_family_bake_source( fam ), size_px,
-                                   path, sizeof( path ), s_resolver.baker_user ) )
-    {
-        landed = size_px;
-    }
-    else
-    {
-        /* Nearest shipped size -- the bakerless boot still comes up readable. */
-        u32 best = 0;
-        resolve_ship_scan();
-        for ( u32 i = 0; i < s_resolver.ship_count; ++i )
-        {
-            const font_ship_entry_t* s = &s_resolver.ship[ i ];
-            if ( s->stem_hash != ship_hash || s->sdf )
-                continue;
-            u32 c  = s->size_px;
-            u32 d  = c > size_px ? c - size_px : size_px - c;
-            u32 bd = best > size_px ? best - size_px : size_px - best;
-            if ( !best || d < bd || ( d == bd && c > best ) )
-                best = c;
-        }
-        if ( best && ( e = resolve_ship_find( ship_hash, best ) ) != NULL )
-        {
-            resolve_ship_path( e, path, sizeof( path ) );
-            landed = best;
-        }
-    }
+    resolve_bytes_t bytes = resolve_bytes( family, size_px, name );
+    bool            ok    = bytes.ok && font_load_into_mem( 0, bytes.data, bytes.size, name );
+    if ( bytes.ok )
+        resolve_bytes_free( &bytes );
 
-    if ( !landed || !font_load_into( 0, path ) )
+    if ( !ok )
     {
-        gui_log( GUI_LOG_WARN, "boot font: no bake for family %u at %upx -- continuing without text",
-                 (u32)fam, size_px );
+        gui_log( GUI_LOG_WARN, "boot font: no bake for '%s' (not in the content mounts, no baker) "
+                               "-- continuing without text", name );
         return;
     }
 
-    ( void )hash;   /* the memo entry for the boot size is gui_dpi_base_set's to place
-                       (font_resolve_adopt_default) -- it clears the memo first */
     if ( out_landed_px )
-        *out_landed_px = landed;
+        *out_landed_px = size_px;
 }
 
-/* Memo the default slot as the answer for (fam, landed_px), so resolving the base size hits
+/* Memo the default slot as the answer for (family, landed_px), so resolving the base size hits
    slot 0 instead of loading a duplicate.  gui_dpi_base_set calls this after its clear. */
 
 void
-font_resolve_adopt_default( gui_font_family_t fam, u32 landed_px )
+font_resolve_adopt_default( const char* family, u32 landed_px )
 {
-    if ( fam == GUI_FONT_NONE || landed_px == 0 )
+    if ( !family || !*family || landed_px == 0 )
         return;
     if ( resolve_memo_space() )
-        resolve_memo_insert( resolve_name_hash( fam, NULL ), landed_px, false, 0, landed_px );
+        resolve_memo_insert( resolve_name_hash( family ), landed_px, false, 0, landed_px );
 }
 
 /*==============================================================================================
@@ -607,7 +517,7 @@ font_resolve_evict_stale( void )
    gated on the frame having actually run widget code).  A clean skipped frame must not age
    the holds: no emission ran, so no font_get could have re-stamped its entry.  Entries not
    re-requested within one emitted frame go stale -- still resident, but reclaimable the
-   moment a load needs a registry slot; re-requesting reloads from the bake cache. */
+   moment a load needs a registry slot; re-requesting reloads. */
 void
 font_resolve_frame_tick( void )
 {
@@ -647,19 +557,6 @@ font_resolve_clear( void )
     }
 }
 
-/* True shutdown only -- unlike font_resolve_clear (also called mid-session on a family change,
-   which must never disturb the shipped-file listing), this drops the ship-scan itself so a
-   later gui_init rescans fresh rather than trusting a listing whose name_off values are about
-   to point into a name pool (gui_names.h) that gui_shutdown resets right after this call.
-   Call once, from gui_shutdown, after font_resolve_clear. */
-void
-font_resolve_shutdown( void )
-{
-    memset( s_resolver.ship, 0, sizeof( s_resolver.ship ) );
-    s_resolver.ship_count   = 0;
-    s_resolver.ship_scanned = false;
-}
-
 /* Install / replace the runtime baker.  Failure latches and stale degraded aliases are
    dropped -- the new baker may bake what the ladder had to substitute -- and the generation
    moves so the DPI engine re-resolves every viewport.  Exact loads are kept.  NULL uninstalls. */
@@ -692,11 +589,9 @@ font_resolve_debug_t
 font_resolve_debug( void )
 {
     font_resolve_debug_t d;
-    d.memo_used    = s_resolver.memo_count;
-    d.memo_cap     = FONT_RESOLVE_MEMO_MAX;
-    d.ship_count   = s_resolver.ship_count;
-    d.ship_scanned = s_resolver.ship_scanned;
-    d.baker        = s_resolver.baker != NULL;
+    d.memo_used = s_resolver.memo_count;
+    d.memo_cap  = FONT_RESOLVE_MEMO_MAX;
+    d.baker     = s_resolver.baker != NULL;
     return d;
 }
 
@@ -722,7 +617,7 @@ font_resolve_debug_flags( u32 id, char* out, int out_size )
         out[ n++ ] = 'L';
     out[ n ] = 0;
 
-    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v ) 
+    for ( u32 v = 0; v < GUI_MAX_VIEWPORTS; ++v )
     {
         if ( s_resolver.pin[ FONT_PIN_VP0 + v ] == id && n < out_size - 3 )
         {

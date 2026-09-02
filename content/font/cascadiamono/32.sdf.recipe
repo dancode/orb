@@ -1,0 +1,7 @@
+# Distance-field bake of the 32 px face: "font/cascadiamono/32.sdf" (the dot is part of the
+# name; the extension is what follows the LAST dot).
+
+kind    font
+face    CascadiaMono
+size    32
+sdf     8

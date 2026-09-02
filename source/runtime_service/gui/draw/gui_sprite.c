@@ -20,10 +20,10 @@
     (render/pipeline/gui_build_tess.c, tess_sprite), reached through the sprite source contract
     (sprite_get) the same way glyph metrics reach the tessellator.  Pixel SOURCING is split the way
     icons split it: sprite_register takes raw RGBA8 from whoever has it (procedural code, a host,
-    the asset pipeline later) and sprite_load_file is the from-disk caller on top.
+    the asset pipeline later) and sprite_load_res is the from-content caller on top.
 
-    Included by gui_draw.c after gui_icon_load.c, whose stb_image implementation and file slurp
-    (icon_read_file) it shares -- one decoder in this TU, not two.
+    Included by gui_draw.c after gui_icon_load.c, whose stb_image implementation and resource
+    read (image_read) it shares -- one decoder in this TU, not two.
 
 ==============================================================================================*/
 // clang-format off
@@ -211,36 +211,36 @@ sprite_get( gui_sprite_id_t id, f32* u0, f32* v0, f32* u1, f32* v1,
 }
 
 /*==============================================================================================
-    sprite_load_file -- decode an image file to RGBA8 and register it as a sprite.
+    sprite_load_res -- decode an image resource to RGBA8 and register it as a sprite.
 
     The icon loader's twin, minus the channel decision: an icon has to pick between alpha and
     luminance because it is collapsing colour into one coverage byte, and a sprite keeps every
     channel it was authored with, so there is nothing to decide.  Shares this TU's stb_image
-    implementation and icon_read_file (gui_icon_load.c, included just above).
+    implementation and image_read (gui_icon_load.c, included just above): `res` is a resource
+    name, RID( "ui/skin/frame" ), read through the fs mounts.
 
-    Returns the new sprite id, or GUI_SPRITE_NONE if the file is missing, undecodable, or the
-    atlas is full.  A missing file is a quiet failure (the caller decides whether that matters);
-    a present-but-broken file logs, since it signals a real asset problem.
+    Returns the new sprite id, or GUI_SPRITE_NONE if no mount serves the name, the bytes are
+    undecodable, or the atlas is full.  A missing resource is a quiet failure (the caller decides
+    whether that matters); a present-but-broken image logs, since it signals a real asset problem.
 ==============================================================================================*/
 
 gui_sprite_id_t
-sprite_load_file( const char* name, const char* path )
+sprite_load_res( const char* name, const char* res )
 {
-    if ( !name || !path )
+    if ( !name || !res )
         return GUI_SPRITE_NONE;
 
-    u32 size = 0;
-    u8* file = icon_read_file( path, &size );
-    if ( !file )
-        return GUI_SPRITE_NONE;   // missing / unreadable -- quiet
+    fs_blob_t file = image_read( res );
+    if ( !file.ok )
+        return GUI_SPRITE_NONE;   // no mount serves it -- quiet
 
     int      w = 0, h = 0, comp = 0;
-    stbi_uc* rgba = stbi_load_from_memory( file, (int)size, &w, &h, &comp, STBI_rgb_alpha );
-    free( file );
+    stbi_uc* rgba = stbi_load_from_memory( (const stbi_uc*)file.data, (int)file.size, &w, &h, &comp, STBI_rgb_alpha );
+    fs()->free( &file );
     if ( !rgba )
     {
         gui_log( GUI_LOG_WARN, "sprite '%s' decode failed ('%s'): %s",
-                 name, path, stbi_failure_reason() );
+                 name, res, stbi_failure_reason() );
         return GUI_SPRITE_NONE;
     }
 

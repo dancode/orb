@@ -252,9 +252,9 @@ font_registry_reset( void )
     s_active_id = 0;
 }
 
-/* Intern a family-root name for a registry slot (gui_font_load.c, after font_ship_name_parse
-   strips the size token) into the shared pool.  A dedicated accessor rather than reaching
-   across for gui_names_intern directly, matching font_alloc_slot / font_slot_ptr. */
+/* Intern a loaded font's resource name for its registry slot (gui_font_load.c) into the shared
+   pool.  A dedicated accessor rather than reaching across for gui_names_intern directly,
+   matching font_alloc_slot / font_slot_ptr. */
 u16
 font_name_intern( const char* s )
 {
@@ -271,11 +271,12 @@ font_slot_name( u32 id )
 }
 
 /*==============================================================================================
-    Name utilities -- how the resolver matches requests against files and memo keys.
+    Name utilities -- how the resolver keys its memo.
 ==============================================================================================*/
 
-/* Lowercase, alphanumeric-only copy of `s`, so a family name matches a filename stem regardless
-   of spaces, case, or punctuation: "Cascadia Mono" == "CascadiaMono" == "cascadia_mono". */
+/* Lowercase, alphanumeric-only copy of `s`, so two spellings of one family share a memo key
+   regardless of spaces, case, or punctuation: "Cascadia Mono" == "CascadiaMono" ==
+   "cascadia_mono". */
 void
 font_name_normalize( const char* s, char* out, int out_size )
 {
@@ -288,56 +289,6 @@ font_name_normalize( const char* s, char* out, int out_size )
             out[ len++ ] = c;
     }
     out[ len ] = '\0';
-}
-
-/* Split a shipped bake's filename -- "<stem>_<N>px[<tags>].orb_font" -- into its facts.  The
-   size token is the LAST "_<digits>px" whose successor is '.' or '_', so a stem containing that
-   shape itself still parses.  `tagged` reports anything between the size token and the
-   extension; `sdf` reports a "_sdf" among the tags (such files are never auto-resolved -- SDF is
-   an authored choice).  False for names with no size token (e.g. "Roboto-Regular.orb_font"):
-   the filename is the identity, and those carry none. */
-bool
-font_ship_name_parse( const char* filename, char* stem, int stem_size,
-                      u32* size_px, bool* tagged, bool* sdf )
-{
-    int name_len = (int)strlen( filename );
-    int ext_at   = name_len - 9;                       /* strlen(".orb_font") */
-    if ( ext_at <= 0 || strcmp( filename + ext_at, ".orb_font" ) != 0 )
-        return false;
-
-    /* Scan for the last "_<digits>px" token ending at '.' or '_'. */
-    int tok_at = -1, tok_end = -1;
-    for ( int i = 0; i < ext_at; ++i )
-    {
-        if ( filename[ i ] != '_' )
-            continue;
-        int j = i + 1;
-        while ( j < ext_at && filename[ j ] >= '0' && filename[ j ] <= '9' )
-            ++j;
-        if ( j == i + 1 || j + 1 >= ext_at + 1 )
-            continue;
-        if ( filename[ j ] == 'p' && filename[ j + 1 ] == 'x'
-             && ( j + 2 == ext_at || filename[ j + 2 ] == '_' ) )
-        {
-            tok_at  = i;
-            tok_end = j + 2;
-        }
-    }
-    if ( tok_at < 0 )
-        return false;
-
-    u32 px = 0;
-    for ( int i = tok_at + 1; filename[ i ] >= '0' && filename[ i ] <= '9'; ++i )
-        px = px * 10u + (u32)( filename[ i ] - '0' );
-
-    int n = tok_at < stem_size - 1 ? tok_at : stem_size - 1;
-    memcpy( stem, filename, (size_t)n );
-    stem[ n ] = '\0';
-
-    if ( size_px ) *size_px = px;
-    if ( tagged )  *tagged  = tok_end < ext_at;
-    if ( sdf )     *sdf     = strstr( filename + tok_end, "_sdf" ) != NULL;
-    return true;
 }
 
 /* Decentralized memory accounting -- the registry plus each loaded font's resident R8 glyph pixels

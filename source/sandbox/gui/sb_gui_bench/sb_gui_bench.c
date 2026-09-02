@@ -49,6 +49,9 @@
 #include "base/fmt.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
+#include "engine/res/res.h"
+#include "engine/pack/pack_host.h"
+#include "engine/fs/fs_host.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
@@ -106,6 +109,8 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( pack );
+    mod_static( fs );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -130,7 +135,7 @@ main( int argc, char** argv )
         .title = "ORB -- gui bench",
         .x     = 32, .y = 32,  
         .w     = ( i32 )BENCH_HOST_W, .h = ( i32 )BENCH_HOST_H,
-        .font  = GUI_FONT_JETBRAINS,
+        .font  = RID( "font/jetbrains/16" ),
         .clock = sys_tick_seconds,          /* arms the diff/tess/submit zones */
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,

@@ -618,13 +618,10 @@ bench_frame( void )
 
 /* font_load ACTIVATES what it loads, so the caller's font is put back (sb_gui_sdf pattern). */
 static u32
-bench_font_try( const char* asset )
+bench_font_try( const char* name )
 {
-    char path[ 576 ];
-    snprintf( path, sizeof( path ), "%s/assets/font/%s", sys_root_dir(), asset );
-
     u32 prev = gui()->font_active_id();
-    u32 id   = gui()->font_load( path );
+    u32 id   = gui()->font_load( name );
     gui()->font_use( prev );
     return id;
 }
@@ -632,7 +629,7 @@ bench_font_try( const char* asset )
 static void
 bench_assets_init( void )
 {
-    s_bench_font_sdf = bench_font_try( "CascadiaMono_32px_sdf.orb_font" );
+    s_bench_font_sdf = bench_font_try( RID( "font/cascadiamono/32.sdf" ) );
     if ( !s_bench_font_sdf )
         printf( "[sb_gui_bench] no SDF font bake -- text_outline will run plain and be marked\n" );
     bench_shape_init();

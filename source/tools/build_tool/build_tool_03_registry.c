@@ -39,7 +39,6 @@
             root        <source directory relative to project root>
             folder      <VS solution virtual folder>
             unit        <unity entry .c filename>           (one per line; multiple allowed)
-            shader      <stage-tagged .hlsl, relative to root>  (cooked to bin/shaders; repeatable)
             dep         <dependency target name>            (one per line; multiple allowed)
             tool_dep    <tool dependency name>              (one per line; multiple allowed)
             mono_dep    <monolithic-only link dep>          (one per line; multiple allowed)
@@ -515,7 +514,6 @@ registry_load( const char* path, bool is_external )
             }
             else if ( strcmp( key, "folder" ) == 0 && val ) cur_t->virtual_folder = pool_str( val );
             else if ( strcmp( key, "unit"   ) == 0 && val ) { if ( !reg_append_slot( cur_t->units, TARGET_MAX_SLOTS, val ) ) ok = false; }
-            else if ( strcmp( key, "shader" ) == 0 && val ) { if ( !reg_append_slot( cur_t->shaders, TARGET_MAX_SLOTS, val ) ) ok = false; }
             else if ( ( strcmp( key, "dep" ) == 0 || strcmp( key, "tool_dep" ) == 0
                      || strcmp( key, "mono_dep" ) == 0 ) && val )
             {

@@ -141,8 +141,7 @@ typedef struct
    gui is in k_modules[]. */
 typedef struct
 {
-    gui_font_family_t         font;       // GUI_FONT_NONE = host loads its own (font_load)
-    u32                       font_size;  // requested boot size, px; 0 = 16
+    const char*               font;       // boot font resource name, RID( "font/roboto/16" ); NULL = host font_load()s its own
     f32                       clear[ 4 ]; // main-surface clear color; alpha 0 = default dark
     bool                      debug;      // arm the gui debug hotkey driver (P/O/F9/F10...)  */
 

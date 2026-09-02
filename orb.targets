@@ -140,7 +140,7 @@ target run
     root        source/runtime
     folder      03_RUNTIME
     unit        run.c
-    dep         mod sys ref prof job net app core   # engine floor: run.c loads all of these in run_host_main
+    dep         mod sys ref prof pack fs job net app core   # engine floor: run.c loads all of these in run_host_main (and mounts content on fs)
 
 # ==============================================================================
 # 03_RUNTIME_SERVICE
@@ -185,11 +185,8 @@ target gui
     unit        gui_flow.c  				# GUI_FLOW unit: layout composition (metrics in, rects out)
     unit        gui_chrome.c   				# GUI_CHROME unit: widgets/table/window/dock/popup/nav
 
-    shader      shaders/gui_quad.vs.hlsl	# THE gui pipeline: SV_VertexID pull stage (bufferless)
-    shader      shaders/gui_quad.ps.hlsl	# THE gui pipeline: the fx band (gui_fx.hlsli), placement per quad
-
-    dep         app rhi base
-    tool_dep    asset_tool shader_tool		# the shader cookers, ordered ahead of this target
+    dep         app rhi fs base
+    tool_dep    asset_tool shader_tool font_tool	# content cookers: gui names shaders + font recipes, so every image linking it cooks them
 
 target asset
 
@@ -663,12 +660,9 @@ target sb_quad_pull						# bufferless quad-record proof: SV_VertexID pull vs cla
     root        source/sandbox/rhi/sb_quad_pull
     folder      09_SANDBOX/RHI
     unit        sb_quad_pull.c
-    shader      shaders/qp_pull.vs.hlsl	# cooked to bin/shaders/qp_pull.vs.oshd
-    shader      shaders/qp_vb.vs.hlsl	# cooked to bin/shaders/qp_vb.vs.oshd
-    shader      shaders/qp.ps.hlsl		# cooked to bin/shaders/qp.ps.oshd
-    dep         mod sys ref app core
+    dep         mod sys ref pack fs app core
     dep         rhi
-    tool_dep    asset_tool shader_tool	# the shader cookers, ordered ahead of this target
+    tool_dep    asset_tool shader_tool	# its RID'd shaders (content/sandbox/quad_pull) cook from the manifest
 
 # ==============================================================================
 # 09_SANDBOX -- GUI
@@ -690,7 +684,7 @@ target sb_gui_base						# minimal gui frame loop: boot + empty ctx begin/end + p
     root        source/sandbox/gui/sb_gui_base
     folder      09_SANDBOX/GUI
     unit        sb_gui_base.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_brush						# brush + sprite atlas + nine-slice test bed
@@ -699,7 +693,7 @@ target sb_gui_brush						# brush + sprite atlas + nine-slice test bed
     root        source/sandbox/gui/sb_gui_brush
     folder      09_SANDBOX/GUI
     unit        sb_gui_brush.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_test						# HEADLESS assertion tests: fx word, packing, rect kit, log sink, font lookup, caret math
@@ -708,7 +702,7 @@ target sb_gui_test						# HEADLESS assertion tests: fx word, packing, rect kit, 
     root        source/sandbox/gui/sb_gui_test
     folder      09_SANDBOX/GUI
     unit        sb_gui_test.c
-    dep         gui base sys app rhi core ref
+    dep         gui base sys app rhi core ref pack fs
 
 target sb_gui_utf						# extended characters: -range fonts, UTF-8 editing, byte anatomy
 
@@ -716,7 +710,7 @@ target sb_gui_utf						# extended characters: -range fonts, UTF-8 editing, byte 
     root        source/sandbox/gui/sb_gui_utf
     folder      09_SANDBOX/GUI
     unit        sb_gui_utf.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_sdf						# distance-field text: scale, rotation, hud numbers
@@ -725,7 +719,7 @@ target sb_gui_sdf						# distance-field text: scale, rotation, hud numbers
     root        source/sandbox/gui/sb_gui_sdf
     folder      09_SANDBOX/GUI
     unit        sb_gui_sdf.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_line						# stroke test bed: capsule vs ribbon, caps, joints, hairlines
@@ -734,7 +728,7 @@ target sb_gui_line						# stroke test bed: capsule vs ribbon, caps, joints, hair
     root        source/sandbox/gui/sb_gui_line
     folder      09_SANDBOX/GUI
     unit        sb_gui_line.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_console					# Quake-style dev console over core cvar/console
@@ -743,7 +737,7 @@ target sb_gui_console					# Quake-style dev console over core cvar/console
     root        source/sandbox/gui/sb_gui_console
     folder      09_SANDBOX/GUI
     unit        sb_gui_console.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_dock						# docking test bed: dockspace / split / tabs / drag-to-dock
@@ -752,7 +746,7 @@ target sb_gui_dock						# docking test bed: dockspace / split / tabs / drag-to-d
     root        source/sandbox/gui/sb_gui_dock
     folder      09_SANDBOX/GUI
     unit        sb_gui_dock.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_diablo					# rect-first ui layer proof: diablo-style menu / HUD shell
@@ -762,7 +756,7 @@ target sb_gui_diablo					# rect-first ui layer proof: diablo-style menu / HUD sh
     folder      09_SANDBOX/GUI
     unit        sb_gui_diablo.c
     unit        ui.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_custom					# custom non-chrome UI test bed over gui's shared backing
@@ -771,7 +765,7 @@ target sb_gui_custom					# custom non-chrome UI test bed over gui's shared backi
     root        source/sandbox/gui/sb_gui_custom
     folder      09_SANDBOX/GUI
     unit        sb_gui_custom.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_editor					# game-engine editor shell over the gui library
@@ -791,7 +785,7 @@ target sb_gui_example					# gui feature explorer: end-to-end demos of every feat
     folder      09_SANDBOX/GUI
     unit        sb_gui_example.c
     unit        ex_demos.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui dev_font base
 
 target sb_gui_timeline					# prof timeline overlay (flame graph) + synthetic workload
@@ -802,7 +796,7 @@ target sb_gui_timeline					# prof timeline overlay (flame graph) + synthetic wor
     unit        sb_gui_timeline.c
     unit        gui_timeline.c
     unit        tl_workload.c
-    dep         mod sys ref prof job app core
+    dep         mod sys ref prof pack fs job app core
     dep         rhi gui base
 
 target sb_gui_style						# style + look bench: editor, gallery, C exporter, font tool
@@ -821,7 +815,7 @@ target sb_gui_stress					# gui load-limit bench at the shipping caps:
     root        source/sandbox/gui/sb_gui_stress
     folder      09_SANDBOX/GUI
     unit        sb_gui_stress.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_bench						# gui performance benchmark suite: per-stage / per-op / per-style timings
@@ -830,7 +824,7 @@ target sb_gui_bench						# gui performance benchmark suite: per-stage / per-op /
     root        source/sandbox/gui/sb_gui_bench
     folder      09_SANDBOX/GUI
     unit        sb_gui_bench.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 target sb_gui_render					# render feature matrix: draw primitives x style/fx combinations
@@ -839,7 +833,7 @@ target sb_gui_render					# render feature matrix: draw primitives x style/fx com
     root        source/sandbox/gui/sb_gui_render
     folder      09_SANDBOX/GUI
     unit        sb_gui_render.c
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 # ==============================================================================
@@ -972,7 +966,7 @@ target launch_tool						# project manager / command hub -- the one gui()-driven 
     folder      08_TOOL
     unit        launch_tool.c
     flag        is_tool
-    dep         mod sys ref job app core
+    dep         mod sys ref pack fs job app core
     dep         rhi gui base
 
 # ==============================================================================

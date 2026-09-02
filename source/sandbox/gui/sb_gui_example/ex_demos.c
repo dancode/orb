@@ -18,7 +18,8 @@
 
 #include "ex_demos.h"
 #include "runtime_service/gui/gui_host.h"
-#include "engine/sys/sys_host.h"          /* sys_exe_dir (fonts demo), sys_tick_seconds */
+#include "engine/sys/sys_host.h"          /* sys_tick_seconds */
+#include "engine/res/res.h"               /* RID -- fonts and icons the demos name */
 
 // clang-format off
 

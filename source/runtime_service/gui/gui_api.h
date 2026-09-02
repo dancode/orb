@@ -104,11 +104,11 @@ typedef struct gui_api_s
 
     /* Runtime font baker -- the door on-demand font sizes come through.  gui ships no bake for
        an arbitrary pixel size, so the font resolver asks this callback to produce one whenever
-       no shipped bake serves a request (the DPI retarget, the type ramp's SMALL/LARGE roles,
+       no cooked bake answers a request (the DPI retarget, the type ramp's SMALL/LARGE roles,
        font_get).  dev_font_get is the canonical implementation; the gui target stays free of
        the developer tier the same way it stays free of core above.  Install any time -- before
-       or after init(); NULL uninstalls.  Unwired, requests degrade to the nearest shipped size
-       (warn-once) and the type ramp stays off for unshipped sizes. */
+       or after init(); NULL uninstalls.  Unwired, requests degrade to the nearest resident size
+       (warn-once) and the type ramp stays off for sizes with no bake. */
 
     void                ( *font_baker_set )     ( gui_font_bake_fn fn, void* user );
 
@@ -116,49 +116,44 @@ typedef struct gui_api_s
 
         init()
             : call after rhi()->init(); creates pipeline, font atlas, GPU buffers.
-              `family` optionally boots a managed font (gui_font_family_t, gui.h) into
-              slot 0 at `size_px` (0 = 16): a shipped bake if one matches, else the
-              installed baker, else the nearest shipped size.  Pass GUI_FONT_NONE to
-              load nothing and call font_load() yourself.  A failed resolve is
-              non-fatal (a warning; init still succeeds without text).
+              `font` optionally boots a managed font into slot 0 by NAME --
+              RID( "font/cascadiamono/16" ) (gui.h, font configuration): the cooked bake
+              read through fs if the mounts serve it, else the installed baker.  NULL
+              loads nothing; call font_load() yourself.  A failed resolve is non-fatal
+              (a warning; init still succeeds without text).  The host mounts content
+              before this (run_host does; the boot path does it for you).
 
         shutdown()
             : call before rhi()->shutdown(); destroys all GPU resources.
 
-        asset_path()
-            : resolve `relative` (e.g. "assets/icon/foo.png") against sys_root_dir() --
-              the build root, one level above the executable -- the same convention
-              load_icon and the font resolver resolve through. Writes the resolved
-              path into `out` (out_size bytes); for a caller that wants the absolute
-              path itself (e.g. a plain fopen) rather than a load_icon call.
-
         font_load()
-            : load a pre-baked .orb_font atlas into a new font id and make it active;
-              call after init(). Returns the new id (>= 1), or 0 on failure.
+            : load a baked font by resource name -- RID( "font/roboto/16" ) -- into a
+              new font id and make it active; call after init().  gui reads name +
+              ".orb_font" through fs.  Returns the new id (>= 1), or 0 on failure.
+
+        font_load_mem()
+            : the same from bytes the caller already holds (a bake it produced itself,
+              a test fixture); `name` labels the slot for the debug overlay.
 
         font_get()
-            : resolve a font by REQUEST -- source name + pixel size -- without
-              activating it.  `family` is a file in assets/font_source, an OS-installed
-              face name, or a shipped file stem; the resolver finds a shipped bake,
-              asks the installed baker, or degrades to the nearest in-family size
-              (warn-once), never below the default font.  IMMEDIATE-MODE retention:
-              call it every frame the font is in use (steady-state = a memo probe) and
-              apply the id with font_use / push_font -- the request IS the hold, like
-              any other per-frame widget state.  A font not requested for an emitted
-              frame goes stale and may be reclaimed under registry pressure; requesting
-              it again reloads from the bake cache.
+            : resolve a font by REQUEST -- family + pixel size -- without activating
+              it.  `family` is the directory under content/font ("cascadiamono"); the
+              resolver reads "font/<family>/<size>.orb_font" through fs, else asks the
+              installed baker, else degrades to the nearest RESIDENT size in that
+              family (warn-once), never below the default font.  A size composed at
+              runtime is invisible to the build: mark it with RID() somewhere, or accept
+              the baker/degrade path.  IMMEDIATE-MODE retention: call it every frame the
+              font is in use (steady-state = a memo probe) and apply the id with
+              font_use / push_font -- the request IS the hold, like any other per-frame
+              widget state.  A font not requested for an emitted frame goes stale and
+              may be reclaimed under registry pressure; requesting it again reloads. */
 
-        font_get_builtin()
-            : font_get for a curated family (gui_font_family_t) -- no name plumbing
-              at the call site. */
-
-    bool                ( *init      )          ( gui_font_family_t family, u32 size_px );
+    bool                ( *init      )          ( const char* font );
     void                ( *shutdown  )          ( void );
-    void                ( *asset_path )         ( const char* relative, char* out, int out_size );
 
-    u32                 ( *font_load )          ( const char* path );
+    u32                 ( *font_load )          ( const char* name );
+    u32                 ( *font_load_mem )      ( const void* data, u32 size, const char* name );
     u32                 ( *font_get )           ( const char* family, u32 size_px );
-    u32                 ( *font_get_builtin )   ( gui_font_family_t fam, u32 size_px );
 
     /* DPI response (gui_dpi_mode_t, gui.h) -- keeps text and widgets a sensible physical size on
        a scaled monitor. The engine works in physical pixels, so without this a UI on a 200%
@@ -177,7 +172,7 @@ typedef struct gui_api_s
             : the current response mode.
         dpi_scale()
             : the scale in effect on the PRIMARY surface -- its landed size / the init()
-              base size.  1.0 while unmanaged (GUI_FONT_NONE init).  During a host font
+              base size.  1.0 while unmanaged (init( NULL )).  During a host font
               takeover (font_use / a custom load) it keeps reporting the last landed scale --
               retargeting is suspended, not reset. */
 
@@ -510,14 +505,16 @@ typedef struct gui_api_s
 
        Fonts live in a small registry of numbered slots, and everything below is either loading
        one into a slot or picking which slot is active. Slot 0 is the default; it is empty until the first
-       font_load / font_load_into( 0, path ) call -- call one right after gui()->init(), before any
-       frame renders.  font_load() loads a .orb_font into a fresh id; font_load_into() loads one
-       into an existing id (id 0 swaps the default).  font_use() makes a loaded id active; another
-       context can select its own font this way.  push_font() / pop_font() bracket a temporary
-       font and restore the previous one.  Each font_load/font_load_into uses its own bindless
-       texture.  Widget layout dimensions follow the active font's metrics. */
+       font_load / font_load_into( 0, name ) call -- call one right after gui()->init(), before any
+       frame renders.  font_load() loads a bake by resource name into a fresh id; font_load_into()
+       loads one into an existing id (id 0 swaps the default); the _mem twins take the bake's
+       bytes instead of a name.  font_use() makes a loaded id active; another context can select
+       its own font this way.  push_font() / pop_font() bracket a temporary font and restore the
+       previous one.  Each font_load/font_load_into uses its own bindless texture.  Widget layout
+       dimensions follow the active font's metrics. */
 
-    bool ( *font_load_into     )( u32 id, const char* path );
+    bool ( *font_load_into     )( u32 id, const char* name );
+    bool ( *font_load_into_mem )( u32 id, const void* data, u32 size, const char* name );
     void ( *font_use           )( u32 id );
     void ( *push_font          )( u32 id );
     void ( *pop_font           )( void );
@@ -592,18 +589,18 @@ typedef struct gui_api_s
        register_icon packs a raw monochrome bitmap (row-major coverage, w*h bytes) and returns a
        handle (0 = atlas full); the pixels live in the same flush as text and tint by `col`.
 
-       load_icon is the from-disk source: it decodes an image file (PNG and the other stb_image
-       formats) to R8 coverage -- alpha channel when present, else luminance -- and registers it the
-       same way, so a loaded icon is identical to a procedural one downstream.  `path` is resolved
-       through asset_path -- a plain path relative to the assets root ("assets/icon/foo.png"), no
-       need to call asset_path yourself first.  
-       
-       load_icons is the batch form an application's own icon table wants: a flat array of 
-       name,path string PAIRS -- lookup name first, then the root-relative image path, e.g. 
-       { "gear", "assets/icon/gear.png", "play", "assets/my/play.png" }.  `count` is the TOTAL
-       string count (ARRAY_COUNT of the table), so it must be even; an odd count is a name missing 
-       its path and asserts.  Names already registered are skipped, so the call is idempotent and
-       safe to repeat after a hot reload.
+       load_icon is the from-content source: it decodes an image (PNG first, then the other
+       stb_image formats) to R8 coverage -- alpha channel when present, else luminance -- and
+       registers it the same way, so a loaded icon is identical to a procedural one downstream.
+       `res` is the image's resource NAME -- RID( "ui/icon/gear" ), the file under content/
+       minus its extension -- read through fs; `name` is the registry key find_icon takes.
+
+       load_icons is the batch form an application's own icon table wants: a flat array of
+       name,resource string PAIRS -- lookup name first, then the resource name, e.g.
+       { "gear", RID( "ui/icon/gear" ), "play", RID( "my/icon/play" ) }.  `count` is the TOTAL
+       string count (ARRAY_COUNT of the table), so it must be even; an odd count is a name missing
+       its resource and asserts.  Names already registered are skipped, so the call is idempotent
+       and safe to repeat after a hot reload.
 
        It returns how many of the named icons are available afterward -- compare against
        count / 2 to log a shortfall.  find_icon looks one up by the name it was registered with 
@@ -612,7 +609,7 @@ typedef struct gui_api_s
        in a rect the caller already holds (cell / button label / canvas cut).  col 0 means white. */
 
     gui_icon_id_t ( *register_icon )( const char* name, u32 w, u32 h, const u8* coverage );
-    gui_icon_id_t ( *load_icon     )( const char* name, const char* path );
+    gui_icon_id_t ( *load_icon     )( const char* name, const char* res );
     u32           ( *load_icons    )( const char* const* pairs, u32 count );
     gui_icon_id_t ( *find_icon     )( const char* name );
     gui_vec2_t    ( *icon_size     )( gui_icon_id_t id );
@@ -651,7 +648,7 @@ typedef struct gui_api_s
        you do it). */
     gui_icon_id_t ( *register_icon_sdf )( const char* name, u32 w, u32 h, const u8* coverage,
                                           u32 out_max );
-    gui_icon_id_t ( *load_icon_sdf     )( const char* name, const char* path, u32 out_max );
+    gui_icon_id_t ( *load_icon_sdf     )( const char* name, const char* res, u32 out_max );
 
     /* BAKED SHAPES -- the same distance field as an SDF icon, read one stage earlier, which is the
        whole difference and a large one.  An SDF icon's texel becomes ALPHA in the colour stage,
@@ -715,7 +712,7 @@ typedef struct gui_api_s
        ones exactly (register / load / find / size), because the two kinds differ in what a texel
        MEANS -- an icon is coverage the colour paints, a sprite is a picture the colour tints --
        not in how you obtain one. register_sprite takes raw RGBA8 (row-major, w*h*4, straight alpha);
-       load_sprite decodes an image file through asset_path like load_icon.
+       load_sprite decodes an image by resource name through fs like load_icon.
 
        set_slice is the verb with no icon twin, and the reason sprites are their own kind: it
        declares four insets, in SOURCE pixels, that cut the art into nine pieces.  A sliced sprite
@@ -728,7 +725,7 @@ typedef struct gui_api_s
        surface, and its job is to cover what it was given).  tint 0 means untinted. */
 
     gui_sprite_id_t ( *register_sprite )( const char* name, u32 w, u32 h, const u8* rgba );
-    gui_sprite_id_t ( *load_sprite     )( const char* name, const char* path );
+    gui_sprite_id_t ( *load_sprite     )( const char* name, const char* res );
     gui_sprite_id_t ( *find_sprite     )( const char* name );
     bool            ( *sprite_set_slice)( gui_sprite_id_t id, gui_pad_t slice );
     gui_pad_t       ( *sprite_slice    )( gui_sprite_id_t id );

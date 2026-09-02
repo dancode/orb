@@ -1,7 +1,7 @@
 // qp_vb.vs.hlsl -- the CLASSIC vertex stage of the sb_quad_pull proof: the control arm of the
 // A/B.  The CPU expands every quad into six 20-byte vertices (qp_vert_t, sb_quad_pull.c)
-// and this stage just transforms what arrives, exactly like today's gui vertex stage.  Cooked
-// to bin/shaders/qp_vb.vs.oshd; qp_pull.vs.hlsl is the pulled stage measured against this one.
+// and this stage just transforms what arrives, exactly like today's gui vertex stage.  Resource
+// name "sandbox/quad_pull/qp_vb.vs"; qp_pull.vs.hlsl is the pulled stage measured against it.
 //
 // The push constant block mirrors qp_push_t in sb_quad_pull.c; the buffer slots are unused
 // here but the block must stay identical across the three shaders.

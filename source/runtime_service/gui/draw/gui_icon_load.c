@@ -1,20 +1,22 @@
 /*==============================================================================================
 
-    runtime_service/gui/draw/gui_icon_load.c -- Icon pixel SOURCING from disk.
+    runtime_service/gui/draw/gui_icon_load.c -- Icon pixel SOURCING from content.
 
     gui_icon.c (included just before this file) owns icon bookkeeping and packing but is
     deliberately blind to where the coverage bytes come from -- callers hand it raw R8.  This file
-    is one such caller: it decodes an image file (PNG and the other stb_image formats) into R8
+    is one such caller: it decodes an image (PNG and the other stb_image formats) into R8
     coverage and feeds it straight to icon_register, so a loaded icon is indistinguishable from a
     procedurally-filled one downstream (same tenant, same shared-atlas UVs, same batching).
 
-    PNG is the expected authoring format for icons: lossless and carries an alpha channel, which is
-    exactly the coverage an R8 icon wants.  Coverage is taken from alpha when the source has it, and
-    from luminance otherwise, so both alpha-on-transparent art and plain greyscale masks work.
+    An image is a resource NAME -- RID( "ui/icon/save" ), its file under content/ minus the
+    extension -- read through the fs mounts (gui_res.h) with each extension this loader accepts
+    tried in turn, PNG first.  PNG is the expected authoring format for icons: lossless and
+    carries an alpha channel, which is exactly the coverage an R8 icon wants.  Coverage is taken
+    from alpha when the source has it, and from luminance otherwise, so both alpha-on-transparent
+    art and plain greyscale masks work.
 
-    This is the icon analogue of font/gui_font_load.c's .orb_font parser -- same raw stdio read, same
-    "decode then res_atlas_add (via icon_register)" shape -- and, like it, depends on no higher
-    service (no asset/fs layer): the gui backend owns its own resource loading.
+    This is the icon analogue of font/gui_font_load.c's .orb_font parser -- the same read-by-name
+    then "decode then res_atlas_add (via icon_register)" shape.
 
     stb_image's implementation is compiled here.  It is marked STB_IMAGE_STATIC so its symbols stay
     private to this (gui backend) translation unit -- the asset service compiles its own external
@@ -27,8 +29,6 @@
 
 #include <stdlib.h>   // malloc / free
 
-#include "engine/sys/sys_host.h"   // sys_root_dir -- built-in icon assets resolve root-relative
-
 /* stb_image: memory-only decode (no fopen path of its own); STATIC so the symbols do not clash
    with the asset service's external copy when a host links both libraries. */
 PUSH_WARNINGS
@@ -39,55 +39,31 @@ PUSH_WARNINGS
 POP_WARNINGS
 
 /*==============================================================================================
-    icon_read_file -- slurp an entire file into a fresh malloc'd buffer (caller frees).  Raw stdio,
-    matching font_slot_load; the gui backend does its own resource I/O and takes no fs dependency.
+    image_read -- the bytes of an image resource, whichever accepted extension the mounts serve.
+    The extension belongs to the loader: a name is "ui/icon/save", and the file behind it may be
+    save.png or any other format stb_image decodes.  Shared with gui_sprite.c (included after
+    this file).  Release with fs()->free.
 ==============================================================================================*/
 
-static u8*
-icon_read_file( const char* path, u32* out_size )
+static const char* const s_image_exts[] = { ".png", ".tga", ".bmp", ".jpg", ".jpeg", ".gif", ".psd", NULL };
+
+static fs_blob_t
+image_read( const char* res )
 {
-    FILE* f = fopen( path, "rb" );
-    if ( !f )
-        return NULL;
-
-    fseek( f, 0, SEEK_END );
-    long len = ftell( f );
-    fseek( f, 0, SEEK_SET );
-    if ( len <= 0 )
-    {
-        fclose( f );
-        return NULL;
-    }
-
-    u8* buf = (u8*)malloc( (size_t)len );
-    if ( !buf )
-    {
-        fclose( f );
-        return NULL;
-    }
-
-    if ( fread( buf, 1, (size_t)len, f ) != (size_t)len )
-    {
-        free( buf );
-        fclose( f );
-        return NULL;
-    }
-    fclose( f );
-
-    *out_size = (u32)len;
-    return buf;
+    return gui_res_read_any( res, s_image_exts );
 }
 
 /*==============================================================================================
-    icon_load_file / icon_load_file_sdf -- decode an image file to R8 coverage and register it.
+    icon_load_res / icon_load_res_sdf -- decode an image resource to R8 coverage and register it.
 
-    Returns the new icon id, or GUI_ICON_NONE if the file is missing, undecodable, or the icon
-    atlas is full.  A missing file is a quiet failure (the caller decides whether that matters);
-    a present-but-broken file logs, since it signals a real asset problem.
+    Returns the new icon id, or GUI_ICON_NONE if no mount serves the name, the bytes are
+    undecodable, or the icon atlas is full.  A missing resource is a quiet failure (the caller
+    decides whether that matters); a present-but-broken image logs, since it signals a real asset
+    problem.
 
     Two entry points over one decode.  The DECODE is identical -- both want the same R8 coverage
     out of the same PNG -- and only the registration forks, which is the honest shape: coverage is
-    what an image file holds, and whether it is stored as coverage or transformed into a distance
+    what an image holds, and whether it is stored as coverage or transformed into a distance
     field is a decision about how it will be DRAWN, not about how it is read.
 
     Note the asymmetry the SDF path wants from its source art, though (gui_icon_sdf.c): it should
@@ -97,27 +73,26 @@ icon_read_file( const char* path, u32* out_size )
 ==============================================================================================*/
 
 static gui_icon_id_t
-icon_load_file_impl( const char* name, const char* path, bool sdf, u32 out_max )
+icon_load_res_impl( const char* name, const char* res, bool sdf, u32 out_max )
 {
-    if ( !name || !path )
+    if ( !name || !res )
         return GUI_ICON_NONE;
 
-    u32 size = 0;
-    u8* file = icon_read_file( path, &size );
-    if ( !file )
-        return GUI_ICON_NONE;   // missing / unreadable -- quiet
+    fs_blob_t file = image_read( res );
+    if ( !file.ok )
+        return GUI_ICON_NONE;   // no mount serves it -- quiet
 
     /* Decode to RGBA8 (req_comp = 4).  stb resolves transparency for us regardless of how the
        source spelled it -- a real alpha channel, or an RGB/paletted image with a tRNS color-key --
        into the decoded alpha channel, so we read alpha from the pixels rather than trusting the
        source component count (`comp`), which would report 3 for a tRNS-keyed RGB icon and miss it. */
     int      w = 0, h = 0, comp = 0;
-    stbi_uc* rgba = stbi_load_from_memory( file, (int)size, &w, &h, &comp, STBI_rgb_alpha );
-    free( file );
+    stbi_uc* rgba = stbi_load_from_memory( (const stbi_uc*)file.data, (int)file.size, &w, &h, &comp, STBI_rgb_alpha );
+    fs()->free( &file );
     if ( !rgba )
     {
         gui_log( GUI_LOG_WARN, "icon '%s' decode failed ('%s'): %s",
-                 name, path, stbi_failure_reason() );
+                 name, res, stbi_failure_reason() );
         return GUI_ICON_NONE;
     }
 
@@ -165,7 +140,7 @@ icon_load_file_impl( const char* name, const char* path, bool sdf, u32 out_max )
        than intended art -- say so, since it would otherwise register a valid-but-invisible icon. */
     if ( peak == 0 )
         gui_log( GUI_LOG_WARN, "icon '%s' has no visible pixels -- '%s' decoded fully %s (%dx%d)",
-                 name, path, use_alpha ? "transparent" : "black", w, h );
+                 name, res, use_alpha ? "transparent" : "black", w, h );
 
     gui_icon_id_t id = sdf ? icon_register_sdf( name, (u32)w, (u32)h, coverage, out_max )
                            : icon_register    ( name, (u32)w, (u32)h, coverage );
@@ -174,34 +149,32 @@ icon_load_file_impl( const char* name, const char* path, bool sdf, u32 out_max )
 }
 
 gui_icon_id_t
-icon_load_file( const char* name, const char* path )
+icon_load_res( const char* name, const char* res )
 {
-    return icon_load_file_impl( name, path, false, 0 );
+    return icon_load_res_impl( name, res, false, 0 );
 }
 
 gui_icon_id_t
-icon_load_file_sdf( const char* name, const char* path, u32 out_max )
+icon_load_res_sdf( const char* name, const char* res, u32 out_max )
 {
-    return icon_load_file_impl( name, path, true, out_max );
+    return icon_load_res_impl( name, res, true, out_max );
 }
 
 /*==============================================================================================
     icon_load_pairs -- register a caller-supplied list of icons in one pass.
 
-    `pairs` is a flat array of string PAIRS -- lookup name first, then a root-relative image
-    path:
+    `pairs` is a flat array of string PAIRS -- lookup name first, then the image's resource name:
 
-        { "gear", "assets/icon/gear.png",  "play", "assets/my_project/icon/play.png" }
+        { "gear", RID( "ui/icon/gear" ),  "play", RID( "my_project/icon/play" ) }
 
     `count` is the TOTAL string count (use ARRAY_COUNT on the table), so it must be even; an
-    odd count means a name without its path and asserts.  Paths resolve against sys_root_dir()
-    so hosts work from any working directory; the name is what gui()->find_icon takes at draw
-    time.  A name already registered is skipped -- the registry has no dedup or unregister of
-    its own, so this is what makes the call idempotent and safe to repeat (e.g. from a
-    hot-reloaded module).
+    odd count means a name without its resource and asserts.  The name is what gui()->find_icon
+    takes at draw time.  A name already registered is skipped -- the registry has no dedup or
+    unregister of its own, so this is what makes the call idempotent and safe to repeat (e.g.
+    from a hot-reloaded module).
 
     Returns how many of the named icons are available afterward (freshly loaded or already
-    present); a shortfall against count / 2 means missing or undecodable files, which the load
+    present); a shortfall against count / 2 means missing or undecodable images, which the load
     path logs individually.
 ==============================================================================================*/
 
@@ -209,14 +182,14 @@ u32
 icon_load_pairs( const char* const* pairs, u32 count )
 {
     ORB_ASSERT_MSG( ( count & 1 ) == 0,
-                    "icon_load_pairs: odd count -- pass name,path string pairs" );
+                    "icon_load_pairs: odd count -- pass name,resource string pairs" );
 
     u32 available = 0;
-    for ( u32 i = 0; i + 1 < count; i += 2 )   // + 1: an odd trailing name has no path to load
+    for ( u32 i = 0; i + 1 < count; i += 2 )   // + 1: an odd trailing name has no resource to load
     {
         const char* name = pairs[ i ];
-        const char* path = pairs[ i + 1 ];
-        if ( !name || !path || name[ 0 ] == '\0' )
+        const char* res  = pairs[ i + 1 ];
+        if ( !name || !res || name[ 0 ] == '\0' )
             continue;
 
         if ( icon_find( name ) != GUI_ICON_NONE )
@@ -225,9 +198,7 @@ icon_load_pairs( const char* const* pairs, u32 count )
             continue;
         }
 
-        char resolved[ 576 ];
-        fmt_snprintf( resolved, sizeof( resolved ), "%s/%s", sys_root_dir(), path );
-        if ( icon_load_file( name, resolved ) != GUI_ICON_NONE )
+        if ( icon_load_res( name, res ) != GUI_ICON_NONE )
             ++available;
     }
     return available;
@@ -236,36 +207,35 @@ icon_load_pairs( const char* const* pairs, u32 count )
 /*==============================================================================================
     Built-in icon set -- declared upfront here and loaded in one pass at backend init.
 
+    Each entry pairs the registry key with the icon's resource name, marked with RID() so the
+    build resolves it against content/ and lists it in the manifest of every image that links
+    gui -- the set a package must ship for gui to look like itself.
+
     SDF is the default for built-ins: s_builtin_icons_sdf loads each as a distance field via
-    icon_load_file_sdf, so the set stays crisp at any draw size and can take an outline or glow
+    icon_load_res_sdf, so the set stays crisp at any draw size and can take an outline or glow
     later with no re-bake.  Coverage (icon_load_pairs / s_builtin_icons below) is the fixed-size
     optimization -- reach for it once a size is locked in, or for a large set where sparing the
     SDF source's oversampling and margin matters.
 
-    The SDF source PNGs are baked from assets/icon_source/*.svg via `image_tool icons
-    config/icons.manifest` (see that file); re-run it and rebuild after editing the source SVGs,
-    nothing bakes automatically.  Add a new SDF built-in by adding a line to the manifest, baking,
-    and listing the name,path pair below; look one up at draw time with
-    gui()->find_icon( "<name>" ).  A host or the editor can register its OWN icons on top of
-    these at runtime via gui()->load_icon / load_icon_sdf, or a whole coverage set at once via
-    gui()->load_icons.
-
-    "orb" -- the engine's own mark and the fallback a demo can reach for when its own icon fails
-    to load -- is authored art (assets/icon_source/orb_keyed.png) rather than manifest-baked, but
-    loads through the same icon_load_file_sdf call as the rest of this set.
+    The PNGs under content/ui/icon are baked from assets/icon_source/*.svg via `image_tool icons
+    config/icons.manifest` (see that file); re-run it after editing the source SVGs, nothing bakes
+    automatically.  Add a new SDF built-in by adding a line to the manifest, baking, and listing
+    the name,RID pair below; look one up at draw time with gui()->find_icon( "<name>" ).  A host
+    or the editor can register its OWN icons on top of these at runtime via gui()->load_icon /
+    load_icon_sdf, or a whole coverage set at once via gui()->load_icons.
 ==============================================================================================*/
 
-static const struct { const char* name; const char* path; } s_builtin_icons_sdf[] =
+static const struct { const char* name; const char* res; } s_builtin_icons_sdf[] =
 {
-    { "settings", "assets/icon/settings.png" },
-    { "file",     "assets/icon/file.png" },
-    { "save",     "assets/icon/save.png" },
-    { "folder",   "assets/icon/folder.png" },    
+    { "settings", RID( "ui/icon/settings" ) },
+    { "file",     RID( "ui/icon/file" ) },
+    { "save",     RID( "ui/icon/save" ) },
+    { "folder",   RID( "ui/icon/folder" ) },
 };
 
 static const char* const s_builtin_icons[] =
-{           
-    "temp",   "assets/icon/temp.png",
+{
+    "temp",   RID( "ui/icon/temp" ),
 };
 
 void
@@ -276,9 +246,7 @@ icon_load_builtins( void )
 
     for ( u32 i = 0; i < ARRAY_COUNT( s_builtin_icons_sdf ); ++i )
     {
-        char path[ 576 ];
-        fmt_snprintf( path, sizeof( path ), "%s/%s", sys_root_dir(), s_builtin_icons_sdf[ i ].path );
-        if ( icon_load_file_sdf( s_builtin_icons_sdf[ i ].name, path, 0 ) != GUI_ICON_NONE )
+        if ( icon_load_res_sdf( s_builtin_icons_sdf[ i ].name, s_builtin_icons_sdf[ i ].res, 0 ) != GUI_ICON_NONE )
             ++loaded;
     }
 

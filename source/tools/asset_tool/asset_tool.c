@@ -15,6 +15,8 @@
             .hlsl       -> spawn shader_tool cook <src> -o <dst> -T <profile>, where the
                            profile comes from the filename's stage tag (foo.vs.hlsl -> vs_6_0;
                            also ps/cs/gs/hs/ds).  Untagged .hlsl fails loudly; .hlsli copies.
+            .recipe     -> what its "kind" line says; a font recipe (face, size, optional
+                           sdf / range) spawns font_tool like a .ttf does
             other       -> built-in verbatim copy
 
         asset_tool -src <dir> -dst <dir> [-f]        incremental tree cook
@@ -331,6 +333,145 @@ cook_image( const char* src_path, const char* dst_path )
     return true;
 }
 
+/*============================================================================================*/
+/*  Recipes                                                                                   */
+/*============================================================================================*/
+
+/* A parsed .recipe (engine/res/res_cook.h): content with no source file of its own.  Lines are
+   "<key> <value>", '#' starts a comment.  Only kind "font" cooks today. */
+typedef struct recipe_s
+{
+    res_kind_t kind;
+    char       face[ 256 ];     // font_tool input: a TTF under assets/font_source or an OS face name
+    int        size;            // pixel size
+    int        sdf;             // 0 = coverage bake; > 0 = distance field with this spread
+    char       range[ 128 ];    // font_tool -range spec; "" = the ASCII default
+} recipe_t;
+
+static bool
+recipe_parse( const char* src_path, recipe_t* out )
+{
+    memset( out, 0, sizeof( *out ) );
+
+    sys_file_data_t fd = sys_file_read_entire( src_path );
+    if ( !fd.ok )
+    {
+        fprintf( stderr, "asset_tool: error: could not read %s\n", src_path );
+        return false;
+    }
+
+    bool  ok = true;
+    char* p  = ( char* )fd.data;    /* NUL-terminated by sys_file_read_entire */
+    while ( *p )
+    {
+        char* line = p;
+        while ( *p && *p != '\n' )
+            ++p;
+        if ( *p )
+            *p++ = '\0';
+
+        char* hash = strchr( line, '#' );
+        if ( hash )
+            *hash = '\0';
+        while ( *line == ' ' || *line == '\t' || *line == '\r' )
+            ++line;
+        if ( !*line )
+            continue;
+
+        char* key = line;
+        char* val = line;
+        while ( *val && *val != ' ' && *val != '\t' )
+            ++val;
+        if ( *val )
+            *val++ = '\0';
+        while ( *val == ' ' || *val == '\t' )
+            ++val;
+        for ( char* e = val + strlen( val ); e > val && ( e[ -1 ] == ' ' || e[ -1 ] == '\t' || e[ -1 ] == '\r' ); --e )
+            e[ -1 ] = '\0';
+
+        if ( strcmp( key, "kind" ) == 0 )
+            out->kind = res_kind_from_name( val );
+        else if ( strcmp( key, "face" ) == 0 )
+            snprintf( out->face, sizeof( out->face ), "%s", val );
+        else if ( strcmp( key, "size" ) == 0 )
+            out->size = atoi( val );
+        else if ( strcmp( key, "sdf" ) == 0 )
+            out->sdf = atoi( val );
+        else if ( strcmp( key, "range" ) == 0 )
+            snprintf( out->range, sizeof( out->range ), "%s", val );
+        else
+        {
+            fprintf( stderr, "asset_tool: error: %s: unknown recipe key '%s'\n", src_path, key );
+            ok = false;
+        }
+    }
+    sys_file_free( &fd );
+
+    if ( !ok )
+        return false;
+    if ( out->kind != RES_KIND_FONT )
+    {
+        fprintf( stderr, "asset_tool: error: %s: recipe kind must be 'font'\n", src_path );
+        return false;
+    }
+    if ( !out->face[ 0 ] || out->size <= 0 )
+    {
+        fprintf( stderr, "asset_tool: error: %s: a font recipe needs 'face' and 'size'\n", src_path );
+        return false;
+    }
+    return true;
+}
+
+/* The cooked extension a recipe produces, read from its "kind" line; NULL on a bad recipe. */
+static const char*
+recipe_cooked_ext( const char* src_path )
+{
+    recipe_t r;
+    if ( !recipe_parse( src_path, &r ) )
+        return NULL;
+    return res_kind_cooked_ext( r.kind );
+}
+
+/* cook_recipe -- bake the font a recipe describes.  Same font_tool spawn as cook_font, with the
+   recipe's face, size and flags on the command line. */
+static bool
+cook_recipe( const char* src_path, const char* dst_path )
+{
+    recipe_t r;
+    if ( !recipe_parse( src_path, &r ) )
+        return false;
+
+    char exe_dir[ 512 ];
+    sys_exe_dir( exe_dir, ( int )sizeof( exe_dir ) );
+
+    char flags[ 192 ] = "";
+    int  n            = 0;
+    if ( r.sdf > 0 )
+        n += snprintf( flags + n, sizeof( flags ) - ( size_t )n, " -sdf=%d", r.sdf );
+    if ( r.range[ 0 ] )
+        n += snprintf( flags + n, sizeof( flags ) - ( size_t )n, " \"-range=%s\"", r.range );
+
+    char cmd[ 1536 ];
+    snprintf( cmd, sizeof( cmd ), "\"%s\\font_tool.exe\" \"%s\" %d \"%s\"%s", exe_dir, r.face,
+              r.size, dst_path, flags );
+
+    sys_process_result_t res;
+    if ( !sys_process_run( cmd, NULL, &res ) )
+    {
+        fprintf( stderr, "asset_tool: error: could not launch font_tool (is it built?)\n" );
+        return false;
+    }
+    if ( res.exit_code != 0 )
+    {
+        fprintf( stderr, "asset_tool: error: font_tool exited %d for %s\n", res.exit_code, src_path );
+        return false;
+    }
+
+    printf( "asset_tool:   font %s -> %s (%s %dpx%s, %.0f ms)\n", src_path, dst_path, r.face,
+            r.size, flags, res.elapsed_seconds * 1000.0 );
+    return true;
+}
+
 /* cook_file -- dispatch one source file to a converter chosen by its extension. */
 static bool
 cook_file( const char* src_path, const char* dst_path, int font_size_px )
@@ -342,6 +483,8 @@ cook_file( const char* src_path, const char* dst_path, int font_size_px )
         return cook_image( src_path, dst_path );
     if ( ext_is_hlsl( ext ) )
         return cook_shader( src_path, dst_path );
+    if ( res_kind_from_ext( ext ) == RES_KIND_RECIPE )
+        return cook_recipe( src_path, dst_path );
     return cook_copy( src_path, dst_path ); /* everything else: verbatim copy */
 }
 
@@ -398,12 +541,14 @@ path_parent( char* out, size_t cap, const char* full )
    everything else keeps its extension (verbatim copy).  The directory and stem pass through
    unchanged: content file names are canonical lowercase already (res_tool fails the build on
    one that is not), so the cooked file sits under the same name the runtime asks for.  A
-   .recipe copies verbatim here until the recipe cook lands. */
+   .recipe's cooked extension comes from its "kind" line (read from src_full); a malformed
+   recipe copies verbatim and fails loudly when its cook runs. */
 static void
-job_dst_rel( char* out, size_t cap, const char* src_rel )
+job_dst_rel( char* out, size_t cap, const char* src_rel, const char* src_full )
 {
     const char* ext  = path_ext( src_rel );
-    const char* cext = res_kind_cooked_ext( res_kind_from_ext( ext ) );
+    res_kind_t  kind = res_kind_from_ext( ext );
+    const char* cext = kind == RES_KIND_RECIPE ? recipe_cooked_ext( src_full ) : res_kind_cooked_ext( kind );
     int         keep = ( int )( ext - src_rel ); /* chars up to and including the '.' */
     if ( cext )
         snprintf( out, cap, "%.*s%s", keep, src_rel, cext );
@@ -463,7 +608,7 @@ collect_job( const char* filename, const char* full_path, void* ud )
     snprintf( j->src_rel, sizeof( j->src_rel ), "%s", rel );
     path_norm( j->src_rel, '/' );
 
-    job_dst_rel( j->dst_rel, sizeof( j->dst_rel ), j->src_rel );
+    job_dst_rel( j->dst_rel, sizeof( j->dst_rel ), j->src_rel, j->src_full );
     j->src_mtime = sys_file_time( full_path );
     j->present   = false;
     ++c->job_count;
@@ -793,6 +938,7 @@ usage( void )
              "      image      -> .tex       (pre-decoded RGBA8)\n"
              "      .hlsl      -> shader_tool cook -> .oshd (stage tag names the profile:\n"
              "                    foo.vs.hlsl -> vs_6_0; also ps/cs/gs/hs/ds)\n"
+             "      .recipe    -> what its 'kind' line says (font: face/size/sdf/range -> font_tool)\n"
              "      other      -> copy\n"
              "  asset_tool -src <dir> -dst <dir> [-f]   incremental tree cook (-f = force all)\n"
              "  asset_tool pack <cooked_dir> <out.zip>  bundle a cooked tree (via its manifest)\n",

@@ -107,6 +107,13 @@ bool        dev_font_get( const char* ttf_path, int size_px,
 bool        dev_font_get_ex( const char* ttf_path, int size_px, dev_font_quality_t quality,
                              const char* range_spec, char* out_path, int out_path_size );
 
+/* dev_font_get_ex followed by a read of the bake it located: *out_data receives a malloc'd
+   buffer of *out_size bytes the caller frees with free().  The shape gui's runtime font baker
+   wants (gui_font_bake_fn takes bytes, never a path) -- a host adapter calls this and kicks a
+   refine.  False, with nothing allocated, when the bake cannot be produced or read. */
+bool        dev_font_get_bytes( const char* ttf_path, int size_px, dev_font_quality_t quality,
+                                const char* range_spec, void** out_data, u32* out_size );
+
 /* Fire-and-forget background FreeType refine of the fine ("_ft") cache file for this request.
    A worker thread spawns font_tool.exe; the caller keeps whatever bake it already has, and the
    next run's FINE_IF_CACHED picks the fine file up.  No-op when the fine cache is already fresh

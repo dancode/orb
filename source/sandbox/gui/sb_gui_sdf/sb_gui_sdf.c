@@ -20,11 +20,9 @@
     Every animated window owes gui()->request_redraw() per frame (the gui is idle-skipped and
     sandbox memory changing is not an event it can see) -- keep_awake() below.
 
-    ASSETS.  assets/font is generated and not tracked, so every font here is loaded by path and
-    every panel degrades to the bake command when one is missing:
-
-        bin\font_tool.exe CascadiaMono 32          -- the coverage twin
-        bin\font_tool.exe CascadiaMono 32 -sdf     -- the distance field
+    ASSETS.  The two fonts are resource names marked with RID(), so the build cooks their
+    recipes (content/font/cascadiamono/32.recipe and 32.sdf.recipe) into build/content and gui
+    reads the bakes through fs; every panel says so when one is missing anyway.
 
 ==============================================================================================*/
 
@@ -37,6 +35,9 @@
 #include "base/fmt.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
+#include "engine/res/res.h"
+#include "engine/pack/pack_host.h"
+#include "engine/fs/fs_host.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
@@ -69,23 +70,21 @@
 ==============================================================================================*/
 
 #define FONT_PX      32
-#define COV_ASSET    "CascadiaMono_32px.orb_font"
-#define SDF_ASSET    "CascadiaMono_32px_sdf.orb_font"
+#define COV_ASSET    RID( "font/cascadiamono/32" )
+#define SDF_ASSET    RID( "font/cascadiamono/32.sdf" )
 
 static u32  s_font_cov;          /* 0 = the built-in 16px face (font id 0) */
 static u32  s_font_sdf;          /* 0 = no distance-field bake found       */
 static bool s_cov_is_fallback;   /* true when COV_ASSET was missing        */
 
-/* One path under the engine root; font_load ACTIVATES what it loads, so the caller's font is put
-   back.  Returns 0 when the asset is not there, which every call site treats as "say so". */
+/* A bake by resource name (its recipe under content/font, cooked by the build); font_load
+   ACTIVATES what it loads, so the caller's font is put back.  Returns 0 when the bake is not
+   there, which every call site treats as "say so". */
 static u32
-font_try( const char* asset )
+font_try( const char* name )
 {
-    char path[ 576 ];
-    snprintf( path, sizeof( path ), "%s/assets/font/%s", sys_root_dir(), asset );
-
     u32 prev = gui()->font_active_id();
-    u32 id   = gui()->font_load( path );
+    u32 id   = gui()->font_load( name );
     gui()->font_use( prev );
     return id;
 }
@@ -3047,6 +3046,8 @@ main( int argc, char** argv )
     mod_system_init();
     mod_static( sys );
     mod_static( ref );
+    mod_static( pack );
+    mod_static( fs );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -3069,7 +3070,7 @@ main( int argc, char** argv )
         .title     = "ORB -- gui sdf explorer",
         .w         = 2480, .h = 1280,
         .os_chrome = true,
-        .font      = GUI_FONT_CASCADIA_MONO,
+        .font      = RID( "font/cascadiamono/16" ),
         .clock = sys_tick_seconds,
         .sleep = sys_sleep_milliseconds,
         .wait  = sys_wait_for_os_events_ms,
