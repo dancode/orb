@@ -127,8 +127,8 @@ res_hash_name( const char* s )
     string when the result does not fit in `cap` bytes.
 ==============================================================================================*/
 
-#define RES_EXT_MAX           16                         // extension incl. dot, excl. NUL
-#define RES_PATH_MAX          ( RES_NAME_MAX + RES_EXT_MAX + 1 )   // a res_path result incl. NUL
+#define RES_EXT_MAX           16    // extension includes dot excludes NUL
+#define RES_PATH_MAX          ( RES_NAME_MAX + RES_EXT_MAX + 1 )
 
 static inline bool
 res_path( char* out, u32 cap, const char* name, const char* ext )

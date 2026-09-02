@@ -195,19 +195,24 @@ test_font_name_normalize( void )
     A minimal font: header, reference section, one glyph, a 1x1 atlas (orb_font.h).  Each case
     assembles the pieces into a buffer -- appended one by one, never as a struct, so no padding
     lands between them.  The reference section is the field under test: it sits between the
-    header and the glyph records, so a count the bytes do not back (or bytes no count admits to)
-    shifts every record after it.  The loader must refuse both at parse, and refuse a count past
-    RES_REF_MAX before it sizes anything.
+    header and the glyph records, so a size the bytes do not back (or bytes no size admits to)
+    shifts every record after it.  The loader must refuse both at parse, and refuse a head that
+    fails res_ref_head_ok before it sizes anything.
 ==============================================================================================*/
 
-/* Assemble a font whose header claims `ref_count` references while `refs_written` ids actually
-   follow it (equal for a well-formed file).  Returns the byte count written into `out`. */
+/* Assemble a font whose header claims a reference section of `ref_count` names in `ref_size`
+   bytes at `ref_offset`, while `section_written` bytes of section actually follow the header
+   (equal to ref_size for a well-formed file; the bytes are a valid two-name table, zero past
+   it).  Returns the byte count written into `out`. */
 static u32
-font_case_build( u8* out, u32 version, u32 ref_count, u32 refs_written )
+font_case_build( u8* out, u32 version, u32 ref_count, u32 ref_size, u32 ref_offset, u32 section_written )
 {
     orb_font_header_t hdr = { 0 };
     hdr.magic       = ORB_FONT_MAGIC;
     hdr.version     = version;
+    hdr.ref_count   = ref_count;
+    hdr.ref_size    = ref_size;
+    hdr.ref_offset  = ref_offset;
     hdr.atlas_w     = 1;
     hdr.atlas_h     = 1;
     hdr.font_size   = 8;
@@ -216,7 +221,6 @@ font_case_build( u8* out, u32 version, u32 ref_count, u32 refs_written )
     hdr.line_gap    = 0;
     hdr.glyph_count = 1;
     hdr.sdf_range   = 0;
-    hdr.ref_count   = ref_count;
 
     orb_font_glyph_t g = { 0 };
     g.codepoint = 'A';
@@ -224,12 +228,15 @@ font_case_build( u8* out, u32 version, u32 ref_count, u32 refs_written )
     g.h         = 1;
     g.advance   = 1;
 
-    u32 refs[ 4 ] = { 0x11111111u, 0x22222222u, 0x33333333u, 0x44444444u };
-    u8  pixel     = 255;
+    /* "case/a" + NUL + "case/b" + NUL = 14 bytes, padded to 16 (RES_REF_ALIGN). */
+    static const char* const names[ 2 ] = { "case/a", "case/b" };
+    u8 section[ 64 ] = { 0 };
+    test_true( res_ref_write( section, sizeof( section ), names, 2 ) );
+    u8 pixel = 255;
 
     u32 n = 0;
     memcpy( out + n, &hdr, sizeof( hdr ) );              n += (u32)sizeof( hdr );
-    memcpy( out + n, refs, sizeof( u32 ) * refs_written ); n += (u32)( sizeof( u32 ) * refs_written );
+    memcpy( out + n, section, section_written );         n += section_written;
     memcpy( out + n, &g, sizeof( g ) );                  n += (u32)sizeof( g );
     out[ n++ ] = pixel;
     return n;
@@ -238,32 +245,43 @@ font_case_build( u8* out, u32 version, u32 ref_count, u32 refs_written )
 static void
 test_font_file_contract( void )
 {
-    u8  buf[ 256 ];
-    u32 n;
+    u8        buf[ 256 ];
+    u32       n;
+    const u32 hs  = (u32)sizeof( orb_font_header_t );
+    const u32 two = 16;   /* the padded size of the two-name table font_case_build writes */
 
     /* Empty reference section: the shape every bake writes today. */
-    n = font_case_build( buf, ORB_FONT_VERSION, 0, 0 );
+    n = font_case_build( buf, ORB_FONT_VERSION, 0, 0, hs, 0 );
     test_true( font_load_mem( buf, n, "case/plain" ) != 0 );
 
-    /* Populated section: two ids the loader steps over to reach the glyph record. */
-    n = font_case_build( buf, ORB_FONT_VERSION, 2, 2 );
+    /* Populated section: two names the loader steps over to reach the glyph record. */
+    n = font_case_build( buf, ORB_FONT_VERSION, 2, two, hs, two );
     test_true( font_load_mem( buf, n, "case/refs" ) != 0 );
 
-    /* Bad section length, short: a count with no bytes behind it.  The buffer is 4 bytes shorter
-       than the header claims and the glyph record would be read 4 bytes late. */
-    n = font_case_build( buf, ORB_FONT_VERSION, 1, 0 );
+    /* Bad section length, short: a size with no bytes behind it.  The buffer is 16 bytes shorter
+       than the header claims and the glyph record would be read 16 bytes late. */
+    n = font_case_build( buf, ORB_FONT_VERSION, 2, two, hs, 0 );
     test_true( font_load_mem( buf, n, "case/short" ) == 0 );
 
-    /* Bad section length, long: bytes no count admits to. */
-    n = font_case_build( buf, ORB_FONT_VERSION, 0, 1 );
+    /* Bad section length, long: bytes no size admits to. */
+    n = font_case_build( buf, ORB_FONT_VERSION, 0, 0, hs, two );
     test_true( font_load_mem( buf, n, "case/long" ) == 0 );
 
-    /* A count past the format cap is refused on the count alone. */
-    n = font_case_build( buf, ORB_FONT_VERSION, RES_REF_MAX + 1, 0 );
+    /* A head that fails res_ref_head_ok is refused before anything is sized: a count with no
+       bytes, a size that is not a multiple of RES_REF_ALIGN, a count past the cap. */
+    n = font_case_build( buf, ORB_FONT_VERSION, 1, 0, hs, 0 );
+    test_true( font_load_mem( buf, n, "case/count_no_size" ) == 0 );
+    n = font_case_build( buf, ORB_FONT_VERSION, 2, two - 2, hs, two - 2 );
+    test_true( font_load_mem( buf, n, "case/unaligned" ) == 0 );
+    n = font_case_build( buf, ORB_FONT_VERSION, RES_REF_MAX + 1, two, hs, two );
     test_true( font_load_mem( buf, n, "case/cap" ) == 0 );
 
-    /* The previous version, whose header had no ref_count: refused outright. */
-    n = font_case_build( buf, ORB_FONT_VERSION - 1, 0, 0 );
+    /* The section must sit right after the header. */
+    n = font_case_build( buf, ORB_FONT_VERSION, 0, 0, hs + 8, 0 );
+    test_true( font_load_mem( buf, n, "case/offset" ) == 0 );
+
+    /* The previous version, whose header was shaped differently: refused outright. */
+    n = font_case_build( buf, ORB_FONT_VERSION - 1, 0, 0, hs, 0 );
     test_true( font_load_mem( buf, n, "case/old" ) == 0 );
 }
 

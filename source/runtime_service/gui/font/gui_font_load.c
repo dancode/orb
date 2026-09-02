@@ -40,12 +40,9 @@ font_rd( font_rd_t* r, void* out, size_t n )
 /*==============================================================================================
     Stage 1 -- the header.
 
-    orb_font_glyph_t's v5 layout is not byte-compatible with 2/3/4 (orb_font.h), so this loader
-    requires exactly ORB_FONT_VERSION -- an older file's glyph records would misread at the new,
-    smaller record size, not just underfill a header tail.  The BASE/tail split below is what's
-    left of the header-only v2->v4 history: the tail (sdf_range, ref_count) still reads
-    separately from the base because that is the header's on-disk shape, even though every
-    version this loader now accepts already carries it.
+    The glyph record layout is not byte-compatible across versions (orb_font.h), so this loader
+    requires exactly ORB_FONT_VERSION -- an older file's records would misread at a different
+    record size, not just underfill a header tail.
 
     Dimensions are BOUNDED, not just nonzero: atlas_w * atlas_h sizes a malloc and the memory
     accounting, and an unchecked product wraps u32 (65536 x 65536 = 0) -- a corrupt file must die
@@ -59,7 +56,7 @@ static bool
 font_header_read( font_rd_t* r, orb_font_header_t* hdr )
 {
     memset( hdr, 0, sizeof( *hdr ) );
-    if ( !font_rd( r, hdr, ORB_FONT_HEADER_BASE_SIZE )
+    if ( !font_rd( r, hdr, sizeof( *hdr ) )
          || hdr->magic   != ORB_FONT_MAGIC
          || hdr->version  != ORB_FONT_VERSION
          || hdr->glyph_count == 0 || hdr->glyph_count > ORB_FONT_MAX_GLYPHS
@@ -69,32 +66,30 @@ font_header_read( font_rd_t* r, orb_font_header_t* hdr )
          || hdr->ascent - hdr->descent + hdr->line_gap <= 0 )
         return false;
 
-    size_t tail = sizeof( *hdr ) - ORB_FONT_HEADER_BASE_SIZE;
-    if ( !font_rd( r, (u8*)hdr + ORB_FONT_HEADER_BASE_SIZE, tail ) )
-        return false;
-
     /* The spread lives in the same baked-page space as atlas_w -- it cannot outreach the page that
        holds it -- so that bound also caps font_slot_t.sdf_range (u16) from truncating a corrupt
-       file's value.  The reference count is bounded by the format (RES_REF_MAX) before it sizes
-       anything. */
-    return hdr->sdf_range <= ORB_FONT_PAGE_MAX_W_SDF && res_ref_count_ok( hdr->ref_count );
+       file's value.  The reference section is bounded by the format (res_ref_head_ok) and must
+       sit right after this header, before it sizes anything. */
+    return hdr->sdf_range <= ORB_FONT_PAGE_MAX_W_SDF
+        && res_ref_head_ok( (const res_ref_head_t*)hdr )
+        && hdr->ref_offset == sizeof( *hdr );
 }
 
 /*==============================================================================================
     Stage 1b -- the reference section, and the file's exact length.
 
-    Between the header and the glyph records sit hdr->ref_count resource ids (orb_font.h,
-    engine/res/res_ref.h).  A font names nothing, so the section is empty in every file baked
-    today and this loader only steps over it.  It is also where a sequential reader is easiest
-    to mislead: glyph records read from the wrong offset can pass their per-record checks by
-    luck.  So the file's length is checked against everything the header claims -- header,
-    references, records, pixels -- before any record is trusted.
+    Between the header and the glyph records sit hdr->ref_size bytes of resource names
+    (orb_font.h, engine/res/res_ref.h).  A font names nothing, so the section is empty in every
+    file baked today and this loader only steps over it.  It is also where a sequential reader
+    is easiest to mislead: glyph records read from the wrong offset can pass their per-record
+    checks by luck.  So the file's length is checked against everything the header claims --
+    header, references, records, pixels -- before any record is trusted.
 ==============================================================================================*/
 
 static bool
 font_refs_skip( font_rd_t* r, const u8* file_start, const orb_font_header_t* hdr )
 {
-    u64 refs   = res_ref_bytes( hdr->ref_count );
+    u64 refs   = hdr->ref_size;
     u64 expect = (u64)sizeof( *hdr ) + refs
                + (u64)hdr->glyph_count * sizeof( orb_font_glyph_t )
                + (u64)hdr->atlas_w * hdr->atlas_h;

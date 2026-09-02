@@ -107,13 +107,13 @@ bool            font_load_into_mem ( u32 id, const void* data, u32 size, const c
 /*==============================================================================================
     Families -- a family is the directory under content/font a bake lives in ("cascadiamono").
     The resolver composes "font/<family>/<size>" from it; the runtime baker needs the typeface
-    behind it, which for the curated families is a different spelling (an OS face name or a TTF
-    under assets/font_source).  Until recipes carry the face (RESOURCE_ID_PLAN Phase 6), this
-    small table maps the curated directories to their faces; an unknown family passes through
-    unchanged, which is right for a directory named after a face dev_font can already resolve.
+    behind it, which is a different spelling (an OS face name or a TTF under assets/font_source)
+    read from the family's descriptor, content/font/<family>/family.txt.  A family with no
+    descriptor passes through unchanged, which is right for a directory named after a face
+    dev_font can already resolve.
 ==============================================================================================*/
 
-const char*        font_family_face( const char* family );   // baker source for a family directory; never NULL
+void               font_family_face( const char* family, char* out, u32 cap );   // baker source for a family directory; always writes
 
 /* Memo keying: lowercase alphanumeric-only copy, so "Cascadia Mono" == "CascadiaMono" ==
    "cascadia_mono" (unit-tested in sb_gui_test). */

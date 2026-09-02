@@ -16,6 +16,10 @@
                    RES_TREE() literals in this file and resolved against content/, holds
                    exactly those names plus the files the subtree expanded to -- and nothing a
                    plain string mentions.  The fixtures live in content/sandbox/res/.
+      - refs:      the reference section of a cooked file (res_ref.h) round-trips through the
+                   header-only writer and reader, every malformed shape is refused, and a walk
+                   from a parent file reaches the children it names without any source line
+                   spelling them -- the edge the packager follows.
 
     Exit code is the number of failed checks, so it can gate a build step.  Run from the repo
     root (the manifest is read from build/obj/sb_res/).
@@ -27,6 +31,7 @@
 
 #include "orb.h"
 #include "engine/res/res.h"
+#include "engine/res/res_ref.h"
 
 /*==============================================================================================
     Check helper
@@ -257,6 +262,254 @@ test_harvest( void )
 }
 
 /*==============================================================================================
+    Reference sections: what a cooked file says it needs, and the packager's walk over it
+
+    Synthetic cooked files built in memory with the layout every format shares (res_ref.h): a
+    header opening with the res_ref_head_t fields, the reference section right after it, then
+    a payload.  Nothing here knows any real format, which is the point: the packager reads
+    the head, finds the section, and walks the names.
+
+    The walk fixture is three files.  The parent names both children; child a also names
+    child b; child b names nothing.  No RID() spells the children -- they are plain strings
+    here and absent from this executable's manifest (test_harvest proves the manifest holds
+    only the marked set) -- yet the walk from the parent reaches them, and reaches b once.
+==============================================================================================*/
+
+/* A stand-in format header: the shared head, then one field of its own. */
+typedef struct
+{
+    u32 magic;
+    u32 version;
+    u32 ref_count;
+    u32 ref_size;
+    u32 ref_offset;
+    u32 payload_size;
+
+} fake_hdr_t;
+
+RES_REF_HEAD_ASSERT( fake_hdr_t );
+
+#define FAKE_MAGIC   0x454B4146u    /* 'FAKE' */
+#define FAKE_PAYLOAD 12u
+
+/* Assemble a fake cooked file: a head claiming (`count`, `size`, `offset`), then `sec_len`
+   bytes of `sec`, then the payload.  Returns the byte count written. */
+static u32
+fake_build( u8* out, u32 count, u32 size, u32 offset, const u8* sec, u32 sec_len )
+{
+    fake_hdr_t h   = { FAKE_MAGIC, 1, count, size, offset, FAKE_PAYLOAD };
+    u32        n   = 0;
+    memcpy( out + n, &h, sizeof( h ) );   n += ( u32 )sizeof( h );
+    memcpy( out + n, sec, sec_len );      n += sec_len;
+    memset( out + n, 0xAB, FAKE_PAYLOAD ); n += FAKE_PAYLOAD;
+    return n;
+}
+
+/* A well-formed fake file naming `refs`: the section res_ref_write produces, at its natural
+   offset, with the head sized to match. */
+static u32
+fake_build_ok( u8* out, const char* const* refs, u32 count )
+{
+    u8  sec[ 256 ];
+    u32 size = 0;
+    if ( !res_ref_measure( refs, count, &size ) || !res_ref_write( sec, sizeof( sec ), refs, count ) )
+        return 0;
+    return fake_build( out, count, size, ( u32 )sizeof( fake_hdr_t ), sec, size );
+}
+
+typedef struct
+{
+    const char* name;
+    u8          bytes[ 512 ];
+    u32         size;
+    u32         reads;    /* how many times the walk opened this file */
+
+} fake_file_t;
+
+static fake_file_t s_files[ 3 ];
+
+static fake_file_t*
+fake_open( const char* name )
+{
+    for ( u32 i = 0; i < ARRAY_COUNT( s_files ); ++i )
+        if ( str_eq( s_files[ i ].name, name ) )
+            return &s_files[ i ];
+    return NULL;
+}
+
+/* The packager's walk, in miniature: visit a name once, read its file's reference section,
+   recurse into every name it lists.  `visited` collects the closure in visit order. */
+static bool
+fake_walk( const char* name, const char** visited, u32* visited_count, u32 cap )
+{
+    for ( u32 i = 0; i < *visited_count; ++i )
+        if ( str_eq( visited[ i ], name ) )
+            return true;
+    if ( *visited_count >= cap )
+        return false;
+    visited[ ( *visited_count )++ ] = name;
+
+    fake_file_t* f = fake_open( name );
+    if ( !f )
+        return false;
+    f->reads++;
+
+    const u8* sec;
+    u32       size, count;
+    if ( !res_ref_locate( f->bytes, f->size, &sec, &size, &count ) )
+        return false;
+
+    u32 cursor = 0;
+    for ( const char* child; ( child = res_ref_next( sec, size, &cursor ) ) != NULL; )
+        if ( !fake_walk( child, visited, visited_count, cap ) )
+            return false;
+    return true;
+}
+
+static void
+test_refs( void )
+{
+    printf( "  reference sections\n" );
+
+    static const char* const two[] = { "sandbox/res/walk/child_a", "sandbox/res/walk/child_b" };
+    u32                      size  = 0;
+
+    /* Measure and write: "sandbox/res/walk/child_a" is 24 + NUL, twice = 50, padded to 56. */
+    sb_check( res_ref_measure( two, 2, &size ) && size == 56, "two names measure to their padded length" );
+    sb_check( res_ref_measure( NULL, 0, &size ) && size == 0, "no names measure to 0" );
+    {
+        static const char* const bad[] = { "Sandbox/res/walk/child_a" };
+        sb_check( !res_ref_measure( bad, 1, &size ) && size == 0, "a non-canonical name is refused at write" );
+        static const char* const empty[] = { "" };
+        sb_check( !res_ref_measure( empty, 1, &size ), "an empty name is refused at write" );
+    }
+
+    u8 sec[ 128 ];
+    memset( sec, 0xCC, sizeof( sec ) );
+    sb_check( res_ref_write( sec, sizeof( sec ), two, 2 ), "the section writes" );
+    sb_check( !res_ref_write( sec, 55, two, 2 ), "a buffer one byte short is refused" );
+    sb_check( res_ref_write( sec, 56, two, 2 ), "a buffer of exactly the padded length is enough" );
+    sb_check( sec[ 50 ] == 0 && sec[ 55 ] == 0, "padding is zero" );
+    sb_check( res_ref_section_ok( sec, 56, 2 ), "the written section validates" );
+
+    /* Iterate back. */
+    {
+        u32         cursor = 0;
+        const char* a      = res_ref_next( sec, 56, &cursor );
+        const char* b      = res_ref_next( sec, 56, &cursor );
+        const char* end    = res_ref_next( sec, 56, &cursor );
+        sb_check( str_eq( a, two[ 0 ] ) && str_eq( b, two[ 1 ] ) && end == NULL, "the names read back in order, then NULL" );
+    }
+
+    /* Head bounds. */
+    {
+        res_ref_head_t h = { FAKE_MAGIC, 1, 2, 56, sizeof( fake_hdr_t ) };
+        sb_check( res_ref_head_ok( &h ), "a sane head is ok" );
+        h.ref_size = 52;   sb_check( !res_ref_head_ok( &h ), "a size not a multiple of RES_REF_ALIGN is refused" );
+        h.ref_size = 0;    sb_check( !res_ref_head_ok( &h ), "a count with no bytes is refused" );
+        h.ref_count = 0;   sb_check( res_ref_head_ok( &h ), "no names, no bytes is ok" );
+        h.ref_size = 8;    sb_check( !res_ref_head_ok( &h ), "bytes with no names are refused" );
+        h.ref_count = RES_REF_MAX + 1; h.ref_size = 56;
+        sb_check( !res_ref_head_ok( &h ), "a count past RES_REF_MAX is refused" );
+        h.ref_count = 2; h.ref_size = RES_REF_SIZE_MAX + 8;
+        sb_check( !res_ref_head_ok( &h ), "a size past RES_REF_SIZE_MAX is refused" );
+        h.ref_size = 56; h.ref_offset = 4;
+        sb_check( !res_ref_head_ok( &h ), "an offset inside the head is refused" );
+    }
+
+    /* Whole-file location, well-formed and every malformed shape. */
+    {
+        u8        file[ 512 ];
+        const u8* got;
+        u32       got_size, got_count, n;
+
+        n = fake_build_ok( file, two, 2 );
+        sb_check( n && res_ref_locate( file, n, &got, &got_size, &got_count ) && got_count == 2 && got_size == 56
+                      && got == file + sizeof( fake_hdr_t ),
+                  "a well-formed file locates its section" );
+
+        n = fake_build_ok( file, NULL, 0 );
+        sb_check( n && res_ref_locate( file, n, &got, &got_size, &got_count ) && got_count == 0 && got_size == 0,
+                  "a file naming nothing locates an empty section" );
+
+        sb_check( !res_ref_locate( file, sizeof( res_ref_head_t ) - 1, &got, &got_size, &got_count ),
+                  "a file shorter than the head is refused" );
+
+        n = fake_build( file, 2, 56, 400, sec, 56 );
+        sb_check( !res_ref_locate( file, n, &got, &got_size, &got_count ), "a section past the end of the file is refused" );
+
+        n = fake_build( file, 1, 56, sizeof( fake_hdr_t ), sec, 56 );
+        sb_check( !res_ref_locate( file, n, &got, &got_size, &got_count ), "a count short of the names present is refused" );
+
+        n = fake_build( file, 3, 56, sizeof( fake_hdr_t ), sec, 56 );
+        sb_check( !res_ref_locate( file, n, &got, &got_size, &got_count ), "a count past the names present is refused" );
+
+        {
+            u8 dirty[ 56 ];
+            memcpy( dirty, sec, 56 );
+            dirty[ 55 ] = 1;
+            n = fake_build( file, 2, 56, sizeof( fake_hdr_t ), dirty, 56 );
+            sb_check( !res_ref_locate( file, n, &got, &got_size, &got_count ), "nonzero padding is refused" );
+
+            memcpy( dirty, sec, 56 );
+            memset( dirty + 49, 'x', 7 );    /* the second name's NUL and the padding: it never ends */
+            n = fake_build( file, 2, 56, sizeof( fake_hdr_t ), dirty, 56 );
+            sb_check( !res_ref_locate( file, n, &got, &got_size, &got_count ), "an unterminated last name is refused" );
+
+            memcpy( dirty, sec, 56 );
+            dirty[ 0 ] = 'S';
+            n = fake_build( file, 2, 56, sizeof( fake_hdr_t ), dirty, 56 );
+            sb_check( !res_ref_locate( file, n, &got, &got_size, &got_count ), "a non-canonical name is refused at read" );
+        }
+
+        {
+            /* "a/b" + NUL = 4 bytes, padded to 8.  A head claiming 16 has a whole RES_REF_ALIGN of
+               zero slack after the natural padding, which is not padding but bytes no count
+               admits to. */
+            static const char* const one[] = { "a/b" };
+            u8                       loose[ 16 ] = { 0 };
+            res_ref_write( loose, sizeof( loose ), one, 1 );
+            n = fake_build( file, 1, 16, sizeof( fake_hdr_t ), loose, 16 );
+            sb_check( !res_ref_locate( file, n, &got, &got_size, &got_count ), "a whole alignment unit of slack is refused" );
+            n = fake_build( file, 1, 8, sizeof( fake_hdr_t ), loose, 8 );
+            sb_check( res_ref_locate( file, n, &got, &got_size, &got_count ) && got_size == 8, "the natural padding is accepted" );
+        }
+    }
+
+    /* The walk. */
+    {
+        static const char* const parent_refs[] = { "sandbox/res/walk/child_a", "sandbox/res/walk/child_b" };
+        static const char* const a_refs[]      = { "sandbox/res/walk/child_b" };
+
+        memset( s_files, 0, sizeof( s_files ) );
+        s_files[ 0 ].name = "sandbox/res/walk/parent";
+        s_files[ 0 ].size = fake_build_ok( s_files[ 0 ].bytes, parent_refs, 2 );
+        s_files[ 1 ].name = "sandbox/res/walk/child_a";
+        s_files[ 1 ].size = fake_build_ok( s_files[ 1 ].bytes, a_refs, 1 );
+        s_files[ 2 ].name = "sandbox/res/walk/child_b";
+        s_files[ 2 ].size = fake_build_ok( s_files[ 2 ].bytes, NULL, 0 );
+        sb_check( s_files[ 0 ].size && s_files[ 1 ].size && s_files[ 2 ].size, "the three fixture files build" );
+
+        const char* visited[ 8 ];
+        u32         visited_count = 0;
+        bool        ok = fake_walk( "sandbox/res/walk/parent", visited, &visited_count, ARRAY_COUNT( visited ) );
+        sb_check( ok, "the walk completes" );
+        sb_check( visited_count == 3, "the walk reaches exactly the parent and its two children" );
+        sb_check( visited_count == 3 && str_eq( visited[ 0 ], "sandbox/res/walk/parent" )
+                      && str_eq( visited[ 1 ], "sandbox/res/walk/child_a" )
+                      && str_eq( visited[ 2 ], "sandbox/res/walk/child_b" ),
+                  "depth first, in the order the parent named them" );
+        sb_check( s_files[ 2 ].reads == 1, "a child named twice (by the parent and by its sibling) is read once" );
+
+        /* Break the parent's section and the walk refuses rather than guesses. */
+        s_files[ 0 ].bytes[ sizeof( fake_hdr_t ) ] = 'S';
+        visited_count = 0;
+        sb_check( !fake_walk( "sandbox/res/walk/parent", visited, &visited_count, ARRAY_COUNT( visited ) ),
+                  "a corrupt section stops the walk" );
+    }
+}
+
+/*==============================================================================================
     Entry
 ==============================================================================================*/
 
@@ -273,6 +526,7 @@ main( int argc, char** argv )
     test_hash();
     test_path();
     test_harvest();
+    test_refs();
 
     printf( "sb_res: %d checks, %d failed\n", s_checks, s_fails );
     return s_fails;

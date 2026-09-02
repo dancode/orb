@@ -15,8 +15,9 @@
             .hlsl       -> spawn shader_tool cook <src> -o <dst> -T <profile>, where the
                            profile comes from the filename's stage tag (foo.vs.hlsl -> vs_6_0;
                            also ps/cs/gs/hs/ds).  Untagged .hlsl fails loudly; .hlsli copies.
-            .recipe     -> what its "kind" line says; a font recipe (face, size, optional
-                           sdf / range) spawns font_tool like a .ttf does
+            .recipe     -> what its "kind" line says; a font recipe (size, optional sdf /
+                           range, and a face -- its own "face" line, else the "face" in the
+                           family.txt beside it) spawns font_tool like a .ttf does
             other       -> built-in verbatim copy
 
         asset_tool -src <dir> -dst <dir> [-f]        incremental tree cook
@@ -295,11 +296,15 @@ cook_image( const char* src_path, const char* dst_path )
     hdr.format     = ASSET_TEX_FORMAT_RGBA8;
     hdr.mip_levels = 1;
     hdr.flags      = 0;
-    hdr.ref_count  = 0;    /* an image names no other resource: the reference section is empty */
+
+    /* An image names no other resource: the reference section (res_ref.h) is empty. */
+    hdr.ref_count  = 0;
+    hdr.ref_size   = 0;
+    hdr.ref_offset = ( u32 )sizeof( hdr );
 
     /* u64 math: a huge image would wrap w*h*4 in 32 bits; the format caps the file at u32. */
     u64 pixel_bytes = ( u64 )w * ( u64 )h * 4;
-    u64 refs        = res_ref_bytes( hdr.ref_count );
+    u64 refs        = hdr.ref_size;
     u64 total       = sizeof( hdr ) + refs + pixel_bytes;
     if ( total > 0xFFFFFFFFull )
     {
@@ -348,17 +353,18 @@ typedef struct recipe_s
     char       range[ 128 ];    // font_tool -range spec; "" = the ASCII default
 } recipe_t;
 
-static bool
-recipe_parse( const char* src_path, recipe_t* out )
-{
-    memset( out, 0, sizeof( *out ) );
+/* Callback per "<key> <value>" line of a recipe-style text file (comments and blanks skipped,
+   whitespace trimmed).  Returns false to flag the line as an error. */
+typedef bool ( *kv_line_fn )( const char* key, const char* val, void* user );
 
-    sys_file_data_t fd = sys_file_read_entire( src_path );
+/* Read `path` and feed every key/value line to `fn`.  False when the file cannot be read or
+   any line was refused. */
+static bool
+kv_file_read( const char* path, kv_line_fn fn, void* user )
+{
+    sys_file_data_t fd = sys_file_read_entire( path );
     if ( !fd.ok )
-    {
-        fprintf( stderr, "asset_tool: error: could not read %s\n", src_path );
         return false;
-    }
 
     bool  ok = true;
     char* p  = ( char* )fd.data;    /* NUL-terminated by sys_file_read_entire */
@@ -389,34 +395,103 @@ recipe_parse( const char* src_path, recipe_t* out )
         for ( char* e = val + strlen( val ); e > val && ( e[ -1 ] == ' ' || e[ -1 ] == '\t' || e[ -1 ] == '\r' ); --e )
             e[ -1 ] = '\0';
 
-        if ( strcmp( key, "kind" ) == 0 )
-            out->kind = res_kind_from_name( val );
-        else if ( strcmp( key, "face" ) == 0 )
-            snprintf( out->face, sizeof( out->face ), "%s", val );
-        else if ( strcmp( key, "size" ) == 0 )
-            out->size = atoi( val );
-        else if ( strcmp( key, "sdf" ) == 0 )
-            out->sdf = atoi( val );
-        else if ( strcmp( key, "range" ) == 0 )
-            snprintf( out->range, sizeof( out->range ), "%s", val );
-        else
-        {
-            fprintf( stderr, "asset_tool: error: %s: unknown recipe key '%s'\n", src_path, key );
+        if ( !fn( key, val, user ) )
             ok = false;
-        }
     }
     sys_file_free( &fd );
+    return ok;
+}
 
-    if ( !ok )
+typedef struct
+{
+    const char* src_path;    // for diagnostics
+    recipe_t*   out;
+} recipe_parse_ctx_t;
+
+static bool
+recipe_line( const char* key, const char* val, void* user )
+{
+    recipe_parse_ctx_t* c = ( recipe_parse_ctx_t* )user;
+    recipe_t*           out = c->out;
+
+    if ( strcmp( key, "kind" ) == 0 )
+        out->kind = res_kind_from_name( val );
+    else if ( strcmp( key, "face" ) == 0 )
+        snprintf( out->face, sizeof( out->face ), "%s", val );
+    else if ( strcmp( key, "size" ) == 0 )
+        out->size = atoi( val );
+    else if ( strcmp( key, "sdf" ) == 0 )
+        out->sdf = atoi( val );
+    else if ( strcmp( key, "range" ) == 0 )
+        snprintf( out->range, sizeof( out->range ), "%s", val );
+    else
+    {
+        fprintf( stderr, "asset_tool: error: %s: unknown recipe key '%s'\n", c->src_path, key );
         return false;
+    }
+    return true;
+}
+
+/* The family descriptor's "face" line only; every other key is someone else's business. */
+static bool
+family_line( const char* key, const char* val, void* user )
+{
+    if ( strcmp( key, "face" ) == 0 )
+        snprintf( ( char* )user, 256, "%s", val );
+    return true;
+}
+
+/* A font recipe with no "face" line of its own takes the face from content/font/<family>/
+   family.txt -- the file beside it on disk, the same one the gui's runtime baker reads for the
+   family, so the cooked bake and a runtime bake come from one spelling.  The sibling is looked
+   up on disk, not across content roots: a child project that shadows one size of an engine
+   family also carries the family's descriptor (or spells the face in the recipe). */
+static bool
+recipe_inherit_face( const char* src_path, recipe_t* out )
+{
+    char dir[ 1024 ];
+    snprintf( dir, sizeof( dir ), "%s", src_path );
+    char* sep = strrchr( dir, '/' );
+    char* alt = strrchr( dir, '\\' );
+    if ( alt > sep )
+        sep = alt;
+    if ( !sep )
+        return false;
+    *sep = '\0';
+
+    char family_path[ 1024 ];
+    snprintf( family_path, sizeof( family_path ), "%s/family.txt", dir );
+    kv_file_read( family_path, family_line, out->face );    /* a missing file leaves face "" */
+    return out->face[ 0 ] != 0;
+}
+
+static bool
+recipe_parse( const char* src_path, recipe_t* out )
+{
+    memset( out, 0, sizeof( *out ) );
+
+    recipe_parse_ctx_t ctx = { src_path, out };
+    if ( !sys_file_exists( src_path ) )
+    {
+        fprintf( stderr, "asset_tool: error: could not read %s\n", src_path );
+        return false;
+    }
+    if ( !kv_file_read( src_path, recipe_line, &ctx ) )
+        return false;
+
     if ( out->kind != RES_KIND_FONT )
     {
         fprintf( stderr, "asset_tool: error: %s: recipe kind must be 'font'\n", src_path );
         return false;
     }
-    if ( !out->face[ 0 ] || out->size <= 0 )
+    if ( out->size <= 0 )
     {
-        fprintf( stderr, "asset_tool: error: %s: a font recipe needs 'face' and 'size'\n", src_path );
+        fprintf( stderr, "asset_tool: error: %s: a font recipe needs 'size'\n", src_path );
+        return false;
+    }
+    if ( !out->face[ 0 ] && !recipe_inherit_face( src_path, out ) )
+    {
+        fprintf( stderr, "asset_tool: error: %s: no 'face' line and no family.txt beside it\n", src_path );
         return false;
     }
     return true;

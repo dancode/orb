@@ -5,8 +5,8 @@
     tools/font_tool/orb_font.h -- .orb_font binary file format.
 
     File layout (all values little-endian):
-        orb_font_header_t   header
-        uint32_t            refs[ header.ref_count ]     (rid_t; engine/res/res_ref.h)
+        orb_font_header_t   header                          (opens with res_ref_head_t)
+        uint8_t             refs[ header.ref_size ]         (engine/res/res_ref.h)
         orb_font_glyph_t    glyphs[ header.glyph_count ]
         uint8_t             pixels[ header.atlas_w * header.atlas_h ]  (R8: coverage, or a
                                                                         distance field when
@@ -14,7 +14,6 @@
 
 ==============================================================================================*/
 
-#include <stddef.h>   /* offsetof -- the header base size is asserted below */
 #include <stdint.h>
 
 #include "engine/res/res_ref.h"   /* the reference section between header and glyphs */
@@ -22,29 +21,21 @@
 /* 'OFNT' -- bytes O,F,N,T in little-endian memory order */
 #define ORB_FONT_MAGIC    0x544E464Fu
 
-/* Format versions:
-     6  Header gained `ref_count` and the file gained a REFERENCE SECTION (engine/res/res_ref.h):
-        ref_count little-endian resource ids between the header and the glyph records, the same
-        layout every cooked format carries for the resources its content names.  A font names
-        nothing, so every bake writes 0 and the section is empty.  The loader requires exactly v6.
+/* Format versions.  The loader requires the current one outright; nothing older parses.
+     7  The header opens with the res_ref_head_t fields (engine/res/res_ref.h) and the
+        reference section is a padded string table sized by `ref_size`, located by
+        `ref_offset`.  A font names nothing, so every bake writes both as 0.
+     6  Header gained `ref_count` and the file gained a reference section of u32 ids.
      5  orb_font_glyph_t shrank: w, h, advance became uint8_t and bearing_x, bearing_y became
         int8_t (ORB_FONT_GLYPH_DIM_MAX / ORB_FONT_GLYPH_BEARING_MIN/MAX), and the trailing _pad
-        was dropped.  The glyph record layout breaks byte compatibility, so the loader requires
-        exactly v5 -- an older file's records would misread at the new (smaller) record size, not
-        just underfill a tail like the header-only bumps below.  The baker (dev_font_bake_write)
-        rejects any glyph that would not fit these ranges, so a v5 file never carries a truncated
-        value.
-     4  Header gained `sdf_range`, so a font can be a DISTANCE FIELD instead of coverage.  The
-        header grew by one u32; everything before it is unchanged, which is what let a v4 loader
-        read the base and then the tail (see ORB_FONT_HEADER_BASE_SIZE).
+        was dropped.  The baker (dev_font_bake_write) rejects any glyph that would not fit these
+        ranges, so a file never carries a truncated value.
+     4  Header gained `sdf_range`, so a font can be a DISTANCE FIELD instead of coverage.
      3  Glyphs are packed full-height; the atlas is pure glyph coverage, no reserved band.  The gui
         runtime draws its white texel + dash-pattern rows from a shared resource atlas
         (gui_res_atlas.c), so a font no longer carries drawing assists of its own.
-     2  Left the bottom 5 rows blank for gui to paint assists into at load.
-   The header layout below still documents how 2/3/4 were shaped -- ORB_FONT_HEADER_BASE_SIZE is
-   the byte offset every version through 4 shared -- but font_header_read requires the current
-   version outright, so none of that compatibility is reachable any more. */
-#define ORB_FONT_VERSION  6u
+     2  Left the bottom 5 rows blank for gui to paint assists into at load. */
+#define ORB_FONT_VERSION  7u
 
 /* Per-glyph metric ceiling backing the u8/i8 fields below: a bitmap dimension or the horizontal
    advance never exceeds this many pixels, and a bearing never leaves this signed range.  Text
@@ -54,11 +45,6 @@
 #define ORB_FONT_GLYPH_DIM_MAX      255
 #define ORB_FONT_GLYPH_BEARING_MIN (-128)
 #define ORB_FONT_GLYPH_BEARING_MAX  127
-
-/* Byte size of the v2/v3 header -- magic through glyph_count.  A v4 reader loads this much, checks
-   the version, and only then reads the tail, so every older file still parses with the new struct
-   (the tail zero-fills, and zero is exactly the legacy meaning).  Asserted below. */
-#define ORB_FONT_HEADER_BASE_SIZE  36u
 
 /* DEFAULT baked codepoint range -- the ASCII printable span U+0020 (space) .. U+007E (tilde).
    This is the contract shared by both bakers (dev_font, font_tool) and the runtime loader's dense
@@ -91,8 +77,13 @@
 
 typedef struct
 {
-    uint32_t magic;
-    uint32_t version;
+    /* The res_ref_head_t fields (engine/res/res_ref.h): every cooked format opens with these. */
+    uint32_t magic;         /* ORB_FONT_MAGIC                                             */
+    uint32_t version;       /* ORB_FONT_VERSION                                           */
+    uint32_t ref_count;     /* names in the reference section; 0 -- a font names nothing  */
+    uint32_t ref_size;      /* padded bytes of the reference section; 0 today             */
+    uint32_t ref_offset;    /* where the section starts: sizeof( orb_font_header_t )      */
+
     uint32_t atlas_w;
     uint32_t atlas_h;
     uint32_t font_size;     /* rendered glyph height in pixels          */
@@ -101,10 +92,7 @@ typedef struct
     int32_t  line_gap;      /* extra spacing beyond ascent+descent      */
     uint32_t glyph_count;
 
-    /* ---- v4 tail; a v2/v3 file has none and reads back as 0 ---- */
-
-    /* 0  -- the pixels are COVERAGE: the byte is alpha, 0 = empty, 255 = solid.  Every font baked
-             before v4 is this, which is why 0 had to be its value.
+    /* 0  -- the pixels are COVERAGE: the byte is alpha, 0 = empty, 255 = solid.
        >0 -- the pixels are a SIGNED DISTANCE FIELD and this is its SPREAD in pixels.  The byte
              encoding is FreeType's (src/sdf): 128 is exactly ON the outline, >128 inside, <128
              outside, and 127 byte-steps span `sdf_range` pixels.  So a texel's signed distance in
@@ -114,24 +102,12 @@ typedef struct
              is what makes the file self-describing, and `font_tool info` prints it. */
     uint32_t sdf_range;
 
-    /* ---- v6 tail ---- */
-
-    /* Number of resource ids in the reference section that immediately follows this header
-       (engine/res/res_ref.h).  Always 0 today -- a font names no other resource -- but a reader
-       still steps over ref_count * 4 bytes to reach the glyph records, and rejects a count past
-       RES_REF_MAX. */
-    uint32_t ref_count;
-
     /* immediately followed by the reference section, glyph_count * orb_font_glyph_t, then pixel
        data */
 
 } orb_font_header_t;
 
-/* The base size is a FILE CONTRACT, not a convenience: a v4 reader seeks by it.  If a field is ever
-   inserted before sdf_range this fires, which is the point -- silently shifting it would make every
-   pre-v4 font parse as garbage rather than fail. */
-_Static_assert( offsetof( orb_font_header_t, sdf_range ) == ORB_FONT_HEADER_BASE_SIZE,
-                "orb_font v2/v3 header prefix must stay 36 bytes" );
+RES_REF_HEAD_ASSERT( orb_font_header_t );
 
 typedef struct
 {

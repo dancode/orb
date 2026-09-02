@@ -15,20 +15,20 @@
                    the bindless descriptor contract -- without linking any reflection library.
 
     One .oshd holds ONE shader stage (per-stage containers; a pipeline references a vs + ps
-    pair).  File layout -- a fixed 64-byte header followed by five tightly packed sections:
+    pair).  File layout -- a fixed 72-byte header followed by six tightly packed sections:
 
-        [ oshd_header_t ]
-        [ rid_t             x ref_count       ]   resources the content names (res_ref.h);
-                                                  padded to 8 bytes, see oshd_ref_bytes
+        [ oshd_header_t ]                         opens with res_ref_head_t (res_ref.h)
+        [ refs              ref_size bytes    ]   resources the content names: a padded
+                                                  string table, 8-aligned (RES_REF_ALIGN)
         [ oshd_input_t      x input_count     ]   vertex inputs, sorted by location
         [ oshd_pc_member_t  x pc_member_count ]   push constant members, pre-order, with depth
         [ oshd_binding_t    x binding_count   ]   descriptor bindings, as reflected
         [ string table      strtab_size bytes ]   NUL-terminated names; offset 0 = "" (unnamed)
         [ SPIR-V payload    spirv_size bytes  ]
 
-    A shader names no other resource, so every cooked .oshd has ref_count 0 and readers step
-    over an empty section.  All fields are little-endian (tool and engine share the
-    architecture).  strtab_size is padded to a multiple of 4 so the SPIR-V payload stays
+    A shader names no other resource, so every cooked .oshd has ref_count 0 and ref_size 0 and
+    readers step over an empty section.  All fields are little-endian (tool and engine share
+    the architecture).  strtab_size is padded to a multiple of 4 so the SPIR-V payload stays
     4-aligned when the file is mapped.  Enum fields deliberately reuse the numeric values
     SPIRV-Reflect reports:
 
@@ -49,7 +49,8 @@
     it alongside the RHI.
 
     Versions:
-        3  ref_count + the reference section between header and inputs (took the pad slot).
+        4  header opens with res_ref_head_t; the reference section is a padded string table.
+        3  ref_count + a reference section of u32 ids between header and inputs.
         2  push constant member table with depth/type; layout_hash.
         1  first container.
 
@@ -62,7 +63,7 @@
 #define OSHD_MAGIC \
     ( ( u32 )'O' | ( ( u32 )'S' << 8 ) | ( ( u32 )'H' << 16 ) | ( ( u32 )'D' << 24 ) )
 
-#define OSHD_VERSION 3
+#define OSHD_VERSION 4
 
 /* Shader stage.  Own scale (not VkShaderStageFlagBits) so the file format does not encode a
    bitmask where exactly one value is legal. */
@@ -81,6 +82,10 @@ typedef struct oshd_header_s
 {
     u32 magic;             // OSHD_MAGIC
     u32 version;           // OSHD_VERSION
+    u32 ref_count;         // names in the reference section (res_ref.h); 0 -- a shader names nothing
+    u32 ref_size;          // padded bytes of the reference section; 0 today
+    u32 ref_offset;        // where the section starts: sizeof( oshd_header_t )
+
     u32 stage;             // OSHD_STAGE_*
     u32 entry;             // strtab offset of the entry point name
     u32 input_count;       // oshd_input_t records
@@ -92,19 +97,15 @@ typedef struct oshd_header_s
     u32 strtab_size;       // string table bytes (multiple of 4; >= 1: offset 0 is "")
     u32 spirv_size;        // SPIR-V payload bytes (nonzero, multiple of 4)
     u32 flags;             // reserved (0)
-    u32 ref_count;         // rid_t ids right after this header (res_ref.h); 0 today, <= RES_REF_MAX
     u64 layout_hash;       // FNV-1a 64 fingerprint of the CPU-visible layout contract
 
 } oshd_header_t;
 
-/* Byte length of the reference section: ref_count little-endian rid_t, padded to a multiple of
-   8 so the oshd_pc_member_t records (u64 name_hash) stay aligned in a mapped file.  Callers
-   bound ref_count with res_ref_count_ok first; within that bound the arithmetic cannot wrap. */
-static inline u32
-oshd_ref_bytes( u32 ref_count )
-{
-    return ( ref_count * RES_REF_SIZE + 7u ) & ~7u;
-}
+RES_REF_HEAD_ASSERT( oshd_header_t );
+
+/* The reference section is padded to RES_REF_ALIGN (8), so the oshd_pc_member_t records (u64
+   name_hash) stay aligned in a mapped file. */
+_Static_assert( sizeof( oshd_header_t ) % 8 == 0, "oshd header must keep the sections 8-aligned" );
 
 /* One user vertex input (built-ins like SV_VertexID are not stored). */
 typedef struct oshd_input_s

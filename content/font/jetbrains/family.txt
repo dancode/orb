@@ -1,0 +1,3 @@
+# The typeface behind every bake in this directory (see cascadiamono/family.txt).
+
+face    jetbrains/JetBrainsMonoNL-Regular.ttf

@@ -143,18 +143,19 @@ vk_shader_load_oshd_memory( const void* blob, u32 size, const char* debug_name )
         return bad;
     }
 
-    /* Validate the container in u64 before trusting any count or offset.  The reference count
-       is bounded first (res_ref.h): past RES_REF_MAX the section arithmetic is meaningless. */
+    /* Validate the container in u64 before trusting any count or offset.  The reference section
+       is bounded first (res_ref.h): past its caps the section arithmetic is meaningless. */
     const oshd_header_t* h = ( const oshd_header_t* )blob;
     u64 need               = ( u64 )sizeof( oshd_header_t )
-                           + ( u64 )oshd_ref_bytes( h->ref_count )
+                           + ( u64 )h->ref_size
                            + ( u64 )h->input_count * sizeof( oshd_input_t )
                            + ( u64 )h->pc_member_count * sizeof( oshd_pc_member_t )
                            + ( u64 )h->binding_count * sizeof( oshd_binding_t )
                            + ( u64 )h->strtab_size + ( u64 )h->spirv_size;
 
     if ( h->magic != OSHD_MAGIC || h->version != OSHD_VERSION ||
-         !res_ref_count_ok( h->ref_count ) || need != ( u64 )size ||
+         !res_ref_head_ok( ( const res_ref_head_t* )h ) ||
+         h->ref_offset != sizeof( oshd_header_t ) || need != ( u64 )size ||
          h->strtab_size < 4 || h->strtab_size % 4 != 0 ||
          h->spirv_size == 0 || h->spirv_size % 4 != 0 )
     {
@@ -164,7 +165,7 @@ vk_shader_load_oshd_memory( const void* blob, u32 size, const char* debug_name )
     }
 
     const oshd_input_t*   inputs = ( const oshd_input_t* )
-        ( ( const u8* )( h + 1 ) + oshd_ref_bytes( h->ref_count ) );
+        ( ( const u8* )( h + 1 ) + h->ref_size );
     const oshd_binding_t* binds  = ( const oshd_binding_t* )
         ( ( const oshd_pc_member_t* )( inputs + h->input_count ) + h->pc_member_count );
     const char*           strtab = ( const char* )( binds + h->binding_count );

@@ -280,6 +280,24 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
             }
         }
 
+        // A recipe with no face line of its own takes it from the family.txt beside it
+        // (asset_tool), so that file's edits change the cooked bytes too.
+        if ( !is_shader )
+        {
+            char fam[ PATH_MAX ];
+            snprintf( fam, sizeof( fam ), "%s", src );
+            char* sep = strrchr( fam, PATH_SEP[ 0 ] );
+            char* alt = strrchr( fam, '/' );
+            if ( alt > sep ) sep = alt;
+            if ( sep )
+            {
+                snprintf( sep + 1, sizeof( fam ) - ( size_t )( sep + 1 - fam ), "family.txt" );
+                platform_mtime_t m = platform_get_mtime( fam );
+                if ( m > src_mtime )
+                    src_mtime = m;
+            }
+        }
+
         // Keyed on the OUTPUT, not on this target. Every image linking gui names the gui
         // shaders, and under the parallel scheduler two of them reach this at the same moment;
         // so can two build_tool invocations. The staleness test is inside the lock with the

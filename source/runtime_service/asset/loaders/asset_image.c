@@ -117,15 +117,15 @@ image_load_cooked( const char* vpath, const void* data, u32 size )
         LOG_ERROR( "asset: .tex '%s' unsupported format %u", vpath, hdr->format );
         return NULL;
     }
-    if ( !res_ref_count_ok( hdr->ref_count ) )
+    if ( !res_ref_head_ok( ( const res_ref_head_t* )hdr ) || hdr->ref_offset != sizeof( *hdr ) )
     {
-        LOG_ERROR( "asset: .tex '%s' claims %u references (max %u)", vpath, hdr->ref_count,
-                   RES_REF_MAX );
+        LOG_ERROR( "asset: .tex '%s' has a bad reference section (%u names, %u bytes at %u)", vpath,
+                   hdr->ref_count, hdr->ref_size, hdr->ref_offset );
         return NULL;
     }
 
     u64 expect = ( u64 )hdr->width * hdr->height * 4;    // u64: a hostile header can wrap u32
-    u64 refs   = res_ref_bytes( hdr->ref_count );
+    u64 refs   = hdr->ref_size;
     u64 need   = ( u64 )sizeof( asset_tex_header_t ) + refs + hdr->data_size;
     if ( hdr->data_size != expect || need != size )
     {

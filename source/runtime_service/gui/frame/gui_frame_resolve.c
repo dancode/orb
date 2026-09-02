@@ -298,9 +298,11 @@ resolve_bytes_baked( const char* family, u32 size_px )
     resolve_bytes_t r = { 0 };
     if ( !s_resolver.baker )
         return r;
+    char face[ 256 ];
+    font_family_face( family, face, sizeof( face ) );
     void* data = NULL;
     u32   size = 0;
-    if ( s_resolver.baker( font_family_face( family ), size_px, &data, &size, s_resolver.baker_user )
+    if ( s_resolver.baker( face, size_px, &data, &size, s_resolver.baker_user )
          && data && size )
     {
         r.data = data;

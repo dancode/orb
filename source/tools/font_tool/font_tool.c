@@ -183,35 +183,22 @@ info_print_file( const char* label, const char* path )
         return;
     }
 
-    /* Base first, then only the tail the file's version actually has -- sdf_range from v4,
-       ref_count from v6 -- so `info` reports an older file as it is shaped instead of showing
-       whatever the first glyph record's leading bytes happen to be.  A truncated tail reads as
-       zeros. */
-    const size_t base = ORB_FONT_HEADER_BASE_SIZE;
-
+    /* Only the current version's header is shaped like orb_font_header_t; an older file is
+       reported by its version alone rather than through fields that no longer line up. */
     orb_font_header_t h;
     memset( &h, 0, sizeof( h ) );
 
-    bool valid = fread( &h, 1, base, f ) == base && h.magic == ORB_FONT_MAGIC;
-    if ( valid )
-    {
-        size_t tail = 0;
-        if ( h.version >= 6u )
-            tail = sizeof( orb_font_header_t ) - base;
-        else if ( h.version >= 4u )
-            tail = offsetof( orb_font_header_t, ref_count ) - base;
-
-        if ( tail && fread( (uint8_t*)&h + base, 1, tail, f ) != tail )
-        {
-            h.sdf_range = 0;
-            h.ref_count = 0;
-        }
-    }
+    bool valid = fread( &h, 1, sizeof( h ), f ) == sizeof( h ) && h.magic == ORB_FONT_MAGIC;
     fclose( f );
 
     if ( !valid )
     {
         printf( "%-40s  (not an .orb_font)\n", label );
+        return;
+    }
+    if ( h.version != ORB_FONT_VERSION )
+    {
+        printf( "%-40s %3u  (older format; rebake)\n", label, h.version );
         return;
     }
 

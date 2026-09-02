@@ -2,6 +2,5 @@
 # name; the extension is what follows the LAST dot).
 
 kind    font
-face    CascadiaMono
 size    32
 sdf     8

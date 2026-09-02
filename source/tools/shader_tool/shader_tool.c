@@ -362,16 +362,16 @@ oshd_view( const char* path, const sys_file_data_t* fd, oshd_view_t* v )
                  path, h->version, OSHD_VERSION );
         return false;
     }
-    if ( !res_ref_count_ok( h->ref_count ) )
+    if ( !res_ref_head_ok( ( const res_ref_head_t* )h ) || h->ref_offset != sizeof( oshd_header_t ) )
     {
-        fprintf( stderr, "shader_tool: error: %s claims %u references (max %u)\n",
-                 path, h->ref_count, RES_REF_MAX );
+        fprintf( stderr, "shader_tool: error: %s has a bad reference section (%u names, %u bytes at %u)\n",
+                 path, h->ref_count, h->ref_size, h->ref_offset );
         return false;
     }
 
     /* Validate the section math in u64 before trusting any count or offset. */
     u64 need = ( u64 )sizeof( oshd_header_t )
-             + ( u64 )oshd_ref_bytes( h->ref_count )
+             + ( u64 )h->ref_size
              + ( u64 )h->input_count * sizeof( oshd_input_t )
              + ( u64 )h->pc_member_count * sizeof( oshd_pc_member_t )
              + ( u64 )h->binding_count * sizeof( oshd_binding_t )
@@ -386,7 +386,7 @@ oshd_view( const char* path, const sys_file_data_t* fd, oshd_view_t* v )
     }
 
     v->h       = h;
-    v->inputs  = ( const oshd_input_t* )( ( const u8* )( h + 1 ) + oshd_ref_bytes( h->ref_count ) );
+    v->inputs  = ( const oshd_input_t* )( ( const u8* )( h + 1 ) + h->ref_size );
     v->members = ( const oshd_pc_member_t* )( v->inputs + h->input_count );
     v->binds   = ( const oshd_binding_t* )( v->members + h->pc_member_count );
     v->strtab  = ( const char* )( v->binds + h->binding_count );
@@ -421,7 +421,7 @@ run_reflect_oshd( const char* path, const sys_file_data_t* fd )
 
     const char* entry = oshd_str( strtab, h->strtab_size, h->entry );
     printf( "  entry : %s\n", entry[ 0 ] ? entry : "(none)" );
-    printf( "  refs  : %u\n", h->ref_count );
+    printf( "  refs  : %u (%u bytes)\n", h->ref_count, h->ref_size );
 
     printf( "  inputs: %u\n", h->input_count );
     for ( u32 i = 0; i < h->input_count; ++i )
@@ -808,6 +808,8 @@ run_cook( const compile_args_t* a )
     h.stage         = oshd_stage_from_reflect( module.shader_stage );
     h.spirv_size    = fd.size;
     h.ref_count     = 0;    /* a shader names no other resource: the reference section is empty */
+    h.ref_size      = 0;
+    h.ref_offset    = ( u32 )sizeof( h );
     if ( h.stage == OSHD_STAGE_NONE )
     {
         fprintf( stderr, "shader_tool: error: unsupported shader stage in %s\n", a->src );
@@ -941,7 +943,7 @@ run_cook( const compile_args_t* a )
 
     /* Assemble and write.  Sizes are u32 in the header; the u64 total guards the sum. */
     u64 total = ( u64 )sizeof( h )
-              + ( u64 )oshd_ref_bytes( h.ref_count )
+              + ( u64 )h.ref_size
               + ( u64 )h.input_count * sizeof( oshd_input_t )
               + ( u64 )h.pc_member_count * sizeof( oshd_pc_member_t )
               + ( u64 )h.binding_count * sizeof( oshd_binding_t )
@@ -955,8 +957,8 @@ run_cook( const compile_args_t* a )
     file   = ( u8* )malloc( ( size_t )total );
     u8* at = file;
     memcpy( at, &h, sizeof( h ) );                                        at += sizeof( h );
-    memset( at, 0, oshd_ref_bytes( h.ref_count ) );                      /* refs + pad: none today */
-    at += oshd_ref_bytes( h.ref_count );
+    memset( at, 0, h.ref_size );                                          /* refs: none today */
+    at += h.ref_size;
     if ( h.input_count )
     {
         memcpy( at, in_tab, h.input_count * sizeof( oshd_input_t ) );

@@ -4,6 +4,7 @@
 
 Status: IN PROGRESS.  Phases 0-4 landed 2026-09-01/02 as a runtime catalogue; REDUCED on
 2026-09-02 to a header-only marker plus a build-time tool (see "The reduction" below).
+Phases 5 and 6 landed 2026-09-02.  Phase 7 (the packager) is next.
 Successor to the reference half of ASSET_SYSTEM_PLAN.md.  That plan built the RUNTIME half
 -- fs mounts, zip bundles, the asset registry, the cook track, packaging -- and left one
 question unanswered: what does an application actually reference?  Today ship_tool answers
@@ -101,9 +102,9 @@ piece.
    or an absolute filesystem path where the function accepts one -- only the first is
    packaged.  There is no rid_t-to-name lookup because there is no need for one.  When code
    must STORE a name compactly it interns a sid_t (core), the engine's one interner, which
-   gives the string back.  A cooked file's reference section (res_ref.h) may carry names or
-   hashes; that is decided when the first cooker writes one (Phase 6), and names are the
-   default.
+   gives the string back.  A cooked file's reference section (res_ref.h) carries NAMES, as a
+   padded string table (decided in Phase 6): the packager reads them without inverting
+   anything and without knowing the format.
 
 3. rid_t IS A KEY, NOT AN IDENTITY.  u32 FNV-1a of the name (res_hash_name), header-only, for
    anything that indexes by name -- a dedup table, a cooked-file section.  res_tool proves the
@@ -144,8 +145,18 @@ piece.
 
 9. RECIPES ARE SOURCE ASSETS.  Content with no source file (a font bake) gets a recipe file
    under the content root -- content/font/cascadiamono/16.recipe -- so decision 6 holds
-   universally and every name has exactly one source file.  config/fonts.manifest and
-   config/icons.manifest dissolve into ordinary named content (Phase 6).
+   universally and every name has exactly one source file.  A recipe says what it cooks to
+   (kind) and its bake parameters (size, sdf, range); the TYPEFACE it bakes from is stated
+   once per family in content/font/<family>/family.txt, which the recipes beside it inherit
+   (a recipe may still spell its own "face" to override) and which the gui's runtime baker
+   reads for sizes no recipe covers -- so a cooked bake and a runtime bake of one family come
+   from one spelling, and gui compiles in no family table.  The face is a COOK INPUT (a TTF
+   under assets/, or an OS face name), not a reference: it is never written to a cooked
+   file's reference section and never ships.
+   config/fonts.manifest -- the ship-time cook list dev_ship reads -- is fully expressed by
+   the recipe set plus RID(); it and dev_ship's font cook loop go when Phase 7 lands the
+   manifest walk.  config/icons.manifest is NOT a recipe candidate: it is an IMPORT manifest
+   (decision 17) and stays.
 
 10. THE MANIFEST IS DERIVED OUTPUT, PLAIN TEXT, PER IMAGE.  obj/<target>/<target>_res_manifest.txt:
     '#' comment lines, then one entry per line -- name, the source file it resolved to under
@@ -200,7 +211,34 @@ piece.
     orb.targets -- decision 13 now holds literally -- and it is what makes "only RID'd font
     sizes ship" produce the bakes: content/font/cascadiamono/16.recipe cooks because sb_gui
     marks the name, and no other size does.  Images stay loose (gui decodes PNG itself; the
-    asset service's .tex preference is a ship-time cook, Phase 7).
+    asset service's .tex preference is a ship-time cook, Phase 7).  Any target whose manifest
+    names a shader or a recipe carries 'tool_dep asset_tool shader_tool font_tool' so the
+    cookers are built first under the parallel scheduler (gui does; sb_res does for its
+    fixture recipe).
+
+17. THREE TIERS, TWO PIPELINES.  (2026-09-02.)  What a directory holds is decided by who reads
+    it:
+
+      | Tier            | Tracked   | Read by              | Holds                          |
+      |-----------------|-----------|----------------------|--------------------------------|
+      | assets/         | no        | tools only           | raw sources: TTFs, SVGs; tool   |
+      |                 |           |                      | caches (font_cache)             |
+      | content/        | yes       | engine and cooker    | source-form content: PNGs,      |
+      |                 |           |                      | .hlsl, .recipe, family.txt      |
+      | build/content   | generated | engine (mounted      | cooked forms: .orb_font, .oshd, |
+      |                 |           | above content/)      | .tex                            |
+
+    Two pipelines cross those tiers and must not be confused.  IMPORT moves a raw source
+    into content/ (image_tool icons rasterizes assets/icon_source/*.svg into content/ui/icon/
+    from config/icons.manifest, by hand, checked in); it decides what content EXISTS.
+    PACKAGE filters content/ plus build/content into a shipped set; RID() and the per-target
+    manifest decide what SHIPS.  asset_tool belongs to neither: it cooks content/ into
+    build/content and never reads assets/ except through a recipe's face.  Nothing reads
+    assets/ at runtime except the dev-only font baker's cache.  Follow-on, not done: assets/
+    should MIRROR content/ (assets/font/jetbrains/*.ttf beside content/font/jetbrains/) so a
+    raw source and the content it becomes sit at the same path, and the old output
+    directories assets/font and assets/icon -- font_tool's default output, dev_ship's cook
+    target, the style editor's final bake -- retire with dev_ship's cook loop in Phase 7.
 
 --------------------------------------------------------------------------------
 ## Where it sits
@@ -208,12 +246,16 @@ piece.
 
     source/engine/res/
       res.h        -- markers, canonical form, hash, path join   (header-only)
-      res_ref.h    -- the reference section of a cooked file      (header-only, formats)
+      res_ref.h    -- the reference section of a cooked file: the res_ref_head_t every cooked
+                      format opens with, and the string-table writer / validator / iterator /
+                      whole-file locator the cookers and the packager share (header-only)
       res_cook.h   -- source extension -> cooked extension        (header-only, tools)
     source/tools/res_tool/res_tool.c   -- scanner + resolver + manifest writer (builtin target)
     build/obj/<target>/<target>_res_manifest.txt, _res_units.txt, _res_deps.txt
     build/content/<name>.<cooked ext>   -- the cooked mirror build_cook_content writes from the
                                            manifest (build_tool_09_exec.c); mounted above content/
+    content/font/<family>/family.txt    -- the family's typeface (decision 9); recipes inherit it,
+                                           gui_font_family.c reads it for the runtime baker
     source/runtime_service/gui/gui_res.h -- how gui reads a name + ext through fs
 
 Reading the layering as a sentence: res says how ui/icon/save is spelled and proves it has a
@@ -285,13 +327,11 @@ Phases 0-4 -- catalogue, harvester, resolution, format sections, asset on rid   
      every name resolves); ProjectDependencies on res_tool in the NMake solutions; -graph /
      -list / -doctor awareness.  Up-to-date test E replays _res_deps.txt (equal timestamps
      count as stale; a newer res_tool.exe is stale).  No generated .c anywhere.
-   - Cooked formats (Phase 3): one shared contract, engine/res/res_ref.h -- a ref_count
-     header field and a reference section immediately after the fixed header, before the
-     payload; RES_REF_MAX 4096, every reader rejects the count before any size arithmetic.
-     orb_font v6, .tex v2 (36-byte header, exact length required), .oshd v3 (ref_count in
-     the pad slot, section padded to 8 via oshd_ref_bytes).  Every cooker writes 0.  The
-     section is reserved as u32 slots today; whether Phase 6 fills it with hashes or with
-     names (a string table) is Phase 6's call -- names are the default (decision 2).
+   - Cooked formats (Phase 3, re-cut in Phase 6): one shared contract, engine/res/res_ref.h --
+     a reference section immediately after the fixed header, before the payload; every
+     reader rejects the head before any size arithmetic.  Phase 3 laid it down as a
+     ref_count field and u32 id slots; Phase 6 replaced that with the res_ref_head_t opening
+     and a string table (see Phase 6).
    - Asset service (Phase 4, re-cut): aid_t { index, generation }; acquire( const char*
      name, u16 type ); the caller names the TYPE (built-ins ASSET_TYPE_IMAGE = 1,
      ASSET_TYPE_SHADER = 2, fixed and asserted at init; custom types via type_register); a
@@ -345,8 +385,9 @@ Phase 5 -- GUI adoption (the real surface)                               [DONE 2
      loader.  sb_quad_pull's three shaders moved to content/sandbox/quad_pull/ the same way.
      The 'shader' lines left orb.targets (decision 16).
    - Deviation from the plan as written: s_family[] did not retire outright.  The family
-     directory -> typeface table (font_family_face) survives because the runtime baker needs
-     "JetBrains Mono NL", not "jetbrains"; it goes when recipes carry the face (Phase 6).
+     directory -> typeface table (font_family_face) survived because the runtime baker needs
+     "JetBrains Mono NL", not "jetbrains"; Phase 6 moved that spelling into content
+     (family.txt) and the table is gone.
    - Left alone, on purpose: rhi's path-taking shader loaders and draw_material's optional
      cooked pair under bin/shaders (scripts/cook_shaders.bat) -- a dev-only affordance with
      an embedded fallback, not content.  dev_ship still cooks config/fonts.manifest into
@@ -356,19 +397,62 @@ Phase 5 -- GUI adoption (the real surface)                               [DONE 2
      shaders), build/content holds font/cascadiamono/16.orb_font and shader/gui_quad.{vs,ps}.oshd,
      and sb_gui renders from them.
 
-Phase 6 -- Recipes + content-declared edges                              [NOT STARTED]
-   - config/fonts.manifest and config/icons.manifest decompose into per-name recipe files
-     under content/.  asset_tool cooks a recipe by dispatching to font_tool as it does now.
-   - The cooker writes the names its content references into the res_ref.h section (decide
-     the encoding here: a string table is the default).  Loaders step over it; the packager
-     reads it.
-   - Proof: a font bakes from a recipe to byte-identical output; a synthetic parent asset
-     with two children is walked transitively by the packager with no C source mentioning
-     the children.
+Phase 6 -- Recipes + content-declared edges                              [DONE 2026-09-02]
+   - Reference section, decided and built (res_ref.h).  Every cooked format's header OPENS
+     with the five res_ref_head_t fields -- magic, version, ref_count, ref_size, ref_offset
+     -- and the section is a string table: ref_count names, NUL-terminated, in order,
+     zero-padded to a multiple of RES_REF_ALIGN (8), ref_size bytes long, at ref_offset
+     (which is the fixed header's size; loaders check that).  RES_REF_MAX 4096 names,
+     RES_REF_SIZE_MAX 1 MiB; res_ref_head_ok bounds the head before any arithmetic;
+     res_ref_section_ok accepts exactly one byte string per name list (padding shorter
+     than one alignment unit, all zero; every name canonical); res_ref_measure / _write
+     produce it; res_ref_next walks it; res_ref_locate does the whole-file find-and-
+     validate the packager calls on any cooked file without knowing its format.  Formats:
+     orb_font v7 (52-byte header; ORB_FONT_HEADER_BASE_SIZE and the v2-v4 tail reading are
+     gone), .tex v3 (44 bytes), .oshd v4 (72 bytes; oshd_ref_bytes gone -- the section's
+     own alignment keeps the u64 members aligned).  Every cooker still writes an empty
+     section: nothing that exists today names anything.  A cook input (a recipe's face) is
+     not a reference and is never written.
+   - Recipes (decision 9).  content/font/<family>/family.txt states the family's face; the
+     recipes inherit it (asset_tool reads the sibling on disk when a recipe has no "face"
+     line -- not across content roots, so a child project shadowing one size of an engine
+     family carries the descriptor or spells the face); build_cook_content folds
+     family.txt's mtime into a recipe's staleness the way it folds .hlsli siblings into a
+     shader's.  Every size config/fonts.manifest lists now has a recipe (cascadiamono,
+     jetbrains, roboto at 12/16/20/24/32; cascadiacode 16), so nothing is lost when the
+     manifest goes; only RID'd ones cook.
+   - gui.  gui_font_family.c reads "font/<family>/family" + ".txt" through the mounts and
+     hands the face to the baker; the compiled table is gone.  No descriptor = the family
+     directory name is the face request (dev_font resolves "consolas" directly).
+   - Out of scope, on purpose: config/icons.manifest is an import manifest (decision 17)
+     and stays as it is.  config/fonts.manifest, dev_ship's font cook loop and font_tool's
+     `manifest` subcommand stay one more phase: deleting them before the manifest walk
+     exists would leave a ship with no fonts.
+   - Proof: full modular Debug build green; -gen and -doctor green (the one warning is the
+     pre-existing 'run' descriptor note).  sb_res 78/0: measure / write / validate /
+     iterate round-trip, every malformed shape refused (unaligned size, count without bytes
+     and bytes without count, counts short of and past the names, nonzero padding, a whole
+     alignment unit of slack, an unterminated name, a non-canonical name, a section past the
+     end of the file, a file shorter than the head), and the walk: a synthetic parent names
+     two children, one child names the other, no RID() spells either, and the walk from the
+     parent visits exactly the three, depth first, reading the twice-named child once, and
+     stops on a corrupt section.  sb_gui_test 35/0 (the .orb_font contract over the new
+     head: short/long sections, count-without-size, unaligned, over-cap, wrong offset, old
+     version all refused).  sb_asset_test 21/0.  sb_gui and sb_gui_example boot from
+     recooked v7 bakes.  Byte-identical: content/font/jetbrains/16.recipe cooked through
+     asset_tool, the same face and size baked through font_tool directly, and the build's
+     own build/content/font/jetbrains/16.orb_font share one SHA-256.
 
 Phase 7 -- ship_tool consumes the manifest                               [NOT STARTED]
    - Replace the three hardcoded trees (dev_ship.c:623-625) with the target's manifest,
-     walked transitively through cooked-file references, resolved to files.
+     walked transitively through cooked-file references (res_ref_locate / res_ref_next over
+     each cooked file), resolved to files.
+   - Delete config/fonts.manifest, dev_ship's font cook loop (ship_cook) and font_tool's
+     `manifest` subcommand: the recipe set plus RID() is the whole of what they said.
+   - Retire the assets/font and assets/icon output directories: font_tool's default output,
+     the style editor's final bake, dev_ship's stage step.  Then lay assets/ out as a mirror
+     of content/ (decision 17) and point family.txt faces and image_tool's icon source at
+     the mirrored paths.
    - A `-verify` mode (or a small manifest_tool) re-runs the content-set check on demand:
      every manifest name cooked and present, collisions over the complete tree, orphans.
    - Read mono_dep for the module list, retiring the TODO at dev_ship.c:226.
@@ -382,9 +466,9 @@ Phase 7 -- ship_tool consumes the manifest                               [NOT ST
 ## Open decisions
 --------------------------------------------------------------------------------
 
-1. Reference-section encoding (Phase 6): names via a string table (default) or u32 hashes.
-   Names keep the packager format-free and need no inversion; hashes are smaller.  Decide
-   when the first cooker writes one; every reader today only steps over the section.
+1. DECIDED 2026-09-02 (Phase 6): the reference section is a string table of names behind a
+   head every format opens with (res_ref.h).  Names keep the packager format-free and need
+   no inversion; the size cost is nothing until a cooker writes one.
 2. RES_TREE granularity: whole subtree, or subtree plus a type filter?  Start with whole
    subtree and tighten only if a real site over-includes badly.
 3. DECIDED 2026-09-02: there is no reader hook.  gui reads through fs directly (decision 12)

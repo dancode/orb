@@ -515,6 +515,7 @@ target sb_res
     root        source/sandbox/engine/sb_res
     folder      09_SANDBOX/ENGINE
     unit        sb_res.c
+    tool_dep    asset_tool font_tool	# its fixture recipe (content/sandbox/res/font/mono/16.recipe) cooks from the manifest
 
 target sb_fs
 

@@ -696,7 +696,11 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
     hdr.line_gap    = line_gap;
     hdr.glyph_count = count;
     hdr.sdf_range   = sdf_range;
-    hdr.ref_count   = 0;   /* a font names no other resource: the reference section is empty */
+
+    /* A font names no other resource: the reference section (res_ref.h) is empty. */
+    hdr.ref_count   = 0;
+    hdr.ref_size    = 0;
+    hdr.ref_offset  = (u32)sizeof( hdr );
 
     /* Header, then the (empty) reference section, then records and pixels. */
     fwrite( &hdr,       sizeof( hdr ),              1,         out );
@@ -962,14 +966,15 @@ cache_file_valid( const char* path )
            && hdr.magic == ORB_FONT_MAGIC
            && hdr.version == ORB_FONT_VERSION
            && hdr.glyph_count <= ORB_FONT_MAX_GLYPHS
-           && res_ref_count_ok( hdr.ref_count )
+           && res_ref_head_ok( (const res_ref_head_t*)&hdr )
+           && hdr.ref_offset == sizeof( hdr )
            && hdr.atlas_w > 0 && hdr.atlas_h > 0;
     fclose( f );
     if ( !ok )
         return false;
 
     u64 expect = (u64)sizeof( orb_font_header_t )
-               + res_ref_bytes( hdr.ref_count )
+               + hdr.ref_size
                + (u64)hdr.glyph_count * sizeof( orb_font_glyph_t )
                + (u64)hdr.atlas_w * hdr.atlas_h;
     return (u64)sys_file_size( path ) == expect;
