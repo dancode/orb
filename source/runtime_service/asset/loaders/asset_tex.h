@@ -11,28 +11,36 @@
         reader  -- the asset service's image loader (loaders/asset_image.c) memory-maps the
                    payload straight onto a bindless RHI texture with ZERO decode.
 
-    Layout is a fixed 32-byte header (all fields little-endian u32; the tool and the engine run
-    on the same architecture) immediately followed by `data_size` bytes of pixel data:
+    Layout is a fixed 36-byte header (all fields little-endian u32; the tool and the engine run
+    on the same architecture), the reference section, then `data_size` bytes of pixel data:
 
-        [ asset_tex_header_t ][ mip 0 pixels ... ]
+        [ asset_tex_header_t ][ rid_t refs[ ref_count ] ][ mip 0 pixels ... ]
 
-    Only mip 0 / RGBA8 exists today (mip_levels == 1).  The header carries mip_levels and a
-    reserved flags word so a full mip chain or a block-compressed format can be added later
-    without breaking the magic/version handshake.
+    The reference section (engine/res/res_ref.h) lists the resources the content names; an
+    image names none, so every cooked .tex has ref_count 0 and the loader steps over an empty
+    section.  Only mip 0 / RGBA8 exists today (mip_levels == 1).  The header carries mip_levels
+    and a reserved flags word so a full mip chain or a block-compressed format can be added
+    later without breaking the magic/version handshake.
 
-    This header is intentionally dependency-free (just u32 from orb.h) so asset_tool -- which
-    links base + sys only, no engine runtime -- can include it alongside the runtime loader.
+    This header is intentionally dependency-free (u32 from orb.h and the header-only res_ref.h)
+    so asset_tool -- which links base + sys only, no engine runtime -- can include it alongside
+    the runtime loader.
+
+    Versions:
+        2  ref_count + the reference section between header and pixels.
+        1  header + pixels.
 
 ==============================================================================================*/
 
 #include "orb.h"
+#include "engine/res/res_ref.h"
 
 /* 'O','T','E','X' in file order (little-endian store). Distinguishes a cooked .tex from a raw
    source image the loader might also be handed. */
 #define ASSET_TEX_MAGIC \
     ( ( u32 )'O' | ( ( u32 )'T' << 8 ) | ( ( u32 )'E' << 16 ) | ( ( u32 )'X' << 24 ) )
 
-#define ASSET_TEX_VERSION 1
+#define ASSET_TEX_VERSION 2
 
 /* Pixel formats. Kept minimal; maps 1:1 onto an RHI format at load time. */
 enum
@@ -48,8 +56,9 @@ typedef struct asset_tex_header_s
     u32 height;       // mip 0 height in texels
     u32 format;       // ASSET_TEX_FORMAT_*
     u32 mip_levels;   // 1 for now (no mip chain yet)
-    u32 data_size;    // payload bytes following this header
+    u32 data_size;    // pixel payload bytes following the reference section
     u32 flags;        // reserved (0); future: sRGB, premultiplied, block-compressed, ...
+    u32 ref_count;    // rid_t ids right after this header (res_ref.h); 0 today, <= RES_REF_MAX
 
 } asset_tex_header_t;
 

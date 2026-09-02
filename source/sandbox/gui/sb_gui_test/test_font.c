@@ -9,9 +9,14 @@
     the hard form of the bug to notice.  These cases run it over a hand-built slot -- no file,
     no registry, no context.
 
+    The last section is the one exception that touches a file: the .orb_font contract as
+    font_load enforces it, over a minimal font written to a scratch path and bent one field at
+    a time.
+
 ==============================================================================================*/
 // clang-format off
 
+#include <stdio.h>    /* fopen/fwrite/remove -- the scratch .orb_font of the file-contract case */
 #include <string.h>   /* memset -- the case slot resets between builds */
 
 #include "runtime_service/gui/font/gui_font.h"
@@ -235,6 +240,88 @@ test_font_ship_name_parse( void )
     test_true( font_ship_name_parse( "Face_12px_x_16px.orb_font",
                                      stem, sizeof( stem ), &px, &tagged, &sdf ) );
     test_true( strcmp( stem, "Face_12px_x" ) == 0 && px == 16 && !tagged );
+}
+
+/*==============================================================================================
+    The .orb_font file contract -- what font_load accepts.
+
+    A minimal font: header, reference section, one glyph, a 1x1 atlas (orb_font.h).  The loader
+    reads a FILE*, so each case writes the pieces to a scratch path -- appended one by one, never
+    as a struct, so no padding lands in the file.  The reference section is the field under test:
+    it sits between the header and the glyph records, so a count the bytes do not back (or bytes
+    no count admits to) shifts every record after it.  font_load must refuse both at parse, and
+    refuse a count past RES_REF_MAX before it sizes anything.
+==============================================================================================*/
+
+#define FONT_CASE_PATH "sb_gui_test_scratch.orb_font"
+
+/* Write a font whose header claims `ref_count` references while `refs_written` ids actually
+   follow it (equal for a well-formed file).  Returns false only if the file could not be written. */
+static bool
+font_case_write( u32 version, u32 ref_count, u32 refs_written )
+{
+    orb_font_header_t hdr = { 0 };
+    hdr.magic       = ORB_FONT_MAGIC;
+    hdr.version     = version;
+    hdr.atlas_w     = 1;
+    hdr.atlas_h     = 1;
+    hdr.font_size   = 8;
+    hdr.ascent      = 6;
+    hdr.descent     = -2;
+    hdr.line_gap    = 0;
+    hdr.glyph_count = 1;
+    hdr.sdf_range   = 0;
+    hdr.ref_count   = ref_count;
+
+    orb_font_glyph_t g = { 0 };
+    g.codepoint = 'A';
+    g.w         = 1;
+    g.h         = 1;
+    g.advance   = 1;
+
+    u32 refs[ 4 ] = { 0x11111111u, 0x22222222u, 0x33333333u, 0x44444444u };
+    u8  pixel     = 255;
+
+    FILE* f = fopen( FONT_CASE_PATH, "wb" );
+    if ( !f )
+        return false;
+    bool ok = fwrite( &hdr,  sizeof( hdr ), 1,            f ) == 1
+           && fwrite( refs,  sizeof( u32 ), refs_written, f ) == refs_written
+           && fwrite( &g,    sizeof( g ),   1,            f ) == 1
+           && fwrite( &pixel, 1,            1,            f ) == 1;
+    fclose( f );
+    return ok;
+}
+
+static void
+test_font_file_contract( void )
+{
+    /* Empty reference section: the shape every bake writes today. */
+    test_true( font_case_write( ORB_FONT_VERSION, 0, 0 ) );
+    test_true( font_load( FONT_CASE_PATH ) != 0 );
+
+    /* Populated section: two ids the loader steps over to reach the glyph record. */
+    test_true( font_case_write( ORB_FONT_VERSION, 2, 2 ) );
+    test_true( font_load( FONT_CASE_PATH ) != 0 );
+
+    /* Bad section length, short: a count with no bytes behind it.  The file is 4 bytes shorter
+       than the header claims and the glyph record would be read 4 bytes late. */
+    test_true( font_case_write( ORB_FONT_VERSION, 1, 0 ) );
+    test_true( font_load( FONT_CASE_PATH ) == 0 );
+
+    /* Bad section length, long: bytes no count admits to. */
+    test_true( font_case_write( ORB_FONT_VERSION, 0, 1 ) );
+    test_true( font_load( FONT_CASE_PATH ) == 0 );
+
+    /* A count past the format cap is refused on the count alone. */
+    test_true( font_case_write( ORB_FONT_VERSION, RES_REF_MAX + 1, 0 ) );
+    test_true( font_load( FONT_CASE_PATH ) == 0 );
+
+    /* The previous version, whose header had no ref_count: refused outright. */
+    test_true( font_case_write( ORB_FONT_VERSION - 1, 0, 0 ) );
+    test_true( font_load( FONT_CASE_PATH ) == 0 );
+
+    remove( FONT_CASE_PATH );
 }
 
 // clang-format on

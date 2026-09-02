@@ -90,10 +90,11 @@ platform_embed_manifest( const char* exe_path, const char* manifest_src )
     and forwards to shader_tool; both must therefore be listed as tool deps by any target that
     declares shaders, which is also what orders them ahead of it under the parallel scheduler.
 
-    Staleness is a plain mtime compare against the .oshd.  It deliberately does NOT consult the
-    target's artifact: a shader and the C code that draws with it change on their own schedules,
-    and coupling them would either recompile the world after a one-line shader edit or leave a
-    stale .oshd next to a fresh .lib.
+    Staleness is a plain mtime compare against the .oshd: the source, its sibling .hlsli files,
+    and the two cooker executables (the container format lives in them, so a rebuilt cooker
+    recooks).  It deliberately does NOT consult the target's artifact: a shader and the C code
+    that draws with it change on their own schedules, and coupling them would either recompile
+    the world after a one-line shader edit or leave a stale .oshd next to a fresh .lib.
 ==============================================================================================*/
 
 bool
@@ -142,6 +143,15 @@ build_cook_shaders( build_context_t* ctx, target_info_t* target )
         {
             printf( ORB_INDENT "[orb error] '%s' shader source not found: %s\n", target->name, src );
             return false;
+        }
+
+        /* A newer cooker makes every .oshd stale: a format bump in shader_tool changes the
+           cooked bytes without touching any shader source. */
+        {
+            platform_mtime_t m = platform_get_mtime( "bin" PATH_SEP "asset_tool.exe" );
+            if ( m > src_mtime ) src_mtime = m;
+            m = platform_get_mtime( "bin" PATH_SEP "shader_tool.exe" );
+            if ( m > src_mtime ) src_mtime = m;
         }
 
         /* Shared .hlsli code beside the source counts toward staleness: dxc resolves #include

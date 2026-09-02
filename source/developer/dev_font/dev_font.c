@@ -696,7 +696,9 @@ dev_font_bake_write( const char* out_path, const dev_font_glyph_t* glyphs, u32 c
     hdr.line_gap    = line_gap;
     hdr.glyph_count = count;
     hdr.sdf_range   = sdf_range;
+    hdr.ref_count   = 0;   /* a font names no other resource: the reference section is empty */
 
+    /* Header, then the (empty) reference section, then records and pixels. */
     fwrite( &hdr,       sizeof( hdr ),              1,         out );
     fwrite( out_glyphs, sizeof( orb_font_glyph_t ), count,     out );
     fwrite( s_atlas,    1,                           (size_t)atlas_w * atlas_h, out );
@@ -942,8 +944,10 @@ fine_spawn( const char* ttf_abs, int size_px, const char* range_spec, const char
 }
 
 /* Full structural check of a cached .orb_font this pipeline wrote: header fields sane and the
-   file exactly as long as header + records + pixels claim.  Rejects the torn file a killed
-   bake leaves behind, which the mtime freshness rule alone would accept. */
+   file exactly as long as header + references + records + pixels claim.  Rejects the torn file
+   a killed bake leaves behind, which the mtime freshness rule alone would accept.  A file from
+   an older format version is invalid too -- the runtime loader requires the current version, so
+   re-baking it is the only useful outcome. */
 
 static bool
 cache_file_valid( const char* path )
@@ -954,21 +958,21 @@ cache_file_valid( const char* path )
 
     orb_font_header_t hdr;
     memset( &hdr, 0, sizeof( hdr ) );
-    bool ok = fread( &hdr, 1, ORB_FONT_HEADER_BASE_SIZE, f ) == ORB_FONT_HEADER_BASE_SIZE
+    bool ok = fread( &hdr, 1, sizeof( hdr ), f ) == sizeof( hdr )
            && hdr.magic == ORB_FONT_MAGIC
-           && hdr.version >= 2u && hdr.version <= ORB_FONT_VERSION
+           && hdr.version == ORB_FONT_VERSION
            && hdr.glyph_count <= ORB_FONT_MAX_GLYPHS
+           && res_ref_count_ok( hdr.ref_count )
            && hdr.atlas_w > 0 && hdr.atlas_h > 0;
     fclose( f );
     if ( !ok )
         return false;
 
-    u32 hdr_bytes = ( hdr.version >= 4u ) ? (u32)sizeof( orb_font_header_t )
-                                          : ORB_FONT_HEADER_BASE_SIZE;
-    u32 expect    = hdr_bytes
-                  + hdr.glyph_count * (u32)sizeof( orb_font_glyph_t )
-                  + hdr.atlas_w * hdr.atlas_h;
-    return sys_file_size( path ) == expect;
+    u64 expect = (u64)sizeof( orb_font_header_t )
+               + res_ref_bytes( hdr.ref_count )
+               + (u64)hdr.glyph_count * sizeof( orb_font_glyph_t )
+               + (u64)hdr.atlas_w * hdr.atlas_h;
+    return (u64)sys_file_size( path ) == expect;
 }
 
 /* Cache path for a request at a quality tier:

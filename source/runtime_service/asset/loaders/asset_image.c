@@ -98,7 +98,10 @@ image_upload_rgba8( const char* vpath, const void* pixels, u32 w, u32 h )
     Input paths
 ==============================================================================================*/
 
-/* Cooked: the payload is already RGBA8; upload it verbatim. Called only after the magic matched. */
+/* Cooked: the payload is already RGBA8; upload it verbatim. Called only after the magic matched.
+   The file must be exactly header + reference section + payload: a reference count the bytes do
+   not back (or bytes no count admits to) would put the pixels at the wrong offset, so a length
+   mismatch in either direction is a corrupt file, not slack. */
 static void*
 image_load_cooked( const char* vpath, const void* data, u32 size )
 {
@@ -114,17 +117,24 @@ image_load_cooked( const char* vpath, const void* data, u32 size )
         LOG_ERROR( "asset: .tex '%s' unsupported format %u", vpath, hdr->format );
         return NULL;
     }
-
-    u64 expect = ( u64 )hdr->width * hdr->height * 4;    // u64: a hostile header can wrap u32
-    u64 need   = ( u64 )sizeof( asset_tex_header_t ) + hdr->data_size;
-    if ( hdr->data_size != expect || need > size )
+    if ( !res_ref_count_ok( hdr->ref_count ) )
     {
-        LOG_ERROR( "asset: .tex '%s' truncated/inconsistent (%ux%u, %u payload, %u file)", vpath,
-                   hdr->width, hdr->height, hdr->data_size, size );
+        LOG_ERROR( "asset: .tex '%s' claims %u references (max %u)", vpath, hdr->ref_count,
+                   RES_REF_MAX );
         return NULL;
     }
 
-    const void* pixels = ( const u8* )data + sizeof( asset_tex_header_t );
+    u64 expect = ( u64 )hdr->width * hdr->height * 4;    // u64: a hostile header can wrap u32
+    u64 refs   = res_ref_bytes( hdr->ref_count );
+    u64 need   = ( u64 )sizeof( asset_tex_header_t ) + refs + hdr->data_size;
+    if ( hdr->data_size != expect || need != size )
+    {
+        LOG_ERROR( "asset: .tex '%s' truncated/inconsistent (%ux%u, %u refs, %u payload, %u file)",
+                   vpath, hdr->width, hdr->height, hdr->ref_count, hdr->data_size, size );
+        return NULL;
+    }
+
+    const void* pixels = ( const u8* )data + sizeof( asset_tex_header_t ) + refs;
     return image_upload_rgba8( vpath, pixels, hdr->width, hdr->height );
 }
 

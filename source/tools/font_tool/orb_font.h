@@ -6,6 +6,7 @@
 
     File layout (all values little-endian):
         orb_font_header_t   header
+        uint32_t            refs[ header.ref_count ]     (rid_t; engine/res/res_ref.h)
         orb_font_glyph_t    glyphs[ header.glyph_count ]
         uint8_t             pixels[ header.atlas_w * header.atlas_h ]  (R8: coverage, or a
                                                                         distance field when
@@ -16,10 +17,16 @@
 #include <stddef.h>   /* offsetof -- the header base size is asserted below */
 #include <stdint.h>
 
+#include "engine/res/res_ref.h"   /* the reference section between header and glyphs */
+
 /* 'OFNT' -- bytes O,F,N,T in little-endian memory order */
 #define ORB_FONT_MAGIC    0x544E464Fu
 
 /* Format versions:
+     6  Header gained `ref_count` and the file gained a REFERENCE SECTION (engine/res/res_ref.h):
+        ref_count little-endian resource ids between the header and the glyph records, the same
+        layout every cooked format carries for the resources its content names.  A font names
+        nothing, so every bake writes 0 and the section is empty.  The loader requires exactly v6.
      5  orb_font_glyph_t shrank: w, h, advance became uint8_t and bearing_x, bearing_y became
         int8_t (ORB_FONT_GLYPH_DIM_MAX / ORB_FONT_GLYPH_BEARING_MIN/MAX), and the trailing _pad
         was dropped.  The glyph record layout breaks byte compatibility, so the loader requires
@@ -35,9 +42,9 @@
         (gui_res_atlas.c), so a font no longer carries drawing assists of its own.
      2  Left the bottom 5 rows blank for gui to paint assists into at load.
    The header layout below still documents how 2/3/4 were shaped -- ORB_FONT_HEADER_BASE_SIZE is
-   the byte offset every version through 4 shared -- but font_header_read requires v5 outright, so
-   none of that compatibility is reachable any more. */
-#define ORB_FONT_VERSION  5u
+   the byte offset every version through 4 shared -- but font_header_read requires the current
+   version outright, so none of that compatibility is reachable any more. */
+#define ORB_FONT_VERSION  6u
 
 /* Per-glyph metric ceiling backing the u8/i8 fields below: a bitmap dimension or the horizontal
    advance never exceeds this many pixels, and a bearing never leaves this signed range.  Text
@@ -107,7 +114,16 @@ typedef struct
              is what makes the file self-describing, and `font_tool info` prints it. */
     uint32_t sdf_range;
 
-    /* immediately followed by glyph_count * orb_font_glyph_t, then pixel data */
+    /* ---- v6 tail ---- */
+
+    /* Number of resource ids in the reference section that immediately follows this header
+       (engine/res/res_ref.h).  Always 0 today -- a font names no other resource -- but a reader
+       still steps over ref_count * 4 bytes to reach the glyph records, and rejects a count past
+       RES_REF_MAX. */
+    uint32_t ref_count;
+
+    /* immediately followed by the reference section, glyph_count * orb_font_glyph_t, then pixel
+       data */
 
 } orb_font_header_t;
 

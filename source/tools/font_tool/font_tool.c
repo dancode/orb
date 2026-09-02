@@ -168,8 +168,8 @@ typedef struct { int count; } info_ctx_t;
 static void
 info_print_header( void )
 {
-    printf( "\n%-40s %3s %5s %5s %5s %5s %5s %5s %7s %5s\n",
-            "file", "ver", "aw", "ah", "size", "asc", "desc", "gap", "glyphs", "sdf" );
+    printf( "\n%-40s %3s %5s %5s %5s %5s %5s %5s %7s %5s %5s\n",
+            "file", "ver", "aw", "ah", "size", "asc", "desc", "gap", "glyphs", "sdf", "refs" );
 }
 
 /* Read one .orb_font header and print its row (or a short note if it is not a valid atlas). */
@@ -183,18 +183,30 @@ info_print_file( const char* label, const char* path )
         return;
     }
 
-    /* Base first, tail only for v4+ -- the same versioned read the runtime loader does, so `info`
-       reports a pre-v4 file exactly as the engine sees it (sdf_range 0) instead of showing whatever
-       the first glyph record's leading bytes happen to be.  A truncated tail reads the same way. */
+    /* Base first, then only the tail the file's version actually has -- sdf_range from v4,
+       ref_count from v6 -- so `info` reports an older file as it is shaped instead of showing
+       whatever the first glyph record's leading bytes happen to be.  A truncated tail reads as
+       zeros. */
     const size_t base = ORB_FONT_HEADER_BASE_SIZE;
-    const size_t tail = sizeof( orb_font_header_t ) - base;
 
     orb_font_header_t h;
     memset( &h, 0, sizeof( h ) );
 
     bool valid = fread( &h, 1, base, f ) == base && h.magic == ORB_FONT_MAGIC;
-    if ( valid && h.version >= 4u && fread( (uint8_t*)&h + base, 1, tail, f ) != tail )
-        h.sdf_range = 0;
+    if ( valid )
+    {
+        size_t tail = 0;
+        if ( h.version >= 6u )
+            tail = sizeof( orb_font_header_t ) - base;
+        else if ( h.version >= 4u )
+            tail = offsetof( orb_font_header_t, ref_count ) - base;
+
+        if ( tail && fread( (uint8_t*)&h + base, 1, tail, f ) != tail )
+        {
+            h.sdf_range = 0;
+            h.ref_count = 0;
+        }
+    }
     fclose( f );
 
     if ( !valid )
@@ -207,9 +219,9 @@ info_print_file( const char* label, const char* path )
     if ( h.sdf_range )
         snprintf( sdf, sizeof( sdf ), "%u", h.sdf_range );
 
-    printf( "%-40s %3u %5u %5u %5u %5d %5d %5d %7u %5s\n",
+    printf( "%-40s %3u %5u %5u %5u %5d %5d %5d %7u %5s %5u\n",
             label, h.version, h.atlas_w, h.atlas_h, h.font_size,
-            h.ascent, h.descent, h.line_gap, h.glyph_count, sdf );
+            h.ascent, h.descent, h.line_gap, h.glyph_count, sdf, h.ref_count );
 }
 
 /* sys_file_glob callback: print each matched file, keep going. */

@@ -2,7 +2,7 @@
 
 # Resource Catalogue (res) + Package Manifest -- Plan
 
-Status: IN PROGRESS -- Phases 0, 1 and 2 landed 2026-09-01.  Successor to the reference
+Status: IN PROGRESS -- Phases 0, 1 and 2 landed 2026-09-01, Phase 3 2026-09-02.  Successor to the reference
 half of ASSET_SYSTEM_PLAN.md.
 That plan built the RUNTIME half -- fs mounts, zip bundles, the asset registry, the cook
 track, packaging -- and left one question unanswered: what does an application actually
@@ -395,7 +395,7 @@ Phase 2 -- Content root + name resolution                                [DONE 2
      (36 targets recompiled), -gen and -doctor green.
    - Not exercised: -monolithic, and the POSIX directory listing (written, not compiled).
 
-Phase 3 -- Format header reference section                               [NOT STARTED]
+Phase 3 -- Format header reference section                               [DONE 2026-09-02]
    - Reserve a child-rid table section in the three cooked format contracts (orb_font.h v5,
      asset_tex.h v1, rhi_shader_format.h v2) plus a version bump each.
    - SPLIT THIS: reserving the fields is an hour's work and should be pulled forward the
@@ -404,6 +404,31 @@ Phase 3 -- Format header reference section                               [NOT ST
    - Writing and consuming edges follows in Phase 6.
    - Proof: all three formats round-trip with an empty reference section; readers reject a
      bad section length.
+   - Landed as: one shared contract, engine/res/res_ref.h -- a `ref_count` header field and
+     `rid_t refs[ ref_count ]` (little-endian u32) IMMEDIATELY AFTER the fixed header, before
+     the payload, so a loader can read header + references without touching the payload
+     (that is where Phase 6's lazy registration reads from).  RES_REF_MAX (4096) bounds the
+     count; every reader rejects the count before any size arithmetic.  Formats bumped:
+     orb_font v6 (`ref_count` after `sdf_range`; gui_font_load now also checks the file's
+     exact length, header + refs + records + pixels, before trusting a record; dev_font's
+     cache validator requires the current version, so a stale cache re-bakes), .tex v2
+     (36-byte header; asset_image requires exact length -- trailing slack is no longer
+     tolerated), .oshd v3 (`ref_count` took the `pad` slot, so the header stays 64 bytes;
+     the section is padded to 8 via oshd_ref_bytes so oshd_pc_member_t's u64 stays aligned
+     when mapped).  Every cooker writes 0.  layout_hash does not cover references.
+   - build_tool: the shader cook now counts asset_tool.exe / shader_tool.exe mtimes toward
+     .oshd staleness, so a format bump in the tools recooks without touching a source.
+     Fonts have no such hook: `font_tool manifest config/fonts.manifest` rebaked the 16
+     shipped fonts by hand (they must be, since the loader requires exactly v6).
+   - Proof: sb_gui_test `font_file_contract` (36/36 pass) loads a minimal v6 font with an
+     empty and a two-id section, and refuses a count with no bytes, bytes with no count, a
+     count past RES_REF_MAX, and the previous version.  shader_tool reflect on a v3 file
+     prints `refs : 0`; the same file with ref_count patched to 1 fails "corrupt (13852
+     bytes, sections need 13860)", patched to 5000 fails "claims 5000 references (max
+     4096)".  sb_asset_image `tex` mode loads a v2 .tex zero-decode and rejects ref_count 1
+     ("truncated/inconsistent") and 4097 ("claims 4097 references").  sb_asset_shader cooks,
+     acquires, renders and hot-reloads v3 containers; sb_gui boots on v6 fonts and v3
+     shaders.
 
 Phase 4 -- Asset service moves onto rid                                  [NOT STARTED]
    - asset_id_t -> aid_t.  acquire( rid_t ) replaces acquire( const char* vpath ).

@@ -285,15 +285,6 @@ cook_image( const char* src_path, const char* dst_path )
         return false;
     }
 
-    /* u64 math: a huge image would wrap w*h*4 in 32 bits; the format caps payloads at u32. */
-    u64 pixel_bytes = ( u64 )w * ( u64 )h * 4;
-    if ( pixel_bytes > 0xFFFFFFFFull - sizeof( asset_tex_header_t ) )
-    {
-        stbi_image_free( pixels );
-        fprintf( stderr, "asset_tool: error: %s too large to cook (%dx%d)\n", src_path, w, h );
-        return false;
-    }
-
     asset_tex_header_t hdr = { 0 };
     hdr.magic      = ASSET_TEX_MAGIC;
     hdr.version    = ASSET_TEX_VERSION;
@@ -301,11 +292,22 @@ cook_image( const char* src_path, const char* dst_path )
     hdr.height     = ( u32 )h;
     hdr.format     = ASSET_TEX_FORMAT_RGBA8;
     hdr.mip_levels = 1;
-    hdr.data_size  = ( u32 )pixel_bytes;
     hdr.flags      = 0;
+    hdr.ref_count  = 0;    /* an image names no other resource: the reference section is empty */
 
-    u32   total = ( u32 )( sizeof( hdr ) + pixel_bytes );
-    void* buf   = malloc( total );
+    /* u64 math: a huge image would wrap w*h*4 in 32 bits; the format caps the file at u32. */
+    u64 pixel_bytes = ( u64 )w * ( u64 )h * 4;
+    u64 refs        = res_ref_bytes( hdr.ref_count );
+    u64 total       = sizeof( hdr ) + refs + pixel_bytes;
+    if ( total > 0xFFFFFFFFull )
+    {
+        stbi_image_free( pixels );
+        fprintf( stderr, "asset_tool: error: %s too large to cook (%dx%d)\n", src_path, w, h );
+        return false;
+    }
+    hdr.data_size = ( u32 )pixel_bytes;
+
+    void* buf = malloc( ( size_t )total );
     if ( !buf )
     {
         stbi_image_free( pixels );
@@ -313,10 +315,10 @@ cook_image( const char* src_path, const char* dst_path )
         return false;
     }
     memcpy( buf, &hdr, sizeof( hdr ) );
-    memcpy( ( u8* )buf + sizeof( hdr ), pixels, hdr.data_size );
+    memcpy( ( u8* )buf + sizeof( hdr ) + refs, pixels, hdr.data_size );    /* past the (empty) refs */
     stbi_image_free( pixels );
 
-    bool wrote = sys_file_write_entire( dst_path, buf, total );
+    bool wrote = sys_file_write_entire( dst_path, buf, ( u32 )total );
     free( buf );
     if ( !wrote )
     {
@@ -324,7 +326,8 @@ cook_image( const char* src_path, const char* dst_path )
         return false;
     }
 
-    printf( "asset_tool:   tex  %s -> %s (%dx%d RGBA8, %u bytes)\n", src_path, dst_path, w, h, total );
+    printf( "asset_tool:   tex  %s -> %s (%dx%d RGBA8, %u bytes)\n", src_path, dst_path, w, h,
+            ( u32 )total );
     return true;
 }
 

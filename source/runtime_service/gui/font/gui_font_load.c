@@ -20,9 +20,9 @@
     orb_font_glyph_t's v5 layout is not byte-compatible with 2/3/4 (orb_font.h), so this loader
     requires exactly ORB_FONT_VERSION -- an older file's glyph records would misread at the new,
     smaller record size, not just underfill a header tail.  The BASE/tail split below is what's
-    left of the header-only v2->v4 history: the tail (sdf_range) still reads separately from the
-    base because that is the header's on-disk shape, even though every version this loader now
-    accepts already carries it.
+    left of the header-only v2->v4 history: the tail (sdf_range, ref_count) still reads
+    separately from the base because that is the header's on-disk shape, even though every
+    version this loader now accepts already carries it.
 
     Dimensions are BOUNDED, not just nonzero: atlas_w * atlas_h sizes a malloc and the memory
     accounting, and an unchecked product wraps u32 (65536 x 65536 = 0) -- a corrupt file must die
@@ -52,8 +52,38 @@ font_header_read( FILE* f, orb_font_header_t* hdr )
 
     /* The spread lives in the same baked-page space as atlas_w -- it cannot outreach the page that
        holds it -- so that bound also caps font_slot_t.sdf_range (u16) from truncating a corrupt
-       file's value. */
-    return hdr->sdf_range <= ORB_FONT_PAGE_MAX_W_SDF;
+       file's value.  The reference count is bounded by the format (RES_REF_MAX) before it sizes
+       anything. */
+    return hdr->sdf_range <= ORB_FONT_PAGE_MAX_W_SDF && res_ref_count_ok( hdr->ref_count );
+}
+
+/*==============================================================================================
+    Stage 1b -- the reference section, and the file's exact length.
+
+    Between the header and the glyph records sit hdr->ref_count resource ids (orb_font.h,
+    engine/res/res_ref.h).  A font names nothing, so the section is empty in every file baked
+    today and this loader only steps over it.  It is also where a sequential reader is easiest
+    to mislead: glyph records read from the wrong offset can pass their per-record checks by
+    luck.  So the file's length is checked against everything the header claims -- header,
+    references, records, pixels -- before any record is trusted.
+==============================================================================================*/
+
+static bool
+font_refs_skip( FILE* f, const orb_font_header_t* hdr )
+{
+    u64 refs   = res_ref_bytes( hdr->ref_count );
+    u64 expect = (u64)sizeof( *hdr ) + refs
+               + (u64)hdr->glyph_count * sizeof( orb_font_glyph_t )
+               + (u64)hdr->atlas_w * hdr->atlas_h;
+
+    long here = ftell( f );
+    if ( here < 0 || fseek( f, 0, SEEK_END ) != 0 )
+        return false;
+    long end = ftell( f );
+    if ( end < 0 || (u64)end != expect )
+        return false;
+
+    return fseek( f, here + (long)refs, SEEK_SET ) == 0;
 }
 
 /*==============================================================================================
@@ -118,7 +148,8 @@ font_glyphs_read( FILE* f, const orb_font_header_t* hdr, orb_font_glyph_t* looku
 /*==============================================================================================
     font_slot_load -- parse a .orb_font from disk into `slot`.  Does not activate the slot.
 
-    Three stages, each all-or-nothing: header, glyph table, glyph pixels.  On success the slot
+    Four stages, each all-or-nothing: header, reference section + length check, glyph table,
+    glyph pixels.  On success the slot
     holds resolved metrics, the advance/placement table, and its resident R8 glyph pixels
     (slot->pixels), and is flagged needs_upload.  A failed load at ANY stage leaves the slot's
     previous contents intact and leaks nothing.
@@ -136,7 +167,8 @@ font_slot_load( font_slot_t* slot, const char* path )
     orb_font_glyph_t* ext       = NULL;
     u32               ext_count = 0;
 
-    if ( !font_header_read( f, &hdr ) || !font_glyphs_read( f, &hdr, lookup, &ext, &ext_count ) )
+    if ( !font_header_read( f, &hdr ) || !font_refs_skip( f, &hdr )
+         || !font_glyphs_read( f, &hdr, lookup, &ext, &ext_count ) )
     {
         fclose( f );
         return false;

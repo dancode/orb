@@ -25,7 +25,8 @@
         test_pack.c  -- the vertex: UV packing and the constructor; the primitive record layout
         test_rect.c  -- the GUI_RECT leaf kit: rectcut, containment, alignment, colour blend
         test_log.c   -- the GUI_LOG sink contract + the GUI_WARN_ONCE latch
-        test_font.c  -- the two-tier glyph lookup: ASCII dense tier, ext binary search, '?' miss
+        test_font.c  -- the two-tier glyph lookup: ASCII dense tier, ext binary search, '?' miss;
+                        the .orb_font file contract (reference section, exact length)
         test_edit.c  -- UTF-8 caret math: boundary-only carets, midpoint snapping, word classes
         test_msel.c  -- multi-select protocol: the click/modifier rule + the range application
 
@@ -122,6 +123,7 @@ main( int argc, char* argv[] )
     test_register( "font_measure_utf8",   test_font_measure_utf8 );
     test_register( "font_name_normalize", test_font_name_normalize );
     test_register( "font_ship_name_parse", test_font_ship_name_parse );
+    test_register( "font_file_contract",  test_font_file_contract );
 
     /* Edit seams -- UTF-8 caret math + word classes */
     test_register( "edit_caret_utf8",     test_edit_caret_utf8 );
