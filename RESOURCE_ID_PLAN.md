@@ -349,15 +349,14 @@ Phase 7 -- ship_tool consumes the manifest                               [NOT ST
    gui skip a copy for atlas uploads.  Decide in Phase 5.
 4. Transient runtime resources (render targets, procedural atlases) stay OUT of the name
    space -- they are not packageable.  Confirm nothing in rhi wants a name.
-5. '.' in names.  The user wants '.' reserved and forbidden (a name is <stem>, a file is
-   <stem>.<ext> with one dot, so the two never blur).  Blocked by the shader stage tag,
-   which is a dotted stem suffix engine-wide: gui_quad.vs.hlsl, draw_solid.ps.oshd, the
-   asset_tool profile sniff, build_tool's shader cook, gui_render_init, draw_material,
-   scripts/cook_shaders.bat, orb.targets `shader` lines, docs/shader_pipeline.md.  Options:
-   (a) rename the tag to an underscore suffix (gui_quad_vs.hlsl) across all of the above and
-   then forbid '.'; (b) keep '.' legal and let the tool treat it as an ordinary byte, as it
-   does today (the stem is everything before the LAST dot, so "tri.vs" names tri.vs.hlsl).
-   Decide before any content beyond shaders relies on a dotted stem.
+5. DECIDED 2026-09-02: '.' is legal in a name and is an ordinary byte.  A file's extension
+   is whatever follows its LAST dot; everything before it is the name, dots included.  So
+   "tri.vs" names tri.vs.hlsl (loader adds .oshd), which is the shader stage-tag convention
+   used engine-wide (gui_quad.vs.hlsl, draw_solid.ps.oshd, asset_tool's profile sniff), and
+   the tool's rule and the shader tools' rule are the same rule.  A shader program is NOT one
+   name for both stages: a name is exactly one file, and sb_quad_pull already shares qp.ps
+   across two vertex shaders.  Forbidding dots was considered and rejected: it would have
+   forced an underscore rename across the shader pipeline for no visible behavior.
 
 --------------------------------------------------------------------------------
 ## Rejected (do not re-propose without new evidence)

@@ -6,11 +6,12 @@
     plain string, and everything here is a stateless helper over it.
 
     A NAME is the path of a file under a content root, minus the extension: "ui/icon/save" is
-    content/ui/icon/save.png.  Names and content file names are canonical lowercase with '/'
-    separators, so a name is opened as-is and nothing is ever translated between the two.  The
-    extension belongs to the loader (it asks for the name plus each extension it accepts), and
-    which tree answers -- loose content, a cooked mirror, a shipped pack -- belongs to the
-    mounts.
+    content/ui/icon/save.png.  The extension is whatever follows the file's LAST dot; any
+    earlier dot is part of the name ("shaders/tri.vs" is tri.vs.hlsl -- the shader stage tag).
+    Names and content file names are canonical lowercase with '/' separators, so a name is
+    opened as-is and nothing is ever translated between the two.  The extension belongs to the
+    loader (it asks for the name plus each extension it accepts), and which tree answers --
+    loose content, a cooked mirror, a shipped pack -- belongs to the mounts.
 
     RID( "ui/icon/save" ) is the one door a literal name passes through in source.  It
     evaluates to the literal itself; its job is to be the single token the build-time scanner
