@@ -31,9 +31,6 @@
     is good for the lifetime of the program.
 
     Slots hold pool OFFSETS rather than pointers, so growing the pool needs no fixup pass.
-    Byte 0 of the pool is a reserved NUL: offset 0 is the empty string, which is how a slot
-    with no cooked path reads back as "" without spending a byte per entry.  Names always
-    land above it.
     The hash table is rebuilt on growth, and always holds twice slot_cap so the load factor
     stays at or under 50% and a linear probe always terminates on an empty bucket.
 
@@ -46,7 +43,6 @@ typedef struct res_slot_s
 {
     rid_t   id;          // hash of the canonical name
     u32     name_off;    // byte offset of the NUL-terminated canonical name in pool
-    u32     path_off;    // byte offset of the cooked relative path in pool; 0 = none
 
 } res_slot_t;
 

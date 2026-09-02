@@ -178,20 +178,16 @@ res_reserve_slot( void )
     return true;
 }
 
-/* Make room for `need` more bytes of text.  The first allocation also lays down the reserved
-   NUL at offset 0 that an empty path reads from. */
+/* Make room for `need` more bytes of name text. */
 
 static bool
 res_reserve_pool( u32 need )
 {
-    bool first = ( g_res.pool == NULL );
-    u32  top   = first ? 1 : g_res.pool_top;
-
-    if ( !first && top + need <= g_res.pool_cap )
+    if ( g_res.pool && g_res.pool_top + need <= g_res.pool_cap )
          return true;
 
     u32 pool_cap = g_res.pool_cap ? g_res.pool_cap * 2 : RES_INIT_POOL;
-    while ( top + need > pool_cap )
+    while ( g_res.pool_top + need > pool_cap )
     {
         pool_cap *= 2;
     }
@@ -203,11 +199,6 @@ res_reserve_pool( u32 need )
     }
     g_res.pool     = pool;
     g_res.pool_cap = pool_cap;
-    if ( first )
-    {
-        pool[ 0 ]      = 0;
-        g_res.pool_top = 1;
-    }
     return true;
 }
 
@@ -239,19 +230,16 @@ res_canon_checked( const char* name, char* out )
     return len;
 }
 
-/* Insert an already-canonical name under `id`, with `path` (NULL or "" for none). Returns id,
-   or RID_INVALID having reported. */
+/* Insert an already-canonical name under `id`. Returns id, or RID_INVALID having reported. */
 
 static rid_t
-res_insert( rid_t id, const char* canon, u32 len, const char* path )
+res_insert( rid_t id, const char* canon, u32 len )
 {
     if ( id == RID_INVALID )
     {
         res_set_error( "register '%s': id is RID_INVALID", canon );
         return RID_INVALID;
     }
-
-    u32 plen = path ? ( u32 )strlen( path ) : 0;
 
     /* Present. Same name: idempotent hit -- this is every name of a hot-reloaded module's
        table on its second and later loads. Different name: collision, so the first
@@ -266,38 +254,17 @@ res_insert( rid_t id, const char* canon, u32 len, const char* path )
                             id, g_res.pool + hit->name_off, canon );
             return RID_INVALID;
         }
-
-        /* Same name. A path arriving for an entry that has none fills it in (the entry
-           came from a by-name feed before any table mentioned it). A different path
-           means the two images were built against different content trees: the first
-           stands, and the name is registered either way. */
-        if ( plen == 0 )
-            return id;
-
-        if ( hit->path_off == 0 )
-        {
-            u32 slot = ( u32 )( hit - g_res.slots );
-            if ( !res_reserve_pool( plen + 1 ) )
-                return RID_INVALID;
-            g_res.slots[ slot ].path_off = res_pool_push( path, plen );
-            return id;
-        }
-
-        if ( strcmp( g_res.pool + hit->path_off, path ) != 0 )
-            res_set_error( "register '%s': path '%s' (registered) vs '%s' (ignored) -- images "
-                           "built against different content", canon, g_res.pool + hit->path_off, path );
         return id;
     }
 
-    /* Room for the slot and for both strings before anything is committed, so a failed
-       growth leaves the catalogue exactly as it was. */
-    if ( !res_reserve_slot() || !res_reserve_pool( len + 1 + ( plen ? plen + 1 : 0 ) ) )
+    /* Room for the slot and the name before anything is committed, so a failed growth
+       leaves the catalogue exactly as it was. */
+    if ( !res_reserve_slot() || !res_reserve_pool( len + 1 ) )
         return RID_INVALID;
 
     res_slot_t* s = &g_res.slots[ g_res.slot_count ];
     s->id         = id;
     s->name_off   = res_pool_push( canon, len );
-    s->path_off   = plen ? res_pool_push( path, plen ) : 0;
 
     /* Bucket holds the slot index + 1. */
     g_res.hash[ res_probe( id ) ] = ( u16 )( ++g_res.slot_count );
@@ -324,13 +291,11 @@ res_register_id( rid_t id, const char* name )
         return RID_INVALID;
     }
 
-    return res_insert( id, canon, len, NULL );
+    return res_insert( id, canon, len );
 }
 
-/* res_register with a path: the table feed. */
-
-static rid_t
-res_register_path( const char* name, const char* path )
+rid_t
+res_register( const char* name )
 {
     char canon[ RES_NAME_MAX + 1 ];
 
@@ -342,13 +307,7 @@ res_register_path( const char* name, const char* path )
        res_hash_name folds as it goes, but it reads a short buffer already in
        cache instead of walking the caller's string a second time. */
 
-    return res_insert( res_hash_name( canon ), canon, len, path );
-}
-
-rid_t
-res_register( const char* name )
-{
-    return res_register_path( name, NULL );
+    return res_insert( res_hash_name( canon ), canon, len );
 }
 
 u32
@@ -360,7 +319,7 @@ res_register_table( const res_table_t* table )
     u32 ok = 0;
     for ( u32 i = 0; i < table->count; ++i )
     {
-        if ( res_register_path( table->entries[ i ].name, table->entries[ i ].path ) != RID_INVALID )
+        if ( res_register( table->entries[ i ].name ) != RID_INVALID )
             ok++;
     }
     return ok;
@@ -375,13 +334,6 @@ res_name( rid_t id )
 {
     const res_slot_t* s = res_find( id );
     return s ? g_res.pool + s->name_off : NULL;
-}
-
-const char*
-res_path( rid_t id )
-{
-    const res_slot_t* s = res_find( id );
-    return s ? g_res.pool + s->path_off : NULL;    /* path_off 0 is the reserved "" */
 }
 
 bool

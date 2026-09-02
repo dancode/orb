@@ -2,11 +2,11 @@
 
     engine/res/res_cook.h - Source-to-cooked file classification shared by the offline tools.
 
-    A logical name is a path under a content root minus the extension; the extension is what
-    says which cooker runs and what the cooked file is called.  Two tools need that mapping to
-    agree byte for byte: res_tool, which records the cooked relative path of every referenced
-    name into an image's resource table at build time, and asset_tool, which writes the cooked
-    files.  Both read it from here.
+    A logical name is a path under a content root minus the extension; the source extension is
+    what says which cooker runs and what the cooked file is called.  Every tool that turns a
+    source file into a cooked one -- asset_tool's tree cook today, the packager's ship cook
+    later -- reads the mapping from here, so the file a loader asks fs for (name plus the
+    extension it accepts) is the file the cooker wrote.
 
     Header-only, tools only.  Not part of the runtime res library and never included by it.
 

@@ -56,14 +56,8 @@ void            res_exit             ( void );
     one id is a collision: the call fails, both names are reported through
     res_last_error(), and the first registration stands.
 
-    Only a table brings a cooked path (res_entry_t.path): the build is the one party that
-    knows it.  The by-name entry points register with no path, and a table arriving later
-    for a name that has none fills it in.  Two tables disagreeing on a name's path means one
-    image was built against a different content tree; the first path stands and the
-    disagreement is reported.
-
-    The name and path text are COPIED into the pool.  Callers may pass stack buffers or
-    literals in a DLL image that is about to be unloaded.
+    The name text is COPIED into the pool.  Callers may pass stack buffers or literals in a
+    DLL image that is about to be unloaded.
 ==============================================================================================*/
 
 rid_t           res_register         ( const char* name );              // RID_INVALID on failure
@@ -73,17 +67,15 @@ u32             res_register_table   ( const res_table_t* table );      // names
 /*==============================================================================================
     Lookup
 
-    res_name and res_path point into the name pool, which moves when a later registration
-    grows it (the same rule sid_cstr follows).  Print it, copy it, or hold it across nothing
-    -- do not stash it in a struct.  Ids are the durable handle; the text is a view.
+    res_name points into the name pool, which moves when a later registration grows it (the
+    same rule sid_cstr follows).  Print it, copy it, or hold it across nothing -- do not
+    stash it in a struct.  Ids are the durable handle; the text is a view.
 
-    res_path is the cooked file relative to the content root, extension included, exactly
-    as the build recorded it; "" for a subtree or a name no table has resolved yet.  It is
-    the string the asset service hands to fs.
+    The name is also the file's path under a content root, minus the extension, so a loader
+    builds the path to hand fs from res_name plus the extension it accepts.
 ==============================================================================================*/
 
 const char*     res_name             ( rid_t id );                      // canonical; NULL if unknown
-const char*     res_path             ( rid_t id );                      // cooked rel path; NULL if unknown
 bool            res_exists           ( rid_t id );
 u32             res_count            ( void );
 void            res_each             ( res_each_fn fn, void* user );

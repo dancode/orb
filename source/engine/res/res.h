@@ -12,12 +12,13 @@
     same name hold the same id with no registry round-trip, and a hot-reloaded DLL re-finds
     the ids it declared.
 
-    Names are logical and hierarchical, never file paths: "ui/icon/save" or
-    "font/cascadia_mono/16".  No extension, no directory coupling.  The build resolves a
-    name to a cooked file; source code never does.  The convention it resolves by: a name is
-    the path of its source file under a content root, minus the extension -- "ui/icon/save"
-    is content/ui/icon/save.png, cooked to ui/icon/save.tex.  A project's content/ shadows
-    the engine's, name by name.
+    A name IS the file's path under a content root, minus the extension: "ui/icon/save" is
+    content/ui/icon/save.png.  Content file names are canonical lowercase, so the name and
+    the path are the same text; the build (res_tool) proves every name has exactly one file
+    and fails with file:line when it does not.  The extension is the loader's business: a
+    loader asks fs for the name plus the extensions it accepts (.tex, then .png), and the
+    mount order decides which tree -- loose content, cooked, shipped pack -- answers.  A
+    project's content/ shadows the engine's, name by name.
 
 ==============================================================================================*/
 #ifndef RES_H
@@ -45,8 +46,8 @@ typedef u32 rid_t;
 
     Storage grows on demand and holds no more than the catalogue needs, so the two INIT sizes
     are only where doubling starts -- a first allocation small enough that a host with a
-    handful of names pays almost nothing.  A catalogue costs 16 bytes per entry (a 12-byte
-    slot plus the two hash buckets it is budgeted) on top of its name and path text.
+    handful of names pays almost nothing.  A catalogue costs 12 bytes per entry (an 8-byte
+    slot plus the two hash buckets it is budgeted) on top of its name text.
 
     RES_MAX_ENTRIES is a hard ceiling, not a budget, and exceeding it is a clean registration
     failure.  It is the largest power of two whose slot index plus one still fits the u16 hash
@@ -163,22 +164,16 @@ res_hash_child( rid_t tree, const char* leaf )
     its sources -- for a DLL module its own units, for an executable its units plus every
     statically linked library -- and pointed at from mod_desc_t.res_table (MOD_RES_TABLE).
     The res library registers the table when the module's pre_init hook fires, hashing each
-    name then -- an id is a pure function of the name, so the table carries no id.
-
-    What it does carry is the answer the build alone can give: the cooked file each name
-    resolves to, relative to the content root and WITH its extension.  The path is canonical
-    like the name -- lowercase, '/' separators -- because the cooker writes it that way
-    whatever the source file was called; it is the name plus the cooked extension.  A subtree
-    entry has an empty path -- it is a directory, not a file -- and every file beneath it in
-    the content root is listed as its own entry, so a runtime-composed child of a RES_TREE()
-    resolves to a path too.  Entries are plain literals living in the image; the registry
-    copies them.
+    name then -- an id is a pure function of the name, so the table carries no id, and the
+    name is the path, so it carries no path either.  A subtree entry names a directory, and
+    every file beneath it in the content root is listed as its own entry, so a runtime-
+    composed child of a RES_TREE() is a known name too.  Entries are plain literals living
+    in the image; the registry copies them.
 ==============================================================================================*/
 
 typedef struct res_entry_s
 {
     const char* name;               // canonical logical name; trailing '/' = subtree
-    const char* path;               // cooked file relative to the content root; "" = none
 
 } res_entry_t;
 

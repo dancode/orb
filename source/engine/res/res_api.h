@@ -15,15 +15,14 @@
     Resource Catalogue Runtime API
 
     Hashing a literal needs no vtable (RID() is inline).  The vtable is for everything that
-    touches the registry: turning an id back into its name or its cooked path, checking
-    membership, and feeding names in from cooked content at load time.
+    touches the registry: turning an id back into its name, checking membership, and
+    feeding names in from cooked content at load time.
 ==============================================================================================*/
 
 typedef struct res_api_s
 {
     /* Lookup */
     const char*  ( *name           )( rid_t id );                   /* NULL if unregistered */
-    const char*  ( *path           )( rid_t id );                   /* NULL if unregistered; "" if no cooked file */
     bool         ( *exists         )( rid_t id );
     u32          ( *count          )( void );
     void         ( *each           )( res_each_fn fn, void* user );

@@ -90,8 +90,10 @@ real runtime handle AND the manifest entry, never a parallel annotation.
    makes the dynamic escape hatch a scannable token instead of a side-list.
 
 8. NAME == PATH UNDER A CONTENT ROOT, MINUS THE EXTENSION.  Convention, not a mapping file,
-   so there is nothing to author.  "ui/icon/save" -> content/ui/icon/save.* -> cooked
-   ui/icon/save.tex.
+   so there is nothing to author.  "ui/icon/save" is content/ui/icon/save.png; the same
+   name is ui/icon/save.tex in a shipped pack.  Content file and directory names are
+   canonical lowercase (the engine is lowercase-only; decision 17), so the name and the path
+   are the same text and nothing is ever translated between them.
 
 9. RECIPES ARE SOURCE ASSETS.  Content with no source file (a font bake) gets a recipe file
    under the content root -- content/font/CascadiaMono/16.recipe -- so the convention in (8)
@@ -115,16 +117,19 @@ real runtime handle AND the manifest entry, never a parallel annotation.
     zip entries are genuinely about paths, and giving fs an identity concept would make it
     the second place identity lives.
 
-14. TWO OVERRIDE AXES, RESOLVED AT DIFFERENT TIMES.
-      build-time content-root layering  -- WHICH SOURCE a name comes from (a project shadows
-                                           the engine, and only this axis can ADD names)
-      runtime mount priority            -- WHERE THE BYTES ARE for a fixed path (loose file
-                                           shadows zip; already built, fs.c:484-510)
-    Doing project-override at runtime alone fails: a project adding a new name has nothing
-    in the table, and an override with a different format (save.png vs save.tex) yields two
-    paths that mount priority cannot compare.  Resolving name -> path WITH extension at
-    build time is also the only version that works over a zip at all, since fs_glob cannot
-    enumerate ZIP mounts (fs_api.h:42-43).
+14. THE EXTENSION BELONGS TO THE LOADER; THE TREE BELONGS TO THE MOUNT.  A loader knows the
+    extensions it accepts and asks fs for the name plus each in turn -- the image loader
+    tries ui/icon/save.tex then ui/icon/save.png.  Each ask is an exact lookup, which works
+    over loose files and zip mounts alike (only enumeration fails over a zip, and nothing
+    here enumerates).  Mount order then decides which tree answers: loose content/ in
+    development, a cooked mirror for kinds that need baking (fonts, shaders), a shipped pack
+    in a release -- the Quake 3 search path, with the same name in every tree.  The table
+    therefore carries NO path: the name is the path, the loader adds the extension, fs finds
+    the bytes.  (An earlier cut resolved name -> cooked path WITH extension at build time and
+    stored it in the table; it was removed 2026-09-02 as double storage -- see decision 17.)
+    Build-time content-root layering still decides WHICH SOURCE a name comes from (a project
+    shadows the engine, and only this axis can ADD names); runtime mount priority decides
+    WHERE THE BYTES ARE.
 
 15. NO RUNTIME TRACE.  Deliberately not part of this design.  It answers "what was loaded",
     which is the wrong question.
@@ -132,14 +137,14 @@ real runtime handle AND the manifest entry, never a parallel annotation.
 16. orb.targets STAYS ABOUT COMPILING.  It gains no asset configuration.  The manifest is
     COMPUTED FROM the unit/dep graph it already carries; derived output lands in obj/.
 
-17. COOKED PATHS ARE CANONICAL.  The engine is lowercase-only (a decision that predates this
-    plan).  The cooker writes canon( name ) + cooked extension -- lowercase, '/' separators --
-    so Content/UI/Icon/Save.PNG lands as ui/icon/save.tex, and the table records exactly that.
-    Artists spell source files however they like; the cooked tree and the runtime never see
-    it, so there is no case-sensitivity question at the fs boundary and no probing for an
-    extension.  The path column is therefore name + extension.  It stays a stored string
-    rather than a derived one so the runtime asks res for a path and hands it to fs, learning
-    nothing about kinds or cookers.
+17. CONTENT IS LOWERCASE, ENFORCED AT BUILD.  The engine is lowercase-only (a decision that
+    predates this plan), and content file and directory names are part of that: res_tool
+    matches a name case-insensitively so it can find a misspelled file, then fails the build
+    with file:line quoting the on-disk spelling.  One naming scheme, no folding anywhere, and
+    the path a RID() spells opens the file unchanged on a case-sensitive filesystem.  The
+    alternative -- fold at cook time and let source files be spelled freely -- was built and
+    removed the same day: it needed a path column to carry the folded spelling (decision 14)
+    and a second spelling of every file.
 
 18. VERIFICATION SPLITS BY WHAT IS BEING ASSEMBLED.  The build verifies what the code it just
     compiled asks for: each referenced name resolves to exactly one file, referenced names do
@@ -151,7 +156,7 @@ real runtime handle AND the manifest entry, never a parallel annotation.
     collisions over the complete tree, orphans.  Runtime failure -- a name with no path, a load
     that fails -- remains underneath both; build-time resolution is a net in front of it, not a
     replacement.  The table is never populated from the disk walk: names enter only from
-    source, and the walk fills in paths and expands subtrees.
+    source, and the walk verifies them and expands subtrees.
 
 --------------------------------------------------------------------------------
 ## Where it sits
@@ -354,60 +359,57 @@ Phase 2 -- Content root + name resolution                                [DONE 2
      as repeated -root flags, highest priority first (build_gen_res_table).  No orb.targets
      vocabulary (decision 16).  A root that does not exist is still passed: res_tool records
      it so its later appearance makes every table stale.
-   - res_entry_t = { name, path }.  `path` is the cooked file relative to the content root,
-     WITH its extension, canonical like the name (decision 17; the first cut kept on-disk
-     spelling and was corrected 2026-09-02).  A subtree entry
-     has "" (a directory, not a file).  Runtime: res_path( rid ) in res_api_t / res_host.h
-     (NULL unknown, "" none); the registry slot gains path_off with pool byte 0 reserved as
-     the empty string; a by-name registration (res_register, the cooked-header feed) has no
-     path, a table arriving later fills it in, and two tables disagreeing keep the first and
-     report through res_last_error -- two images built against different content.
+   - res_entry_t = { name }.  The table carries names only: the name is the path under the
+     content root, and the extension is the loader's (decision 14).  REVISED 2026-09-02: the
+     first cut added a `path` column (cooked file with extension, res_path() at runtime,
+     path_off in the slot, fill-in and first-wins rules for tables disagreeing); all of it
+     was removed as double storage once the loader-owns-the-extension model was settled.
    - RESOLUTION (res_tool): each directory is listed once from the OS and cached (Win32
      FindFirstFile / POSIX opendir); a name walks its segments through a root one listing at
-     a time, matching case-insensitively (the on-disk spelling is used only to open).  A leaf
+     a time, matching case-insensitively so a misspelled file is found and reported.  A leaf
      is exactly one file whose stem folds to the last segment -- two files (save.png beside
      save.jpg) is an error, a directory of that name alone is an error pointing at
-     RES_TREE.  A subtree is the directory in every root that has it, expanded recursively,
-     higher roots first, first root winning per name; the subtree's own entry stays.
-     '.'-prefixed entries are not content.  Errors are per site with file:line, all
-     reported in one run, and no table is written.
+     RES_TREE, and a file or directory not spelled in lowercase is an error quoting the
+     spelling (decision 17).  A subtree is the directory in every root that has it, expanded
+     recursively, higher roots first, first root winning per name; the subtree's own entry
+     stays.  '.'-prefixed entries are not content.  Errors are per site with file:line, all
+     reported in one run, and no table is written.  The generated table's comment column
+     gives the source file each name resolved to.
    - COOKED EXTENSION: engine/res/res_cook.h, header-only and tools-only, is the single
      source -> cooked mapping (png/... -> tex, ttf/otf -> orb_font, hlsl -> oshd, else
-     verbatim).  asset_tool's dispatch predicates and job_dst_rel now read it, so the path
-     res_tool records is by construction the file asset_tool writes.
+     verbatim) that every cooker writes files by.  asset_tool's dispatch predicates and
+     job_dst_rel read it.  res_tool no longer does: it records no extension.
    - RECIPES (decision 9, brought forward): a .recipe is a text file with a `kind <word>`
-     line; the kind decides the cooked extension (font -> orb_font).  No kind, or an
-     unknown one, is a build error.  content/font/CascadiaMono/16.recipe exists, so
-     sb_gui's name has a backing file; the bake itself is Phase 6, and asset_tool copies a
-     recipe verbatim until then.
+     line; the kind decides what the cook produces (font -> orb_font).
+     content/font/cascadiamono/16.recipe exists, so sb_gui's name has a backing file; the
+     bake itself is Phase 6, and asset_tool copies a recipe verbatim until then.  Recipe
+     validation moved to cook time with the path column's removal.
    - STALENESS: content is the one input the compiler never sees.  res_tool writes every
-     directory it listed and every recipe it read to <obj>/_res_deps.txt ('!' prefix for a
-     root that did not exist), and build_target's up-to-date test E replays it: a directory's
-     mtime moves on add / remove / rename beneath it.  Equal timestamps count as stale there
-     (mtimes are whole seconds; an edit in the same second as the previous link was
-     otherwise missed -- observed once, then fixed).
+     directory it listed to <obj>/_res_deps.txt ('!' prefix for a root that did not exist),
+     and build_target's up-to-date test E replays it: a directory's mtime moves on add /
+     remove / rename beneath it.  Equal timestamps count as stale there (mtimes are whole
+     seconds; an edit in the same second as the previous link was otherwise missed --
+     observed once, then fixed).  A newer res_tool.exe also makes every table stale.
    - TABLE ORDER: sorted by canonical name, so every RES_TREE closure is a contiguous run and
      a lookup can binary-search -- the tree layout open decision 7 asks of static artifacts,
      obtained from the sort rather than a directory table.  The collision check sorts a copy
      by id.  Expanded entries are commented "in <subtree>" with the RES_TREE site.
    - Fixtures: content/sandbox/res/ (see its README.md) backs sb_res, whose names moved
      from ui/icon/* to sandbox/res/* so real icon content (Phase 5) never mixes with test
-     files.  Load.png is deliberately capitalised; sub/deep.txt is a copy-kind file in a
-     nested directory; tree_only.png is spelled by no source line.
-   - Proof: sb_res, 109 checks, 0 failed.  New `paths` test covers a table path, "" for a
-     by-name registration and a subtree, fill-in by a later table, first-path-wins with the
-     ignored path reported, and paths surviving pool growth.  The harvest test now checks
-     the generated table is exactly 5 explicit + 2 expanded names, every leaf with a path
-     (.tex / .orb_font / .txt), Load.png recorded as load.tex, and a child composed at
-     runtime from the tree id (res_hash_child) resolving to a path no source spelled.  sb_gui's
-     table records font/cascadiamono/16 -> font/cascadiamono/16.orb_font and the demo
-     still boots logging the name as resolving.  res_tool over scratch roots: a project
-     .tex shadows the engine .png under one name, a project file wins inside a merged
-     subtree with no false ambiguity, an engine-only name is found, a case-folded name
-     (UI/Icon/Only_Eng vs Only_Proj.PNG) resolves; a second file
-     with five bad sites (directory-only leaf, missing file, ambiguous pair, subtree with
-     no directory, recipe without kind) reports all five with file:line and writes no
-     table; no -root gives a per-name error; a missing root lands as a '!' dep line.
+     files.  sub/deep.txt is a copy-kind file in a nested directory; tree_only.png is
+     spelled by no source line.  (Load.png, once deliberately capitalised to prove
+     spelling preservation, became load.png when lowercase became the rule.)
+   - Proof: sb_res, 82 checks, 0 failed (109 before the path tests were removed).  The
+     harvest test checks the generated table is exactly 5 explicit + 2 expanded names and
+     that a child composed at runtime from the tree id (res_hash_child) is a known name no
+     source spelled.  sb_gui's table records font/cascadiamono/16 and the demo boots logging
+     the name as resolving.  res_tool over scratch roots: a project file shadows the
+     engine's under one name whatever the two extensions, a project file wins inside a
+     merged subtree with no false ambiguity, an engine-only name is found; a file with bad
+     sites (directory-only leaf, missing file, ambiguous pair, subtree with no directory)
+     reports all of them with file:line and writes no table; a capitalised file or
+     directory is reported with its on-disk spelling; no -root gives a per-name error; a
+     missing root lands as a '!' dep line.
      build_tool: adding a png under sb_res's RES_TREE directory rebuilt sb_res with the new
      entry and no source change, touching a recipe rebuilt, an unchanged tree skipped.
      Child project: `build_tool -target my_project -res-table` from samples/my_project
@@ -454,7 +456,8 @@ Phase 3 -- Format header reference section                               [DONE 2
 Phase 4 -- Asset service moves onto rid                                  [NOT STARTED]
    - asset_id_t -> aid_t.  acquire( rid_t ) replaces acquire( const char* vpath ).
    - The service DELETES its own path interning and case-folding -- that is res's job now.
-   - fs is untouched; the service asks res for a path and hands that to fs.
+   - fs is untouched; a loader builds the path from res_name( rid ) plus each extension it
+     accepts, in preference order, and asks fs for it (decision 14).
    - Proof: sb_asset_test and sb_asset_image pass unchanged in behavior via rid; dedup,
      refcount, generation-stale rejection, and refresh() all still hold.
 

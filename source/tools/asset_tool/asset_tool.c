@@ -49,7 +49,6 @@
 #include <string.h>
 #include "base/base.h"
 #include "engine/sys/sys_host.h"
-#include "engine/res/res.h"        /* res_canon_char: cooked paths are canonical */
 #include "engine/res/res_cook.h"
 #include "runtime_service/asset/loaders/asset_tex.h"
 
@@ -396,11 +395,10 @@ path_parent( char* out, size_t cap, const char* full )
 
 /* job_dst_rel -- map a source relative path to its cooked output relative path: fonts become
    .orb_font, source images become .tex, shaders .oshd (the stage tag survives: foo.vs.oshd),
-   everything else keeps its extension (verbatim copy).  The whole path is folded to canonical
-   form (lowercase, '/'; res_canon_char), so Content/UI/Icon/Save.PNG lands as
-   ui/icon/save.tex -- the path res_tool records for RID( "ui/icon/save" ), and the only
-   spelling the runtime ever sees.  A .recipe copies verbatim here until the recipe cook
-   lands; res_tool already records what it will cook to. */
+   everything else keeps its extension (verbatim copy).  The directory and stem pass through
+   unchanged: content file names are canonical lowercase already (res_tool fails the build on
+   one that is not), so the cooked file sits under the same name the runtime asks for.  A
+   .recipe copies verbatim here until the recipe cook lands. */
 static void
 job_dst_rel( char* out, size_t cap, const char* src_rel )
 {
@@ -411,9 +409,6 @@ job_dst_rel( char* out, size_t cap, const char* src_rel )
         snprintf( out, cap, "%.*s%s", keep, src_rel, cext );
     else
         snprintf( out, cap, "%s", src_rel );
-
-    for ( char* p = out; *p; ++p )
-        *p = res_canon_char( *p );
 }
 
 /*============================================================================================*/

@@ -292,10 +292,8 @@ test_misses( void )
     res_register( "sandbox/res/icon/save" );
 
     sb_check( res_name( RID( "sandbox/res/icon/never" ) ) == NULL, "unknown id -> NULL name" );
-    sb_check( res_path( RID( "sandbox/res/icon/never" ) ) == NULL, "unknown id -> NULL path" );
     sb_check( !res_exists( RID( "sandbox/res/icon/never" ) ), "unknown id -> not exists" );
     sb_check( res_name( RID_INVALID ) == NULL, "RID_INVALID -> NULL name" );
-    sb_check( res_path( RID_INVALID ) == NULL, "RID_INVALID -> NULL path" );
     sb_check( !res_exists( RID_INVALID ), "RID_INVALID -> not exists" );
 
     sb_check( res_register( "" ) == RID_INVALID, "empty name refused" );
@@ -310,93 +308,20 @@ test_misses( void )
 }
 
 /*==============================================================================================
-    Paths
-
-    Only a table carries a cooked path.  The names below are plain strings in tables, never
-    RID() literals, so the build harvests none of them into this executable's own table.
-==============================================================================================*/
-
-static const res_entry_t s_path_entries[] = {
-    { "paths/a",     "paths/a.tex" },
-    { "paths/tree/", "" },
-    { "paths/c",     NULL },                    /* a table may leave a path unset */
-};
-
-static const res_table_t g_path_table = {
-    .entries = s_path_entries,
-    .count   = ARRAY_COUNT( s_path_entries ),
-};
-
-static const res_entry_t s_path_late_entries[] = {
-    { "paths/b", "paths/b.txt" },               /* fills in a path registered by name first */
-    { "paths/a", "paths/a.png" },               /* disagrees with the first table */
-};
-
-static const res_table_t g_path_late_table = {
-    .entries = s_path_late_entries,
-    .count   = ARRAY_COUNT( s_path_late_entries ),
-};
-
-static void
-test_paths( void )
-{
-    printf( "  paths\n" );
-    res_init();
-
-    rid_t a    = res_hash_name( "paths/a" );
-    rid_t b    = res_hash_name( "paths/b" );
-    rid_t c    = res_hash_name( "paths/c" );
-    rid_t tree = res_hash_name( "paths/tree/" );
-
-    /* A by-name registration has no path, and that reads as "" -- never NULL, which is
-       reserved for an unknown id. */
-    sb_check( res_register( "paths/b" ) == b, "by-name registration" );
-    sb_check( str_eq( res_path( b ), "" ), "a name registered without a table has an empty path" );
-
-    sb_check( res_register_table( &g_path_table ) == 3, "the table registers every entry" );
-    sb_check( str_eq( res_path( a ), "paths/a.tex" ), "a table entry carries its cooked path" );
-    sb_check( str_eq( res_path( tree ), "" ), "a subtree has no path" );
-    sb_check( str_eq( res_path( c ), "" ), "a NULL table path reads as empty" );
-    sb_check( str_eq( res_name( a ), "paths/a" ), "name is intact beside the path" );
-
-    /* Re-registering the same table is the hot-reload shape: nothing moves. */
-    u32 n = res_count();
-    res_register_table( &g_path_table );
-    sb_check( res_count() == n, "re-registering a table adds nothing" );
-    sb_check( str_eq( res_path( a ), "paths/a.tex" ), "path is stable across re-registration" );
-
-    /* A later table fills in a missing path, and loses a disagreement to the first. */
-    sb_check( res_register_table( &g_path_late_table ) == 2, "the later table still registers its names" );
-    sb_check( str_eq( res_path( b ), "paths/b.txt" ), "a later table fills in a path that was empty" );
-    sb_check( str_eq( res_path( a ), "paths/a.tex" ), "the first path stands against a different one" );
-    sb_check( strstr( res_last_error(), "paths/a.png" ) != NULL, "the ignored path is reported" );
-    sb_check( res_count() == n, "neither adds an entry" );
-
-    /* Paths ride the same pool as names, so they must survive its growth too. */
-    char name[ 64 ];
-    for ( u32 i = 0; i < 600; ++i )
-    {
-        snprintf( name, sizeof( name ), "paths/filler_%04u", i );
-        res_register( name );
-    }
-    sb_check( str_eq( res_path( a ), "paths/a.tex" ), "path survives pool growth" );
-    sb_check( str_eq( res_path( b ), "paths/b.txt" ), "a filled-in path survives pool growth" );
-    sb_check( str_eq( res_path( tree ), "" ), "an empty path survives pool growth" );
-}
-
-/*==============================================================================================
     Mod lifecycle: a descriptor's res_table registers through the pre_init hook
 
     A hand-built table on a fake module, the shape every DLL module's generated table
     takes.  Loading "res" also brings this executable's own generated table
-    (g_host_res_table) along, so counts below are measured relative to that.
+    (g_host_res_table) along, so counts below are measured relative to that.  The names are
+    plain strings in a table, never RID() literals, so the build harvests none of them into
+    this executable's own table.
 ==============================================================================================*/
 
 static const res_entry_t s_fake_entries[] = {
-    { "fake/font/mono/16", "fake/font/mono/16.orb_font" },
-    { "fake/icon/save",    "fake/icon/save.tex" },
-    { "fake/icon/load",    "fake/icon/load.tex" },
-    { "FAKE/ICON/SAVE",    "fake/icon/save.tex" }, /* duplicate spelled differently: must not add an entry  */
+    { "fake/font/mono/16" },
+    { "fake/icon/save" },
+    { "fake/icon/load" },
+    { "FAKE/ICON/SAVE" },                       /* duplicate spelled differently: must not add an entry */
 };
 
 static const res_table_t g_fake_res_table = {
@@ -473,8 +398,6 @@ test_mod_lifecycle( void )
               "pre_init registered the fake table (3 distinct names) and the host table" );
     sb_check( res_exists( res_hash_name( "fake/icon/load" ) ), "table name resolvable by id" );
     sb_check( res_name( res_hash_name( "fake/font/mono/16" ) ) != NULL, "font name present" );
-    sb_check( str_eq( res_path( res_hash_name( "fake/icon/load" ) ), "fake/icon/load.tex" ),
-              "table path arrives through the pre_init hook" );
 
     /* Hot-reload shape: the same table arrives again. */
     u32 again = res_register_table( &g_fake_res_table );
@@ -502,8 +425,8 @@ test_mod_lifecycle( void )
     in test_identity arrives as "sandbox/res/icon/", slash included.
 
     Every name was also resolved against content/ (see content/sandbox/res/README.md): each
-    leaf carries the cooked path of its file, and the subtree brought in the files beneath
-    it that no source line spells.
+    leaf was proven to be exactly one lowercase file, and the subtree brought in the files
+    beneath it that no source line spells.
 ==============================================================================================*/
 
 static void
@@ -525,7 +448,6 @@ test_harvest( void )
     rid_t       tree_id = RES_TREE( "sandbox/res/icon" );
     const char* tree    = res_name( tree_id );
     sb_check( str_eq( tree, "sandbox/res/icon/" ), "RES_TREE prefix harvested as a subtree name" );
-    sb_check( str_eq( res_path( tree_id ), "" ), "a subtree has no cooked path" );
     sb_check( !res_exists( res_hash_name( "sandbox/res/icon" ) ),
               "the leaf spelling of a subtree is not implied" );
 
@@ -538,44 +460,27 @@ test_harvest( void )
     const char* canon = res_name( RID( "sandbox/res/icon/save" ) );
     sb_check( str_eq( canon, "sandbox/res/icon/save" ), "generated names are canonical" );
 
-    /* Resolution: name -> source file under content/ -> cooked path with its extension. */
-    sb_check( str_eq( res_path( RID( "sandbox/res/icon/save" ) ), "sandbox/res/icon/save.tex" ),
-              "a png leaf resolves to its .tex cooked path" );
-    sb_check( str_eq( res_path( RID( "sandbox/res/icon/load" ) ), "sandbox/res/icon/load.tex" ),
-              "the cooked path is canonical lowercase however the source is spelled (Load.png)" );
-    sb_check( str_eq( res_path( RID( "sandbox/res/font/mono/16" ) ), "sandbox/res/font/mono/16.orb_font" ),
-              "a recipe resolves to the cooked file its kind produces" );
-
     /* Subtree expansion: files beneath the directory that no source line names, reachable
-       from the tree id alone, each with a path -- including one in a nested directory that
-       has no cooker and so keeps its own extension. */
+       from the tree id alone -- including one in a nested directory. */
     rid_t tree_only = res_hash_child( tree_id, "tree_only" );
     rid_t deep      = res_hash_child( tree_id, "sub/deep" );
     sb_check( res_exists( tree_only ), "a file beneath the subtree is an entry no source spelled" );
-    sb_check( str_eq( res_path( tree_only ), "sandbox/res/icon/tree_only.tex" ),
-              "an expanded entry carries its cooked path" );
     sb_check( str_eq( res_name( deep ), "sandbox/res/icon/sub/deep" ), "expansion recurses into subdirectories" );
-    sb_check( str_eq( res_path( deep ), "sandbox/res/icon/sub/deep.txt" ),
-              "a copy-kind file keeps its extension" );
 
     /* The table is exactly the RID() / RES_TREE() literals in this file plus the two files
-       the subtree contributed: nothing extra rode in, and every leaf has a file. */
-    u32 expected = 0, with_path = 0;
+       the subtree contributed: nothing extra rode in. */
+    u32 expected = 0;
     for ( u32 i = 0; i < g_host_res_table.count; ++i )
     {
         const char* nm = g_host_res_table.entries[ i ].name;
-        const char* pt = g_host_res_table.entries[ i ].path;
         if ( strcmp( nm, "sandbox/res/icon/save" ) == 0 || strcmp( nm, "sandbox/res/icon/load" ) == 0 ||
              strcmp( nm, "sandbox/res/icon/never" ) == 0 || strcmp( nm, "sandbox/res/font/mono/16" ) == 0 ||
              strcmp( nm, "sandbox/res/icon/" ) == 0 || strcmp( nm, "sandbox/res/icon/tree_only" ) == 0 ||
              strcmp( nm, "sandbox/res/icon/sub/deep" ) == 0 )
             expected++;
-        if ( pt && pt[ 0 ] )
-            with_path++;
     }
     sb_check( expected == g_host_res_table.count && expected == 7,
               "the generated table holds exactly the five names spelled through the doors plus two expanded" );
-    sb_check( with_path == 6, "every entry but the subtree resolved to a cooked path" );
 }
 
 /*==============================================================================================
@@ -596,7 +501,6 @@ main( int argc, char** argv )
     test_growth();
     test_collision();
     test_misses();
-    test_paths();
     test_mod_lifecycle();
     test_harvest();
 
