@@ -12,7 +12,7 @@
 
     Everything is addressed by id:
         world_id_t  -- slot into the framework's bound-world table
-        ent_t       -- { index, generation } stale-safe handle (the asset_id_t idiom)
+        ent_t       -- { index, generation } stale-safe handle (the aid_t idiom)
         comp_id_t   -- component registration index within a world
 
     Pointers appear only as TRANSIENT access to component data inside a call or a query

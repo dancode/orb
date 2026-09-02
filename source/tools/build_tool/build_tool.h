@@ -467,10 +467,10 @@ typedef struct target_info_s
 
     bool            is_reflect_tool;
 
-    /*  If true, this is the resource-reference harvester (res_tool). Every dynamic
-        target, and every executable whose dep closure links the res library, gets its
-        generated <name>_res_table.c from whichever target carries this flag; see
-        target_wants_res_table() in build_tool_02_data.c. */
+    /*  If true, this is the resource-reference harvester (res_tool). Every image -- each
+        executable and each dynamic module, the three builtin tools excepted -- gets its
+        <name>_res_manifest.txt from whichever target carries this flag; see
+        target_wants_res_manifest() in build_tool_02_data.c. */
 
     bool            is_res_tool;
 
@@ -702,16 +702,17 @@ bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
 bool build_cook_shaders( build_context_t* ctx, target_info_t* target );
 
 /*  Harvests the resource names (RID / RES_TREE tokens) the target's image references
-    into <obj_dir>/<name>_res_table.c, which build_target_compile then compiles in,
-    each resolved to its cooked file under the content roots (this project's content/,
-    then the engine's for a child project). The scan covers the target's own units plus
-    those of every dependency it links statically, so an executable's table is the
-    complete name set of the program. Also writes <obj_dir>/_res_deps.txt, the content
-    directories and recipes the table depends on, for the up-to-date check.
-    res_tool must already be built (the caller resolves and builds it). Fails the
-    build on a malformed name, a name with no file, or a rid collision, naming the site. */
+    into <obj_dir>/<name>_res_manifest.txt, each resolved against the content roots (this
+    project's content/, then the engine's for a child project). Nothing is compiled from
+    it: the manifest is the packager's input and the build's proof that every marked name
+    has a file. The scan covers the target's own units plus those of every dependency it
+    links statically, so an executable's manifest is the complete name set of the program.
+    Also writes <obj_dir>/_res_deps.txt, the content directories the manifest depends on,
+    for the up-to-date check. res_tool must already be built (the caller resolves and
+    builds it). Fails the build on a malformed or non-canonical name, a name with no file,
+    a misspelled content file, or a rid collision, naming the site. */
 
-bool build_gen_res_table( target_info_t* target, const char* obj_dir, const target_info_t* res_tool );
+bool build_gen_res_manifest( target_info_t* target, const char* obj_dir, const target_info_t* res_tool );
 
 /*  Links or archives the target's objects into the final artifact: lib.exe
     for static libs, link.exe (with /DLL or as an exe) for the rest. PDB paths

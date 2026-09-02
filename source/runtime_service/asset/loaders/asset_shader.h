@@ -4,9 +4,11 @@
 
     runtime_service/asset/loaders/asset_shader.h -- built-in shader asset resource.
 
-    The asset service auto-registers a "shader" type (see asset_api.c) for cooked .oshd
-    containers (rhi_shader_format.h, produced by `shader_tool cook` or the asset_tool .hlsl
-    dispatch).  acquire()ing one parses the container through rhi()->shader_load_oshd_memory
+    The asset service auto-registers a "shader" type (ASSET_TYPE_SHADER, see asset_api.c) for
+    cooked .oshd containers (rhi_shader_format.h, produced by `shader_tool cook` or the
+    asset_tool .hlsl dispatch).  Acquiring a resource as that type -- asset()->acquire(
+    RID( "shaders/tri.vs" ), ASSET_TYPE_SHADER ) -- parses the container through
+    rhi()->shader_load_oshd_memory
     -- stage and entry come from the file, reflection lands in the RHI shader slot, and the
     bindless contract is enforced at load.  get() returns a pointer to this struct.
 

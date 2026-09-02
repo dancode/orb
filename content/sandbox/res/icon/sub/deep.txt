@@ -1,2 +1,2 @@
 sb_res fixture: a file with no cooker, found by expanding RES_TREE( "sandbox/res/icon" ) into a
-nested directory.  It ships verbatim, so its cooked path keeps the .txt extension.
+nested directory.  It ships verbatim under its own extension.

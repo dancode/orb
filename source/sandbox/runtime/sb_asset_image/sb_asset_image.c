@@ -1,17 +1,22 @@
 /*==============================================================================================
 
-    sandbox/runtime/sb_asset_image/sb_asset_image.c -- asset service image loader proof (Phase 3).
+    sandbox/runtime/sb_asset_image/sb_asset_image.c -- asset service image loader proof.
 
-    Boots sys + ref + app + core + rhi + draw + asset through the module system, opens a window
-    and an RHI context, then:
-      - mounts the current directory on core/fs,
-      - acquire()s a PNG by virtual path -- the asset service's built-in "image" type decodes it
-        (stb_image) and uploads a bindless RHI texture behind the id,
+    Boots sys + ref + app + core + rhi + draw + asset through the module system, opens a
+    window and an RHI context, then:
+      - mounts a content tree (or trees) on core/fs,
+      - acquire()s an image by NAME -- marked with RID() so the build resolves it against
+        content/ and lists it in this executable's resource manifest -- and the asset
+        service's built-in "image" type finds the file by trying its extensions in
+        preference order (.tex, then .png ...) against the mounts, decodes if needed, and
+        uploads a bindless RHI texture behind the id,
       - reads the resulting asset_image_t (bindless slot + dimensions) with get(),
       - draws it every frame as a single centered, aspect-fit textured quad via draw()->image.
 
-    The whole point: pixels on screen come from an ACQUIRED ASSET ID, not a hand-built texture.
-    ESC or the window close button quits; release() then unloads the texture.
+    The whole point: pixels on screen come from an ACQUIRED ASSET named without an extension
+    or a root.  Which tree served the bytes is the mounts' business; the asset log line
+    "loaded '...' as image" says which file won.  ESC or the window close button quits;
+    release() then unloads the texture.
 
 ==============================================================================================*/
 
@@ -22,6 +27,7 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
+#include "engine/res/res.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
@@ -34,25 +40,69 @@
 
 // clang-format off
 
-/* Virtual path of the image to display.  gui_issue.png sits at the repo root; the sandbox runs
-   with the repo root as its working directory, and we mount "" -> "" (CWD) below. */
-#define IMAGE_VPATH   "gui_issue.png"
-#define IMAGE_TEX     "gui_issue.tex"   /* cooked twin: asset_tool cook gui_issue.png gui_issue.tex */
-#define PACK_ZIP      "sb_asset_pack.zip"
-#define PACK_COOK     "sb_asset_cooked.zip"   /* asset_tool-produced bundle for "pack" mode */
+/* The image: content/sandbox/asset/image.png, named without its extension or root.  The
+   sandbox runs with the repo root as its working directory. */
+#define IMAGE_NAME    "sandbox/asset/image"
+#define IMAGE_SRC     "content/sandbox/asset/image.png"
 
-/* Phase 5 mode: pack the loose PNG into a .zip so the asset is served from a bundle instead of
-   loose files.  Reads the loose image through sys, deflates it into a heap zip, writes it out.
-   Returns false (and packs nothing) if the source image is not next to the executable's CWD. */
+/* Trees the modes mount.  build/content is the cooked mirror of content/: same names, cooked
+   extensions; a mount above content/ so the image type's preferred .tex wins there. */
+#define CONTENT_DIR   "content"
+#define COOKED_DIR    "build/content"
+#define COOKED_TEX    "build/content/sandbox/asset/image.tex"
+#define COOK_TREE     "build/content_cooked"       /* asset_tool tree cook of content/, for "pack" */
+#define PACK_ZIP      "build/sb_asset_pack.zip"     /* the loose png zipped in-process, for "zip"  */
+#define PACK_COOK     "build/sb_asset_cooked.zip"   /* asset_tool-produced bundle, for "pack"      */
+
+/* Make every directory along `path` (forward slashes), so a cook has somewhere to write. */
+static void
+dir_make_deep( const char* path )
+{
+    char buf[ 512 ];
+    snprintf( buf, sizeof( buf ), "%s", path );
+    for ( char* p = buf + 1; *p; ++p )
+    {
+        if ( *p == '/' )
+        {
+            *p = '\0';
+            sys_dir_make( buf );
+            *p = '/';
+        }
+    }
+    sys_dir_make( buf );
+}
+
+/* Spawn bin/asset_tool.exe with `args`; false if it could not run or failed. */
 static bool
-build_png_zip( const char* zip_path, const char* src_png )
+run_asset_tool( const char* args )
+{
+    char exe_dir[ 512 ];
+    sys_exe_dir( exe_dir, ( int )sizeof( exe_dir ) );
+
+    char cmd[ 1536 ];
+    snprintf( cmd, sizeof( cmd ), "\"%s\\asset_tool.exe\" %s", exe_dir, args );
+
+    sys_process_result_t res;
+    if ( !sys_process_run( cmd, NULL, &res ) || res.exit_code != 0 )
+    {
+        fprintf( stderr, "[sb_asset_image] asset_tool failed: %s\n", cmd );
+        return false;
+    }
+    return true;
+}
+
+/* "zip" mode: pack the loose PNG into a .zip under its content-relative name, so the asset is
+   served from a bundle instead of loose files.  Reads the image through sys, deflates it into
+   a heap zip, writes it out.  Returns false (and packs nothing) if the source is missing. */
+static bool
+build_png_zip( const char* zip_path, const char* src_png, const char* entry )
 {
     sys_file_data_t fd = sys_file_read_entire( src_png );
     if ( !fd.ok )
         return false;
 
     pack_zip_writer_t* zw = pack_zip_writer_begin();
-    bool ok = zw && pack_zip_writer_add( zw, src_png, fd.data, fd.size, PACK_LEVEL_DEFAULT );
+    bool ok = zw && pack_zip_writer_add( zw, entry, fd.data, fd.size, PACK_LEVEL_DEFAULT );
 
     void* buf = NULL;
     u32   sz  = 0;
@@ -71,9 +121,11 @@ main( int argc, char** argv )
 {
     /* Optional numeric arg = auto-quit after N rendered frames (headless smoke test); 0/absent
        runs interactively until ESC or the close button.  Backing-store arg (pick one):
-         "zip"  -- pack the source PNG into a bundle in-process and serve from it (Phase 5).
-         "tex"  -- load the cooked .tex twin from loose files, zero decode (Cook-C).
-         "pack" -- load the cooked .tex from an asset_tool-produced .zip pack (Cook-D). */
+         "tex"  -- cook the PNG to a .tex in the cooked mirror (build/content) and mount that
+                   above content/: the image type prefers .tex, so it loads with zero decode.
+         "zip"  -- pack the source PNG into a bundle in-process and serve from it.
+         "pack" -- asset_tool tree-cooks content/ and bundles it; serve the .tex from the pack
+                   with loose content/ mounted above it (which only has the .png). */
     int         max_frames = 0;
     bool        use_zip    = false;
     bool        use_tex    = false;
@@ -89,13 +141,6 @@ main( int argc, char** argv )
         else
             max_frames = atoi( argv[ i ] );
     }
-
-    /* "tex" mode acquires the cooked .tex twin instead of the source PNG: the loader uploads its
-       pre-decoded RGBA8 payload with zero decode (Cook-C).  Cook it first with
-       `asset_tool cook gui_issue.png gui_issue.tex`.
-       "pack" mode (Cook-D) also acquires the .tex, but from an asset_tool-produced .zip bundle
-       (see the mount block below). */
-    const char* image_vpath = ( use_tex || use_pack ) ? IMAGE_TEX : IMAGE_VPATH;
 
     /* ---- Modules ---- */
     mod_system_init();
@@ -154,49 +199,61 @@ main( int argc, char** argv )
         return 1;
     }
 
-    /* ---- Acquire the image asset ---- */
-    /* Loose mode: serve the working directory verbatim (vpath == real path under CWD).
-       Zip mode (Phase 5): pack the PNG into a bundle and mount that -- the asset service reads
-       through core/fs, so acquire() is identical; only the backing store changes. */
+    /* ---- Mount the tree(s) the image will be found in ---- */
+    /* Every mode serves the same name; only the mounts differ.  The asset service never learns
+       which: it asks fs for the name plus each extension the image type accepts. */
 
-    if ( use_zip )
+    bool mounted = true;
+    if ( use_tex )
     {
-        if ( !build_png_zip( PACK_ZIP, IMAGE_VPATH ) )
-        {
-            fprintf( stderr, "[sb_asset_image] could not build %s from '%s' -- run from the repo root\n",
-                     PACK_ZIP, IMAGE_VPATH );
-            draw()->shutdown();
-            rhi()->context_destroy( ctx );
-            app()->window_close( win );
-            rhi()->shutdown();
-            mod_system_exit();
-            return 1;
-        }
+        dir_make_deep( "build/content/sandbox/asset" );
+        mounted = run_asset_tool( "cook " IMAGE_SRC " " COOKED_TEX );
+        fs()->mount( "", COOKED_DIR, 10 );     // cooked mirror above ...
+        fs()->mount( "", CONTENT_DIR, 0 );     // ... the source tree
+        printf( "[sb_asset_image] cooked mirror %s over %s/\n", COOKED_DIR, CONTENT_DIR );
+    }
+    else if ( use_zip )
+    {
+        dir_make_deep( "build" );
+        mounted = build_png_zip( PACK_ZIP, IMAGE_SRC, IMAGE_NAME ".png" );
         fs()->mount( "", PACK_ZIP, 0 );
         printf( "[sb_asset_image] serving from bundle %s\n", PACK_ZIP );
     }
     else if ( use_pack )
     {
-        /* Cook-D: serve the cooked .tex out of an asset_tool-produced pack.  The bundle mounts at
-           priority 0; CWD mounts loose at priority 10, so a loose file of the same vpath would
-           shadow the bundled one (loose-over-bundle, proven generically in fs_zip_test).  Build
-           the pack first:  asset_tool -src <srctree> -dst cooked  &&  asset_tool pack cooked <zip>
-           where <srctree> holds gui_issue.png, so the pack carries gui_issue.tex. */
-        fs()->mount( "", PACK_COOK, 0 );    // bundle (low priority)
-        fs()->mount( "", "", 10 );          // loose CWD (high priority) -- would override
-        printf( "[sb_asset_image] serving from asset_tool pack %s (loose CWD overrides)\n", PACK_COOK );
+        dir_make_deep( COOK_TREE );
+        mounted = run_asset_tool( "-src " CONTENT_DIR " -dst " COOK_TREE )
+               && run_asset_tool( "pack " COOK_TREE " " PACK_COOK );
+        fs()->mount( "", PACK_COOK, 0 );       // bundle holds the .tex ...
+        fs()->mount( "", CONTENT_DIR, 10 );    // ... loose content above it holds only the .png
+        printf( "[sb_asset_image] serving from asset_tool pack %s (loose %s/ mounted above)\n",
+                PACK_COOK, CONTENT_DIR );
     }
     else
     {
-        fs()->mount( "", "", 0 );
+        fs()->mount( "", CONTENT_DIR, 0 );
     }
 
-    asset_id_t     id  = asset()->acquire( image_vpath );
+    if ( !mounted )
+    {
+        fprintf( stderr, "[sb_asset_image] could not prepare the backing store -- run from the repo root\n" );
+        draw()->shutdown();
+        rhi()->context_destroy( ctx );
+        app()->window_close( win );
+        rhi()->shutdown();
+        mod_system_exit();
+        return 1;
+    }
+
+    /* ---- Acquire the image asset by name ---- */
+    /* The literal is spelled at the marker: RID() takes no macro or variable, so the build can
+       harvest it (IMAGE_NAME above is only for messages and the zip entry). */
+    aid_t          id  = asset()->acquire( RID( "sandbox/asset/image" ), ASSET_TYPE_IMAGE );
     asset_image_t* img = ( asset_image_t* )asset()->get( id );
     if ( !img )
     {
         fprintf( stderr, "[sb_asset_image] could not load '%s' (state=%d) -- run from the repo root\n",
-                 image_vpath, asset()->state( id ) );
+                 IMAGE_NAME, asset()->state( id ) );
         asset()->release( id );
         draw()->shutdown();
         rhi()->context_destroy( ctx );
@@ -205,9 +262,8 @@ main( int argc, char** argv )
         mod_system_exit();
         return 1;
     }
-    printf( "[sb_asset_image] loaded '%s' (%s) -> tex_index=%u  %ux%u  (asset id {%u,%u})\n",
-            image_vpath, ( use_tex || use_pack ) ? "cooked .tex, zero decode" : "source decode",
-            img->tex_index, img->width, img->height, id.index, id.generation );
+    printf( "[sb_asset_image] loaded '%s' -> tex_index=%u  %ux%u  (asset id {%u,%u})\n",
+            asset()->name( id ), img->tex_index, img->width, img->height, id.index, id.generation );
     printf( "[sb_asset_image] running -- edit/re-save the image to hot-reload; ESC to quit\n" );
     fflush( stdout );
 
@@ -230,10 +286,10 @@ main( int argc, char** argv )
         if ( app()->window_is_minimized( win ) )
             continue;
 
-        /* Hot-reload poll: if the source file changed on disk, refresh() re-runs the loader in
-           place behind the same id -- but that frees the old resource, so re-get the pointer.
-           (A transient bad/incomplete save can leave the asset FAILED; img goes NULL and we
-           just skip drawing until the next good save.) */
+        /* Hot-reload poll: if the file that loaded changed on disk, refresh() re-runs the
+           loader in place behind the same id -- but that frees the old resource, so re-get the
+           pointer.  (A transient bad/incomplete save can leave the asset FAILED; img goes NULL
+           and we just skip drawing until the next good save.) */
         if ( asset()->refresh() > 0 )
         {
             img = ( asset_image_t* )asset()->get( id );

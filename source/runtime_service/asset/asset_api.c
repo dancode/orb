@@ -26,6 +26,7 @@ const asset_api_t g_asset_api_struct =
     .state         = asset_state,
     .valid         = asset_valid,
     .refcount      = asset_refcount,
+    .name          = asset_name,
     .count         = asset_count,
 };
 
@@ -39,7 +40,7 @@ asset_mod_init( void* raw_state, get_api_fn get_api )
     UNUSED( raw_state );
 
     /* Cache siblings; the deps "fs"/"core"/"rhi" guarantee all are initialized first.
-       fs = read bytes by vpath; core = sid + alloc (registry); rhi = texture create/upload/
+       fs = read bytes by vpath; core = logging + sid interner; rhi = texture create/upload/
        bindless (image loader). */
     if ( !MOD_FETCH_FS )
         return false;
@@ -50,18 +51,23 @@ asset_mod_init( void* raw_state, get_api_fn get_api )
 
     asset_system_init();
 
-    /* Built-in image type: acquire()ing any of these extensions decodes via stb_image and
-       uploads a bindless texture (loaders/asset_image.c).  Registered here rather than by the
-       caller so images "just work"; game/editor DLLs still add their own kinds via the API. */
+    /* Built-in types, registered in the order that fixes their ids (ASSET_TYPE_IMAGE,
+       ASSET_TYPE_SHADER) so callers name them without a lookup.  Registered here rather than
+       by the caller so images and shaders "just work"; game/editor DLLs still add their own
+       kinds via the API. */
     static const char* const image_exts[] = ASSET_IMAGE_EXTS;
-    asset_type_register( "image", image_exts, ( u32 )( sizeof( image_exts ) / sizeof( image_exts[ 0 ] ) ),
-                         asset_image_load, asset_image_unload, NULL );
+    u16 image = asset_type_register( "image", image_exts, ( u32 )( sizeof( image_exts ) / sizeof( image_exts[ 0 ] ) ),
+                                     asset_image_load, asset_image_unload, NULL );
 
-    /* Built-in shader type: a cooked .oshd parses through the RHI's container loader
-       (loaders/asset_shader.c); get() returns asset_shader_t with the handle + layout hash. */
     static const char* const shader_exts[] = ASSET_SHADER_EXTS;
-    asset_type_register( "shader", shader_exts, ( u32 )( sizeof( shader_exts ) / sizeof( shader_exts[ 0 ] ) ),
-                         asset_shader_load, asset_shader_unload, NULL );
+    u16 shader = asset_type_register( "shader", shader_exts, ( u32 )( sizeof( shader_exts ) / sizeof( shader_exts[ 0 ] ) ),
+                                      asset_shader_load, asset_shader_unload, NULL );
+
+    if ( image != ASSET_TYPE_IMAGE || shader != ASSET_TYPE_SHADER )
+    {
+        LOG_ERROR( "asset: built-in type ids drifted (image %u, shader %u)", image, shader );
+        return false;
+    }
     return true;
 }
 

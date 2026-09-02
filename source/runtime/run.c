@@ -35,7 +35,6 @@
 /* static modules always used by the runtime */
 #include "engine/sys/sys_host.h"        // system: auto-wired on every DLL load
 #include "engine/ref/ref_host.h"        // reflection: auto-wired on every DLL load
-#include "engine/res/res_host.h"        // resource catalogue: tables auto-registered on every load
 #include "engine/prof/prof_host.h"      // profiler: leaf capture kernel, always present
 #include "engine/pack/pack_host.h"      // compression: leaf, pure memory transforms
 #include "engine/fs/fs_host.h"          // virtual filesystem: leaf on sys+pack, mount + read bytes

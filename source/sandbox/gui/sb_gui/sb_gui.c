@@ -22,7 +22,7 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
-#include "engine/res/res_host.h"
+#include "engine/res/res.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
@@ -215,14 +215,11 @@ main( int argc, char** argv )
     UNUSED( argc );
     UNUSED( argv );
 
-    /* Load modules.  res is wired before any load so this exe's generated name table
-       (obj/sb_gui/sb_gui_res_table.c, carried by res's descriptor) registers at init. */
+    /* Load modules. */
 
     mod_system_init();
-    res_wire_mod_callbacks();
     mod_static( sys );
     mod_static( ref );
-    mod_static( res );
     mod_static( app );
     mod_static( core );
     mod_static( rhi );
@@ -243,17 +240,15 @@ main( int argc, char** argv )
     core()->log_set_min_level( LOG_LEVEL_INFO );
     core_log_fn( LOG_LEVEL_DEBUG, "sb_gui", "debug log: modules loaded successfully" );
 
-    /* The font this demo boots with, named through the resource catalogue.  gui still takes
-       the family enum + size below; naming the resource here is what puts CascadiaMono/16 --
-       and none of the other three families -- into this executable's generated table, which
-       is the set a package for sb_gui must ship.  The build harvested the literal; res
-       registered it at mod_init_all. */
+    /* The font this demo boots with, named through the RID() marker.  gui still takes the
+       family enum + size below; marking the name here is what puts cascadiamono/16 -- and
+       none of the other three families -- into this executable's resource manifest
+       (build/obj/sb_gui/sb_gui_res_manifest.txt), which is the set a package for sb_gui must
+       ship.  The build resolved the literal against content/ or failed. */
     {
-        rid_t font_rid = RID( "font/CascadiaMono/16" );
-        if ( res_exists( font_rid ) )
-            core_log_fn( LOG_LEVEL_INFO, "sb_gui", "resource table registered: font/CascadiaMono/16 resolves" );
-        else
-            core_log_fn( LOG_LEVEL_ERROR, "sb_gui", "resource table missing: font/CascadiaMono/16 does not resolve" );
+        char msg[ 128 ];
+        snprintf( msg, sizeof( msg ), "boot font resource: %s", RID( "font/cascadiamono/16" ) );
+        core_log_fn( LOG_LEVEL_INFO, "sb_gui", msg );
     }
 
     /* ------------------------------------------------------------------------------ */

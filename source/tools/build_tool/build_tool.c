@@ -261,7 +261,7 @@ main( int argc, char** argv )
     bool  should_bootstrap    = false;
     bool  should_create       = false;
     bool  should_doctor       = false;
-    bool  should_res_table    = false;
+    bool  should_res_manifest = false;
     bool  saw_quiet           = false;
     bool  saw_verbose         = false;
     char* create_name         = NULL;
@@ -311,7 +311,7 @@ main( int argc, char** argv )
         if ( str_icmp( argv[ i ], "-shipping"         ) == 0 ) { ctx.config = CONFIG_RELEASE; ctx.is_shipping = true; }
         if ( str_icmp( argv[ i ], "-clang"            ) == 0 ) { ctx.compiler = COMPILE_CLANG; }
         if ( str_icmp( argv[ i ], "-compile-only"     ) == 0 ) { ctx.compile_only = true; }
-        if ( str_icmp( argv[ i ], "-res-table"        ) == 0 ) { should_res_table = true; }
+        if ( str_icmp( argv[ i ], "-res-manifest"     ) == 0 ) { should_res_manifest = true; }
         if ( str_icmp( argv[ i ], "-force"            ) == 0 ) { ctx.force_rebuild = true; }
         if ( str_icmp( argv[ i ], "-no-deps"          ) == 0 ) { ctx.skip_deps = true; }
         
@@ -549,18 +549,18 @@ main( int argc, char** argv )
         }
     }
 
-    // --- Command: RES-TABLE (MSBuild pre-build event) ---
+    // --- Command: RES-MANIFEST (MSBuild pre-build event) ---
     //
-    // Generates the target's resource table only, building res_tool first if needed. The
-    // native MSBuild projects compile sources themselves, so this is how their pre-build
-    // event gets obj/<target>/<target>_res_table.c written before cl.exe runs.
+    // Generates the target's resource manifest only, building res_tool first if needed. The
+    // native MSBuild projects build without build_target, so this is how their pre-build
+    // event still resolves every marked name and writes obj/<target>/<target>_res_manifest.txt.
 
-    if ( should_res_table )
+    if ( should_res_manifest )
     {
-        if ( !target ) { printf( ORB_INDENT "[orb error] -res-table requires -target\n" ); return 1; }
-        if ( !target_wants_res_table( target ) )
+        if ( !target ) { printf( ORB_INDENT "[orb error] -res-manifest requires -target\n" ); return 1; }
+        if ( !target_wants_res_manifest( target ) )
         {
-            printf( ORB_INDENT "[orb error] '%s' carries no resource table (not a dynamic module or an exe linking res)\n",
+            printf( ORB_INDENT "[orb error] '%s' carries no resource manifest (not an executable or a dynamic module)\n",
                     target->name );
             return 1;
         }
@@ -572,7 +572,7 @@ main( int argc, char** argv )
         snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
         ensure_dir( g_build_dir );
         ensure_dir( obj_dir );
-        if ( !build_gen_res_table( target, obj_dir, res_tool ) )
+        if ( !build_gen_res_manifest( target, obj_dir, res_tool ) )
         {
             printf( ORB_BANNER "%s[ %s: FAILED ]%s\n", g_clr_red, target_upper, g_clr_reset );
             return 1;

@@ -60,7 +60,7 @@ cmd_print_help( void )
     printf( ORB_INDENT "  %-28s%s\n", "-force",                 "Skip the up-to-date check; always compile + link." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-deps",               "Build only the named target; skip dep recursion. (VS -managed)" );
     printf( ORB_INDENT "  %-28s%s\n", "-compile-only",          "Compile all unity units for -target; no link. (VS Ctrl+F7)" );
-    printf( ORB_INDENT "  %-28s%s\n", "-res-table",             "Generate only -target's resource table (obj/<t>/<t>_res_table.c)." );
+    printf( ORB_INDENT "  %-28s%s\n", "-res-manifest",          "Generate only -target's resource manifest (obj/<t>/<t>_res_manifest.txt)." );
     printf( ORB_INDENT "  %-28s%s\n", "-file <path>",           "Compile one file with target's full flag set; no link." );
     printf( ORB_INDENT "  %-28s%s\n", "-j N",                   "Worker thread count (default: auto-detect from CPU count)." );
     printf( "\n" );
@@ -141,7 +141,7 @@ deps_visit( deps_topo_t* topo, target_info_t* t )
         target_info_t* rt = find_reflect_tool();
         if ( rt && !deps_visit( topo, rt ) ) return false;
     }
-    if ( target_wants_res_table( t ) )
+    if ( target_wants_res_manifest( t ) )
     {
         target_info_t* rt = find_res_tool();
         if ( rt && !deps_visit( topo, rt ) ) return false;
@@ -170,7 +170,7 @@ deps_collect( const target_info_t* t, target_info_t* out_deps[], const char* out
     }
     target_info_t* implicit[ 2 ] = {
         t->has_reflect              ? find_reflect_tool() : NULL,
-        target_wants_res_table( t ) ? find_res_tool()     : NULL,
+        target_wants_res_manifest( t ) ? find_res_tool()     : NULL,
     };
     for ( int k = 0; k < 2; ++k )
     {

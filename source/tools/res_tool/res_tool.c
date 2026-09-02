@@ -3,51 +3,49 @@
     res_tool.c - Resource reference harvester + name resolver (build-time)
 
     Usage:
-        res_tool -list <units.txt> -out <table.c> -name <symbol>
+        res_tool -list <units.txt> -out <manifest.txt> [-name <label>]
                  [-inc <dir>]... [-root <dir>]... [-deps <file>] [-silent]
 
     Reads a list of translation units (one path per line; '#' starts a comment), follows
     every #include "..." reachable from them -- unity fragments and headers alike -- and
     collects the names spelled through RID( "..." ) and RES_TREE( "..." ).  Each name is
-    then resolved against the content roots to prove it stands for exactly one file, and
-    the set is written as a C table of canonical names:
-
-        const res_table_t g_<symbol>_res_table;
-
-    which the executable or DLL compiles in and hands to the resource catalogue through its
-    module descriptor (MOD_RES_TABLE).  build_tool invokes this once per image, over the
-    image's own units plus those of every statically linked dependency; see
-    build_gen_res_table in build_tool_09_exec.c.
+    then resolved against the content roots to prove it stands for exactly one file, and the
+    set is written as a plain-text manifest, one name per line (see write_manifest for the
+    layout) -- the complete list of content the image can reach, for the packager.  Nothing
+    is generated for the compiler: RID() evaluates to its literal, and the program loads by
+    name.  build_tool invokes this once per image, over the image's own units plus those of
+    every statically linked dependency; see build_gen_res_manifest in build_tool_09_exec.c.
 
     RESOLUTION.  A name is the path of its source file under a content root, minus the
-    extension: "ui/icon/save" is <root>/ui/icon/save.<ext> for exactly one <ext>.  Content
-    file and directory names are canonical lowercase, so the name IS the path and the runtime
-    opens it as-is; a file whose on-disk spelling is not canonical is an error here, found by
+    extension: "ui/icon/save" is <root>/ui/icon/save.<ext> for exactly one <ext>.  Names and
+    content file and directory names are canonical lowercase with '/' separators, so the name
+    IS the path and the runtime opens it as-is.  A literal that is not canonical is an error
+    at its site; a file whose on-disk spelling is not canonical is an error too, found by
     matching each segment case-insensitively so the report can quote the spelling.  Nothing
     about the extension is recorded: a loader asks fs for the name plus the extensions it
     accepts.  Roots are searched in the order given and the first that holds the name wins,
     so a project's content/ shadows the engine's name by name, whatever the two extensions
     are.
 
-    A RES_TREE prefix is recorded with a trailing slash, exactly as the macro hashes it, so
-    "ui/icon/" (the subtree) and "ui/icon" (a leaf) are two entries with two ids.  The
-    subtree names a directory, and every file beneath it in any root becomes an entry of its
-    own, so a child composed at runtime (res_hash_child) is a known name.  Two roots holding
-    the same subtree merge, first root winning per name.
+    A RES_TREE prefix is recorded with a trailing slash, exactly as the macro spells it, so
+    "ui/icon/" (the subtree) and "ui/icon" (a leaf) are two entries.  The subtree names a
+    directory, and every file beneath it in any root becomes an entry of its own, so a child
+    composed at runtime from the prefix is a listed name.  Two roots holding the same subtree
+    merge, first root winning per name.
 
     Errors, each reported at the RID / RES_TREE site before the tool exits non-zero so one
     run shows the whole list: a name with no file under any root; a name matching two files
     in one directory (save.png beside save.jpg); a leaf name that is only a directory (use
-    RES_TREE); a subtree with no directory; a file or directory not spelled in lowercase; a
-    malformed name (empty segment, leading or trailing separator, whitespace, non-ASCII); a
-    RID() whose argument is not a string literal; and two names hashing to one rid_t (the
-    catalogue's uniqueness guarantee is proven here, with the same res_hash_name the runtime
-    uses).
+    RES_TREE); a subtree with no directory; a literal, file or directory not spelled in
+    canonical lowercase; a malformed name (empty segment, leading or trailing separator,
+    whitespace, non-ASCII); a RID() whose argument is not a string literal; and two names
+    hashing to one rid_t (res_hash_name is a dedup key for whoever indexes by name, so the
+    marked set is proven collision-free here).
 
     -deps writes every directory listed, one path per line, so build_tool can tell when a
-    content change (a file added, renamed, or removed) has made the image's table stale even
-    though no source changed.  A root that did not exist is written with a leading '!': the
-    table is stale the moment it appears.
+    content change (a file added, renamed, or removed) has made the image's manifest stale
+    even though no source changed.  A root that did not exist is written with a leading '!':
+    the manifest is stale the moment it appears.
 
     Include resolution tries the including file's directory first and then each -inc root,
     in order -- the same search the compiler performs for a quoted include.  Angle-bracket
@@ -56,8 +54,7 @@
     arms of a platform #ifdef are scanned; an over-inclusion there is harmless.
 
     Standalone C11: reads files with stdio and lists directories with the OS API, links
-    nothing.  It includes engine/res/res.h for the hash and the canonical fold only, so the
-    ids it computes are the runtime's.
+    nothing.  It includes engine/res/res.h for the hash and the canonical-form rules only.
 
 ==============================================================================================*/
 
@@ -100,18 +97,18 @@ typedef struct rt_file_s
 /*==============================================================================================
     Harvested entry
 
-    One per canonical name.  An explicit entry comes from a RID / RES_TREE site; an expanded
-    entry is a file found beneath a RES_TREE directory and points back at that site through
-    `via`.  `path` is filled by resolution: the source file (a subtree: its directory) as
-    spelled on disk, relative to its root, for the table comment and the spelling report.
+    One per name.  An explicit entry comes from a RID / RES_TREE site; an expanded entry is a
+    file found beneath a RES_TREE directory and points back at that site through `via`.
+    `path` is filled by resolution: the source file (a subtree: its directory) as spelled on
+    disk, relative to its root, for the manifest's source column and the spelling report.
 ==============================================================================================*/
 
 typedef struct rt_entry_s
 {
-    char*    name;      // canonical name (res_canon_char applied); trailing '/' = subtree
-    char*    spelled;   // name as written at the first site that mentioned it
+    char*    name;      // the name, canonical; trailing '/' = subtree
+    char*    spelled;   // name as written at the site (RES_TREE: without the slash)
     char*    path;      // source file or directory relative to its root, on-disk spelling
-    rid_t    id;        // res_hash_name( name )
+    rid_t    id;        // res_hash_name( name ), for the collision check
     int      file;      // index into g_files of the site
     int      line;      // line of the site
     int      via;       // index of the subtree entry this was expanded from, or -1
@@ -161,7 +158,7 @@ static int         g_inc_dir_count;
 static const char* g_roots[ RT_MAX_ROOTS ];
 static int         g_root_count;
 
-static char**      g_deps;              // paths the table depends on, for -deps
+static char**      g_deps;              // paths the manifest depends on, for -deps
 static int         g_dep_count;
 static int         g_dep_cap;
 
@@ -432,7 +429,7 @@ file_read( const char* path, size_t* out_size )
     Each directory is read from the OS once and cached, keyed like a scanned file.  Entries
     whose name starts with '.' are not content ("." and ".." included, along with .gitkeep
     and tool caches).  Every directory listed -- present or not -- is a dependency of the
-    table, because a change in what it holds can change the table.
+    manifest, because a change in what it holds can change the manifest.
 ==============================================================================================*/
 
 static void
@@ -590,8 +587,9 @@ include_add( const char* from_path, const char* inc )
     Names
 ==============================================================================================*/
 
-/* Why a name is malformed, or NULL when it is acceptable. max is the longest canonical form
-   allowed, one less for a subtree since the slash the macro appends counts too. */
+/* Why a name is malformed, or NULL when it is acceptable. max is the longest form allowed,
+   one less for a subtree since the slash the macro appends counts too.  Case and separator
+   direction are not folded: a literal is spelled canonically or it is an error. */
 
 static const char*
 name_check( const char* s, size_t max )
@@ -608,10 +606,13 @@ name_check( const char* s, size_t max )
             return "name contains whitespace, a control character, or a non-ASCII byte";
         if ( c == '"' )
             return "name contains a double quote";
-        bool sep = ( c == '/' || c == '\\' );
-        if ( sep && ( i == 0 || i + 1 == n ) )
+        if ( c == '\\' )
+            return "name uses a backslash -- separators are '/'";
+        if ( c >= 'A' && c <= 'Z' )
+            return "name is not lowercase -- names and content file names are canonical lowercase";
+        if ( c == '/' && ( i == 0 || i + 1 == n ) )
             return "name has a leading or trailing separator";
-        if ( sep && ( s[ i + 1 ] == '/' || s[ i + 1 ] == '\\' ) )
+        if ( c == '/' && s[ i + 1 ] == '/' )
             return "name has an empty segment (doubled separator)";
     }
     return NULL;
@@ -691,24 +692,13 @@ entry_add( const char* spelled, bool tree, int file, int line )
         return;
     }
 
-    /* Canonical form, with the subtree slash RES_TREE() appends in the macro. */
+    /* The name as the macro spells it: the literal, plus the subtree slash RES_TREE() appends. */
     char canon[ RES_NAME_MAX + 1 ];
     size_t n = strlen( spelled );
-    for ( size_t i = 0; i < n; ++i )
-        canon[ i ] = res_canon_char( spelled[ i ] );
+    memcpy( canon, spelled, n );
     if ( tree )
         canon[ n++ ] = '/';
     canon[ n ] = 0;
-
-    /* A subtree id doubles as the hash state res_hash_child continues from, and the zero
-       remap in res_hash_name breaks that for exactly one state.  Refuse it here so every
-       declared subtree composes correctly at runtime. */
-    if ( tree && res_hash_step( RES_HASH_BASIS, canon ) == 0 )
-    {
-        rt_error( g_files[ file ].path, line,
-                  "RES_TREE( \"%s\" ): subtree hashes to the reserved state 0; rename it", spelled );
-        return;
-    }
 
     if ( entry_find( canon, res_hash_name( canon ) ) >= 0 )
         return;
@@ -1360,8 +1350,11 @@ check_collisions( void )
 /*==============================================================================================
     Output
 
-    Entries are written in canonical-name order, which makes every subtree a contiguous run
-    of the table and keeps the generated file byte-stable across runs.
+    The manifest: '#' comment lines, then one entry per line in name order, which makes every
+    subtree a contiguous run and keeps the file byte-stable across runs.  Each entry line is
+    whitespace-separated columns -- the name, the source file it resolved to under its content
+    root (a subtree: its directory), and the site -- so a reader that wants only the names
+    takes the first token of every non-comment line.  Names never contain whitespace.
 ==============================================================================================*/
 
 static int
@@ -1371,7 +1364,7 @@ entry_cmp_name( const void* a, const void* b )
 }
 
 static bool
-write_table( const char* out_path, const char* symbol )
+write_manifest( const char* out_path, const char* label )
 {
     FILE* f = fopen( out_path, "wb" );
     if ( !f )
@@ -1384,28 +1377,25 @@ write_table( const char* out_path, const char* symbol )
     for ( int i = 0; i < g_entry_count; ++i )
         expanded += ( g_entries[ i ].via >= 0 );
 
-    fprintf( f, "/*  %s_res_table.c -- generated by res_tool; do not edit.\n\n", symbol );
-    fprintf( f, "    Every resource name this image references through RID() or RES_TREE(),\n" );
-    fprintf( f, "    harvested from %d source file(s); %d found beneath declared subtrees.  A\n", g_file_count, expanded );
-    fprintf( f, "    trailing slash marks a subtree.  Each comment gives the id, the source file\n" );
-    fprintf( f, "    the name resolved to under its content root, and the site.  Registered with\n" );
-    fprintf( f, "    the resource catalogue when the image's module descriptor comes online\n" );
-    fprintf( f, "    (MOD_RES_TABLE).  */\n\n" );
-    fprintf( f, "#include \"engine/res/res.h\"\n\n" );
+    fprintf( f, "# %s -- resource manifest, generated by res_tool; do not edit.\n", label );
+    fprintf( f, "# Every resource name this image references through RID() or RES_TREE(), harvested\n" );
+    fprintf( f, "# from %d source file(s); %d found beneath declared subtrees.  A trailing slash marks\n",
+             g_file_count, expanded );
+    fprintf( f, "# a subtree.  Columns: name, source file under its content root, site.\n" );
+    fprintf( f, "# %d name(s)\n", g_entry_count );
 
     if ( g_entry_count == 0 )
     {
-        fprintf( f, "const res_table_t g_%s_res_table = { .entries = NULL, .count = 0 };\n", symbol );
         fclose( f );
         return true;
     }
 
-    /* The site comments are written from a sorted copy; `via` still indexes g_entries. */
+    /* The site columns are written from a sorted copy; `via` still indexes g_entries. */
     rt_entry_t* sorted = ( rt_entry_t* )rt_xrealloc( NULL, ( size_t )g_entry_count * sizeof( rt_entry_t ) );
     memcpy( sorted, g_entries, ( size_t )g_entry_count * sizeof( rt_entry_t ) );
     qsort( sorted, ( size_t )g_entry_count, sizeof( rt_entry_t ), entry_cmp_name );
 
-    /* Columns line up so the table reads as a list. */
+    /* Columns line up so the manifest reads as a table. */
     int name_w = 0, path_w = 0;
     for ( int i = 0; i < g_entry_count; ++i )
     {
@@ -1415,24 +1405,17 @@ write_table( const char* out_path, const char* symbol )
         if ( w > path_w ) path_w = w;
     }
 
-    fprintf( f, "static const res_entry_t s_%s_res_entries[] = {\n", symbol );
     for ( int i = 0; i < g_entry_count; ++i )
     {
         const rt_entry_t* e    = &sorted[ i ];
         const rt_entry_t* site = entry_site( e );
         int               np   = name_w - ( int )strlen( e->name );
         int               pp   = path_w - ( int )strlen( e->path );
-        fprintf( f, "    { \"%s\" },%*s/* 0x%08x  %s%*s  ", e->name, np + 4, "", ( unsigned )e->id,
-                 e->path, pp, "" );
+        fprintf( f, "%s%*s  %s%*s  ", e->name, np, "", e->path, pp, "" );
         if ( e->via >= 0 )
             fprintf( f, "in %s  ", g_entries[ e->via ].name );
-        fprintf( f, "%s:%d */\n", path_basename( g_files[ site->file ].path ), site->line );
+        fprintf( f, "%s:%d\n", path_basename( g_files[ site->file ].path ), site->line );
     }
-    fprintf( f, "};\n\n" );
-    fprintf( f, "const res_table_t g_%s_res_table = {\n", symbol );
-    fprintf( f, "    .entries = s_%s_res_entries,\n", symbol );
-    fprintf( f, "    .count   = %d,\n", g_entry_count );
-    fprintf( f, "};\n" );
     fclose( f );
     free( sorted );
     return true;
@@ -1460,13 +1443,13 @@ write_deps( const char* deps_path )
 static int
 usage( void )
 {
-    printf( "usage: " RT_TOOL " -list <units.txt> -out <table.c> -name <symbol> [-inc <dir>]... [-root <dir>]... [-deps <file>] [-silent]\n" );
+    printf( "usage: " RT_TOOL " -list <units.txt> -out <manifest.txt> [-name <label>] [-inc <dir>]... [-root <dir>]... [-deps <file>] [-silent]\n" );
     printf( "  -list   file naming one translation unit per line; '#' starts a comment\n" );
-    printf( "  -out    generated C file defining g_<symbol>_res_table\n" );
-    printf( "  -name   symbol base name (the target name, or 'host' for an executable)\n" );
+    printf( "  -out    manifest to write: one resolved name per line, '#' comments\n" );
+    printf( "  -name   label for the manifest header and messages (the target name)\n" );
     printf( "  -inc    quoted-include search root; repeatable, searched in order\n" );
     printf( "  -root   content root; repeatable, the first that holds a name wins\n" );
-    printf( "  -deps   file to write the content directories the table depends on\n" );
+    printf( "  -deps   file to write the content directories the manifest depends on\n" );
     printf( "  -silent suppress the summary line\n" );
     return 0;
 }
@@ -1517,12 +1500,14 @@ main( int argc, char** argv )
         }
     }
 
-    if ( !list_path || !out_path || !symbol )
+    if ( !list_path || !out_path )
     {
-        fprintf( stderr, "[" RT_TOOL "] -list, -out and -name are required\n" );
+        fprintf( stderr, "[" RT_TOOL "] -list and -out are required\n" );
         usage();
         return 1;
     }
+    if ( !symbol )
+        symbol = path_basename( out_path );
 
     /* Seed the queue from the list file. */
     {
@@ -1563,7 +1548,7 @@ main( int argc, char** argv )
         lex_file( i );
 
     /* Every root is a dependency even when no name reaches into it: a root that appears
-       later must make the table stale. */
+       later must make the manifest stale. */
     for ( int r = 0; r < g_root_count; ++r )
         dir_list( g_roots[ r ] );
 
@@ -1572,12 +1557,12 @@ main( int argc, char** argv )
 
     if ( g_error_count )
     {
-        fprintf( stderr, "[" RT_TOOL "] %s: %d error(s); %s not written\n", symbol, g_error_count, out_path );
+        fprintf( stderr, "[" RT_TOOL "] %s: %d error(s); manifest %s not written\n", symbol, g_error_count, out_path );
         remove( out_path );
         return 1;
     }
 
-    if ( !write_table( out_path, symbol ) )
+    if ( !write_manifest( out_path, symbol ) )
         return 1;
     if ( deps_path && !write_deps( deps_path ) )
         return 1;

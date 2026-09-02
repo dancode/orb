@@ -13,8 +13,8 @@
       4. Directory creation     -- ensure every write destination exists.
       5. Locked-file management -- rename any in-use .exe aside before relinking.
       6. Reflection codegen     -- invoke reflect_tool if has_reflect is set.
-      6.5 Resource table        -- invoke res_tool over the image's unit closure (exes linking
-                                   res, and every dynamic module); emits <name>_res_table.c.
+      6.5 Resource manifest     -- invoke res_tool over the image's unit closure (every exe
+                                   and dynamic module); writes <name>_res_manifest.txt.
       7. Compile + link         -- call 06_compile and 07_link; restore .exe on failure.
       8. Config+mode stamp      -- touch _<config>_<mode>.stamp; delete the other 3 combos.
 
@@ -224,23 +224,24 @@ build_cook_shaders( build_context_t* ctx, target_info_t* target )
 }
 
 /*==============================================================================================
-    --- Resource Table ---
+    --- Resource Manifest ---
 
     The image's name set is the union of the RID() / RES_TREE() tokens in its own units and
     in every library it links statically, so the scan input is the unit list of the target's
     whole link closure.  build_tool owns the graph and writes that list to
     <obj_dir>/_res_units.txt; res_tool owns the scan (it follows #include from each unit,
-    so unity fragments and headers are covered) and writes <obj_dir>/<name>_res_table.c.
+    so unity fragments and headers are covered), resolves every name against the content
+    roots, and writes <obj_dir>/<name>_res_manifest.txt.  Nothing is compiled from it.
 
     Monolithic-only deps are deliberately NOT folded in: a module linked as a static lib
-    under -monolithic still registers its own g_<name>_res_table through its own descriptor,
-    exactly as its DLL form does, so the exe's table must not absorb it.
+    under -monolithic still gets its own manifest, exactly as its DLL form does, so the exe's
+    manifest must not absorb it.
 
     Runs only when the target is being rebuilt (after the up-to-date check): a name added
     anywhere in the closure either changes one of this target's units or headers, or
     rebuilds a dep's .lib, and each of those already makes the target stale.  A CONTENT
     change is the one input the compiler never sees, so res_tool also writes the content
-    directories and recipes the table was computed from to <obj_dir>/_res_deps.txt, and the
+    directories the manifest was computed from to <obj_dir>/_res_deps.txt, and the
     up-to-date check replays that list (test E in build_target).
 ==============================================================================================*/
 
@@ -271,14 +272,12 @@ res_list_units( FILE* f, const target_info_t* t, bool visited[ MAX_TARGETS ] )
 }
 
 bool
-build_gen_res_table( target_info_t* target, const char* obj_dir, const target_info_t* res_tool )
+build_gen_res_manifest( target_info_t* target, const char* obj_dir, const target_info_t* res_tool )
 {
-    const char* symbol = res_table_symbol( target );
-
     char list_path[ PATH_MAX ];
     snprintf( list_path, sizeof( list_path ), "%s" PATH_SEP "_res_units.txt", obj_dir );
     char out_path[ PATH_MAX ];
-    snprintf( out_path, sizeof( out_path ), "%s" PATH_SEP "%s_res_table.c", obj_dir, target->name );
+    snprintf( out_path, sizeof( out_path ), "%s" PATH_SEP "%s_res_manifest.txt", obj_dir, target->name );
 
     FILE* lf = fopen( list_path, "w" );
     if ( !lf )
@@ -298,7 +297,7 @@ build_gen_res_table( target_info_t* target, const char* obj_dir, const target_in
     {
         const char* lp = sched_log_path();
         FILE*       f  = lp ? fopen( lp, "a" ) : NULL;
-        fprintf( f ? f : stdout, ORB_INDENT "[orb res] %s -> g_%s_res_table\n", target->name, symbol );
+        fprintf( f ? f : stdout, ORB_INDENT "[orb res] %s -> %s_res_manifest.txt\n", target->name, target->name );
         if ( f ) fclose( f );
     }
 
@@ -315,7 +314,7 @@ build_gen_res_table( target_info_t* target, const char* obj_dir, const target_in
     // Content roots in the same order, highest priority first: this project's content/,
     // then the engine's when this is a child project -- so a project file shadows the
     // engine's under the same name. A root that does not exist yet is passed anyway:
-    // res_tool records it in the deps file and its appearance makes the table stale.
+    // res_tool records it in the deps file and its appearance makes the manifest stale.
     char roots[ PATH_MAX * 2 + 32 ];
     {
         char content_root[ PATH_MAX ];
@@ -332,10 +331,10 @@ build_gen_res_table( target_info_t* target, const char* obj_dir, const target_in
     const char* silent = ( g_out_flags & ORB_OUT_REFLECT ) ? "" : " -silent";
     char cmd[ PATH_MAX * 8 ];
     snprintf( cmd, sizeof( cmd ), "bin" PATH_SEP "%s.exe -list %s -out %s -deps %s -name %s -inc %s%s%s%s",
-              res_tool->name, list_path, out_path, deps_path, symbol, src_root, engine_inc, roots, silent );
+              res_tool->name, list_path, out_path, deps_path, target->name, src_root, engine_inc, roots, silent );
     if ( build_run_cmd( cmd ) != 0 )
     {
-        printf( ORB_INDENT "[orb error] '%s' resource table failed -- see the res_tool errors above\n",
+        printf( ORB_INDENT "[orb error] '%s' resource manifest failed -- see the res_tool errors above\n",
                 target->name );
         return false;
     }
@@ -349,7 +348,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     if ( out_elapsed_ms ) *out_elapsed_ms = 0;
 
     target_info_t* refl_tool = NULL;    // Located in step 0; reused in step 6.
-    target_info_t* res_tool  = NULL;    // Located in step 0 when the target carries a table; reused in step 6.5.
+    target_info_t* res_tool  = NULL;    // Located in step 0 when the target carries a manifest; reused in step 6.5.
 
     // --- 0. Dependency Resolution ---
 
@@ -416,12 +415,12 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
 
     // Implicit res tool dep -- same two paths as reflection: built here on the serial
     // path, pre-wired as a graph dep by the scheduler.
-    if ( target_wants_res_table( target ) )
+    if ( target_wants_res_manifest( target ) )
     {
         res_tool = find_res_tool();
         if ( !res_tool )
         {
-            printf( ORB_INDENT "[orb error] '%s' needs a resource table but no is_res_tool target is registered\n",
+            printf( ORB_INDENT "[orb error] '%s' needs a resource manifest but no is_res_tool target is registered\n",
                     target->name );
             return false;
         }
@@ -561,18 +560,19 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         // Empty file (size == 0): no headers recorded, nothing to check, stay up to date.
     }
 
-    // E. Content check. res_tool wrote every content directory it listed and every recipe
-    //    it read into <obj_dir>/_res_deps.txt. A directory's mtime moves when a file is
-    //    added, removed or renamed inside it, which is exactly the change that alters the
-    //    resource table without touching any source. A line starting with '!' is a content
-    //    root that did not exist when the table was generated: it going stale means the
-    //    root now exists.
+    // E. Content check. res_tool wrote every content directory it listed into
+    //    <obj_dir>/_res_deps.txt. A directory's mtime moves when a file is added, removed
+    //    or renamed inside it, which is exactly the change that alters the resource
+    //    manifest (or breaks a name's resolution) without touching any source. A line
+    //    starting with '!' is a content root that did not exist when the manifest was
+    //    generated: it going stale means the root now exists.
     //    Equal timestamps count as stale here, unlike tests A-D: mtimes are whole seconds,
     //    and a content edit made in the same second the previous link finished would
-    //    otherwise leave a table missing that edit until some source changed. The cost is
-    //    one extra rebuild in that second; the next link lands later and the check settles.
-    //    A newer res_tool.exe is stale too: how a table is spelled lives in the tool.
-    if ( up_to_date && target_wants_res_table( target ) )
+    //    otherwise leave a manifest missing that edit until some source changed. The cost
+    //    is one extra rebuild in that second; the next link lands later and the check
+    //    settles. A newer res_tool.exe is stale too: how a manifest is spelled lives in the
+    //    tool.
+    if ( up_to_date && target_wants_res_manifest( target ) )
     {
         char deps_path[ PATH_MAX ];
         snprintf( deps_path, sizeof( deps_path ), "%s" PATH_SEP "_res_deps.txt", obj_dir );
@@ -682,9 +682,9 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         }
     }
 
-    // --- 6.5 Resource Table ---
+    // --- 6.5 Resource Manifest ---
 
-    if ( res_tool && !build_gen_res_table( target, obj_dir, res_tool ) )
+    if ( res_tool && !build_gen_res_manifest( target, obj_dir, res_tool ) )
     {
         result = false;
         goto cleanup;

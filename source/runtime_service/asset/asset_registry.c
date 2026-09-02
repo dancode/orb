@@ -1,12 +1,18 @@
 /*==============================================================================================
 
-    runtime_service/asset/asset_registry.c -- asset registry: id table, path dedup, refcount,
-    state, and extension -> type dispatch.  Synchronous load (Phase 2); LOADING/id indirection
-    are reserved so a background loader slots in later without an API change.
+    runtime_service/asset/asset_registry.c -- asset registry: id table, name dedup, refcount,
+    state, and type dispatch.  Synchronous load; LOADING/id indirection are reserved so a
+    background loader slots in later without an API change.
+
+    A record is one loaded instance of a resource, keyed by its name (interned through core's
+    sid so equality is an integer compare), so every acquirer of one name shares it.  The
+    record does not store a path.  Its vpath is the name plus the extension of its type that
+    matched, recomposed whenever fs is asked (load, stat), which is what keeps this service
+    ignorant of where content lives -- the mounts know.
 
     Storage lives in file-scope globals (a static service is never hot-reloaded, so preserved
-    module state is unnecessary -- matches draw).  core() (fs + sid + alloc) is reached through
-    the cached gateway pointer declared in asset.c.
+    module state is unnecessary -- matches draw).  fs() and core() (logging, sid) are reached
+    through the cached gateway pointers declared in asset.c.
 
 ==============================================================================================*/
 
@@ -15,13 +21,13 @@
 #include <ctype.h>
 
 /*==============================================================================================
-    Records + type table + path index
+    Records + type table + name index
 ==============================================================================================*/
 
 typedef struct asset_type_s
 {
     char            name[ ASSET_TYPE_NAME ];
-    char            exts[ ASSET_TYPE_EXTS ][ ASSET_EXT_LEN ];   // lowercased, incl. leading '.'
+    char            exts[ ASSET_TYPE_EXTS ][ ASSET_EXT_LEN ];   // lowercased, incl. leading '.', preference order
     u32             ext_count;
     asset_load_fn   load;
     asset_unload_fn unload;
@@ -32,9 +38,9 @@ typedef struct asset_type_s
 
 typedef struct asset_rec_s
 {
-    sid_t  path;         // interned normalized vpath (dedup key + reload lookup)
-    u32    hash;         // sid hash of the path (path-index key)
-    u16    type;         // index into s_types (0 = none)
+    sid_t  name;         // the resource this is an instance of: its name, interned (dedup key)
+    u16    type;         // index into s_types, named by the caller at acquire
+    u8     ext;          // index into the type's exts of the file that loaded (valid when LOADED)
     u8     state;        // asset_state_t
     u8     used;
     i32    refcount;
@@ -45,13 +51,13 @@ typedef struct asset_rec_s
 
 } asset_rec_t;
 
-/* Open-addressing path index: sid-hash -> record slot.  state: 0 empty, 1 used, 2 tombstone. */
+/* Open-addressing name index: sid offset -> record slot.  state: 0 empty, 1 used, 2 tombstone. */
 #define ASSET_INDEX_CAP    2048   // power of two, > ASSET_MAX for a healthy load factor
 typedef struct asset_index_s
 {
-    u32 hash;
-    u16 rec;
-    u8  state;
+    u32   key;           // sid_t.off of the record's name
+    u16   rec;
+    u8    state;
 
 } asset_index_t;
 
@@ -62,73 +68,33 @@ static u32            s_live;              // live record count
 static asset_index_t  s_index[ ASSET_INDEX_CAP ];
 
 /*==============================================================================================
-    Path helpers
+    Name index
+
+    Keyed by the interned name's sid offset: two acquires of one name intern to one sid, so
+    the key is exact (no hash-collision case to handle).  The offset is mixed before masking
+    because sid offsets are pool positions, not hashes.
 ==============================================================================================*/
 
-/* Normalize a vpath into `out` for dedup: '\\' -> '/', strip leading slashes. */
-static void
-asset_norm( char* out, u32 out_cap, const char* in )
+static u32
+asset_index_slot( u32 key )
 {
-    while ( *in == '/' || *in == '\\' )
-        ++in;
-
-    u32 n = 0;
-    for ( ; in[ 0 ] && n < out_cap - 1; ++in )
-        out[ n++ ] = ( *in == '\\' ) ? '/' : *in;
-    out[ n ] = '\0';
+    key ^= key >> 16;
+    key *= 0x7feb352du;
+    key ^= key >> 15;
+    return key & ( ASSET_INDEX_CAP - 1 );
 }
-
-/* Extension of a path (".png"), lowercased into `out`; "" if none. */
-static void
-asset_ext_of( char* out, u32 out_cap, const char* path )
-{
-    const char* slash = strrchr( path, '/' );
-    const char* base  = slash ? slash + 1 : path;
-    const char* dot   = strrchr( base, '.' );
-    out[ 0 ] = '\0';
-    if ( !dot )
-        return;
-
-    u32 n = 0;
-    for ( ; dot[ 0 ] && n < out_cap - 1; ++dot )
-        out[ n++ ] = ( char )tolower( ( unsigned char )*dot );
-    out[ n ] = '\0';
-}
-
-/* Find the type that claims `ext` (already lowercased), or 0 (none). */
-static u16
-asset_type_for_ext( const char* ext )
-{
-    if ( !ext[ 0 ] )
-        return 0;
-    for ( u32 t = 1; t < s_type_count; ++t )
-    {
-        if ( !s_types[ t ].used )
-            continue;
-        for ( u32 e = 0; e < s_types[ t ].ext_count; ++e )
-        {
-            if ( strcmp( s_types[ t ].exts[ e ], ext ) == 0 )
-                return ( u16 )t;
-        }
-    }
-    return 0;
-}
-
-/*==============================================================================================
-    Path index
-==============================================================================================*/
 
 static i32
-asset_index_find( sid_t path, u32 hash )
+asset_index_find( u32 key )
 {
     u32 mask = ASSET_INDEX_CAP - 1;
-    u32 i    = hash & mask;
+    u32 i    = asset_index_slot( key );
     for ( u32 n = 0; n < ASSET_INDEX_CAP; ++n )
     {
         asset_index_t* s = &s_index[ i ];
         if ( s->state == 0 )
             return -1;    // empty: not present
-        if ( s->state == 1 && s->hash == hash && sid_equals( s_recs[ s->rec ].path, path ) )
+        if ( s->state == 1 && s->key == key )
             return ( i32 )s->rec;
         i = ( i + 1 ) & mask;    // tombstone (2) or miss: keep probing
     }
@@ -136,17 +102,17 @@ asset_index_find( sid_t path, u32 hash )
 }
 
 static void
-asset_index_insert( u32 hash, u16 rec )
+asset_index_insert( u32 key, u16 rec )
 {
     u32 mask = ASSET_INDEX_CAP - 1;
-    u32 i    = hash & mask;
+    u32 i    = asset_index_slot( key );
     for ( u32 n = 0; n < ASSET_INDEX_CAP; ++n )
     {
         asset_index_t* s = &s_index[ i ];
         if ( s->state != 1 )    // reuse empty or tombstone
         {
             s->state = 1;
-            s->hash  = hash;
+            s->key   = key;
             s->rec   = rec;
             return;
         }
@@ -155,16 +121,16 @@ asset_index_insert( u32 hash, u16 rec )
 }
 
 static void
-asset_index_remove( sid_t path, u32 hash )
+asset_index_remove( u32 key )
 {
     u32 mask = ASSET_INDEX_CAP - 1;
-    u32 i    = hash & mask;
+    u32 i    = asset_index_slot( key );
     for ( u32 n = 0; n < ASSET_INDEX_CAP; ++n )
     {
         asset_index_t* s = &s_index[ i ];
         if ( s->state == 0 )
             return;
-        if ( s->state == 1 && s->hash == hash && sid_equals( s_recs[ s->rec ].path, path ) )
+        if ( s->state == 1 && s->key == key )
         {
             s->state = 2;    // tombstone -- keeps probe chains intact
             return;
@@ -178,7 +144,7 @@ asset_index_remove( sid_t path, u32 hash )
 ==============================================================================================*/
 
 static asset_rec_t*
-asset_rec_from_id( asset_id_t id )
+asset_rec_from_id( aid_t id )
 {
     if ( id.index == 0 || id.index > ASSET_MAX )
         return NULL;
@@ -188,42 +154,82 @@ asset_rec_from_id( asset_id_t id )
     return r;
 }
 
-/* Load bytes and decode into the record's resource; sets state LOADED or FAILED. */
+/* The record's name, from core's interner. */
+static const char*
+asset_rec_name( const asset_rec_t* r )
+{
+    return core()->sid_cstr( r->name );
+}
+
+/* The vpath of `r` through extension `ext` of its type: name + ".ext". */
+static void
+asset_path( const asset_rec_t* r, u32 ext, char* out, u32 cap )
+{
+    res_path( out, cap, asset_rec_name( r ), s_types[ r->type ].exts[ ext ] );
+}
+
+/* The type's extensions as one string for a diagnostic: ".tex .png .jpg". */
+static void
+asset_exts_join( const asset_type_t* t, char* out, u32 cap )
+{
+    u32 n = 0;
+    out[ 0 ] = '\0';
+    for ( u32 e = 0; e < t->ext_count && n + 1 < cap; ++e )
+        n += ( u32 )snprintf( out + n, cap - n, "%s%s", e ? " " : "", t->exts[ e ] );
+}
+
+/* Probe the type's extensions in preference order, read the first file fs has, and decode it
+   into the record's resource; sets state LOADED or FAILED and records which extension won. */
 static void
 asset_do_load( asset_rec_t* r )
 {
-    r->state = ASSET_LOADING;
+    r->state    = ASSET_LOADING;
+    r->resource = NULL;
+    r->bytes    = 0;
 
-    const char* vpath = core()->sid_cstr( r->path );
-    fs_blob_t   blob  = fs()->read( vpath );
-    if ( !blob.ok )
+    asset_type_t* t = &s_types[ r->type ];
+    char          path[ ASSET_PATH_MAX ];
+    fs_blob_t     blob = { 0 };
+    u32           e    = 0;
+    for ( ; e < t->ext_count; ++e )
     {
-        LOG_WARN( "asset: read failed for '%s'", vpath );
-        r->resource = NULL;
-        r->bytes    = 0;
-        r->state    = ASSET_FAILED;
-        return;
+        asset_path( r, e, path, sizeof( path ) );
+        if ( !fs()->exists( path ) )
+            continue;
+        blob = fs()->read( path );
+        if ( blob.ok )
+            break;
     }
 
+    if ( !blob.ok )
+    {
+        char exts[ ASSET_TYPE_EXTS * ASSET_EXT_LEN ];
+        asset_exts_join( t, exts, sizeof( exts ) );
+        LOG_WARN( "asset: no file for '%s' as %s (tried %s)", asset_rec_name( r ), t->name, exts );
+        r->state = ASSET_FAILED;
+        return;
+    }
+    r->ext = ( u8 )e;
+
     fs_stat_t st;
-    if ( fs()->stat( vpath, &st ) )
+    if ( fs()->stat( path, &st ) )
         r->mtime = st.mtime;
     r->bytes = blob.size;
 
-    asset_type_t* t   = &s_types[ r->type ];
-    void*         res = ( t->used && t->load ) ? t->load( vpath, blob.data, blob.size, t->userdata ) : NULL;
+    void* res_ptr = ( t->used && t->load ) ? t->load( path, blob.data, blob.size, t->userdata ) : NULL;
     fs()->free( &blob );
 
-    if ( res )
+    if ( res_ptr )
     {
-        r->resource = res;
+        r->resource = res_ptr;
         r->state    = ASSET_LOADED;
+        LOG_INFO( "asset: loaded '%s' as %s", path, t->name );
     }
     else
     {
         r->resource = NULL;
         r->state    = ASSET_FAILED;
-        LOG_WARN( "asset: no loader / decode failed for '%s' (type %u)", vpath, r->type );
+        LOG_WARN( "asset: decode failed for '%s' as %s", path, t->name );
     }
 }
 
@@ -289,8 +295,8 @@ asset_type_register( const char* name, const char* const* exts, u32 ext_count,
     u32 count = ext_count;
     if ( count > ASSET_TYPE_EXTS )
     {
-        /* Loud, not silent: a dropped extension dispatches to no type and FAILs at acquire,
-           which is miserable to trace back here. */
+        /* Loud, not silent: a dropped extension is a file the type can never find, which is
+           miserable to trace back here. */
         LOG_WARN( "asset: type '%s' registers %u extensions, cap is %d -- extras dropped",
                   name ? name : "?", ext_count, ASSET_TYPE_EXTS );
         count = ASSET_TYPE_EXTS;
@@ -311,26 +317,41 @@ asset_type_register( const char* name, const char* const* exts, u32 ext_count,
     return id;
 }
 
-static asset_id_t
-asset_acquire( const char* vpath_in )
+static aid_t
+asset_acquire( const char* name, u16 type )
 {
-    asset_id_t invalid = { 0, 0 };
-    if ( !vpath_in || !vpath_in[ 0 ] )
+    aid_t invalid = { 0, 0 };
+
+    /* Names are canonical (lowercase, '/' separators, no extension) and nothing folds: a
+       misspelled name is refused here rather than probed against fs under a spelling no
+       content file can have. */
+    if ( !res_name_ok( name ) )
+    {
+        LOG_ERROR( "asset: acquire '%s': not a canonical resource name (lowercase, '/' separators)",
+                   name ? name : "(null)" );
         return invalid;
+    }
 
-    char norm[ 256 ];
-    asset_norm( norm, sizeof( norm ), vpath_in );
+    if ( type == 0 || type >= s_type_count || !s_types[ type ].used )
+    {
+        LOG_ERROR( "asset: acquire '%s': unknown asset type %u", name, type );
+        return invalid;
+    }
 
-    sid_t path = core()->sid_intern( norm, ( int32_t )strlen( norm ) );
-    u32   hash = core()->sid_get_hash( path );
-
-    /* Dedup: an existing record for this path just takes another reference. */
-    i32 found = asset_index_find( path, hash );
+    /* Dedup: an existing record for this name just takes another reference. */
+    sid_t sid   = core()->sid_intern_cstr( name );
+    i32   found = asset_index_find( sid.off );
     if ( found >= 0 )
     {
         asset_rec_t* r = &s_recs[ found ];
+        if ( r->type != type )
+        {
+            LOG_ERROR( "asset: '%s' is already loaded as %s, not %s -- one resource, one type", name,
+                       s_types[ r->type ].name, s_types[ type ].name );
+            return invalid;
+        }
         ++r->refcount;
-        asset_id_t id = { ( u32 )found + 1, r->generation };
+        aid_t id = { ( u32 )found + 1, r->generation };
         return id;
     }
 
@@ -346,18 +367,15 @@ asset_acquire( const char* vpath_in )
     }
     if ( slot < 0 )
     {
-        LOG_ERROR( "asset: record table full (%d), cannot acquire '%s'", ASSET_MAX, norm );
+        LOG_ERROR( "asset: record table full (%d), cannot acquire '%s'", ASSET_MAX, name );
         return invalid;
     }
 
-    char ext[ ASSET_EXT_LEN ];
-    asset_ext_of( ext, sizeof( ext ), norm );
-
     asset_rec_t* r = &s_recs[ slot ];
     r->used     = 1;
-    r->path     = path;
-    r->hash     = hash;
-    r->type     = asset_type_for_ext( ext );
+    r->name     = sid;
+    r->type     = type;
+    r->ext      = 0;
     r->refcount = 1;
     r->resource = NULL;
     r->bytes    = 0;
@@ -365,17 +383,17 @@ asset_acquire( const char* vpath_in )
     r->state    = ASSET_UNLOADED;
     /* r->generation persists from the slot's previous life (0 on first use). */
 
-    asset_index_insert( hash, ( u16 )slot );
+    asset_index_insert( sid.off, ( u16 )slot );
     ++s_live;
 
     asset_do_load( r );
 
-    asset_id_t id = { ( u32 )slot + 1, r->generation };
+    aid_t id = { ( u32 )slot + 1, r->generation };
     return id;
 }
 
 static void
-asset_release( asset_id_t id )
+asset_release( aid_t id )
 {
     asset_rec_t* r = asset_rec_from_id( id );
     if ( !r )
@@ -385,7 +403,7 @@ asset_release( asset_id_t id )
         return;
 
     asset_do_unload( r );
-    asset_index_remove( r->path, r->hash );
+    asset_index_remove( r->name.off );
 
     ++r->generation;    // invalidate stale handles to this recycled slot
     r->used     = 0;
@@ -394,7 +412,7 @@ asset_release( asset_id_t id )
 }
 
 static void
-asset_reload( asset_id_t id )
+asset_reload( aid_t id )
 {
     asset_rec_t* r = asset_rec_from_id( id );
     if ( !r )
@@ -403,15 +421,16 @@ asset_reload( asset_id_t id )
     asset_do_load( r );
 }
 
-/* Hot-reload poll: re-stat every live record's source and re-run the loader in place for any
+/* Hot-reload poll: re-stat every live record's file and re-run the loader in place for any
    whose file changed on disk (mtime differs) -- plus retry records that FAILED (e.g. the file
-   was missing and has since appeared).  The id and refcount are preserved, so the swapped
-   resource shows up behind get() with no handle churn.  Returns the number reloaded.
+   was missing and has since appeared, under any of the type's extensions).  The id and
+   refcount are preserved, so the swapped resource shows up behind get() with no handle churn.
+   Returns the number reloaded.
 
    Caller-driven cadence (no clock dep here): a host/editor calls this a few times a second, or
    a sandbox once a frame.  A momentarily-unreadable source (an editor mid-write) simply stats
-   as gone this tick and is left untouched until it settles.  This is the mtime-compare fallback
-   the plan names; an OS file watch could later gate which records get re-stat'd. */
+   as gone this tick and is left untouched until it settles.  Only the extension that loaded is
+   stat'd: a preferred form appearing beside it is picked up on the next reload, not here. */
 static u32
 asset_refresh( void )
 {
@@ -422,48 +441,60 @@ asset_refresh( void )
         if ( !r->used )
             continue;
 
-        const char* vpath = core()->sid_cstr( r->path );
-        fs_stat_t   st;
-        if ( !fs()->stat( vpath, &st ) )
-            continue;    // source unavailable this tick -- keep the current resource
+        if ( r->state != ASSET_FAILED )
+        {
+            char      path[ ASSET_PATH_MAX ];
+            fs_stat_t st;
+            asset_path( r, r->ext, path, sizeof( path ) );
+            if ( !fs()->stat( path, &st ) )
+                continue;    // source unavailable this tick -- keep the current resource
+            if ( st.mtime == r->mtime )
+                continue;    // unchanged since load
 
-        if ( r->state != ASSET_FAILED && st.mtime == r->mtime )
-            continue;    // unchanged since load
+            LOG_INFO( "asset: hot-reload '%s' (mtime %llu -> %llu)", path,
+                      ( unsigned long long )r->mtime, ( unsigned long long )st.mtime );
+        }
 
-        LOG_INFO( "asset: hot-reload '%s' (mtime %llu -> %llu)", vpath,
-                  ( unsigned long long )r->mtime, ( unsigned long long )st.mtime );
         asset_do_unload( r );
-        asset_do_load( r );    // re-stats and updates r->mtime
-        ++reloaded;
+        asset_do_load( r );    // re-probes the extensions, re-stats, updates r->mtime
+        if ( r->state == ASSET_LOADED )
+            ++reloaded;
     }
     return reloaded;
 }
 
 static void*
-asset_get( asset_id_t id )
+asset_get( aid_t id )
 {
     asset_rec_t* r = asset_rec_from_id( id );
     return ( r && r->state == ASSET_LOADED ) ? r->resource : NULL;
 }
 
 static int
-asset_state( asset_id_t id )
+asset_state( aid_t id )
 {
     asset_rec_t* r = asset_rec_from_id( id );
     return r ? ( int )r->state : ASSET_UNLOADED;
 }
 
 static bool
-asset_valid( asset_id_t id )
+asset_valid( aid_t id )
 {
     return asset_rec_from_id( id ) != NULL;
 }
 
 static i32
-asset_refcount( asset_id_t id )
+asset_refcount( aid_t id )
 {
     asset_rec_t* r = asset_rec_from_id( id );
     return r ? r->refcount : 0;
+}
+
+static const char*
+asset_name( aid_t id )
+{
+    asset_rec_t* r = asset_rec_from_id( id );
+    return r ? asset_rec_name( r ) : NULL;
 }
 
 static u32

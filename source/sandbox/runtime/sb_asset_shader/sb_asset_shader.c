@@ -4,11 +4,14 @@
 
     The whole cook -> acquire -> render -> hot-reload chain in one run:
 
-      1. Spawns asset_tool to cook the sb_tri HLSL pair (source/tools/shader_tool/test/) into
-         bin/ -- asset_tool derives the dxc profile from the .vs/.ps stage tag and forwards to
-         shader_tool, which bakes SPIR-V + reflection into an .oshd container.
-      2. Mounts the repo root on core/fs and acquire()s both .oshd files by virtual path --
-         the asset service's built-in "shader" type parses them through
+      1. Spawns asset_tool to cook the tri HLSL pair (content/sandbox/asset/) into the cooked
+         mirror build/content/ under the same names -- asset_tool derives the dxc profile from
+         the .vs/.ps stage tag and forwards to shader_tool, which bakes SPIR-V + reflection
+         into an .oshd container.
+      2. Mounts the cooked mirror above content/ on core/fs and acquire()s both shaders by
+         NAME (marked with RID(), so the build resolved them and listed them in this
+         executable's resource manifest) -- the asset service's built-in "shader" type asks fs
+         for the name plus .oshd and parses the container through
          rhi()->shader_load_oshd_memory behind the ids.
       3. Builds a pipeline from the ACQUIRED shader handles with an empty desc (attribs and
          push_const_size 0), so the RHI derives everything from baked reflection, and renders
@@ -30,6 +33,7 @@
 #include "orb.h"
 #include "engine/mod/mod_host.h"
 #include "engine/ref/ref_host.h"
+#include "engine/res/res.h"
 #include "engine/sys/sys_host.h"
 #include "engine/app/app_host.h"
 #include "engine/core/core_host.h"
@@ -41,10 +45,32 @@
 
 // clang-format off
 
-#define VS_HLSL   "source\\tools\\shader_tool\\test\\sb_tri.vs.hlsl"
-#define PS_HLSL   "source\\tools\\shader_tool\\test\\sb_tri.ps.hlsl"
-#define VS_OSHD   "bin/sb_asset_tri.vs.oshd"     /* vpath form; cook uses backslashes */
-#define PS_OSHD   "bin/sb_asset_tri.ps.oshd"
+/* Source under content/, cooked into the mirror build/content/ under the same name.  The
+   stage tag is part of the name: "sandbox/asset/tri.vs" is tri.vs.hlsl, cooked to tri.vs.oshd. */
+#define VS_NAME   "sandbox/asset/tri.vs"
+#define PS_NAME   "sandbox/asset/tri.ps"
+#define VS_HLSL   "content\\sandbox\\asset\\tri.vs.hlsl"
+#define PS_HLSL   "content\\sandbox\\asset\\tri.ps.hlsl"
+#define VS_OSHD   "build/content/sandbox/asset/tri.vs.oshd"     /* cook converts to backslashes */
+#define PS_OSHD   "build/content/sandbox/asset/tri.ps.oshd"
+
+/* Make every directory along `path` (forward slashes), so the cook has somewhere to write. */
+static void
+dir_make_deep( const char* path )
+{
+    char buf[ 512 ];
+    snprintf( buf, sizeof( buf ), "%s", path );
+    for ( char* p = buf + 1; *p; ++p )
+    {
+        if ( *p == '/' )
+        {
+            *p = '\0';
+            sys_dir_make( buf );
+            *p = '/';
+        }
+    }
+    sys_dir_make( buf );
+}
 
 /* cook_via_asset_tool -- spawn asset_tool for one .hlsl -> .oshd job.  This is the Phase 5
    dispatch proof: asset_tool picks the profile from the stage tag and forwards to shader_tool. */
@@ -95,6 +121,7 @@ main( int argc, char** argv )
     int max_frames = ( argc > 1 ) ? atoi( argv[ 1 ] ) : 0;
 
     /* ---- Cook (Track 1 proof: asset_tool dispatches .hlsl by stage tag) ---- */
+    dir_make_deep( "build/content/sandbox/asset" );
     if ( !cook_via_asset_tool( VS_HLSL, VS_OSHD ) || !cook_via_asset_tool( PS_HLSL, PS_OSHD ) )
         return 1;
 
@@ -139,11 +166,14 @@ main( int argc, char** argv )
     }
 
     /* ---- Acquire the shader assets (Track 2 proof: .oshd type behind asset ids) ---- */
-    fs()->mount( "", "", 0 );    /* repo root (CWD) served verbatim */
+    /* The cooked mirror sits above the source tree; the shader type accepts only .oshd, so
+       the mirror is where every shader name resolves. */
+    fs()->mount( "", "build/content", 10 );
+    fs()->mount( "", "content", 0 );
 
     rhi_pipeline_t  pipeline = { 0 };    /* declared before any goto so shutdown can test it */
-    asset_id_t      vs_id = asset()->acquire( VS_OSHD );
-    asset_id_t      ps_id = asset()->acquire( PS_OSHD );
+    aid_t           vs_id = asset()->acquire( RID( "sandbox/asset/tri.vs" ), ASSET_TYPE_SHADER );   /* literals at the marker: */
+    aid_t           ps_id = asset()->acquire( RID( "sandbox/asset/tri.ps" ), ASSET_TYPE_SHADER );   /* the build harvests them  */
     asset_shader_t* vs    = ( asset_shader_t* )asset()->get( vs_id );
     asset_shader_t* ps    = ( asset_shader_t* )asset()->get( ps_id );
     if ( !vs || !ps )
@@ -154,8 +184,8 @@ main( int argc, char** argv )
     }
 
     printf( "[sb_asset_shader] acquired %s (hash %016llx) + %s (hash %016llx)\n",
-            VS_OSHD, ( unsigned long long )vs->layout_hash,
-            PS_OSHD, ( unsigned long long )ps->layout_hash );
+            VS_NAME, ( unsigned long long )vs->layout_hash,
+            PS_NAME, ( unsigned long long )ps->layout_hash );
     fflush( stdout );
 
     /* Cache the reload gate: the hash pair the current pipeline was built against. */
@@ -254,7 +284,7 @@ main( int argc, char** argv )
         rhi()->cmd_set_scissor( cmd, &( rhi_rect_t ){ 0, 0, w, h } );
         rhi()->cmd_bind_pipeline( cmd, pipeline );
 
-        /* sb_tri.ps reads a float4 tint push constant; pc_size comes from reflection. */
+        /* tri.ps reads a float4 tint push constant; pc_size comes from reflection. */
         if ( ps->pc_size > 0 )
         {
             f32 tint[ 4 ] = { 0.9f, 0.6f, 0.1f, 1.0f };    /* amber: distinct from sb_vulkan's blue */

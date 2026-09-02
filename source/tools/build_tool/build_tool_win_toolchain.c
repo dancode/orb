@@ -72,9 +72,9 @@ platform_cc_base_flags( compiler_t compiler, config_t config, bool is_shipping, 
     size_t used = strlen( buf );
     const char* sep = used ? " " : "";
     /* /GF pools identical string literals into a single read-only COMDAT. /O2 implies it, so
-       only Debug names it explicitly. Without it a name spelled at a RID() site and again in
-       the generated res table occupies the binary twice, and string literals are writable in
-       Debug alone -- a divergence that hides literal writes until a Release run. */
+       only Debug names it explicitly. Without it a name spelled at two RID() sites occupies
+       the binary twice, and string literals are writable in Debug alone -- a divergence that
+       hides literal writes until a Release run. */
     const char* cfg = ( config == CONFIG_DEBUG ) ? "/Zi /Od /GF /MDd"
                     : is_shipping               ? "/O2 /GL /MD"
                                                : "/O2 /MD";

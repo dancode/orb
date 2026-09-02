@@ -774,8 +774,7 @@ write_vcxproj_filters_file( const char* filters_path, target_info_t* target )
                  ( unsigned int )i );
         fprintf( f, "    </Filter>\n" );
     }
-    bool wants_res = target && target_wants_res_table( target );
-    if ( target && ( target->has_reflect || wants_res ) )
+    if ( target && target->has_reflect )
     {
         fprintf( f, "    <Filter Include=\"generated\">\n" );
         fprintf( f, "      <UniqueIdentifier>{%08X-0000-0000-0000-000000000000}</UniqueIdentifier>\n",
@@ -809,13 +808,6 @@ write_vcxproj_filters_file( const char* filters_path, target_info_t* target )
                  s_ctx.root_prefix, g_build_dir, g_gen_dir, rname );
         fprintf( f, "      <Filter>generated</Filter>\n" );
         fprintf( f, "    </ClInclude>\n" );
-    }
-    if ( wants_res )
-    {
-        fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s\\%s_res_table.c\">\n",
-                 s_ctx.root_prefix, g_build_dir, g_int_dir, target->name, target->name );
-        fprintf( f, "      <Filter>generated</Filter>\n" );
-        fprintf( f, "    </ClCompile>\n" );
     }
     fprintf( f, "  </ItemGroup>\n" );
 
@@ -924,18 +916,6 @@ build_gen_proj_target( target_info_t* target )
         fprintf( f, "    </ClCompile>\n" );
         fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\" />\n", s_ctx.root_prefix, g_build_dir,
                  g_gen_dir, rname );
-    }
-
-    // The generated resource table lives in the obj dir and appears after the first build;
-    // listed so the image's harvested name set is one click away in Solution Explorer.
-    if ( target_wants_res_table( target ) )
-    {
-        const char* item_mono = s_ctx.is_monolithic ? " -monolithic" : "";
-        fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s\\%s_res_table.c\">\n", s_ctx.root_prefix, g_build_dir,
-                 g_int_dir, target->name, target->name );
-        fprintf( f, "      <NMakeCompileFileCommandLine>cd %s &amp;&amp; %s -no-deps -compile-only -config $(Configuration) -target %s%s</NMakeCompileFileCommandLine>\n",
-                 s_ctx.cd_root, s_ctx.build_tool_exe, target->name, item_mono );
-        fprintf( f, "    </ClCompile>\n" );
     }
 
     fprintf( f, "  </ItemGroup>\n" );
@@ -1108,7 +1088,7 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
                      target->name, guid );
 
             if ( target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect ||
-                 target_wants_res_table( target ) || !target->is_build_tool )
+                 target_wants_res_manifest( target ) || !target->is_build_tool )
             {
                 // Every entry below must name a project actually in this solution: VS silently
                 // ignores dangling dep GUIDs, but msbuild.exe on the .sln hard-fails with
@@ -1173,8 +1153,8 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
                     }
                 }
 
-                // Implicit dep: images with a resource table depend on the res tool when present.
-                if ( target_wants_res_table( target ) )
+                // Implicit dep: images with a resource manifest depend on the res tool when present.
+                if ( target_wants_res_manifest( target ) )
                 {
                     for ( int k = 0; k < g_target_count; ++k )
                     {

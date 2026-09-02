@@ -238,7 +238,7 @@ add_job( target_info_t* t )
     }
 
     // Implicit res tool dep -- same treatment as the reflect tool above.
-    if ( target_wants_res_table( t ) )
+    if ( target_wants_res_manifest( t ) )
     {
         target_info_t* rt = find_res_tool();
         if ( rt )

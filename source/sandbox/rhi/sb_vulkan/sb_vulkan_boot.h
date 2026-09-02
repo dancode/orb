@@ -9,8 +9,8 @@
     the executable, they are loaded instead of the embedded SPIR-V and the triangle renders
     BLUE via a push-constant tint.  Bake them with:
 
-        bin\shader_tool.exe compile source\tools\shader_tool\test\sb_tri.vs.hlsl -o bin\sb_tri.vs.spv -T vs_6_0
-        bin\shader_tool.exe compile source\tools\shader_tool\test\sb_tri.ps.hlsl -o bin\sb_tri.ps.spv -T ps_6_0
+        bin\shader_tool.exe compile content\sandbox\asset\tri.vs.hlsl -o bin\sb_tri.vs.spv -T vs_6_0
+        bin\shader_tool.exe compile content\sandbox\asset\tri.ps.hlsl -o bin\sb_tri.ps.spv -T ps_6_0
 
     OSHD override (shader_tool Phase 3 proof): a cooked sb_tri.vs.oshd / sb_tri.ps.oshd pair
     next to the executable takes precedence over the .spv pair.  Loaded via
@@ -19,8 +19,8 @@
     Same blue triangle -- the difference shows in the shader_load_oshd / pipeline_create log
     lines.  Bake with:
 
-        bin\shader_tool.exe cook source\tools\shader_tool\test\sb_tri.vs.hlsl -o bin\sb_tri.vs.oshd -T vs_6_0
-        bin\shader_tool.exe cook source\tools\shader_tool\test\sb_tri.ps.hlsl -o bin\sb_tri.ps.oshd -T ps_6_0
+        bin\shader_tool.exe cook content\sandbox\asset\tri.vs.hlsl -o bin\sb_tri.vs.oshd -T vs_6_0
+        bin\shader_tool.exe cook content\sandbox\asset\tri.ps.hlsl -o bin\sb_tri.ps.oshd -T ps_6_0
 
     Delete the .oshd/.spv pairs to fall back to the embedded orange triangle.
 

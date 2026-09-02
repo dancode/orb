@@ -63,7 +63,7 @@ No automated test framework. Run sandbox executables to validate:
 - `sb_sys` -- sys layer
 - `sb_core` -- core layer
 - `sb_reflect` -- ref_ reflection
-- `sb_res` -- res resource catalogue (exit code = failed checks)
+- `sb_res` -- res name helpers + the build's resource manifest (exit code = failed checks)
 - `sb_mod` -- module system / hot-reload
 - `sb_app` -- application / windowing
 
@@ -81,8 +81,10 @@ source/engine/        -- root engine libraries, listed lowest to highest
   mod/                -- module registry: loading, hot-reload, dep-ordered init; substrate, online first
   sys/                -- OS abstractions: files, threads, time, DLL loading, paths (leaf, no deps)
   ref/                -- reflection registry: types, fields, schema hash (leaf, no deps)
-  res/                -- resource catalogue: rid_t logical-name ids, RID() door, per-module
-                         name tables; see RESOURCE_ID_PLAN.md (leaf, no deps)
+  res/                -- resource names, header-only: the RID() marker the build scans for,
+                         canonical-form check, name hash, name+ext join; no library, no module.
+                         res_tool resolves every marked name against content/ at build time and
+                         writes obj/<t>/<t>_res_manifest.txt; see RESOURCE_ID_PLAN.md
   prof/               -- profiler: SID zones, SPSC rings, trace dump (dep: sys)
   pack/               -- compression: deflate/inflate, crc32, zip read/write; owns the single
                          engine-wide miniz copy (leaf, no deps)
@@ -109,7 +111,7 @@ content/              -- source content root: a resource name (RID( "ui/icon/sav
                          child project's content/ shadows it name by name. See RESOURCE_ID_PLAN.md.
 ```
 
-Engine libraries (`mod`, `sys`, `ref`, `res`, `prof`, `pack`, `fs`, `job`, `net`, `core`, `app`)
+Engine libraries (`mod`, `sys`, `ref`, `prof`, `pack`, `fs`, `job`, `net`, `core`, `app`)
 are always statically linked into the host. Never in a DLL.
 
 ## Libraries
@@ -135,7 +137,8 @@ Every engine library uses a three-header split:
 
 **mod** has four files (self-hosting): `mod_import.h`, `mod_api.h`, `mod_host.h`, `mod_export.h`.
 
-Existing header sets: `mod_*`, `sys.*`, `ref.*`, `res.*`, `prof.*`, `pack.*`, `fs.*`, `job.*`, `net.*`, `core.*`, `app.*`.
+Existing header sets: `mod_*`, `sys.*`, `ref.*`, `prof.*`, `pack.*`, `fs.*`, `job.*`, `net.*`, `core.*`, `app.*`.
+`res` is the exception: header-only (`res.h`, `res_ref.h`, `res_cook.h`), no `_api`/`_host` split.
 
 ## Module System
 

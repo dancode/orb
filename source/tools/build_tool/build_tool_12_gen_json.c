@@ -361,24 +361,6 @@ build_gen_compile_commands( const gen_manifest_t* m )
             json_emit_entry( fp, root_abs, &cc_constituent, abs_src );
             entry_count++;
         }
-
-        /* --- Generated resource table .c (obj dir; appears after the first build) --- */
-        if ( target_wants_res_table( target ) )
-        {
-            char rel[ PATH_MAX ];
-            snprintf( rel, sizeof( rel ), "%s/%s/%s/%s_res_table.c",
-                      g_build_dir, g_int_dir, target->name, target->name );
-
-            char abs_src[ PATH_MAX ];
-            if ( !platform_fullpath( abs_src, rel, sizeof( abs_src ) ) )
-                snprintf( abs_src, sizeof( abs_src ), "%s", rel );
-            json_fwd_slashes( abs_src );
-
-            if ( !first ) fprintf( fp, ",\n" );
-            first = false;
-            json_emit_entry( fp, root_abs, &cc_constituent, abs_src );
-            entry_count++;
-        }
     }
 
     fprintf( fp, "\n]\n" );

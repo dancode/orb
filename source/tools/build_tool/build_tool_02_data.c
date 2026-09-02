@@ -30,9 +30,9 @@
           if orb.targets is missing or malformed.
         - reflect_tool is an immediate dependency of the bootstrap path (core etc.
           need it), so it must always be resolvable.
-        - res_tool is an implicit dependency of every executable that links the res
-          library and of every dynamic module, including those of a child project that
-          only imports the engine's targets, so it must resolve the same way.
+        - res_tool is an implicit dependency of every executable and every dynamic
+          module, including those of a child project that only imports the engine's
+          targets, so it must resolve the same way.
         - Every other target can be added or edited in orb.targets without touching
           or recompiling build_tool.c.
 
@@ -166,7 +166,7 @@ init_builtin_targets( void )
         t->is_external     = is_external;
     }
 
-    // res_tool: the resource-reference harvester (RID / RES_TREE tokens -> res tables).
+    // res_tool: the resource-reference harvester (RID / RES_TREE tokens -> res manifests).
     {
         target_info_t* t = &g_targets[ g_target_count++ ];
         memset( t, 0, sizeof( *t ) );
@@ -299,57 +299,24 @@ find_res_tool( void )
 }
 
 /*==============================================================================================
-    --- Resource Table Policy ---
+    --- Resource Manifest Policy ---
 
-    A generated resource table (<name>_res_table.c, see build_gen_res_table) belongs to an
-    IMAGE: a DLL module always gets one, under g_<name>_res_table, which its descriptor
-    points at through MOD_RES_TABLE; an executable gets one, under g_host_res_table, when
-    the res library is anywhere in its link closure -- res's own descriptor carries that
-    symbol, so an exe linking res cannot link without it. Static libraries never get a
-    table of their own; their names are harvested into whichever image links them.
+    A resource manifest (<name>_res_manifest.txt, see build_gen_res_manifest) belongs to an
+    IMAGE: every executable and every DLL module gets one, listing the names its own units
+    and its statically linked libraries mark with RID() / RES_TREE(). Static libraries never
+    get a manifest of their own; their names land in whichever image links them. The three
+    builtin tools are excluded: res_tool cannot depend on itself, and build_tool and
+    reflect_tool must build before it exists.
 ==============================================================================================*/
 
-// True when `name` is reachable from t through link deps. visited[] is indexed like g_targets[].
 static bool
-deps_closure_has( const target_info_t* t, const char* name, bool visited[ MAX_TARGETS ] )
-{
-    for ( int i = 0; t->deps[ i ]; ++i )
-    {
-        if ( strcmp( t->deps[ i ], name ) == 0 )
-            return true;
-        const target_info_t* dep = find_target( t->deps[ i ] );
-        if ( !dep )
-            continue;
-        int idx = ( int )( dep - g_targets );
-        if ( visited[ idx ] )
-            continue;
-        visited[ idx ] = true;
-        if ( deps_closure_has( dep, name, visited ) )
-            return true;
-    }
-    return false;
-}
-
-static bool
-target_wants_res_table( const target_info_t* t )
+target_wants_res_manifest( const target_info_t* t )
 {
     if ( t->alias_for )
         return false;
-    if ( t->type == TARGET_DYNAMIC_LIB )
-        return true;
-    if ( t->type != TARGET_EXECUTABLE )
+    if ( t->is_build_tool || t->is_reflect_tool || t->is_res_tool )
         return false;
-
-    bool visited[ MAX_TARGETS ] = { 0 };
-    return deps_closure_has( t, "res", visited );
-}
-
-// Symbol base of the target's table: g_<sym>_res_table. Executables share one fixed name
-// because the res library, not the exe, is what declares and registers it.
-static const char*
-res_table_symbol( const target_info_t* t )
-{
-    return ( t->type == TARGET_EXECUTABLE ) ? "host" : t->name;
+    return t->type == TARGET_DYNAMIC_LIB || t->type == TARGET_EXECUTABLE;
 }
 
 /*============================================================================================*/

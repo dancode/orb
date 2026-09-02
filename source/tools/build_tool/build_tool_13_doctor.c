@@ -813,17 +813,17 @@ doctor_check_filesystem( void )
         }
     }
 
-    /* Resource tables: every dynamic module and every exe linking res needs res_tool. */
+    /* Resource manifests: every executable and every dynamic module needs res_tool. */
     int res_targets = 0;
     for ( int i = 0; i < g_target_count; ++i )
-        if ( !g_targets[ i ].is_external && target_wants_res_table( &g_targets[ i ] ) ) ++res_targets;
+        if ( !g_targets[ i ].is_external && target_wants_res_manifest( &g_targets[ i ] ) ) ++res_targets;
     if ( res_targets )
     {
         if ( find_res_tool() )
-            doc_ok( "res_tool registered (%d local target(s) carry a resource table)", res_targets );
+            doc_ok( "res_tool registered (%d local target(s) carry a resource manifest)", res_targets );
         else
         {
-            doc_fail( "%d target(s) carry a resource table but no res_tool is registered", res_targets );
+            doc_fail( "%d target(s) carry a resource manifest but no res_tool is registered", res_targets );
             doc_fix( "built-ins register it automatically -- check for 'is_res_tool' flag misuse" );
         }
     }

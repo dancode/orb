@@ -22,12 +22,15 @@
         // in init()/reload():
         if (!MOD_FETCH_ASSET) return false;
 
-        // call site:
-        asset_id_t id = asset()->acquire( "textures/hero.png" );
+        // call site: RID() marks the name so the build resolves it against content/ and
+        // lists it in this image's resource manifest; the image loader then tries
+        // textures/hero.tex, then textures/hero.png, against fs
+        aid_t id = asset()->acquire( RID( "textures/hero" ), ASSET_TYPE_IMAGE );
 
     The dep "fs" in the mod_desc_t ensures the virtual filesystem is initialized before the
-    asset service, so fs()->read succeeds inside the loaders.  Mount the directories the assets
-    live in (fs()->mount) before acquiring.
+    asset service.  Hosts mount the content trees (fs()->mount) before acquiring: loose
+    content/ in development, a cooked mirror above it, a pack when shipped -- the same names
+    in every tree.
 
 ==============================================================================================*/
 

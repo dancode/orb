@@ -343,14 +343,6 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
                 snprintf( abs_p, sizeof( abs_p ), "%s", rel );
             snprintf( sources[ n_sources++ ], PATH_MAX, "%s", abs_p );
         }
-        if ( target_wants_res_table( target ) )
-        {
-            // Written by build_gen_res_table into the obj dir just before this compile.
-            snprintf( rel, sizeof( rel ), "%s/%s_res_table.c", obj_dir, target->name );
-            if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
-                snprintf( abs_p, sizeof( abs_p ), "%s", rel );
-            snprintf( sources[ n_sources++ ], PATH_MAX, "%s", abs_p );
-        }
     }
 
     char  includes_path[ PATH_MAX ];
@@ -487,21 +479,8 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
             return false;
     }
 
-    // Resource table: same shape as reflection -- the tool is our responsibility, the
-    // generated .c must exist before the compiler runs.
-    if ( target_wants_res_table( target ) )
-    {
-        target_info_t* res_tool = find_res_tool();
-        if ( !res_tool )
-        {
-            printf( ORB_INDENT "[orb error] '%s' no res_tool is registered\n", target->name );
-            return false;
-        }
-        if ( build_target( ctx, res_tool, NULL, NULL ) == false )
-            return false;
-        if ( !build_gen_res_table( target, obj_dir, res_tool ) )
-            return false;
-    }
+    // The resource manifest is not a compiler input, so a compile-only pass does not
+    // generate it; the full build (step 6.5 in build_target) does.
 
     return build_target_compile( ctx, target, obj_dir, gen_dir );
 }

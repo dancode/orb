@@ -1,8 +1,9 @@
 # content/sandbox/res -- fixtures for sb_res
 
 Content the `sb_res` sandbox names through `RID()` / `RES_TREE()`, so the build can prove
-every one of its names stands for exactly one file.  Nothing else references this tree, so no
-package ever carries it.
+every one of its names stands for exactly one file and list them in the sandbox's resource
+manifest (`build/obj/sb_res/sb_res_res_manifest.txt`).  Nothing else references this tree,
+so no package ever carries it.
 
 | File                   | Proves                                                              |
 |------------------------|---------------------------------------------------------------------|
@@ -17,6 +18,6 @@ File and directory names here are lowercase, as all content must be: the name a 
 spells is the path the runtime opens, and res_tool fails the build with file:line on a file
 that is spelled otherwise.
 
-Adding a file under `icon/` changes `sb_res`'s generated table (and its harvest test's
-expected count) without touching a source file; the build notices through the deps file
-res_tool writes beside the table.
+Adding a file under `icon/` changes `sb_res`'s manifest (and its harvest test's expected
+count) without touching a source file; the build notices through the deps file res_tool
+writes beside the manifest.

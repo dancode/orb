@@ -9,11 +9,12 @@
         [ fixed header, with a ref_count field ][ rid_t refs[ ref_count ] ][ payload ... ]
 
     Each id is stored as a little-endian u32.  The cooker writes the array, since only it
-    understands the content; the loader hands the ids to res when the file is read, so a name
-    referenced by content alone still resolves at runtime, and the packager can walk from a
-    target's source references through its content to everything it drags in without parsing
-    a single format.  No cooker emits a reference yet: every file written today has ref_count
-    0, and every loader steps over the (empty) section.
+    understands the content, so the packager can walk from a target's source references
+    through its content to everything it drags in without parsing a single format.  No
+    cooker emits a reference yet: every file written today has ref_count 0, and every loader
+    steps over the (empty) section.  Whether the section holds bare ids or names (a string
+    table the ids index) is decided when the first cooker writes one; the count field and
+    the section's position are what the formats have committed to.
 
     A format may pad the section for the alignment of what follows it; the format header says
     so where it does (oshd_ref_bytes).  Header-only, so the format headers -- shared with
