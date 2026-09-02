@@ -149,8 +149,11 @@ piece.
 
 10. THE MANIFEST IS DERIVED OUTPUT, PLAIN TEXT, PER IMAGE.  obj/<target>/<target>_res_manifest.txt:
     '#' comment lines, then one entry per line -- name, the source file it resolved to under
-    its content root, and the site -- sorted by name so a subtree is a contiguous run.  A
-    reader that wants only names takes the first token of every non-comment line.  Every
+    its content root, and for an expanded entry the subtree it came from -- sorted by name so
+    a subtree is a contiguous run.  The RID site is not written: it is where a name was
+    spelled, not something a packager acts on, and a line number would churn the file on
+    every unrelated edit; errors carry file:line.  A reader that wants only names takes the
+    first token of every non-comment line.  Every
     executable and every dynamic module gets one (its own units plus every statically linked
     library); static libraries never do.  orb.targets gains no vocabulary: the manifest is
     computed from the unit/dep graph it already carries (decision 13).
@@ -346,6 +349,15 @@ Phase 7 -- ship_tool consumes the manifest                               [NOT ST
    gui skip a copy for atlas uploads.  Decide in Phase 5.
 4. Transient runtime resources (render targets, procedural atlases) stay OUT of the name
    space -- they are not packageable.  Confirm nothing in rhi wants a name.
+5. '.' in names.  The user wants '.' reserved and forbidden (a name is <stem>, a file is
+   <stem>.<ext> with one dot, so the two never blur).  Blocked by the shader stage tag,
+   which is a dotted stem suffix engine-wide: gui_quad.vs.hlsl, draw_solid.ps.oshd, the
+   asset_tool profile sniff, build_tool's shader cook, gui_render_init, draw_material,
+   scripts/cook_shaders.bat, orb.targets `shader` lines, docs/shader_pipeline.md.  Options:
+   (a) rename the tag to an underscore suffix (gui_quad_vs.hlsl) across all of the above and
+   then forbid '.'; (b) keep '.' legal and let the tool treat it as an ordinary byte, as it
+   does today (the stem is everything before the LAST dot, so "tri.vs" names tri.vs.hlsl).
+   Decide before any content beyond shaders relies on a dotted stem.
 
 --------------------------------------------------------------------------------
 ## Rejected (do not re-propose without new evidence)

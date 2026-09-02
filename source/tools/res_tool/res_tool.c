@@ -10,8 +10,9 @@
     every #include "..." reachable from them -- unity fragments and headers alike -- and
     collects the names spelled through RID( "..." ) and RES_TREE( "..." ).  Each name is
     then resolved against the content roots to prove it stands for exactly one file, and the
-    set is written as a plain-text manifest, one name per line (see write_manifest for the
-    layout) -- the complete list of content the image can reach, for the packager.  Nothing
+    set is written as a plain-text manifest, one name per line with the source file it
+    resolved to (see write_manifest) -- the complete list of content the image can reach,
+    for the packager.  Nothing
     is generated for the compiler: RID() evaluates to its literal, and the program loads by
     name.  build_tool invokes this once per image, over the image's own units plus those of
     every statically linked dependency; see build_gen_res_manifest in build_tool_09_exec.c.
@@ -38,7 +39,8 @@
     in one directory (save.png beside save.jpg); a leaf name that is only a directory (use
     RES_TREE); a subtree with no directory; a literal, file or directory not spelled in
     canonical lowercase; a malformed name (empty segment, leading or trailing separator,
-    whitespace, non-ASCII); a RID() whose argument is not a string literal; and two names
+    whitespace, non-ASCII); a RID() whose argument is not a string literal, including inside
+    another macro's body; and two names
     hashing to one rid_t (res_hash_name is a dedup key for whoever indexes by name, so the
     marked set is proven collision-free here).
 
@@ -716,10 +718,11 @@ entry_add( const char* spelled, bool tree, int file, int line )
       RID( "..." )         a reference; adjacent literals concatenate as in C
       RES_TREE( "..." )
 
-    Preprocessor lines (a '#' first on the line, continued by trailing backslashes) are
-    where the macros themselves are defined, so a RID( there whose argument is not a
-    literal is skipped silently.  Anywhere else it is an error: a name reaching RID()
-    through a macro or variable is invisible to this scan and would not resolve at runtime.
+    The one place a RID( may legally take a non-literal is its own definition, "#define
+    RID( lit )" (and RES_TREE's), so those two preprocessor lines are skipped.  Anywhere
+    else -- ordinary code or another macro's body -- it is an error: a name reaching RID()
+    through a macro or variable is invisible to this scan, so a wrapper like
+    "#define ICON( n ) RID( \"ui/icon/\" n )" would compile and never be packaged.
 ==============================================================================================*/
 
 typedef struct lex_s
@@ -731,6 +734,7 @@ typedef struct lex_s
     int         file;       // index into g_files
     bool        bol;        // only whitespace seen since the last newline
     bool        directive;  // inside a preprocessor line
+    bool        defining;   // that line is "#define RID" or "#define RES_TREE"
 
 } lex_t;
 
@@ -756,6 +760,7 @@ lex_skip_space( lex_t* lx )
             lx->i++;
             lx->bol       = true;
             lx->directive = false;
+            lx->defining  = false;
         }
         else if ( c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v' )
         {
@@ -885,7 +890,7 @@ lex_reference( lex_t* lx, bool tree, int line )
 
     if ( parts == 0 || lx->i >= lx->n || lx->s[ lx->i ] != ')' )
     {
-        if ( !lx->directive )
+        if ( !lx->defining )
             rt_error( g_files[ lx->file ].path, line,
                       "%s( ... ): argument must be a string literal -- a name reaching %s through a"
                       " macro or variable cannot be harvested by the build", what, what );
@@ -922,7 +927,7 @@ lex_file( int file )
         return;
     }
 
-    lex_t lx = { .s = text, .n = size, .i = 0, .line = 1, .file = file, .bol = true, .directive = false };
+    lex_t lx = { .s = text, .n = size, .i = 0, .line = 1, .file = file, .bol = true, .directive = false, .defining = false };
 
     for ( ;; )
     {
@@ -943,28 +948,47 @@ lex_file( int file )
                 lx.i += 7;
                 lex_include( &lx );
             }
+            else if ( lx.i + 6 <= lx.n && strncmp( lx.s + lx.i, "define", 6 ) == 0 && !lex_is_ident( lx.s[ lx.i + 6 ] ) )
+            {
+                /* "#define RID" / "#define RES_TREE": the one line where the macro's argument
+                   is legitimately not a literal. */
+                lx.i += 6;
+                lex_skip_space( &lx );
+                size_t start = lx.i;
+                while ( lx.i < lx.n && lex_is_ident( lx.s[ lx.i ] ) )
+                    lx.i++;
+                size_t len  = lx.i - start;
+                lx.defining = ( len == 3 && strncmp( lx.s + start, "RID", 3 ) == 0 ) ||
+                              ( len == 8 && strncmp( lx.s + start, "RES_TREE", 8 ) == 0 );
+            }
             continue;
         }
 
         lx.bol = false;
 
-        if ( c == '"' )
+        if ( c == '"' || c == '\'' )
         {
-            /* An ordinary string: step over it, escapes included, so its contents are inert. */
+            /* An ordinary string or character literal: step over it, escapes included, so its
+               contents are inert.  A backslash-newline inside it still counts as a line. */
+            char q = c;
             lx.i++;
-            while ( lx.i < lx.n && lx.s[ lx.i ] != '"' && lx.s[ lx.i ] != '\n' )
-                lx.i += ( lx.s[ lx.i ] == '\\' && lx.i + 1 < lx.n ) ? 2 : 1;
-            if ( lx.i < lx.n && lx.s[ lx.i ] == '"' )
-                lx.i++;
-            continue;
-        }
-
-        if ( c == '\'' )
-        {
-            lx.i++;
-            while ( lx.i < lx.n && lx.s[ lx.i ] != '\'' && lx.s[ lx.i ] != '\n' )
-                lx.i += ( lx.s[ lx.i ] == '\\' && lx.i + 1 < lx.n ) ? 2 : 1;
-            if ( lx.i < lx.n && lx.s[ lx.i ] == '\'' )
+            while ( lx.i < lx.n && lx.s[ lx.i ] != q && lx.s[ lx.i ] != '\n' )
+            {
+                if ( lx.s[ lx.i ] == '\\' && lx.i + 1 < lx.n )
+                {
+                    if ( lx.s[ lx.i + 1 ] == '\n' )
+                        lx.line++;
+                    else if ( lx.s[ lx.i + 1 ] == '\r' && lx.i + 2 < lx.n && lx.s[ lx.i + 2 ] == '\n' )
+                    {
+                        lx.line++;
+                        lx.i++;
+                    }
+                    lx.i += 2;
+                }
+                else
+                    lx.i++;
+            }
+            if ( lx.i < lx.n && lx.s[ lx.i ] == q )
                 lx.i++;
             continue;
         }
@@ -1351,10 +1375,12 @@ check_collisions( void )
     Output
 
     The manifest: '#' comment lines, then one entry per line in name order, which makes every
-    subtree a contiguous run and keeps the file byte-stable across runs.  Each entry line is
-    whitespace-separated columns -- the name, the source file it resolved to under its content
-    root (a subtree: its directory), and the site -- so a reader that wants only the names
-    takes the first token of every non-comment line.  Names never contain whitespace.
+    subtree a contiguous run.  Each entry line is whitespace-separated columns -- the name,
+    the source file it resolved to under its content root (a subtree: its directory), and for
+    an expanded entry the subtree it came from -- so a reader that wants only the names takes
+    the first token of every non-comment line.  Names never contain whitespace.  The RID site
+    is deliberately not written: it is where a name was spelled, not what a packager acts on,
+    and a line number would change the file on every unrelated edit.  Errors carry the site.
 ==============================================================================================*/
 
 static int
@@ -1381,7 +1407,7 @@ write_manifest( const char* out_path, const char* label )
     fprintf( f, "# Every resource name this image references through RID() or RES_TREE(), harvested\n" );
     fprintf( f, "# from %d source file(s); %d found beneath declared subtrees.  A trailing slash marks\n",
              g_file_count, expanded );
-    fprintf( f, "# a subtree.  Columns: name, source file under its content root, site.\n" );
+    fprintf( f, "# a subtree.  Columns: name, source file under its content root, [in <subtree>].\n" );
     fprintf( f, "# %d name(s)\n", g_entry_count );
 
     if ( g_entry_count == 0 )
@@ -1390,12 +1416,12 @@ write_manifest( const char* out_path, const char* label )
         return true;
     }
 
-    /* The site columns are written from a sorted copy; `via` still indexes g_entries. */
+    /* Written from a sorted copy; `via` still indexes g_entries. */
     rt_entry_t* sorted = ( rt_entry_t* )rt_xrealloc( NULL, ( size_t )g_entry_count * sizeof( rt_entry_t ) );
     memcpy( sorted, g_entries, ( size_t )g_entry_count * sizeof( rt_entry_t ) );
     qsort( sorted, ( size_t )g_entry_count, sizeof( rt_entry_t ), entry_cmp_name );
 
-    /* Columns line up so the manifest reads as a table. */
+    /* Columns line up so the manifest reads as a table; a trailing pad is never written. */
     int name_w = 0, path_w = 0;
     for ( int i = 0; i < g_entry_count; ++i )
     {
@@ -1407,14 +1433,12 @@ write_manifest( const char* out_path, const char* label )
 
     for ( int i = 0; i < g_entry_count; ++i )
     {
-        const rt_entry_t* e    = &sorted[ i ];
-        const rt_entry_t* site = entry_site( e );
-        int               np   = name_w - ( int )strlen( e->name );
-        int               pp   = path_w - ( int )strlen( e->path );
-        fprintf( f, "%s%*s  %s%*s  ", e->name, np, "", e->path, pp, "" );
+        const rt_entry_t* e  = &sorted[ i ];
+        int               np = name_w - ( int )strlen( e->name );
+        fprintf( f, "%s%*s  %s", e->name, np, "", e->path );
         if ( e->via >= 0 )
-            fprintf( f, "in %s  ", g_entries[ e->via ].name );
-        fprintf( f, "%s:%d\n", path_basename( g_files[ site->file ].path ), site->line );
+            fprintf( f, "%*s  in %s", path_w - ( int )strlen( e->path ), "", g_entries[ e->via ].name );
+        fputc( '\n', f );
     }
     fclose( f );
     free( sorted );

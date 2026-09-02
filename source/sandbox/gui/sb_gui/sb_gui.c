@@ -262,6 +262,8 @@ main( int argc, char** argv )
     bool     draw_used   = false;
     bool     draw_inited = false;
 
+    RID( "font/cascadiamono/16" );   /* mark the font resource for the manifest */
+
     i32 vp = gui()->boot( &( gui_boot_desc_t ){
         .title     = "sb_gui",
         .x         = 64, .y = 64,
