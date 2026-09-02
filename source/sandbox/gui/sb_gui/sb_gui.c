@@ -217,6 +217,7 @@ main( int argc, char** argv )
 
     /* Load modules.  res is wired before any load so this exe's generated name table
        (obj/sb_gui/sb_gui_res_table.c, carried by res's descriptor) registers at init. */
+
     mod_system_init();
     res_wire_mod_callbacks();
     mod_static( sys );
@@ -227,7 +228,7 @@ main( int argc, char** argv )
     mod_static( rhi );
     mod_static( gui );
 
-    // mod_static( draw );
+    // mod_static( draw );  // disabled because its not being used at the moment
 
     if ( !mod_init_all() )
     {
@@ -286,7 +287,6 @@ main( int argc, char** argv )
         goto shutdown;
     }
 
-    // gui()->dpi_set( GUI_DPI_MANUAL, 0.0f );
     gui()->debug_enable( true );
 
     /* ------------------------------------------------------------------------------ */
