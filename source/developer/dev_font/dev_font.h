@@ -9,8 +9,8 @@
     binary.  The format is identical to font_tool output, so the existing ttf_load_file()
     path in the GUI loads it without modification.
 
-    Intended for development builds only.  In release, fonts are pre-baked by font_tool
-    (FreeType quality) and shipped in assets/font/.
+    Intended for development builds only.  Shipped bakes are recipes under content/font/ that
+    the build cooks with font_tool (FreeType quality) into build/content/font/.
 
     Usage
     -----
@@ -24,13 +24,13 @@
     ---------------
     ttf_path may be a bare filename ("CascadiaMono.ttf"), a friendly font name ("Cascadia Mono"),
     or a full path.  A request with no directory separator is searched in order:
-        1. <build_root>/assets/font_source/   (exact name, then + .ttf / .otf / .ttc)
+        1. <build_root>/assets/font/   (exact name, then + .ttf / .otf / .ttc)
         2. C:\Windows\Fonts\           (Windows)  (exact filename, then + .ttf / .otf / .ttc)
            /usr/share/fonts/truetype/  (Linux / macOS)
         3. By friendly name -- the OS font registry (Windows: HKLM then HKCU), then a
-           normalized-stem scan of font_source/ and the system font dir.  This resolves names
+           normalized-stem scan of assets/font/ and the system font dir.  This resolves names
            that differ from the filename ("Consolas" -> consola.ttf, "Cascadia Mono" ->
-           CascadiaMono.ttf) so fonts need not be copied into font_source/ first.
+           CascadiaMono.ttf) so fonts need not be copied into assets/font/ first.
     Paths that already contain a separator are used as-is.
 
     Cache

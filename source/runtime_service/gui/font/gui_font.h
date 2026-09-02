@@ -107,7 +107,7 @@ bool            font_load_into_mem ( u32 id, const void* data, u32 size, const c
 /*==============================================================================================
     Families -- a family is the directory under content/font a bake lives in ("cascadiamono").
     The resolver composes "font/<family>/<size>" from it; the runtime baker needs the typeface
-    behind it, which is a different spelling (an OS face name or a TTF under assets/font_source)
+    behind it, which is a different spelling (an OS face name or a TTF under assets/font)
     read from the family's descriptor, content/font/<family>/family.txt.  A family with no
     descriptor passes through unchanged, which is right for a directory named after a face
     dev_font can already resolve.
