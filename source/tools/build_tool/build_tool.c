@@ -305,9 +305,10 @@ int
 main( int argc, char** argv )
 {
     // --- Debug arg injection ---
-
-    bool debug_arg_injection = false;
-    if ( debug_arg_injection ) { argc = 2; argv[ 1 ] = "-custom_args"; }
+    //
+    // Replaces the command line with the DEBUG_ARGS list in build_tool_test.c when
+    // -custom_args is passed. No-op otherwise, and compiled out entirely under
+    // BUILD_TOOL_NO_DEBUG_INJECT.
 
     build_tool_debug_inject( &argc, &argv );
 
@@ -349,7 +350,17 @@ main( int argc, char** argv )
     char* create_type         = NULL;    // "static" (default), "dynamic", or "project"
     int   j_threads           = 0;       // 0 -> auto-detect from CPU count.
 
-    // --- Arg parsing (order-independent flag scan) ---
+    /*  --- Arg parsing (order-independent flag scan) ---
+
+        Flat, unchained tests: flags are independent, so several may be set in one
+        command line and order never matters. Only one can match any single token --
+        the literals are distinct and str_icmp is exact equality -- so the
+        independence comes from the loop, not from the lack of an else chain.
+
+        A branch that takes a value consumes it with argv[ ++i ] and then continues:
+        i now addresses the value, so any test still to run in this iteration would
+        be comparing against the wrong token. Adding a value-taking flag without
+        that continue is the way to break this loop. */
 
     for ( int i = 1; i < argc; ++i )
     {
@@ -372,18 +383,19 @@ main( int argc, char** argv )
         if ( str_icmp( argv[ i ], "-create" ) == 0 )
         {
             should_create = true;
-            if ( arg_has_value( argc, argv, i ) ) create_name = argv[ ++i ];
+            if ( arg_has_value( argc, argv, i ) ) { create_name = argv[ ++i ]; continue; }
         }
-        if ( str_icmp( argv[ i ], "-dir"    ) == 0 && arg_has_value( argc, argv, i ) ) { create_dir  = argv[ ++i ]; }
-        if ( str_icmp( argv[ i ], "-type"   ) == 0 && arg_has_value( argc, argv, i ) ) { create_type = argv[ ++i ]; }
-        
+        if ( str_icmp( argv[ i ], "-dir"    ) == 0 && arg_has_value( argc, argv, i ) ) { create_dir  = argv[ ++i ]; continue; }
+        if ( str_icmp( argv[ i ], "-type"   ) == 0 && arg_has_value( argc, argv, i ) ) { create_type = argv[ ++i ]; continue; }
+
         // compile settings
-        if ( str_icmp( argv[ i ], "-target" ) == 0 && arg_has_value( argc, argv, i ) ) ctx.target_name = argv[ ++i ];
-        if ( str_icmp( argv[ i ], "-file"   ) == 0 && arg_has_value( argc, argv, i ) ) ctx.file_path   = argv[ ++i ];
-        if ( str_icmp( argv[ i ], "-j"      ) == 0 && arg_has_value( argc, argv, i ) ) j_threads       = atoi( argv[ ++i ] );
+        if ( str_icmp( argv[ i ], "-target" ) == 0 && arg_has_value( argc, argv, i ) ) { ctx.target_name = argv[ ++i ]; continue; }
+        if ( str_icmp( argv[ i ], "-file"   ) == 0 && arg_has_value( argc, argv, i ) ) { ctx.file_path   = argv[ ++i ]; continue; }
+        if ( str_icmp( argv[ i ], "-j"      ) == 0 && arg_has_value( argc, argv, i ) ) { j_threads       = atoi( argv[ ++i ] ); continue; }
         if ( str_icmp( argv[ i ], "-config" ) == 0 && arg_has_value( argc, argv, i ) )
         {
             if ( str_icmp( argv[ ++i ], "release" ) == 0 ) ctx.config = CONFIG_RELEASE;
+            continue;
         }
         if ( str_icmp( argv[ i ], "-monolithic"       ) == 0 ) { ctx.is_monolithic = true; }
         if ( str_icmp( argv[ i ], "-mono"             ) == 0 ) { ctx.is_monolithic = true; }
@@ -411,6 +423,7 @@ main( int argc, char** argv )
             else if ( year >= 2017 ) g_vs_major_version = 15;
             else if ( year >= 2015 ) g_vs_major_version = 14;
             else                     g_vs_major_version = year; // direct pass-through for unknowns
+            continue;
         }
 
         // output verbosity
@@ -419,6 +432,7 @@ main( int argc, char** argv )
         if ( str_icmp( argv[ i ], "--out" ) == 0 && arg_has_value( argc, argv, i ) )
         {
             g_out_flags = (out_flags_t)strtoul( argv[ ++i ], NULL, 16 );
+            continue;
         }
     }
 
@@ -493,10 +507,12 @@ main( int argc, char** argv )
     // --- Target registry: orb.targets first (sets g_engine_root if 'engine' declared),
     //     then built-ins (uses g_engine_root to set paths and is_external correctly). ---
 
-    // %VAR% tokens in orb.targets (include_dir uses them for SDK roots like %VULKAN_SDK%)
-    // expand against the process environment as the file is parsed, so the VC environment
+    // This is where the VC environment actually gets imported, for every command path
+    // below: %VAR% tokens in orb.targets (include_dir uses them for SDK roots like
+    // %VULKAN_SDK%) expand against the process environment as the file is parsed, so it
     // has to be in place before the parse. Set up later and -gen would bake whatever the
     // launching shell happened to carry while builds used the vcvars cache value instead.
+    // Later calls are memoized no-ops (s_env_ready in 04_env.c).
     build_setup_vc_env();
 
     bool registry_ok = registry_load( "orb.targets", false );
@@ -525,7 +541,7 @@ main( int argc, char** argv )
             printf( ORB_INDENT "[orb warn] 'orb.targets' did not load -- bootstrapping anyway;"
                                " it is not an input to build_tool itself\n" );
 
-        build_setup_vc_env();
+        build_setup_vc_env();    // already done above; states that this path needs cl.exe
         target_info_t* bt = find_build_tool();
         if ( !bt ) { printf( ORB_INDENT "[orb error] build_tool target not found\n" ); return 1; }
         ctx.force_rebuild = true;
@@ -607,8 +623,9 @@ main( int argc, char** argv )
         printf( "\n" );
     }
 
-    // Make cl.exe / link.exe / lib.exe callable. Idempotent when already inside
-    // a Developer Command Prompt.
+    // cl.exe / link.exe / lib.exe must be callable from here down. Already imported
+    // before the registry parse, so this is a memoized no-op that records the
+    // requirement at the paths that depend on it.
     build_setup_vc_env();
 
     // Re-mirror third-party runtime files into bin/ on full builds only (covers
