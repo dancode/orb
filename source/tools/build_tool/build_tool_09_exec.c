@@ -35,6 +35,12 @@
       tool_deps loop and implicit reflect tool dep in step 0. VS -no-deps still
       needs those built; the scheduler pre-wires them as graph deps via add_job().
 
+    Content pipeline:
+      Steps 2.5 and 6.5 (res_tool, asset_tool and the cookers it forwards to) produce runtime
+      data only. A failure in either is reported and the target still compiles and links --
+      see the Content Pipeline Strictness block in build_tool.c. -strict-content restores
+      hard failure. Step 6 (reflect_tool) is fatal in both modes: its output is compiled.
+
 ==============================================================================================*/
 // clang-format off
 
@@ -111,6 +117,27 @@ platform_embed_manifest( const char* exe_path, const char* manifest_src )
     fresh manifest is written (a newly marked name cooks on the build that introduced it).
 ==============================================================================================*/
 
+/*  Diagnostic label for the content pipeline (res_tool, asset_tool and the cookers it
+    forwards to): "error" under -strict-content, "warn" otherwise. Every call site pairs it
+    with `if ( g_content_strict )` around the abort -- see the Content Pipeline Strictness
+    block in build_tool.c for why the default is non-fatal. */
+
+static const char*
+content_severity( void )
+{
+    return g_content_strict ? "error" : "warn";
+}
+
+/*  A content tool that could not be built is unavailable for the whole run: without these
+    latches every image would retry the same failing compile and repeat the same diagnostic
+    (twice over, since each target cooks in two passes). Plain bools, deliberately unlocked:
+    workers already past the check when one of them sets the latch repeat the message, so the
+    worst case is one line per worker rather than one per target -- bounded, and never a
+    correctness question. Neither is ever set under -strict-content, which returns first. */
+
+static bool g_res_tool_down   = false;
+static bool g_asset_tool_down = false;
+
 // Content roots, highest priority first: this project's content/, then the engine's when this
 // is a child project. Returns the count.
 static int
@@ -174,6 +201,8 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
     char roots[ 2 ][ PATH_MAX ];
     int  root_count = res_content_roots( roots );
 
+    // ok goes false only under -strict-content; otherwise every failure below is reported and
+    // the caller carries on to compile and link.
     bool        ok               = true;
     bool        asset_tool_ready = false;    // built at most once per call, the first time a
                                               // manifest entry actually needs cooking
@@ -226,27 +255,42 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
 
         if ( !asset_tool_ready )
         {
+            if ( g_asset_tool_down )
+                break;    // reported on the first image that needed it
+
             target_info_t* asset_tool = find_asset_tool();
+            const char*    down       = NULL;    // why nothing can be cooked this run
+
             if ( !asset_tool )
+                down = "no is_asset_tool target is registered";
+            else
             {
-                printf( ORB_INDENT "[orb error] '%s' names '%s', which needs cooking, but no"
-                                   " is_asset_tool target is registered\n",
-                        target->name, name );
-                ok = false;
-                break;
+                // Whether cooking is needed at all depends on manifest content, which isn't
+                // known until this point, so asset_tool is never wired into the parallel job
+                // graph like reflect_tool/res_tool are -- resolve its own deps here rather
+                // than trusting the caller's scheduling context (ctx->skip_deps may be true
+                // on the scheduler path).
+                build_context_t asset_ctx = *ctx;
+                asset_ctx.skip_deps       = false;
+                asset_ctx.skip_tool_deps  = false;
+                if ( !build_target( &asset_ctx, asset_tool, NULL, NULL ) )
+                    down = "the content cooker did not build";
             }
 
-            // Whether cooking is needed at all depends on manifest content, which isn't known
-            // until this point, so asset_tool is never wired into the parallel job graph like
-            // reflect_tool/res_tool are -- resolve its own deps here rather than trusting the
-            // caller's scheduling context (ctx->skip_deps may be true on the scheduler path).
-            build_context_t asset_ctx = *ctx;
-            asset_ctx.skip_deps       = false;
-            asset_ctx.skip_tool_deps  = false;
-            if ( !build_target( &asset_ctx, asset_tool, NULL, NULL ) )
+            if ( down )
             {
-                ok = false;
-                break;
+                if ( g_content_strict )
+                {
+                    printf( ORB_INDENT "[orb error] '%s' names '%s', which needs cooking, but %s\n",
+                            target->name, name, down );
+                    ok = false;
+                    break;
+                }
+                printf( ORB_INDENT "[orb warn] %s -- nothing is cooked into %s" PATH_SEP "content"
+                                   " this run; the first name that wanted it was '%s'\n",
+                        down, g_build_dir, name );
+                g_asset_tool_down = true;
+                break;    // the cooker is unusable, so no later entry can cook either
             }
             asset_tool_ready = true;
         }
@@ -358,8 +402,12 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
         build_unlock_target( cook_lock );
         if ( ret != 0 )
         {
-            printf( ORB_INDENT "[orb error] '%s' content cook failed: %s\n", target->name, src );
-            ok = false;
+            // One uncookable file does not stop the rest: the loop condition keeps going
+            // while ok holds, and ok only drops under -strict-content.
+            printf( ORB_INDENT "[orb %s] '%s' content cook failed: %s\n",
+                    content_severity(), target->name, src );
+            if ( g_content_strict )
+                ok = false;
         }
     }
 
@@ -426,7 +474,7 @@ build_gen_res_manifest( target_info_t* target, const char* obj_dir, const target
     FILE* lf = fopen( list_path, "w" );
     if ( !lf )
     {
-        printf( ORB_INDENT "[orb error] '%s' cannot write %s\n", target->name, list_path );
+        printf( ORB_INDENT "[orb %s] '%s' cannot write %s\n", content_severity(), target->name, list_path );
         return false;
     }
     fprintf( lf, "# res_tool inputs for '%s': its units and those of its link closure\n", target->name );
@@ -477,8 +525,8 @@ build_gen_res_manifest( target_info_t* target, const char* obj_dir, const target
               res_tool->name, list_path, out_path, deps_path, target->name, src_root, engine_inc, roots, silent );
     if ( build_run_cmd( cmd ) != 0 )
     {
-        printf( ORB_INDENT "[orb error] '%s' resource manifest failed -- see the res_tool errors above\n",
-                target->name );
+        printf( ORB_INDENT "[orb %s] '%s' resource manifest failed -- see the res_tool errors above\n",
+                content_severity(), target->name );
         return false;
     }
     return true;
@@ -557,18 +605,40 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     }
 
     // Implicit res tool dep -- same two paths as reflection: built here on the serial
-    // path, pre-wired as a graph dep by the scheduler.
-    if ( target_wants_res_manifest( target ) )
+    // path, pre-wired as a graph dep by the scheduler. Unlike reflection, an unavailable
+    // res_tool leaves res_tool NULL and step 6.5 is skipped: the manifest is a runtime
+    // input, so the target still compiles unless -strict-content is set.
+    if ( target_wants_res_manifest( target ) && !g_res_tool_down )
     {
         res_tool = find_res_tool();
+
+        const char* down = NULL;    // why no target gets a manifest this run
         if ( !res_tool )
+            down = "no is_res_tool target is registered";
+        else if ( !ctx->skip_tool_deps && !build_target( ctx, res_tool, NULL, NULL ) )
+            down = "res_tool did not build";
+        else
         {
-            printf( ORB_INDENT "[orb error] '%s' needs a resource manifest but no is_res_tool target is registered\n",
-                    target->name );
-            return false;
+            // On the scheduler path res_tool is a graph dep, so a soft failure of that job
+            // reaches us as a missing exe rather than as a failed build_target.
+            char rt_exe[ PATH_MAX ];
+            snprintf( rt_exe, sizeof( rt_exe ), "bin" PATH_SEP "%s.exe", res_tool->name );
+            if ( !platform_file_exists( rt_exe ) )
+                down = "res_tool is not built";
         }
-        if ( !ctx->skip_tool_deps && !build_target( ctx, res_tool, NULL, NULL ) )
-            return false;
+
+        if ( down )
+        {
+            if ( g_content_strict )
+            {
+                printf( ORB_INDENT "[orb error] '%s' needs a resource manifest but %s\n",
+                        target->name, down );
+                return false;
+            }
+            printf( ORB_INDENT "[orb warn] %s -- no target gets a resource manifest this run\n", down );
+            g_res_tool_down = true;
+            res_tool        = NULL;
+        }
     }
 
     // --- 1. Per-Target Mutex Lock ---
@@ -596,7 +666,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     // mtime compare per cookable name when there is nothing to do.
     //
     // Returns directly rather than through cleanup: nothing has been renamed yet, and the
-    // variables that label reads are not declared until after the up-to-date check.
+    // variables that label reads are not declared until after the up-to-date check. Only
+    // -strict-content can produce that return; otherwise a cook failure is a warning.
 
     if ( !build_cook_content( ctx, target, obj_dir ) )
     {
@@ -716,13 +787,26 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     //    is one extra rebuild in that second; the next link lands later and the check
     //    settles. A newer res_tool.exe is stale too: how a manifest is spelled lives in the
     //    tool.
-    if ( up_to_date && target_wants_res_manifest( target ) )
+    //    A missing manifest is stale as well. res_tool deletes it and writes no deps file
+    //    when a name fails to resolve, and outside -strict-content the target links anyway --
+    //    without this the fresh artifact would look current and the harvest would never be
+    //    retried, so the broken name would go quiet after one build.
+    //    Keyed on res_tool rather than on target_wants_res_manifest: when the harvest is off
+    //    for the run there is no manifest to miss and no deps to replay, and treating that as
+    //    stale would recompile every image on every build until res_tool builds again.
+    if ( up_to_date && res_tool )
     {
         char deps_path[ PATH_MAX ];
         snprintf( deps_path, sizeof( deps_path ), "%s" PATH_SEP "_res_deps.txt", obj_dir );
+        char man_path[ PATH_MAX ];
+        snprintf( man_path, sizeof( man_path ), "%s" PATH_SEP "%s_res_manifest.txt", obj_dir, target->name );
 
         platform_mapped_file_t dep_map;
-        if ( platform_get_mtime( "bin" PATH_SEP "res_tool.exe" ) >= out_mtime )
+        if ( !platform_file_exists( man_path ) )
+        {
+            up_to_date = false;
+        }
+        else if ( platform_get_mtime( "bin" PATH_SEP "res_tool.exe" ) >= out_mtime )
         {
             up_to_date = false;
         }
@@ -831,11 +915,20 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     // The fresh manifest may name content the previous one did not; cook it now so the image
     // that introduced a name runs against its cooked form on this same build.
 
-    if ( res_tool && ( !build_gen_res_manifest( target, obj_dir, res_tool )
-                       || !build_cook_content( ctx, target, obj_dir ) ) )
+    if ( res_tool )
     {
-        result = false;
-        goto cleanup;
+        // A failed harvest removes the manifest, so there is nothing left to cook from.
+        bool manifest_ok = build_gen_res_manifest( target, obj_dir, res_tool );
+        if ( !manifest_ok && g_content_strict )
+        {
+            result = false;
+            goto cleanup;
+        }
+        if ( manifest_ok && !build_cook_content( ctx, target, obj_dir ) )
+        {
+            result = false;    // only reachable under -strict-content
+            goto cleanup;
+        }
     }
 
     // --- 7. Compile & Link ---

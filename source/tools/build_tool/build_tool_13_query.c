@@ -76,6 +76,7 @@ cmd_print_help( void )
     printf( ORB_INDENT "  %-28s%s\n", "-no-fwd-compat",         "-gen: omit stdcpp20 IntelliSense mode; use strict C11." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-rsp",                "Pass command lines directly; skip .rsp response files." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-include-track",      "Skip /showIncludes; header changes won't trigger rebuild." );
+    printf( ORB_INDENT "  %-28s%s\n", "-strict-content",        "Fail the build when res_tool or a content cook fails (default: warn)." );
     printf( "\n" );
     return 0;
 }

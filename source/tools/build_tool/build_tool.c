@@ -131,11 +131,29 @@ static bool        g_include_track  = true;         // Use up-to-date tracking v
 static bool        g_use_rsp        = true;         // Use overflow prevention.
 static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 + stdc11 (for nmake).
                                                     // (suppress designated-initializer squiggles)
+static bool        g_content_strict = false;        // Content pipeline failures abort the target.
 static int         g_job_threads    = 1;            // Effective scheduler worker count. Divides
                                                     // the /MP share so N workers each running M
                                                     // child compilers stay near the core count.
                                                     // Stays 1 on the serial -no-deps path.
 int                g_vs_major_version = 0;          // 0 = auto-detect; set by -vs-version <year>.
+
+/*==============================================================================================
+    --- Content Pipeline Strictness ---
+
+    The content pipeline is res_tool (the resource manifest) plus asset_tool and the cookers
+    it forwards to (shader_tool, font_tool). Everything they produce is a RUNTIME input --
+    obj/<t>/<t>_res_manifest.txt and the cooked mirror under build/content -- and no compiler
+    ever reads any of it. So by default a failure anywhere in that pipeline is a warning:
+    the target still compiles and links, and an image with a broken RID or an uncookable
+    shader is a runnable binary that will fault on that one resource at load time.
+
+    -strict-content puts the whole pipeline back in the hard-failure set: use it for CI and
+    for ship builds, where a name that does not resolve must stop the build.
+
+    reflect_tool is deliberately NOT part of this. Its .generated.c/.h are compiled into the
+    target, so its failure is a compile failure and stays fatal in both modes.
+==============================================================================================*/
 
 /*==============================================================================================
     --- ANSI Color Strings ---
@@ -319,6 +337,7 @@ main( int argc, char** argv )
         if ( str_icmp( argv[ i ], "-no-rsp"           ) == 0 ) g_use_rsp = false;
         if ( str_icmp( argv[ i ], "-no-fwd-compat"    ) == 0 ) g_gen_fwd_compat = false;
         if ( str_icmp( argv[ i ], "-no-include-track" ) == 0 ) g_include_track = false;
+        if ( str_icmp( argv[ i ], "-strict-content"   ) == 0 ) g_content_strict = true;
         if ( str_icmp( argv[ i ], "-vs-version" ) == 0 && arg_has_value( argc, argv, i ) )
         {
             // Accept a VS release year (2022, 2026, ...) and map to the internal major version.
@@ -554,6 +573,9 @@ main( int argc, char** argv )
     // Generates the target's resource manifest only, building res_tool first if needed. The
     // native MSBuild projects build without build_target, so this is how their pre-build
     // event still resolves every marked name and writes obj/<target>/<target>_res_manifest.txt.
+    //
+    // Exits 0 on a pipeline failure unless -strict-content: a nonzero exit from a pre-build
+    // event stops the MSBuild project, which is exactly what the default must not do.
 
     if ( should_res_manifest )
     {
@@ -565,14 +587,23 @@ main( int argc, char** argv )
             return 1;
         }
         target_info_t* res_tool = find_res_tool();
-        if ( !res_tool ) { printf( ORB_INDENT "[orb error] no res_tool is registered\n" ); return 1; }
-        if ( !build_target( &ctx, res_tool, NULL, NULL ) ) return 1;
+        if ( !res_tool )
+        {
+            printf( ORB_INDENT "[orb %s] no res_tool is registered\n", content_severity() );
+            return g_content_strict ? 1 : 0;
+        }
+        if ( !build_target( &ctx, res_tool, NULL, NULL ) )
+        {
+            printf( ORB_INDENT "[orb %s] '%s' resource manifest skipped -- res_tool did not build\n",
+                    content_severity(), target->name );
+            return g_content_strict ? 1 : 0;
+        }
 
         char obj_dir[ PATH_MAX ];
         snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
         ensure_dir( g_build_dir );
         ensure_dir( obj_dir );
-        if ( !build_gen_res_manifest( target, obj_dir, res_tool ) )
+        if ( !build_gen_res_manifest( target, obj_dir, res_tool ) && g_content_strict )
         {
             printf( ORB_BANNER "%s[ %s: FAILED ]%s\n", g_clr_red, target_upper, g_clr_reset );
             return 1;

@@ -328,5 +328,35 @@ target_wants_res_manifest( const target_info_t* t )
     return t->type == TARGET_DYNAMIC_LIB || t->type == TARGET_EXECUTABLE;
 }
 
+/*==============================================================================================
+    --- Content Tool Membership ---
+
+    True for the targets that make up the content pipeline: res_tool, asset_tool, and the
+    cookers asset_tool spawns as bin/ siblings (its tool_deps -- shader_tool, font_tool).
+    Membership is derived from the flags and the tool_dep edges, so a project that swaps in
+    its own cooker is covered without touching this file.
+
+    The scheduler consults it when a job fails: a content tool produces nothing the compiler
+    reads, so its failure is reported and the graph keeps going (see worker_main). reflect_tool
+    is not a member -- its generated .c/.h are compiled, so it stays a hard dependency.
+==============================================================================================*/
+
+static bool
+target_is_content_tool( const target_info_t* t )
+{
+    if ( t->is_res_tool || t->is_asset_tool )
+        return true;
+
+    for ( int i = 0; i < g_target_count; ++i )
+    {
+        if ( !g_targets[ i ].is_asset_tool )
+            continue;
+        for ( int d = 0; g_targets[ i ].tool_deps[ d ]; ++d )
+            if ( strcmp( g_targets[ i ].tool_deps[ d ], t->name ) == 0 )
+                return true;
+    }
+    return false;
+}
+
 /*============================================================================================*/
 // clang-format on

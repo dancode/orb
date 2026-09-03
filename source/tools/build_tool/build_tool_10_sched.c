@@ -67,7 +67,8 @@ typedef struct
 
     int                 in_flight;                  // Workers currently inside build_target().
     int                 total_remaining;            // Jobs not yet completed.
-    bool                any_failed;                 // Sticky: one failure stops new dispatches.
+    bool                any_failed;                 // Sticky: one failure stops new dispatches. A
+                                                    // failed content tool does not set it.
 
     platform_mutex_t    lock;                       // Guards every field below jobs[].
     platform_cond_t     cv;                         // Signaled on state changes.
@@ -296,6 +297,10 @@ add_job( target_info_t* t )
       4. Take the print lock and dump the per-target log atomically.
       5. Reacquire the scheduler lock, decrement counters, promote any
          dependents whose final dep just finished, broadcast on the CV.
+
+    A failure normally makes any_failed sticky and drains the ready queue. The one exception
+    is a content tool (target_is_content_tool): res_tool, asset_tool and its cookers emit only
+    runtime data, so their failure is printed and their dependents are still released.
 ==============================================================================================*/
 
 static PLATFORM_THREAD_ENTRY
@@ -389,12 +394,18 @@ worker_main( void* arg )
             }
         }
 
+        // A content tool that fails to build is not a build-stopper: nothing it emits reaches
+        // the compiler, and the steps that use it degrade to warnings of their own. Report it
+        // in yellow, release its dependents, and leave any_failed alone.
+        bool soft_fail = !ok && !g_content_strict && target_is_content_tool( j->target );
+
         bool show_skipped = j->skipped && ( g_out_flags & ORB_OUT_SUMMARY_COMPILE );
         if ( !ok || show_skipped )
         {
-            const char* clr    = !ok ? g_clr_red : g_clr_dim;
+            const char* clr    = !ok ? ( soft_fail ? g_clr_yellow : g_clr_red ) : g_clr_dim;
             const char* status = !ok ? "FAILED" : "skipped";
-            printf( ORB_INDENT "%s[orb %s]%s %s\n", clr, status, g_clr_reset, j->target->name );
+            printf( ORB_INDENT "%s[orb %s]%s %s%s\n", clr, status, g_clr_reset, j->target->name,
+                    soft_fail ? " (content tool -- build continues; -strict-content to stop)" : "" );
         }
         fflush( stdout );
         platform_mutex_unlock( &g_print_lock );
@@ -405,7 +416,7 @@ worker_main( void* arg )
         j->failed = !ok;
         g_sched.in_flight--;
         g_sched.total_remaining--;
-        if ( !ok ) g_sched.any_failed = true;
+        if ( !ok && !soft_fail ) g_sched.any_failed = true;
         else
         {
             for ( int ri = 0; ri < j->rev_dep_count; ++ri )
