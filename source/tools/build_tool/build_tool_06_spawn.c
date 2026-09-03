@@ -13,6 +13,12 @@
     stdio without mutating the parent's file descriptors. This makes N concurrent worker
     threads safe -- CRT wrappers race on descriptor duplication and produce silent failures.
 
+    Neither helper wraps the command in a shell. Every caller passes a fully-formed
+    compiler / linker / tool command line, and build_clean() reaches the filesystem
+    through the platform_delete_* helpers rather than through del and rd -- so the only
+    cmd.exe in the whole tool is the vcvars import in 04_env.c, which BUILD_SAFE_MODE
+    exists to turn off.
+
 ==============================================================================================*/
 // clang-format off
 
@@ -39,20 +45,6 @@ build_run_cmd( const char* cmd )
     }
     return rc;
 }
-
-#if !defined( BUILD_SAFE_MODE )
-/* Like build_run_cmd() but routes through cmd.exe /c so shell built-ins (del, rd)
-   and output redirections (>nul 2>nul) work. Errors are suppressed -- used by
-   build_clean() where "file not found" is expected and the caller prints a summary. */
-
-int
-build_run_cmd_quiet( const char* cmd )
-{
-    char shell_cmd[ PATH_MAX * 2 ];
-    snprintf( shell_cmd, sizeof( shell_cmd ), "cmd.exe /c %s", cmd );
-    return platform_spawn( shell_cmd, sched_log_path() );
-}
-#endif
 
 /*==============================================================================================
     --- Output Line Filtering ---

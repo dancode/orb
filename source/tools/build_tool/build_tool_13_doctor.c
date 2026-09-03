@@ -184,7 +184,14 @@ doctor_check_environment( void )
        every mode) or the vcvars import (blocked by BUILD_SAFE_MODE) must cover it. */
     char cl_path[ PATH_MAX ];
     bool cl_found = doctor_exe_on_path( "cl.exe", cl_path, sizeof( cl_path ) );
-    bool has_cache = ( platform_get_mtime( VCVARS_CACHE_PATH ) > 0 );
+
+    /* Resolve the cache the same way build_setup_vc_env does. The macro is the engine's
+       own CWD-relative path; a child project's cache lives under the engine root, and
+       probing the macro there reports "no cache" against a perfectly good one. */
+    char cache_path[ PATH_MAX ];
+    snprintf( cache_path, sizeof( cache_path ), "%s", vcvars_cache_path() );
+    bool has_cache = ( platform_get_mtime( cache_path ) > 0 );
+
     if ( cl_found && strstr( cl_path, "\\x64\\" ) )
         doc_ok( "cl.exe on PATH (x64): %s", cl_path );
     else if ( cl_found )
@@ -193,12 +200,12 @@ doctor_check_environment( void )
         doc_fix( "run vcvarsall.bat with the x64 argument -- an x86 cl produces 32-bit output" );
     }
     else if ( has_cache )
-        doc_ok( "cl.exe not on PATH; vcvars cache available: %s", VCVARS_CACHE_PATH );
+        doc_ok( "cl.exe not on PATH; vcvars cache available: %s", cache_path );
     else if ( safe_mode )
     {
         doc_fail( "cl.exe not on PATH; BUILD_SAFE_MODE blocks auto-import and no vcvars cache exists" );
         doc_fix( "run any build_tool command once from a Developer Command Prompt to seed %s",
-                 VCVARS_CACHE_PATH );
+                 cache_path );
     }
     else
     {

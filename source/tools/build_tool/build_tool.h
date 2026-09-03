@@ -68,37 +68,34 @@
 // clang-format off
 
 /*  Uncomment to build in safe mode for machines with EDR / aggressive threat protection.
-    Disables all cmd.exe and _popen call paths:
-      - vcvarsall auto-import: disabled. Run from a Developer Command Prompt instead.
+    Disables the two remaining _popen call paths, both in VS discovery:
+      - vcvarsall auto-import: disabled. Run from a Developer Command Prompt instead
+        (one such run seeds the vcvars cache, which every later plain-terminal run reads).
       - vswhere discovery via _popen: skipped. VS found via hardcoded paths only.
-      - build_clean(): uses Win32 API (DeleteFileA / RemoveDirectoryA), no del / rd.
-    All original code is preserved under #else and restored by removing this define. */
+
+    Everything else already avoids the shell unconditionally: commands are spawned with
+    CreateProcess / posix_spawn and never through cmd.exe, and build_clean() deletes via
+    the Win32 / POSIX APIs rather than del and rd. */
 
 /*
     Where BUILD_SAFE_MODE is wired in -- keep this list in sync if a guard site moves.
 
     build_tool.h
-    - The build_run_cmd_quiet declaration is guarded by #if !defined( BUILD_SAFE_MODE ).
+    - This block; nothing else in the header branches on it.
 
-    build_tool_win.c
-    - Three Win32 helpers exist only under #if defined( BUILD_SAFE_MODE ):
-      - platform_delete_file_quiet(path) -- DeleteFileA, silent
-      - platform_delete_glob_quiet(dir, glob) -- FindFirstFileA loop + DeleteFileA
-      - platform_rmdir_quiet(path) -- recursive RemoveDirectoryA
+    build_tool_win.c / build_tool_posix.c
+    - platform_popen / platform_pclose are defined only under #if !defined( BUILD_SAFE_MODE ),
+      matching their two call sites below.
 
-    build_tool_04_env.c (the main EDR trigger)
+    build_tool_04_env.c (the whole reason the switch exists)
     - locate_vcvarsall(): the vswhere _popen loop is guarded by #if !defined( BUILD_SAFE_MODE );
       the hardcoded path fallback always runs regardless.
     - build_setup_vc_env(): in safe mode, it prints a clear message and returns after the two
       fast paths instead of importing vcvars.
 
-    build_tool_06_spawn.c
-    - build_run_cmd_quiet() is defined only under #if !defined( BUILD_SAFE_MODE ).
-
-    build_tool_11_clean.c
-    - In safe mode, build_clean() calls platform_delete_file_quiet / platform_delete_glob_quiet /
-      platform_rmdir_quiet directly, spawning no child processes; otherwise it uses del_q() and
-      the shell-based build_clean() path.
+    build_tool_13_doctor.c
+    - doctor_check_environment() reads the mode to report it, and to decide whether a missing
+      cache is a failure (safe mode cannot import) or merely a slower first build.
 */
 
 /* #define BUILD_SAFE_MODE */
@@ -778,16 +775,6 @@ void  build_unlock_target( void* lock );
     active (see sched_log_path), otherwise inherits the parent's stdout/stderr. */
 
 int build_run_cmd( const char* cmd );
-
-#if !defined( BUILD_SAFE_MODE )
-/*  Like build_run_cmd but routes through the shell (cmd.exe /c on Win32) so
-    shell builtins (del, rd) and output redirections (>nul 2>nul) work. Used for
-    housekeeping invocations such as build_clean() where "file not found" is
-    expected; the caller prints its own human-readable summary instead of one
-    line per call. */
-
-int build_run_cmd_quiet( const char* cmd );
-#endif
 
 /*  Pipes the child's stdout+stderr back line-by-line through us. Used for compile and
     link/lib steps alike. Lines are forwarded to the active sink (worker log or stdout)

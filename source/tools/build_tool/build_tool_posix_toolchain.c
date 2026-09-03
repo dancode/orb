@@ -72,14 +72,21 @@ platform_cc_exe( compiler_t compiler )
     Appends the core compile flags to buf. -fPIC is always included so objects
     can go into shared libraries without recompilation. Config selects Debug or
     Release variants. Output flags and dependency tracking are NOT included here.
+
+    is_shipping adds -flto, the GCC/Clang counterpart of MSVC /GL: it defers code
+    generation to link time so the linker can optimize across translation units.
+    The archive and link steps pass their own -flto to match.
 ==============================================================================================*/
 
 static void
-platform_cc_base_flags( compiler_t compiler, config_t config, char* buf, size_t size )
+platform_cc_base_flags( compiler_t compiler, config_t config, bool is_shipping, char* buf, size_t size )
 {
+    ( void )compiler;
     size_t used = strlen( buf );
     const char* sep = used ? " " : "";
-    const char* cfg = ( config == CONFIG_DEBUG ) ? "-g -O0" : "-O2";
+    const char* cfg = ( config == CONFIG_DEBUG ) ? "-g -O0"
+                    : is_shipping               ? "-O2 -flto"
+                                                : "-O2";
     snprintf( buf + used, size - used,
               "%s-c -Wall -Wextra -Werror -std=c11 -fPIC %s", sep, cfg );
 }
@@ -249,13 +256,15 @@ platform_lk_append_sys_libs( char* buf, size_t size )
     --- Linker: Pre-Link Cleanup ---
 
     No-op on POSIX: debug information is embedded as DWARF inside the binary.
-    There are no separate per-link PDB files to rotate or sweep.
+    There are no separate per-link PDB files to rotate or sweep, so neither the
+    target name nor the config selects anything to sweep here.
 ==============================================================================================*/
 
 static void
-platform_lk_pre_link( const char* target_name )
+platform_lk_pre_link( const char* target_name, config_t config )
 {
     ( void )target_name;
+    ( void )config;
 }
 
 /*==============================================================================================
@@ -266,11 +275,17 @@ platform_lk_pre_link( const char* target_name )
 
     Assembled command: ar rcs bin/libname.a obj/name/*.o
     The /bin/sh -c wrapper in platform_spawn expands the *.o glob.
+
+    A shipping build compiles with -flto, so the members are LTO bytecode rather than
+    native objects. "ar" reads them through the linker plugin binutils loads by default,
+    so the archive command itself is unchanged -- is_shipping is taken for signature
+    parity with the Win32 counterpart, where lib.exe does need an explicit /LTCG.
 ==============================================================================================*/
 
 static void
-platform_lk_fill_static( const char* target_name, link_cmd_t* lk )
+platform_lk_fill_static( const char* target_name, bool is_shipping, link_cmd_t* lk )
 {
+    ( void )is_shipping;
     snprintf( lk->exe,      sizeof( lk->exe ),      "ar" );
     snprintf( lk->artifact, sizeof( lk->artifact ),  "bin/lib%s.a", target_name );
     snprintf( lk->flags,    sizeof( lk->flags ),     "rcs" );
@@ -286,6 +301,11 @@ platform_lk_fill_static( const char* target_name, link_cmd_t* lk )
 
     DLLs use -shared and produce bin/libname.so.
     Executables produce bin/name with no special flags.
+
+    A shipping build repeats -flto here: the compile step emitted bytecode instead of
+    native code, so the link is where that code is actually generated and optimized
+    across units. The 'subsystem' setting has no POSIX counterpart -- an executable is
+    distinguished by its entry point, not by a header field -- and is ignored.
 ==============================================================================================*/
 
 static void
@@ -293,19 +313,20 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
 {
     const bool  is_dll = ( target->type == TARGET_DYNAMIC_LIB );
     const char* cc     = ( ctx->compiler == COMPILE_CLANG ) ? "clang" : "gcc";
+    const char* lto    = ctx->is_shipping ? "-flto" : "";
 
     snprintf( lk->exe, sizeof( lk->exe ), "%s", cc );
 
     if ( is_dll )
     {
         snprintf( lk->artifact, sizeof( lk->artifact ),  "bin/lib%s.so", target->name );
-        snprintf( lk->flags,    sizeof( lk->flags ),     "-shared" );
+        snprintf( lk->flags,    sizeof( lk->flags ),     "-shared%s%s", lto[ 0 ] ? " " : "", lto );
         snprintf( lk->output,   sizeof( lk->output ),    "-o bin/lib%s.so", target->name );
     }
     else
     {
         snprintf( lk->artifact, sizeof( lk->artifact ),  "bin/%s", target->name );
-        snprintf( lk->flags,    sizeof( lk->flags ),     "" );
+        snprintf( lk->flags,    sizeof( lk->flags ),     "%s", lto );
         snprintf( lk->output,   sizeof( lk->output ),    "-o bin/%s", target->name );
     }
 }

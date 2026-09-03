@@ -24,6 +24,12 @@
         platform_find_first()    -- begin directory enumeration    (_findfirst)
         platform_find_next()     -- advance directory enumeration  (_findnext)
         platform_find_close()    -- end directory enumeration      (_findclose)
+        platform_touch_file()    -- create / truncate a stamp file (CreateFileA)
+        platform_delete_file()   -- remove a file                  (DeleteFileA)
+        platform_delete_glob_quiet() -- remove matching files in a dir (FindFirstFileA)
+        platform_rmdir_quiet()   -- remove a directory tree        (RemoveDirectoryA)
+        platform_map_file()      -- read-only memory map           (CreateFileMappingA)
+        platform_unmap_file()    -- release a mapping              (UnmapViewOfFile)
 
 ==============================================================================================*/
 // clang-format off
@@ -334,21 +340,13 @@ platform_unmap_file( platform_mapped_file_t* m )
     m->_map  = NULL;
 }
 
-#if defined( BUILD_SAFE_MODE )
-
 /*==============================================================================================
-    --- Safe-Mode File Deletion Helpers ---
+    --- Bulk File Deletion Helpers ---
 
-    Used by build_clean() in safe mode to avoid spawning cmd.exe for del / rd.
-    All three functions are silent on error -- file-not-found during clean is expected.
+    build_clean()'s primitives. Win32 API only -- no cmd.exe child, so a clean spawns
+    nothing regardless of BUILD_SAFE_MODE, and EDR sees no shell process behind the build
+    tool. Both are silent on error: file-not-found during a clean is the normal case.
 ==============================================================================================*/
-
-/* Delete a single file by path. */
-static void
-platform_delete_file_quiet( const char* path )
-{
-    DeleteFileA( path );
-}
 
 /* Delete all non-directory entries in dir whose name matches glob (e.g. "*.pdb"). */
 static void
@@ -407,8 +405,6 @@ platform_rmdir_quiet( const char* path )
 
     RemoveDirectoryA( path );
 }
-
-#endif
 
 // clang-format on
 /*============================================================================================*/

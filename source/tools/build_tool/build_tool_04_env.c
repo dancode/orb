@@ -33,27 +33,49 @@
 ==============================================================================================*/
 // clang-format off
 
+/*  Everything from here to build_setup_vc_env() is Windows-only: vcvarsall, vswhere and the
+    environment cache have no POSIX counterpart, where the compiler is simply on PATH. The
+    guard is what keeps them from compiling as unreferenced statics there (-Wunused-function
+    is an error under -Werror). build_setup_vc_env() and build_detect_vs_major() below are
+    declared in the header and stay defined on both platforms. */
+
+#if defined( _WIN32 )
+
 /* Set to false to always run the full vcvarsall import and never read or write the cache. */
 static bool s_vcvars_cache_enabled = true;
 
 #define VCVARS_CACHE_PATH  BUILD_DIR "\\.vcvars_x64"
 
-/* The vcvars cache captures a machine-wide VS environment -- it is not project-specific.  When
-   this run builds a CHILD project, g_engine_root is set (from the 'engine' directive) and the CWD
-   is the project, whose build/ has no cache; the ENGINE's cache is the one to use.  Resolving the
-   cache under g_engine_root lets a plain-terminal or launcher-driven child build reuse the engine's
-   seeded cache instead of dropping into safe mode.  The engine's own build (g_engine_root empty)
-   keeps the original CWD-relative path. */
+/*  Where the vcvars cache lives for this run.
+
+    The cache captures a machine-wide VS environment, not a project-specific one, so when this
+    run builds a CHILD project the ENGINE's cache is the one worth reusing -- that is what keeps
+    a plain-terminal or launcher-driven child build out of the safe-mode "no cache" path.
+
+    That redirect only applies when g_engine_root is already known, and it usually is not:
+    build_setup_vc_env() runs before registry_load() parses the 'engine' directive, because the
+    parse expands %VAR% tokens against the environment this sets up. So in practice a child
+    project resolves to its own build/ and seeds a second cache there. Harmless -- one extra
+    import on that project's first run -- but it is why the engine-rooted form is rarely taken.
+
+    The answer is memoized on the first call so every later caller sees the path this run
+    ACTUALLY used, not the one it would pick now that more is known. -doctor is the caller
+    that depends on this: it runs after the registry load, and without the latch it would
+    report an engine-rooted cache while the build was reading the project-local one. */
+
 static const char*
 vcvars_cache_path( void )
 {
     static char path[ PATH_MAX ];
-    if ( g_engine_root[ 0 ] )
-    {
-        snprintf( path, sizeof( path ), "%s" PATH_SEP BUILD_DIR PATH_SEP ".vcvars_x64", g_engine_root );
+    if ( path[ 0 ] )
         return path;
-    }
-    return VCVARS_CACHE_PATH;
+
+    if ( g_engine_root[ 0 ] )
+        snprintf( path, sizeof( path ), "%s" PATH_SEP BUILD_DIR PATH_SEP ".vcvars_x64", g_engine_root );
+    else
+        snprintf( path, sizeof( path ), "%s", VCVARS_CACHE_PATH );
+
+    return path;
 }
 
 /*==============================================================================================
@@ -200,7 +222,6 @@ vcvars_cache_load( const char* path )
     Returns the number of variables written, 0 on failure.
 ==============================================================================================*/
 
-#if defined( _WIN32 )
 static int
 vcvars_cache_save_current_env( const char* cache_path )
 {
@@ -244,7 +265,6 @@ vcvars_cache_save_current_env( const char* cache_path )
     }
     return written;
 }
-#endif
 
 /*==============================================================================================
     import_vcvars_env()
@@ -319,7 +339,9 @@ import_vcvars_env( const char* vcvars_path, const char* cache_path )
     platform_pclose( pipe );
     return imported;
 }
-#endif
+#endif  // !BUILD_SAFE_MODE
+
+#endif  // _WIN32 -- end of the vcvars machinery
 
 /*==============================================================================================
     build_setup_vc_env()

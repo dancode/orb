@@ -942,8 +942,11 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     char res_path[ PATH_MAX ] = { 0 };
     if ( target->is_build_tool )
     {
-        const char* rc_src  = "source" PATH_SEP "tools" PATH_SEP "build_tool"
-                              PATH_SEP "build_tool.rc";
+        // Resolved from root_dir, not from the CWD: when a child project builds the
+        // engine's build_tool the sources live under the engine root, not under this
+        // project's source/.
+        char rc_src[ PATH_MAX ];
+        snprintf( rc_src, sizeof( rc_src ), "%s/build_tool.rc", target->root_dir );
         snprintf( res_path, sizeof( res_path ), "%s" PATH_SEP "build_tool.res", obj_dir );
         if ( g_out_flags & ORB_OUT_SUMMARY_COMPILE )
             printf( ORB_INDENT "[orb rc] %s\n", rc_src );

@@ -14,6 +14,8 @@
         platform_putenv()        -- set environment variable       (setenv)
         platform_popen()         -- open a pipe to a command       (popen)
         platform_pclose()        -- close a pipe                   (pclose)
+        platform_time_ms()       -- monotonic millisecond counter  (clock_gettime)
+        platform_enable_ansi_color() -- report VT support on stdout (isatty)
         platform_cpu_count()     -- logical processor count        (sysconf)
         platform_mkdir()         -- create a directory             (mkdir)
         platform_copy_file_quiet() -- overwrite-copy a file        (fread / fwrite)
@@ -21,12 +23,20 @@
         platform_find_first()    -- begin directory enumeration    (opendir / readdir / fnmatch)
         platform_find_next()     -- advance directory enumeration  (readdir / fnmatch)
         platform_find_close()    -- end directory enumeration      (closedir)
+        platform_touch_file()    -- create / truncate a stamp file (open O_CREAT|O_TRUNC)
+        platform_delete_file()   -- remove a file                  (unlink)
+        platform_delete_glob_quiet() -- remove matching files in a dir (readdir / fnmatch)
+        platform_rmdir_quiet()   -- remove a directory tree        (readdir / unlink / rmdir)
+        platform_map_file()      -- read-only memory map           (open / fstat / mmap)
+        platform_unmap_file()    -- release a mapping              (munmap)
 
 ==============================================================================================*/
 // clang-format off
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -155,6 +165,37 @@ platform_pclose( FILE* pipe )
 #endif
 
 /*==============================================================================================
+    --- Monotonic Timer ---
+==============================================================================================*/
+
+/* Returns a monotonically increasing millisecond counter. Used for build timing.
+   CLOCK_MONOTONIC is unaffected by wall-clock adjustments, so an NTP step mid-build
+   cannot produce a negative interval the way gettimeofday could. */
+
+static uint64_t
+platform_time_ms( void )
+{
+    struct timespec ts;
+    if ( clock_gettime( CLOCK_MONOTONIC, &ts ) != 0 ) return 0;
+    return ( uint64_t )ts.tv_sec * 1000u + ( uint64_t )( ts.tv_nsec / 1000000 );
+}
+
+/*==============================================================================================
+    --- ANSI Color ---
+==============================================================================================*/
+
+/* Reports whether stdout can render ANSI escape codes. POSIX terminals process them
+   natively -- there is no mode to enable, so this only answers the question the Win32
+   counterpart answers as a side effect of enabling: is stdout a terminal, or a
+   redirect that would receive raw escape bytes as text. */
+
+static bool
+platform_enable_ansi_color( void )
+{
+    return isatty( STDOUT_FILENO ) != 0;
+}
+
+/*==============================================================================================
     --- CPU Count ---
 ==============================================================================================*/
 
@@ -229,26 +270,14 @@ platform_copy_file_quiet( const char* src, const char* dst )
 }
 
 /*==============================================================================================
-    --- Directory Enumeration ---
+    --- Directory Entry Kind ---
 
-    The Win32 _findfirst/_findnext API takes a glob pattern like "bin/*.pdb".
-    POSIX opendir/readdir iterates all entries; fnmatch selects matching names.
-    A heap-allocated context struct carries the open DIR* and filename pattern
-    between calls so the opaque platform_find_t handle stays a plain intptr_t.
-
-    is_dir uses d_type when the filesystem populates it (O(1) -- no extra syscall).
-    DT_UNKNOWN (returned by NFS, some tmpfs variants) falls back to stat().
+    Shared by the deletion helpers and the enumeration section below. d_type is used when
+    the filesystem populates it (O(1) -- no extra syscall); DT_UNKNOWN (returned by NFS and
+    some tmpfs variants) falls back to stat().
 ==============================================================================================*/
 
-typedef struct
-{
-    DIR* d;
-    char dir[ PATH_MAX ];
-    char pat[ 256 ];
-
-} posix_find_ctx_t;
-
-/* Returns true when the entry is a directory, using d_type when available. */
+/* Returns true when the entry is a directory. */
 
 static bool
 posix_dirent_is_dir( struct dirent* ent, const char* dir )
@@ -260,6 +289,157 @@ posix_dirent_is_dir( struct dirent* ent, const char* dir )
     struct stat st;
     return ( stat( full, &st ) == 0 ) && S_ISDIR( st.st_mode );
 }
+
+/*==============================================================================================
+    --- File Create / Delete ---
+==============================================================================================*/
+
+/* Creates or truncates a zero-byte file at path. Used to write config stamp files. */
+
+static void
+platform_touch_file( const char* path )
+{
+    int fd = open( path, O_WRONLY | O_CREAT | O_TRUNC, 0644 );
+    if ( fd >= 0 ) close( fd );
+}
+
+/* Deletes a file at path. Silent no-op if the file does not exist. */
+
+static void
+platform_delete_file( const char* path )
+{
+    unlink( path );
+}
+
+/* Deletes every non-directory entry in dir whose name matches glob (e.g. "*.pdb"). */
+
+static void
+platform_delete_glob_quiet( const char* dir, const char* glob )
+{
+    DIR* d = opendir( dir );
+    if ( !d ) return;
+
+    struct dirent* ent;
+    while ( ( ent = readdir( d ) ) != NULL )
+    {
+        if ( fnmatch( glob, ent->d_name, 0 ) != 0 ) continue;
+        if ( posix_dirent_is_dir( ent, dir ) ) continue;
+
+        char path[ PATH_MAX ];
+        snprintf( path, sizeof( path ), "%s/%s", dir, ent->d_name );
+        unlink( path );
+    }
+
+    closedir( d );
+}
+
+/* Recursively removes a directory tree (entries first, then the directory itself). */
+
+static void
+platform_rmdir_quiet( const char* path )
+{
+    DIR* d = opendir( path );
+    if ( d )
+    {
+        struct dirent* ent;
+        while ( ( ent = readdir( d ) ) != NULL )
+        {
+            if ( strcmp( ent->d_name, "." ) == 0 || strcmp( ent->d_name, ".." ) == 0 )
+                continue;
+
+            char child[ PATH_MAX ];
+            snprintf( child, sizeof( child ), "%s/%s", path, ent->d_name );
+
+            if ( posix_dirent_is_dir( ent, path ) )
+                platform_rmdir_quiet( child );
+            else
+                unlink( child );
+        }
+        closedir( d );
+    }
+
+    rmdir( path );
+}
+
+/*==============================================================================================
+    --- Memory-Mapped File ---
+==============================================================================================*/
+
+/* Maps path into the process address space for read-only pointer access.
+   Returns true on success. On false the file does not exist or could not be mapped.
+   Empty files return true with data=NULL and size=0 -- no mapping is created.
+   Call platform_unmap_file() to release resources when done.
+
+   The descriptor is closed immediately: POSIX keeps a mapping valid after its fd goes
+   away, so only the address range has to survive into platform_unmap_file(). _file and
+   _map stay NULL -- they exist for the Win32 counterpart, which must hold both handles. */
+
+static bool
+platform_map_file( const char* path, platform_mapped_file_t* out )
+{
+    out->data  = NULL;
+    out->size  = 0;
+    out->_file = NULL;
+    out->_map  = NULL;
+
+    int fd = open( path, O_RDONLY );
+    if ( fd < 0 )
+        return false;
+
+    struct stat st;
+    if ( fstat( fd, &st ) != 0 )
+    {
+        close( fd );
+        return false;
+    }
+
+    if ( st.st_size == 0 )
+    {
+        // Empty file: valid, nothing to iterate.
+        close( fd );
+        return true;
+    }
+
+    void* data = mmap( NULL, ( size_t )st.st_size, PROT_READ, MAP_PRIVATE, fd, 0 );
+    close( fd );
+    if ( data == MAP_FAILED )
+        return false;
+
+    out->data = ( const char* )data;
+    out->size = ( size_t )st.st_size;
+    return true;
+}
+
+/* Releases the mapping acquired by platform_map_file(). Safe to call on a zeroed struct. */
+
+static void
+platform_unmap_file( platform_mapped_file_t* m )
+{
+    if ( m->data ) munmap( ( void* )m->data, m->size );
+    m->data  = NULL;
+    m->size  = 0;
+    m->_file = NULL;
+    m->_map  = NULL;
+}
+
+/*==============================================================================================
+    --- Directory Enumeration ---
+
+    The Win32 _findfirst/_findnext API takes a glob pattern like "bin/*.pdb".
+    POSIX opendir/readdir iterates all entries; fnmatch selects matching names.
+    A heap-allocated context struct carries the open DIR* and filename pattern
+    between calls so the opaque platform_find_t handle stays a plain intptr_t.
+
+    is_dir is answered by posix_dirent_is_dir() above.
+==============================================================================================*/
+
+typedef struct
+{
+    DIR* d;
+    char dir[ PATH_MAX ];
+    char pat[ 256 ];
+
+} posix_find_ctx_t;
 
 /* Begins enumeration matching pattern (e.g. "bin/*.pdb").
    Fills data and returns a valid handle, or PLATFORM_FIND_INVALID if no match. */

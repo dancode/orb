@@ -389,11 +389,13 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
 #if defined( BUILD_TOOL_EMBED_MANIFEST )
     // For the build_tool exe only: embed the app manifest via the linker so no
     // post-link mt.exe call is required (mt.exe fails on UNC-style long paths).
+    // The manifest is read from root_dir so an engine-rooted build_tool still finds
+    // it when a child project is the working directory.
     if ( !is_dll && target->is_build_tool )
     {
         size_t used = strlen( lk->flags );
         snprintf( lk->flags + used, sizeof( lk->flags ) - used,
-                  " /MANIFEST:EMBED /MANIFESTINPUT:source\\tools\\build_tool\\build_tool.manifest" );
+                  " /MANIFEST:EMBED /MANIFESTINPUT:%s/build_tool.manifest", target->root_dir );
     }
 #endif
 }
