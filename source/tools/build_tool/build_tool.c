@@ -15,13 +15,17 @@
 
     Module roles (in include order):
 
+        00_str.c          -- ASCII string helpers (str_icmp, str_istr, ...). First in the
+                             chain: the platform layer uses these, so nothing in it may
+                             depend on anything else
         win.c             -- 00a platform layer: file I/O, CRT wrappers
         win_thread.c      -- 00b platform threading: mutex, cond, TLS, threads
         win_spawn.c       -- 00c platform process spawning
         win_toolchain.c   -- 00d compiler/linker flag sets (MSVC vs GCC/Clang)
         posix_*.c         -- POSIX equivalents of the above for Linux/macOS
 
-        01_prim.c         -- shared: cmd_buf, file locks (pure primitives, no deps)
+        01_prim.c         -- shared: cmd_buf, path helpers, file locks (needs the platform
+                             layer, which is why it follows it)
         02_data.c         -- g_targets[] / g_solutions[] dynamic pools + lookup helpers
         03_registry.c     -- "orb.targets" text-file parser; appends to 02_data pools
         04_env.c          -- VS environment discovery and vcvars import
@@ -244,6 +248,7 @@ const char* sched_log_path( void );
 /* Defined in 00_util.c (included last). -doctor reports its result as one check. */
 static bool validate_targets( void );
 
+#include "build_tool_00_str.c"              // 00  ASCII string helpers (used by the platform layer)
 #if defined( _WIN32 )
     #include "build_tool_win.c"             // 00a platform layer (MSVC / Win32 CRT wrappers)
     #include "build_tool_win_thread.c"      // 00b platform threading (mutex / cond / TLS / threads)

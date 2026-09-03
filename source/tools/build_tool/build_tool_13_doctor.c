@@ -135,20 +135,6 @@ doctor_exe_on_path( const char* exe, char* out, size_t out_size )
 #endif
 }
 
-/* Copy of a path normalized for comparison: forward slashes, trailing separator
-   stripped. Windows path compares below pair this with str_icmp. */
-static void
-doctor_norm_path( const char* in, char* out, size_t out_size )
-{
-    snprintf( out, out_size, "%s", in );
-    path_to_fwd( out );
-
-    size_t n = strlen( out );
-    while ( n > 0 && out[ n - 1 ] == '/' )
-        --n;
-    out[ n ] = '\0';
-}
-
 /* First whitespace-delimited token of a target's 'run' line (the exe target name). */
 static void
 doctor_run_exe_token( const target_info_t* t, char* exe, size_t exe_size )
@@ -890,10 +876,7 @@ doctor_check_child_wiring( void )
             }
             fclose( f );
 
-            char a[ PATH_MAX ], b[ PATH_MAX ];
-            doctor_norm_path( line, a, sizeof( a ) );
-            doctor_norm_path( g_engine_root, b, sizeof( b ) );
-            if ( str_icmp( a, b ) == 0 )
+            if ( path_eq( line, g_engine_root ) )
                 doc_ok( ".orb_engine agrees with the 'engine' directive" );
             else
             {

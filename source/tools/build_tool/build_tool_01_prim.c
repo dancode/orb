@@ -206,6 +206,50 @@ path_to_fwd( char* s )
         if ( *s == '\\' ) *s = '/';
 }
 
+/*  True when two paths name the same location, comparing the spellings only -- no
+    filesystem access, no symlink resolution, no relative-to-absolute step. Callers that
+    need those must resolve through path_abs() first.
+
+    Separator kind is ignored ('\' == '/') and trailing separators are ignored, so
+    "C:\proj\game", "C:/proj/game" and "C:/proj/game/" all compare equal. Case is folded
+    on Windows only: on POSIX two paths differing in case are two different files.
+
+    Streams both sides rather than normalizing into buffers, so an over-long path cannot
+    be silently truncated into a false match. */
+
+static bool
+path_eq( const char* a, const char* b )
+{
+    for ( ;; )
+    {
+        bool sep_a = ( *a == '/' || *a == '\\' );
+        bool sep_b = ( *b == '/' || *b == '\\' );
+
+        if ( sep_a || sep_b )
+        {
+            /* Collapse each run of separators to one. */
+            while ( *a == '/' || *a == '\\' ) ++a;
+            while ( *b == '/' || *b == '\\' ) ++b;
+
+            /* A run that ends the string is a trailing separator: ignore it on
+               either side. Otherwise both sides must have had one here. */
+            if ( !*a && !*b )         return true;
+            if ( !sep_a || !sep_b )   return false;
+            continue;
+        }
+
+        if ( !*a || !*b ) return *a == *b;
+
+        unsigned char ca = (unsigned char)*a++;
+        unsigned char cb = (unsigned char)*b++;
+#if defined( _WIN32 )
+        if ( ca >= 'A' && ca <= 'Z' ) ca = (unsigned char)( ca + 32 );
+        if ( cb >= 'A' && cb <= 'Z' ) cb = (unsigned char)( cb + 32 );
+#endif
+        if ( ca != cb ) return false;
+    }
+}
+
 /*==============================================================================================
     --- Filesystem Helpers ---
 ==============================================================================================*/
@@ -275,55 +319,6 @@ void
 build_unlock_target( void* lock )
 {
     platform_lock_release( lock );
-}
-
-/*==============================================================================================
-    --- String Helpers ---
-==============================================================================================*/
-
-/* Copy src into buf uppercased; ASCII only, no ctype.h dependency. */
-
-static void
-str_upper( const char* src, char* buf, size_t buf_size )
-{
-    size_t i = 0;
-    for ( ; src[ i ] && i < buf_size - 1; ++i )
-    {
-        char c   = src[ i ];
-        buf[ i ] = ( c >= 'a' && c <= 'z' ) ? ( char )( c - 32 ) : c;
-    }
-    buf[ i ] = '\0';
-}
-
-/* ASCII case-insensitive strcmp / strncmp; no locale, no CRT dependency. */
-
-static int
-str_icmp( const char* a, const char* b )
-{
-    for ( ;; )
-    {
-        unsigned char ca = (unsigned char)*a++;
-        unsigned char cb = (unsigned char)*b++;
-        if ( ca >= 'A' && ca <= 'Z' ) ca = (unsigned char)( ca + 32 );
-        if ( cb >= 'A' && cb <= 'Z' ) cb = (unsigned char)( cb + 32 );
-        if ( ca != cb ) return (int)ca - (int)cb;
-        if ( ca == '\0' ) return 0;
-    }
-}
-
-static int
-str_nicmp( const char* a, const char* b, size_t n )
-{
-    for ( ; n; --n )
-    {
-        unsigned char ca = (unsigned char)*a++;
-        unsigned char cb = (unsigned char)*b++;
-        if ( ca >= 'A' && ca <= 'Z' ) ca = (unsigned char)( ca + 32 );
-        if ( cb >= 'A' && cb <= 'Z' ) cb = (unsigned char)( cb + 32 );
-        if ( ca != cb ) return (int)ca - (int)cb;
-        if ( ca == '\0' ) return 0;
-    }
-    return 0;
 }
 
 // clang-format on

@@ -184,33 +184,6 @@ platform_spawn_capture( const char* cmd, platform_line_fn_t fn, void* userdata )
     return ( int )exit_code;
 }
 
-/*==============================================================================================
-    --- win_stristr ---
-
-    ASCII case-insensitive strstr. Local to this file: the shared str_* helpers in
-    01_prim.c are unity-included after the platform layer and are not visible here.
-==============================================================================================*/
-
-static const char*
-win_stristr( const char* hay, const char* needle )
-{
-    for ( ; *hay; ++hay )
-    {
-        const char* h = hay;
-        const char* n = needle;
-        for ( ;; )
-        {
-            if ( !*n ) return hay;
-            char ch = *h++;
-            char cn = *n++;
-            if ( ch >= 'A' && ch <= 'Z' ) ch = ( char )( ch + 32 );
-            if ( cn >= 'A' && cn <= 'Z' ) cn = ( char )( cn + 32 );
-            if ( ch != cn ) break;
-        }
-    }
-    return NULL;
-}
-
 /*  Toolchain headers are dropped from the tracked set: project source can never
     invalidate them, and they are the bulk of every dependency list.
 
@@ -220,8 +193,8 @@ win_stristr( const char* hay, const char* needle )
 static bool
 win_is_system_header( const char* path )
 {
-    return win_stristr( path, "\\vc\\tools\\"    ) != NULL
-        || win_stristr( path, "\\windows kits\\" ) != NULL;
+    return str_istr( path, "\\vc\\tools\\"    ) != NULL
+        || str_istr( path, "\\windows kits\\" ) != NULL;
 }
 
 /*  Bounded literal search over a mapped file. The mapping is not null-terminated,
