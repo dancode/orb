@@ -93,9 +93,18 @@ cmake-build-*/
 # Generated runtime artifacts (profiler traces, hitch captures, future dumps)
 /artifacts/
 
-# Assets
-/assets
+# Assets -- raw tool inputs (TTF, SVG). Committed, so content/ plus this is a complete
+# input set and a fresh clone can cook. The font baker's scratch cache is derived, not source.
+/assets/font_cache/
 
-# Third Party Bloat
-/third_party
+# Third party -- vendored FreeType source and headers are committed so a clone can build,
+# and so a POSIX target can build the library from source. MSBuild output (objs/) and the
+# generated documentation site (docs/) are not. The prebuilt x64 import lib and DLL are
+# re-included by name: build_deploy_third_party mirrors third_party/bin into bin/, and the
+# *.lib / *.dll rules above would otherwise drop them.
+/third_party/freetype-2.14.3/objs/
+/third_party/freetype-2.14.3/docs/
+!/third_party/bin/
+!/third_party/bin/freetype.lib
+!/third_party/bin/freetype.dll
 
