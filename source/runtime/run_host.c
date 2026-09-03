@@ -11,7 +11,8 @@
            mod_dynamic_load_dir( project )          -- PASSIVE: optional project DLL (desc->project_name)
         5. mod_init_all()                           -- pass 1: load callbacks fire in dep order (ref frames pushed, reflection live)
                                                        pass 2: init() runs in same order
-        6. MOD_HOST_FETCH_API( rhi, render, ... )   -- cache host-owned optional-service API ptrs
+        6. fs->mount( build/content, content )      -- AFTER init: fs_system_init clears the mount table
+           MOD_HOST_FETCH_API( rhi, render, ... )   -- cache host-owned optional-service API ptrs
         7. window_open()                            -- when RUN_HOST_WINDOWED is set (explicit host policy)
            rhi->init() + context_open()             -- when rhi is loaded
            draw->init()                             -- when draw is loaded, after rhi context
@@ -424,19 +425,6 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         return 1;
     }
 
-    /* Content mounts -- the one place the runtime says where bytes live.  Every service reads
-       content by resource name through fs (gui's bakes, icons and shaders; the asset service's
-       images and shaders), so a name resolves against the cooked mirror build/content first and
-       loose content/ beneath it, both under the engine root.  A shipped build mounts its pack
-       here instead. */
-    {
-        char path[ 576 ];
-        snprintf( path, sizeof( path ), "%s/build/content", sys_root_dir() );
-        fs()->mount( "", path, 10 );
-        snprintf( path, sizeof( path ), "%s/content", sys_root_dir() );
-        fs()->mount( "", path, 0 );
-    }
-
     /* Engine extented -- Load all the modules dynamically passed in to the host from the .exe */
     if ( !load_all( desc->modules ))
     {
@@ -474,6 +462,25 @@ run_host_main( const run_host_desc_t* desc, int argc, char** argv )
         fprintf( stderr, "[host] mod_init_all failed: %s\n", mod_last_error() );
         mod_system_exit();
         return 1;
+    }
+
+    /* Content mounts -- the one place the runtime says where bytes live.  Every service reads
+       content by resource name through fs (gui's bakes, icons and shaders; the asset service's
+       images and shaders), so a name resolves against the cooked mirror build/content first and
+       loose content/ beneath it, both under the engine root.  A shipped build mounts its pack
+       here instead.
+
+       Must run AFTER mod_init_all: fs_mod_init calls fs_system_init, which clears the mount
+       table.  Mounting during the passive load phase above would be silently undone here, and
+       every content read after it would miss.  Nothing between load and this point reads
+       content -- module init() bodies do not, and the services that do (gui->init, rhi) are
+       brought up further down. */
+    {
+        char path[ 576 ];
+        snprintf( path, sizeof( path ), "%s/build/content", sys_root_dir() );
+        fs()->mount( "", path, 10 );
+        snprintf( path, sizeof( path ), "%s/content", sys_root_dir() );
+        fs()->mount( "", path, 0 );
     }
 
     /* Route mod and app output through core's logger now that core is live. */
