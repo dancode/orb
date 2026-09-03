@@ -555,7 +555,9 @@ main( int argc, char** argv )
     // fresh checkouts and external cleans). Named-target builds skip it -- VS
     // solution builds spawn one build_tool per project and shouldn't re-probe.
     if ( !ctx.target_name )
+    {
         build_deploy_third_party();
+    }
 
     // --- Resolve target (if named) ---
 

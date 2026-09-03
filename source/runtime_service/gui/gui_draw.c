@@ -62,7 +62,9 @@
 
 #include "runtime_service/gui/draw/gui_draw.h"
 #include "runtime_service/gui/debug/gui_debug.h"
-#include "runtime_service/gui/gui_res.h"    // icons and sprites are read by resource name through fs
+
+// icons and sprites are read by resource name through fs
+#include "runtime_service/gui/gui_res.h"    
 
 /*==============================================================================================
     Draw : Unity build
