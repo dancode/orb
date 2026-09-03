@@ -15,6 +15,9 @@
     Dynamic (hot-reload DLL, like render/audio):
         <name>.h  <name>_api.h  <name>.c  <name>_api.c
 
+    Every emitted file is a k_tpl_* string literal expanded by create_expand(): the template
+    reads as the file it produces, so it can be compared by eye against a real module.
+
     Project scaffolding creates a complete standalone game project that builds on this
     engine (run from the engine root; -dir defaults to <name>).  The project builds a
     GAME MODULE DLL (runtime/run_project.h contract) that the engine's hosts load and run:
@@ -58,19 +61,11 @@ create_valid_name( const char* name )
 
 /* ---- File helpers ---- */
 
-static bool
-create_file_exists( const char* path )
-{
-    FILE* f = fopen( path, "r" );
-    if ( f ) { fclose( f ); return true; }
-    return false;
-}
-
 /* Opens `path` for writing. Returns NULL if it already exists or cannot be created. */
 static FILE*
 create_open_write( const char* path )
 {
-    if ( create_file_exists( path ) )
+    if ( platform_file_exists( path ) )
     {
         printf( ORB_INDENT "[orb warn]  already exists, skipping: %s\n", path );
         return NULL;
@@ -81,424 +76,440 @@ create_open_write( const char* path )
     return f;
 }
 
-/* ---- File emitters ---- */
+/* Closes an emitted file and reports it in the create log. */
+static void
+create_close( FILE* f, const char* path )
+{
+    fclose( f );
+    printf( ORB_INDENT "  wrote  %s\n", path );
+}
+
+/* ---- Template expansion ---- */
+
+/* One $key -> value binding for create_expand(). */
+typedef struct create_sub_s
+{
+    const char* key;    // the name after '$', without the sigil
+    const char* val;    // text written in its place
+
+} create_sub_t;
+
+/* Pass a create_sub_t array and its length to a create_write_tpl* call. */
+#define CREATE_SUBS( a )    ( a ), ( int )( sizeof( a ) / sizeof( ( a )[ 0 ] ) )
+
+/* Writes tpl to f, replacing each "$key" from subs with its value.
+
+   Keys are matched longest-first, so one key being a prefix of another resolves to the
+   longer one. Text after a match is copied verbatim, which is what lets "$NAME_H" expand
+   to "<NAME>_H" without a delimiter. "$$" emits a literal '$'.
+
+   An unmatched "$<letter>" is copied through and warned about: a mistyped key would
+   otherwise land silently in the scaffolded file. */
+static void
+create_expand( FILE* f, const char* tpl, const create_sub_t* subs, int sub_count )
+{
+    for ( const char* p = tpl; *p; )
+    {
+        if ( *p != '$' )     { fputc( *p,  f ); ++p;     continue; }
+        if ( p[ 1 ] == '$' ) { fputc( '$', f ); p += 2; continue; }
+
+        int    best     = -1;
+        size_t best_len = 0;
+        for ( int i = 0; i < sub_count; ++i )
+        {
+            size_t len = strlen( subs[ i ].key );
+            if ( len <= best_len ) continue;
+            if ( strncmp( p + 1, subs[ i ].key, len ) == 0 ) { best = i; best_len = len; }
+        }
+
+        if ( best < 0 )
+        {
+            char c = p[ 1 ];
+            if ( ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) )
+                printf( ORB_INDENT "[orb warn]  unknown template key near: %.24s\n", p );
+            fputc( *p, f );
+            ++p;
+            continue;
+        }
+
+        fputs( subs[ best ].val, f );
+        p += 1 + best_len;
+    }
+}
+
+/* Expands tpl into a new file at path. Skips the write if the file already exists. */
+static void
+create_write_tpl( const char* path, const char* tpl, const create_sub_t* subs, int sub_count )
+{
+    FILE* f = create_open_write( path );
+    if ( !f ) return;
+    create_expand( f, tpl, subs, sub_count );
+    create_close( f, path );
+}
+
+/* Same, but overwrites an existing file. Used for the machine-local files that must be
+   refreshed on every run so re-creating an existing project repairs a moved engine root. */
+static void
+create_write_tpl_force( const char* path, const char* tpl, const create_sub_t* subs, int sub_count )
+{
+    FILE* f = fopen( path, "w" );
+    if ( !f )
+    {
+        printf( ORB_INDENT "[orb error] cannot create: %s\n", path );
+        return;
+    }
+    create_expand( f, tpl, subs, sub_count );
+    create_close( f, path );
+}
+
+/*==============================================================================================
+    Module templates
+
+    Substitutions:
+        $name   module identifier            $NAME   the same, upper-cased
+        $inc    include-root-relative dir     $hint   <name>.h "which header to include" line
+        $link   <name>_api.h link-mode note
+==============================================================================================*/
 
 /* <name>.h -- pure types, no vtable, no function declarations. */
-static void
-create_emit_h( const char* path, const char* name, const char* NAME, const char* inc_dir, bool is_static )
-{
-    FILE* f = create_open_write( path );
-    if ( !f ) return;
-
-    fprintf( f, "#ifndef %s_H\n", NAME );
-    fprintf( f, "#define %s_H\n", NAME );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    %s/%s.h -- %s module types.\n", inc_dir, name, name );
-    fprintf( f, "    Include in DLL modules that use %s through the vtable (%s()->...).\n", name, name );
-    if ( is_static )
-        fprintf( f, "    Include %s_host.h instead for direct-call access (host, sandbox).\n", name );
-    else
-        fprintf( f, "    Include %s_api.h in the module's own .c files.\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "#include \"orb.h\"\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Types\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/* TODO: add %s-specific types here */\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*============================================================================================*/\n" );
-    fprintf( f, "#endif    // %s_H\n", NAME );
-
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
-}
+static const char k_tpl_h[] =
+"#ifndef $NAME_H\n"
+"#define $NAME_H\n"
+"/*==============================================================================================\n"
+"\n"
+"    $inc/$name.h -- $name module types.\n"
+"    Include in DLL modules that use $name through the vtable ($name()->...).\n"
+"$hint\n"
+"\n"
+"==============================================================================================*/\n"
+"\n"
+"#include \"orb.h\"\n"
+"\n"
+"/*==============================================================================================\n"
+"    Types\n"
+"==============================================================================================*/\n"
+"\n"
+"/* TODO: add $name-specific types here */\n"
+"\n"
+"/*============================================================================================*/\n"
+"#endif    // $NAME_H\n";
 
 /* <name>_api.h -- API struct and dual-mode gateway macros. */
-static void
-create_emit_api_h( const char* path, const char* name, const char* NAME,
-                   const char* inc_dir, bool is_static )
-{
-    FILE* f = create_open_write( path );
-    if ( !f ) return;
-
-    const char* link_note = is_static
-        ? "always statically linked into the host"
-        : "hot-reloadable DLL; BUILD_STATIC switches to static gateway";
-
-    fprintf( f, "#ifndef %s_API_H\n", NAME );
-    fprintf( f, "#define %s_API_H\n", NAME );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    %s/%s_api.h -- %s module API struct and gateway macro.\n", inc_dir, name, name );
-    fprintf( f, "    %s.\n", link_note );
-    fprintf( f, "\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "#include \"%s/%s.h\"\n", inc_dir, name );
-    fprintf( f, "#include \"engine/mod/mod_import.h\"\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    API Struct\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "typedef struct %s_api_s\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    void ( *tick )( float dt );    /* TODO: replace with real API functions */\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "} %s_api_t;\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "#if defined( BUILD_STATIC ) || defined( %s_STATIC )\n", NAME );
-    fprintf( f, "    MOD_GATEWAY_STATIC( %s_api_t, %s )\n", name, name );
-    fprintf( f, "    #define MOD_USE_%s    /* static build */\n", NAME );
-    fprintf( f, "    #define MOD_FETCH_%s  true\n", NAME );
-    fprintf( f, "#else\n" );
-    fprintf( f, "    MOD_GATEWAY_DYNAMIC( %s_api_t, %s )\n", name, name );
-    fprintf( f, "    #define MOD_USE_%s    MOD_DEFINE_API_PTR( %s_api_t, %s )\n", NAME, name, name );
-    fprintf( f, "    #define MOD_FETCH_%s  MOD_FETCH_API( %s_api_t, %s )\n", NAME, name, name );
-    fprintf( f, "#endif\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*============================================================================================*/\n" );
-    fprintf( f, "#endif    // %s_API_H\n", NAME );
-
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
-}
+static const char k_tpl_api_h[] =
+"#ifndef $NAME_API_H\n"
+"#define $NAME_API_H\n"
+"/*==============================================================================================\n"
+"\n"
+"    $inc/$name_api.h -- $name module API struct and gateway macro.\n"
+"    $link.\n"
+"\n"
+"==============================================================================================*/\n"
+"\n"
+"#include \"$inc/$name.h\"\n"
+"#include \"engine/mod/mod_import.h\"\n"
+"\n"
+"/*==============================================================================================\n"
+"    API Struct\n"
+"==============================================================================================*/\n"
+"\n"
+"typedef struct $name_api_s\n"
+"{\n"
+"    void ( *tick )( float dt );    /* TODO: replace with real API functions */\n"
+"\n"
+"} $name_api_t;\n"
+"\n"
+"/*============================================================================================*/\n"
+"\n"
+"#if defined( BUILD_STATIC ) || defined( $NAME_STATIC )\n"
+"    MOD_GATEWAY_STATIC( $name_api_t, $name )\n"
+"    #define MOD_USE_$NAME    /* static build */\n"
+"    #define MOD_FETCH_$NAME  true\n"
+"#else\n"
+"    MOD_GATEWAY_DYNAMIC( $name_api_t, $name )\n"
+"    #define MOD_USE_$NAME    MOD_DEFINE_API_PTR( $name_api_t, $name )\n"
+"    #define MOD_FETCH_$NAME  MOD_FETCH_API( $name_api_t, $name )\n"
+"#endif\n"
+"\n"
+"/*============================================================================================*/\n"
+"#endif    // $NAME_API_H\n";
 
 /* <name>_host.h -- direct-call function declarations (static modules only). */
-static void
-create_emit_host_h( const char* path, const char* name, const char* NAME, const char* inc_dir )
-{
-    FILE* f = create_open_write( path );
-    if ( !f ) return;
-
-    fprintf( f, "#ifndef %s_HOST_H\n", NAME );
-    fprintf( f, "#define %s_HOST_H\n", NAME );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    %s/%s_host.h -- Host-only %s services.\n", inc_dir, name, name );
-    fprintf( f, "    Includes %s_api.h.\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "#include \"%s/%s_api.h\"\n", inc_dir, name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Module Descriptor\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    Used by the host to register the %s module:\n", name );
-    fprintf( f, "        mod_static_load( \"%s\", %s_get_mod_desc() );\n", name, name );
-    fprintf( f, "    or via the build-mode-transparent macro:\n" );
-    fprintf( f, "        mod_load( %s );\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "mod_desc_t* %s_get_mod_desc( void );\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Direct-call functions (host and sandbox use only)\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "void %s_tick( float dt );    /* TODO: replace with real direct-call functions */\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*============================================================================================*/\n" );
-    fprintf( f, "#endif    // %s_HOST_H\n", NAME );
-
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
-}
+static const char k_tpl_host_h[] =
+"#ifndef $NAME_HOST_H\n"
+"#define $NAME_HOST_H\n"
+"/*==============================================================================================\n"
+"\n"
+"    $inc/$name_host.h -- Host-only $name services.\n"
+"    Includes $name_api.h.\n"
+"\n"
+"==============================================================================================*/\n"
+"\n"
+"#include \"$inc/$name_api.h\"\n"
+"\n"
+"/*==============================================================================================\n"
+"    Module Descriptor\n"
+"\n"
+"    Used by the host to register the $name module:\n"
+"        mod_static_load( \"$name\", $name_get_mod_desc() );\n"
+"    or via the build-mode-transparent macro:\n"
+"        mod_load( $name );\n"
+"\n"
+"==============================================================================================*/\n"
+"\n"
+"mod_desc_t* $name_get_mod_desc( void );\n"
+"\n"
+"/*==============================================================================================\n"
+"    Direct-call functions (host and sandbox use only)\n"
+"==============================================================================================*/\n"
+"\n"
+"void $name_tick( float dt );    /* TODO: replace with real direct-call functions */\n"
+"\n"
+"/*============================================================================================*/\n"
+"#endif    // $NAME_HOST_H\n";
 
 /* <name>.c -- unity build entry for a STATIC module. */
-static void
-create_emit_c_static( const char* path, const char* name, const char* inc_dir )
-{
-    FILE* f = create_open_write( path );
-    if ( !f ) return;
-
-    char NAME[ 128 ];
-    str_upper( name, NAME, sizeof( NAME ) );
-
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    %s.c -- Unity build entry for the %s module.\n", name, name );
-    fprintf( f, "\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "#include \"orb.h\"\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "#include \"engine/mod/mod_export.h\"\n" );
-    fprintf( f, "#include \"%s/%s_host.h\"\n", inc_dir, name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Platform units\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/* Platform-specific implementation files go here:\n" );
-    fprintf( f, "   #include \"win/win_%s.c\" */\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Unity build\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/* Implementation files go here:\n" );
-    fprintf( f, "   #include \"%s/%s_function.c\" */\n", inc_dir, name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Public API wiring  (must be last -- all implementations must be in scope)\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "#ifndef %s_API_C_PRELUDE\n", NAME );
-    fprintf( f, "#include \"%s/%s_api.c\"\n", inc_dir, name );
-    fprintf( f, "#endif\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*============================================================================================*/\n" );
-
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
-}
+static const char k_tpl_c_static[] =
+"/*==============================================================================================\n"
+"\n"
+"    $name.c -- Unity build entry for the $name module.\n"
+"\n"
+"==============================================================================================*/\n"
+"\n"
+"#include \"orb.h\"\n"
+"\n"
+"#include \"engine/mod/mod_export.h\"\n"
+"#include \"$inc/$name_host.h\"\n"
+"\n"
+"/*==============================================================================================\n"
+"    Platform units\n"
+"==============================================================================================*/\n"
+"\n"
+"/* Platform-specific implementation files go here:\n"
+"   #include \"win/win_$name.c\" */\n"
+"\n"
+"/*==============================================================================================\n"
+"    Unity build\n"
+"==============================================================================================*/\n"
+"\n"
+"/* Implementation files go here:\n"
+"   #include \"$inc/$name_function.c\" */\n"
+"\n"
+"/*==============================================================================================\n"
+"    Public API wiring  (must be last -- all implementations must be in scope)\n"
+"==============================================================================================*/\n"
+"\n"
+"#ifndef $NAME_API_C_PRELUDE\n"
+"#include \"$inc/$name_api.c\"\n"
+"#endif\n"
+"\n"
+"/*============================================================================================*/\n";
 
 /* <name>_api.c -- API struct wiring and mod_desc_t lifecycle (static modules only). */
-static void
-create_emit_api_c( const char* path, const char* name )
-{
-    FILE* f = create_open_write( path );
-    if ( !f ) return;
-
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    %s_api.c -- %s module wiring.\n", name, name );
-    fprintf( f, "    Implements the %s_api_t vtable struct and the mod_desc_t lifecycle descriptor.\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Implementation\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "static void\n" );
-    fprintf( f, "%s_tick_impl( float dt )\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    ( void )dt;    /* TODO */\n" );
-    fprintf( f, "}\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    API Struct\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "const %s_api_t g_%s_api_struct = {\n", name, name );
-    fprintf( f, "    .tick = %s_tick_impl,\n", name );
-    fprintf( f, "};\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Direct-call wrappers (declared in %s_host.h)\n", name );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "void\n" );
-    fprintf( f, "%s_tick( float dt )\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    %s_tick_impl( dt );\n", name );
-    fprintf( f, "}\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Lifecycle\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "static bool\n" );
-    fprintf( f, "%s_mod_init( void* raw_state, get_api_fn get_api )\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    UNUSED( get_api );\n" );
-    fprintf( f, "    UNUSED( raw_state );\n" );
-    fprintf( f, "    return true;\n" );
-    fprintf( f, "}\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "static void\n" );
-    fprintf( f, "%s_mod_exit( void* raw_state )\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    UNUSED( raw_state );\n" );
-    fprintf( f, "}\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Module descriptor\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "mod_desc_t*\n" );
-    fprintf( f, "%s_get_mod_desc( void )\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    static mod_desc_t desc = {\n" );
-    fprintf( f, "        .version       = 1,\n" );
-    fprintf( f, "        .state_size    = 0,\n" );
-    fprintf( f, "        .func_api_size = sizeof( %s_api_t ),\n", name );
-    fprintf( f, "        .func_api      = &g_%s_api_struct,\n", name );
-    fprintf( f, "        .dep_count     = 0,\n" );
-    fprintf( f, "        .init          = %s_mod_init,\n", name );
-    fprintf( f, "        .exit          = %s_mod_exit,\n", name );
-    fprintf( f, "        .reload        = NULL,\n" );
-    fprintf( f, "    };\n" );
-    fprintf( f, "    return &desc;\n" );
-    fprintf( f, "}\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*============================================================================================*/\n" );
-
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
-}
+static const char k_tpl_api_c_static[] =
+"/*==============================================================================================\n"
+"\n"
+"    $name_api.c -- $name module wiring.\n"
+"    Implements the $name_api_t vtable struct and the mod_desc_t lifecycle descriptor.\n"
+"\n"
+"==============================================================================================*/\n"
+"\n"
+"/*==============================================================================================\n"
+"    Implementation\n"
+"==============================================================================================*/\n"
+"\n"
+"static void\n"
+"$name_tick_impl( float dt )\n"
+"{\n"
+"    ( void )dt;    /* TODO */\n"
+"}\n"
+"\n"
+"/*==============================================================================================\n"
+"    API Struct\n"
+"==============================================================================================*/\n"
+"\n"
+"const $name_api_t g_$name_api_struct = {\n"
+"    .tick = $name_tick_impl,\n"
+"};\n"
+"\n"
+"/*==============================================================================================\n"
+"    Direct-call wrappers (declared in $name_host.h)\n"
+"==============================================================================================*/\n"
+"\n"
+"void\n"
+"$name_tick( float dt )\n"
+"{\n"
+"    $name_tick_impl( dt );\n"
+"}\n"
+"\n"
+"/*==============================================================================================\n"
+"    Lifecycle\n"
+"==============================================================================================*/\n"
+"\n"
+"static bool\n"
+"$name_mod_init( void* raw_state, get_api_fn get_api )\n"
+"{\n"
+"    UNUSED( get_api );\n"
+"    UNUSED( raw_state );\n"
+"    return true;\n"
+"}\n"
+"\n"
+"static void\n"
+"$name_mod_exit( void* raw_state )\n"
+"{\n"
+"    UNUSED( raw_state );\n"
+"}\n"
+"\n"
+"/*==============================================================================================\n"
+"    Module descriptor\n"
+"==============================================================================================*/\n"
+"\n"
+"mod_desc_t*\n"
+"$name_get_mod_desc( void )\n"
+"{\n"
+"    static mod_desc_t desc = {\n"
+"        .version       = 1,\n"
+"        .state_size    = 0,\n"
+"        .func_api_size = sizeof( $name_api_t ),\n"
+"        .func_api      = &g_$name_api_struct,\n"
+"        .dep_count     = 0,\n"
+"        .init          = $name_mod_init,\n"
+"        .exit          = $name_mod_exit,\n"
+"        .reload        = NULL,\n"
+"    };\n"
+"    return &desc;\n"
+"}\n"
+"\n"
+"/*============================================================================================*/\n";
 
 /* <name>.c -- unity build entry for a DYNAMIC (hot-reload DLL) module. */
-static void
-create_emit_c_dynamic( const char* path, const char* name, const char* inc_dir )
-{
-    FILE* f = create_open_write( path );
-    if ( !f ) return;
-
-    char NAME[ 128 ];
-    str_upper( name, NAME, sizeof( NAME ) );
-
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    %s.c -- Unity build entry for the %s module.\n", name, name );
-    fprintf( f, "\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "#include \"orb.h\"\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "#include \"engine/mod/mod_export.h\"\n" );
-    fprintf( f, "#include \"%s/%s_api.h\"\n", inc_dir, name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Unity build\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/* Implementation files go here:\n" );
-    fprintf( f, "   #include \"%s/%s_function.c\" */\n", inc_dir, name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Public API wiring  (must be last -- all implementations must be in scope)\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "#ifndef %s_API_C_PRELUDE\n", NAME );
-    fprintf( f, "#include \"%s/%s_api.c\"\n", inc_dir, name );
-    fprintf( f, "#endif\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*============================================================================================*/\n" );
-
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
-}
+static const char k_tpl_c_dynamic[] =
+"/*==============================================================================================\n"
+"\n"
+"    $name.c -- Unity build entry for the $name module.\n"
+"\n"
+"==============================================================================================*/\n"
+"\n"
+"#include \"orb.h\"\n"
+"\n"
+"#include \"engine/mod/mod_export.h\"\n"
+"#include \"$inc/$name_api.h\"\n"
+"\n"
+"/*==============================================================================================\n"
+"    Unity build\n"
+"==============================================================================================*/\n"
+"\n"
+"/* Implementation files go here:\n"
+"   #include \"$inc/$name_function.c\" */\n"
+"\n"
+"/*==============================================================================================\n"
+"    Public API wiring  (must be last -- all implementations must be in scope)\n"
+"==============================================================================================*/\n"
+"\n"
+"#ifndef $NAME_API_C_PRELUDE\n"
+"#include \"$inc/$name_api.c\"\n"
+"#endif\n"
+"\n"
+"/*============================================================================================*/\n";
 
 /* <name>_api.c -- state, API struct, lifecycle, and DLL export (dynamic modules only). */
-static void
-create_emit_api_c_dynamic( const char* path, const char* name )
-{
-    FILE* f = create_open_write( path );
-    if ( !f ) return;
-
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    %s_api.c -- %s module wiring.\n", name, name );
-    fprintf( f, "    Implements the %s_api_t vtable struct and the mod_desc_t lifecycle descriptor.\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Cached API pointers\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "    Declare one per consumed module using its MOD_USE_<NAME> macro (defined in its _api.h),\n" );
-    fprintf( f, "    then fetch in init() and reload() with MOD_FETCH_<NAME>:\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "        MOD_USE_CORE;                                    // file scope\n" );
-    fprintf( f, "        if ( !MOD_FETCH_CORE ) return false;             // in init() and reload()\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Persistent state (allocated by the module system; preserved across hot-reloads)\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "typedef struct %s_state_s\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    int32_t placeholder;    /* replace with real state fields */\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "} %s_state_t;\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "static %s_state_t* g_state = NULL;\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Implementation\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "static void\n" );
-    fprintf( f, "%s_tick_impl( float dt )\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    if ( !g_state ) return;\n" );
-    fprintf( f, "    ( void )dt;    /* TODO */\n" );
-    fprintf( f, "}\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    API Struct\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "const %s_api_t g_%s_api_struct = {\n", name, name );
-    fprintf( f, "    .tick = %s_tick_impl,\n", name );
-    fprintf( f, "};\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Lifecycle\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "static bool\n" );
-    fprintf( f, "%s_init( void* raw_state, get_api_fn get_api )\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    UNUSED( get_api );    /* remove when fetching module APIs */\n" );
-    fprintf( f, "    g_state = ( %s_state_t* )raw_state;\n", name );
-    fprintf( f, "    return true;\n" );
-    fprintf( f, "}\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "static bool\n" );
-    fprintf( f, "%s_reload( void* raw_state, get_api_fn get_api )\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    UNUSED( get_api );    /* remove when fetching module APIs */\n" );
-    fprintf( f, "    g_state = ( %s_state_t* )raw_state;\n", name );
-    fprintf( f, "    return true;\n" );
-    fprintf( f, "}\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "static void\n" );
-    fprintf( f, "%s_exit( void* raw_state )\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    UNUSED( raw_state );\n" );
-    fprintf( f, "}\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "/*==============================================================================================\n" );
-    fprintf( f, "    Module descriptor\n" );
-    fprintf( f, "==============================================================================================*/\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "mod_desc_t*\n" );
-    fprintf( f, "%s_get_mod_desc( void )\n", name );
-    fprintf( f, "{\n" );
-    fprintf( f, "    static mod_desc_t desc = {\n" );
-    fprintf( f, "        .version       = 1,\n" );
-    fprintf( f, "        .state_size    = sizeof( %s_state_t ),\n", name );
-    fprintf( f, "        .func_api_size = sizeof( %s_api_t ),\n", name );
-    fprintf( f, "        .func_api      = &g_%s_api_struct,\n", name );
-    fprintf( f, "        .dep_count     = 0,\n" );
-    fprintf( f, "        .init          = %s_init,\n", name );
-    fprintf( f, "        .exit          = %s_exit,\n", name );
-    fprintf( f, "        .reload        = %s_reload,\n", name );
-    fprintf( f, "    };\n" );
-    fprintf( f, "    return &desc;\n" );
-    fprintf( f, "}\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "MOD_DEFINE_EXPORTS( %s )\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "/*============================================================================================*/\n" );
-
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
-}
+static const char k_tpl_api_c_dynamic[] =
+"/*==============================================================================================\n"
+"\n"
+"    $name_api.c -- $name module wiring.\n"
+"    Implements the $name_api_t vtable struct and the mod_desc_t lifecycle descriptor.\n"
+"\n"
+"==============================================================================================*/\n"
+"\n"
+"/*==============================================================================================\n"
+"    Cached API pointers\n"
+"\n"
+"    Declare one per consumed module using its MOD_USE_<NAME> macro (defined in its _api.h),\n"
+"    then fetch in init() and reload() with MOD_FETCH_<NAME>:\n"
+"\n"
+"        MOD_USE_CORE;                                    // file scope\n"
+"        if ( !MOD_FETCH_CORE ) return false;             // in init() and reload()\n"
+"==============================================================================================*/\n"
+"\n"
+"/*==============================================================================================\n"
+"    Persistent state (allocated by the module system; preserved across hot-reloads)\n"
+"==============================================================================================*/\n"
+"\n"
+"typedef struct $name_state_s\n"
+"{\n"
+"    int32_t placeholder;    /* replace with real state fields */\n"
+"\n"
+"} $name_state_t;\n"
+"\n"
+"static $name_state_t* g_state = NULL;\n"
+"\n"
+"/*==============================================================================================\n"
+"    Implementation\n"
+"==============================================================================================*/\n"
+"\n"
+"static void\n"
+"$name_tick_impl( float dt )\n"
+"{\n"
+"    if ( !g_state ) return;\n"
+"    ( void )dt;    /* TODO */\n"
+"}\n"
+"\n"
+"/*==============================================================================================\n"
+"    API Struct\n"
+"==============================================================================================*/\n"
+"\n"
+"const $name_api_t g_$name_api_struct = {\n"
+"    .tick = $name_tick_impl,\n"
+"};\n"
+"\n"
+"/*==============================================================================================\n"
+"    Lifecycle\n"
+"==============================================================================================*/\n"
+"\n"
+"static bool\n"
+"$name_init( void* raw_state, get_api_fn get_api )\n"
+"{\n"
+"    UNUSED( get_api );    /* remove when fetching module APIs */\n"
+"    g_state = ( $name_state_t* )raw_state;\n"
+"    return true;\n"
+"}\n"
+"\n"
+"static bool\n"
+"$name_reload( void* raw_state, get_api_fn get_api )\n"
+"{\n"
+"    UNUSED( get_api );    /* remove when fetching module APIs */\n"
+"    g_state = ( $name_state_t* )raw_state;\n"
+"    return true;\n"
+"}\n"
+"\n"
+"static void\n"
+"$name_exit( void* raw_state )\n"
+"{\n"
+"    UNUSED( raw_state );\n"
+"}\n"
+"\n"
+"/*==============================================================================================\n"
+"    Module descriptor\n"
+"==============================================================================================*/\n"
+"\n"
+"mod_desc_t*\n"
+"$name_get_mod_desc( void )\n"
+"{\n"
+"    static mod_desc_t desc = {\n"
+"        .version       = 1,\n"
+"        .state_size    = sizeof( $name_state_t ),\n"
+"        .func_api_size = sizeof( $name_api_t ),\n"
+"        .func_api      = &g_$name_api_struct,\n"
+"        .dep_count     = 0,\n"
+"        .init          = $name_init,\n"
+"        .exit          = $name_exit,\n"
+"        .reload        = $name_reload,\n"
+"    };\n"
+"    return &desc;\n"
+"}\n"
+"\n"
+"MOD_DEFINE_EXPORTS( $name )\n"
+"\n"
+"/*============================================================================================*/\n";
 
 /* ---- Entry point ---- */
 
@@ -516,6 +527,25 @@ cmd_create_module( const char* name, const char* dir, bool is_dynamic )
 
     char NAME[ 128 ];
     str_upper( name, NAME, sizeof( NAME ) );
+
+    /* The two lines that differ between a static and a dynamic module. */
+    char hint[ 160 ];
+    snprintf( hint, sizeof( hint ),
+              is_dynamic ? "    Include %s_api.h in the module's own .c files."
+                         : "    Include %s_host.h instead for direct-call access (host, sandbox).",
+              name );
+
+    const char* link = is_dynamic
+        ? "hot-reloadable DLL; BUILD_STATIC switches to static gateway"
+        : "always statically linked into the host";
+
+    const create_sub_t subs[] = {
+        { "name", name    },
+        { "NAME", NAME    },
+        { "inc",  inc_dir },
+        { "hint", hint    },
+        { "link", link    },
+    };
 
     /* Ensure the target directory exists before writing any files. */
     ensure_dir( dir );
@@ -536,19 +566,19 @@ cmd_create_module( const char* name, const char* dir, bool is_dynamic )
     const char* type_label = is_dynamic ? "dynamic" : "static";
     printf( ORB_BANNER "[orb create]  %s  (%s)  in %s\n\n", name, type_label, dir );
 
-    create_emit_h    ( p_h,     name, NAME, inc_dir, !is_dynamic );
-    create_emit_api_h( p_api_h, name, NAME, inc_dir, !is_dynamic );
+    create_write_tpl( p_h,     k_tpl_h,     CREATE_SUBS( subs ) );
+    create_write_tpl( p_api_h, k_tpl_api_h, CREATE_SUBS( subs ) );
 
     if ( is_dynamic )
     {
-        create_emit_c_dynamic    ( p_c,     name, inc_dir );
-        create_emit_api_c_dynamic( p_api_c, name );
+        create_write_tpl( p_c,     k_tpl_c_dynamic,     CREATE_SUBS( subs ) );
+        create_write_tpl( p_api_c, k_tpl_api_c_dynamic, CREATE_SUBS( subs ) );
     }
     else
     {
-        create_emit_host_h  ( p_host_h, name, NAME, inc_dir );
-        create_emit_c_static( p_c,      name,       inc_dir );
-        create_emit_api_c   ( p_api_c,  name );
+        create_write_tpl( p_host_h, k_tpl_host_h,       CREATE_SUBS( subs ) );
+        create_write_tpl( p_c,      k_tpl_c_static,     CREATE_SUBS( subs ) );
+        create_write_tpl( p_api_c,  k_tpl_api_c_static, CREATE_SUBS( subs ) );
     }
 
     /* Print the orb.targets stanza for copy-paste. */
@@ -595,6 +625,14 @@ create_project_engine_ref( const char* dir_fwd, const char* engine_abs, char* ou
     snprintf( out, size, "%s", engine_abs );
 }
 
+/*==============================================================================================
+    Project templates
+
+    Substitutions:
+        $name        project identifier        $NAME         the same, upper-cased
+        $engine_ref  orb.targets engine path   $engine_abs   absolute engine root
+==============================================================================================*/
+
 /* <dir>/orb.targets -- engine declaration, game DLL target, and solution.
 
    The project builds a game module DLL, not an exe: the engine's hosts run it --
@@ -602,64 +640,89 @@ create_project_engine_ref( const char* dir_fwd, const char* engine_abs, char* ou
    the editor).  The DLL implements runtime/run_project.h and hot-reloads while a host is
    running.  -monolithic is not supported for project DLLs (a mono build produces no
    engine DLLs for the project to pair with). */
-static void
-create_emit_project_targets( const char* path, const char* name, const char* NAME,
-                             const char* engine_ref, const char* engine_abs )
-{
-    FILE* f = create_open_write( path );
-    if ( !f ) return;
+static const char k_tpl_project_targets[] =
+"# orb.targets -- $name\n"
+"#\n"
+"# 'engine' declares the ORB installation this project builds on:\n"
+"#   - All engine targets are available as deps and build on demand into this\n"
+"#     project's bin/ (they are excluded from local build-all/gen/clean).\n"
+"#   - Engine headers (engine/sys/sys.h etc.) are on the include path automatically.\n"
+"#   - Built-in tools (build_tool, reflect_tool) resolve from the engine root.\n"
+"#\n"
+"# This project builds $name.dll -- a game module (runtime/run_project.h contract)\n"
+"# run by the engine's hosts.  -monolithic is not supported for project DLLs.\n"
+"#\n"
+"# Workflow:\n"
+"#   bin\\build_tool.bat -gen      generate VS project files (build/proj)\n"
+"#   bin\\build_tool.bat           build (add -config Release as needed)\n"
+"#   \"$engine_abs\\bin\\host_game.exe\"   -project .     play it\n"
+"#   \"$engine_abs\\bin\\host_editor.exe\" -project .     edit it (Play/Stop)\n"
+"#\n"
+"# In Visual Studio, F5 does the same via the 'run' lines below: the startup\n"
+"# project launches host_editor; set '$name_play' as startup to launch host_game.\n"
+"\n"
+"engine  $engine_ref\n"
+"\n"
+"target $name\n"
+"\n"
+"    type        dynamic\n"
+"    root        src\n"
+"    folder      01_$NAME\n"
+"    unit        $name.c\n"
+"    unit        game_ui.c   # the game kit: HUD over gui's element tier\n"
+"    run         host_editor -project .\n"
+"\n"
+"# F5 launcher: builds $name.dll, runs it standalone under host_game.\n"
+"target $name_play\n"
+"\n"
+"    alias       $name\n"
+"    folder      01_$NAME\n"
+"    run         host_game -project .\n"
+"\n"
+"solution $name\n"
+"\n"
+"    out         build/proj\n"
+"    startup     $name\n"
+"    add         $name $name_play\n"
+"\n"
+"    # Engine targets included for source navigation and debugging.\n"
+"    add         base sys ref mod app core job\n"
+"    add         run rhi draw render game\n";
 
-    fprintf( f, "# orb.targets -- %s\n", name );
-    fprintf( f, "#\n" );
-    fprintf( f, "# 'engine' declares the ORB installation this project builds on:\n" );
-    fprintf( f, "#   - All engine targets are available as deps and build on demand into this\n" );
-    fprintf( f, "#     project's bin/ (they are excluded from local build-all/gen/clean).\n" );
-    fprintf( f, "#   - Engine headers (engine/sys/sys.h etc.) are on the include path automatically.\n" );
-    fprintf( f, "#   - Built-in tools (build_tool, reflect_tool) resolve from the engine root.\n" );
-    fprintf( f, "#\n" );
-    fprintf( f, "# This project builds %s.dll -- a game module (runtime/run_project.h contract)\n", name );
-    fprintf( f, "# run by the engine's hosts.  -monolithic is not supported for project DLLs.\n" );
-    fprintf( f, "#\n" );
-    fprintf( f, "# Workflow:\n" );
-    fprintf( f, "#   bin\\build_tool.bat -gen      generate VS project files (build/proj)\n" );
-    fprintf( f, "#   bin\\build_tool.bat           build (add -config Release as needed)\n" );
-    fprintf( f, "#   \"%s\\bin\\host_game.exe\"   -project .     play it\n", engine_abs );
-    fprintf( f, "#   \"%s\\bin\\host_editor.exe\" -project .     edit it (Play/Stop)\n", engine_abs );
-    fprintf( f, "#\n" );
-    fprintf( f, "# In Visual Studio, F5 does the same via the 'run' lines below: the startup\n" );
-    fprintf( f, "# project launches host_editor; set '%s_play' as startup to launch host_game.\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "engine  %s\n", engine_ref );
-    fprintf( f, "\n" );
-    fprintf( f, "target %s\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "    type        dynamic\n" );
-    fprintf( f, "    root        src\n" );
-    fprintf( f, "    folder      01_%s\n", NAME );
-    fprintf( f, "    unit        %s.c\n", name );
-    fprintf( f, "    unit        game_ui.c   # the game kit: HUD over gui's element tier\n" );
-    fprintf( f, "    run         host_editor -project .\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "# F5 launcher: builds %s.dll, runs it standalone under host_game.\n", name );
-    fprintf( f, "target %s_play\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "    alias       %s\n", name );
-    fprintf( f, "    folder      01_%s\n", NAME );
-    fprintf( f, "    run         host_game -project .\n" );
-    fprintf( f, "\n" );
-    fprintf( f, "solution %s\n", name );
-    fprintf( f, "\n" );
-    fprintf( f, "    out         build/proj\n" );
-    fprintf( f, "    startup     %s\n", name );
-    fprintf( f, "    add         %s %s_play\n", name, name );
-    fprintf( f, "\n" );
-    fprintf( f, "    # Engine targets included for source navigation and debugging.\n" );
-    fprintf( f, "    add         base sys ref mod app core job\n" );
-    fprintf( f, "    add         run rhi draw render game\n" );
+/* <dir>/clean_build.bat -- wipe generated outputs and restore the forwarder.
+   Reads .orb_engine at runtime so it keeps working if the project moves.  The doubled
+   '%%' is batch's own escape, reaching bin\build_tool.bat as a single '%'. */
+static const char k_tpl_project_clean_bat[] =
+"@echo off\n"
+"if not exist .orb_engine (\n"
+"    echo [orb error] .orb_engine not found. Re-run bootstrap_project.bat to restore.\n"
+"    exit /b 1\n"
+")\n"
+"set /p ENGINE_ROOT=<.orb_engine\n"
+"if exist build rmdir /s /q build\n"
+"if exist bin   rmdir /s /q bin\n"
+"if not exist bin mkdir bin\n"
+"(echo @\"%ENGINE_ROOT%\\bin\\build_tool.exe\" %%*) > bin\\build_tool.bat\n"
+"echo [orb] clean complete. bin\\build_tool.bat restored.\n";
 
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
-}
+/* <dir>/.gitignore -- generated outputs only; scaffolded sources stay tracked. */
+static const char k_tpl_project_gitignore[] =
+"bin/\n"
+"build/\n"
+".cache/\n"
+".vscode/\n"
+".clangd\n"
+".orb_engine\n"
+"compile_commands.json\n"
+"*.code-workspace\n";
+
+/* <dir>/.orb_engine -- absolute engine root, one line. Machine-local. */
+static const char k_tpl_project_engine_file[] =
+"$engine_abs\n";
+
+/* <dir>/bin/build_tool.bat -- forwarder to the engine's build_tool.exe. Machine-local. */
+static const char k_tpl_project_forwarder[] =
+"@\"$engine_abs" PATH_SEP "bin" PATH_SEP "build_tool.exe\" %*\n";
 
 /*  The identifier every file under source/project/sample_game/ is written in terms of.
     It is substituted in both file contents and emitted file names. */
@@ -672,7 +735,7 @@ create_emit_project_targets( const char* path, const char* name, const char* NAM
     keeps its name. sample_game is the benchmark minimal-but-real game: a new project is a
     full copy of it, not a subset, so the two stay at parity until sample_game is
     deliberately forked. Adding a file here also needs a 'unit' line for it in
-    create_emit_project_targets() if it compiles as its own translation unit. */
+    k_tpl_project_targets if it compiles as its own translation unit. */
 
 static const char* k_project_template_files[] = {
     CREATE_TOKEN ".c",
@@ -745,52 +808,7 @@ create_emit_project_module( const char* path, const char* name, const char* temp
     }
 
     platform_unmap_file( &mf );
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
-}
-
-/* <dir>/clean_build.bat -- wipe generated outputs and restore the forwarder.
-   Reads .orb_engine at runtime so it keeps working if the project moves. */
-static void
-create_emit_project_clean_bat( const char* path )
-{
-    FILE* f = create_open_write( path );
-    if ( !f ) return;
-
-    fprintf( f, "@echo off\n" );
-    fprintf( f, "if not exist .orb_engine (\n" );
-    fprintf( f, "    echo [orb error] .orb_engine not found. Re-run bootstrap_project.bat to restore.\n" );
-    fprintf( f, "    exit /b 1\n" );
-    fprintf( f, ")\n" );
-    fprintf( f, "set /p ENGINE_ROOT=<.orb_engine\n" );
-    fprintf( f, "if exist build rmdir /s /q build\n" );
-    fprintf( f, "if exist bin   rmdir /s /q bin\n" );
-    fprintf( f, "if not exist bin mkdir bin\n" );
-    fprintf( f, "(echo @\"%%ENGINE_ROOT%%\\bin\\build_tool.exe\" %%%%*) > bin\\build_tool.bat\n" );
-    fprintf( f, "echo [orb] clean complete. bin\\build_tool.bat restored.\n" );
-
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
-}
-
-/* <dir>/.gitignore -- generated outputs only; scaffolded sources stay tracked. */
-static void
-create_emit_project_gitignore( const char* path )
-{
-    FILE* f = create_open_write( path );
-    if ( !f ) return;
-
-    fprintf( f, "bin/\n" );
-    fprintf( f, "build/\n" );
-    fprintf( f, ".cache/\n" );
-    fprintf( f, ".vscode/\n" );
-    fprintf( f, ".clangd\n" );
-    fprintf( f, ".orb_engine\n" );
-    fprintf( f, "compile_commands.json\n" );
-    fprintf( f, "*.code-workspace\n" );
-
-    fclose( f );
-    printf( ORB_INDENT "  wrote  %s\n", path );
+    create_close( f, path );
 }
 
 /* Register the project in <engine>/build/.orb_projects -- the machine-local, gitignored
@@ -862,8 +880,8 @@ static bool
 cmd_create_project( const char* name, const char* dir )
 {
     /* Must run from the engine root: the generated project embeds paths to it. */
-    if ( !create_file_exists( "orb.targets" ) ||
-         !create_file_exists( "source" PATH_SEP "engine" PATH_SEP "mod" PATH_SEP "mod.c" ) )
+    if ( !platform_file_exists( "orb.targets" ) ||
+         !platform_file_exists( "source" PATH_SEP "engine" PATH_SEP "mod" PATH_SEP "mod.c" ) )
     {
         printf( ORB_INDENT "[orb error] -type project must run from the engine root"
                            " (orb.targets + source/engine not found here)\n" );
@@ -887,6 +905,13 @@ cmd_create_project( const char* name, const char* dir )
     char engine_ref[ PATH_MAX ];
     create_project_engine_ref( dir_fwd, engine_abs, engine_ref, sizeof( engine_ref ) );
 
+    const create_sub_t subs[] = {
+        { "name",       name       },
+        { "NAME",       NAME       },
+        { "engine_ref", engine_ref },
+        { "engine_abs", engine_abs },
+    };
+
     printf( ORB_BANNER "[orb create]  %s  (project)  in %s\n", name, dir );
     printf( ORB_INDENT "  engine  %s\n\n", engine_abs );
 
@@ -899,7 +924,7 @@ cmd_create_project( const char* name, const char* dir )
     char path[ PATH_MAX ];
 
     snprintf( path, sizeof( path ), "%s%sorb.targets", dir, PATH_SEP );
-    create_emit_project_targets( path, name, NAME, engine_ref, engine_abs );
+    create_write_tpl( path, k_tpl_project_targets, CREATE_SUBS( subs ) );
 
     for ( int i = 0; i < ( int )( sizeof( k_project_template_files ) /
                                   sizeof( k_project_template_files[ 0 ] ) ); ++i )
@@ -918,31 +943,18 @@ cmd_create_project( const char* name, const char* dir )
     }
 
     snprintf( path, sizeof( path ), "%s%sclean_build.bat", dir, PATH_SEP );
-    create_emit_project_clean_bat( path );
+    create_write_tpl( path, k_tpl_project_clean_bat, CREATE_SUBS( subs ) );
 
     snprintf( path, sizeof( path ), "%s%s.gitignore", dir, PATH_SEP );
-    create_emit_project_gitignore( path );
+    create_write_tpl( path, k_tpl_project_gitignore, CREATE_SUBS( subs ) );
 
     /* Machine-local files: always refresh so re-running repairs a moved engine. */
 
     snprintf( path, sizeof( path ), "%s%s.orb_engine", dir, PATH_SEP );
-    {
-        FILE* f = fopen( path, "w" );
-        if ( f ) { fprintf( f, "%s\n", engine_abs ); fclose( f ); printf( ORB_INDENT "  wrote  %s\n", path ); }
-        else       printf( ORB_INDENT "[orb error] cannot create: %s\n", path );
-    }
+    create_write_tpl_force( path, k_tpl_project_engine_file, CREATE_SUBS( subs ) );
 
     snprintf( path, sizeof( path ), "%s%sbin%sbuild_tool.bat", dir, PATH_SEP, PATH_SEP );
-    {
-        FILE* f = fopen( path, "w" );
-        if ( f )
-        {
-            fprintf( f, "@\"%s%sbin%sbuild_tool.exe\" %%*\n", engine_abs, PATH_SEP, PATH_SEP );
-            fclose( f );
-            printf( ORB_INDENT "  wrote  %s\n", path );
-        }
-        else printf( ORB_INDENT "[orb error] cannot create: %s\n", path );
-    }
+    create_write_tpl_force( path, k_tpl_project_forwarder, CREATE_SUBS( subs ) );
 
     /* Register in the engine's machine-local project index (re-running repairs it too). */
     {
