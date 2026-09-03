@@ -60,9 +60,17 @@ ORB_STATIC_ASSERT( VK_MAX_FRAMES_IN_FLIGHT == RHI_MAX_FRAMES_IN_FLIGHT,
 #define VK_MAX_BINDLESS_SAMPLERS    128
 #define VK_MAX_BINDLESS_BUFFERS     64
 
-/* Per-frame staging capacity (linear bump; reset at each frame_begin) */
+/* Per-frame staging capacity (linear bump; reset at each frame_begin).
 
-#define VK_STAGING_SIZE             ORB_MB( 64 )
+   One buffer of this size is allocated per frame-in-flight slot and stays persistently mapped,
+   so the reservation is VK_STAGING_SIZE * VK_MAX_FRAMES_IN_FLIGHT of host-visible memory held
+   for the process lifetime -- it lands in the process working set whether or not a frame ever
+   fills it.  Keep it near the largest single-frame upload burst a host can produce: the GUI
+   sandboxes peak around 0.6 MB (vertex/index streams plus atlas pages), so 8 MB leaves an order
+   of magnitude of headroom.  A host that streams large textures or meshes needs a bigger value;
+   overflowing a slot is not silent -- vk_staging_alloc logs "ring full" and fails the upload. */
+
+#define VK_STAGING_SIZE             ORB_MB( 16 )
 
 /*==============================================================================================
     Resource slot types  --  one entry per live GPU object; indexed by rhi handle .id field.

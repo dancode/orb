@@ -266,7 +266,7 @@ main( int argc, char** argv )
         .font      = RID( "font/cascadiamono/16" ),
         .clock     = sys_tick_seconds,
         .sleep     = sys_sleep_milliseconds,
-     // .wait      = sys_wait_for_os_events_ms,
+        .wait      = sys_wait_for_os_events_ms,
         .clear     = { 0.1f, 0.1f, 0.1f, 1.00f },
         .debug     = true,
     } );

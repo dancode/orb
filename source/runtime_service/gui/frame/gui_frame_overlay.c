@@ -890,7 +890,11 @@ static bool s_dbg_font_open;     /* font registry overlay, selector menu checkbo
 static bool s_dbg_mem_open;      /* memory overlay, selector menu checkbox toggles          */
 static bool s_dbg_dash_open;     /* pipeline dashboard, F10 toggles (X button writes false) */
 static bool s_dbg_step_open;     /* command stepper window, F8 opens (X button hides)       */
-static bool s_idle_skip;         /* boot_pace: block on OS input when idle, selector menu toggles */
+static bool s_idle_skip = true;  /* boot_pace: block on OS input when idle, selector menu toggles */
+                                 /* On by default: a settled UI then costs no CPU at all.  Off
+                                    sends boot_pace down pace_spin_wait, whose busy-spin tail is
+                                    a large fraction of a short target period (2 ms held back
+                                    from a 4 ms cadence spins half a core). */
 
 /* Master arm state: off -> on -> minimized -> off, cycled by NP_DOT / '.'.  Hotkeys (NP1-7, F9,
    F10, NP+/-) are live in BOTH on and minimized -- minimized only shrinks the selector menu down
