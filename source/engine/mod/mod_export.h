@@ -76,7 +76,7 @@ typedef const void* ( *get_api_fn )( const char* name );
     Lifecycle Callback Typedefs
 ==============================================================================================*/
 
-#define MOD_MAX_DEPS 8
+#define MOD_MAX_DEPS 12
 
 /* Called on first load. Return false to abort the load.
    `state` is zeroed on first load and preserved across reloads. */
