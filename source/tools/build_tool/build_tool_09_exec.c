@@ -381,7 +381,13 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
             if ( *c == '/' || *c == '.' ) *c = '_';
         void* cook_lock = build_lock_target( key );
 
-        if ( !ctx->force_rebuild && platform_get_mtime( dst ) >= src_mtime )
+        // -force is deliberately not consulted here. It rebuilds targets, and content staleness
+        // is decoupled from target staleness (see the header of this section); honouring it
+        // would recook every name once per image that lists it, which for a shader named by
+        // every gui-linking image is dozens of identical cooks per run. A -force run still
+        // recooks everything exactly once, because it relinks the cookers and their mtimes fold
+        // into src_mtime above -- the first image cooks, the rest see the fresh file and skip.
+        if ( platform_get_mtime( dst ) >= src_mtime )
         {
             build_unlock_target( cook_lock );
             continue;
