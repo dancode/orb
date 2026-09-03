@@ -445,20 +445,24 @@ main( int argc, char** argv )
 
     if ( should_doctor ) return cmd_doctor( registry_ok );
 
-    if ( !registry_ok || !validate_targets() ) return 1;
-
-    // --- Command: LIST ---
-
-    if ( should_list )  return cmd_list();
-
-    // --- Command: GRAPH ---
-
-    if ( should_graph ) return cmd_graph( ctx.target_name );
-
     // --- Command: BOOTSTRAP (recompile build_tool.exe itself) ---
+    //
+    // Ahead of the registry gate on purpose. build_tool is a hardcoded built-in registered by
+    // init_builtin_targets() above: no deps, no reflection, no resource manifest, and its unit
+    // paths resolve without orb.targets. So none of what it needs comes from the file, and a
+    // half-edited orb.targets -- a renamed unit, a duplicated target name, a block still being
+    // written -- is precisely when rebuilding the tool that reports the problem matters most.
+    // Gating this on the file the tool exists to parse is what wedges a tree: the old exe
+    // refuses to rebuild itself, leaving bootstrap_build_tool.bat as the only way out.
+    //
+    // Nothing is silenced. Registry and validation errors surface on the next ordinary build.
 
     if ( should_bootstrap )
     {
+        if ( !registry_ok )
+            printf( ORB_INDENT "[orb warn] 'orb.targets' did not load -- bootstrapping anyway;"
+                               " it is not an input to build_tool itself\n" );
+
         build_setup_vc_env();
         target_info_t* bt = NULL;
         for ( int i = 0; i < g_target_count; ++i )
@@ -474,6 +478,16 @@ main( int argc, char** argv )
         printf( ORB_BANNER "%s[ BOOTSTRAP: OK ]%s\n", g_clr_green, g_clr_reset );
         return 0;
     }
+
+    if ( !registry_ok || !validate_targets() ) return 1;
+
+    // --- Command: LIST ---
+
+    if ( should_list )  return cmd_list();
+
+    // --- Command: GRAPH ---
+
+    if ( should_graph ) return cmd_graph( ctx.target_name );
 
     // --- Command: CLEAN ---
 
