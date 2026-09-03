@@ -16,6 +16,12 @@
 ==============================================================================================*/
 // clang-format off
 
+/* Display label per target_type_t, indexed by the enum. Shown in the [..] column of
+   -list and -graph; unrelated to the artifact extension on disk, which is platform
+   dependent and lives in the toolchain layer. */
+
+static const char* type_tag[] = { "lib", "dll", "exe" };
+
 /*==============================================================================================
     --- cmd_print_help (-help / -h) ---
 
@@ -202,7 +208,6 @@ deps_tree_children( target_info_t* t, int shown[], const char* p )
 static void
 deps_tree_node( target_info_t* t, const char* kind, int shown[], const char* p, bool last )
 {
-    static const char* type_tag[] = { "lib", "dll", "exe" };
     int  idx     = deps_target_idx( t );
     bool already = ( idx >= 0 && shown[ idx ] != 0 );
     if ( idx >= 0 ) shown[ idx ]++;
@@ -228,8 +233,6 @@ deps_tree_node( target_info_t* t, const char* kind, int shown[], const char* p, 
 static int
 cmd_list( void )
 {
-    static const char* type_tag[] = { "lib", "dll", "exe" };
-
     // Measure the longest name for column alignment.
     int max_name = 4;
     for ( int i = 0; i < g_target_count; ++i )
@@ -286,8 +289,6 @@ cmd_list( void )
 static int
 cmd_graph( const char* target_name )
 {
-    static const char* type_tag[] = { "lib", "dll", "exe" };
-
     target_info_t* root = NULL;
     if ( target_name )
     {
