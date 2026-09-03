@@ -292,17 +292,21 @@ build_gen_proj_target_msbuild( target_info_t* target )
     write_msbuild_clcompile_group( f, CONFIG_DEBUG,   target );
     write_msbuild_clcompile_group( f, CONFIG_RELEASE, target );
 
-    // Reflection codegen pre-build event. Mirrors step 6 in build_tool_09_exec.c:
-    //   bin\reflect_tool.exe -src <root_dir> -out <gen_dir> -name <reflect_name>
+    // Reflection codegen pre-build event. Mirrors build_gen_reflect() in build_tool_09_exec.c:
+    //   bin\<reflect tool>.exe -src <root_dir> -out <gen_dir> -name <reflect_name>
+    // The tool's name comes from whichever target carries is_reflect_tool, not a literal, so a
+    // project that registers its own reflect tool gets a working pre-build event. A target with
+    // has_reflect and no such target registered emits no reflection command at all -- a real
+    // build reports that as an error, and a bogus command line here would only obscure it.
     // Two-step command:
-    //   1. build_tool.exe builds reflect_tool if missing or stale (incremental,
+    //   1. build_tool.exe builds the reflect tool if missing or stale (incremental,
     //      nearly instant when already up to date). This handles fresh checkouts
-    //      where reflect_tool.exe hasn't been compiled yet. reflect_tool is not
-    //      included in the solution's project list, so VS won't build it on its own.
+    //      where the tool hasn't been compiled yet. It is not included in the
+    //      solution's project list, so VS won't build it on its own.
     //      s_ctx.build_tool_exe resolves to the engine-absolute path for child
-    //      projects (a child bin has no build_tool.exe); reflect_tool.exe lands in
+    //      projects (a child bin has no build_tool.exe); the tool's .exe lands in
     //      the local bin because build_tool runs with CWD = this project's root.
-    //   2. reflect_tool.exe generates the .generated.c/.h files.
+    //   2. the reflect tool generates the .generated.c/.h files.
     // cd /d also changes drive letter so projects on any drive work correctly.
     // NOTE: avoid "if not exist ... (cmd) && next" -- cmd.exe absorbs the && into
     // the if clause. Using build_tool.exe unconditionally avoids that trap entirely.
@@ -310,18 +314,19 @@ build_gen_proj_target_msbuild( target_info_t* target )
     // res_tool if needed, computes the image's unit closure, and runs the harvest -- the
     // closure comes from orb.targets, which only build_tool can read. Nothing is compiled
     // from it; the event is how a VS build still proves every marked name resolves.
-    bool wants_res = target_wants_res_manifest( target );
-    if ( target->has_reflect || wants_res )
+    bool                 wants_res = target_wants_res_manifest( target );
+    const target_info_t* refl_tool = target->has_reflect ? find_reflect_tool() : NULL;
+    if ( refl_tool || wants_res )
     {
         fprintf( f, "  <ItemDefinitionGroup>\n" );
         fprintf( f, "    <PreBuildEvent>\n" );
         fprintf( f, "      <Message>build_tool: generating %s%s%s for %s</Message>\n",
-                 target->has_reflect ? "reflection" : "",
-                 ( target->has_reflect && wants_res ) ? " + " : "",
+                 refl_tool ? "reflection" : "",
+                 ( refl_tool && wants_res ) ? " + " : "",
                  wants_res ? "resource manifest" : "", target->name );
         fprintf( f, "      <Command>" );
         fprintf( f, "cd /d \"$(ProjectDir)%s\"", s_ctx.cd_root );
-        if ( target->has_reflect )
+        if ( refl_tool )
         {
             const char* rname = target_reflect_name( target );
 
@@ -330,8 +335,9 @@ build_gen_proj_target_msbuild( target_info_t* target )
             for ( char* p = root_dir_norm; *p; ++p )
                 if ( *p == '/' ) *p = '\\';
 
-            fprintf( f, " &amp;&amp; %s -config $(Configuration) -target reflect_tool", s_ctx.build_tool_exe );
-            fprintf( f, " &amp;&amp; bin\\reflect_tool.exe -src %s -out %s\\%s -name %s", root_dir_norm, g_build_dir, g_gen_dir, rname );
+            fprintf( f, " &amp;&amp; %s -config $(Configuration) -target %s", s_ctx.build_tool_exe, refl_tool->name );
+            fprintf( f, " &amp;&amp; bin\\%s.exe -src %s -out %s\\%s -name %s",
+                     refl_tool->name, root_dir_norm, g_build_dir, g_gen_dir, rname );
         }
         if ( wants_res )
             fprintf( f, " &amp;&amp; %s -config $(Configuration) -target %s -res-manifest", s_ctx.build_tool_exe, target->name );

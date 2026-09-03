@@ -456,22 +456,14 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
         target_info_t* refl_tool = find_reflect_tool();
         if ( !refl_tool )
         {
-            printf( ORB_INDENT "[orb error] '%s' no reflect_tool is registered\n", target->name );
+            printf( ORB_INDENT "[orb error] '%s' needs reflection but no is_reflect_tool target is registered\n",
+                    target->name );
             return false;
         }
         if ( build_target( ctx, refl_tool, NULL, NULL ) == false )
             return false;
 
-        const char* rname = target_reflect_name( target );
-
-        if ( g_out_flags & ORB_OUT_REFLECT )
-            log_printf( ORB_INDENT "[orb reflect] %s\n", rname );
-
-        const char* silent = ( g_out_flags & ORB_OUT_REFLECT ) ? "" : " -silent";
-        char refl_cmd[ PATH_MAX * 2 ];
-        snprintf( refl_cmd, sizeof( refl_cmd ), "bin" PATH_SEP "%s.exe -src %s -out %s -name %s%s",
-                  refl_tool->name, target->root_dir, gen_dir, rname, silent );
-        if ( build_run_cmd( refl_cmd ) != 0 )
+        if ( !build_gen_reflect( target, gen_dir, refl_tool ) )
             return false;
     }
 

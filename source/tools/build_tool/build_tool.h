@@ -715,6 +715,15 @@ bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
 
 bool build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj_dir );
 
+/*  Runs reflect_tool over the target's source tree, writing <gen_dir>/<name>.generated.{c,h}
+    -- the type and field tables ref_ registers at startup. The .c is a compile unit of the
+    target, so this runs before the compiler and a failure is fatal in every mode. Both build
+    paths (build_target step 6, and build_target_compile_only for VS Ctrl+F7) call it, so the
+    command line has one definition. The caller resolves the tool (find_reflect_tool()), builds
+    it, and creates gen_dir. */
+
+bool build_gen_reflect( target_info_t* target, const char* gen_dir, const target_info_t* refl_tool );
+
 /*  Harvests the resource names (RID / RES_TREE tokens) the target's image references
     into <obj_dir>/<name>_res_manifest.txt, each resolved against the content roots (this
     project's content/, then the engine's for a child project). Nothing is compiled from

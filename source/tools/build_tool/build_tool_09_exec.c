@@ -423,6 +423,36 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
 }
 
 /*==============================================================================================
+    --- Reflection Codegen ---
+
+    reflect_tool scans the target's source tree and writes <gen_dir>/<name>.generated.{c,h},
+    the type and field tables ref_ registers at startup.  The .c is a compile unit of the
+    target, so this runs ahead of the compiler and a failure is fatal in every mode.
+
+    Two build paths reach it -- step 6 of build_target() and build_target_compile_only(), the
+    -compile-only route VS drives with Ctrl+F7 -- so the command line has one definition here
+    and the two paths cannot generate different code.  The caller owns locating the tool
+    (find_reflect_tool()), building it, and creating gen_dir.
+==============================================================================================*/
+
+bool
+build_gen_reflect( target_info_t* target, const char* gen_dir, const target_info_t* refl_tool )
+{
+    const char* rname = target_reflect_name( target );
+
+    if ( g_out_flags & ORB_OUT_REFLECT )
+        log_printf( ORB_INDENT "[orb reflect] %s\n", rname );
+
+    // Pass -silent when ORB_OUT_REFLECT is off so the tool produces no output.
+    // build_run_cmd routes to the per-target log in a parallel worker automatically.
+    const char* silent = ( g_out_flags & ORB_OUT_REFLECT ) ? "" : " -silent";
+    char cmd[ PATH_MAX * 2 ];
+    snprintf( cmd, sizeof( cmd ), "bin" PATH_SEP "%s.exe -src %s -out %s -name %s%s",
+              refl_tool->name, target->root_dir, gen_dir, rname, silent );
+    return build_run_cmd( cmd ) == 0;
+}
+
+/*==============================================================================================
     --- Resource Manifest ---
 
     The image's name set is the union of the RID() / RES_TREE() tokens in its own units and
@@ -884,24 +914,10 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
 
     // --- 6. Reflection Codegen ---
 
-    if ( target->has_reflect )
+    if ( target->has_reflect && !build_gen_reflect( target, gen_dir, refl_tool ) )
     {
-        const char* rname = target_reflect_name( target );
-
-        if ( g_out_flags & ORB_OUT_REFLECT )
-            log_printf( ORB_INDENT "[orb reflect] %s\n", rname );
-
-        // Pass -silent when ORB_OUT_REFLECT is off so the tool produces no output.
-        // build_run_cmd routes to the per-target log in a parallel worker automatically.
-        const char* silent = ( g_out_flags & ORB_OUT_REFLECT ) ? "" : " -silent";
-        char refl_cmd[ PATH_MAX * 2 ];
-        snprintf( refl_cmd, sizeof( refl_cmd ), "bin" PATH_SEP "%s.exe -src %s -out %s -name %s%s",
-                  refl_tool->name, target->root_dir, gen_dir, rname, silent );
-        if ( build_run_cmd( refl_cmd ) != 0 )
-        {
-            result = false;
-            goto cleanup;
-        }
+        result = false;
+        goto cleanup;
     }
 
     // --- 6.5 Resource Manifest + Content Cook (post) ---
