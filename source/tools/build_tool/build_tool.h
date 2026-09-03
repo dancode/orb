@@ -202,7 +202,12 @@ typedef void* platform_thread_t;
 
 #define MAX_TARGETS                 128
 #define MAX_SOLUTIONS               16
-#define MAX_SLN_TARGETS             128
+
+/*  A solution may list every registered target. solution_info_t::target_names is
+    NULL-terminated and reg_sln_add() reserves the last slot for that terminator,
+    so this must stay one above MAX_TARGETS or the widest solution loses a target. */
+
+#define MAX_SLN_TARGETS             ( MAX_TARGETS + 1 )
 
 /*  Max extra include directories per target or solution declared via 'include_dir'.
     These are appended to AdditionalIncludeDirectories/NMakeIncludeSearchPath in vcxproj

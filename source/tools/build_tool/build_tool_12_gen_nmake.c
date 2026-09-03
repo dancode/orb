@@ -128,6 +128,16 @@ static int         g_filter_count = 0;
     Two FNV-1a passes with different (seed, prime) pairs fill the 16 bytes.
 ==============================================================================================*/
 
+/*  Buffer size for one GUID string: "{8-4-4-4-12}" is 38 characters plus the NUL.
+    Every guid_from_name() destination in both generators is declared at this size. */
+
+#define GUID_STR_MAX    40
+
+/*  Virtual VS folders per solution. Each '/' segment of a target's virtual_folder
+    registers separately, so "03_RUNTIME/SERVICE" costs two entries. */
+
+#define MAX_SLN_FOLDERS 64
+
 // Returns the PlatformToolset string: $(DefaultPlatformToolset) by default, or vNNN when
 // -vs-version was explicitly passed (same logic as the MSBuild generator).
 static const char*
@@ -141,7 +151,7 @@ gen_platform_toolset( char* buf, size_t buf_size )
 }
 
 static void
-guid_from_name( const char* name, char* out )
+guid_from_name( const char* name, char* out, size_t out_size )
 {
     // FNV-1a 64-bit variant
     unsigned long long h1 = 0xcbf29ce484222325ULL;
@@ -152,7 +162,7 @@ guid_from_name( const char* name, char* out )
         h2 = ( h2 ^ *p ) * 0x880355f21e6d1965ULL;
     }
 
-    snprintf( out, 64, "{%08X-%04X-%04X-%04X-%04X%08X}", ( unsigned int )( h1 >> 32 ),
+    snprintf( out, out_size, "{%08X-%04X-%04X-%04X-%04X%08X}", ( unsigned int )( h1 >> 32 ),
               ( unsigned int )( ( h1 >> 16 ) & 0xFFFFu ), ( unsigned int )( h1 & 0xFFFFu ),
               ( unsigned int )( h2 >> 48 ), ( unsigned int )( ( h2 >> 32 ) & 0xFFFFu ),
               ( unsigned int )( h2 & 0xFFFFFFFFu ) );
@@ -835,8 +845,8 @@ build_gen_proj_target( target_info_t* target )
     char vcxproj_path[ PATH_MAX ];
     snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_ctx.out_dir, target->name );
 
-    char guid[ 64 ];
-    guid_from_name( target->name, guid );
+    char guid[ GUID_STR_MAX ];
+    guid_from_name( target->name, guid, sizeof( guid ) );
 
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
@@ -1013,9 +1023,46 @@ sln_emit_dep_guid( FILE* f, const solution_info_t* sln, const char* name )
 {
     if ( !name || !sln_has_target( sln, name ) )
         return;
-    char dep_guid[ 64 ];
-    guid_from_name( name, dep_guid );
+    char dep_guid[ GUID_STR_MAX ];
+    guid_from_name( name, dep_guid, sizeof( dep_guid ) );
     fprintf( f, "\t\t%s = %s\n", dep_guid, dep_guid );
+}
+
+/* The virtual folders of one solution, in registration order. Parallel arrays rather
+   than an array of structs so `name` stays a plain char[PATH_MAX] for strcmp. */
+
+typedef struct
+{
+    char folders[ MAX_SLN_FOLDERS ][ PATH_MAX ];    // full '/'-joined path, e.g. "03_RUNTIME/SERVICE"
+    char guids  [ MAX_SLN_FOLDERS ][ GUID_STR_MAX ];// GUID hashed from solution name + folder path
+    int  count;                                     // valid entries in both arrays
+
+} sln_folders_t;
+
+/* Find-or-insert one folder path. The GUID is keyed on the solution name too, so the
+   same folder path in two solutions gets distinct GUIDs. Overflow warns and drops the
+   folder: its targets then appear at the solution root rather than nested. */
+
+static void
+sln_folder_intern( sln_folders_t* fl, const char* sln_name, const char* path )
+{
+    for ( int i = 0; i < fl->count; ++i )
+        if ( strcmp( fl->folders[ i ], path ) == 0 )
+            return;
+
+    if ( fl->count >= MAX_SLN_FOLDERS )
+    {
+        printf( ORB_INDENT "[orb warn] solution '%s' folder table full (MAX_SLN_FOLDERS=%d);"
+                " '%s' will not be nested\n", sln_name, MAX_SLN_FOLDERS, path );
+        return;
+    }
+
+    snprintf( fl->folders[ fl->count ], PATH_MAX, "%s", path );
+
+    char key[ 192 ];
+    snprintf( key, sizeof( key ), "folder:%s:%s", sln_name, path );
+    guid_from_name( key, fl->guids[ fl->count ], GUID_STR_MAX );
+    fl->count++;
 }
 
 /*==============================================================================================
@@ -1045,11 +1092,11 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
     const char* folder_type_guid = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}";
     const char* cpp_type_guid    = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}";
 
-    char nav_guid[ 64 ]   = { 0 };
+    char nav_guid[ GUID_STR_MAX ] = { 0 };
     {
         char key[ 128 ];
         snprintf( key, sizeof( key ), "nav:%s", out_name );
-        guid_from_name( key, nav_guid );
+        guid_from_name( key, nav_guid, sizeof( nav_guid ) );
     }
 
     // 1. Generate the nav .vcxproj file now so the file exists when VS opens the .sln,
@@ -1061,9 +1108,7 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
     // 2. Target projects.
     // VS uses file order (not ExtensibilityGlobals) to pick the default startup project
     // on first open, so emit the declared startup target before all others.
-    char folders[ 64 ][ PATH_MAX ];
-    char folder_guids[ 64 ][ 64 ];
-    int  folder_count = 0;
+    sln_folders_t folders = { 0 };
 
     target_info_t* startup_first =
         sln->startup_project ? find_target( sln->startup_project ) : NULL;
@@ -1079,8 +1124,8 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
             if (  emit_startup && !is_startup ) continue;
             if ( !emit_startup &&  is_startup ) continue;
 
-            char guid[ 64 ];
-            guid_from_name( target->name, guid );
+            char guid[ GUID_STR_MAX ];
+            guid_from_name( target->name, guid, sizeof( guid ) );
             fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, target->name,
                      target->name, guid );
 
@@ -1146,33 +1191,13 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
             if ( *p == '/' )
             {
                 *p = '\0';
-                bool found = false;
-                for ( int j = 0; j < folder_count; ++j )
-                    if ( strcmp( folders[ j ], tmp ) == 0 ) { found = true; break; }
-                if ( !found && folder_count < 64 )
-                {
-                    snprintf( folders[ folder_count ], PATH_MAX, "%s", tmp );
-                    char key[ 192 ];
-                    snprintf( key, sizeof( key ), "folder:%s:%s", out_name, tmp );
-                    guid_from_name( key, folder_guids[ folder_count ] );
-                    folder_count++;
-                }
+                sln_folder_intern( &folders, out_name, tmp );
                 *p = '/';
             }
             p++;
         }
         // Register the leaf (full path).
-        bool found = false;
-        for ( int j = 0; j < folder_count; ++j )
-            if ( strcmp( folders[ j ], tmp ) == 0 ) { found = true; break; }
-        if ( !found && folder_count < 64 )
-        {
-            snprintf( folders[ folder_count ], PATH_MAX, "%s", tmp );
-            char key[ 192 ];
-            snprintf( key, sizeof( key ), "folder:%s:%s", out_name, tmp );
-            guid_from_name( key, folder_guids[ folder_count ] );
-            folder_count++;
-        }
+        sln_folder_intern( &folders, out_name, tmp );
     }
 
     // 3. Navigation project entry (listed last so target projects get first-project
@@ -1186,12 +1211,12 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
 
     // 4. Virtual SLN folders.
     // Display name is the leaf segment only; nesting is expressed via NestedProjects below.
-    for ( int i = 0; i < folder_count; ++i )
+    for ( int i = 0; i < folders.count; ++i )
     {
-        const char* leaf = strrchr( folders[ i ], '/' );
-        const char* display = leaf ? leaf + 1 : folders[ i ];
+        const char* leaf = strrchr( folders.folders[ i ], '/' );
+        const char* display = leaf ? leaf + 1 : folders.folders[ i ];
         fprintf( f, "Project(\"%s\") = \"%s\", \"%s\", \"%s\"\n", folder_type_guid, display, display,
-                 folder_guids[ i ] );
+                 folders.guids[ i ] );
         fprintf( f, "EndProject\n" );
     }
 
@@ -1208,8 +1233,8 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
         target_info_t* t = find_target( *tn );
         if ( t )
         {
-            char guid[ 64 ];
-            guid_from_name( t->name, guid );
+            char guid[ GUID_STR_MAX ];
+            guid_from_name( t->name, guid, sizeof( guid ) );
             fprintf( f, "\t\t%s.Debug|x64.ActiveCfg = Debug|x64\n", guid );
             fprintf( f, "\t\t%s.Debug|x64.Build.0 = Debug|x64\n", guid );
             fprintf( f, "\t\t%s.Release|x64.ActiveCfg = Release|x64\n", guid );
@@ -1239,13 +1264,13 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
             snprintf( norm, sizeof( norm ), "%s", t->virtual_folder );
             path_to_fwd( norm );
 
-            char proj_guid[ 64 ];
-            guid_from_name( t->name, proj_guid );
-            for ( int j = 0; j < folder_count; ++j )
+            char proj_guid[ GUID_STR_MAX ];
+            guid_from_name( t->name, proj_guid, sizeof( proj_guid ) );
+            for ( int j = 0; j < folders.count; ++j )
             {
-                if ( strcmp( folders[ j ], norm ) == 0 )
+                if ( strcmp( folders.folders[ j ], norm ) == 0 )
                 {
-                    fprintf( f, "\t\t%s = %s\n", proj_guid, folder_guids[ j ] );
+                    fprintf( f, "\t\t%s = %s\n", proj_guid, folders.guids[ j ] );
                     break;
                 }
             }
@@ -1253,20 +1278,20 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
     }
 
     // Map each non-root folder to its parent folder.
-    for ( int i = 0; i < folder_count; ++i )
+    for ( int i = 0; i < folders.count; ++i )
     {
-        const char* slash = strrchr( folders[ i ], '/' );
+        const char* slash = strrchr( folders.folders[ i ], '/' );
         if ( !slash )
             continue;
         char parent[ PATH_MAX ];
-        int  parent_len = ( int )( slash - folders[ i ] );
-        strncpy( parent, folders[ i ], parent_len );
+        int  parent_len = ( int )( slash - folders.folders[ i ] );
+        strncpy( parent, folders.folders[ i ], parent_len );
         parent[ parent_len ] = '\0';
-        for ( int j = 0; j < folder_count; ++j )
+        for ( int j = 0; j < folders.count; ++j )
         {
-            if ( strcmp( folders[ j ], parent ) == 0 )
+            if ( strcmp( folders.folders[ j ], parent ) == 0 )
             {
-                fprintf( f, "\t\t%s = %s\n", folder_guids[ i ], folder_guids[ j ] );
+                fprintf( f, "\t\t%s = %s\n", folders.guids[ i ], folders.guids[ j ] );
                 break;
             }
         }
@@ -1280,8 +1305,8 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
         target_info_t* startup_t = find_target( sln->startup_project );
         if ( startup_t )
         {
-            char sln_guid[ 64 ];
-            guid_from_name( out_name, sln_guid );
+            char sln_guid[ GUID_STR_MAX ];
+            guid_from_name( out_name, sln_guid, sizeof( sln_guid ) );
             fprintf( f, "\tGlobalSection(ExtensibilityGlobals) = postSolution\n" );
             fprintf( f, "\t\tSolutionGuid = %s\n", sln_guid );
             fprintf( f, "\t\tStartupProject = %s\n", startup_t->name );

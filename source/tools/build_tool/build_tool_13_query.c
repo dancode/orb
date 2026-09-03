@@ -95,14 +95,16 @@ cmd_print_help( void )
     The tree uses +-- / `-- ASCII connectors; [dup] marks nodes already expanded above.
 ==============================================================================================*/
 
-#define DEPS_MAX_TOPO   128
+// deps_visit() appends a target only once and only if it is in g_targets[],
+// so the topological order can never be longer than the target pool.
+#define DEPS_MAX_TOPO   MAX_TARGETS
 #define DEPS_PREFIX_MAX 256
 
 typedef struct
 {
     target_info_t*  order[ DEPS_MAX_TOPO ];       // Topological order: leaves first.
     int             count;
-    int             visited[ MAX_TARGETS + 4 ];   // 0=unvisited  1=on_stack  2=done
+    int             visited[ MAX_TARGETS ];       // 0=unvisited  1=on_stack  2=done
     bool            has_cycle;
     char            cycle_msg[ 128 ];
 } deps_topo_t;
@@ -326,7 +328,7 @@ cmd_graph( const char* target_name )
     // Tree view: single-target mode only.
     if ( root )
     {
-        int shown[ MAX_TARGETS + 4 ] = { 0 };
+        int shown[ MAX_TARGETS ] = { 0 };
         int ridx = deps_target_idx( root );
         if ( ridx >= 0 ) shown[ ridx ]++;
         printf( "\n" );

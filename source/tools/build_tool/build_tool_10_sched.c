@@ -32,7 +32,9 @@
 // Fixed upper bounds. Hitting either MAX_JOBS or MAX_REV_DEPS is a hard error --
 // preferable to silently dropping deps and causing scheduler races.
 
-#define MAX_JOBS       128   // Distinct targets in any single closure.
+// find_job() keeps one job per target name and every job's target comes from
+// g_targets[], so a closure can never hold more jobs than there are targets.
+#define MAX_JOBS       MAX_TARGETS
 #define MAX_THREADS    32   // Worker thread cap (further clamped to logical CPUs).
 #define MAX_REV_DEPS   96   // Dependents per target. Inverse fan-out limit.
 #define MAX_LOCAL_DEPS 32   // Deps per target captured during add_job recursion.

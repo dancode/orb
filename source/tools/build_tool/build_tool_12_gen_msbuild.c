@@ -229,8 +229,8 @@ build_gen_proj_alias_msbuild( target_info_t* target )
     char vcxproj_path[ PATH_MAX ];
     snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_ctx.out_dir, target->name );
 
-    char guid[ 64 ];
-    guid_from_name( target->name, guid );
+    char guid[ GUID_STR_MAX ];
+    guid_from_name( target->name, guid, sizeof( guid ) );
 
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
@@ -260,8 +260,8 @@ build_gen_proj_target_msbuild( target_info_t* target )
     char vcxproj_path[ PATH_MAX ];
     snprintf( vcxproj_path, sizeof( vcxproj_path ), "%s\\%s.vcxproj", s_ctx.out_dir, target->name );
 
-    char guid[ 64 ];
-    guid_from_name( target->name, guid );
+    char guid[ GUID_STR_MAX ];
+    guid_from_name( target->name, guid, sizeof( guid ) );
 
     FILE* f = fopen( vcxproj_path, "w" );
     if ( !f )
@@ -386,8 +386,8 @@ build_gen_proj_target_msbuild( target_info_t* target )
         fprintf( f, "  <ItemGroup>\n" );
         for ( int i = 0; target->deps[ i ]; ++i )
         {
-            char dep_guid[ 64 ];
-            guid_from_name( target->deps[ i ], dep_guid );
+            char dep_guid[ GUID_STR_MAX ];
+            guid_from_name( target->deps[ i ], dep_guid, sizeof( dep_guid ) );
             fprintf( f, "    <ProjectReference Include=\"%s.vcxproj\">\n", target->deps[ i ] );
             fprintf( f, "      <Project>%s</Project>\n", dep_guid );
             fprintf( f, "    </ProjectReference>\n" );
@@ -396,8 +396,8 @@ build_gen_proj_target_msbuild( target_info_t* target )
         {
             for ( int i = 0; target->mono_deps[ i ]; ++i )
             {
-                char dep_guid[ 64 ];
-                guid_from_name( target->mono_deps[ i ], dep_guid );
+                char dep_guid[ GUID_STR_MAX ];
+                guid_from_name( target->mono_deps[ i ], dep_guid, sizeof( dep_guid ) );
                 fprintf( f, "    <ProjectReference Include=\"%s.vcxproj\">\n", target->mono_deps[ i ] );
                 fprintf( f, "      <Project>%s</Project>\n", dep_guid );
                 fprintf( f, "    </ProjectReference>\n" );
