@@ -6,8 +6,8 @@
     resource atlas (gui_res_atlas.c) as tenants, so icons draw from the same texture -- and 
     batch in the same draw call -- as text and solid fills.  
     
-    This file is resource bookkeeping only: the name table and the mapping from gui_icon_id_t
-    to a shared-atlas tenant.  
+    This file is for resource bookkeeping only: the name table and mapping from gui_icon_id_t
+    to a shared-atlas tenant.
     
     The draw entry point, draw_push_icon, lives in pipeline/gui_emit_shape.c and reads 
     icon_get (UVs) + icon_atlas_idx (bindless slot) below.

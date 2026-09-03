@@ -319,15 +319,7 @@ main( int argc, char** argv )
         
         // Recolor by RAMP: change how far a derivation travels, not the color it travels from.
         // A deeper HOVER wash reads as a punchier, more reactive theme off the same seeds.
-
-        // style->palette.ramp[GUI_RAMP_HOVER]     = 0.25f;
-        // style->palette.ramp[GUI_RAMP_PRESS]     = 0.25f;
-        // style->palette.ramp[GUI_RAMP_FADE]      = 0.25f;
-        // style->palette.ramp[GUI_RAMP_RECESS]    = 0.25f;
-        // style->palette.ramp[GUI_RAMP_NEST]      = 0.25f;   // signed: negative LIFTS nested regions
-        // style->palette.ramp[GUI_RAMP_STEP]      = 0.25f;
-        // style->palette.ramp[GUI_RAMP_SELECT]    = 0.25f;
-        
+       
         gui()->style_bake( style );
 
         // ...then disagree with the ramp on individual cells, if you want to. Order matters:
