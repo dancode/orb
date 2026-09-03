@@ -107,14 +107,26 @@ typedef struct
 
 } file_info_t;
 
-// Per-scan buffers. Reset (g_file_count = 0, g_filter_count = 0) at the
-// start of every project emission -- reusable scratch, not persistent state.
+// Per-scan buffers. Reset via gen_scan_reset() at the start of every project
+// emission -- reusable scratch, not persistent state.
 
 static file_info_t g_files[ MAX_FILES ];
 static int         g_file_count = 0;
+static bool        g_files_full = false;    // MAX_FILES warning already issued this scan
 
 static char        g_filters[ MAX_FILTERS ][ PATH_MAX ];
 static int         g_filter_count = 0;
+static bool        g_filters_full = false;   // MAX_FILTERS warning already issued this scan
+
+// Clear the scan buffers. Every scan_directory_recursive() caller starts here.
+static void
+gen_scan_reset( void )
+{
+    g_file_count   = 0;
+    g_files_full   = false;
+    g_filter_count = 0;
+    g_filters_full = false;
+}
 
 /*==============================================================================================
     guid_from_name()
@@ -168,10 +180,45 @@ guid_from_name( const char* name, char* out, size_t out_size )
               ( unsigned int )( h2 & 0xFFFFFFFFu ) );
 }
 
-// Register a virtual VS folder. Idempotent -- no-op if empty or already present.
+/*==============================================================================================
+    path_walk_prefixes()
+
+    Calls fn once per ancestor of a separator-joined path, shortest first, then once
+    for the whole path: "engine\core\win" yields "engine", "engine\core",
+    "engine\core\win". Both VS folder registries need every ancestor present, not just
+    the leaf -- a gap in the chain makes the folders below it silently fail to nest.
+
+    fn receives a temporary buffer, so it must copy anything it keeps.
+==============================================================================================*/
+
+typedef void ( *path_prefix_fn_t )( const char* prefix, void* ctx );
+
 static void
-add_filter( const char* filter )
+path_walk_prefixes( const char* path, char sep, path_prefix_fn_t fn, void* ctx )
 {
+    char tmp[ PATH_MAX ];
+    snprintf( tmp, sizeof( tmp ), "%s", path );
+
+    for ( char* p = tmp; *p; ++p )
+    {
+        if ( *p == sep )
+        {
+            *p = '\0';
+            fn( tmp, ctx );
+            *p = sep;
+        }
+    }
+    fn( tmp, ctx );    // The leaf: the whole path.
+}
+
+// Register one virtual filter folder in g_filters[]. Idempotent, and case-insensitive
+// because filter paths are built from on-disk directory names. ctx is unused -- the
+// destination is the per-vcxproj scratch table, not a caller-supplied one.
+static void
+add_filter( const char* filter, void* ctx )
+{
+    ( void )ctx;
+
     if ( filter[ 0 ] == '\0' )
         return;
     for ( int i = 0; i < g_filter_count; ++i )
@@ -179,31 +226,27 @@ add_filter( const char* filter )
         if ( str_icmp( g_filters[ i ], filter ) == 0 )
             return;
     }
-    if ( g_filter_count < MAX_FILTERS )
-        strcpy( g_filters[ g_filter_count++ ], filter );
+
+    if ( g_filter_count >= MAX_FILTERS )
+    {
+        // Once per scan: add_filters_recursive() runs per file, so the same overflowing
+        // folder is re-offered many times over.
+        if ( !g_filters_full )
+        {
+            printf( ORB_INDENT "[orb warn] filter table full (MAX_FILTERS=%d); '%s' and any"
+                    " further folders will not appear in the project tree\n", MAX_FILTERS, filter );
+            g_filters_full = true;
+        }
+        return;
+    }
+    strcpy( g_filters[ g_filter_count++ ], filter );
 }
 
-// Register all parent folders of a filter path. e.g. "engine\\core\\win"
-// -> adds "engine", "engine\\core", "engine\\core\\win". Necessary for VS to
-// display nested folder structure correctly.
+// Register a filter path and every folder above it. Filter paths are backslash-joined.
 static void
 add_filters_recursive( const char* filter )
 {
-    char  tmp[ PATH_MAX ];
-    char* p = tmp;
-    snprintf( tmp, sizeof( tmp ), "%s", filter );
-
-    while ( *p )
-    {
-        if ( *p == '\\' )
-        {
-            *p = '\0';
-            add_filter( tmp );
-            *p = '\\';
-        }
-        p++;
-    }
-    add_filter( tmp );    // Register the leaf segment.
+    path_walk_prefixes( filter, '\\', add_filter, NULL );
 }
 
 // Normalize all forward slashes to backslashes in place (vcxproj paths must be consistent).
@@ -285,7 +328,17 @@ scan_directory_recursive( const char* dir, const char* root_dir )
             if ( !( is_c || is_h || is_natvis ) )
                 continue;
             if ( g_file_count >= MAX_FILES )
+            {
+                // Warn once per scan: an omitted file looks like a missing source in VS,
+                // not like a table that filled up.
+                if ( !g_files_full )
+                {
+                    printf( ORB_INDENT "[orb warn] file table full (MAX_FILES=%d) scanning %s;"
+                            " remaining files omitted from the project\n", MAX_FILES, root_dir );
+                    g_files_full = true;
+                }
                 continue;
+            }
 
             file_info_t* f = &g_files[ g_file_count++ ];
 
@@ -861,8 +914,7 @@ build_gen_proj_target( target_info_t* target )
 
     write_vcxproj_common_header( f, guid, type, target );
 
-    g_file_count   = 0;
-    g_filter_count = 0;
+    gen_scan_reset();
 
     if ( target->root_dir )
         scan_directory_recursive( target->root_dir, target->root_dir );
@@ -938,8 +990,7 @@ build_gen_proj_target( target_info_t* target )
 static void
 gen_proj_engine_navigation( const char* sln_name, const char* nav_dir, const char* nav_guid )
 {
-    g_file_count   = 0;
-    g_filter_count = 0;
+    gen_scan_reset();
     scan_directory_recursive( nav_dir, nav_dir );
 
     char vcxproj_path[ PATH_MAX ];
@@ -1029,38 +1080,52 @@ sln_emit_dep_guid( FILE* f, const solution_info_t* sln, const char* name )
 }
 
 /* The virtual folders of one solution, in registration order. Parallel arrays rather
-   than an array of structs so `name` stays a plain char[PATH_MAX] for strcmp. */
+   than an array of structs so a folder path stays a plain char[PATH_MAX] for strcmp.
+   sln_name lives here because every GUID is keyed on it. */
 
 typedef struct
 {
-    char folders[ MAX_SLN_FOLDERS ][ PATH_MAX ];    // full '/'-joined path, e.g. "03_RUNTIME/SERVICE"
-    char guids  [ MAX_SLN_FOLDERS ][ GUID_STR_MAX ];// GUID hashed from solution name + folder path
-    int  count;                                     // valid entries in both arrays
+    char        folders[ MAX_SLN_FOLDERS ][ PATH_MAX ];     // full '/'-joined path, e.g. "03_RUNTIME/SERVICE"
+    char        guids  [ MAX_SLN_FOLDERS ][ GUID_STR_MAX ]; // GUID hashed from sln_name + folder path
+    int         count;                                      // valid entries in both arrays
+    const char* sln_name;                                   // owning solution; part of every GUID key
+    bool        full_warned;                                // MAX_SLN_FOLDERS warning already issued
 
 } sln_folders_t;
 
-/* Find-or-insert one folder path. The GUID is keyed on the solution name too, so the
-   same folder path in two solutions gets distinct GUIDs. Overflow warns and drops the
+/* Find-or-insert one folder path. Keying the GUID on the solution name gives the same
+   folder path distinct GUIDs in different solutions. Overflow warns and drops the
    folder: its targets then appear at the solution root rather than nested. */
 
 static void
-sln_folder_intern( sln_folders_t* fl, const char* sln_name, const char* path )
+sln_folder_intern( const char* path, void* ctx )
 {
+    sln_folders_t* fl = ( sln_folders_t* )ctx;
+
+    if ( path[ 0 ] == '\0' )
+        return;    // A target with no virtual_folder; nothing to nest it under.
+
     for ( int i = 0; i < fl->count; ++i )
         if ( strcmp( fl->folders[ i ], path ) == 0 )
             return;
 
     if ( fl->count >= MAX_SLN_FOLDERS )
     {
-        printf( ORB_INDENT "[orb warn] solution '%s' folder table full (MAX_SLN_FOLDERS=%d);"
-                " '%s' will not be nested\n", sln_name, MAX_SLN_FOLDERS, path );
+        // Once per solution: every target in an overflowing folder re-offers it.
+        if ( !fl->full_warned )
+        {
+            printf( ORB_INDENT "[orb warn] solution '%s' folder table full (MAX_SLN_FOLDERS=%d);"
+                    " '%s' and any further folders will not be nested\n",
+                    fl->sln_name, MAX_SLN_FOLDERS, path );
+            fl->full_warned = true;
+        }
         return;
     }
 
     snprintf( fl->folders[ fl->count ], PATH_MAX, "%s", path );
 
     char key[ 192 ];
-    snprintf( key, sizeof( key ), "folder:%s:%s", sln_name, path );
+    snprintf( key, sizeof( key ), "folder:%s:%s", fl->sln_name, path );
     guid_from_name( key, fl->guids[ fl->count ], GUID_STR_MAX );
     fl->count++;
 }
@@ -1108,7 +1173,7 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
     // 2. Target projects.
     // VS uses file order (not ExtensibilityGlobals) to pick the default startup project
     // on first open, so emit the declared startup target before all others.
-    sln_folders_t folders = { 0 };
+    sln_folders_t folders = { .sln_name = out_name };
 
     target_info_t* startup_first =
         sln->startup_project ? find_target( sln->startup_project ) : NULL;
@@ -1185,19 +1250,7 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
         snprintf( tmp, sizeof( tmp ), "%s", target->virtual_folder );
         path_to_fwd( tmp );
 
-        char* p = tmp;
-        while ( *p )
-        {
-            if ( *p == '/' )
-            {
-                *p = '\0';
-                sln_folder_intern( &folders, out_name, tmp );
-                *p = '/';
-            }
-            p++;
-        }
-        // Register the leaf (full path).
-        sln_folder_intern( &folders, out_name, tmp );
+        path_walk_prefixes( tmp, '/', sln_folder_intern, &folders );
     }
 
     // 3. Navigation project entry (listed last so target projects get first-project

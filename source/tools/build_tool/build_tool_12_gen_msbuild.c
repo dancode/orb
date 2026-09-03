@@ -347,8 +347,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
     }
 
     // Source files: unity .c as ClCompile, everything else as ClInclude.
-    g_file_count   = 0;
-    g_filter_count = 0;
+    gen_scan_reset();
     scan_directory_recursive( target->root_dir, target->root_dir );
 
     fprintf( f, "  <ItemGroup>\n" );
