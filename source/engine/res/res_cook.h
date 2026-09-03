@@ -31,9 +31,9 @@ typedef enum res_kind_e
 {
     RES_KIND_COPY = 0,      // no cooker: ships verbatim under its own extension
     RES_KIND_IMAGE,         // png/jpg/jpeg/bmp/tga/psd/gif/hdr  ->  .tex (RGBA8, asset_tex.h)
-    RES_KIND_FONT,          // ttf/otf                            ->  .orb_font (font_tool bake)
-    RES_KIND_SHADER,        // hlsl                               ->  .oshd (shader_tool cook)
-    RES_KIND_RECIPE,        // recipe                             ->  whatever its "kind" line says
+    RES_KIND_FONT,          // ttf/otf                           ->  .orb_font (font_tool bake)
+    RES_KIND_SHADER,        // hlsl                              ->  .oshd (shader_tool cook)
+    RES_KIND_RECIPE,        // recipe                            ->  whatever its "kind" line says
 
 } res_kind_t;
 
