@@ -53,8 +53,10 @@
     --- Icon State ---
 ==============================================================================================*/
 
-/* One registered icon: its name, stored dimensions, and its tenant handle.  UVs are NOT cached --
-   they are derived live from the tenant's origin (icon_get), since a repack can move the tenant.
+/* One registered icon: its name, stored dimensions, and its tenant handle.  
+
+   Note: UVs are NOT cached -- they are derived live from the tenant's origin (icon_get), 
+   since a repack can move the tennant in the atlas changing its UV.
 
    `sdf` is the fork, and it is per ICON rather than a mode the whole set runs in. 
 
