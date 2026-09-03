@@ -105,7 +105,7 @@ icon_tenant_sdf( u16 packed )
 
 typedef struct
 {
-    icon_entry_t  entries[ ICON_MAX ];      // id - 1 indexes here
+    icon_entry_t  entries[ ICON_MAX ];      // id - 1 indexes here (0 = GUI_ICON_NONE)
     u32           count;                    // number of registered icons (0..ICON_MAX) 
     bool          ready;                    // registration enabled (shared atlas stood up)
 

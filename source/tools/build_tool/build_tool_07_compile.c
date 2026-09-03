@@ -465,12 +465,7 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
         const char* rname = target_reflect_name( target );
 
         if ( g_out_flags & ORB_OUT_REFLECT )
-        {
-            const char* lp = sched_log_path();
-            FILE* lf = lp ? fopen( lp, "a" ) : NULL;
-            fprintf( lf ? lf : stdout, ORB_INDENT "[orb reflect] %s\n", rname );
-            if ( lf ) fclose( lf );
-        }
+            log_printf( ORB_INDENT "[orb reflect] %s\n", rname );
 
         const char* silent = ( g_out_flags & ORB_OUT_REFLECT ) ? "" : " -silent";
         char refl_cmd[ PATH_MAX * 2 ];

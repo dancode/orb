@@ -8,7 +8,7 @@
     assembling correct commands; this file focuses on making them readable.
 
     Contents:
-      - Log routing   : log_open / log_close -- route output to the
+      - Log routing   : log_open / log_close / log_printf -- route output to the
                         per-worker log during parallel builds, stdout otherwise.
       - MSVC output   : is_msvc_source_echo -- filter cl.exe TU banner lines.
       - Token printers: print_tokens, print_section, print_compile_output.
@@ -31,6 +31,10 @@
 
     log_open / log_close encapsulate that routing: callers get the right sink
     (worker log or stdout) without caring about the scheduler's internal state.
+
+    The sink is closed around every child spawn rather than held open: the child
+    writes the same file through its own append handle (see platform_spawn), so
+    the parent's buffered text must reach disk before the child's output does.
 ==============================================================================================*/
 
 static FILE*
@@ -49,6 +53,20 @@ static void
 log_close( FILE* f )
 {
     if ( f != stdout ) fclose( f );
+}
+
+/* Emit a single line to the active sink. Callers printing a whole section should hold
+   log_open()'s handle across their prints instead of calling this once per line. */
+
+static void
+log_printf( const char* fmt, ... )
+{
+    FILE*   out = log_open();
+    va_list args;
+    va_start( args, fmt );
+    vfprintf( out, fmt, args );
+    va_end( args );
+    log_close( out );
 }
 
 /*==============================================================================================

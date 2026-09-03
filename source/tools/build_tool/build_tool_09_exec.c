@@ -374,12 +374,7 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
         }
 
         if ( g_out_flags & ORB_OUT_REFLECT )
-        {
-            const char* lp = sched_log_path();
-            FILE*       lf = lp ? fopen( lp, "a" ) : NULL;
-            fprintf( lf ? lf : stdout, ORB_INDENT "[orb cook] %s\n", name );
-            if ( lf ) fclose( lf );
-        }
+            log_printf( ORB_INDENT "[orb cook] %s\n", name );
 
         char cmd[ PATH_MAX * 2 ];
         snprintf( cmd, sizeof( cmd ), "bin" PATH_SEP "asset_tool.exe cook %s %s", src, dst );
@@ -470,12 +465,7 @@ build_gen_res_manifest( target_info_t* target, const char* obj_dir, const target
     fclose( lf );
 
     if ( g_out_flags & ORB_OUT_REFLECT )
-    {
-        const char* lp = sched_log_path();
-        FILE*       f  = lp ? fopen( lp, "a" ) : NULL;
-        fprintf( f ? f : stdout, ORB_INDENT "[orb res] %s -> %s_res_manifest.txt\n", target->name, target->name );
-        if ( f ) fclose( f );
-    }
+        log_printf( ORB_INDENT "[orb res] %s -> %s_res_manifest.txt\n", target->name, target->name );
 
     // Quoted-include roots, in the compiler's order: the project source root, then the
     // engine's when this is a child project.
@@ -869,16 +859,10 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
 
     if ( target->has_reflect )
     {
-        const char* rname   = target_reflect_name( target );
-        const char* log_path = sched_log_path();
+        const char* rname = target_reflect_name( target );
 
-        // Header line: route to per-target log in a parallel worker, stdout otherwise.
         if ( g_out_flags & ORB_OUT_REFLECT )
-        {
-            FILE* lf = log_path ? fopen( log_path, "a" ) : NULL;
-            fprintf( lf ? lf : stdout, ORB_INDENT "[orb reflect] %s\n", rname );
-            if ( lf ) fclose( lf );
-        }
+            log_printf( ORB_INDENT "[orb reflect] %s\n", rname );
 
         // Pass -silent when ORB_OUT_REFLECT is off so the tool produces no output.
         // build_run_cmd routes to the per-target log in a parallel worker automatically.
