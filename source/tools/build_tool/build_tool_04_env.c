@@ -86,16 +86,46 @@ vcvars_cache_path( void )
     path to vcvarsall.bat into `out` on success.
 ==============================================================================================*/
 
+/*  Captures the first absolute path vswhere prints (the installation path) and ignores the
+    rest. platform_spawn_capture delivers whole lines already stripped of their newline, so
+    there is nothing to trim. It also merges stderr into the same stream, which the old
+    stdout-only pipe did not -- hence the absolute-path test, so a diagnostic line cannot be
+    mistaken for an install root. */
+
+typedef struct
+{
+    char inst[ 512 ];
+    bool have;
+
+} vswhere_out_t;
+
+static void
+vswhere_on_line( char* line, void* userdata )
+{
+    vswhere_out_t* o = ( vswhere_out_t* )userdata;
+    if ( o->have || !line[ 0 ] || !platform_is_abs_path( line ) ) return;
+    snprintf( o->inst, sizeof( o->inst ), "%s", line );
+    o->have = true;
+}
+
 static bool
 locate_vcvarsall( char* out, size_t out_size )
 {
 #if !defined( BUILD_SAFE_MODE )
-    // Three candidate paths cover default installs and non-standard Program Files locations.
-    // vswhere spawns cmd.exe via _popen -- skipped in safe mode.
+    /*  Three candidate paths cover default installs and non-standard Program Files
+        locations. They are probed with platform_spawn_capture (CreateProcess), not through
+        a shell: vswhere is a real executable, so nothing here needs cmd.exe. Expanding
+        %ProgramFiles% ourselves is what the shell was otherwise contributing, and it lets
+        a path that does not exist be skipped before a process is ever created.
+
+        Safe mode still skips the whole block. Not because of cmd.exe any more, but because
+        its posture is to spawn nothing it does not have to -- the hardcoded fallback below
+        covers every default install layout on its own. */
+
     const char* vswhere_paths[] = {
-        "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
-        "\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
-        "\"%ProgramFiles%\\Microsoft Visual Studio\\Installer\\vswhere.exe\"",
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe",
+        "%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe",
+        "%ProgramFiles%\\Microsoft Visual Studio\\Installer\\vswhere.exe",
     };
 
     // -prerelease makes Insiders and Preview instances visible; without it they are invisible
@@ -113,27 +143,21 @@ locate_vcvarsall( char* out, size_t out_size )
     {
         for ( int i = 0; i < ( int )( sizeof( vswhere_paths ) / sizeof( vswhere_paths[ 0 ] ) ); ++i )
         {
-            char cmd[ 1024 ];
-            snprintf( cmd, sizeof( cmd ), "%s %s", vswhere_paths[ i ], vswhere_args[ q ] );
+            char exe[ PATH_MAX ];
+            if ( !platform_expand_env( vswhere_paths[ i ], exe, sizeof( exe ) ) ) continue;
+            if ( !platform_file_exists( exe ) ) continue;
 
-            // Pipe vswhere's stdout and read the install path it prints.
-            char inst[ 512 ] = { 0 };
-            {
-                FILE* pipe = platform_popen( cmd, "rt" );
-                if ( !pipe ) continue;
-                if ( fgets( inst, sizeof( inst ), pipe ) )
-                {
-                    char* nl = strpbrk( inst, "\r\n" );
-                    if ( nl ) *nl = '\0';
-                }
-                platform_pclose( pipe );
-            }
-            if ( inst[ 0 ] )
-            {
-                // vcvarsall.bat is always at <install>\VC\Auxiliary\Build\.
-                snprintf( out, out_size, "%s\\VC\\Auxiliary\\Build\\vcvarsall.bat", inst );
-                if ( platform_file_exists( out ) ) return true;
-            }
+            char cmd[ 1024 ];
+            snprintf( cmd, sizeof( cmd ), "\"%s\" %s", exe, vswhere_args[ q ] );
+
+            // Read the install path vswhere prints on stdout.
+            vswhere_out_t got = { { 0 }, false };
+            if ( platform_spawn_capture( cmd, vswhere_on_line, &got ) != 0 || !got.have )
+                continue;
+
+            // vcvarsall.bat is always at <install>\VC\Auxiliary\Build\.
+            snprintf( out, out_size, "%s\\VC\\Auxiliary\\Build\\vcvarsall.bat", got.inst );
+            if ( platform_file_exists( out ) ) return true;
         }
     }
 #endif
