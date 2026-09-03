@@ -5,8 +5,10 @@
     A toolbox of ready-made drawing routines built over the render server's raw push 
     primitives: fill a rect, draw a line of text so it fits inside a given width, draw one
     of a small built-in set of symbols (an arrow, a checkmark), and a general-purpose "canvas"
-    for a caller who wants to draw custom 2d shapes of their own. This is also where fonts and
-    icons actually load and get packed into the shared texture the render server draws from 
+    for a caller who wants to draw custom 2d shapes of their own. 
+    
+    This is also where fonts and icons actually load and get packed into the shared texture
+    the render server draws from.
     
     -- the render server itself has no idea what a font or an icon IS, it only knows how to 
        draw from an atlas someone else filled in.
