@@ -20,9 +20,10 @@
     GAME MODULE DLL (runtime/run_project.h contract) that the engine's hosts load and run:
     host_game.exe -project <dir> / host_editor.exe -project <dir>.
         <dir>/orb.targets      -- 'engine' declaration + game DLL target + solution
-        <dir>/src/<name>.c|.h  -- copy of source/project/sample_game/sample_game.c|.h
-                                  with the identifier 'sample_game' renamed to <name>;
-                                  the template is a compiled engine target, so it cannot rot
+        <dir>/src/             -- a full copy of source/project/sample_game/ with the
+                                  identifier 'sample_game' renamed to <name>: <name>.c|.h
+                                  plus game_ui.c|.h, the game kit they build on. The
+                                  template is a compiled engine target, so it cannot rot
         <dir>/.orb_engine      -- absolute engine root (read by clean_build.bat)
         <dir>/bin/build_tool.bat  -- forwarder to the engine's build_tool.exe
         <dir>/clean_build.bat  -- wipe bin/ + build/ and restore the forwarder
@@ -636,6 +637,7 @@ create_emit_project_targets( const char* path, const char* name, const char* NAM
     fprintf( f, "    root        src\n" );
     fprintf( f, "    folder      01_%s\n", NAME );
     fprintf( f, "    unit        %s.c\n", name );
+    fprintf( f, "    unit        game_ui.c   # the game kit: HUD over gui's element tier\n" );
     fprintf( f, "    run         host_editor -project .\n" );
     fprintf( f, "\n" );
     fprintf( f, "# F5 launcher: builds %s.dll, runs it standalone under host_game.\n", name );
@@ -659,15 +661,48 @@ create_emit_project_targets( const char* path, const char* name, const char* NAM
     printf( ORB_INDENT "  wrote  %s\n", path );
 }
 
-/* <dir>/src/<name>.c|.h -- copied from the canonical project module
-   (source/project/sample_game/sample_game.c|.h) with the identifier 'sample_game'
-   renamed to the project name. The template is a real engine target built on every
-   full engine build, so the emitted code can never drift from the current API. */
+/*  The identifier every file under source/project/sample_game/ is written in terms of.
+    It is substituted in both file contents and emitted file names. */
+
+#define CREATE_TOKEN     "sample_game"
+#define CREATE_TOKEN_LEN ( sizeof( CREATE_TOKEN ) - 1 )
+
+/*  Every file copied into a new project, in emit order. The emitted name is the template
+    name with CREATE_TOKEN substituted, so sample_game.c becomes <name>.c while game_ui.c
+    keeps its name. sample_game is the benchmark minimal-but-real game: a new project is a
+    full copy of it, not a subset, so the two stay at parity until sample_game is
+    deliberately forked. Adding a file here also needs a 'unit' line for it in
+    create_emit_project_targets() if it compiles as its own translation unit. */
+
+static const char* k_project_template_files[] = {
+    CREATE_TOKEN ".c",
+    CREATE_TOKEN ".h",
+    "game_ui.c",
+    "game_ui.h",
+};
+
+/* <dir>/src/<file> -- copied from the canonical project module
+   (source/project/sample_game/) with the identifier 'sample_game' renamed to the project
+   name. The template is a real engine target built on every full engine build, so the
+   emitted code can never drift from the current API.
+
+   Two rewrites are applied while streaming, longest pattern first:
+
+     "project/sample_game/"  ->  ""      the engine tree reaches the game kit header
+                                         through an include root; a scaffolded project
+                                         keeps every source file flat in <dir>/src, so
+                                         the same include becomes a sibling one.
+     "sample_game"           ->  <name>  the module identifier and file names.
+
+   Order matters: the path pattern contains the identifier and must be tested first. */
 static void
 create_emit_project_module( const char* path, const char* name, const char* template_file )
 {
-    static const char k_token[] = "sample_game";
-    const size_t      token_len = sizeof( k_token ) - 1;
+    const struct { const char* from; const char* to; } subs[] = {
+        { "project/" CREATE_TOKEN "/", ""   },
+        { CREATE_TOKEN,                name },
+    };
+    const int sub_count = ( int )( sizeof( subs ) / sizeof( subs[ 0 ] ) );
 
     char template_path[ PATH_MAX ];
     snprintf( template_path, sizeof( template_path ),
@@ -683,19 +718,28 @@ create_emit_project_module( const char* path, const char* name, const char* temp
     FILE* f = create_open_write( path );
     if ( !f ) { platform_unmap_file( &mf ); return; }
 
-    /* Stream the template through, renaming every token hit. CRs are dropped so a
-       CRLF checkout still emits clean text (the "w" stream re-adds them on Windows). */
+    /* Stream the template through, applying the first rewrite that matches at each
+       position. CRs are dropped so a CRLF checkout still emits clean text (the "w"
+       stream re-adds them on Windows). */
     const char* p   = mf.data;
     const char* end = mf.data + mf.size;
     while ( p < end )
     {
         if ( *p == '\r' ) { ++p; continue; }
-        if ( ( size_t )( end - p ) >= token_len && memcmp( p, k_token, token_len ) == 0 )
+
+        bool matched = false;
+        for ( int i = 0; i < sub_count && !matched; ++i )
         {
-            fputs( name, f );
-            p += token_len;
-            continue;
+            size_t len = strlen( subs[ i ].from );
+            if ( ( size_t )( end - p ) < len || memcmp( p, subs[ i ].from, len ) != 0 )
+                continue;
+            fputs( subs[ i ].to, f );
+            p += len;
+            matched = true;
         }
+        if ( matched )
+            continue;
+
         fputc( *p, f );
         ++p;
     }
@@ -857,11 +901,21 @@ cmd_create_project( const char* name, const char* dir )
     snprintf( path, sizeof( path ), "%s%sorb.targets", dir, PATH_SEP );
     create_emit_project_targets( path, name, NAME, engine_ref, engine_abs );
 
-    snprintf( path, sizeof( path ), "%s%ssrc%s%s.c", dir, PATH_SEP, PATH_SEP, name );
-    create_emit_project_module( path, name, "sample_game.c" );
+    for ( int i = 0; i < ( int )( sizeof( k_project_template_files ) /
+                                  sizeof( k_project_template_files[ 0 ] ) ); ++i )
+    {
+        const char* tf = k_project_template_files[ i ];
 
-    snprintf( path, sizeof( path ), "%s%ssrc%s%s.h", dir, PATH_SEP, PATH_SEP, name );
-    create_emit_project_module( path, name, "sample_game.h" );
+        // Name-carrying files (sample_game.c|.h) are renamed; the rest keep their names.
+        char out_name[ 128 ];
+        if ( strncmp( tf, CREATE_TOKEN, CREATE_TOKEN_LEN ) == 0 )
+            snprintf( out_name, sizeof( out_name ), "%s%s", name, tf + CREATE_TOKEN_LEN );
+        else
+            snprintf( out_name, sizeof( out_name ), "%s", tf );
+
+        snprintf( path, sizeof( path ), "%s%ssrc%s%s", dir, PATH_SEP, PATH_SEP, out_name );
+        create_emit_project_module( path, name, tf );
+    }
 
     snprintf( path, sizeof( path ), "%s%sclean_build.bat", dir, PATH_SEP );
     create_emit_project_clean_bat( path );
