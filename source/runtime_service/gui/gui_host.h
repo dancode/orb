@@ -217,8 +217,7 @@ void gui_draw_plus_minus( gui_rect_t box, bool plus, f32 thickness, u32 col );
 void gui_draw_bezel( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
 void gui_draw_frame( gui_rect_t box, u32 col_bg, u32 col_border, f32 border );
 void gui_draw_round_frame( gui_rect_t box, f32 rounding, u32 col_bg, u32 col_border, f32 border );
-void gui_draw_round_frame_ex( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl,
-                              u32 col_bg, u32 col_border, f32 border );
+void gui_draw_round_frame_ex( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, u32 col_bg, u32 col_border, f32 border );
 void gui_draw_round_rect( gui_rect_t box, f32 rounding, f32 thickness, u32 col );
 void gui_draw_round_rect_ex( gui_rect_t box, f32 r_tl, f32 r_tr, f32 r_br, f32 r_bl, f32 thickness, u32 col );
 void gui_draw_ngon( f32 cx, f32 cy, f32 r, u32 sides, f32 rot, f32 thickness, u32 col );
