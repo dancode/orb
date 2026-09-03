@@ -306,9 +306,18 @@ main( int argc, char** argv )
 {
     // --- Debug arg injection ---
     //
-    // Replaces the command line with the DEBUG_ARGS list in build_tool_test.c when
-    // -custom_args is passed. No-op otherwise, and compiled out entirely under
-    // BUILD_TOOL_NO_DEBUG_INJECT.
+    // build_tool_debug_inject() swaps the command line for the DEBUG_ARGS list in
+    // build_tool_test.c when -custom_args is present, and is compiled out entirely
+    // under BUILD_TOOL_NO_DEBUG_INJECT.
+    //
+    // Flipping debug_arg_injection to true forces that path regardless of what was
+    // passed: it is the switch for running a canned build under F5 in Visual Studio
+    // without editing the project's debugger arguments. Ships false; edit it locally,
+    // never commit it true. Overwriting argv[1] is safe even with no real args --
+    // argv[argc] exists and the argv array is modifiable.
+
+    bool debug_arg_injection = false;
+    if ( debug_arg_injection ) { argc = 2; argv[ 1 ] = "-custom_args"; }
 
     build_tool_debug_inject( &argc, &argv );
 
