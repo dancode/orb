@@ -271,6 +271,13 @@ const char* g_intellisense_flags[] = {
 
 /*==============================================================================================
     --- Target Lookup Helpers ---
+
+    The find_*_tool() pair of a flag and a target: each returns the first target carrying its
+    is_*_tool flag, or NULL when none does. Every consumer -- the builder, the scheduler, both
+    project generators, -doctor -- resolves a tool through these rather than scanning the flag
+    or naming the tool in a string literal, so a project that registers its own reflect tool,
+    res tool or cooker is picked up everywhere at once and no two sites can disagree about
+    which target IS the tool.
 ==============================================================================================*/
 
 static target_info_t*
@@ -287,6 +294,15 @@ find_target_icase( const char* name )
 {
     for ( int i = 0; i < g_target_count; ++i )
         if ( str_icmp( g_targets[ i ].name, name ) == 0 )
+            return &g_targets[ i ];
+    return NULL;
+}
+
+static target_info_t*
+find_build_tool( void )
+{
+    for ( int i = 0; i < g_target_count; ++i )
+        if ( g_targets[ i ].is_build_tool )
             return &g_targets[ i ];
     return NULL;
 }
@@ -372,14 +388,13 @@ target_is_content_tool( const target_info_t* t )
     if ( t->is_res_tool || t->is_asset_tool )
         return true;
 
-    for ( int i = 0; i < g_target_count; ++i )
-    {
-        if ( !g_targets[ i ].is_asset_tool )
-            continue;
-        for ( int d = 0; g_targets[ i ].tool_deps[ d ]; ++d )
-            if ( strcmp( g_targets[ i ].tool_deps[ d ], t->name ) == 0 )
+    // A cooker the asset tool spawns: reached through find_asset_tool() so membership is
+    // computed against the same target build_cook_content() actually runs.
+    const target_info_t* cooker = find_asset_tool();
+    if ( cooker )
+        for ( int d = 0; cooker->tool_deps[ d ]; ++d )
+            if ( strcmp( cooker->tool_deps[ d ], t->name ) == 0 )
                 return true;
-    }
     return false;
 }
 

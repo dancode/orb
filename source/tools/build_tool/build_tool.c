@@ -521,9 +521,7 @@ main( int argc, char** argv )
                                " it is not an input to build_tool itself\n" );
 
         build_setup_vc_env();
-        target_info_t* bt = NULL;
-        for ( int i = 0; i < g_target_count; ++i )
-            if ( g_targets[ i ].is_build_tool ) { bt = &g_targets[ i ]; break; }
+        target_info_t* bt = find_build_tool();
         if ( !bt ) { printf( ORB_INDENT "[orb error] build_tool target not found\n" ); return 1; }
         ctx.force_rebuild = true;
         bool skipped = false;

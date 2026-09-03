@@ -1005,6 +1005,19 @@ sln_has_target( const solution_info_t* sln, const char* name )
     return false;
 }
 
+/* Writes one ProjectDependencies entry for `name`, or nothing when the solution has no such
+   project -- the MSB4051 guard above, applied at every site that emits a dep GUID. A NULL
+   name is the "no such tool is registered" case and is likewise nothing to emit. */
+static void
+sln_emit_dep_guid( FILE* f, const solution_info_t* sln, const char* name )
+{
+    if ( !name || !sln_has_target( sln, name ) )
+        return;
+    char dep_guid[ 64 ];
+    guid_from_name( name, dep_guid );
+    fprintf( f, "\t\t%s = %s\n", dep_guid, dep_guid );
+}
+
 /*==============================================================================================
     build_gen_solution()
 
@@ -1082,74 +1095,31 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
 
                 // Alias launchers depend on the target they build so VS builds it (with
                 // its full dep chain) before the alias's fast skip-rebuild runs.
-                if ( target->alias_for && sln_has_target( sln, target->alias_for ) )
-                {
-                    char a_guid[ 64 ];
-                    guid_from_name( target->alias_for, a_guid );
-                    fprintf( f, "\t\t%s = %s\n", a_guid, a_guid );
-                }
+                sln_emit_dep_guid( f, sln, target->alias_for );
 
                 for ( int i = 0; target->deps[ i ]; ++i )
-                {
-                    if ( !sln_has_target( sln, target->deps[ i ] ) )
-                        continue;
-                    char dep_guid[ 64 ];
-                    guid_from_name( target->deps[ i ], dep_guid );
-                    fprintf( f, "\t\t%s = %s\n", dep_guid, dep_guid );
-                }
+                    sln_emit_dep_guid( f, sln, target->deps[ i ] );
 
                 for ( int i = 0; target->tool_deps[ i ]; ++i )
-                {
-                    if ( !sln_has_target( sln, target->tool_deps[ i ] ) )
-                        continue;
-                    char tool_guid[ 64 ];
-                    guid_from_name( target->tool_deps[ i ], tool_guid );
-                    fprintf( f, "\t\t%s = %s\n", tool_guid, tool_guid );
-                }
+                    sln_emit_dep_guid( f, sln, target->tool_deps[ i ] );
 
-                // Implicit dep: every target depends on build_tool when it is in the same solution.
-                if ( !target->is_build_tool && sln_has_target( sln, "build_tool" ) )
-                {
-                    for ( int k = 0; k < g_target_count; ++k )
-                    {
-                        if ( g_targets[ k ].is_build_tool )
-                        {
-                            char bt_guid[ 64 ];
-                            guid_from_name( g_targets[ k ].name, bt_guid );
-                            fprintf( f, "\t\t%s = %s\n", bt_guid, bt_guid );
-                            break;
-                        }
-                    }
-                }
+                // Implicit deps on the build's own tools. Each is resolved through its
+                // find_*_tool(), so the GUID and the membership test name the same target:
+                // taking one from a flag scan and the other from a string literal is how a
+                // dangling GUID gets emitted.
+                const target_info_t* bt = target->is_build_tool ? NULL : find_build_tool();
+                sln_emit_dep_guid( f, sln, bt ? bt->name : NULL );
 
-                // Implicit dep: has_reflect targets depend on the reflect tool when present.
                 if ( target->has_reflect )
                 {
-                    for ( int k = 0; k < g_target_count; ++k )
-                    {
-                        if ( g_targets[ k ].is_reflect_tool && sln_has_target( sln, g_targets[ k ].name ) )
-                        {
-                            char refl_guid[ 64 ];
-                            guid_from_name( g_targets[ k ].name, refl_guid );
-                            fprintf( f, "\t\t%s = %s\n", refl_guid, refl_guid );
-                            break;
-                        }
-                    }
+                    const target_info_t* rt = find_reflect_tool();
+                    sln_emit_dep_guid( f, sln, rt ? rt->name : NULL );
                 }
 
-                // Implicit dep: images with a resource manifest depend on the res tool when present.
                 if ( target_wants_res_manifest( target ) )
                 {
-                    for ( int k = 0; k < g_target_count; ++k )
-                    {
-                        if ( g_targets[ k ].is_res_tool && sln_has_target( sln, g_targets[ k ].name ) )
-                        {
-                            char res_guid[ 64 ];
-                            guid_from_name( g_targets[ k ].name, res_guid );
-                            fprintf( f, "\t\t%s = %s\n", res_guid, res_guid );
-                            break;
-                        }
-                    }
+                    const target_info_t* rt = find_res_tool();
+                    sln_emit_dep_guid( f, sln, rt ? rt->name : NULL );
                 }
 
                 fprintf( f, "\tEndProjectSection\n" );
