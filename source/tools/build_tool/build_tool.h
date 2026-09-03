@@ -477,6 +477,19 @@ typedef struct target_info_s
 
     bool            is_host_only;
 
+    /*  If true, this target's image carries the Windows resources that sit next to its
+        sources: <root_dir>/<name>.rc compiles to a .res the linker folds in, and
+        <root_dir>/<name>.manifest becomes the embedded application manifest. Either file
+        may be absent -- the matching step is skipped. The manifest is executables only;
+        a DLL runs under the manifest of the process that loads it.
+
+        What they buy: the .rc gives an unsigned binary a publisher identity (CompanyName,
+        version, original filename) that Explorer and AV heuristics read, and the manifest
+        declares DPI awareness, the supported OS list, and requestedExecutionLevel so
+        Windows never has to guess. Off Windows the flag is ignored. */
+
+    bool            has_win_resources;
+
     /*  Extra include directories declared via 'include_dir' in orb.targets.
         Stored as absolute paths. Appended to /I flags in CLI compile and to
         AdditionalIncludeDirectories/NMakeIncludeSearchPath in vcxproj gen.

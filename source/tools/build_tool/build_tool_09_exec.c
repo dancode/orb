@@ -19,7 +19,9 @@
       6.5 Resource manifest     -- invoke res_tool over the image's unit closure (every exe
                                    and dynamic module); writes <name>_res_manifest.txt, then
                                    the content cook runs again over the fresh manifest.
-      7. Compile + link         -- call 06_compile and 07_link; restore .exe on failure.
+      7. Compile + link         -- call 06_compile and 07_link; restore .exe on failure. A
+                                   target with has_win_resources compiles its .rc first and
+                                   links the .res in (Windows only).
       8. Config+mode stamp      -- touch _<config>_<mode>.stamp; delete the other 3 combos.
 
     Concurrency:
@@ -45,49 +47,33 @@
 // clang-format off
 
 /*==============================================================================================
-    --- RC Compile and Manifest Embed Helpers (Windows only) ---
+    --- RC Compile Helper (Windows only) ---
 
-    Used in step 7 of build_target() when is_build_tool is true.  Defined here
-    (after 06_spawn.c in the unity include chain) so build_run_cmd() is in scope.
+    Used in step 7 of build_target() for targets that carry has_win_resources.  Defined
+    here (after 06_spawn.c in the unity include chain) so build_run_cmd() is in scope.
 
-    platform_compile_rc()     -- rc.exe: .rc -> .res (version-info resource)
-    platform_embed_manifest() -- mt.exe: embed XML manifest into PE RT_MANIFEST
+    platform_compile_rc() -- rc.exe: .rc -> .res (version-info resource)
 
-    Both are non-fatal: a warning is printed on failure and the binary is still
-    usable, just without the metadata that reduces AV heuristic false-positives.
+    The caller has already established that rc_src exists; a false return means rc.exe
+    itself failed, and the link then runs without the resource. Non-fatal by design: the
+    binary is still valid, just without the metadata that reduces AV heuristic
+    false-positives.
 
-    Guarded by BUILD_TOOL_EMBED_MANIFEST to match the call site in step 7 -- without
-    it the whole feature is dormant and the helpers would compile as dead code.
+    The manifest half of the feature has no helper here -- it goes in as linker flags,
+    see platform_lk_fill_dynamic() in build_tool_win_toolchain.c.
 
 ==============================================================================================*/
 
-#if defined( _WIN32 ) && defined( BUILD_TOOL_EMBED_MANIFEST )
+#if defined( _WIN32 )
 static bool
 platform_compile_rc( const char* rc_src, const char* res_out )
 {
-    if ( !platform_file_exists( rc_src ) )
-        return true;
-
     char cmd[ PATH_MAX * 2 ];
     snprintf( cmd, sizeof( cmd ), "rc.exe /nologo /fo %s %s", res_out, rc_src );
     int ret = build_run_cmd( cmd );
     if ( ret != 0 )
         printf( ORB_INDENT "[orb warn] rc.exe failed (exit %d) -- version resource not embedded\n", ret );
     return ret == 0;
-}
-
-static void
-platform_embed_manifest( const char* exe_path, const char* manifest_src )
-{
-    if ( !platform_file_exists( manifest_src ) )
-        return;
-
-    char cmd[ PATH_MAX * 2 ];
-    snprintf( cmd, sizeof( cmd ),
-              "mt.exe -nologo -manifest %s -outputresource:%s;1", manifest_src, exe_path );
-    int ret = build_run_cmd( cmd );
-    if ( ret != 0 )
-        printf( ORB_INDENT "[orb warn] mt.exe failed (exit %d) -- manifest not embedded\n", ret );
 }
 #endif
 
@@ -933,24 +919,27 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
 
     // --- 7. Compile & Link ---
 
-#if defined( _WIN32 ) && defined( BUILD_TOOL_EMBED_MANIFEST )
-    // For the build_tool target only: compile the version-info resource (.rc -> .res)
-    // and pass it to the linker so the binary carries publisher metadata that AV
-    // scanners and Windows Explorer use to identify the executable.  Both steps are
-    // non-fatal warnings; the binary is still valid if rc.exe or mt.exe are absent.
-    // Guard: define BUILD_TOOL_EMBED_MANIFEST at compile time to enable.
+#if defined( _WIN32 )
+    // A target that opted into Windows resources compiles its version-info resource
+    // (<name>.rc -> <name>.res) and hands the result to the linker, so the image carries
+    // the publisher metadata AV scanners and Windows Explorer use to identify it. A target
+    // with the flag but no .rc, or a machine without rc.exe, links without one.
     char res_path[ PATH_MAX ] = { 0 };
-    if ( target->is_build_tool )
+    if ( target->has_win_resources )
     {
         // Resolved from root_dir, not from the CWD: when a child project builds the
         // engine's build_tool the sources live under the engine root, not under this
         // project's source/.
         char rc_src[ PATH_MAX ];
-        snprintf( rc_src, sizeof( rc_src ), "%s/build_tool.rc", target->root_dir );
-        snprintf( res_path, sizeof( res_path ), "%s" PATH_SEP "build_tool.res", obj_dir );
-        if ( g_out_flags & ORB_OUT_SUMMARY_COMPILE )
-            printf( ORB_INDENT "[orb rc] %s\n", rc_src );
-        platform_compile_rc( rc_src, res_path );
+        snprintf( rc_src, sizeof( rc_src ), "%s/%s.rc", target->root_dir, target->name );
+        if ( platform_file_exists( rc_src ) )
+        {
+            snprintf( res_path, sizeof( res_path ), "%s" PATH_SEP "%s.res", obj_dir, target->name );
+            if ( g_out_flags & ORB_OUT_SUMMARY_COMPILE )
+                printf( ORB_INDENT "[orb rc] %s\n", rc_src );
+            if ( !platform_compile_rc( rc_src, res_path ) )
+                res_path[ 0 ] = '\0';    // nothing for the linker to fold in
+        }
     }
 #endif
 
@@ -961,8 +950,8 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     }
 
     if ( !build_target_link( ctx, target, obj_dir,
-#if defined( _WIN32 ) && defined( BUILD_TOOL_EMBED_MANIFEST )
-                             ( target->is_build_tool && res_path[ 0 ] ) ? res_path : NULL
+#if defined( _WIN32 )
+                             res_path[ 0 ] ? res_path : NULL
 #else
                              NULL
 #endif

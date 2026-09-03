@@ -50,12 +50,12 @@ if "%EMBED_MANIFEST%"=="1" (
 :: --- Step 2: Compile build_tool.exe (unity build) ---
 :: cl.exe accepts .res files alongside .c files on the same command line.
 :: The linker automatically includes the compiled resource in the output binary.
-:: /DBUILD_TOOL_EMBED_MANIFEST activates the rc/manifest code paths inside the
-:: self-hosted -bootstrap build (must match the EMBED_MANIFEST toggle above).
+:: The toggle above only governs the exe this script compiles. Every later build
+:: reads the decision from the build_tool target's win_resources flag instead.
 
 echo [bootstrap] Compiling build_tool.exe...
 if "%EMBED_MANIFEST%"=="1" (
-    cl.exe /nologo /W4 /WX /Zi /std:c11 /wd4100 /wd4101 /wd4189 /guard:cf /DBUILD_TOOL_EMBED_MANIFEST source/tools/build_tool/build_tool.c %RES_FILE% /I source /Fobuild/obj/ /Fdbuild/obj/ /Fe:bin/build_tool.exe /link /guard:cf /MANIFEST:EMBED /MANIFESTINPUT:source\tools\build_tool\build_tool.manifest
+    cl.exe /nologo /W4 /WX /Zi /std:c11 /wd4100 /wd4101 /wd4189 /guard:cf source/tools/build_tool/build_tool.c %RES_FILE% /I source /Fobuild/obj/ /Fdbuild/obj/ /Fe:bin/build_tool.exe /link /guard:cf /MANIFEST:EMBED /MANIFESTINPUT:source\tools\build_tool\build_tool.manifest
 ) else (
     cl.exe /nologo /W4 /WX /Zi /std:c11 /wd4100 /wd4101 /wd4189 /guard:cf source/tools/build_tool/build_tool.c /I source /Fobuild/obj/ /Fdbuild/obj/ /Fe:bin/build_tool.exe /link /guard:cf
 )

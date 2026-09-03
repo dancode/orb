@@ -55,6 +55,7 @@
             flag        <token1> [token2] ...               (space-separated list of boolean flags)
                             reflect                         -- run reflect_tool before compile
                             host_only                       -- engine service; dynamic targets may not dep this
+                            win_resources                   -- link <root>/<name>.rc, embed <root>/<name>.manifest
                             is_tool | is_build_tool | is_reflect_tool | is_res_tool | is_asset_tool
 
         RUN / ALIAS (F5 for DLL projects):
@@ -544,6 +545,7 @@ registry_load( const char* path, bool is_external )
                 {
                     if      ( strcmp( tok, "reflect"         ) == 0 ) cur_t->has_reflect    = true;
                     else if ( strcmp( tok, "host_only"       ) == 0 ) cur_t->is_host_only   = true;
+                    else if ( strcmp( tok, "win_resources"   ) == 0 ) cur_t->has_win_resources = true;
                     else if ( strcmp( tok, "is_tool"         ) == 0 ) cur_t->is_tool        = true;
                     else if ( strcmp( tok, "is_build_tool"   ) == 0 ) cur_t->is_build_tool  = true;
                     else if ( strcmp( tok, "is_reflect_tool" ) == 0 ) cur_t->is_reflect_tool = true;

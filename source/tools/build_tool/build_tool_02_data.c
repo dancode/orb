@@ -139,27 +139,22 @@ init_builtin_targets( void )
         t->is_tool       = true;
         t->is_external   = is_external;
 
-        /*  Both flags exist to keep an unsigned, freshly-built .exe out of EDR heuristics.
+        /*  Both settings exist to keep an unsigned, freshly-built .exe out of EDR heuristics.
 
             /guard:cf on compiler and linker alike writes a CFG bitmap into the PE header,
             which EDRs read as a positive trust signal (marks the binary as memory-safe).
 
-            BUILD_TOOL_EMBED_MANIFEST turns on the version-resource and manifest steps that
-            give the binary publisher metadata. It has to be defined for the exe being BUILT,
-            not just for the one doing the building: the steps live behind an #if in the tool's
-            own source, so without this the property survives exactly one self-host and then
-            disappears -- bootstrap_build_tool.bat produces an exe that carries it, that exe
-            produces one that does not, and the third generation emits no resource at all.
-            Keep in sync with the EMBED_MANIFEST toggle in bootstrap_build_tool.bat. */
+            has_win_resources links build_tool.rc (publisher metadata) and embeds
+            build_tool.manifest (DPI awareness, supported OS list, asInvoker), both of which
+            live in root_dir beside the sources. bootstrap_build_tool.bat compiles and embeds
+            the same two files by hand for the exe it produces before any build_tool exists. */
 
-        static const char* k_bt_flags[] = { "/guard:cf", "/DBUILD_TOOL_EMBED_MANIFEST" };
-        for ( int i = 0; i < ( int )( sizeof( k_bt_flags ) / sizeof( k_bt_flags[ 0 ] ) ); ++i )
-        {
-            t->extra_compile_flags[ i ].compiler = COMPILE_MSVC;
-            snprintf( t->extra_compile_flags[ i ].flag,
-                      sizeof( t->extra_compile_flags[ i ].flag ), "%s", k_bt_flags[ i ] );
-            t->extra_compile_flag_count = i + 1;
-        }
+        t->has_win_resources = true;
+
+        t->extra_compile_flags[ 0 ].compiler = COMPILE_MSVC;
+        snprintf( t->extra_compile_flags[ 0 ].flag,
+                  sizeof( t->extra_compile_flags[ 0 ].flag ), "/guard:cf" );
+        t->extra_compile_flag_count = 1;
 
         t->extra_link_flags[ 0 ].compiler = COMPILE_MSVC;
         snprintf( t->extra_link_flags[ 0 ].flag,

@@ -319,13 +319,12 @@ platform_lk_pre_link( const char* target_name, config_t config )
 }
 
 /*==============================================================================================
-    --- Toolchain: Resource Compiler and Manifest Embed ---
+    --- Toolchain: Resource Compiler ---
 
-    platform_compile_rc() and platform_embed_manifest() are defined in
-    build_tool_09_exec.c (after 06_spawn.c in the unity include chain) because
-    they call build_run_cmd(), which is not yet in scope at this include point.
-
-    See build_tool_09_exec.c for the implementations.
+    platform_compile_rc() is defined in build_tool_09_exec.c (after 06_spawn.c in the
+    unity include chain) because it calls build_run_cmd(), which is not yet in scope at
+    this include point. The manifest half of the feature needs no helper -- it rides on
+    the linker flags filled in below.
 
 ==============================================================================================*/
 
@@ -386,18 +385,23 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
     snprintf( lk->pdb, sizeof( lk->pdb ),
               "/DEBUG /PDB:bin/%s_%s_%lld.pdb", target->name, cfg_str, ( long long )time( NULL ) );
 
-#if defined( BUILD_TOOL_EMBED_MANIFEST )
-    // For the build_tool exe only: embed the app manifest via the linker so no
-    // post-link mt.exe call is required (mt.exe fails on UNC-style long paths).
-    // The manifest is read from root_dir so an engine-rooted build_tool still finds
-    // it when a child project is the working directory.
-    if ( !is_dll && target->is_build_tool )
+    // A target with has_win_resources embeds <root_dir>/<name>.manifest through the linker
+    // rather than a post-link mt.exe call (mt.exe fails on UNC-style long paths). The path
+    // comes from root_dir so an engine-rooted target still finds its manifest when a child
+    // project is the working directory. Executables only: a DLL runs under the manifest of
+    // the process that loads it. A target that declares the flag but ships no .manifest
+    // links without one.
+    if ( !is_dll && target->has_win_resources )
     {
-        size_t used = strlen( lk->flags );
-        snprintf( lk->flags + used, sizeof( lk->flags ) - used,
-                  " /MANIFEST:EMBED /MANIFESTINPUT:%s/build_tool.manifest", target->root_dir );
+        char man_src[ PATH_MAX ];
+        snprintf( man_src, sizeof( man_src ), "%s/%s.manifest", target->root_dir, target->name );
+        if ( platform_file_exists( man_src ) )
+        {
+            size_t used = strlen( lk->flags );
+            snprintf( lk->flags + used, sizeof( lk->flags ) - used,
+                      " /MANIFEST:EMBED /MANIFESTINPUT:%s", man_src );
+        }
     }
-#endif
 }
 
 // clang-format on
