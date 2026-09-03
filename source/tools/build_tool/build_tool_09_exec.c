@@ -5,7 +5,7 @@
     build_target() is the core worker function. It builds one target by running
     the following phases in order:
 
-      0. Dependency resolution  -- recurse into link deps and tool deps first.
+      0. Dependency resolution  -- recurse into link deps, mono deps and tool deps first.
       1. Per-target mutex lock  -- serialize concurrent invocations on the same target.
       2. Path preparation       -- obj_dir, gen_dir, out_path.
       2.5 Content cook (pre)    -- asset_tool over the cookable names in the previous
@@ -583,6 +583,23 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
             {
                 printf( ORB_INDENT "[orb error] '%s' depends on unknown target '%s'\n",
                         target->name, target->deps[ i ] );
+                return false;
+            }
+            if ( !build_target( ctx, dep, NULL, NULL ) )
+                return false;
+        }
+
+        // Mono deps -- built in both modes, linked only in a monolithic one (step 7). A host
+        // names a module here because it loads it, so it includes that module's API header;
+        // when the module's API struct and gateway come from reflect_tool (REF_MODULE), the
+        // header does not exist until the module has built.
+        for ( int i = 0; target->mono_deps[ i ]; ++i )
+        {
+            target_info_t* dep = find_target( target->mono_deps[ i ] );
+            if ( !dep )
+            {
+                printf( ORB_INDENT "[orb error] '%s' has unknown mono_dep '%s'\n",
+                        target->name, target->mono_deps[ i ] );
                 return false;
             }
             if ( !build_target( ctx, dep, NULL, NULL ) )

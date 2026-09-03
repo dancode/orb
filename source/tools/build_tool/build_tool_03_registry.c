@@ -41,7 +41,7 @@
             unit        <unity entry .c filename>           (one per line; multiple allowed)
             dep         <dependency target name>            (one per line; multiple allowed)
             tool_dep    <tool dependency name>              (one per line; multiple allowed)
-            mono_dep    <monolithic-only link dep>          (one per line; multiple allowed)
+            mono_dep    <runtime-loaded module>            (one per line; multiple allowed)
             reflect_name <name>                             (override generated file base name)
             inc         <path>                              (extra include dir; alias for include_dir)
             include_dir <path>                              (extra include dir; repeatable)
@@ -119,7 +119,8 @@
             unit        render.c
             dep         core sys                # link deps; space-separated or one per line
             tool_dep    asset_compiler          # must exist before building; not linked
-            mono_dep    audio                   # linked only in monolithic (-mono) builds
+            mono_dep    audio                   # runtime-loaded module; built first in both
+                                                #   modes, linked only in monolithic (-mono)
             flag        reflect                 # run reflect_tool before compile
             reflect_name render_types           # optional: override generated file base name
             inc         source/render/private   # extra /I flag; real compile + IntelliSense
