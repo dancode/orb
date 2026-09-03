@@ -140,9 +140,10 @@ doctor_exe_on_path( const char* exe, char* out, size_t out_size )
 static void
 doctor_norm_path( const char* in, char* out, size_t out_size )
 {
-    size_t n = 0;
-    for ( ; in[ n ] && n < out_size - 1; ++n )
-        out[ n ] = ( in[ n ] == '\\' ) ? '/' : in[ n ];
+    snprintf( out, out_size, "%s", in );
+    path_to_fwd( out );
+
+    size_t n = strlen( out );
     while ( n > 0 && out[ n - 1 ] == '/' )
         --n;
     out[ n ] = '\0';

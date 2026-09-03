@@ -55,16 +55,6 @@ create_valid_name( const char* name )
     return true;
 }
 
-/* Copy src into buf replacing every backslash with a forward slash. */
-static void
-create_str_fwd( const char* src, char* buf, size_t buf_size )
-{
-    size_t i = 0;
-    for ( ; src[ i ] && i < buf_size - 1; ++i )
-        buf[ i ] = ( src[ i ] == '\\' ) ? '/' : src[ i ];
-    buf[ i ] = '\0';
-}
-
 /* ---- File helpers ---- */
 
 static bool
@@ -515,7 +505,8 @@ static bool
 cmd_create_module( const char* name, const char* dir, bool is_dynamic )
 {
     char dir_fwd[ PATH_MAX ];
-    create_str_fwd( dir, dir_fwd, sizeof( dir_fwd ) );
+    snprintf( dir_fwd, sizeof( dir_fwd ), "%s", dir );
+    path_to_fwd( dir_fwd );
 
     /* Strip leading "source/" to get the include-root-relative path used inside #include. */
     const char* inc_dir = dir_fwd;
@@ -843,7 +834,8 @@ cmd_create_project( const char* name, const char* dir )
     }
 
     char dir_fwd[ PATH_MAX ];
-    create_str_fwd( dir, dir_fwd, sizeof( dir_fwd ) );
+    snprintf( dir_fwd, sizeof( dir_fwd ), "%s", dir );
+    path_to_fwd( dir_fwd );
 
     char NAME[ 128 ];
     str_upper( name, NAME, sizeof( NAME ) );

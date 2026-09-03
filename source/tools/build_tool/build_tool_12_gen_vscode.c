@@ -218,7 +218,7 @@ build_gen_vscode( const gen_manifest_t* m )
             {
                 char fwd[ PATH_MAX ];
                 snprintf( fwd, sizeof( fwd ), "%s", m->ext_ref_targets[ i ]->root_dir );
-                for ( char* p = fwd; *p; ++p ) if ( *p == '\\' ) *p = '/';
+                path_to_fwd( fwd );
                 fprintf( fp, ",\n    { \"name\": \"%s\", \"path\": \"%s\" }",
                          m->ext_ref_targets[ i ]->name, fwd );
             }

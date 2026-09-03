@@ -78,7 +78,7 @@ gen_manifest_build( gen_manifest_t* m )
         // VSCode / JSON: forward slashes, quoted.
         char fwd[ PATH_MAX ];
         snprintf( fwd, sizeof( fwd ), "%s/bin/build_tool.exe", g_engine_root );
-        for ( char* p = fwd; *p; ++p ) if ( *p == '\\' ) *p = '/';
+        path_to_fwd( fwd );
         snprintf( m->build_tool_exe_fwd, sizeof( m->build_tool_exe_fwd ), "\"%s\"", fwd );
     }
     else
@@ -96,8 +96,8 @@ gen_manifest_build( gen_manifest_t* m )
                   "%s/source", g_engine_root );
         snprintf( m->engine_gen_dir, sizeof( m->engine_gen_dir ),
                   "%s/%s/generated", g_engine_root, BUILD_DIR );
-        for ( char* p = m->engine_src_dir; *p; ++p ) if ( *p == '\\' ) *p = '/';
-        for ( char* p = m->engine_gen_dir; *p; ++p ) if ( *p == '\\' ) *p = '/';
+        path_to_fwd( m->engine_src_dir );
+        path_to_fwd( m->engine_gen_dir );
     }
 
     // Local solutions: fill gen_sln_entry_t per non-external solution.

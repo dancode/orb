@@ -54,20 +54,6 @@ json_str( FILE* fp, const char* s )
 }
 
 /*==============================================================================================
-    json_fwd_slashes()
-
-    Convert backslashes to forward slashes in a path buffer in-place.
-    cl.exe accepts both; forward slashes avoid backslash double-escaping in JSON.
-==============================================================================================*/
-
-static void
-json_fwd_slashes( char* s )
-{
-    for ( ; *s; ++s )
-        if ( *s == '\\' ) *s = '/';
-}
-
-/*==============================================================================================
     json_emit_entry()
 
     Write one compile_commands.json entry to fp using the "command" string form.
@@ -83,7 +69,7 @@ json_emit_entry( FILE* fp, const char* root_abs, const compile_cmd_t* cc, const 
     char cmd[ 4096 ];
     snprintf( cmd, sizeof( cmd ), "%s %s %s %s %s",
               cc->exe, cc->flags, cc->includes, cc->defines, abs_src );
-    json_fwd_slashes( cmd );
+    path_to_fwd( cmd );
 
     fprintf( fp, "  {\n" );
     fprintf( fp, "    \"directory\": " ); json_str( fp, root_abs ); fprintf( fp, ",\n" );
@@ -186,9 +172,8 @@ json_emit_constituents_from( FILE* fp, bool* first,
         }
 
         char abs_src[ PATH_MAX ];
-        if ( !platform_fullpath( abs_src, rel, sizeof( abs_src ) ) )
-            snprintf( abs_src, sizeof( abs_src ), "%s", rel );
-        json_fwd_slashes( abs_src );
+        path_abs( abs_src, rel, sizeof( abs_src ) );
+        path_to_fwd( abs_src );
 
         /* _api.c constituents define the g_<name>_api_struct that MOD_GATEWAY_STATIC
            declares in the matching _api.h.  The unity prelude (/FI net.c) already
@@ -258,9 +243,8 @@ build_gen_compile_commands( const gen_manifest_t* m )
     /* Absolute project root for the "directory" field in every entry.
        All relative paths in compile commands (like -Isource) are resolved from here. */
     char root_abs[ PATH_MAX ];
-    if ( !platform_fullpath( root_abs, ".", sizeof( root_abs ) ) )
-        snprintf( root_abs, sizeof( root_abs ), "." );
-    json_fwd_slashes( root_abs );
+    path_abs( root_abs, ".", sizeof( root_abs ) );
+    path_to_fwd( root_abs );
 
     /* Include path for reflection-generated headers: "build/generated". */
     char gen_dir[ PATH_MAX ];
@@ -301,7 +285,7 @@ build_gen_compile_commands( const gen_manifest_t* m )
             char unity_path[ PATH_MAX ];
             snprintf( unity_path, sizeof( unity_path ), "%s/%s",
                       target->root_dir, target->units[ 0 ] );
-            json_fwd_slashes( unity_path );
+            path_to_fwd( unity_path );
 
             CC_APPEND( cc_constituent.includes, " /FI %s", unity_path );
         }
@@ -314,9 +298,8 @@ build_gen_compile_commands( const gen_manifest_t* m )
             snprintf( rel, sizeof( rel ), "%s/%s", target->root_dir, target->units[ j ] );
 
             char abs_src[ PATH_MAX ];
-            if ( !platform_fullpath( abs_src, rel, sizeof( abs_src ) ) )
-                snprintf( abs_src, sizeof( abs_src ), "%s", rel );
-            json_fwd_slashes( abs_src );
+            path_abs( abs_src, rel, sizeof( abs_src ) );
+            path_to_fwd( abs_src );
 
             if ( !first ) fprintf( fp, ",\n" );
             first = false;
@@ -344,9 +327,8 @@ build_gen_compile_commands( const gen_manifest_t* m )
                       g_build_dir, g_gen_dir, rname );
 
             char abs_src[ PATH_MAX ];
-            if ( !platform_fullpath( abs_src, rel, sizeof( abs_src ) ) )
-                snprintf( abs_src, sizeof( abs_src ), "%s", rel );
-            json_fwd_slashes( abs_src );
+            path_abs( abs_src, rel, sizeof( abs_src ) );
+            path_to_fwd( abs_src );
 
             if ( !first ) fprintf( fp, ",\n" );
             first = false;

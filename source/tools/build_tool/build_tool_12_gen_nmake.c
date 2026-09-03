@@ -1168,8 +1168,7 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
 
         char tmp[ PATH_MAX ];
         snprintf( tmp, sizeof( tmp ), "%s", target->virtual_folder );
-        for ( char* p = tmp; *p; p++ )
-            if ( *p == '\\' ) *p = '/';
+        path_to_fwd( tmp );
 
         char* p = tmp;
         while ( *p )
@@ -1268,8 +1267,7 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
             // Normalize virtual_folder to forward slashes for comparison.
             char norm[ PATH_MAX ];
             snprintf( norm, sizeof( norm ), "%s", t->virtual_folder );
-            for ( char* p = norm; *p; p++ )
-                if ( *p == '\\' ) *p = '/';
+            path_to_fwd( norm );
 
             char proj_guid[ 64 ];
             guid_from_name( t->name, proj_guid );

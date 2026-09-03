@@ -301,6 +301,34 @@ reg_sln_add( solution_info_t* sln, const char* name )
     return false;
 }
 
+/*  Resolve one path-valued directive to an absolute path.
+
+    An absolute value is taken as written. A relative one is resolved against base_dir --
+    the directory of the .targets file that declared it, never build_tool's working
+    directory -- so a target in an imported file points back at its own source tree.
+
+    %VAR% tokens are expanded first, so an SDK root such as %VULKAN_SDK% works in any
+    directive that comes through here. An unset variable survives as a literal '%', which
+    the include_dir callers check for and report against the declaring line. */
+
+static void
+reg_resolve_path( const char* base_dir, const char* val, char* out, size_t size )
+{
+    char expanded[ PATH_MAX ];
+    if ( !platform_expand_env( val, expanded, sizeof( expanded ) ) )
+        snprintf( expanded, sizeof( expanded ), "%s", val );
+
+    if ( platform_is_abs_path( expanded ) )
+    {
+        snprintf( out, size, "%s", expanded );
+        return;
+    }
+
+    char combined[ PATH_MAX ];
+    snprintf( combined, sizeof( combined ), "%s/%s", base_dir, expanded );
+    path_abs( out, combined, size );
+}
+
 /*==============================================================================================
     registry_load()
 
@@ -318,8 +346,7 @@ registry_load( const char* path, bool is_external )
     {
         char abs_path[ PATH_MAX ];
 
-        if ( !platform_fullpath( abs_path, path, sizeof( abs_path ) ) )
-            snprintf( abs_path, sizeof( abs_path ), "%s", path );
+        path_abs( abs_path, path, sizeof( abs_path ) );
         snprintf( base_dir, sizeof( base_dir ), "%s", abs_path );
         char* last = NULL;
         for ( char* cp = base_dir; *cp; ++cp )
@@ -368,17 +395,7 @@ registry_load( const char* path, bool is_external )
             const char* rel = line + 7;
             while ( *rel == ' ' || *rel == '\t' ) ++rel;
             char engine_path[ PATH_MAX ];
-            if ( platform_is_abs_path( rel ) )
-            {
-                snprintf( engine_path, sizeof( engine_path ), "%s", rel );
-            }
-            else
-            {
-                char combined[ PATH_MAX ];
-                snprintf( combined, sizeof( combined ), "%s/%s", base_dir, rel );
-                if ( !platform_fullpath( engine_path, combined, sizeof( engine_path ) ) )
-                    snprintf( engine_path, sizeof( engine_path ), "%s", combined );
-            }
+            reg_resolve_path( base_dir, rel, engine_path, sizeof( engine_path ) );
             snprintf( g_engine_root, sizeof( g_engine_root ), "%s", engine_path );
 
             char engine_targets[ PATH_MAX ];
@@ -394,17 +411,7 @@ registry_load( const char* path, bool is_external )
             const char* rel = line + 7;
             while ( *rel == ' ' || *rel == '\t' ) ++rel;
             char import_path[ PATH_MAX ];
-            if ( platform_is_abs_path( rel ) )
-            {
-                snprintf( import_path, sizeof( import_path ), "%s", rel );
-            }
-            else
-            {
-                char combined[ PATH_MAX ];
-                snprintf( combined, sizeof( combined ), "%s/%s", base_dir, rel );
-                if ( !platform_fullpath( import_path, combined, sizeof( import_path ) ) )
-                    snprintf( import_path, sizeof( import_path ), "%s", combined );
-            }
+            reg_resolve_path( base_dir, rel, import_path, sizeof( import_path ) );
             // The recursive call opens a separate mapping; our mapping is unaffected.
             // Imported targets/solutions are always marked external regardless of depth.
             if ( !registry_load( import_path, true ) ) { ok = false; break; }
@@ -498,20 +505,9 @@ registry_load( const char* path, bool is_external )
             }
             else if ( strcmp( key, "root" ) == 0 && val )
             {
-                // Resolve relative roots against the declaring file's directory so
-                // targets in imported .targets files point back to their own source tree.
-                if ( platform_is_abs_path( val ) )
-                {
-                    cur_t->root_dir = pool_str( val );
-                }
-                else
-                {
-                    char combined[ PATH_MAX ], abs_buf[ PATH_MAX ];
-                    snprintf( combined, sizeof( combined ), "%s/%s", base_dir, val );
-                    if ( !platform_fullpath( abs_buf, combined, sizeof( abs_buf ) ) )
-                        snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
-                    cur_t->root_dir = pool_str( abs_buf );
-                }
+                char abs_buf[ PATH_MAX ];
+                reg_resolve_path( base_dir, val, abs_buf, sizeof( abs_buf ) );
+                cur_t->root_dir = pool_str( abs_buf );
             }
             else if ( strcmp( key, "folder" ) == 0 && val ) cur_t->virtual_folder = pool_str( val );
             else if ( strcmp( key, "unit"   ) == 0 && val ) { if ( !reg_append_slot( cur_t->units, TARGET_MAX_SLOTS, val ) ) ok = false; }
@@ -559,24 +555,9 @@ registry_load( const char* path, bool is_external )
             }
             else if ( ( strcmp( key, "include_dir" ) == 0 || strcmp( key, "inc" ) == 0 ) && val )
             {
-                /* 'inc' is an alias for 'include_dir'. Resolve relative paths against this
-                   file's directory so targets in imported .targets files point to their own tree.
-                   %VAR% tokens are expanded first so SDK roots like %VULKAN_SDK% work. */
-                char expanded[ PATH_MAX ];
-                if ( !platform_expand_env( val, expanded, sizeof( expanded ) ) )
-                    snprintf( expanded, sizeof( expanded ), "%s", val );
+                /* 'inc' is an alias for 'include_dir'. */
                 char abs_buf[ PATH_MAX ];
-                if ( platform_is_abs_path( expanded ) )
-                {
-                    snprintf( abs_buf, sizeof( abs_buf ), "%s", expanded );
-                }
-                else
-                {
-                    char combined[ PATH_MAX ];
-                    snprintf( combined, sizeof( combined ), "%s/%s", base_dir, expanded );
-                    if ( !platform_fullpath( abs_buf, combined, sizeof( abs_buf ) ) )
-                        snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
-                }
+                reg_resolve_path( base_dir, val, abs_buf, sizeof( abs_buf ) );
                 if ( !reg_append_slot( cur_t->extra_include_dirs, MAX_EXTRA_INCLUDE_DIRS, abs_buf ) ) ok = false;
 
                 /* A surviving '%' means the variable is unset; a path that does not exist
@@ -654,17 +635,7 @@ registry_load( const char* path, bool is_external )
             else if ( strcmp( key, "include_dir" ) == 0 && val )
             {
                 char abs_buf[ PATH_MAX ];
-                if ( platform_is_abs_path( val ) )
-                {
-                    snprintf( abs_buf, sizeof( abs_buf ), "%s", val );
-                }
-                else
-                {
-                    char combined[ PATH_MAX ];
-                    snprintf( combined, sizeof( combined ), "%s/%s", base_dir, val );
-                    if ( !platform_fullpath( abs_buf, combined, sizeof( abs_buf ) ) )
-                        snprintf( abs_buf, sizeof( abs_buf ), "%s", combined );
-                }
+                reg_resolve_path( base_dir, val, abs_buf, sizeof( abs_buf ) );
                 if ( !reg_append_slot( cur_sln->extra_include_dirs, MAX_EXTRA_INCLUDE_DIRS, abs_buf ) ) ok = false;
             }
             else if ( strcmp( key, "add" ) == 0 && val )

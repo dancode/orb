@@ -661,8 +661,7 @@ main( int argc, char** argv )
         {
             char combined[ PATH_MAX ];
             snprintf( combined, sizeof( combined ), "%s" PATH_SEP "%s", target->root_dir, ctx.file_path );
-            if ( !platform_fullpath( resolved_file, combined, sizeof( resolved_file ) ) )
-                snprintf( resolved_file, sizeof( resolved_file ), "%s", combined );
+            path_abs( resolved_file, combined, sizeof( resolved_file ) );
             effective_file = resolved_file;
         }
 

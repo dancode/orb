@@ -130,8 +130,7 @@ static int
 res_content_roots( char roots[ 2 ][ PATH_MAX ] )
 {
     int n = 0;
-    if ( !platform_fullpath( roots[ n ], "content", PATH_MAX ) )
-        snprintf( roots[ n ], PATH_MAX, "content" );
+    path_abs( roots[ n ], "content", PATH_MAX );
     ++n;
     if ( g_engine_root[ 0 ] )
         snprintf( roots[ n++ ], PATH_MAX, "%s/content", g_engine_root );
@@ -432,8 +431,7 @@ res_list_units( FILE* f, const target_info_t* t, bool visited[ MAX_TARGETS ] )
     {
         char rel[ PATH_MAX ], abs_p[ PATH_MAX ];
         snprintf( rel, sizeof( rel ), "%s/%s", t->root_dir, t->units[ i ] );
-        if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
-            snprintf( abs_p, sizeof( abs_p ), "%s", rel );
+        path_abs( abs_p, rel, sizeof( abs_p ) );
         fprintf( f, "%s\n", abs_p );
     }
     for ( int i = 0; t->deps[ i ]; ++i )
@@ -482,8 +480,7 @@ build_gen_res_manifest( target_info_t* target, const char* obj_dir, const target
     // Quoted-include roots, in the compiler's order: the project source root, then the
     // engine's when this is a child project.
     char src_root[ PATH_MAX ];
-    if ( !platform_fullpath( src_root, "source", sizeof( src_root ) ) )
-        snprintf( src_root, sizeof( src_root ), "source" );
+    path_abs( src_root, "source", sizeof( src_root ) );
 
     char engine_inc[ PATH_MAX + 8 ] = { 0 };
     if ( g_engine_root[ 0 ] )

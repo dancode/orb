@@ -170,6 +170,43 @@ cmd_spill_to_response_file( cmd_buf_t* b, const char* rsp_path )
 }
 
 /*==============================================================================================
+    --- Path Helpers ---
+==============================================================================================*/
+
+/*  Resolve in to an absolute path, falling back to a verbatim copy when resolution fails.
+
+    The fallback is not decoration. platform_fullpath is _fullpath on Windows, which is
+    pure string work and succeeds for a path that does not exist yet; on POSIX it is
+    realpath, which fails outright unless every component already exists. Build paths are
+    routinely named before they are created (an obj dir, a generated .c, a cooked asset),
+    so on POSIX this branch is the common case, and keeping the unresolved spelling is
+    what lets the caller go on to create the thing. */
+
+void
+path_abs( char* out, const char* in, size_t size )
+{
+    if ( !platform_fullpath( out, in, size ) )
+        snprintf( out, size, "%s", in );
+}
+
+/*  Convert backslashes to forward slashes in place.
+
+    Everything that leaves the build tool as text -- JSON, vcxproj, VS filter paths, the
+    generated orb.targets -- wants forward slashes: cl.exe and MSBuild accept both, and
+    JSON would otherwise need every separator double-escaped. Paths coming back from
+    platform_fullpath on Windows are backslashed, so this normalizes at the boundary.
+
+    There is no in-place inverse here: normalize_slashes() in build_tool_12_gen_nmake.c
+    goes the other way for NMake recipe text and has no second caller to share with. */
+
+void
+path_to_fwd( char* s )
+{
+    for ( ; *s; ++s )
+        if ( *s == '\\' ) *s = '/';
+}
+
+/*==============================================================================================
     --- Filesystem Helpers ---
 ==============================================================================================*/
 

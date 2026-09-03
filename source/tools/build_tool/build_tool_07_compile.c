@@ -335,16 +335,14 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         for ( int i = 0; target->units[ i ] && n_sources < TARGET_MAX_SLOTS; ++i )
         {
             snprintf( rel, sizeof( rel ), "%s/%s", target->root_dir, target->units[ i ] );
-            if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
-                snprintf( abs_p, sizeof( abs_p ), "%s", rel );
+            path_abs( abs_p, rel, sizeof( abs_p ) );
             snprintf( sources[ n_sources++ ], PATH_MAX, "%s", abs_p );
         }
         if ( target->has_reflect )
         {
             const char* rname = target->reflect_name ? target->reflect_name : target->name;
             snprintf( rel, sizeof( rel ), "%s/%s.generated.c", gen_dir, rname );
-            if ( !platform_fullpath( abs_p, rel, sizeof( abs_p ) ) )
-                snprintf( abs_p, sizeof( abs_p ), "%s", rel );
+            path_abs( abs_p, rel, sizeof( abs_p ) );
             snprintf( sources[ n_sources++ ], PATH_MAX, "%s", abs_p );
         }
     }

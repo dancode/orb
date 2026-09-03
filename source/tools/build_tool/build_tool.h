@@ -756,6 +756,18 @@ int build_detect_vs_major( void );
 
 extern int g_vs_major_version;
 
+/*  Resolves in to an absolute path in out, falling back to a verbatim copy when
+    resolution fails. The fallback carries the build: platform_fullpath is realpath on
+    POSIX, which fails for a path whose components do not exist yet, and build paths are
+    routinely named before they are created. */
+
+void path_abs( char* out, const char* in, size_t size );
+
+/*  Converts backslashes to forward slashes in place. Applied to any path that leaves
+    the tool as text (JSON, vcxproj, generated orb.targets). */
+
+void path_to_fwd( char* s );
+
 /*  Appends one whitespace-separated token to a fixed-size command field, inserting
     the separating space when the field is already non-empty. Halts the process on
     overflow: a truncated compile or link field runs and silently misbuilds. */
