@@ -997,6 +997,15 @@ cleanup:
         if ( rename( old_path, exe_path ) != 0 )
             fprintf( stderr, "[orb warn] failed to restore %s from %s\n", exe_path, old_path );
     }
+    else if ( renamed )
+    {
+        // The new image is in place, so the copy held for rollback is dead weight -- and a
+        // stale unsigned .exe is exactly what should not accumulate in bin/. The delete
+        // fails while the old image is still mapped by a running process (Windows permits
+        // the rename above but not the unlink), including build_tool rebuilding itself;
+        // the next build of this target retries it.
+        remove( old_path );
+    }
     build_unlock_target( target_lock );
     return result;
 }

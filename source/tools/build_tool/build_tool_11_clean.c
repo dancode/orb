@@ -7,7 +7,8 @@
 
       Per-target (target != NULL) -- removes only that target's artifacts:
 
-        bin/<name>.{lib,dll,exe,exp,pdb}, obj/<name>/, and generated reflection files.
+        bin/<name>.{lib,dll,exe,exe.old,exp,ilk,pdb}, obj/<name>/, and generated
+        reflection files.
         Called from each VS .vcxproj's NMakeCleanCommandLine so a solution rebuild
         cleans each project independently rather than wiping the whole bin/ tree.
 
@@ -119,6 +120,13 @@ build_clean( target_info_t* target )
             clean_bin_file( target->name, "exp" );
         }
 
+        // <name>.exe.old is the rollback copy build_target() renames a locked image to
+        // before relinking; <name>.ilk is the incremental-link database. Neither is an
+        // input to anything, and the .old is a stale unsigned executable.
+        if ( target->type == TARGET_EXECUTABLE )
+            clean_bin_file( target->name, "exe.old" );
+        clean_bin_file( target->name, "ilk" );
+
         char pdb_glob[ 128 ];
         snprintf( pdb_glob, sizeof( pdb_glob ), "%s_*.pdb", target->name );
         platform_delete_glob_quiet( "bin", pdb_glob );
@@ -153,6 +161,13 @@ build_clean( target_info_t* target )
     platform_delete_glob_quiet( "bin", "*.lib" );
     platform_delete_glob_quiet( "bin", "*.dll" );
     platform_delete_glob_quiet( "bin", "*.exp" );
+    platform_delete_glob_quiet( "bin", "*.ilk" );
+
+    // Rollback copies go even for the tool targets whose .exe survives below: a .old is
+    // never the file anything rebuilds from. One still mapped by a running process
+    // (build_tool's own, when it is the process doing the clean) refuses to unlink and
+    // stays until the next build of that target replaces it.
+    platform_delete_glob_quiet( "bin", "*.exe.old" );
 
     // Delete executables only for non-tool targets. is_tool executables
     // (reflect_tool, build_tool) are rebuilt by dep resolution and have no
