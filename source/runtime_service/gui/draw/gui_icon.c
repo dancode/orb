@@ -27,25 +27,16 @@
 
 #define ICON_MAX                256u     // max distinct icons
 
-/* An SDF icon stores how far a point sits from the icon's edge in texels of the STORED field 
-   (baked by gui_sdf_bake.c). ICON_SDF_SPREAD is the largest distance that encoding can hold 
-   before it saturates (clamps to fully-inside or fully-outside, with no distance left to read).
+/* An SDF icon stores distance-to-edge in texels. ICON_SDF_SPREAD is the maximum
+   distance encoded before values clamp to fully-inside (255) or fully-outside (0).
 
-   That spread controls two different things:
+   This sets a balance:
 
-   1. How wide an outline can grow.  A GUI_OP_TEXT_EDGE outline is drawn by walking outward from
-      the edge through the field, and it can only walk as far as the field still has distance to
-      give -- past the spread, everything reads as "far away" with no further detail.  Icons only
-      ever want a thin outline, not a soft halo, so a narrow spread is what they want here. (This
-      is why the baked SHAPE in gui_shape.c, which drives a much bigger effect cascade, picks a
-      far wider spread than this one.)
-
-   2. How fine the antialiasing looks.  The field is one byte per texel, giving 127 distinct
-      distance levels split across the spread on either side of the edge.  Antialiasing happens
-      in roughly a 1-pixel-wide band around the edge (the fragment shader measures that band
-      itself, via fwidth() -- it does not read this constant).  A spread of 4 texels puts about
-      32 of those 127 levels inside that 1-pixel band, which is enough to look smooth.  A wider
-      spread would spread the same 127 levels thinner and the edge would start to visibly band. */
+   - Outline limit: Outlines are drawn using this distance field, so an outline 
+     cannot be thicker than 4 texels. (Icons only need thin borders, so 4 is plenty.)
+   - Edge smoothness: 1 byte provides ~127 distance steps per side. Spreading those 
+     over only 4 texels gives ~32 steps per texel, ensuring smooth, band-free antialiasing.
+     A larger spread would stretch those 127 steps too thin and cause visible banding. */
 
 #define ICON_SDF_SPREAD         4.0f
 
