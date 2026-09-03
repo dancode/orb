@@ -2,15 +2,84 @@
 
     build_tool_01_prim.c -- Low-level primitives used by every other module.
 
-    Three stateless utility families:
-      - cmd_buf_t management   : safe append + response-file overflow spill.
-      - Filesystem helpers     : mtime probe, ensure_dir.
-      - Per-target named mutex : cross-process serialization of same-target builds.
+    Four stateless utility families:
+      - Command field append    : space-joined append into a fixed char field.
+      - cmd_buf_t management    : safe append + response-file overflow spill.
+      - Filesystem helpers      : mtime probe, ensure_dir.
+      - Per-target named mutex  : cross-process serialization of same-target builds.
 
     No dependencies on any other build_tool module.
 
 ==============================================================================================*/
 // clang-format off
+
+/*==============================================================================================
+    --- Command Field Append ---
+
+    Append one whitespace-separated token to a fixed-size command field, inserting the
+    separating space when the field is already non-empty. Every compile and link field
+    that is built up entry-by-entry (flags, includes, defines, libs) goes through here.
+
+    Overflow halts the process. A truncated compiler or linker field produces a command
+    that runs and silently does the wrong thing -- a short lib list surfaces as an
+    unresolved-symbol dump with no hint of its real cause -- so there is no useful way to
+    continue. link_cmd_t.libs (1024 bytes) is the field that fills first: roughly thirty
+    dependency paths plus the system libs.
+==============================================================================================*/
+
+void
+str_append_tok( char* buf, size_t size, const char* fmt, ... )
+{
+    size_t used = strlen( buf );
+    if ( used + 1 >= size )
+    {
+        printf( ORB_INDENT "[orb error] command field full (capacity %zu)"
+                " -- raise the field size\n", size );
+        exit( 1 );
+    }
+
+    if ( used )
+        buf[ used++ ] = ' ';
+
+    size_t remaining = size - used;
+
+    va_list args;
+    va_start( args, fmt );
+    int written = vsnprintf( buf + used, remaining, fmt, args );
+    va_end( args );
+
+    if ( written < 0 || ( size_t )written >= remaining )
+    {
+        printf( ORB_INDENT "[orb error] command field truncated (needed %d, had %zu)"
+                " -- raise the field size\n", written, remaining );
+        exit( 1 );
+    }
+}
+
+/*==============================================================================================
+    --- Command Field Overflow Probe ---
+
+    Report a command field that ends exactly at its capacity and halt.
+
+    str_append_tok() and cc_field() abort on their own truncation, but the whole-field
+    snprintf writes (exe names, output paths, obj globs) do not: snprintf always
+    NUL-terminates, so a lost tail leaves no trace except that the field is now exactly
+    full. That is the only detectable signature, and a field content that happens to land
+    on the capacity boundary intact is a near miss worth stopping for anyway.
+
+    owner/name identify the field in the message so the fix is one struct edit away.
+==============================================================================================*/
+
+void
+cmd_field_check_full( const char* owner, const char* name, const char* buf, size_t size )
+{
+    if ( strlen( buf ) != size - 1 )
+        return;
+
+    printf( ORB_INDENT "[orb error] %s.%s filled its %zu-byte capacity -- content was"
+            " truncated; raise the field size\n", owner, name, size );
+    exit( 1 );
+}
 
 /*==============================================================================================
     --- Command Buffer ---

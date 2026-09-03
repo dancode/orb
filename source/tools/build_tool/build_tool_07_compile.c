@@ -57,22 +57,26 @@ cc_field( char* dst, size_t dst_size, const char* fmt, ... )
 #define CC_APPEND( field, ... ) cc_field( ( field ), sizeof( field ), __VA_ARGS__ )
 
 /*==============================================================================================
-    Verify the last byte of every compile_cmd_t field is still '\0' before
-    assembly. cc_field() aborts on detected overflow, but this catches any
-    silent corruption that bypassed it.
+    Check every compile_cmd_t field for truncation before assembly. cc_field() and
+    str_append_tok() abort on their own overflow; this covers the whole-field snprintf
+    writes (exe, output flags) that cannot report one. See cmd_field_check_full().
 ==============================================================================================*/
+
+#define CC_CHECK_FULL( field ) \
+    cmd_field_check_full( "compile_cmd_t", #field, cc->field, sizeof( cc->field ) )
 
 static void
 cc_check_overflow( const compile_cmd_t* cc )
 {
-    if ( cc->exe     [ sizeof( cc->exe      ) - 1 ] || cc->flags   [ sizeof( cc->flags   ) - 1 ] ||
-         cc->includes[ sizeof( cc->includes ) - 1 ] || cc->defines [ sizeof( cc->defines ) - 1 ] ||
-         cc->output  [ sizeof( cc->output   ) - 1 ] || cc->sources [ sizeof( cc->sources ) - 1 ] )
-    {
-        printf( ORB_INDENT "[orb error] compile_cmd_t sentinel overwritten -- field overflow\n" );
-        exit( 1 );
-    }
+    CC_CHECK_FULL( exe      );
+    CC_CHECK_FULL( flags    );
+    CC_CHECK_FULL( includes );
+    CC_CHECK_FULL( defines  );
+    CC_CHECK_FULL( output   );
+    CC_CHECK_FULL( sources  );
 }
+
+#undef CC_CHECK_FULL
 
 
 /*==============================================================================================

@@ -30,6 +30,33 @@
 ==============================================================================================*/
 
 /*==============================================================================================
+    --- Generator String List ---
+
+    Append s to a separator-joined list in buf. The one string-list builder shared by the
+    generators: vcxproj include paths (';'), IntelliSense defines (';'), NMake options (' '),
+    MSBuild DisableSpecificWarnings (';'). used carries the running length so a list built in
+    a loop does not rescan the buffer per entry.
+
+    An entry that does not fit is dropped. These strings feed IntelliSense and editor
+    tooling, never a command that gets executed, so a short list costs completion quality
+    on the tail entries and must not fail generation.
+==============================================================================================*/
+
+static void
+gen_list_append( char* buf, size_t buf_size, size_t* used, char sep, const char* s )
+{
+    size_t slen = strlen( s );
+    if ( *used + slen + 2 < buf_size )
+    {
+        if ( *used )
+            buf[ ( *used )++ ] = sep;
+        memcpy( buf + *used, s, slen );
+        *used += slen;
+        buf[ *used ] = '\0';
+    }
+}
+
+/*==============================================================================================
     gen_manifest_build()
 
     Fills a gen_manifest_t from current global state. Call after registry_load() and

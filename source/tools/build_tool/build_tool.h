@@ -756,6 +756,18 @@ int build_detect_vs_major( void );
 
 extern int g_vs_major_version;
 
+/*  Appends one whitespace-separated token to a fixed-size command field, inserting
+    the separating space when the field is already non-empty. Halts the process on
+    overflow: a truncated compile or link field runs and silently misbuilds. */
+
+void str_append_tok( char* buf, size_t size, const char* fmt, ... );
+
+/*  Halts if a command field ends exactly at its capacity -- the only detectable
+    signature of a whole-field snprintf write that truncated. owner/name name the
+    field in the error (e.g. "compile_cmd_t", "defines"). */
+
+void cmd_field_check_full( const char* owner, const char* name, const char* buf, size_t size );
+
 /*  Appends a formatted string to a command buffer. */
 
 void cmd_append( cmd_buf_t* b, const char* fmt, ... );

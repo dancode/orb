@@ -17,21 +17,30 @@
 // clang-format off
 
 /*==============================================================================================
-    Verify the last byte of every link_cmd_t field is still '\0' before assembly.
+    Check every link_cmd_t field for truncation before assembly. str_append_tok() aborts on
+    its own overflow; this covers the whole-field snprintf writes (exe, artifact, output,
+    pdb, obj glob) that cannot report one. See cmd_field_check_full().
+
+    libs is the field that fills first in practice: one path per declared dep plus the
+    system libs, against a 1024-byte capacity.
 ==============================================================================================*/
+
+#define LK_CHECK_FULL( field ) \
+    cmd_field_check_full( "link_cmd_t", #field, lk->field, sizeof( lk->field ) )
 
 static void
 lk_check_overflow( const link_cmd_t* lk )
 {
-    if ( lk->exe     [ sizeof( lk->exe      ) - 1 ] || lk->artifact[ sizeof( lk->artifact ) - 1 ] ||
-         lk->flags   [ sizeof( lk->flags    ) - 1 ] || lk->output  [ sizeof( lk->output   ) - 1 ] ||
-         lk->pdb     [ sizeof( lk->pdb      ) - 1 ] || lk->inputs  [ sizeof( lk->inputs   ) - 1 ] ||
-         lk->libs    [ sizeof( lk->libs     ) - 1 ] )
-    {
-        printf( ORB_INDENT "[orb error] link_cmd_t sentinel overwritten -- field overflow\n" );
-        exit( 1 );
-    }
+    LK_CHECK_FULL( exe      );
+    LK_CHECK_FULL( artifact );
+    LK_CHECK_FULL( flags    );
+    LK_CHECK_FULL( output   );
+    LK_CHECK_FULL( pdb      );
+    LK_CHECK_FULL( inputs   );
+    LK_CHECK_FULL( libs     );
 }
+
+#undef LK_CHECK_FULL
 
 /*==============================================================================================
     --- Link Section Printer ---
@@ -123,8 +132,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
             const extra_flag_t* ef = &target->extra_link_flags[ i ];
             if ( ef->compiler == ctx->compiler || ef->compiler == COMPILE_ALL )
             {
-                size_t used = strlen( lk.flags );
-                snprintf( lk.flags + used, sizeof( lk.flags ) - used, " %s", ef->flag );
+                str_append_tok( lk.flags, sizeof( lk.flags ), "%s", ef->flag );
             }
         }
 
@@ -157,8 +165,7 @@ build_target_link( build_context_t* ctx, target_info_t* target, const char* obj_
         // Appended after system libs so the linker sees it regardless of order.
         if ( extra_input && extra_input[ 0 ] )
         {
-            size_t used = strlen( lk.libs );
-            snprintf( lk.libs + used, sizeof( lk.libs ) - used, " %s", extra_input );
+            str_append_tok( lk.libs, sizeof( lk.libs ), "%s", extra_input );
         }
     }
 

@@ -310,22 +310,6 @@ scan_directory_recursive( const char* dir, const char* root_dir )
     An empty string is returned when no extras are defined.
 ==============================================================================================*/
 
-/* Append s to a separator-joined list in buf. The one string-list builder shared by every
-   generator string assembler below (includes ';', defines ';', NMake options ' '). */
-static void
-gen_list_append( char* buf, size_t buf_size, size_t* used, char sep, const char* s )
-{
-    size_t slen = strlen( s );
-    if ( *used + slen + 2 < buf_size )
-    {
-        if ( *used )
-            buf[ ( *used )++ ] = sep;
-        memcpy( buf + *used, s, slen );
-        *used += slen;
-        buf[ *used ] = '\0';
-    }
-}
-
 static void
 build_extra_include_dirs_str( const target_info_t* target, char* buf, size_t buf_size )
 {

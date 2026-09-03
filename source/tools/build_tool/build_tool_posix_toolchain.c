@@ -82,13 +82,10 @@ static void
 platform_cc_base_flags( compiler_t compiler, config_t config, bool is_shipping, char* buf, size_t size )
 {
     ( void )compiler;
-    size_t used = strlen( buf );
-    const char* sep = used ? " " : "";
     const char* cfg = ( config == CONFIG_DEBUG ) ? "-g -O0"
                     : is_shipping               ? "-O2 -flto"
                                                 : "-O2";
-    snprintf( buf + used, size - used,
-              "%s-c -Wall -Wextra -Werror -std=c11 -fPIC %s", sep, cfg );
+    str_append_tok( buf, size, "-c -Wall -Wextra -Werror -std=c11 -fPIC %s", cfg );
 }
 
 /*==============================================================================================
@@ -101,15 +98,13 @@ platform_cc_base_flags( compiler_t compiler, config_t config, bool is_shipping, 
 static void
 platform_cc_append_include( const char* path, char* buf, size_t size )
 {
-    size_t used = strlen( buf );
-    snprintf( buf + used, size - used, "%s-I %s", used ? " " : "", path );
+    str_append_tok( buf, size, "-I %s", path );
 }
 
 static void
 platform_cc_append_define( const char* name, char* buf, size_t size )
 {
-    size_t used = strlen( buf );
-    snprintf( buf + used, size - used, "%s-D%s", used ? " " : "", name );
+    str_append_tok( buf, size, "-D%s", name );
 }
 
 /*==============================================================================================
@@ -135,8 +130,7 @@ platform_cc_output_flags( const char* obj_dir, const char* unit_path, char* buf,
     char* dot = strrchr( stem, '.' );
     if ( dot ) *dot = '\0';
 
-    size_t used = strlen( buf );
-    snprintf( buf + used, size - used, "%s-o %s/%s.o", used ? " " : "", obj_dir, stem );
+    str_append_tok( buf, size, "-o %s/%s.o", obj_dir, stem );
 }
 
 /*==============================================================================================
@@ -230,11 +224,10 @@ platform_lk_obj_pattern( const char* obj_dir, char* buf, size_t size )
 static void
 platform_lk_append_dep_lib( const char* dep_name, target_type_t dep_type, char* buf, size_t size )
 {
-    size_t used = strlen( buf );
     if ( dep_type == TARGET_DYNAMIC_LIB )
-        snprintf( buf + used, size - used, "%sbin/lib%s.so", used ? " " : "", dep_name );
+        str_append_tok( buf, size, "bin/lib%s.so", dep_name );
     else
-        snprintf( buf + used, size - used, "%sbin/lib%s.a",  used ? " " : "", dep_name );
+        str_append_tok( buf, size, "bin/lib%s.a",  dep_name );
 }
 
 /*==============================================================================================
@@ -247,9 +240,7 @@ platform_lk_append_dep_lib( const char* dep_name, target_type_t dep_type, char* 
 static void
 platform_lk_append_sys_libs( char* buf, size_t size )
 {
-    size_t used = strlen( buf );
-    snprintf( buf + used, size - used,
-              "%s-lm -lpthread -ldl", used ? " " : "" );
+    str_append_tok( buf, size, "-lm -lpthread -ldl" );
 }
 
 /*==============================================================================================

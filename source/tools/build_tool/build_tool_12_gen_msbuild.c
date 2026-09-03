@@ -145,16 +145,15 @@ write_msbuild_clcompile_group( FILE* f, config_t config, target_info_t* target )
 
     // Collect /wd<num> entries from g_warn_suppressions that apply to this config + MSVC.
     // MSBuild uses <DisableSpecificWarnings> instead of /wd flags on the command line.
-    char disabled_warns[ 256 ] = { 0 };
+    char   disabled_warns[ 256 ] = { 0 };
+    size_t dw_used               = 0;
     for ( int i = 0; i < g_warn_suppression_count; ++i )
     {
         warn_suppress_t* s = &g_warn_suppressions[ i ];
         if ( s->compiler != COMPILE_MSVC ) continue;
         if ( s->config != config && s->config != CONFIG_COUNT ) continue;
         if ( strncmp( s->flag, "/wd", 3 ) != 0 ) continue;
-        size_t used = strlen( disabled_warns );
-        snprintf( disabled_warns + used, sizeof( disabled_warns ) - used,
-                  "%s%s", used ? ";" : "", s->flag + 3 );
+        gen_list_append( disabled_warns, sizeof( disabled_warns ), &dw_used, ';', s->flag + 3 );
     }
     if ( disabled_warns[ 0 ] )
         fprintf( f, "      <DisableSpecificWarnings>%s</DisableSpecificWarnings>\n", disabled_warns );

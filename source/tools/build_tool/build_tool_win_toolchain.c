@@ -69,8 +69,6 @@ platform_cc_exe( compiler_t compiler )
 static void
 platform_cc_base_flags( compiler_t compiler, config_t config, bool is_shipping, char* buf, size_t size )
 {
-    size_t used = strlen( buf );
-    const char* sep = used ? " " : "";
     /* /GF pools identical string literals into a single read-only COMDAT. /O2 implies it, so
        only Debug names it explicitly. Without it a name spelled at two RID() sites occupies
        the binary twice, and string literals are writable in Debug alone -- a divergence that
@@ -83,8 +81,7 @@ platform_cc_base_flags( compiler_t compiler, config_t config, bool is_shipping, 
     // not define _M_X64 / __x86_64__, causing the architecture detection in orb.h to fail.
     const char* zc     = ( compiler == COMPILE_CLANG ) ? "" : " /Zc:preprocessor";
     const char* target = ( compiler == COMPILE_CLANG ) ? " --target=x86_64-pc-windows-msvc" : "";
-    snprintf( buf + used, size - used,
-              "%s/c /nologo /W4 /WX%s%s /std:c11 %s", sep, zc, target, cfg );
+    str_append_tok( buf, size, "/c /nologo /W4 /WX%s%s /std:c11 %s", zc, target, cfg );
 }
 
 /*==============================================================================================
@@ -97,15 +94,13 @@ platform_cc_base_flags( compiler_t compiler, config_t config, bool is_shipping, 
 static void
 platform_cc_append_include( const char* path, char* buf, size_t size )
 {
-    size_t used = strlen( buf );
-    snprintf( buf + used, size - used, "%s/I %s", used ? " " : "", path );
+    str_append_tok( buf, size, "/I %s", path );
 }
 
 static void
 platform_cc_append_define( const char* name, char* buf, size_t size )
 {
-    size_t used = strlen( buf );
-    snprintf( buf + used, size - used, "%s/D%s", used ? " " : "", name );
+    str_append_tok( buf, size, "/D%s", name );
 }
 
 /*==============================================================================================
@@ -121,9 +116,7 @@ static void
 platform_cc_output_flags( const char* obj_dir, const char* unit_path, char* buf, size_t size )
 {
     ( void )unit_path;  // Win32 uses a directory target; the unit path is not needed.
-    size_t used = strlen( buf );
-    snprintf( buf + used, size - used,
-              "%s/Fo%s/ /Fd%s/", used ? " " : "", obj_dir, obj_dir );
+    str_append_tok( buf, size, "/Fo%s/ /Fd%s/", obj_dir, obj_dir );
 }
 
 /*==============================================================================================
@@ -264,8 +257,7 @@ static void
 platform_lk_append_dep_lib( const char* dep_name, target_type_t dep_type, char* buf, size_t size )
 {
     ( void )dep_type;  // Win32: both static and DLL import libs use .lib.
-    size_t used = strlen( buf );
-    snprintf( buf + used, size - used, "%sbin/%s.lib", used ? " " : "", dep_name );
+    str_append_tok( buf, size, "bin/%s.lib", dep_name );
 }
 
 /*==============================================================================================
@@ -278,9 +270,7 @@ platform_lk_append_dep_lib( const char* dep_name, target_type_t dep_type, char* 
 static void
 platform_lk_append_sys_libs( char* buf, size_t size )
 {
-    size_t used = strlen( buf );
-    snprintf( buf + used, size - used,
-              "%suser32.lib shell32.lib gdi32.lib advapi32.lib", used ? " " : "" );
+    str_append_tok( buf, size, "user32.lib shell32.lib gdi32.lib advapi32.lib" );
 }
 
 /*==============================================================================================
@@ -371,8 +361,7 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
     if ( !is_dll )
     {
         const char* subsys = ( target->subsystem == SUBSYSTEM_WINDOWS ) ? "WINDOWS" : "CONSOLE";
-        size_t used = strlen( lk->flags );
-        snprintf( lk->flags + used, sizeof( lk->flags ) - used, " /SUBSYSTEM:%s", subsys );
+        str_append_tok( lk->flags, sizeof( lk->flags ), "/SUBSYSTEM:%s", subsys );
     }
 
     if ( is_dll )
@@ -397,9 +386,8 @@ platform_lk_fill_dynamic( build_context_t* ctx, target_info_t* target, link_cmd_
         snprintf( man_src, sizeof( man_src ), "%s/%s.manifest", target->root_dir, target->name );
         if ( platform_file_exists( man_src ) )
         {
-            size_t used = strlen( lk->flags );
-            snprintf( lk->flags + used, sizeof( lk->flags ) - used,
-                      " /MANIFEST:EMBED /MANIFESTINPUT:%s", man_src );
+            str_append_tok( lk->flags, sizeof( lk->flags ),
+                            "/MANIFEST:EMBED /MANIFESTINPUT:%s", man_src );
         }
     }
 }

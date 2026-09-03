@@ -208,9 +208,7 @@ json_emit_constituents_from( FILE* fp, bool* first,
             compile_cmd_t cc_api = *cc;
             char macro[ 64 ];
             json_prelude_macro( abs_src, macro, sizeof( macro ) );
-            size_t used = strlen( cc_api.defines );
-            snprintf( cc_api.defines + used, sizeof( cc_api.defines ) - used,
-                      " /D%s", macro );
+            CC_APPEND( cc_api.defines, " /D%s", macro );
             json_emit_entry( fp, root_abs, &cc_api, abs_src );
         }
         else
@@ -305,15 +303,9 @@ build_gen_compile_commands( const gen_manifest_t* m )
                       target->root_dir, target->units[ 0 ] );
             json_fwd_slashes( unity_path );
 
-            size_t used = strlen( cc_constituent.includes );
-            snprintf( cc_constituent.includes + used, sizeof( cc_constituent.includes ) - used,
-                      " /FI %s", unity_path );
+            CC_APPEND( cc_constituent.includes, " /FI %s", unity_path );
         }
-        {
-            size_t used = strlen( cc_constituent.flags );
-            snprintf( cc_constituent.flags + used, sizeof( cc_constituent.flags ) - used,
-                      " -Wno-unused-function -Wno-undefined-internal" );
-        }
+        CC_APPEND( cc_constituent.flags, " -Wno-unused-function -Wno-undefined-internal" );
 
         /* --- Unity entry: one entry per compilation unit --- */
         for ( int j = 0; target->units[ j ]; ++j )
