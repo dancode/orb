@@ -1,6 +1,6 @@
 /*==============================================================================================
 
-    runtime_service/gui/gui_draw.c -- the drawing-routine library.
+    runtime_service/gui/gui_draw.c -- The drawing-routine library.
 
     A toolbox of ready-made drawing routines built over the render server's raw push 
     primitives: fill a rect, draw a line of text so it fits inside a given width, draw one

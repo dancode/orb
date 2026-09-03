@@ -46,6 +46,7 @@ void draw_fill_brush( gui_rect_t r, const gui_brush_t* b );
 
 f32  text_center_y( f32 y, f32 h );              /* baseline y centering one line in a row     */
 f32  label_width( const char* s );               /* visible-span width per the label grammar   */
+
 void draw_label ( f32 x, f32 y, u32 c, const char* s );
 void draw_label_fit( f32 x, f32 y, u32 c, const char* s, f32 max_w );
 void draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w );
@@ -58,14 +59,10 @@ void draw_text_fit_n( f32 x, f32 y, u32 c, const char* s, u32 len, f32 max_w );
 void draw_bullet( f32 cx, f32 cy, f32 r, u32 color );
 void draw_circle( f32 cx, f32 cy, f32 r, f32 thickness, u32 col );
 void draw_gradient( gui_rect_t box, u32 col_a, u32 col_b, bool horizontal );
-void draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b,
-                               gui_grad_t kind, f32 angle, f32 mid );
-void draw_round_rect_dashed( gui_rect_t box, f32 rounding, f32 thickness,
-                             f32 dash, f32 gap, f32 speed, u32 col );
-void draw_border_tracer( gui_rect_t box, f32 rounding, f32 thickness,
-                         f32 frac, f32 rate, u32 col );
-void draw_border_progress( gui_rect_t box, f32 rounding, f32 thickness,
-                           f32 frac, f32 t, u32 col );
+void draw_round_rect_gradient( gui_rect_t box, f32 rounding, u32 col_a, u32 col_b, gui_grad_t kind, f32 angle, f32 mid );
+void draw_round_rect_dashed( gui_rect_t box, f32 rounding, f32 thickness, f32 dash, f32 gap, f32 speed, u32 col );
+void draw_border_tracer( gui_rect_t box, f32 rounding, f32 thickness, f32 frac, f32 rate, u32 col );
+void draw_border_progress( gui_rect_t box, f32 rounding, f32 thickness, f32 frac, f32 t, u32 col );
 void draw_inset_shadow( gui_rect_t box, f32 depth, u32 col );
 void draw_edge_shadow( gui_rect_t box, gui_edge_t edge, f32 size, u32 col );
 void draw_stripes( gui_rect_t box, f32 spacing, f32 thickness, f32 angle, u32 col );
@@ -84,8 +81,8 @@ void draw_round_frame( gui_rect_t b, f32 rounding, u32 col_bg, u32 col_border, f
 /* draw_round_frame's per-corner sibling -- draw_round_rect's independent per-corner set, now
    with the frame's own fill+border pair.  Ignores the ambient rounding, same as draw_round_rect
    and draw_round_frame above. */
-void draw_round_frame_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl,
-                          u32 col_bg, u32 col_border, f32 border );
+
+void draw_round_frame_ex( gui_rect_t b, f32 rtl, f32 rtr, f32 rbr, f32 rbl, u32 col_bg, u32 col_border, f32 border );
 void draw_checker( gui_rect_t box, f32 cell, u32 col_a, u32 col_b );
 void draw_grid( gui_rect_t box, f32 cell, f32 thickness, f32 origin_x, f32 origin_y, u32 col );
 void draw_dropdown_arrow( gui_rect_t box, u32 color );
