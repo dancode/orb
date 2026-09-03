@@ -319,6 +319,20 @@ find_asset_tool( void )
 }
 
 /*==============================================================================================
+    --- Reflection File Base Name ---
+
+    The base name reflect_tool gives a target's generated .c/.h. Defaults to the target name;
+    an orb.targets entry may override it with a `reflect_name` line. Every site that builds a
+    generated-file path or passes reflect_tool its -name argument reads it from here.
+==============================================================================================*/
+
+static const char*
+target_reflect_name( const target_info_t* t )
+{
+    return t->reflect_name ? t->reflect_name : t->name;
+}
+
+/*==============================================================================================
     --- Resource Manifest Policy ---
 
     A resource manifest (<name>_res_manifest.txt, see build_gen_res_manifest) belongs to an

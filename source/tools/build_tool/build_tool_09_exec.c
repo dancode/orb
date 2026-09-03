@@ -175,7 +175,7 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
         return true;
 
     char man_path[ PATH_MAX ];
-    snprintf( man_path, sizeof( man_path ), "%s" PATH_SEP "%s_res_manifest.txt", obj_dir, target->name );
+    path_res_manifest( target, obj_dir, man_path, sizeof( man_path ) );
 
     platform_mapped_file_t map;
     if ( !platform_map_file( man_path, &map ) )
@@ -453,7 +453,7 @@ build_gen_res_manifest( target_info_t* target, const char* obj_dir, const target
     char list_path[ PATH_MAX ];
     snprintf( list_path, sizeof( list_path ), "%s" PATH_SEP "_res_units.txt", obj_dir );
     char out_path[ PATH_MAX ];
-    snprintf( out_path, sizeof( out_path ), "%s" PATH_SEP "%s_res_manifest.txt", obj_dir, target->name );
+    path_res_manifest( target, obj_dir, out_path, sizeof( out_path ) );
 
     FILE* lf = fopen( list_path, "w" );
     if ( !lf )
@@ -635,9 +635,9 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     // --- 2. Path Preparation ---
 
     char obj_dir[ PATH_MAX ];
-    snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
+    path_obj_dir( target, obj_dir, sizeof( obj_dir ) );
     char gen_dir[ PATH_MAX ];
-    snprintf( gen_dir, sizeof( gen_dir ), "%s" PATH_SEP "%s", g_build_dir, g_gen_dir );
+    path_gen_dir( gen_dir, sizeof( gen_dir ) );
 
     // --- 2.5 Content Cook (pre) ---
     //
@@ -782,7 +782,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         char deps_path[ PATH_MAX ];
         snprintf( deps_path, sizeof( deps_path ), "%s" PATH_SEP "_res_deps.txt", obj_dir );
         char man_path[ PATH_MAX ];
-        snprintf( man_path, sizeof( man_path ), "%s" PATH_SEP "%s_res_manifest.txt", obj_dir, target->name );
+        path_res_manifest( target, obj_dir, man_path, sizeof( man_path ) );
 
         platform_mapped_file_t dep_map;
         if ( !platform_file_exists( man_path ) )
@@ -839,7 +839,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
 
     {
         char int_root[ PATH_MAX ];
-        snprintf( int_root, sizeof( int_root ), "%s" PATH_SEP "%s", g_build_dir, g_int_dir );
+        path_obj_root( int_root, sizeof( int_root ) );
         ensure_dir( "bin" );
         ensure_dir( g_build_dir );
         ensure_dir( int_root );
@@ -869,7 +869,7 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
 
     if ( target->has_reflect )
     {
-        const char* rname   = target->reflect_name ? target->reflect_name : target->name;
+        const char* rname   = target_reflect_name( target );
         const char* log_path = sched_log_path();
 
         // Header line: route to per-target log in a parallel worker, stdout otherwise.

@@ -340,8 +340,7 @@ build_target_compile( build_context_t* ctx, target_info_t* target,
         }
         if ( target->has_reflect )
         {
-            const char* rname = target->reflect_name ? target->reflect_name : target->name;
-            snprintf( rel, sizeof( rel ), "%s/%s.generated.c", gen_dir, rname );
+            path_generated( gen_dir, target_reflect_name( target ), "c", rel, sizeof( rel ) );
             path_abs( abs_p, rel, sizeof( abs_p ) );
             snprintf( sources[ n_sources++ ], PATH_MAX, "%s", abs_p );
         }
@@ -437,11 +436,11 @@ bool
 build_target_compile_only( build_context_t* ctx, target_info_t* target )
 {
     char obj_dir[ PATH_MAX ];
-    snprintf( obj_dir, sizeof( obj_dir ), "%s/%s/%s", g_build_dir, g_int_dir, target->name );
+    path_obj_dir( target, obj_dir, sizeof( obj_dir ) );
     char gen_dir[ PATH_MAX ];
-    snprintf( gen_dir, sizeof( gen_dir ), "%s/%s", g_build_dir, g_gen_dir );
+    path_gen_dir( gen_dir, sizeof( gen_dir ) );
     char int_dir[ PATH_MAX ];
-    snprintf( int_dir, sizeof( int_dir ), "%s/%s", g_build_dir, g_int_dir );
+    path_obj_root( int_dir, sizeof( int_dir ) );
 
     ensure_dir( g_build_dir );
     ensure_dir( int_dir );
@@ -463,7 +462,7 @@ build_target_compile_only( build_context_t* ctx, target_info_t* target )
         if ( build_target( ctx, refl_tool, NULL, NULL ) == false )
             return false;
 
-        const char* rname = target->reflect_name ? target->reflect_name : target->name;
+        const char* rname = target_reflect_name( target );
 
         if ( g_out_flags & ORB_OUT_REFLECT )
         {

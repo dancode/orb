@@ -25,7 +25,7 @@
     --- Icon Defines ---
 ==============================================================================================*/
 
-#define ICON_MAX                256u     // max distinct icons
+#define ICON_MAX                128u     // max distinct icons
 
 /* An SDF icon stores distance-to-edge in texels. ICON_SDF_SPREAD is the maximum
    distance encoded before values clamp to fully-inside (255) or fully-outside (0).
@@ -69,17 +69,15 @@
 
 typedef struct
 {
-    u16  name_off;  // lookup key -- offset into the shared name pool (gui_names.h)
-    u16  w, h;      // STORED pixel dimensions (the field's, for an SDF icon)
-    u16  tenant;    // packed: bits [0,15) = atlas handle (0 = unused), bit 15 = sdf flag
+    u16  name_off;      // lookup key -- offset into the shared name pool (gui_names.h)
+    u16  w, h;          // STORED pixel dimensions (the field's, for an SDF icon)
+    u16  tenant;        // packed: bits [0,15) = atlas handle (0 = unused), bit 15 = sdf flag
 
 } icon_entry_t;
 
 /* `tenant` packs the atlas handle and the sdf flag into one u16 instead of a u32 handle plus a
-   separate bool -- GUI_RES_ATLAS_MAX_TENANTS is 320, so 15 bits of handle is generous headroom,
-   and folding the flag into the spare top bit costs nothing where a standalone bool would have
-   cost a full 4 bytes once struct alignment padded it out.  Go through these three helpers rather
-   than hand-rolling the mask/shift at each call site. */
+   separate bool -- GUI_RES_ATLAS_MAX_TENANTS is 320, so 15 bits of handle is generous headroom
+   Go through these three helpers rather than hand-rolling the mask/shift at each call site. */
 
 #define ICON_SDF_BIT      0x8000u
 #define ICON_TENANT_MASK  0x7fffu
@@ -87,18 +85,21 @@ typedef struct
 static inline u16
 icon_pack_tenant( u32 tenant, bool sdf )
 {
+    /* create the packed value */
     return (u16)( tenant | ( sdf ? ICON_SDF_BIT : 0u ) );
 }
 
 static inline u32
 icon_tenant_value( u16 packed )
 {
+    /* return tenant value (sdf bit cleared) */
     return packed & ICON_TENANT_MASK;
 }
 
 static inline bool
 icon_tenant_sdf( u16 packed )
 {
+    /* return sdf flag */
     return ( packed & ICON_SDF_BIT ) != 0;
 }
 

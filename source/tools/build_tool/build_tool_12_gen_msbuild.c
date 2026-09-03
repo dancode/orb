@@ -323,7 +323,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
         fprintf( f, "cd /d \"$(ProjectDir)%s\"", s_ctx.cd_root );
         if ( target->has_reflect )
         {
-            const char* rname = target->reflect_name ? target->reflect_name : target->name;
+            const char* rname = target_reflect_name( target );
 
             char root_dir_norm[ PATH_MAX ];
             snprintf( root_dir_norm, sizeof( root_dir_norm ), "%s", target->root_dir );
@@ -361,7 +361,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
     // Reflection-generated files (may not exist until first build).
     if ( target->has_reflect )
     {
-        const char* rname = target->reflect_name ? target->reflect_name : target->name;
+        const char* rname = target_reflect_name( target );
         fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\" />\n",
                  s_ctx.root_prefix, g_build_dir, g_gen_dir, rname );
         fprintf( f, "    <ClInclude Include=\"%s%s\\%s\\%s.generated.h\" />\n",

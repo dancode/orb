@@ -103,6 +103,63 @@ static const char* g_int_dir        = "obj";        // sub-folder: per-target .o
 static const char* g_gen_dir        = "generated";  // sub-folder: reflection-generated .c/.h.
 
 /*==============================================================================================
+    --- Output Layout Accessors ---
+
+    The build's on-disk layout, joined in one place. Each fills the caller's buffer and
+    returns it, so a result can be passed straight to ensure_dir() or used as a snprintf
+    argument.
+
+    These cover the paths this tool creates and opens. The generators (12_gen_nmake.c,
+    12_gen_msbuild.c, 12_gen_json.c) join the same directories themselves: what they emit is
+    project-file text carrying a $(ProjectDir) + root_prefix head, XML backslashes or JSON
+    forward slashes, and for IntDir a trailing $(ProjectName)\$(Configuration). A layout
+    change here must be mirrored there by hand.
+==============================================================================================*/
+
+static const char*
+path_obj_root( char* buf, size_t size )
+{
+    snprintf( buf, size, "%s" PATH_SEP "%s", g_build_dir, g_int_dir );
+    return buf;
+}
+
+static const char*
+path_obj_dir( const target_info_t* target, char* buf, size_t size )
+{
+    snprintf( buf, size, "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
+    return buf;
+}
+
+static const char*
+path_gen_dir( char* buf, size_t size )
+{
+    snprintf( buf, size, "%s" PATH_SEP "%s", g_build_dir, g_gen_dir );
+    return buf;
+}
+
+/*  The two file-name contracts inside those directories.
+
+    <name>_res_manifest.txt is what res_tool writes and dev_ship reads; <rname>.generated.c/.h
+    is what reflect_tool writes and the compiler picks up. Both spellings are shared with a
+    separate program, so neither is ours alone to change. rname comes from
+    target_reflect_name(); it is passed in rather than derived here because 02_data.c, where
+    that accessor lives, is included after this file's own body. */
+
+static const char*
+path_res_manifest( const target_info_t* target, const char* obj_dir, char* buf, size_t size )
+{
+    snprintf( buf, size, "%s" PATH_SEP "%s_res_manifest.txt", obj_dir, target->name );
+    return buf;
+}
+
+static const char*
+path_generated( const char* gen_dir, const char* rname, const char* ext, char* buf, size_t size )
+{
+    snprintf( buf, size, "%s" PATH_SEP "%s.generated.%s", gen_dir, rname, ext );
+    return buf;
+}
+
+/*==============================================================================================
     --- Third-Party Runtime Deploy ---
 
     Prebuilt third-party runtime files (freetype.dll/.lib for font_tool, ...) live in
@@ -616,7 +673,7 @@ main( int argc, char** argv )
         }
 
         char obj_dir[ PATH_MAX ];
-        snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
+        path_obj_dir( target, obj_dir, sizeof( obj_dir ) );
         ensure_dir( g_build_dir );
         ensure_dir( obj_dir );
         if ( !build_gen_res_manifest( target, obj_dir, res_tool ) && g_content_strict )
@@ -666,9 +723,9 @@ main( int argc, char** argv )
         }
 
         char obj_dir[ PATH_MAX ];
-        snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s" PATH_SEP "%s", g_build_dir, g_int_dir, target->name );
+        path_obj_dir( target, obj_dir, sizeof( obj_dir ) );
         char gen_dir[ PATH_MAX ];
-        snprintf( gen_dir, sizeof( gen_dir ), "%s" PATH_SEP "%s", g_build_dir, g_gen_dir );
+        path_gen_dir( gen_dir, sizeof( gen_dir ) );
 
         ensure_dir( "bin" );
         ensure_dir( g_build_dir );

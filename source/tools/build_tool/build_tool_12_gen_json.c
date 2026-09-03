@@ -320,7 +320,7 @@ build_gen_compile_commands( const gen_manifest_t* m )
            and indexes them once they appear. */
         if ( target->has_reflect )
         {
-            const char* rname = target->reflect_name ? target->reflect_name : target->name;
+            const char* rname = target_reflect_name( target );
 
             char rel[ PATH_MAX ];
             snprintf( rel, sizeof( rel ), "%s/%s/%s.generated.c",

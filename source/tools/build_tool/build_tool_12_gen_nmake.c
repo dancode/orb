@@ -783,7 +783,7 @@ write_vcxproj_filters_file( const char* filters_path, target_info_t* target )
     }
     if ( target && target->has_reflect )
     {
-        const char* rname = target->reflect_name ? target->reflect_name : target->name;
+        const char* rname = target_reflect_name( target );
         fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\">\n",
                  s_ctx.root_prefix, g_build_dir, g_gen_dir, rname );
         fprintf( f, "      <Filter>generated</Filter>\n" );
@@ -891,7 +891,7 @@ build_gen_proj_target( target_info_t* target )
     // directory scan above misses them. They may not exist until the first build.
     if ( target->has_reflect )
     {
-        const char* rname     = target->reflect_name ? target->reflect_name : target->name;
+        const char* rname     = target_reflect_name( target );
         const char* item_mono = s_ctx.is_monolithic ? " -monolithic" : "";
         fprintf( f, "    <ClCompile Include=\"%s%s\\%s\\%s.generated.c\">\n", s_ctx.root_prefix, g_build_dir,
                  g_gen_dir, rname );

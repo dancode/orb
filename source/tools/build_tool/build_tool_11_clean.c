@@ -99,8 +99,8 @@ void
 build_clean( target_info_t* target )
 {
     char obj_root[ PATH_MAX ], gen_root[ PATH_MAX ];
-    snprintf( obj_root, sizeof( obj_root ), "%s" PATH_SEP "%s", g_build_dir, g_int_dir );
-    snprintf( gen_root, sizeof( gen_root ), "%s" PATH_SEP "%s", g_build_dir, g_gen_dir );
+    path_obj_root( obj_root, sizeof( obj_root ) );
+    path_gen_dir( gen_root, sizeof( gen_root ) );
 
     if ( target )
     {
@@ -132,17 +132,14 @@ build_clean( target_info_t* target )
         platform_delete_glob_quiet( "bin", pdb_glob );
 
         char obj_dir[ PATH_MAX ];
-        snprintf( obj_dir, sizeof( obj_dir ), "%s" PATH_SEP "%s", obj_root, target->name );
-        platform_rmdir_quiet( obj_dir );
+        platform_rmdir_quiet( path_obj_dir( target, obj_dir, sizeof( obj_dir ) ) );
 
         if ( target->has_reflect )
         {
-            const char* rname = target->reflect_name ? target->reflect_name : target->name;
+            const char* rname = target_reflect_name( target );
             char path[ PATH_MAX ];
-            snprintf( path, sizeof( path ), "%s" PATH_SEP "%s.generated.c", gen_root, rname );
-            platform_delete_file( path );
-            snprintf( path, sizeof( path ), "%s" PATH_SEP "%s.generated.h", gen_root, rname );
-            platform_delete_file( path );
+            platform_delete_file( path_generated( gen_root, rname, "c", path, sizeof( path ) ) );
+            platform_delete_file( path_generated( gen_root, rname, "h", path, sizeof( path ) ) );
         }
 
         printf( ORB_BANNER "[orb clean] %s -- bin" PATH_SEP "%s.%s, %s" PATH_SEP "%s%s\n",

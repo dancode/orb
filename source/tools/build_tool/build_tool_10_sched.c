@@ -148,8 +148,9 @@ add_job( target_info_t* t )
     j->rev_dep_count  = 0;
     j->done           = false;
     j->failed         = false;
+    char obj_dir[ PATH_MAX ];
     snprintf( j->log_path, sizeof( j->log_path ),
-              "%s" PATH_SEP "%s" PATH_SEP "%s" PATH_SEP "_build.log", g_build_dir, g_int_dir, t->name );
+              "%s" PATH_SEP "_build.log", path_obj_dir( t, obj_dir, sizeof( obj_dir ) ) );
 
     // Two-pass approach: collect dep indices first (via recursion), then wire
     // edges once everyone is registered -- avoids aliasing issues during recursion.
@@ -512,9 +513,7 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     for ( int i = 0; i < g_sched.job_count; ++i )
     {
         char dir_path[ PATH_MAX ];
-        snprintf( dir_path, sizeof( dir_path ), "%s" PATH_SEP "%s" PATH_SEP "%s",
-                  g_build_dir, g_int_dir, g_sched.jobs[ i ].target->name );
-        ensure_dir( dir_path );
+        ensure_dir( path_obj_dir( g_sched.jobs[ i ].target, dir_path, sizeof( dir_path ) ) );
     }
 
     if ( thread_count < 1 ) thread_count = 1;
