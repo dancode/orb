@@ -262,6 +262,38 @@ add_job( target_info_t* t )
         }
     }
 
+    // Implicit asset tool dep -- same treatment again. build_cook_content() cooks for exactly
+    // the targets that carry a manifest, and it reaches the cooker through its own nested
+    // build_target() call, which the scheduler cannot see. Without this edge that call resolves
+    // asset_tool's whole closure (sys, pack, and via its tool_deps shader_tool and font_tool)
+    // from inside a worker, concurrently with the jobs building those same targets: relinking
+    // bin/sys.lib while a sibling worker links against it fails that worker with LNK1104.
+    // Wiring the edge here makes the cooker ready before any cooking target runs.
+    //
+    // The content tools are excluded: they are the cooker, so an edge into asset_tool would be
+    // a self-dep for asset_tool itself and a cycle for the cookers it lists as tool_deps.
+    if ( target_wants_res_manifest( t ) && !target_is_content_tool( t ) )
+    {
+        target_info_t* at = find_asset_tool();
+        if ( at )
+        {
+            if ( dep_count >= MAX_LOCAL_DEPS )
+            {
+                printf( ORB_INDENT "[orb error] '%s' dep table full (MAX_LOCAL_DEPS=%d);"
+                        " asset tool dep cannot be registered -- raise MAX_LOCAL_DEPS\n",
+                        t->name, MAX_LOCAL_DEPS );
+                return -1;
+            }
+            int di = add_job( at );
+            if ( di >= 0 )
+            {
+                bool dup = false;
+                for ( int d = 0; d < dep_count; ++d ) if ( dep_indices[ d ] == di ) { dup = true; break; }
+                if ( !dup ) dep_indices[ dep_count++ ] = di;
+            }
+        }
+    }
+
     // Re-fetch j: nested add_job() calls may have appended to g_sched.jobs[]
     // but the array is fixed-size so &g_sched.jobs[idx] is still valid.
     j = &g_sched.jobs[ idx ];

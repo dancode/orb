@@ -124,6 +124,16 @@ content_severity( void )
 static bool g_res_tool_down   = false;
 static bool g_asset_tool_down = false;
 
+/*  Set once the cooker has been resolved successfully, so the nested build_target() below runs
+    at most once per process instead of once per cooking target. Same unlocked-bool reasoning as
+    the latches above: a worker already past the check repeats the resolve, which is redundant
+    work rather than a wrong answer. Under the scheduler the resolve is redundant anyway --
+    add_job() wires asset_tool as an implicit dep of every target carrying a manifest -- and this
+    call is the fallback for the paths that have no scheduler (-no-deps from VS, serial
+    -target). */
+
+static bool g_asset_tool_ready = false;
+
 // Content roots, highest priority first: this project's content/, then the engine's when this
 // is a child project. Returns the count.
 static int
@@ -243,39 +253,50 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
             if ( g_asset_tool_down )
                 break;    // reported on the first image that needed it
 
-            target_info_t* asset_tool = find_asset_tool();
-            const char*    down       = NULL;    // why nothing can be cooked this run
-
-            if ( !asset_tool )
-                down = "no is_asset_tool target is registered";
-            else
+            if ( !g_asset_tool_ready )
             {
-                // Whether cooking is needed at all depends on manifest content, which isn't
-                // known until this point, so asset_tool is never wired into the parallel job
-                // graph like reflect_tool/res_tool are -- resolve its own deps here rather
-                // than trusting the caller's scheduling context (ctx->skip_deps may be true
-                // on the scheduler path).
-                build_context_t asset_ctx = *ctx;
-                asset_ctx.skip_deps       = false;
-                asset_ctx.skip_tool_deps  = false;
-                if ( !build_target( &asset_ctx, asset_tool, NULL, NULL ) )
-                    down = "the content cooker did not build";
-            }
+                target_info_t* asset_tool = find_asset_tool();
+                const char*    down       = NULL;    // why nothing can be cooked this run
 
-            if ( down )
-            {
-                if ( g_content_strict )
+                if ( !asset_tool )
+                    down = "no is_asset_tool target is registered";
+                else
                 {
-                    printf( ORB_INDENT "[orb error] '%s' names '%s', which needs cooking, but %s\n",
-                            target->name, name, down );
-                    ok = false;
-                    break;
+                    // Resolve the cooker's own deps rather than trusting the caller's scheduling
+                    // context (ctx->skip_deps may be true). Under the scheduler this is already
+                    // done -- add_job() wires asset_tool as an implicit dep of every target
+                    // carrying a manifest -- so this is the fallback for the paths without one.
+                    //
+                    // force_rebuild is deliberately dropped: the call only has to leave a current
+                    // cooker on disk. Carrying it in recompiles asset_tool's whole closure from
+                    // inside a worker, and relinking bin/sys.lib while a sibling worker links
+                    // against it fails that worker with LNK1104 -- the per-target mutex orders
+                    // two writers, not a writer against readers. A -force run still rebuilds the
+                    // cooker through its own scheduled job.
+                    build_context_t asset_ctx = *ctx;
+                    asset_ctx.skip_deps       = false;
+                    asset_ctx.skip_tool_deps  = false;
+                    asset_ctx.force_rebuild   = false;
+                    if ( !build_target( &asset_ctx, asset_tool, NULL, NULL ) )
+                        down = "the content cooker did not build";
                 }
-                printf( ORB_INDENT "[orb warn] %s -- nothing is cooked into %s" PATH_SEP "content"
-                                   " this run; the first name that wanted it was '%s'\n",
-                        down, g_build_dir, name );
-                g_asset_tool_down = true;
-                break;    // the cooker is unusable, so no later entry can cook either
+
+                if ( down )
+                {
+                    if ( g_content_strict )
+                    {
+                        printf( ORB_INDENT "[orb error] '%s' names '%s', which needs cooking, but %s\n",
+                                target->name, name, down );
+                        ok = false;
+                        break;
+                    }
+                    printf( ORB_INDENT "[orb warn] %s -- nothing is cooked into %s" PATH_SEP "content"
+                                       " this run; the first name that wanted it was '%s'\n",
+                            down, g_build_dir, name );
+                    g_asset_tool_down = true;
+                    break;    // the cooker is unusable, so no later entry can cook either
+                }
+                g_asset_tool_ready = true;
             }
             asset_tool_ready = true;
         }
