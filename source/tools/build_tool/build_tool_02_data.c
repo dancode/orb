@@ -298,6 +298,15 @@ find_res_tool( void )
     return NULL;
 }
 
+static target_info_t*
+find_asset_tool( void )
+{
+    for ( int i = 0; i < g_target_count; ++i )
+        if ( g_targets[ i ].is_asset_tool )
+            return &g_targets[ i ];
+    return NULL;
+}
+
 /*==============================================================================================
     --- Resource Manifest Policy ---
 

@@ -9,7 +9,9 @@
       1. Per-target mutex lock  -- serialize concurrent invocations on the same target.
       2. Path preparation       -- obj_dir, gen_dir, out_path.
       2.5 Content cook (pre)    -- asset_tool over the cookable names in the previous
-                                   manifest (shaders, recipes), into <build>/content.
+                                   manifest (shaders, recipes), into <build>/content. Builds
+                                   whichever target carries is_asset_tool on first use --
+                                   see build_cook_content().
       3. Up-to-date check       -- five freshness tests (A-E); short-circuit if clean.
       4. Directory creation     -- ensure every write destination exists.
       5. Locked-file management -- rename any in-use .exe aside before relinking.
@@ -172,7 +174,9 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
     char roots[ 2 ][ PATH_MAX ];
     int  root_count = res_content_roots( roots );
 
-    bool        ok  = true;
+    bool        ok               = true;
+    bool        asset_tool_ready = false;    // built at most once per call, the first time a
+                                              // manifest entry actually needs cooking
     const char* p   = map.data;
     const char* end = map.data + map.size;
     char        line[ PATH_MAX * 2 ];
@@ -220,13 +224,31 @@ build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj
         if ( !cooked_ext[ 0 ] )
             continue;    // loose content: the runtime reads it from content/ as it is
 
-        if ( !platform_file_exists( "bin" PATH_SEP "asset_tool.exe" ) )
+        if ( !asset_tool_ready )
         {
-            printf( ORB_INDENT "[orb error] '%s' names '%s', which needs cooking, but bin/asset_tool.exe is"
-                               " missing -- add 'tool_dep asset_tool shader_tool font_tool' to the target\n",
-                    target->name, name );
-            ok = false;
-            break;
+            target_info_t* asset_tool = find_asset_tool();
+            if ( !asset_tool )
+            {
+                printf( ORB_INDENT "[orb error] '%s' names '%s', which needs cooking, but no"
+                                   " is_asset_tool target is registered\n",
+                        target->name, name );
+                ok = false;
+                break;
+            }
+
+            // Whether cooking is needed at all depends on manifest content, which isn't known
+            // until this point, so asset_tool is never wired into the parallel job graph like
+            // reflect_tool/res_tool are -- resolve its own deps here rather than trusting the
+            // caller's scheduling context (ctx->skip_deps may be true on the scheduler path).
+            build_context_t asset_ctx = *ctx;
+            asset_ctx.skip_deps       = false;
+            asset_ctx.skip_tool_deps  = false;
+            if ( !build_target( &asset_ctx, asset_tool, NULL, NULL ) )
+            {
+                ok = false;
+                break;
+            }
+            asset_tool_ready = true;
         }
 
         char dst[ PATH_MAX ];

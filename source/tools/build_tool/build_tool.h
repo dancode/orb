@@ -466,6 +466,13 @@ typedef struct target_info_s
 
     bool            is_res_tool;
 
+    /*  If true, this is the content cooker (asset_tool). build_cook_content() locates and
+        builds whichever target carries this flag the moment it finds a manifest entry that
+        needs cooking (a shader or a font recipe) -- no target that merely names such an
+        entry has to declare a tool_dep on it. */
+
+    bool            is_asset_tool;
+
     /*  If true, this target is a host-only engine service (sys, core, mod, app, ref).
         Dynamic targets may not list it as a dep -- globals and state live exclusively
         in the host exe. DLLs access these services through the module API vtable.
@@ -692,7 +699,9 @@ bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
     error (the first build cooks after res_tool writes one). Runs ahead of the
     artifact's up-to-date check and again after the manifest is regenerated: a cooked
     file is an input to the RUNTIME, not to the compiler, so editing a shader must
-    re-cook without also forcing a recompile of C code that did not change. */
+    re-cook without also forcing a recompile of C code that did not change. The first
+    entry that needs cooking builds whichever target carries is_asset_tool -- no target
+    that merely names a shader or recipe has to declare a tool_dep on it. */
 
 bool build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj_dir );
 

@@ -211,10 +211,11 @@ piece.
     orb.targets -- decision 13 now holds literally -- and it is what makes "only RID'd font
     sizes ship" produce the bakes: content/font/cascadiamono/16.recipe cooks because sb_gui
     marks the name, and no other size does.  Images stay loose (gui decodes PNG itself; the
-    asset service's .tex preference is a ship-time cook, Phase 7).  Any target whose manifest
-    names a shader or a recipe carries 'tool_dep asset_tool shader_tool font_tool' so the
-    cookers are built first under the parallel scheduler (gui does; sb_res does for its
-    fixture recipe).
+    asset service's .tex preference is a ship-time cook, Phase 7).  build_cook_content finds
+    and builds whichever target carries 'is_asset_tool' (asset_tool) the moment it meets a
+    manifest entry that needs cooking, so a target whose manifest names a shader or a recipe
+    needs no 'tool_dep' of its own; asset_tool itself carries 'tool_dep shader_tool font_tool',
+    since it spawns them as bin/ siblings at cook time.
 
 17. THREE TIERS, TWO PIPELINES.  (2026-09-02.)  What a directory holds is decided by who reads
     it:
