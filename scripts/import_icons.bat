@@ -1,6 +1,6 @@
 @echo off
 :: import_icons.bat -- import the built-in icon set: config\icons.manifest rasterizes the SVGs
-:: under assets\ui\icon\ into content\ui\icon\*.png (checked in).
+:: under source_content\ui\icon\ into content\ui\icon\*.png (checked in).
 ::
 :: Nothing bakes automatically, so re-run this whenever the source art changes. Requires
 :: bin\image_tool.exe (build_tool -config Debug).

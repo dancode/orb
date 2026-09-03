@@ -6,12 +6,13 @@
     sb_gui_style.c; see st.h for the window contract.
 
     The bake here is the quick stb one -- dev_font_get(): rasterized at runtime with stb_truetype
-    into assets/font_cache/.  Instant, disposable, "I want to see this face at this size".  A
-    shippable bake is not made from this window: it is a recipe (content/font/<family>/<size>
-    .recipe) the build cooks with font_tool when some image names it with RID().
+    into source_content/font_cache/.  Instant, disposable, "I want to see this face at this
+    size".  A shippable bake is not made from this window: it is a recipe (content/font/
+    <family>/<size>.recipe) the build cooks with font_tool when some image names it with RID().
 
-    Search scope is a checkbox: local only (assets/font/) or Windows too (the OS font registry,
-    resolving "Cascadia Mono" -> C:\Windows\Fonts\CascadiaMono.ttf without copying it in).
+    Search scope is a checkbox: local only (source_content/font/) or Windows too (the OS font
+    registry, resolving "Cascadia Mono" -> C:\Windows\Fonts\CascadiaMono.ttf without copying it
+    in).
 
 ==============================================================================================*/
 
@@ -26,20 +27,20 @@
 
 typedef struct
 {
-    /* Picker listing: assets/font/ files first (indices 0..local_count), then installed faces
-       (indices local_count..count, sorted) when allow_windows is on. */
+    /* Picker listing: source_content/font/ files first (indices 0..local_count), then installed
+       faces (indices local_count..count, sorted) when allow_windows is on. */
     char names[ FT_LIST_MAX ][ FT_NAME_MAX ];
     int  count;
-    int  local_count;        /* number of leading entries that are project (assets/font) fonts */
+    int  local_count;        /* leading entries that are project (source_content/font) fonts */
     int  sel;
     bool scanned;
     bool list_has_windows;   /* scope the current listing was built with (detects toggle) */
-    bool list_has_local;     /* ditto, for the assets/font toggle */
+    bool list_has_local;     /* ditto, for the source_content/font toggle */
 
     /* Request the user is working on. */
     char request[ FT_NAME_MAX ];   /* font name or filename to resolve */
     bool allow_windows;            /* false = local only; true = also the OS font registry */
-    bool allow_local;              /* false = skip assets/font/ in the picker listing */
+    bool allow_local;              /* false = skip source_content/font/ in the listing */
     i32  size_px;
 
     /* Live stb preview. */
@@ -64,9 +65,10 @@ static font_tool_t s_ft;
 /*============================================================================================*/
 /* Resolution honoring the local/Windows scope checkbox.                                       */
 /*                                                                                             */
-/* dev_font_resolve() always walks assets/font -> system dir -> OS registry.  When the user     */
-/* asks for local only we must NOT fall through to Windows, so we probe assets/font/ ourselves */
-/* and stop there.  With the box ticked we defer to the full resolver.                         */
+/* dev_font_resolve() always walks source_content/font -> system dir -> OS registry.  When    */
+/* the user asks for local only we must NOT fall through to Windows, so we probe              */
+/* source_content/font/ ourselves and stop there.  With the box ticked we defer to the full   */
+/* resolver.                                                                                  */
 /*============================================================================================*/
 
 static bool
@@ -75,7 +77,7 @@ ft_resolve( const char* request, bool allow_windows, char* out, int out_size )
     if ( allow_windows )
         return dev_font_resolve( request, out, out_size );
 
-    /* Local only: exact name in assets/font/, then the common face extensions. */
+    /* Local only: exact name in source_content/font/, then the common face extensions. */
     char src[ 512 ];
     if ( !dev_font_source_dir( src, sizeof( src ) ) )
         return false;
@@ -91,7 +93,7 @@ ft_resolve( const char* request, bool allow_windows, char* out, int out_size )
 }
 
 /*============================================================================================*/
-/* Scan assets/font/ for the local picker.                                                     */
+/* Scan source_content/font/ for the local picker.                                            */
 /*============================================================================================*/
 
 /* Append one name to the list (both scans share this).  Returns false once the list is full so
@@ -121,8 +123,8 @@ ft_name_cmp( const void* a, const void* b )
     return (unsigned char)*x - (unsigned char)*y;
 }
 
-/* True if `name` ends in one of the face extensions assets/font/ is scanned for (case-
-   insensitive, matching sys_file_glob's Windows FindFirstFile semantics). */
+/* True if `name` ends in one of the face extensions source_content/font/ is scanned for
+   (case-insensitive, matching sys_file_glob's Windows FindFirstFile semantics). */
 
 static bool
 ft_has_font_ext( const char* name )
@@ -138,11 +140,12 @@ ft_has_font_ext( const char* name )
     return false;
 }
 
-/* sys_dir_walk() callback for assets/font/: recurses into subdirectories, since a family's faces
-   live in their own folder (assets/font/geist/, mirroring content/font/geist/).  The listed/
-   request name is the path relative to assets/font/ (e.g. "geist/Geist-Bold.ttf"), which both
-   keeps same-stem files in different folders distinct and is what ft_resolve() and
-   dev_font_resolve()'s assets/font-relative fallback expect. */
+/* sys_dir_walk() callback for source_content/font/: recurses into subdirectories, since a
+   family's faces live in their own folder (source_content/font/geist/, mirroring
+   content/font/geist/).  The listed/request name is the path relative to source_content/font/
+   (e.g. "geist/Geist-Bold.ttf"), which both keeps same-stem files in different folders
+   distinct and is what ft_resolve() and
+   dev_font_resolve()'s source_content/font-relative fallback expect. */
 static bool
 ft_local_cb( const char* filename, const char* full_path, void* ud )
 {
@@ -174,8 +177,8 @@ ft_scan( void )
 {
     s_ft.count = 0;
 
-    /* Local .ttf/.otf/.ttc under assets/font/, recursing into the family folders (listed first,
-       sorted), when the scope box is ticked. */
+    /* Local .ttf/.otf/.ttc under source_content/font/, recursing into the family folders
+       (listed first, sorted), when the scope box is ticked. */
     if ( s_ft.allow_local )
     {
         char src[ 512 ];
@@ -226,15 +229,16 @@ ft_bake_preview( void )
     if ( !ft_resolve( s_ft.request, s_ft.allow_windows, abs, sizeof( abs ) ) )
     {
         snprintf( s_ft.bake_status, sizeof( s_ft.bake_status ),
-                  s_ft.allow_windows ? "Not found: %s"
-                                     : "Not in assets/font/: %s  (tick Windows to search installed fonts)",
+                  s_ft.allow_windows
+                      ? "Not found: %s"
+                      : "Not in source_content/font/: %s  (tick Windows to search installed)",
                   s_ft.request );
         s_ft.bake_ok = false;
         return;
     }
 
-    /* The bake lives in assets/font_cache, outside the content mounts, so it is handed to gui
-       as bytes (font_load_mem) rather than by name. */
+    /* The bake lives in source_content/font_cache, outside the content mounts, so it is handed
+       to gui as bytes (font_load_mem) rather than by name. */
     char path[ 512 ];
     if ( !dev_font_get( abs, s_ft.size_px, path, sizeof( path ) ) )
     {
@@ -313,12 +317,12 @@ st_font_window( void )
     
     gui()->checkbox( "Include internal fonts", &s_ft.allow_local );
     gui()->same_line( -1 );
-    gui()->help_marker( "On:  list assets/font/ (the raw faces behind content/font/) in the picker.\n"
-                        "Off: skip them -- handy for browsing/testing the Windows registry alone." );
+    gui()->help_marker( "On:  list source_content/font/ (the raw faces behind content/font/).\n"
+                        "Off: skip them -- handy for browsing the Windows registry alone." );
 
     gui()->checkbox( "Include Windows fonts", &s_ft.allow_windows );
     gui()->same_line( -1 );
-    gui()->help_marker( "Off: list/search assets/font/ only.\n"
+    gui()->help_marker( "Off: list/search source_content/font/ only.\n"
                         "On:  also list installed fonts by friendly name from the OS font registry\n"
                         "     (e.g. \"Cascadia Mono\" -> C:\\Windows\\Fonts\\CascadiaMono.ttf)." );
     
@@ -334,8 +338,8 @@ st_font_window( void )
         gui()->scale_push( GUI_SCALE_DENSE );
         for ( int i = 0; i < s_ft.count; i++ )
         {
-            /* Project (assets/font) fonts lead the list in a distinct tint; installed Windows
-               faces follow in default color. */
+            /* Project (source_content/font) fonts lead the list in a distinct tint; installed
+               Windows faces follow in default color. */
             bool project = ( i < s_ft.local_count );
             if ( project )
                 gui()->push_style_color( GUI_ROLE_TEXT_PRIMARY, GUI_PHASE_ALL, GUI_COLOR( 0x7C, 0xD9, 0x92, 0xFF ) );
@@ -369,8 +373,9 @@ st_font_window( void )
     if ( gui()->button( "Bake & Preview (stb)" ) )
         ft_bake_preview();
     gui()->same_line( -1 );
-    gui()->help_marker( "A quick stb bake into assets/font_cache/ for previewing.  A shipped bake is a\n"
-                        "recipe under content/font/<family>/ that the build cooks when an image names it." );
+    gui()->help_marker( "A quick stb bake into source_content/font_cache/ for previewing.  A\n"
+                        "shipped bake is a recipe under content/font/<family>/ that the build\n"
+                        "cooks when an image names it." );
 
     gui()->stack();
     if ( s_ft.bake_status[ 0 ] )

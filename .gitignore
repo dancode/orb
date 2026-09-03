@@ -93,9 +93,9 @@ cmake-build-*/
 # Generated runtime artifacts (profiler traces, hitch captures, future dumps)
 /artifacts/
 
-# Assets -- raw tool inputs (TTF, SVG). Committed, so content/ plus this is a complete
+# source_content -- raw tool inputs (TTF, SVG). Committed, so content/ plus this is a complete
 # input set and a fresh clone can cook. The font baker's scratch cache is derived, not source.
-/assets/font_cache/
+/source_content/font_cache/
 
 # Third party -- vendored FreeType source and headers are committed so a clone can build,
 # and so a POSIX target can build the library from source. MSBuild output (objs/) and the

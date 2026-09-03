@@ -54,7 +54,7 @@ void sys_wait_for_os_events_ms( i32 timeout_ms );   /* block until input or time
 
 void     sys_exe_dir( char* out, int size );
 
-/* sys_root_dir -- engine/build root, one level above the executable (where assets/ lives).
+/* sys_root_dir -- engine/build root, one level above the executable (where content/ lives).
    Resolved from sys_exe_dir once on the first call and cached in a static buffer; every call
    after that is a plain pointer return, no OS call.  Assumed stable for the process's lifetime. */
 const char* sys_root_dir( void );

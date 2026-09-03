@@ -151,7 +151,7 @@ piece.
    (a recipe may still spell its own "face" to override) and which the gui's runtime baker
    reads for sizes no recipe covers -- so a cooked bake and a runtime bake of one family come
    from one spelling, and gui compiles in no family table.  The face is a COOK INPUT (a TTF
-   under assets/, or an OS face name), not a reference: it is never written to a cooked
+   under source_content/, or an OS face name), not a reference: it is never written to a cooked
    file's reference section and never ships.
    config/fonts.manifest -- the ship-time cook list dev_ship reads -- is fully expressed by
    the recipe set plus RID(); it and dev_ship's font cook loop go when Phase 7 lands the
@@ -221,26 +221,30 @@ piece.
 
       | Tier            | Tracked   | Read by              | Holds                          |
       |-----------------|-----------|----------------------|--------------------------------|
-      | assets/         | no        | tools only           | raw sources: TTFs, SVGs, laid   |
-      |                 |           |                      | out as a MIRROR of content/;    |
+      | source_content/ | yes, less | tools only           | raw sources: TTFs, SVGs, laid   |
+      |                 | font_cache|                      | out as a MIRROR of content/;    |
       |                 |           |                      | tool caches (font_cache)        |
       | content/        | yes       | engine and cooker    | source-form content: PNGs,      |
       |                 |           |                      | .hlsl, .recipe, family.txt      |
       | build/content   | generated | engine (mounted      | cooked forms: .orb_font, .oshd, |
       |                 |           | above content/)      | .tex                            |
 
-    Two pipelines cross those tiers and must not be confused.  IMPORT moves a raw source
-    into content/ (image_tool icons rasterizes assets/ui/icon/*.svg into content/ui/icon/
+    A tier is named for what the engine does with it, and content/ is the only tier a resource
+    name resolves against.
+
+    Two pipelines cross those tiers and must not be confused.  IMPORT moves a raw source into
+    content/ (image_tool icons rasterizes source_content/ui/icon/*.svg into content/ui/icon/
     from config/icons.manifest, by hand, checked in); it decides what content EXISTS.
     PACKAGE filters content/ plus build/content into a shipped set; RID() and the per-target
     manifest decide what SHIPS (dev_ship, Phase 7).  asset_tool belongs to neither: it cooks
-    content/ into build/content and never reads assets/ except through a recipe's face.
-    Nothing reads assets/ at runtime except the dev-only font baker's cache.  assets/ MIRRORS
-    content/ (since Phase 7): a raw source and the content it becomes sit at the same path --
-    assets/font/jetbrains/JetBrainsMonoNL-Regular.ttf beside content/font/jetbrains/, assets/
-    ui/icon/save.svg beside content/ui/icon/save.png -- so a family.txt face is a path under
-    assets/font that reads like its own directory.  assets/font_cache stays a cache.  The old
-    OUTPUT directories under assets/ (font, icon) are gone: no tool writes there.
+    content/ into build/content and never reads source_content/ except through a recipe's face.
+    Nothing reads source_content/ at runtime except the dev-only font baker's cache.
+    source_content/ MIRRORS content/ (since Phase 7): a raw source and the content it becomes
+    sit at the same path -- source_content/font/jetbrains/JetBrainsMonoNL-Regular.ttf beside
+    content/font/jetbrains/, source_content/ui/icon/save.svg beside content/ui/icon/save.png --
+    so a family.txt face is a path under source_content/font that reads like its own directory.
+    source_content/font_cache stays a cache.  The old OUTPUT directories under it (font, icon)
+    are gone: no tool writes there.
 
 --------------------------------------------------------------------------------
 ## Where it sits
@@ -376,7 +380,7 @@ Phase 5 -- GUI adoption (the real surface)                               [DONE 2
      (.font = RID( "font/cascadiamono/16" )); gui_font_family_t and font_size are gone; the
      resolver composes "font/<family>/<N>" for the DPI retarget and type ramp, reads the
      cooked bake through fs, else asks the baker, else settles for a resident size.  The
-     directory scan of assets/font, the filename parser (font_ship_name_parse) and the
+     directory scan of source_content/font, the filename parser (font_ship_name_parse) and the
      nearest-shipped ladder are gone: the mounts are never enumerated.  The baker callback
      returns BYTES, not a path (gui_font_bake_fn; dev_font_get_bytes is the adapter), so
      gui never opens a file outside the mounts.  font_load / font_load_into take names;
@@ -384,7 +388,7 @@ Phase 5 -- GUI adoption (the real surface)                               [DONE 2
    - Icons and sprites: load_icon / load_icons / load_icon_sdf / load_sprite take a resource
      name; the built-in table names RID( "ui/icon/settings" ) etc., so every image linking
      gui carries the five built-ins in its manifest.  content/ui/icon/ holds the PNGs
-     (tracked; assets/ is gitignored) and image_tool icons writes there.
+     (tracked, like the SVGs they come from) and image_tool icons writes there.
    - Shaders: gui_quad.{vs,ps}.hlsl moved to content/shader/, named RID( "shader/gui_quad.vs" )
      / .ps in gui_render_init.c and read as .oshd through fs into the rhi's in-memory .oshd
      loader.  sb_quad_pull's three shaders moved to content/sandbox/quad_pull/ the same way.
@@ -396,7 +400,7 @@ Phase 5 -- GUI adoption (the real surface)                               [DONE 2
    - Left alone, on purpose: rhi's path-taking shader loaders and draw_material's optional
      cooked pair under bin/shaders (scripts/cook_shaders.bat) -- a dev-only affordance with
      an embedded fallback, not content.  dev_ship kept cooking config/fonts.manifest into
-     assets/font until Phase 7 replaced it with the manifest walk.
+     source_content/font until Phase 7 replaced it with the manifest walk.
    - Proof: full Debug build; sb_gui_test passes (the .orb_font contract now runs over bytes);
      sb_gui's manifest is the acceptance-test set (its font, gui's five icons, gui's two
      shaders), build/content holds font/cascadiamono/16.orb_font and shader/gui_quad.{vs,ps}.oshd,
@@ -474,11 +478,11 @@ Phase 7 -- ship_tool consumes the manifest                               [DONE 2
      default, the exe plus its mono_dep DLLs with -modular.  A project ship is unchanged in
      shape; its module list now comes from <project>_ship's mono_dep (host_game's for a
      child project, plus the project).
-   - assets/ mirrors content/ (decision 17): assets/font_source -> assets/font, assets/
-     icon_source -> assets/ui/icon; dev_font resolves faces under assets/font, image_tool
-     icons reads assets/ui/icon, family.txt faces are unchanged (already family-relative).
-     The old output directories assets/font (bakes) and assets/icon were moved aside to
-     assets/_retired/ (untracked; delete at leisure).  font_tool's default output is the
+   - source_content/ mirrors content/ (decision 17): font_source -> font, icon_source ->
+     ui/icon; dev_font resolves faces under source_content/font, image_tool icons reads
+     source_content/ui/icon, family.txt faces are unchanged (already family-relative).
+     The old output directories font (bakes) and icon were moved aside to _retired/
+     (untracked; delete at leisure).  font_tool's default output is the
      current directory and `font_tool info` with no argument walks build/content; the style
      editor's "Export final" button and dev_font_dir are gone.
    - Proof: full modular Debug build, -gen and -doctor green (the one warning is the

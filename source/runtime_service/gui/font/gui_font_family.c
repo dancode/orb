@@ -6,7 +6,8 @@
     The resolver (frame/gui_frame_resolve.c) composes "font/<family>/<size>" from it and reads
     the cooked bake through fs; only when no bake answers does it ask the runtime baker, and
     the baker needs the TYPEFACE -- "Cascadia Mono", the OS-installed face, or a TTF under
-    assets/font -- not the directory.  That spelling is content, the family's descriptor:
+    source_content/font -- not the directory.  That spelling is content, the family's
+    descriptor:
 
         content/font/<family>/family.txt        face <font_tool input>
 

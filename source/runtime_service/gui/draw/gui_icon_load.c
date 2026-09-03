@@ -217,10 +217,11 @@ icon_load_pairs( const char* const* pairs, u32 count )
     optimization -- reach for it once a size is locked in, or for a large set where sparing the
     SDF source's oversampling and margin matters.
 
-    The PNGs under content/ui/icon are baked from assets/ui/icon/*.svg via `image_tool icons
-    config/icons.manifest` (see that file); re-run it after editing the source SVGs, nothing bakes
-    automatically.  Add a new SDF built-in by adding a line to the manifest, baking, and listing
-    the name,RID pair below; look one up at draw time with gui()->find_icon( "<name>" ).  A host
+    The PNGs under content/ui/icon are baked from source_content/ui/icon/*.svg via `image_tool
+    icons config/icons.manifest` (see that file); re-run it after editing the source SVGs,
+    nothing bakes automatically.  Add a new SDF built-in by adding a line to the manifest,
+    baking, and listing the name,RID pair below; look one up at draw time with
+    gui()->find_icon( "<name>" ).  A host
     or the editor can register its OWN icons on top of these at runtime via gui()->load_icon /
     load_icon_sdf, or a whole coverage set at once via gui()->load_icons.
 ==============================================================================================*/

@@ -11,7 +11,7 @@
                   progressively larger power-of-two squares (ATLAS_MIN..ATLAS_MAX) and stopping
                   at the first that fits, so small fonts don't waste a fixed 512x512 canvas.
         Pass 3 -- blit bitmaps into the chosen-size R8 atlas; write orb_font_header_t + glyph
-                  records + pixels to assets/font_cache/.
+                  records + pixels to source_content/font_cache/.
 
     Cache invalidation: sys_file_time() is compared between the source TTF and the cached
     .orb_font.  A cache hit skips all three passes.
@@ -88,8 +88,8 @@ static orb_font_glyph_t s_out_glyphs [ ORB_FONT_MAX_GLYPHS ];
 static struct
 {
     char build_dir      [ DEV_PATH_MAX ];
-    char font_source_dir[ DEV_PATH_MAX ];   // assets/font       -- raw .ttf sources, mirroring content/font
-    char font_cache_dir [ DEV_PATH_MAX ];   // assets/font_cache -- quick stb bakes (dev_font_get)
+    char font_source_dir[ DEV_PATH_MAX ];   // source_content/font -- raw .ttf sources
+    char font_cache_dir [ DEV_PATH_MAX ];   // source_content/font_cache -- quick stb bakes
     bool initialized;
 
 } g_rt;
@@ -238,10 +238,10 @@ scan_dir_for_name( const char* dir, const char* want_norm, char* out, int out_si
 
 /* Resolve a bare filename, a friendly font name, or a full path to an absolute TTF path that
    exists on disk.  For bare requests the search order is:
-       1. assets/font/           -- exact name, then + .ttf / .otf / .ttc
+       1. source_content/font/    -- exact name, then + .ttf / .otf / .ttc
        2. OS system font dir      -- exact filename, then + .ttf / .otf / .ttc
        3. by friendly name        -- OS font registry (Windows), then a normalized-stem scan of
-                                     assets/font/ and the system font dir (portable)
+                                     source_content/font/ and the system font dir (portable)
    A request that already contains a separator is used as-is. */
 
 static bool
@@ -256,8 +256,8 @@ resolve_ttf( const char* ttf_path, char* out, int size )
             return true;
         }
 
-        /* Otherwise treat it as assets/font-relative, e.g. "roboto/Roboto-Bold.ttf": the family
-           directory mirrors content/font/<family>/. */
+        /* Otherwise treat it as source_content/font-relative, e.g. "roboto/Roboto-Bold.ttf":
+           the family directory mirrors content/font/<family>/. */
         snprintf( out, (size_t)size, "%s" PATH_SEP "%s", g_rt.font_source_dir, ttf_path );
         if ( sys_file_time( out ) > 0 ) return true;
 
@@ -269,7 +269,7 @@ resolve_ttf( const char* ttf_path, char* out, int size )
        common face extensions so a bare family name resolves to a file. */
     static const char* ext[] = { "", ".ttf", ".otf", ".ttc" };
 
-    /* 1. assets/font/ */
+    /* 1. source_content/font/ */
     for ( int i = 0; i < 4; ++i )
     {
         snprintf( out, (size_t)size, "%s" PATH_SEP "%s%s", g_rt.font_source_dir, ttf_path, ext[ i ] );
@@ -293,7 +293,8 @@ resolve_ttf( const char* ttf_path, char* out, int size )
     if ( scan_dir_for_name( g_rt.font_source_dir, want, out, size ) ) return true;
     if ( scan_dir_for_name( s_sys_font_dir,       want, out, size ) ) return true;
 
-    set_error( "font '%s' not found in assets/font/, system fonts, or by name", ttf_path );
+    set_error( "font '%s' not found in source_content/font/, system fonts, or by name",
+               ttf_path );
     return false;
 }
 
@@ -871,9 +872,9 @@ dev_font_init( const dev_font_settings_t* settings )
         auto_detect_build_dir( g_rt.build_dir, sizeof( g_rt.build_dir ) );
 
     snprintf( g_rt.font_source_dir, sizeof( g_rt.font_source_dir ),
-              "%s" PATH_SEP "assets" PATH_SEP "font", g_rt.build_dir );
+              "%s" PATH_SEP "source_content" PATH_SEP "font", g_rt.build_dir );
     snprintf( g_rt.font_cache_dir, sizeof( g_rt.font_cache_dir ),
-              "%s" PATH_SEP "assets" PATH_SEP "font_cache", g_rt.build_dir );
+              "%s" PATH_SEP "source_content" PATH_SEP "font_cache", g_rt.build_dir );
 
     g_rt.initialized = true;
 
@@ -894,8 +895,8 @@ dev_font_shutdown( void )
     font_tool lives next to the calling exe in bin/ and resolves the same inputs this library
     does (it links dev_font itself), so handing it the already-resolved absolute TTF path plus
     an explicit output path makes the child bake exactly what the caller asked for.  Output
-    goes to assets/font_cache/ with an "_ft" tag: a cache entry, never content.  Shipped bakes
-    are recipes the build cooks into build/content.
+    goes to source_content/font_cache/ with an "_ft" tag: a cache entry, never content.
+    Shipped bakes are recipes the build cooks into build/content.
 ==============================================================================================*/
 
 #if OS_WINDOWS
@@ -978,7 +979,7 @@ cache_file_valid( const char* path )
 }
 
 /* Cache path for a request at a quality tier:
-   assets/font_cache/<stem>_<size>px[<rangetag>][_ft].orb_font */
+   source_content/font_cache/<stem>_<size>px[<rangetag>][_ft].orb_font */
 
 static void
 cache_path_make( const char* ttf_abs, int size_px, const char* range_spec, bool fine,
@@ -1068,7 +1069,7 @@ dev_font_get_ex( const char* ttf_path, int size_px, dev_font_quality_t quality,
         }
     }
 
-    /* Fast tier: assets/font_cache/<stem>_<size>px[<rangetag>].orb_font */
+    /* Fast tier: source_content/font_cache/<stem>_<size>px[<rangetag>].orb_font */
 
     char cache_path[ DEV_PATH_MAX ];
     cache_path_make( ttf_abs, size_px, range_spec, false, cache_path, sizeof( cache_path ) );
@@ -1082,7 +1083,7 @@ dev_font_get_ex( const char* ttf_path, int size_px, dev_font_quality_t quality,
         return true;
     }
 
-    sys_dir_make( g_rt.font_cache_dir );   // create assets/font_cache/ on first bake
+    sys_dir_make( g_rt.font_cache_dir );   // create source_content/font_cache/ on first bake
 
     if ( !bake_font( ttf_abs, size_px, ranges, range_count, cache_path ) )
         return false;

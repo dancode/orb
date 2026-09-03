@@ -12,7 +12,7 @@
         font_tool info [<file.orb_font> | <dir>]...     -- print .orb_font header internals
 
     Input may be a path, a bare filename, or an installed font name; dev_font_resolve searches
-    assets/font/ then the OS fonts.  With no output argument the path is derived as
+    source_content/font/ then the OS fonts.  With no output argument the path is derived as
     <stem>_<size>px[_<range>][_sdf].orb_font in the current directory.  The atlas is R8, sized
     to the smallest power-of-two square that fits every packed glyph.
 
@@ -781,9 +781,9 @@ bake_one( const cli_t* cli )
         return false;
     }
 
-    /* dev_font resolves a bare filename or friendly name ("Cascadia Mono") against assets/font/
-       and the OS fonts -- the same search the runtime stb baker does, so a face spelled in a
-       family.txt means the same file to both bakers. */
+    /* dev_font resolves a bare filename or friendly name ("Cascadia Mono") against
+       source_content/font/ and the OS fonts -- the same search the runtime stb baker does, so a
+       face spelled in a family.txt means the same file to both bakers. */
     char ttf_abs[ FONT_PATH_MAX ];
     if ( !dev_font_resolve( cli->ttf_arg, ttf_abs, sizeof( ttf_abs ) ) )
     {

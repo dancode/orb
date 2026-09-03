@@ -218,8 +218,8 @@ typedef void ( *gui_style_source_fn )( void* user );
 /* Runtime font baker (see font_baker_set) -- bake "this typeface at this pixel size" to
    .orb_font BYTES.  gui asks it for any size no cooked bake answers (the DPI retarget, the
    type-ramp sizes GUI_VAR_TYPE_SMALL / _LARGE, font_get); `face` is a source name a baker like
-   dev_font_get resolves (a file in assets/font or an OS-installed face name), size_px is
-   final (DPI already applied).  Return true with *out_data pointing at a malloc'd buffer of
+   dev_font_get resolves (a file in source_content/font or an OS-installed face name), size_px
+   is final (DPI already applied).  Return true with *out_data pointing at a malloc'd buffer of
    *out_size bytes -- gui parses it and frees it with free() -- or false = cannot bake (gui
    records the failure once per size and degrades that request).  Bytes rather than a path so
    gui never opens a file outside the fs mounts. */

@@ -5,9 +5,9 @@
     dev_font.h -- Developer runtime font baker.
 
     Rasterizes a TTF/OTF font at a given pixel size using stb_truetype, packs the glyph
-    bitmaps with stb_rect_pack, and writes the result to assets/font_cache/ as an .orb_font
-    binary.  The format is identical to font_tool output, so the existing ttf_load_file()
-    path in the GUI loads it without modification.
+    bitmaps with stb_rect_pack, and writes the result to source_content/font_cache/ as an
+    .orb_font binary.  The format is identical to font_tool output, so the existing
+    ttf_load_file() path in the GUI loads it without modification.
 
     Intended for development builds only.  Shipped bakes are recipes under content/font/ that
     the build cooks with font_tool (FreeType quality) into build/content/font/.
@@ -24,18 +24,18 @@
     ---------------
     ttf_path may be a bare filename ("CascadiaMono.ttf"), a friendly font name ("Cascadia Mono"),
     or a full path.  A request with no directory separator is searched in order:
-        1. <build_root>/assets/font/   (exact name, then + .ttf / .otf / .ttc)
+        1. <build_root>/source_content/font/     (exact name, then + .ttf / .otf / .ttc)
         2. C:\Windows\Fonts\           (Windows)  (exact filename, then + .ttf / .otf / .ttc)
            /usr/share/fonts/truetype/  (Linux / macOS)
         3. By friendly name -- the OS font registry (Windows: HKLM then HKCU), then a
-           normalized-stem scan of assets/font/ and the system font dir.  This resolves names
-           that differ from the filename ("Consolas" -> consola.ttf, "Cascadia Mono" ->
-           CascadiaMono.ttf) so fonts need not be copied into assets/font/ first.
+           normalized-stem scan of source_content/font/ and the system font dir.  This resolves
+           names that differ from the filename ("Consolas" -> consola.ttf, "Cascadia Mono" ->
+           CascadiaMono.ttf) so fonts need not be copied into source_content/font/ first.
     Paths that already contain a separator are used as-is.
 
     Cache
     -----
-    dev_font_get() writes assets/font_cache/<stem>_<size>px[<rangetag>].orb_font; fine
+    dev_font_get() writes source_content/font_cache/<stem>_<size>px[<rangetag>].orb_font; fine
     (FreeType) bakes add an "_ft" tag before the extension.  On a repeated call the cache
     file is returned immediately if its modification time is >= the source TTF's
     modification time -- no re-bake occurs.
@@ -66,7 +66,7 @@ typedef struct
    with an "_ft" filename tag so the two tiers never overwrite each other. */
 typedef enum
 {
-    DEV_FONT_FAST = 0,        // stb bake into assets/font_cache (dev_font_get's behavior)
+    DEV_FONT_FAST = 0,        // stb bake into source_content/font_cache (dev_font_get)
     DEV_FONT_FINE_IF_CACHED,  // fresh fine cache file if one exists, else FAST
     DEV_FONT_FINE             // blocking font_tool.exe spawn (FreeType quality)
 
@@ -153,8 +153,8 @@ bool        dev_font_bake_write( const char* out_path, const dev_font_glyph_t* g
 
 const char* dev_font_last_error( void );
 
-/* Absolute path of the assets/font/ directory (the raw TTF sources; where dev_font_get searches
-   for bare filenames).  Returns false if dev_font_init() has not been called. */
+/* Absolute path of the source_content/font/ directory (the raw TTF sources; where dev_font_get
+   searches for bare filenames).  Returns false if dev_font_init() has not been called. */
 bool        dev_font_source_dir( char* out_path, int out_path_size );
 
 /*============================================================================================*/

@@ -51,7 +51,7 @@ scaffolded). It is a job runner, NOT a monolith that re-implements font baking.
 
   asset_tool cook foo.png            -> data/foo.tex          (built-in image converter)
   asset_tool cook bar.ttf 16         -> spawns font_tool -> data/bar.orb_font
-  asset_tool -src assets/ -dst data/ -> scan tree, cook everything stale (incremental)
+  asset_tool -src content/ -dst data/ -> scan tree, cook everything stale (incremental)
   asset_tool -manifest assets.json   -> cook the declared job list
   asset_tool -pack data/ game.pak    -> bundle cooked outputs for shipping
 

@@ -3,7 +3,7 @@
 #   <name> <source.svg> [-size <px>] [-margin <px>] [-out <path>]
 #
 # <name> is the gui icon registry key (gui()->find_icon) and the default output stem.
-# <source.svg> resolves against assets/ui/icon/, the raw-source mirror of content/ui/icon/.
+# <source.svg> resolves against source_content/ui/icon/, the raw mirror of content/ui/icon/.
 # -size/-margin default to 256/16, generous headroom over icon_register_sdf's out_max default of
 # 64 -- the built-in set loads as distance fields (icon_load_builtins in gui_icon_load.c), which
 # needs the source rasterized several times larger than its display size with a transparent
@@ -11,8 +11,8 @@
 #
 # This is an IMPORT manifest (raw source -> content), not a ship list.  Nothing bakes
 # automatically: re-run `image_tool icons config/icons.manifest` from the repo root whenever
-# source art under assets/ui/icon/ changes.  The output PNGs land under content/ui/icon/ and
-# are checked in: each is the resource "ui/icon/<name>" that gui_icon_load.c marks with RID(),
+# source art under source_content/ui/icon/ changes.  The PNGs land under content/ui/icon/
+# and are checked in: each is the resource "ui/icon/<name>" that gui_icon_load.c marks with RID(),
 # which is how the build resolves it and a package ships it.
 
 settings settings.svg
