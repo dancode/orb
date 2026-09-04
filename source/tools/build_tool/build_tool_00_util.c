@@ -6,11 +6,58 @@
     reference symbols from the full chain (02_data, 07_compile, etc.).
 
     Sections:
+        validate_dep_array   -- shared checks for one NULL-terminated dep slot array
         validate_targets     -- sanity-check the target/solution tables before any build
         print_startup_banner -- standardized header printed at the start of every build
 
 ==============================================================================================*/
 // clang-format off
+
+/*==============================================================================================
+    --- validate_dep_array ---
+
+    Checks one of a target's NULL-terminated dep slot arrays: no name may reference the
+    owning target, and every name must resolve to a declared target. 'kind' is the field
+    name as it appears in error messages ("dep", "tool_dep", "mono_dep").
+
+    reject_host_only additionally bars a dynamic target from listing a host_only dep.
+    Host-only globals live exclusively in the host exe; a DLL that links one gets a
+    private uninitialized copy and will fail at runtime. Only the link deps carry this
+    rule -- tool deps are never linked, and mono deps only link in a monolithic build
+    where there is no separate DLL image.
+==============================================================================================*/
+
+static bool
+validate_dep_array( const target_info_t* t, const char* const* deps, const char* kind,
+                    bool reject_host_only )
+{
+    bool ok = true;
+
+    for ( int j = 0; j < TARGET_MAX_SLOTS && deps[ j ]; ++j )
+    {
+        const target_info_t* dep = find_target( deps[ j ] );
+
+        if ( strcmp( deps[ j ], t->name ) == 0 )
+        {
+            printf( ORB_INDENT "[orb error] target '%s': %s references itself\n", t->name, kind );
+            ok = false;
+        }
+        else if ( !dep )
+        {
+            printf( ORB_INDENT "[orb error] target '%s': unknown %s '%s'\n",
+                    t->name, kind, deps[ j ] );
+            ok = false;
+        }
+        else if ( reject_host_only && t->type == TARGET_DYNAMIC_LIB && dep->is_host_only )
+        {
+            printf( ORB_INDENT "[orb error] target '%s' (dynamic): %s '%s' is host_only"
+                               " -- access it through the module API\n",
+                    t->name, kind, deps[ j ] );
+            ok = false;
+        }
+    }
+    return ok;
+}
 
 /*==============================================================================================
     --- validate_targets ---
@@ -119,55 +166,10 @@ validate_targets( void )
             ok = false;
         }
 
-        // Unresolved, self-referencing, and host_only dep names.
-        for ( int j = 0; j < TARGET_MAX_SLOTS && t->deps[ j ]; ++j )
-        {
-            if ( strcmp( t->deps[ j ], t->name ) == 0 )
-                printf( ORB_INDENT "[orb error] target '%s': dep references itself\n", t->name ),
-                ok = false;
-            else if ( !find_target( t->deps[ j ] ) )
-                printf( ORB_INDENT "[orb error] target '%s': unknown dep '%s'\n",
-                        t->name, t->deps[ j ] ),
-                ok = false;
-            else if ( t->type == TARGET_DYNAMIC_LIB )
-            {
-                /* Dynamic targets must not directly link host-only engine services.
-                   Their globals live exclusively in the host exe; a DLL that links one
-                   gets a private uninitialized copy and will fail at runtime. */
-                const target_info_t* dep = find_target( t->deps[ j ] );
-                if ( dep->is_host_only )
-                {
-                    printf( ORB_INDENT "[orb error] target '%s' (dynamic): dep '%s' is host_only"
-                                       " -- access it through the module API\n",
-                            t->name, t->deps[ j ] );
-                    ok = false;
-                }
-            }
-        }
-
-        // All deps exist + prevent tool targets from depending on oneself.
-        for ( int j = 0; j < TARGET_MAX_SLOTS && t->tool_deps[ j ]; ++j )
-        {
-            if ( strcmp( t->tool_deps[ j ], t->name ) == 0 )
-                printf( ORB_INDENT "[orb error] target '%s': tool_dep references itself\n", t->name ),
-                ok = false;
-            else if ( !find_target( t->tool_deps[ j ] ) )
-                printf( ORB_INDENT "[orb error] target '%s': unknown tool_dep '%s'\n",
-                        t->name, t->tool_deps[ j ] ),
-                ok = false;
-        }
-
-        // All mono_deps exist + prevent monolithic (static) targets from depending on oneself.
-        for ( int j = 0; j < TARGET_MAX_SLOTS && t->mono_deps[ j ]; ++j )
-        {
-            if ( strcmp( t->mono_deps[ j ], t->name ) == 0 )
-                printf( ORB_INDENT "[orb error] target '%s': mono_dep references itself\n", t->name ),
-                ok = false;
-            else if ( !find_target( t->mono_deps[ j ] ) )
-                printf( ORB_INDENT "[orb error] target '%s': unknown mono_dep '%s'\n",
-                        t->name, t->mono_deps[ j ] ),
-                ok = false;
-        }
+        // Every dep slot array: names resolve, nothing references its own target.
+        if ( !validate_dep_array( t, t->deps,      "dep",      true  ) ) ok = false;
+        if ( !validate_dep_array( t, t->tool_deps, "tool_dep", false ) ) ok = false;
+        if ( !validate_dep_array( t, t->mono_deps, "mono_dep", false ) ) ok = false;
     }
 
     // Unresolved solution-to-target references and missing out_dir.
