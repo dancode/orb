@@ -158,6 +158,7 @@ icon_record( const char* name, u32 w, u32 h, u32 tenant, bool sdf )
 
     icon_entry_t* e = &s_icons.entries[ s_icons.count ]; 
     memset( e, 0, sizeof( *e ) );
+
     e->name_off = gui_names_intern( name );
     e->w      = (u16)w;
     e->h      = (u16)h;
