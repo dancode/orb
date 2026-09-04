@@ -5,7 +5,7 @@
 
     Provides all platform_cc_* and platform_lk_* functions for GCC and Clang.
     The Win32 counterpart is build_tool_win_toolchain.c; both files expose
-    identical symbols so 06_compile.c and 07_link.c branch on none of them.
+    identical symbols so 07_compile.c and 08_link.c branch on none of them.
 
     Compiler functions:
         platform_cc_exe()               -- compiler executable name
@@ -30,9 +30,9 @@
         MSVC /Fo<dir>/ directs all .obj files from a single cl.exe invocation into
         a directory, allowing multiple sources per cl.exe call. GCC / Clang require
         a per-file -o <dir>/<stem>.o flag -- there is no directory-target equivalent.
-        platform_cc_output_flags() is therefore a no-op here. When 06_compile.c gains
-        a per-unit compilation loop for POSIX, it will build the -o flag itself.
-        Until then, GCC outputs .o files into the current working directory.
+        platform_cc_output_flags() therefore builds that flag from the unit path, and
+        platform_cc_per_unit() returns true so 07_compile.c drives one compiler call
+        per source file.
 
     Dependency tracking (platform_cc_dep_flag):
         Both toolchains write per-unit dependency files that are collected after the
@@ -112,7 +112,7 @@ platform_cc_append_define( const char* name, char* buf, size_t size )
 
     GCC/Clang require a per-file -o <dir>/<stem>.o flag.
     unit_path is used to extract the filename stem (e.g. "core.c" -> "core.o").
-    Called once per source file from the per-unit compile loop in 06_compile.c.
+    Called once per source file from the per-unit compile loop in 07_compile.c.
 ==============================================================================================*/
 
 static void
@@ -137,7 +137,7 @@ platform_cc_output_flags( const char* obj_dir, const char* unit_path, char* buf,
     --- Compiler: Batch Compilation Flag ---
 
     POSIX: GCC/Clang require a separate -o <dir>/<stem>.o per source file --
-    platform_cc_per_unit returns true so 06_compile.c runs the per-unit loop.
+    platform_cc_per_unit returns true so 07_compile.c runs the per-unit loop.
     Win32: cl.exe accepts all sources in one invocation via /Fo<dir>/.
 ==============================================================================================*/
 

@@ -19,14 +19,14 @@
       6.5 Resource manifest     -- invoke res_tool over the image's unit closure (every exe
                                    and dynamic module); writes <name>_res_manifest.txt, then
                                    the content cook runs again over the fresh manifest.
-      7. Compile + link         -- call 06_compile and 07_link; restore .exe on failure. A
+      7. Compile + link         -- call 07_compile and 08_link; restore .exe on failure. A
                                    target with has_win_resources compiles its .rc first and
                                    links the .res in (Windows only).
       8. Config+mode stamp      -- touch _<config>_<mode>.stamp; delete the other 3 combos.
 
     Concurrency:
       From step 1 onward a per-target named mutex is held so two build_tool.exe
-      invocations (or two parallel workers from 09_sched) targeting the same name
+      invocations (or two parallel workers from 10_sched) targeting the same name
       serialize here. Independent targets run fully in parallel.
 
       skip_deps=true (set by the scheduler and VS -no-deps invocations) skips

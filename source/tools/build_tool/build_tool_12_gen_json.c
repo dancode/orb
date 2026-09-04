@@ -19,8 +19,8 @@
         (e.g. #include "engine/sys/sys_api.c" from source/engine/sys/sys.c).
       - One for the reflection-generated .c (if target->has_reflect).
 
-    The compile command reuses the same flag/define/include tables as 06_compile.c
-    and 11_gen.c, so the database always matches actual build behavior.  Debug
+    The compile command reuses the same flag/define/include tables as 07_compile.c
+    and 12_gen_nmake.c, so the database always matches actual build behavior.  Debug
     config is always used (most useful for development IntelliSense).  The output
     flags (/Fo /Fd) are omitted -- cc->output is empty in this context.
 

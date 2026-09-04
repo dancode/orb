@@ -6,7 +6,7 @@
     lib.exe is used for static libraries; link.exe handles both DLLs and executables.
 
     One public entry point:
-      build_target_link() -- called from build_target() in 08_exec.c.
+      build_target_link() -- called from build_target() in 09_exec.c.
 
     PDB rotation:
       Each link produces a uniquely-timestamped bin/<name>_<ts>.pdb so the linker

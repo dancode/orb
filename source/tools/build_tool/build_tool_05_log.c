@@ -4,7 +4,7 @@
 
     Stateless print helpers: everything in this file produces human-readable
     output without touching any build state. Separating these from the command-
-    building logic in 06_compile and 07_link keeps those files focused on
+    building logic in 07_compile and 08_link keeps those files focused on
     assembling correct commands; this file focuses on making them readable.
 
     Contents:
@@ -14,8 +14,8 @@
       - Token printers: print_tokens, print_section, print_compile_output.
       - Command echo  : print_raw_cmd -- wrapped display of assembled command lines.
 
-    compile_cmd_t sections are printed by cc_print in 06_compile.c.
-    link_cmd_t sections are printed by lk_print in 07_link.c.
+    compile_cmd_t sections are printed by cc_print in 07_compile.c.
+    link_cmd_t sections are printed by lk_print in 08_link.c.
     Both live with their respective struct types to avoid a forward-declaration
     dependency here.
 

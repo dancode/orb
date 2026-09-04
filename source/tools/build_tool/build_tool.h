@@ -4,7 +4,8 @@
 
     This header defines the "schema" for the entire build system. It separates the
     logic of *how* to build (build_tool.c and friends) from the data of *what* to
-    build (build_tool_targets.c).
+    build (the target pools in build_tool_02_data.c, extended by orb.targets files
+    parsed in build_tool_03_registry.c).
 
     Architectural Goals:
     - High Performance: Minimal filesystem overhead, direct tool invocation,
@@ -20,12 +21,12 @@
 
     Unity build:
     - build_tool.exe is itself a unity build. build_tool.c #includes every other
-      .c file in execution order (platform layer -> 01_prim -> 02_data ->
+      .c file in execution order (00_str -> platform layer -> 01_prim -> 02_data ->
       03_registry -> 04_env -> 05_log -> 06_spawn -> 07_compile -> 08_link ->
       09_exec -> 10_sched -> 11_clean -> 12_gen_manifest -> 12_gen_nmake ->
-      12_gen_json -> 12_gen_vscode -> 12_gen_msbuild -> test -> 00_util).
-      All "static" functions are visible across the whole tool while still
-      compiling in a single cl.exe invocation.
+      12_gen_json -> 12_gen_vscode -> 12_gen_msbuild -> 13_create -> 13_query ->
+      13_doctor -> test -> 00_util). All "static" functions are visible across the
+      whole tool while still compiling in a single cl.exe invocation.
 
     Build Output Format:
     +-------------------------+------------------------------+
@@ -398,7 +399,7 @@ typedef enum
 /*  Represents a single buildable unit in the ORB ecosystem. 
     It contains all metadata required to compile and link the target. 
     
-    Targets are pooled in g_targets[] (see build_tool_targets.c).
+    Targets are pooled in g_targets[] (see build_tool_02_data.c).
     Shared across every IDE solution that references them by name. */
 
 typedef struct target_info_s
@@ -652,7 +653,7 @@ extern int             g_solution_count;
     --- Compiler Command Type ---
 
     Holds each logical fragment of the final compiler command line.
-    Assembled section-by-section by cc_fill_compile_cmd() in 06_compile.c;
+    Assembled section-by-section by cc_fill_compile_cmd() in 07_compile.c;
     printed selectively by cc_print(); joined for execution by cc_assemble().
 ==============================================================================================*/
 
@@ -671,7 +672,7 @@ typedef struct
     --- Linker Command Type ---
 
     Holds each logical fragment of the final linker / archiver command line.
-    Filled by build_target_link() in 07_link.c via the platform_lk_* helpers.
+    Filled by build_target_link() in 08_link.c via the platform_lk_* helpers.
     lib.exe leaves pdb empty; link.exe fills all fields.
 ==============================================================================================*/
 

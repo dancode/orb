@@ -7,15 +7,16 @@
     logical group (flags, defines, includes, sources, output) can be printed
     independently under g_out_flags control before being joined for execution.
 
-    Three public entry points, all called from 08_exec.c or main():
+    Three public entry points, all called from 09_exec.c or main():
       build_target_compile()        -- full unity compile; /showIncludes + _includes.txt.
       build_target_compile_single() -- single-file compile for -file flag; no tracking.
       build_target_compile_only()   -- all units, no link step; for -compile-only flag.
 
     Define source of truth:
       Preprocessor defines are driven from the shared tables in 02_data.c
-      (g_defines_always, g_defines_debug, g_defines_release). 11_gen.c reads
-      the same tables for IntelliSense vcxproj emission -- no manual lockstep.
+      (g_defines_always, g_defines_debug, g_defines_release). 12_gen_nmake.c and
+      12_gen_msbuild.c read the same tables for IntelliSense vcxproj emission --
+      no manual lockstep.
 
 ==============================================================================================*/
 // clang-format off
@@ -210,7 +211,7 @@ cc_fill_compile_cmd( build_context_t* ctx, target_info_t* target,
     }
 
     // defines: consumed from shared tables in 02_data.c so the IntelliSense
-    // output in 11_gen.c is guaranteed to match. Per-target _STATIC chain
+    // output in the 12_gen_* modules is guaranteed to match. Per-target _STATIC chain
     // is procedural -- it depends on runtime target state.
     for ( int i = 0; g_defines_always[ i ]; ++i )
         platform_cc_append_define( g_defines_always[ i ], cc->defines, sizeof( cc->defines ) );
