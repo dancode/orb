@@ -20,7 +20,7 @@
       - One for the reflection-generated .c (if target->has_reflect).
 
     The compile command reuses the same flag/define/include tables as 07_compile.c
-    and 12_gen_nmake.c, so the database always matches actual build behavior.  Debug
+    and 12_gen_vs.c, so the database always matches actual build behavior.  Debug
     config is always used (most useful for development IntelliSense).  The output
     flags (/Fo /Fd) are omitted -- cc->output is empty in this context.
 

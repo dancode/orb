@@ -238,9 +238,9 @@ int g_warn_suppression_count = sizeof( g_warn_suppressions ) / sizeof( g_warn_su
     --- Compile Define Tables ---
 
     Single source of truth for preprocessor defines. Both 07_compile.c
-    (cl.exe invocation) and 12_gen_nmake.c / 12_gen_msbuild.c (IntelliSense
-    vcxproj emission) iterate these arrays so the consumers can never silently
-    diverge.
+    (cl.exe invocation) and 12_gen_vs.c (build_intellisense_defines, feeding
+    IntelliSense in every vcxproj format) iterate these arrays so the consumers
+    can never silently diverge.
 ==============================================================================================*/
 
 const char* g_defines_always[] = {

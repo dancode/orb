@@ -38,10 +38,12 @@
         11_clean.c        -- -clean command: per-target or global artifact wipe;
                              third-party runtime deploy into bin/
         12_gen_manifest.c -- resolved generation intent shared by all generators
-        12_gen_nmake.c    -- -gen command: NMake-style .sln/.vcxproj (build_tool owns build)
+        12_gen_vs.c       -- Visual Studio infrastructure both project formats share:
+                             scan, GUIDs, IntelliSense values, nav project, .sln writer
+        12_gen_nmake.c    -- -gen command: Makefile-type .vcxproj (build_tool owns build)
+        12_gen_msbuild.c  -- -gen_ms command: native MSBuild projects (full EDG IntelliSense)
         12_gen_json.c     -- -gen command: compile_commands.json (clangd / LSP tools)
         12_gen_vscode.c   -- -gen command: .vscode/tasks.json (VS Code build tasks)
-        12_gen_msbuild.c  -- -gen_ms command: native MSBuild projects (full EDG IntelliSense)
         13_create.c       -- -create command: scaffold a module or a child game project
         13_query.c        -- -help/-list/-graph commands (read-only; no compiler chain)
         13_doctor.c       -- -doctor command: read-only build-setup diagnosis
@@ -113,11 +115,11 @@ static const char* g_gen_dir        = "generated";  // sub-folder: reflection-ge
     returns it, so a result can be passed straight to ensure_dir() or used as a snprintf
     argument.
 
-    These cover the paths this tool creates and opens. The generators (12_gen_nmake.c,
-    12_gen_msbuild.c, 12_gen_json.c) join the same directories themselves: what they emit is
-    project-file text carrying a $(ProjectDir) + root_prefix head, XML backslashes or JSON
-    forward slashes, and for IntDir a trailing $(ProjectName)\$(Configuration). A layout
-    change here must be mirrored there by hand.
+    These cover the paths this tool creates and opens. The generators (12_gen_vs.c,
+    12_gen_nmake.c, 12_gen_msbuild.c, 12_gen_json.c) join the same directories themselves:
+    what they emit is project-file text carrying a $(ProjectDir) + root_prefix head, XML
+    backslashes or JSON forward slashes, and for IntDir a trailing
+    $(ProjectName)\$(Configuration). A layout change here must be mirrored there by hand.
 ==============================================================================================*/
 
 static const char*
@@ -272,10 +274,11 @@ static bool validate_targets( void );
 #include "build_tool_10_sched.c"            // 10 parallel scheduler
 #include "build_tool_11_clean.c"            // 11 -clean command
 #include "build_tool_12_gen_manifest.c"     // 12   gen manifest (resolved intent; built before all generators)
-#include "build_tool_12_gen_nmake.c"        // 12a -gen command (NMake/Makefile projects)
-#include "build_tool_12_gen_json.c"         // 12b -gen command (compile_commands.json)
-#include "build_tool_12_gen_vscode.c"       // 12c -gen command (.vscode/tasks.json)
-#include "build_tool_12_gen_msbuild.c"      // 12d -gen_ms command (MSBuild projects)
+#include "build_tool_12_gen_vs.c"           // 12a  shared VS infrastructure (scan, GUIDs, .sln)
+#include "build_tool_12_gen_nmake.c"        // 12b -gen command (Makefile-type projects)
+#include "build_tool_12_gen_msbuild.c"      // 12c -gen_ms command (native MSBuild projects)
+#include "build_tool_12_gen_json.c"         // 12d -gen command (compile_commands.json)
+#include "build_tool_12_gen_vscode.c"       // 12e -gen command (.vscode/tasks.json)
 #include "build_tool_13_create.c"           // 13  -create command (module scaffolding)
 #include "build_tool_13_query.c"            // 13  -help/-list/-graph (read-only queries)
 #include "build_tool_13_doctor.c"           // 13  -doctor (build-setup diagnosis; uses 13_query's deps_visit)

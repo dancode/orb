@@ -14,9 +14,8 @@
 
     Define source of truth:
       Preprocessor defines are driven from the shared tables in 02_data.c
-      (g_defines_always, g_defines_debug, g_defines_release). 12_gen_nmake.c and
-      12_gen_msbuild.c read the same tables for IntelliSense vcxproj emission --
-      no manual lockstep.
+      (g_defines_always, g_defines_debug, g_defines_release). 12_gen_vs.c reads
+      the same tables for IntelliSense vcxproj emission -- no manual lockstep.
 
 ==============================================================================================*/
 // clang-format off

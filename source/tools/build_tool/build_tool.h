@@ -23,10 +23,11 @@
     - build_tool.exe is itself a unity build. build_tool.c #includes every other
       .c file in execution order (00_str -> platform layer -> 01_prim -> 02_data ->
       03_registry -> 04_env -> 05_log -> 06_spawn -> 07_compile -> 08_link ->
-      09_exec -> 10_sched -> 11_clean -> 12_gen_manifest -> 12_gen_nmake ->
-      12_gen_json -> 12_gen_vscode -> 12_gen_msbuild -> 13_create -> 13_query ->
-      13_doctor -> test -> 00_util). All "static" functions are visible across the
-      whole tool while still compiling in a single cl.exe invocation.
+      09_exec -> 10_sched -> 11_clean -> 12_gen_manifest -> 12_gen_vs ->
+      12_gen_nmake -> 12_gen_msbuild -> 12_gen_json -> 12_gen_vscode ->
+      13_create -> 13_query -> 13_doctor -> test -> 00_util). All "static" functions
+      are visible across the whole tool while still compiling in a single cl.exe
+      invocation.
 
     Build Output Format:
     +-------------------------+------------------------------+

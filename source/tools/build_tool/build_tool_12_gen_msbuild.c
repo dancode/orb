@@ -13,9 +13,11 @@
     Build model: VS presses Build -> MSBuild -> cl.exe directly 
     (no build_tool.exe involved). CLI builds still use build_tool.exe -config.
 
-    Shares all infrastructure from build_tool_12_gen_nmake.c (included first in unity build):
-      guid_from_name(), scan_directory_recursive(), build_intellisense_defines(),
-      s_ctx.out_dir / s_ctx.root_prefix / s_ctx.cd_root state, g_files[], g_filters[].
+    Everything not specific to the project format -- guid_from_name(),
+    scan_directory_recursive(), build_intellisense_defines(), the s_ctx per-solution
+    state, g_files[], g_filters[], the .filters writer and the .sln writer -- comes from
+    build_tool_12_gen_vs.c, included earlier in the unity build and shared with the
+    Makefile-type generator in build_tool_12_gen_nmake.c.
 
 ==============================================================================================*/
 
@@ -423,7 +425,7 @@ build_gen_proj_target_msbuild( target_info_t* target )
     build_gen_projects() but generates MSBuild StaticLibrary/DLL/Application projects
     instead of NMake/Makefile projects. Output lands in <sln.out_dir>_ms.
 
-    build_gen_solution() from build_tool_12_gen_nmake.c is reused as-is -- the .sln format is
+    build_gen_solution() from build_tool_12_gen_vs.c is reused as-is -- the .sln format is
     identical regardless of project type, and it reads s_ctx.out_dir (already updated by
     compute_path_parts) rather than sln->out_dir directly.
 

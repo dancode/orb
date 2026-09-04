@@ -196,7 +196,7 @@ path_abs( char* out, const char* in, size_t size )
     JSON would otherwise need every separator double-escaped. Paths coming back from
     platform_fullpath on Windows are backslashed, so this normalizes at the boundary.
 
-    There is no in-place inverse here: normalize_slashes() in build_tool_12_gen_nmake.c
+    There is no in-place inverse here: normalize_slashes() in build_tool_12_gen_vs.c
     goes the other way for NMake recipe text and has no second caller to share with. */
 
 void
