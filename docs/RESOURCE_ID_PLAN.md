@@ -257,7 +257,7 @@ piece.
                       format opens with, and the string-table writer / validator / iterator /
                       whole-file locator the cookers and the packager share (header-only)
       res_cook.h   -- source extension -> cooked extension        (header-only, tools)
-    source/tools/res_tool/res_tool.c   -- scanner + resolver + manifest writer (builtin target)
+    source/tools/res_tool/res_tool.c   -- scanner + resolver + manifest writer (orb.targets: is_res_tool)
     build/obj/<target>/<target>_res_manifest.txt, _res_units.txt, _res_deps.txt
     build/content/<name>.<cooked ext>   -- the cooked mirror build_cook_content writes from the
                                            manifest (build_tool_09_exec.c); mounted above content/
@@ -312,8 +312,9 @@ Phases 0-4 -- catalogue, harvester, resolution, format sections, asset on rid   
    - res.h: RID() / RES_TREE() as literal-only markers; res_canon_char and res_name_ok as
      the definition of canonical form; res_hash_name (FNV-1a 32, zero remapped to 1, no
      fold); res_path.  RES_NAME_MAX 255.
-   - res_tool (source/tools/res_tool/res_tool.c): a BUILTIN target like reflect_tool, so a
-     child project that only imports the engine resolves it.  Standalone C11 over stdio.
+   - res_tool (source/tools/res_tool/res_tool.c): an orb.targets entry carrying is_res_tool,
+     like asset_tool; a child project resolves it through the 'engine' import.  Standalone
+     C11 over stdio.
      Follows #include "..." from every unit in the image's link closure (including-file dir
      first, then each -inc root, in compiler order); a comment- and string-aware lexer finds
      RID / RES_TREE tokens, concatenates adjacent literals, decodes escapes; a non-literal
@@ -328,15 +329,20 @@ Phases 0-4 -- catalogue, harvester, resolution, format sections, asset on rid   
      errors reported per site with file:line in one run; no manifest written on error.
      Output: the manifest (decision 10).  -deps: every directory listed, '!' prefix for a
      root that did not exist.
-   - build_tool: build_gen_res_manifest (build_tool_09_exec.c, step 6.5, inside the rebuild
-     path) writes obj/<t>/_res_units.txt from the link closure (NOT mono_deps) and runs
-     res_tool with -root <cwd>/content [-root <engine>/content] -inc source [-inc
-     <engine>/source].  target_wants_res_manifest: every exe and dynamic lib except the three
-     builtin tools.  Implicit tool dep on the serial path and in the scheduler; a
-     PreBuildEvent in the MSBuild projects via `-res-manifest` (so a VS build still proves
-     every name resolves); ProjectDependencies on res_tool in the NMake solutions; -graph /
-     -list / -doctor awareness.  Up-to-date test E replays _res_deps.txt (equal timestamps
-     count as stale; a newer res_tool.exe is stale).  No generated .c anywhere.
+   - build_tool: build_gen_res_manifest (build_tool_09_content.c; step 6.5 of build_target
+     on the rebuild path, and content_stale/content_refresh on the up-to-date path) writes
+     obj/<t>/_res_units.txt from the link closure (NOT mono_deps) and runs res_tool with
+     -root <cwd>/content [-root <engine>/content] -inc source [-inc <engine>/source].
+     target_wants_res_manifest: every static lib, dynamic lib and exe except build_tool,
+     reflect_tool and res_tool itself (a lib's manifest scopes `-target <lib> -content`).
+     Implicit tool dep on the serial path and in the scheduler; a PreBuildEvent in the
+     MSBuild projects via `-res-manifest` (so a VS build still proves every name resolves);
+     ProjectDependencies on res_tool in the NMake solutions; -graph / -list / -doctor
+     awareness.  content_stale replays _res_deps.txt against the MANIFEST's mtime (equal
+     timestamps count as stale; a newer res_tool.exe is stale), and a stale manifest is
+     re-harvested without recompiling: content is never a compiler input.  The cook
+     (asset_tool over the manifest's shaders and recipes) runs only with -content.  No
+     generated .c anywhere.
    - Cooked formats (Phase 3, re-cut in Phase 6): one shared contract, engine/res/res_ref.h --
      a reference section immediately after the fixed header, before the payload; every
      reader rejects the head before any size arithmetic.  Phase 3 laid it down as a

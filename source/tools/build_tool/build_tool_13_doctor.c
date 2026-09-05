@@ -807,7 +807,7 @@ doctor_check_filesystem( void )
         }
     }
 
-    /* Resource manifests: every executable and every dynamic module needs res_tool. */
+    /* Resource manifests: every compiled target harvests one with res_tool. */
     int res_targets = 0;
     for ( int i = 0; i < g_target_count; ++i )
         if ( !g_targets[ i ].is_external && target_wants_res_manifest( &g_targets[ i ] ) ) ++res_targets;
@@ -818,9 +818,16 @@ doctor_check_filesystem( void )
         else
         {
             doc_fail( "%d target(s) carry a resource manifest but no res_tool is registered", res_targets );
-            doc_fix( "built-ins register it automatically -- check for 'is_res_tool' flag misuse" );
+            doc_fix( "declare it in orb.targets with 'flag is_tool is_res_tool' (the engine's has one;"
+                     " a child project inherits it through 'engine')" );
         }
     }
+
+    /* Content cook: opt-in, so a missing cooker is only worth a note. */
+    if ( find_asset_tool() )
+        doc_ok( "asset_tool registered (content cooks with -content)" );
+    else
+        doc_warn( "no asset_tool registered -- -content has nothing to cook with" );
 }
 
 /*==============================================================================================

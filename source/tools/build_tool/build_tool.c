@@ -33,6 +33,7 @@
         06_spawn.c        -- child process spawning, output line capture
         07_compile.c      -- cl.exe command assembly and execution
         08_link.c         -- link.exe / lib.exe command assembly and execution
+        09_content.c      -- resource manifest harvest (always) + content cook (-content)
         09_exec.c         -- build_target() orchestration
         10_sched.c        -- topological worker-pool parallel scheduler
         11_clean.c        -- -clean command: per-target or global artifact wipe;
@@ -194,29 +195,16 @@ static bool        g_include_track  = true;         // Use up-to-date tracking v
 static bool        g_use_rsp        = true;         // Use overflow prevention.
 static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 + stdc11 (for nmake).
                                                     // (suppress designated-initializer squiggles)
-static bool        g_content_strict = false;        // Content pipeline failures abort the target.
+static bool        g_cook           = false;        // -content: cook the manifests' shaders and
+                                                    // recipes into build/content. Off by default;
+                                                    // the manifest harvest itself always runs.
+static bool        g_content_strict = false;        // -strict-content: a harvest or cook failure
+                                                    // fails the target instead of warning.
 static int         g_job_threads    = 1;            // Effective scheduler worker count. Divides
                                                     // the /MP share so N workers each running M
                                                     // child compilers stay near the core count.
                                                     // Stays 1 on the serial -no-deps path.
 int                g_vs_major_version = 0;          // 0 = auto-detect; set by -vs-version <year>.
-
-/*==============================================================================================
-    --- Content Pipeline Strictness ---
-
-    The content pipeline is res_tool (the resource manifest) plus asset_tool and the cookers
-    it forwards to (shader_tool, font_tool). Everything they produce is a RUNTIME input --
-    obj/<t>/<t>_res_manifest.txt and the cooked mirror under build/content -- and no compiler
-    ever reads any of it. So by default a failure anywhere in that pipeline is a warning:
-    the target still compiles and links, and an image with a broken RID or an uncookable
-    shader is a runnable binary that will fault on that one resource at load time.
-
-    -strict-content puts the whole pipeline back in the hard-failure set: use it for CI and
-    for ship builds, where a name that does not resolve must stop the build.
-
-    reflect_tool is deliberately NOT part of this. Its .generated.c/.h are compiled into the
-    target, so its failure is a compile failure and stays fatal in both modes.
-==============================================================================================*/
 
 /*==============================================================================================
     --- ANSI Color Strings ---
@@ -270,7 +258,8 @@ static bool validate_targets( void );
 #include "build_tool_06_spawn.c"            // 06 child process spawning
 #include "build_tool_07_compile.c"          // 07 compile command
 #include "build_tool_08_link.c"             // 08 link command
-#include "build_tool_09_exec.c"             // 09 build_target orchestration
+#include "build_tool_09_content.c"          // 09a resource manifest harvest + content cook
+#include "build_tool_09_exec.c"             // 09b build_target orchestration
 #include "build_tool_10_sched.c"            // 10 parallel scheduler
 #include "build_tool_11_clean.c"            // 11 -clean command
 #include "build_tool_12_gen_manifest.c"     // 12   gen manifest (resolved intent; built before all generators)
@@ -416,6 +405,7 @@ main( int argc, char** argv )
         if ( str_icmp( argv[ i ], "-clang"            ) == 0 ) { ctx.compiler = COMPILE_CLANG; }
         if ( str_icmp( argv[ i ], "-compile-only"     ) == 0 ) { ctx.compile_only = true; }
         if ( str_icmp( argv[ i ], "-res-manifest"     ) == 0 ) { should_res_manifest = true; }
+        if ( str_icmp( argv[ i ], "-content"          ) == 0 ) { g_cook = true; }
         if ( str_icmp( argv[ i ], "-force"            ) == 0 ) { ctx.force_rebuild = true; }
         if ( str_icmp( argv[ i ], "-no-deps"          ) == 0 ) { ctx.skip_deps = true; }
         
@@ -673,49 +663,10 @@ main( int argc, char** argv )
         }
     }
 
-    // --- Command: RES-MANIFEST (MSBuild pre-build event) ---
-    //
-    // Generates the target's resource manifest only, building res_tool first if needed. The
-    // native MSBuild projects build without build_target, so this is how their pre-build
-    // event still resolves every marked name and writes obj/<target>/<target>_res_manifest.txt.
-    //
-    // Exits 0 on a pipeline failure unless -strict-content: a nonzero exit from a pre-build
-    // event stops the MSBuild project, which is exactly what the default must not do.
+    // --- Command: RES-MANIFEST (MSBuild pre-build event; see 09_content.c) ---
 
     if ( should_res_manifest )
-    {
-        if ( !target ) { printf( ORB_INDENT "[orb error] -res-manifest requires -target\n" ); return 1; }
-        if ( !target_wants_res_manifest( target ) )
-        {
-            printf( ORB_INDENT "[orb error] '%s' carries no resource manifest (not an executable or a dynamic module)\n",
-                    target->name );
-            return 1;
-        }
-        target_info_t* res_tool = find_res_tool();
-        if ( !res_tool )
-        {
-            printf( ORB_INDENT "[orb %s] no res_tool is registered\n", content_severity() );
-            return g_content_strict ? 1 : 0;
-        }
-        if ( !build_target( &ctx, res_tool, NULL, NULL ) )
-        {
-            printf( ORB_INDENT "[orb %s] '%s' resource manifest skipped -- res_tool did not build\n",
-                    content_severity(), target->name );
-            return g_content_strict ? 1 : 0;
-        }
-
-        char obj_dir[ PATH_MAX ];
-        path_obj_dir( target, obj_dir, sizeof( obj_dir ) );
-        ensure_dir( g_build_dir );
-        ensure_dir( obj_dir );
-        if ( !build_gen_res_manifest( target, obj_dir, res_tool ) && g_content_strict )
-        {
-            printf( ORB_BANNER "%s[ %s: FAILED ]%s\n", g_clr_red, target_upper, g_clr_reset );
-            return 1;
-        }
-        printf( "\n" );
-        return 0;
-    }
+        return cmd_res_manifest( &ctx, target, target_upper );
 
     // --- Command: COMPILE-ONLY (VS Ctrl+F7) ---
     //

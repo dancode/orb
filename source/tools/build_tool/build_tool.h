@@ -23,7 +23,7 @@
     - build_tool.exe is itself a unity build. build_tool.c #includes every other
       .c file in execution order (00_str -> platform layer -> 01_prim -> 02_data ->
       03_registry -> 04_env -> 05_log -> 06_spawn -> 07_compile -> 08_link ->
-      09_exec -> 10_sched -> 11_clean -> 12_gen_manifest -> 12_gen_vs ->
+      09_content -> 09_exec -> 10_sched -> 11_clean -> 12_gen_manifest -> 12_gen_vs ->
       12_gen_nmake -> 12_gen_msbuild -> 12_gen_json -> 12_gen_vscode ->
       13_create -> 13_query -> 13_doctor -> test -> 00_util). All "static" functions
       are visible across the whole tool while still compiling in a single cl.exe
@@ -467,17 +467,17 @@ typedef struct target_info_s
 
     bool            is_reflect_tool;
 
-    /*  If true, this is the resource-reference harvester (res_tool). Every image -- each
-        executable and each dynamic module, the three builtin tools excepted -- gets its
+    /*  If true, this is the resource-reference harvester (res_tool). Every static lib,
+        dynamic module and executable -- the build tools themselves excepted -- gets its
         <name>_res_manifest.txt from whichever target carries this flag; see
         target_wants_res_manifest() in build_tool_02_data.c. */
 
     bool            is_res_tool;
 
-    /*  If true, this is the content cooker (asset_tool). build_cook_content() locates and
-        builds whichever target carries this flag the moment it finds a manifest entry that
-        needs cooking (a shader or a font recipe) -- no target that merely names such an
-        entry has to declare a tool_dep on it. */
+    /*  If true, this is the content cooker (asset_tool). Under -content, build_cook_content()
+        locates and builds whichever target carries this flag the moment it finds a manifest
+        entry that needs cooking (a shader or a font recipe) -- no target that merely names
+        such an entry has to declare a tool_dep on it. */
 
     bool            is_asset_tool;
 
@@ -713,16 +713,16 @@ bool build_target_compile_single( build_context_t* ctx, target_info_t* target,
 
 bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
 
-/*  Cooks every name in the target's resource manifest that needs a cooked form (a
-    stage-tagged .hlsl -> .oshd, a .recipe -> the file its kind line names) into the
-    cooked mirror <build>/content/<name>.<ext>, skipping any already newer than its
-    source and cookers. Reads the manifest at <obj_dir>; a missing manifest is not an
-    error (the first build cooks after res_tool writes one). Runs ahead of the
-    artifact's up-to-date check and again after the manifest is regenerated: a cooked
-    file is an input to the RUNTIME, not to the compiler, so editing a shader must
-    re-cook without also forcing a recompile of C code that did not change. The first
-    entry that needs cooking builds whichever target carries is_asset_tool -- no target
-    that merely names a shader or recipe has to declare a tool_dep on it. */
+/*  Under -content only (a no-op otherwise): cooks every name in the target's resource
+    manifest that needs a cooked form (a stage-tagged .hlsl -> .oshd, a .recipe -> the file
+    its kind line names) into the cooked mirror <build>/content/<name>.<ext>, skipping any
+    already newer than its source and cookers. Reads the manifest at <obj_dir>; a missing
+    manifest is not an error (the first build cooks after res_tool writes one). Runs ahead
+    of the artifact's up-to-date check and again after the manifest is regenerated: a cooked
+    file is an input to the RUNTIME, not to the compiler, so editing a shader must re-cook
+    without also forcing a recompile of C code that did not change. The first entry that
+    needs cooking builds whichever target carries is_asset_tool -- no target that merely
+    names a shader or recipe has to declare a tool_dep on it. */
 
 bool build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj_dir );
 
@@ -735,16 +735,17 @@ bool build_cook_content( build_context_t* ctx, target_info_t* target, const char
 
 bool build_gen_reflect( target_info_t* target, const char* gen_dir, const target_info_t* refl_tool );
 
-/*  Harvests the resource names (RID / RES_TREE tokens) the target's image references
-    into <obj_dir>/<name>_res_manifest.txt, each resolved against the content roots (this
+/*  Harvests the resource names (RID / RES_TREE tokens) the target's code references into
+    <obj_dir>/<name>_res_manifest.txt, each resolved against the content roots (this
     project's content/, then the engine's for a child project). Nothing is compiled from
-    it: the manifest is the packager's input and the build's proof that every marked name
-    has a file. The scan covers the target's own units plus those of every dependency it
-    links statically, so an executable's manifest is the complete name set of the program.
-    Also writes <obj_dir>/_res_deps.txt, the content directories the manifest depends on,
-    for the up-to-date check. res_tool must already be built (the caller resolves and
-    builds it). Fails the build on a malformed or non-canonical name, a name with no file,
-    a misspelled content file, or a rid collision, naming the site. */
+    it: an image's manifest is the packager's input, a lib's scopes a -content cook to that
+    target, and every manifest is the build's proof that each marked name has a file. The
+    scan covers the target's own units plus those of every dependency it links statically,
+    so an executable's manifest is the complete name set of the program. Also writes
+    <obj_dir>/_res_deps.txt, the content directories the manifest depends on, for
+    content_stale(). res_tool must already be built (the caller resolves and builds it).
+    Reports a malformed or non-canonical name, a name with no file, a misspelled content
+    file, or a rid collision, naming the site; fatal under -strict-content. */
 
 bool build_gen_res_manifest( target_info_t* target, const char* obj_dir, const target_info_t* res_tool );
 
@@ -847,8 +848,10 @@ int build_run_cmd_capture( const char* cmd, const char* includes_path );
 /*  The core worker function. Handles recursive dependency resolution
     (unless ctx->skip_deps), per-target locking, the incremental-build
     timestamp check (artifact mtime vs. each unit, link dep, and recorded
-    header), reflection codegen, then compile + link. Idempotent: a fully
-    up-to-date target short-circuits before any cl.exe spawn.
+    header), reflection codegen, the resource manifest (and content cook under
+    -content), then compile + link. Idempotent: a fully up-to-date target
+    short-circuits before any cl.exe spawn; a stale manifest is refreshed on
+    that path without compiling.
     out_skipped may be NULL; when non-NULL it is set to true if the target was
     skipped because all artifacts were already up to date, false otherwise. */
 

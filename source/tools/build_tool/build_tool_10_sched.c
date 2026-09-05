@@ -127,6 +127,34 @@ find_job( const char* name )
     return -1;
 }
 
+static int add_job( target_info_t* t );
+
+// Registers `tool` as a job and appends its index to t's dep table unless already there.
+// A NULL tool (none registered) is not an error here: the build step that needs it reports
+// that itself. Returns false when the dep table is full -- a dropped edge would race.
+static bool
+add_implicit_dep( const target_info_t* t, const char* what, target_info_t* tool,
+                  int dep_indices[], int* dep_count )
+{
+    if ( !tool )
+        return true;
+    int di = add_job( tool );
+    if ( di < 0 )
+        return true;    // overflow already reported by the nested add_job
+    for ( int d = 0; d < *dep_count; ++d )
+        if ( dep_indices[ d ] == di )
+            return true;
+    if ( *dep_count >= MAX_LOCAL_DEPS )
+    {
+        printf( ORB_INDENT "[orb error] '%s' dep table full (MAX_LOCAL_DEPS=%d);"
+                " %s dep cannot be registered -- raise MAX_LOCAL_DEPS\n",
+                t->name, MAX_LOCAL_DEPS, what );
+        return false;
+    }
+    dep_indices[ ( *dep_count )++ ] = di;
+    return true;
+}
+
 // Idempotently registers a target as a job, recursing through its link and
 // tool dependencies first so the dep set is closed under reachability.
 // After children are registered, wire reverse-dep edges so each completed dep
@@ -218,83 +246,30 @@ add_job( target_info_t* t )
         return -1;
     }
 
-    // Implicit reflect tool dep -- deduplicated to avoid inflating remaining_deps.
-    if ( t->has_reflect && dep_count >= MAX_LOCAL_DEPS )
-    {
-        printf( ORB_INDENT "[orb error] '%s' dep table full (MAX_LOCAL_DEPS=%d);"
-                " reflect tool dep cannot be registered -- raise MAX_LOCAL_DEPS\n",
-                t->name, MAX_LOCAL_DEPS );
-        return -1;
-    }
-    if ( t->has_reflect && dep_count < MAX_LOCAL_DEPS )
-    {
-        target_info_t* rt = find_reflect_tool();
-        if ( rt )
-        {
-            int di = add_job( rt );
-            if ( di >= 0 )
-            {
-                bool dup = false;
-                for ( int d = 0; d < dep_count; ++d ) if ( dep_indices[ d ] == di ) { dup = true; break; }
-                if ( !dup ) dep_indices[ dep_count++ ] = di;
-            }
-        }
-    }
+    // Implicit tool deps: each is deduplicated against the explicit deps above so a target
+    // that also lists the tool by name does not inflate remaining_deps.
 
-    // Implicit res tool dep -- same treatment as the reflect tool above.
+    // Reflect tool: its generated .c is a compile unit of the target.
+    if ( t->has_reflect )
+        if ( !add_implicit_dep( t, "reflect tool", find_reflect_tool(), dep_indices, &dep_count ) )
+            return -1;
+
+    // Res tool: every target carrying a manifest harvests with it.
     if ( target_wants_res_manifest( t ) )
-    {
-        target_info_t* rt = find_res_tool();
-        if ( rt )
-        {
-            if ( dep_count >= MAX_LOCAL_DEPS )
-            {
-                printf( ORB_INDENT "[orb error] '%s' dep table full (MAX_LOCAL_DEPS=%d);"
-                        " res tool dep cannot be registered -- raise MAX_LOCAL_DEPS\n",
-                        t->name, MAX_LOCAL_DEPS );
-                return -1;
-            }
-            int di = add_job( rt );
-            if ( di >= 0 )
-            {
-                bool dup = false;
-                for ( int d = 0; d < dep_count; ++d ) if ( dep_indices[ d ] == di ) { dup = true; break; }
-                if ( !dup ) dep_indices[ dep_count++ ] = di;
-            }
-        }
-    }
+        if ( !add_implicit_dep( t, "res tool", find_res_tool(), dep_indices, &dep_count ) )
+            return -1;
 
-    // Implicit asset tool dep -- same treatment again. build_cook_content() cooks for exactly
-    // the targets that carry a manifest, and it reaches the cooker through its own nested
-    // build_target() call, which the scheduler cannot see. Without this edge that call resolves
-    // asset_tool's whole closure (sys, pack, and via its tool_deps shader_tool and font_tool)
-    // from inside a worker, concurrently with the jobs building those same targets: relinking
-    // bin/sys.lib while a sibling worker links against it fails that worker with LNK1104.
-    // Wiring the edge here makes the cooker ready before any cooking target runs.
-    //
-    // The content tools are excluded: they are the cooker, so an edge into asset_tool would be
-    // a self-dep for asset_tool itself and a cycle for the cookers it lists as tool_deps.
-    if ( target_wants_res_manifest( t ) && !target_is_content_tool( t ) )
-    {
-        target_info_t* at = find_asset_tool();
-        if ( at )
-        {
-            if ( dep_count >= MAX_LOCAL_DEPS )
-            {
-                printf( ORB_INDENT "[orb error] '%s' dep table full (MAX_LOCAL_DEPS=%d);"
-                        " asset tool dep cannot be registered -- raise MAX_LOCAL_DEPS\n",
-                        t->name, MAX_LOCAL_DEPS );
-                return -1;
-            }
-            int di = add_job( at );
-            if ( di >= 0 )
-            {
-                bool dup = false;
-                for ( int d = 0; d < dep_count; ++d ) if ( dep_indices[ d ] == di ) { dup = true; break; }
-                if ( !dup ) dep_indices[ dep_count++ ] = di;
-            }
-        }
-    }
+    // Asset tool, under -content only. build_cook_content() reaches the cooker through its own
+    // nested build_target() call, which the scheduler cannot see. Without this edge that call
+    // resolves asset_tool's whole closure (sys, pack, and via its tool_deps shader_tool and
+    // font_tool) from inside a worker, concurrently with the jobs building those same targets:
+    // relinking bin/sys.lib while a sibling worker links against it fails that worker with
+    // LNK1104. Wiring the edge here makes the cooker ready before any cooking target runs.
+    // cook_active() excludes the content tools themselves: an edge into asset_tool would be a
+    // self-dep for asset_tool and a cycle for the cookers it lists as tool_deps.
+    if ( cook_active( t ) )
+        if ( !add_implicit_dep( t, "asset tool", find_asset_tool(), dep_indices, &dep_count ) )
+            return -1;
 
     // Re-fetch j: nested add_job() calls may have appended to g_sched.jobs[]
     // but the array is fixed-size so &g_sched.jobs[idx] is still valid.

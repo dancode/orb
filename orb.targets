@@ -919,6 +919,14 @@ target font_tool
     inc         third_party/freetype-2.14.3/include
     link_flag   all  third_party/bin/freetype.lib
 
+target res_tool
+
+    type        exe
+    root        source/tools/res_tool
+    folder      08_TOOL
+    unit        res_tool.c
+    flag        is_tool is_res_tool             # harvests every target's resource manifest (RID / RES_TREE -> obj/<t>/<t>_res_manifest.txt)
+
 target asset_tool
 
     type        exe

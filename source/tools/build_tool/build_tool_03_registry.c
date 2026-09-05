@@ -363,7 +363,7 @@ registry_load( const char* path, bool is_external )
     if ( !platform_map_file( path, &mf ) )
     {
         if ( !is_external )
-            printf( ORB_INDENT "[orb warn] '%s' not found -- only built-in targets (build_tool, reflect_tool, res_tool) available.\n", path );
+            printf( ORB_INDENT "[orb warn] '%s' not found -- only built-in targets (build_tool, reflect_tool) available.\n", path );
         return true;
     }
 

@@ -14,7 +14,7 @@
 
         init_builtin_targets()
 
-        --  registers build_tool, reflect_tool and res_tool into g_targets[].
+        --  registers build_tool and reflect_tool into g_targets[].
             If g_engine_root is set, paths and is_external are derived from it;
             otherwise CWD-relative paths are used (engine-root build).
 
@@ -24,17 +24,16 @@
         'engine <path>' directive in orb.targets. Used by init_builtin_targets()
         and the compile/gen modules to auto-add engine header search paths.
 
-    Why build_tool, reflect_tool and res_tool are hard-coded here and not in orb.targets:
+    Why build_tool and reflect_tool are hard-coded here and not in orb.targets:
 
         - build_tool.exe needs to be able to bootstrap itself (-bootstrap flag) even
           if orb.targets is missing or malformed.
         - reflect_tool is an immediate dependency of the bootstrap path (core etc.
           need it), so it must always be resolvable.
-        - res_tool is an implicit dependency of every executable and every dynamic
-          module, including those of a child project that only imports the engine's
-          targets, so it must resolve the same way.
-        - Every other target can be added or edited in orb.targets without touching
-          or recompiling build_tool.c.
+        - Every other target -- the content tools included: res_tool, asset_tool and
+          its cookers are ordinary orb.targets entries carrying is_*_tool flags, and a
+          child project reaches them through the 'engine' import -- can be added or
+          edited in orb.targets without touching or recompiling build_tool.c.
 
 ==============================================================================================*/
 // clang-format off
@@ -93,10 +92,9 @@ pool_str( const char* s )
 /*==============================================================================================
     --- Built-in Target Registration ---
 
-    Registers the three targets that must always be present:
+    Registers the two targets that must always be present:
         build_tool   -- the build orchestrator (this executable).
         reflect_tool -- the reflection code-generator.
-        res_tool     -- the resource-reference harvester.
 
     Called once in main() after registry_load(), so g_engine_root is already set.
 ==============================================================================================*/
@@ -111,18 +109,15 @@ init_builtin_targets( void )
 
     char bt_root[ PATH_MAX ];
     char rt_root[ PATH_MAX ];
-    char rs_root[ PATH_MAX ];
     if ( is_external )
     {
         snprintf( bt_root, sizeof( bt_root ), "%s/source/tools/build_tool",  g_engine_root );
         snprintf( rt_root, sizeof( rt_root ), "%s/source/tools/reflect_tool", g_engine_root );
-        snprintf( rs_root, sizeof( rs_root ), "%s/source/tools/res_tool",     g_engine_root );
     }
     else
     {
         snprintf( bt_root, sizeof( bt_root ), "source/tools/build_tool" );
         snprintf( rt_root, sizeof( rt_root ), "source/tools/reflect_tool" );
-        snprintf( rs_root, sizeof( rs_root ), "source/tools/res_tool" );
     }
 
     // build_tool: the build orchestrator itself.
@@ -174,21 +169,6 @@ init_builtin_targets( void )
         t->units[ 0 ]      = "reflect_tool.c";
         t->is_tool         = true;
         t->is_reflect_tool = true;
-        t->is_external     = is_external;
-    }
-
-    // res_tool: the resource-reference harvester (RID / RES_TREE tokens -> res manifests).
-    {
-        target_info_t* t = &g_targets[ g_target_count++ ];
-        memset( t, 0, sizeof( *t ) );
-        t->name            = "res_tool";
-        t->type            = TARGET_EXECUTABLE;
-        t->has_type        = true;
-        t->root_dir        = pool_str( rs_root );
-        t->virtual_folder  = "08_TOOL";
-        t->units[ 0 ]      = "res_tool.c";
-        t->is_tool         = true;
-        t->is_res_tool     = true;
         t->is_external     = is_external;
     }
 }
@@ -351,12 +331,13 @@ target_reflect_name( const target_info_t* t )
 /*==============================================================================================
     --- Resource Manifest Policy ---
 
-    A resource manifest (<name>_res_manifest.txt, see build_gen_res_manifest) belongs to an
-    IMAGE: every executable and every DLL module gets one, listing the names its own units
-    and its statically linked libraries mark with RID() / RES_TREE(). Static libraries never
-    get a manifest of their own; their names land in whichever image links them. The three
-    builtin tools are excluded: res_tool cannot depend on itself, and build_tool and
-    reflect_tool must build before it exists.
+    Every compiled target -- static lib, DLL module, executable -- gets a resource manifest
+    (<name>_res_manifest.txt, see build_gen_res_manifest) listing the names its own units and
+    its statically linked libraries mark with RID() / RES_TREE(). An image's manifest is the
+    complete name set of that program and the packager's input; a lib's manifest is what
+    scopes `-target <lib> -content` to the content that lib names. Excluded: aliases, which
+    build nothing, and the tools the harvest itself depends on -- res_tool cannot depend on
+    itself, and build_tool and reflect_tool must build before it exists.
 ==============================================================================================*/
 
 static bool
@@ -366,7 +347,7 @@ target_wants_res_manifest( const target_info_t* t )
         return false;
     if ( t->is_build_tool || t->is_reflect_tool || t->is_res_tool )
         return false;
-    return t->type == TARGET_DYNAMIC_LIB || t->type == TARGET_EXECUTABLE;
+    return true;
 }
 
 /*==============================================================================================
