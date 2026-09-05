@@ -4,9 +4,8 @@
 
     sandbox/gui/sb_gui_diablo/ui.h -- the game KIT (S3) over gui's element tier.
 
-    Originally the proving ground for the rect-first API; GUI_STACK_PLAN increment 3 promoted
-    its widget cores into gui proper as the stock_* renders (gui_api.h GUI_STOCK), and this
-    layer shrank to what a game kit is: a palette installed into the style
+    Its widget cores live in gui proper as the stock_* renders (gui_api.h GUI_STOCK); this
+    layer is what a game kit is: a palette installed into the style
     (ui_kit_install), thin names over the cores, and the game-flavored widgets (slot, globe,
     title) the engine has no business shipping.  The three rules still govern everything:
 

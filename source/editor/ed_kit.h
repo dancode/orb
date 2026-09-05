@@ -4,8 +4,8 @@
 
     editor/ed_kit.h -- the editor KIT (S3): the editor's own idiom over the gui stack.
 
-    Reference consumer of the kit tier (GUI_STACK_PLAN increment 6), sibling to the game
-    kits (project/sample_game/game_ui.h, sb_gui_diablo/ui.h).  Where a game kit is
+    Reference consumer of the kit tier, sibling to the game kits
+    (project/sample_game/game_ui.h, sb_gui_diablo/ui.h).  Where a game kit is
     rect-first, the editor's idiom is the PROPERTY ROW: a label column on the left, the
     value editor filling the rest -- the shape every inspector, options pane, and tool
     window in the editor shares.  Asset pickers and friends land here as they appear.

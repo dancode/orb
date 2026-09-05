@@ -87,7 +87,7 @@ editor_update( f32 dt )
     {
         /* gui_vp -1: the editor never forwards on_hud -- a project HUD over the editor's
            own chrome is wrong, and HUD-inside-the-viewport-panel needs a rect-scoped form
-           of the hook (future work, GUI_STACK_PLAN inc 6 notes).  Play Standalone shows it. */
+           of the hook (future work).  Play Standalone shows it. */
         run_view_t view = {
             .version    = RUN_VIEW_VERSION,
             .render_ctx = s_show_viewport ? ed_viewport_render_ctx() : -1,

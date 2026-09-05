@@ -1,9 +1,8 @@
 # The ORB World Framework -- a tutorial
 
 `source/game/framework/` -- the engine's core simulation data structure: entities,
-components, and queries over a reflected world.  This is the keystone of the roadmap
-(ARCHITECTURE_NORTH_STAR.md section 3): every editor panel, scene file, prefab, save
-game, and replicated snapshot is a *view of this one structure*.
+components, and queries over a reflected world.  Every editor panel, scene file, prefab,
+save game, and replicated snapshot is a *view of this one structure* (docs/README.md).
 
 Test bed and living reference: `source/sandbox/game/sb_world/sb_world.c`.
 

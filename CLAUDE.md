@@ -84,7 +84,7 @@ source/engine/        -- root engine libraries, listed lowest to highest
   res/                -- resource names, header-only: the RID() marker the build scans for,
                          canonical-form check, name hash, name+ext join; no library, no module.
                          res_tool resolves every marked name against content/ at build time and
-                         writes obj/<t>/<t>_res_manifest.txt; see RESOURCE_ID_PLAN.md
+                         writes obj/<t>/<t>_res_manifest.txt; see docs/CONTENT.md
   prof/               -- profiler: SID zones, SPSC rings, trace dump (dep: sys)
   pack/               -- compression: deflate/inflate, crc32, zip read/write; owns the single
                          engine-wide miniz copy (leaf, no deps)
@@ -108,7 +108,7 @@ source/project/       -- game-specific code (sample_game)
 third_party/          -- vendored libraries (freetype-2.14.3)
 content/              -- source content root: a resource name (RID( "ui/icon/save" )) is a file's
                          path here minus its extension; the build resolves it (res_tool) and a
-                         child project's content/ shadows it name by name. See RESOURCE_ID_PLAN.md.
+                         child project's content/ shadows it name by name. See docs/CONTENT.md.
 ```
 
 Engine libraries (`mod`, `sys`, `ref`, `prof`, `pack`, `fs`, `job`, `net`, `core`, `app`)

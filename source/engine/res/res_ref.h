@@ -16,7 +16,7 @@
     that header's size -- every writer here does that and every loader checks it.
 
     The cooker writes the section, since only it understands the content.  The packager
-    (RESOURCE_ID_PLAN.md, Phase 7) reads res_ref_head_t off the front of any cooked file,
+    (developer/dev_ship, docs/CONTENT.md) reads res_ref_head_t off the front of any cooked file,
     validates the section (res_ref_locate) and walks the names (res_ref_next), so the walk
     from a target's manifest through its content to everything it drags in never parses a
     format.  Runtime loaders only step over the section to reach their payload.

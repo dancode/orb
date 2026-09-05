@@ -4,8 +4,8 @@
 
     project/sample_game/game_ui.h -- the game KIT (S3): how THIS game shows things.
 
-    The reference kit for a project DLL over gui's element tier (GUI_STACK_PLAN increment 6;
-    sb_gui_diablo/ui.h is the richer standalone-loop sibling).  Everything here follows the
+    The reference kit for a project DLL over gui's stock tier (sb_gui_diablo/ui.h is the
+    richer standalone-loop sibling).  Everything here follows the
     kit shape the stack was built for:
 
       - RECTS ARE THE CURRENCY: the HUD bracket hands back the screen as a rect; the caller

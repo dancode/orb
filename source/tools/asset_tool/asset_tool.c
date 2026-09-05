@@ -39,9 +39,9 @@
             names the newest source of a tool in the cook chain, so an edit to the tool
             counts as an input too (build_tool passes one per tool).
 
-    Cook scope (ASSET_SYSTEM_PLAN.md): single-job CLI + extension dispatch + sub-tool spawn
-    (Cook-A); tree scan + staleness cache + manifest (Cook-B); cooked .tex converter (Cook-C);
-    manifest-driven .zip packaging (Cook-D); resource-manifest cook for build_tool (Cook-E).
+    Cook scope (docs/CONTENT.md): single-job CLI + extension dispatch + sub-tool spawn; tree
+    scan + staleness cache + manifest; cooked .tex converter; manifest-driven .zip packaging;
+    resource-manifest cook for build_tool's content phase.
 
     Tools that don't need hot-reload, a service registry, or a game loop skip the module system
     entirely and call sys directly.

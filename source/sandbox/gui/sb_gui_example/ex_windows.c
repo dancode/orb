@@ -485,8 +485,8 @@ ex_windows_menus( void )
 }
 
 /*==============================================================================================
-    Raw Pane -- pane_begin / pane_end: the minimal top-level surface occupant (GUI_STACK_PLAN
-    section 5), with ALL chrome hand-built from rect cuts + stock_* renders.  The acceptance check:
+    Raw Pane -- pane_begin / pane_end: the minimal top-level surface occupant, with ALL
+    chrome hand-built from rect cuts + stock_* renders.  The acceptance check:
     the pane competes for hover/z correctly beside stock windows -- drag the control window
     over it and cycle the tier to watch the one z contest resolve both paint order and input.
 ==============================================================================================*/
@@ -558,8 +558,7 @@ ex_windows_pane( void )
 }
 
 /*==============================================================================================
-    Feature Kit -- the GUI_STACK_PLAN section-6 acceptance sketch, live: a window assembled
-    feature by feature over a pane.  feat_maximize + feat_clamp shape the rect (B-features:
+    Feature Kit -- a window assembled feature by feature over a pane, live.  feat_maximize + feat_clamp shape the rect (B-features:
     the work area is passed IN), feat_collapse tweens the height off a caller bool, the title
     band drags through feat_move, the edges resize through feat_resize, and close is nothing
     but a static bool a hand-placed stock_button clears.  Every persistent byte is a demo static;

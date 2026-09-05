@@ -572,7 +572,7 @@ ex_layout_carve( void )
 
 /*==============================================================================================
     Flow Seams -- flow_begin / flow_cell / flow_end: the recursive rect <-> flow contract.
-    The canonical nesting from docs/GUI_STACK_PLAN.md section 4, live: carve a rect, auto-flow
+    The canonical nesting (docs/GUI.md section 3), live: carve a rect, auto-flow
     into it, take one flow element back out as a rect, carve THAT, flow into the remainder --
     three flow depths under one window, every crossing through the same two verbs.
 ==============================================================================================*/
