@@ -195,9 +195,11 @@ static bool        g_include_track  = true;         // Use up-to-date tracking v
 static bool        g_use_rsp        = true;         // Use overflow prevention.
 static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 + stdc11 (for nmake).
                                                     // (suppress designated-initializer squiggles)
-static bool        g_cook           = false;        // -content: the content phase cooks into
-                                                    // build/content instead of only reporting what
-                                                    // is stale. The manifest harvest always runs.
+static bool        g_cook           = true;         // The content phase cooks into build/content
+                                                    // with whatever cooker is built; -no-content
+                                                    // makes it report stale outputs instead.
+static bool        g_cook_build     = false;        // -content: also build the cooker (asset_tool
+                                                    // and its closure) as part of this build.
 static bool        g_content_strict = false;        // -strict-content: a harvest or cook failure
                                                     // fails the target instead of warning.
 static int         g_job_threads    = 1;            // Effective scheduler worker count. Divides
@@ -408,12 +410,14 @@ main( int argc, char** argv )
             ctx.config       = CONFIG_RELEASE;
             ctx.is_shipping  = true;
             g_cook           = true;
+            g_cook_build     = true;
             g_content_strict = true;
         }
         if ( str_icmp( argv[ i ], "-clang"            ) == 0 ) { ctx.compiler = COMPILE_CLANG; }
         if ( str_icmp( argv[ i ], "-compile-only"     ) == 0 ) { ctx.compile_only = true; }
         if ( str_icmp( argv[ i ], "-res-manifest"     ) == 0 ) { should_res_manifest = true; }
-        if ( str_icmp( argv[ i ], "-content"          ) == 0 ) { g_cook = true; }
+        if ( str_icmp( argv[ i ], "-content"          ) == 0 ) { g_cook = true; g_cook_build = true; }
+        if ( str_icmp( argv[ i ], "-no-content"       ) == 0 ) { g_cook = false; }
         if ( str_icmp( argv[ i ], "-force"            ) == 0 ) { ctx.force_rebuild = true; }
         if ( str_icmp( argv[ i ], "-no-deps"          ) == 0 ) { ctx.skip_deps = true; }
         
@@ -769,8 +773,9 @@ main( int argc, char** argv )
 
     // --- Content phase (see 09_content.c) ---
     //
-    // After the code, never inside it: cooked files are runtime inputs. A check by default,
-    // a cook under -content; fails the build only under -strict-content.
+    // After the code, never inside it: cooked files are runtime inputs. Cooks with the cooker
+    // on disk (-content also builds it); -no-content only reports; fails the build only under
+    // -strict-content.
 
     if ( !build_content_phase( &ctx, built, built_count ) )
     {

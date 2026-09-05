@@ -64,7 +64,7 @@ typedef struct
     sched_job_t         jobs[ MAX_JOBS ];           // Indexed by job ID. Immutable after add_job() finishes.
     int                 job_count;                  // Number of valid entries in jobs[].
     int                 asked_job_count;            // Jobs the caller's closure produced; the rest were
-                                                    // added for the build's own use (the -content cooker).
+                                                    // added for the build's own use (the cooker, -content).
 
     int                 ready[ MAX_JOBS ];          // LIFO stack of jobs whose deps all finished.
     int                 ready_count;                // Number of valid entries in ready[].
@@ -258,8 +258,8 @@ add_job( target_info_t* t )
 
     // Res tool: every target carrying a manifest harvests with it. The content cooker is NOT
     // an edge of any target: cooked files are runtime inputs, so build_content_phase() runs
-    // after the whole graph, and under -content build_run_parallel() adds asset_tool as a root
-    // job instead.
+    // after the whole graph, and an explicit -content makes build_run_parallel() add asset_tool
+    // as a root job instead.
     if ( target_wants_res_manifest( t ) )
         if ( !add_implicit_dep( t, "res tool", find_res_tool(), dep_indices, &dep_count ) )
             return -1;
@@ -502,11 +502,12 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
 
     g_sched.asked_job_count = g_sched.job_count;
 
-    // Under -content the cooker must be current when build_content_phase() runs after this
-    // graph. It is a root job, not an edge of the targets whose names it cooks: nothing in the
-    // graph waits on a cooked file, and an edge from asset_tool's own dependencies (sys, pack,
-    // the cookers) back into it would be a cycle. Jobs past asked_job_count are this closure.
-    if ( g_cook )
+    // An explicit -content asks for a current cooker when build_content_phase() runs after
+    // this graph (the default phase cooks with whatever cooker is on disk). It is a root job,
+    // not an edge of the targets whose names it cooks: nothing in the graph waits on a cooked
+    // file, and an edge from asset_tool's own dependencies (sys, pack, the cookers) back into
+    // it would be a cycle. Jobs past asked_job_count are this closure.
+    if ( g_cook_build )
     {
         target_info_t* at = find_asset_tool();
         if ( at && add_job( at ) < 0 )
@@ -630,8 +631,8 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
 
 /*  The targets the last build_run_parallel() call was asked to build -- its root's closure, or
     every local target -- for build_content_phase(). Jobs the scheduler added for its own use
-    (the cooker's closure under -content) are not included: `-target gui -content` cooks what
-    gui names, not what font_tool names. Returns the count written. */
+    (the cooker's closure under an explicit -content) are not included: `-target gui -content`
+    cooks what gui names, not what font_tool names. Returns the count written. */
 
 int
 sched_asked_targets( target_info_t** out, int max )

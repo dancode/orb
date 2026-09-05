@@ -66,7 +66,8 @@ cmd_print_help( void )
     printf( ORB_INDENT "  %-28s%s\n", "-force",                 "Skip the up-to-date check; always compile + link." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-deps",               "Build only the named target; skip dep recursion. (VS -managed)" );
     printf( ORB_INDENT "  %-28s%s\n", "-compile-only",          "Compile all unity units for -target; no link. (VS Ctrl+F7)" );
-    printf( ORB_INDENT "  %-28s%s\n", "-content",               "Cook the content the built targets name into build/content. Default: check and report only." );
+    printf( ORB_INDENT "  %-28s%s\n", "-content",               "Build the content cooker too, then cook. (The cook itself runs by default with the cooker on disk.)" );
+    printf( ORB_INDENT "  %-28s%s\n", "-no-content",            "Do not cook; only report which cooked files in build/content are out of date." );
     printf( ORB_INDENT "  %-28s%s\n", "-res-manifest",          "Generate only -target's resource manifest (obj/<t>/<t>_res_manifest.txt)." );
     printf( ORB_INDENT "  %-28s%s\n", "-file <path>",           "Compile one file with target's full flag set; no link." );
     printf( ORB_INDENT "  %-28s%s\n", "-j N",                   "Worker thread count (default: auto-detect from CPU count)." );
@@ -83,7 +84,7 @@ cmd_print_help( void )
     printf( ORB_INDENT "  %-28s%s\n", "-no-fwd-compat",         "-gen: omit stdcpp20 IntelliSense mode; use strict C11." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-rsp",                "Pass command lines directly; skip .rsp response files." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-include-track",      "Skip /showIncludes; header changes won't trigger rebuild." );
-    printf( ORB_INDENT "  %-28s%s\n", "-strict-content",        "Fail the build when the manifest harvest or a -content cook fails (default: warn)." );
+    printf( ORB_INDENT "  %-28s%s\n", "-strict-content",        "Fail the build when the manifest harvest or a content cook fails (default: warn)." );
     printf( "\n" );
     return 0;
 }
@@ -318,7 +319,7 @@ cmd_graph( const char* target_name )
     }
 
     // -content: the cooker is a second root the scheduler adds, not a dep of anything.
-    target_info_t* cooker = g_cook ? find_asset_tool() : NULL;
+    target_info_t* cooker = g_cook_build ? find_asset_tool() : NULL;
     if ( cooker && !topo.has_cycle )
         deps_visit( &topo, cooker );
 

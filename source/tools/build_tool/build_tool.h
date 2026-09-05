@@ -475,9 +475,9 @@ typedef struct target_info_s
     bool            is_res_tool;
 
     /*  If true, this is the content cooker (asset_tool). build_content_phase() runs whichever
-        target carries this flag once per build over the built targets' resource manifests:
-        a check by default, a cook under -content. No target that names a shader or a font
-        recipe declares a tool_dep on it. */
+        target carries this flag once per build over the built targets' resource manifests,
+        cooking what is stale (-no-content: report only); -content also builds it first. No
+        target that names a shader or a font recipe declares a tool_dep on it. */
 
     bool            is_asset_tool;
 
@@ -714,18 +714,19 @@ bool build_target_compile_single( build_context_t* ctx, target_info_t* target,
 bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
 
 /*  The content phase: one asset_tool run over the resource manifests of `targets`, after
-    the code graph has built. Without -content asset_tool only checks which cooked files
-    (a stage-tagged .hlsl -> .oshd, a .recipe -> the file its kind line names) are missing
-    or older than their inputs, and the build ends with one line saying so; with -content
-    it cooks them into <build>/content. A cooked file is an input to the RUNTIME, not to
-    the compiler, which is why nothing in the graph waits on it. A cooker that is not built
-    means no check this run, not a failure. Returns false only under -strict-content. */
+    the code graph has built. It cooks every cooked file (a stage-tagged .hlsl -> .oshd, a
+    .recipe -> the file its kind line names) that is missing or older than its inputs into
+    <build>/content; under -no-content it only reports them and the build ends with one
+    line saying so. A cooked file is an input to the RUNTIME, not to the compiler, which is
+    why nothing in the graph waits on it. The phase uses the cooker already on disk; only an
+    explicit -content builds it, so a cooker that is not built means no phase this run, not
+    a failure. Returns false only under -strict-content. */
 
 bool build_content_phase( build_context_t* ctx, target_info_t* const* targets, int count );
 
 /*  The targets the last build_run_parallel() call was asked to build, for
     build_content_phase(). Excludes jobs the scheduler added for its own use (the cooker's
-    closure under -content). Returns the count written to `out`. */
+    closure under an explicit -content). Returns the count written to `out`. */
 
 int sched_asked_targets( target_info_t** out, int max );
 

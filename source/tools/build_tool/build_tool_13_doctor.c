@@ -823,10 +823,10 @@ doctor_check_filesystem( void )
         }
     }
 
-    /* Content phase: every build checks cooked content against asset_tool and cooks with it
-       under -content, so a missing cooker is a note, not a failure. */
+    /* Content phase: every build cooks with asset_tool when it is on disk (-content builds it),
+       so a missing cooker is a note, not a failure. */
     if ( find_asset_tool() )
-        doc_ok( "asset_tool registered (cooked content is checked every build; cooked with -content)" );
+        doc_ok( "asset_tool registered (every build cooks stale content with it; -content builds it first)" );
     else
         doc_warn( "no asset_tool registered -- cooked content is neither checked nor cooked" );
 }

@@ -15,11 +15,12 @@
 
       Content phase        Once per build, after the code graph has finished, on the main
       (asset_tool)         thread. Hands the manifests of the targets just built to asset_tool
-                           in one call. By default asset_tool only CHECKS them -- which cooked
-                           files (a stage-tagged .hlsl -> .oshd, a .recipe -> its kind) are
-                           missing or older than their inputs -- and the build ends with one
-                           line saying so. With -content it cooks them into <build>/content.
-                           What each kind cooks to and when an output is stale is asset_tool's
+                           in one call, and asset_tool cooks every cooked file (a stage-tagged
+                           .hlsl -> .oshd, a .recipe -> its kind) that is missing or older than
+                           its inputs into <build>/content. Under -no-content it only reports
+                           them and the build ends with one line saying so. The phase uses the
+                           cooker already on disk; an explicit -content builds it first. What
+                           each kind cooks to and when an output is stale is asset_tool's
                            knowledge alone; this file passes it manifests and content roots.
 
     Strictness: a failure in either step is a warning and the build still succeeds;
@@ -310,12 +311,12 @@ content_harvest( target_info_t* target, const char* obj_dir, const target_info_t
                            [-check] [-f]
 
     Cooked files are inputs to the RUNTIME, not to the compiler, so nothing in the graph waits
-    on them and the phase runs after the last job. Under -content the scheduler adds asset_tool
-    as a root job so the cooker is current when the phase starts; the -no-deps path builds it
-    here. Without -content the phase is a report: asset_tool -check exits 3 when any cooked
-    file is missing or older than its inputs, and the build ends with one line saying so. A
-    cooker that is not built means no report this run, not a failure -- a code-only checkout
-    never has to build the content pipeline to compile.
+    on them and the phase runs after the last job. It cooks with the asset_tool.exe already in
+    bin/: a code build never pulls the content toolchain into its graph on its own, so a cooker
+    that is not built means no phase this run, not a failure. An explicit -content is the ask
+    for a current cooker -- the scheduler adds asset_tool as a root job, and the -no-deps path
+    builds it here. Under -no-content the phase is a report: asset_tool -check exits 3 when any
+    cooked file is missing or older than its inputs, and the build ends with one line saying so.
 
     asset_tool's last line is a fixed-format summary, parsed here so the build can print its
     own line with the counts. Its per-name lines are relabelled: "cook <name> (<why>)" prints
@@ -380,9 +381,10 @@ build_content_phase( build_context_t* ctx, target_info_t* const* targets, int co
     {
         snprintf( exe, sizeof( exe ), "bin" PATH_SEP "%s.exe", asset_tool->name );
 
-        // -no-deps has no scheduler to build the cooker; do it here with the cooker's own dep
-        // resolution, and without -force: the call only has to leave a current exe on disk.
-        if ( g_cook && ctx->skip_deps )
+        // An explicit -content on the -no-deps path has no scheduler to build the cooker; do
+        // it here with the cooker's own dep resolution, and without -force: the call only has
+        // to leave a current exe on disk.
+        if ( g_cook_build && ctx->skip_deps )
         {
             build_context_t tctx  = *ctx;
             tctx.skip_deps        = false;
@@ -397,14 +399,15 @@ build_content_phase( build_context_t* ctx, target_info_t* const* targets, int co
 
     if ( down )
     {
-        if ( g_cook )
+        // Only an explicit -content promised a cooker; otherwise its absence is a note.
+        if ( g_cook_build )
         {
             printf( ORB_INDENT "[orb %s] %s -- nothing is cooked into %s" PATH_SEP "content this run\n",
                     content_severity(), down, g_build_dir );
             return !g_content_strict;
         }
         if ( g_out_flags & ORB_OUT_REFLECT )
-            printf( ORB_INDENT "[orb content] check skipped: %s\n", down );
+            printf( ORB_INDENT "[orb content] skipped: %s (build_tool -content builds it)\n", down );
         return true;
     }
 
@@ -482,7 +485,7 @@ build_content_phase( build_context_t* ctx, target_info_t* const* targets, int co
     }
 
     if ( rep.stale )
-        printf( ORB_INDENT "%s[orb content]%s %d cooked file(s) out of date (%d missing) -- run build_tool -content\n",
+        printf( ORB_INDENT "%s[orb content]%s %d cooked file(s) out of date (%d missing) -- build without -no-content to cook\n",
                 g_clr_yellow, g_clr_reset, rep.stale, rep.missing );
     else if ( g_out_flags & ORB_OUT_REFLECT )
         printf( ORB_INDENT "[orb content] %d cooked file(s) up to date\n", rep.total );

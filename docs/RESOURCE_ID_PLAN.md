@@ -217,15 +217,18 @@ piece.
         asset_tool -list <obj>/_content_manifests.txt -root content [-root <engine>/content]
                    -out build/content [-check]
 
-    By default that call is a CHECK: asset_tool reports which cooked files are missing or older
-    than their inputs and the build ends with one line -- "[orb content] N cooked file(s) out
-    of date (M missing) -- run build_tool -content" -- and cooks nothing.  `build_tool
-    -content` cooks them; `-target gui -content` cooks what gui's closure names; `-shipping`
-    implies `-content -strict-content`.  Nothing in the graph waits on a cooked file (it is a
-    runtime input), so the phase needs no edge into any target, asset_tool's own dependencies
-    (sys, pack, the cookers) never form a cycle, and a code-only checkout compiles without
-    ever building the content pipeline.  Under -content the scheduler adds asset_tool as a
-    root job so the cooker is current when the phase runs.
+    That call cooks every cooked file that is missing or older than its inputs, with the
+    asset_tool.exe already in bin/ -- so a plain build, a VS build and a hot-reload build all
+    keep build/content current, and an edited shader recooks on the next build with no C
+    change.  `-no-content` turns it into a CHECK: the build ends with "[orb content] N cooked
+    file(s) out of date (M missing)" and cooks nothing.  The phase never pulls the content
+    toolchain into a build's graph on its own: a code-only checkout compiles one sandbox
+    without building font_tool or shader_tool, and a missing cooker is a note, not a failure.
+    An explicit `-content` is the ask for a current cooker -- the scheduler adds asset_tool as
+    a root job; `-target gui -content` cooks what gui's closure names; `-shipping` implies
+    `-content -strict-content`.  Nothing in the graph waits on a cooked file (it is a runtime
+    input), so the phase needs no edge into any target and asset_tool's own dependencies
+    (sys, pack, the cookers) never form a cycle.
 
     Staleness and the kind table live in asset_tool alone: an output is stale when it is
     missing, when its source or a file the cook reads beside it (a shader's .hlsli siblings,
@@ -363,8 +366,8 @@ Phases 0-4 -- catalogue, harvester, resolution, format sections, asset on rid   
      awareness.  content_stale replays _res_deps.txt against the MANIFEST's mtime (equal
      timestamps count as stale; a newer res_tool.exe is stale), and a stale manifest is
      re-harvested without recompiling: content is never a compiler input.  The cook is the
-     content phase of decision 16: one asset_tool run after the graph, a check by default
-     and a cook with -content.  No generated .c anywhere.
+     content phase of decision 16: one asset_tool run after the graph, cooking what is stale
+     (-no-content: report only; -content: build the cooker first).  No generated .c anywhere.
    - Cooked formats (Phase 3, re-cut in Phase 6): one shared contract, engine/res/res_ref.h --
      a reference section immediately after the fixed header, before the payload; every
      reader rejects the head before any size arithmetic.  Phase 3 laid it down as a

@@ -277,7 +277,7 @@ font_load( const char* name )
     fs_blob_t b = gui_res_read( name, ".orb_font" );
     if ( !b.ok )
     {
-        gui_log( GUI_LOG_WARN, "font '%s': no %s.orb_font in the content mounts (run build_tool -content)",
+        gui_log( GUI_LOG_WARN, "font '%s': no %s.orb_font in the content mounts (build_tool -content cooks it)",
                  name ? name : "", name ? name : "" );
         return 0;
     }
@@ -312,7 +312,7 @@ font_load_into( u32 id, const char* name )
     fs_blob_t b = gui_res_read( name, ".orb_font" );
     if ( !b.ok )
     {
-        gui_log( GUI_LOG_WARN, "font '%s': no %s.orb_font in the content mounts (run build_tool -content)",
+        gui_log( GUI_LOG_WARN, "font '%s': no %s.orb_font in the content mounts (build_tool -content cooks it)",
                  name ? name : "", name ? name : "" );
         return false;
     }
