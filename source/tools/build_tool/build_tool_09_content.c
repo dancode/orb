@@ -21,7 +21,8 @@
                            them and the build ends with one line saying so. The phase uses the
                            cooker already on disk; an explicit -content builds it first. What
                            each kind cooks to and when an output is stale is asset_tool's
-                           knowledge alone; this file passes it manifests and content roots.
+                           knowledge alone; this file passes it manifests, content roots, and
+                           the newest source of each tool in the cook chain (tool_newest_source).
 
     Strictness: a failure in either step is a warning and the build still succeeds;
     -strict-content makes it an error. reflect_tool is deliberately not covered here -- its
@@ -81,8 +82,13 @@ res_root_args( char* buf, size_t cap )
     int  root_count = res_content_roots( root_dirs );
     int  n          = 0;
     buf[ 0 ]        = '\0';
-    for ( int r = 0; r < root_count; ++r )
-        n += snprintf( buf + n, cap - ( size_t )n, " -root %s", root_dirs[ r ] );
+    for ( int r = 0; r < root_count && ( size_t )n < cap; ++r )
+    {
+        int w = snprintf( buf + n, cap - ( size_t )n, " -root %s", root_dirs[ r ] );
+        if ( w < 0 )
+            break;
+        n += w;    // past cap on truncation, which the loop condition then stops on
+    }
 }
 
 /*==============================================================================================
@@ -308,7 +314,12 @@ content_harvest( target_info_t* target, const char* obj_dir, const target_info_t
     One asset_tool call over the manifests of every target this build covered:
 
         bin/asset_tool.exe -list <obj>/_content_manifests.txt -root ... -out <build>/content
-                           [-check] [-f]
+                           -tool <name>=<path> ... [-check] [-f]
+
+    Each -tool names one program in the cook chain -- asset_tool and its tool_deps -- with
+    the newest of its sources, so an edit to a cooker is an input to the cooked file the way
+    the shader itself is.  It is a path rather than a time because asset_tool reads mtimes on
+    a different clock (FILETIME) than this file does (_stat64); asset_tool stats it itself.
 
     Cooked files are inputs to the RUNTIME, not to the compiler, so nothing in the graph waits
     on them and the phase runs after the last job. It cooks with the asset_tool.exe already in
@@ -324,9 +335,92 @@ content_harvest( target_info_t* target, const char* obj_dir, const target_info_t
     and the converters' own output only under ORB_OUT_REFLECT; a line carrying "error" always
     prints.
 
-    A second build_tool running -content at the same time serializes on the content_phase
-    lock rather than cooking the same file underneath this one.
+    A second build_tool running at the same time -- VS runs one per project -- serializes on
+    the content_phase lock, which covers writing the manifest list as well as the cook: it
+    neither rewrites the list under this one's asset_tool nor cooks the same file beneath it.
 ==============================================================================================*/
+
+/*  The newest of a tool's sources: its units, and the headers its last compile recorded in
+    <obj_dir>/_includes.txt (the set freshness test D in build_target() replays). That is what
+    "the tool changed" means to a cooked file. It is deliberately not the exe or the .obj
+    files: build_target_compile() compiles every unit whenever a linked library is newer, so
+    those are rewritten by a change to sys or pack that alters no cooker source. Without
+    _includes.txt (-no-include-track) the units alone are timed. Returns false when nothing
+    could be timed. */
+
+static bool
+tool_newest_source( const target_info_t* t, char* out_path, size_t cap )
+{
+    platform_mtime_t best = 0;
+    out_path[ 0 ]         = '\0';
+
+    for ( int i = 0; t->units[ i ]; ++i )
+    {
+        char rel[ PATH_MAX ], abs_p[ PATH_MAX ];
+        snprintf( rel, sizeof( rel ), "%s/%s", t->root_dir, t->units[ i ] );
+        path_abs( abs_p, rel, sizeof( abs_p ) );
+        platform_mtime_t m = platform_get_mtime( abs_p );
+        if ( m > best )
+        {
+            best = m;
+            snprintf( out_path, cap, "%s", abs_p );
+        }
+    }
+
+    char obj_dir[ PATH_MAX ], inc_path[ PATH_MAX ];
+    path_obj_dir( t, obj_dir, sizeof( obj_dir ) );
+    snprintf( inc_path, sizeof( inc_path ), "%s" PATH_SEP "_includes.txt", obj_dir );
+    platform_mapped_file_t map;
+    if ( platform_map_file( inc_path, &map ) && map.size > 0 )
+    {
+        const char* p   = map.data;
+        const char* end = map.data + map.size;
+        char        h[ PATH_MAX ];
+        while ( mmap_next_line( &p, end, h, sizeof( h ) ) )
+        {
+            if ( !h[ 0 ] ) continue;
+            platform_mtime_t m = platform_get_mtime( h );
+            if ( m > best )
+            {
+                best = m;
+                snprintf( out_path, cap, "%s", h );
+            }
+        }
+        platform_unmap_file( &map );
+    }
+    return best != 0;
+}
+
+/*  The " -tool <name>=<path>" arguments for the cook chain: asset_tool and each of its
+    tool_deps. A tool with nothing to time is left out, and asset_tool then treats that tool
+    as absent from the inputs. On overflow the whole set is dropped with a warning rather
+    than a truncated path passed. */
+
+static void
+content_tool_args( const target_info_t* asset_tool, char* buf, size_t cap )
+{
+    int n    = 0;
+    buf[ 0 ] = '\0';
+    for ( int i = -1; ; ++i )
+    {
+        const target_info_t* tool = ( i < 0 ) ? asset_tool
+                                  : asset_tool->tool_deps[ i ] ? find_target( asset_tool->tool_deps[ i ] ) : NULL;
+        if ( i >= 0 && !asset_tool->tool_deps[ i ] )
+            break;
+        char newest[ PATH_MAX ];
+        if ( !tool || !tool_newest_source( tool, newest, sizeof( newest ) ) )
+            continue;
+        int w = snprintf( buf + n, cap - ( size_t )n, " -tool %s=%s", tool->name, newest );
+        if ( w < 0 || n + w >= ( int )cap )
+        {
+            printf( ORB_INDENT "[orb warn] cook chain arguments exceed %d bytes -- tool edits will not recook\n",
+                    ( int )cap );
+            buf[ 0 ] = '\0';
+            return;
+        }
+        n += w;
+    }
+}
 
 typedef struct
 {
@@ -416,6 +510,11 @@ build_content_phase( build_context_t* ctx, target_info_t* const* targets, int co
     // A target with none (its harvest is off, or failed and removed the file) contributes
     // nothing; res_tool has already said why.
 
+    // The list is one fixed path under obj/, so a concurrent build_tool would rewrite it while
+    // this one's asset_tool is still reading it. Locked from here through the run.
+
+    void* lock = build_lock_target( "content_phase" );
+
     char list_path[ PATH_MAX ];
     {
         char obj_root[ PATH_MAX ];
@@ -426,6 +525,7 @@ build_content_phase( build_context_t* ctx, target_info_t* const* targets, int co
     FILE* lf = fopen( list_path, "w" );
     if ( !lf )
     {
+        build_unlock_target( lock );
         printf( ORB_INDENT "[orb %s] cannot write %s\n", content_severity(), list_path );
         return !g_content_strict;
     }
@@ -446,20 +546,38 @@ build_content_phase( build_context_t* ctx, target_info_t* const* targets, int co
     }
     fclose( lf );
     if ( listed == 0 )
+    {
+        build_unlock_target( lock );
         return true;
+    }
 
     // --- One asset_tool run ---
 
     char roots[ PATH_MAX * 2 + 32 ];
     res_root_args( roots, sizeof( roots ) );
+    char tools[ PATH_MAX * 6 ];
+    content_tool_args( asset_tool, tools, sizeof( tools ) );
 
-    char cmd[ PATH_MAX * 5 ];
-    snprintf( cmd, sizeof( cmd ), "%s -list %s%s -out %s" PATH_SEP "content%s%s", exe, list_path, roots,
-              g_build_dir, g_cook ? "" : " -check", ( g_cook && ctx->force_rebuild ) ? " -f" : "" );
+    // -force reaches the cook as -f: the phase runs once per build and every name is one job,
+    // so a forced recook costs one cook per file, and it is also the way out of the one case
+    // the mtime rule cannot see -- a source restored with an older timestamp.
+    //
+    // A truncated command would lose the mode flags at its tail and turn a check into a cook,
+    // so an overlong one is refused rather than run.
+    char cmd[ PATH_MAX * 12 ];
+    int  cmd_len = snprintf( cmd, sizeof( cmd ), "%s -list %s%s -out %s" PATH_SEP "content%s%s%s", exe, list_path,
+                             roots, g_build_dir, tools, g_cook ? "" : " -check",
+                             ( g_cook && ctx->force_rebuild ) ? " -f" : "" );
+    if ( cmd_len < 0 || cmd_len >= ( int )sizeof( cmd ) )
+    {
+        build_unlock_target( lock );
+        printf( ORB_INDENT "[orb %s] asset_tool command line exceeds %d bytes\n", content_severity(),
+                ( int )sizeof( cmd ) );
+        return !g_content_strict;
+    }
 
-    content_report_t rep  = { 0 };
-    void*            lock = build_lock_target( "content_phase" );
-    int              rc   = platform_spawn_capture( cmd, content_phase_line, &rep );
+    content_report_t rep = { 0 };
+    int              rc  = platform_spawn_capture( cmd, content_phase_line, &rep );
     build_unlock_target( lock );
 
     if ( rc < 0 || !rep.have_summary )

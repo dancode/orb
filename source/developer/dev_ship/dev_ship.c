@@ -524,9 +524,9 @@ ship_source_find( const ship_set_t* set, const char* name, char* src, int src_si
     return 0;
 }
 
-/* The cooked extension (no dot) a source produces, or "" for loose content.  Mirrors
-   build_cook_content: a .hlsl cooks to .oshd, a .recipe to what its "kind" line says, and
-   everything else -- images included -- is read by the runtime as it is. */
+/* The cooked extension (no dot) a source produces, or "" for loose content.  Mirrors the
+   asset_tool manifest cook: a .hlsl cooks to .oshd, a .recipe to what its "kind" line says,
+   and everything else -- images included -- is read by the runtime as it is. */
 static bool
 ship_cooked_ext( const char* src, const char* src_ext, char* out, int out_size )
 {

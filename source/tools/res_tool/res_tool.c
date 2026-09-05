@@ -15,7 +15,7 @@
     for the packager.  Nothing
     is generated for the compiler: RID() evaluates to its literal, and the program loads by
     name.  build_tool invokes this once per image, over the image's own units plus those of
-    every statically linked dependency; see build_gen_res_manifest in build_tool_09_exec.c.
+    every statically linked dependency; see build_gen_res_manifest in build_tool_09_content.c.
 
     RESOLUTION.  A name is the path of its source file under a content root, minus the
     extension: "ui/icon/save" is <root>/ui/icon/save.<ext> for exactly one <ext>.  Names and

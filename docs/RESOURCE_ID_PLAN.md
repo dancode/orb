@@ -215,7 +215,7 @@ piece.
     targets it built (build_content_phase, build_tool_09_content.c):
 
         asset_tool -list <obj>/_content_manifests.txt -root content [-root <engine>/content]
-                   -out build/content [-check]
+                   -out build/content -tool <name>=<path>... [-check]
 
     That call cooks every cooked file that is missing or older than its inputs, with the
     asset_tool.exe already in bin/ -- so a plain build, a VS build and a hot-reload build all
@@ -230,12 +230,16 @@ piece.
     input), so the phase needs no edge into any target and asset_tool's own dependencies
     (sys, pack, the cookers) never form a cycle.
 
-    Staleness and the kind table live in asset_tool alone: an output is stale when it is
-    missing, when its source or a file the cook reads beside it (a shader's .hlsli siblings,
-    a recipe's family.txt) is at least as new, or when the format version recorded in
-    build/content/.cook_format for its kind is not the one the cooker writes (OSHD_VERSION,
-    ORB_FONT_VERSION).  A relinked cooker with an unchanged format recooks nothing.  A failed
-    cook deletes its output so it is "missing" next time, never a stale file that looks fresh.
+    Staleness and the kind table live in asset_tool alone, make-style: an output is stale
+    when it is missing or when any input is at least as new -- its source, a file the cook
+    reads beside it (a shader's .hlsli siblings, a recipe's family.txt), or the newest source
+    of a tool in the cook chain.  build_tool names each tool's newest source (its units plus
+    the headers in obj/<t>/_includes.txt) with `-tool <name>=<path>`, so an edit to
+    shader_tool.c recooks the shaders and a bump of ORB_FONT_VERSION recooks the fonts, while
+    a relink of a cooker because sys or pack was rebuilt recooks nothing: build_target_compile
+    rewrites every .obj and the exe on such a relink but touches no source.  A path rather
+    than a time, because the two tools read mtimes on different clocks.  A failed cook deletes
+    its output so it is "missing" next time, never a stale file that looks fresh.
     asset_tool carries 'tool_dep shader_tool font_tool', since it spawns them as bin/ siblings
     at cook time; no target that names a shader or a recipe declares a tool_dep of its own.
 
@@ -284,8 +288,6 @@ piece.
     build/content/<name>.<cooked ext>   -- the cooked mirror the content phase writes from the
                                            manifests (asset_tool -list, run by build_content_phase
                                            in build_tool_09_content.c); mounted above content/
-    build/content/.cook_format          -- the cooked format version per kind, asset_tool's
-                                           stale signal for a format bump
     content/font/<family>/family.txt    -- the family's typeface (decision 9); recipes inherit it,
                                            gui_font_family.c reads it for the runtime baker
     source/runtime_service/gui/gui_res.h -- how gui reads a name + ext through fs

@@ -1037,8 +1037,9 @@ build_gen_solution( solution_info_t* sln, const char* out_name )
             fprintf( f, "Project(\"%s\") = \"%s\", \"%s.vcxproj\", \"%s\"\n", cpp_type_guid, target->name,
                      target->name, guid );
 
-            if ( target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect ||
-                 target_wants_res_manifest( target ) || !target->is_build_tool )
+            // Every target but build_tool lists build_tool itself below, so only build_tool
+            // can have an empty section to skip.
+            if ( !target->is_build_tool || target->deps[ 0 ] || target->tool_deps[ 0 ] || target->has_reflect )
             {
                 // Every entry below must name a project actually in this solution: VS silently
                 // ignores dangling dep GUIDs, but msbuild.exe on the .sln hard-fails with

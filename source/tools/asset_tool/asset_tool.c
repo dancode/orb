@@ -35,7 +35,9 @@
             name against the content roots in priority order, and cooks the names that need a
             cooked form -- a stage-tagged .hlsl, a .recipe -- into <out>/<name>.<cooked ext>.
             Only what is missing or older than its inputs is cooked; -check reports instead
-            (exit 3 when anything needs a cook); -f cooks everything.
+            (exit 3 when anything needs a cook); -f cooks everything.  -tool <name>=<path>
+            names the newest source of a tool in the cook chain, so an edit to the tool
+            counts as an input too (build_tool passes one per tool).
 
     Cook scope (ASSET_SYSTEM_PLAN.md): single-job CLI + extension dispatch + sub-tool spawn
     (Cook-A); tree scan + staleness cache + manifest (Cook-B); cooked .tex converter (Cook-C);
@@ -62,11 +64,6 @@
 #include "engine/sys/sys_host.h"
 #include "engine/res/res_cook.h"
 #include "runtime_service/asset/loaders/asset_tex.h"
-
-/* Cooked-format version constants, one per kind this tool cooks from a resource manifest. A
-   bump in either makes every cooked file of that kind stale (see man_format_version). */
-#include "runtime_service/rhi/rhi_shader_format.h"    /* OSHD_VERSION     (.oshd)     */
-#include "tools/font_tool/orb_font.h"                 /* ORB_FONT_VERSION (.orb_font) */
 
 /* stb_image: memory-only decode. The converter uses it to pre-decode a source image to RGBA8
    before writing the cooked .tex payload. Implementation compiled right here (tool-local). */
@@ -917,13 +914,20 @@ cook_tree( const char* src_arg, const char* dst_arg, bool force )
    becomes the file its "kind" line names.  Loose content -- images, text -- is not touched; the
    runtime reads it from content/ as it is.  A name that several manifests share is one job.
 
-   Staleness is decided per output, here and nowhere else:
-     - the cooked file is missing;
-     - the source is at least as new as it, or a file the cook reads beside the source is (the
-       .hlsli siblings of a shader, since dxc resolves #include relative to the including file;
-       the family.txt beside a recipe with no face line of its own);
-     - the cooked format version recorded in <out>/.cook_format for that kind is not the one
-       this cooker writes.  A rebuilt cooker whose format did not change recooks nothing.
+   Staleness is decided per output, here and nowhere else, make-style: an output is stale when
+   it is missing or when any input is at least as new as it.  The inputs are
+     - the source;
+     - the files the cook reads beside the source (the .hlsli siblings of a shader, since dxc
+       resolves #include relative to the including file; the family.txt beside a recipe with
+       no face line of its own);
+     - the newest source of each tool that produces the bytes: this tool, which picks the
+       sub-tool and its arguments, and the cooker the kind dispatches to.  build_tool names
+       each with -tool <name>=<path>, where <path> is the newest of the tool's units and
+       recorded headers.  A path, not a time: the two programs read mtimes on different
+       clocks.  A tool not named contributes nothing.  A format-version header is one of a
+       cooker's recorded headers, so a bump recooks that kind with no help from here; a
+       relink because a library the cooker links was rebuilt touches none of its sources and
+       recooks nothing.
 
    -check reports instead of cooking and exits 3 when anything needs a cook.  Both modes end
    with one fixed-format line a caller can parse:
@@ -935,8 +939,7 @@ cook_tree( const char* src_arg, const char* dst_arg, bool force )
    stale file that looks fresh. */
 
 #define MAN_MAX_ROOTS    8
-#define MAN_FORMAT_FILE  ".cook_format"
-#define MAN_KIND_COUNT   ( RES_KIND_RECIPE + 1 )
+#define MAN_MAX_TOOLS    8
 
 typedef struct man_job_s
 {
@@ -946,10 +949,20 @@ typedef struct man_job_s
     res_kind_t kind;                    // kind of the COOKED file (a font recipe -> RES_KIND_FONT)
     bool       stale;                   // needs a cook this run
     bool       missing;                 // no cooked file exists at all
-    const char* why;                    // stale reason for the report
+    char       why[ 96 ];               // stale reason for the report; "" when fresh
 } man_job_t;
 
+typedef struct man_tool_s
+{
+    const char* name;                   // build target name: asset_tool, shader_tool, font_tool
+    const char* path;                   // the tool's newest source, from -tool
+} man_tool_t;
+
 static man_job_t s_man_jobs[ COOK_MAX_JOBS ];   /* BSS, like s_jobs */
+
+/* Every name a manifest row has named this run, cookable or not, so that a name shared by
+   several manifests is resolved, parsed and reported once.  Same bound as the jobs. */
+static char s_man_seen[ COOK_MAX_JOBS ][ COOK_PATH_MAX ];
 
 typedef struct man_ctx_s
 {
@@ -957,71 +970,56 @@ typedef struct man_ctx_s
     int         root_count;
     const char* out_root;               // trailing separator stripped
     int         job_count;
-    int         bad_rows;               // rows that could not be classified (a malformed recipe)
+    int         seen_count;             // names classified so far (s_man_seen)
+    int         bad_rows;               // names that could not be classified (a malformed recipe)
     bool        overflow;
+    const man_tool_t* tools;            // the cook chain's newest sources, from -tool
+    int         tool_count;
 } man_ctx_t;
 
-/* The format version this cooker writes for a kind; 0 for a kind with no versioned container. */
-static u32
-man_format_version( res_kind_t kind )
-{
-    switch ( kind )
-    {
-        case RES_KIND_SHADER: return OSHD_VERSION;
-        case RES_KIND_FONT:   return ORB_FONT_VERSION;
-        default:              return 0;
-    }
-}
-
-/* The word a kind is recorded under in .cook_format; NULL for kinds this mode never cooks. */
+/* The cooker a kind dispatches to, by build target name; NULL for kinds this mode never cooks.
+   The names match the exes cook_shader() and cook_font() spawn. */
 static const char*
-man_kind_word( res_kind_t kind )
+man_kind_tool( res_kind_t kind )
 {
     switch ( kind )
     {
-        case RES_KIND_SHADER: return "shader";
-        case RES_KIND_FONT:   return "font";
+        case RES_KIND_SHADER: return "shader_tool";
+        case RES_KIND_FONT:   return "font_tool";
         default:              return NULL;
     }
 }
 
-/* One "<kind> <version>" line of .cook_format into the recorded[] table. */
-static bool
-man_format_line( const char* key, const char* val, void* user )
+static const char*
+man_basename( const char* path )
 {
-    u32* recorded = ( u32* )user;
-    for ( int k = 0; k < MAN_KIND_COUNT; ++k )
-    {
-        const char* word = man_kind_word( ( res_kind_t )k );
-        if ( word && strcmp( key, word ) == 0 )
-            recorded[ k ] = ( u32 )strtoul( val, NULL, 10 );
-    }
-    return true;
+    const char* s = strrchr( path, '/' );
+    const char* b = strrchr( path, '\\' );
+    if ( b > s )
+        s = b;
+    return s ? s + 1 : path;
 }
 
-static void
-man_format_path( const man_ctx_t* c, char* out, size_t cap )
+/* The newest source among the tools that produce a job's bytes: this tool and the cooker its
+   kind dispatches to.  0 when neither was named.  *out_file is the path that won. */
+static u64
+man_tool_time( const man_ctx_t* c, const man_job_t* j, const char** out_file )
 {
-    snprintf( out, cap, "%s/%s", c->out_root, MAN_FORMAT_FILE );
-}
-
-/* Writes the versions this cooker produces, so the next run can tell a format bump apart from a
-   plain cooker rebuild. */
-static void
-man_format_write( const man_ctx_t* c )
-{
-    char text[ 256 ];
-    int  n = 0;
-    for ( int k = 0; k < MAN_KIND_COUNT; ++k )
+    u64 t     = 0;
+    *out_file = NULL;
+    for ( int i = 0; i < c->tool_count; ++i )
     {
-        const char* word = man_kind_word( ( res_kind_t )k );
-        if ( word )
-            n += snprintf( text + n, sizeof( text ) - ( size_t )n, "%s %u\n", word,
-                           man_format_version( ( res_kind_t )k ) );
+        const char* name = c->tools[ i ].name;
+        if ( strcmp( name, "asset_tool" ) != 0 && strcmp( name, man_kind_tool( j->kind ) ) != 0 )
+            continue;
+        u64 m = sys_file_time( c->tools[ i ].path );
+        if ( m > t )
+        {
+            t         = m;
+            *out_file = c->tools[ i ].path;
+        }
     }
-    char path[ COOK_PATH_MAX ];
-    man_format_path( c, path, sizeof( path ) );
-    sys_file_write_entire( path, text, ( u32 )n );
+    return t;
 }
 
 /* sys_file_glob callback: fold a sibling file's mtime into the newest-input time. */
@@ -1056,11 +1054,23 @@ man_input_time( const man_job_t* j )
     return t;
 }
 
-/* One manifest row.  Rows whose source does not resolve are res_tool's error, not ours, and
-   rows whose kind has no cooked form are loose content: both are skipped without a word. */
+/* One manifest row.  A name is classified once per run no matter how many manifests carry it
+   (an image's manifest is the union of its libraries', so most names arrive several times).
+   Rows whose source does not resolve are res_tool's error, not ours, and rows whose kind has
+   no cooked form are loose content: both are skipped without a word. */
 static void
 man_add_row( man_ctx_t* c, const char* name, const char* rel )
 {
+    for ( int i = 0; i < c->seen_count; ++i )
+        if ( strcmp( s_man_seen[ i ], name ) == 0 )
+            return;
+    if ( c->seen_count >= COOK_MAX_JOBS )
+    {
+        c->overflow = true;
+        return;
+    }
+    snprintf( s_man_seen[ c->seen_count++ ], COOK_PATH_MAX, "%s", name );
+
     char src[ COOK_PATH_MAX ] = "";
     for ( int r = 0; r < c->root_count && !src[ 0 ]; ++r )
     {
@@ -1083,12 +1093,9 @@ man_add_row( man_ctx_t* c, const char* name, const char* rel )
         }
         kind = r.kind;
     }
-    if ( !man_kind_word( kind ) )
+    if ( !man_kind_tool( kind ) )
         return;
 
-    for ( int i = 0; i < c->job_count; ++i )
-        if ( strcmp( s_man_jobs[ i ].name, name ) == 0 )
-            return;
     if ( c->job_count >= COOK_MAX_JOBS )
     {
         c->overflow = true;
@@ -1191,6 +1198,8 @@ typedef struct man_args_s
     const char* roots[ MAN_MAX_ROOTS ];       // -root <dir>, highest priority first
     int         root_count;
     const char* out;                          // -out <dir>
+    man_tool_t  tools[ MAN_MAX_TOOLS ];       // -tool <name>=<path>, repeatable
+    int         tool_count;
     bool        check;                        // -check: report, cook nothing
     bool        force;                        // -f: every job is stale
     bool        silent;                       // -silent: no per-name stale/cook lines (converters still report)
@@ -1208,8 +1217,10 @@ cook_manifests( const man_args_t* a )
     for ( int i = ( int )strlen( out_root ) - 1; i > 0 && ( out_root[ i ] == '\\' || out_root[ i ] == '/' ); --i )
         out_root[ i ] = '\0';
 
-    man_ctx_t c = { 0 };
-    c.out_root  = out_root;
+    man_ctx_t c  = { 0 };
+    c.out_root   = out_root;
+    c.tools      = a->tools;
+    c.tool_count = a->tool_count;
     for ( int r = 0; r < a->root_count; ++r )
         c.roots[ c.root_count++ ] = a->roots[ r ];
 
@@ -1221,34 +1232,31 @@ cook_manifests( const man_args_t* a )
         if ( !man_read_manifest( &c, a->manifests[ i ] ) )
             inputs_ok = false;
     if ( c.overflow )
-        fprintf( stderr, "asset_tool: warning: more than %d cookable names -- truncated\n", COOK_MAX_JOBS );
+        fprintf( stderr, "asset_tool: warning: more than %d resource names -- truncated\n", COOK_MAX_JOBS );
 
-    /* 2. Recorded format versions; a missing stamp reads as version 0 for every kind. */
-    u32 recorded[ MAN_KIND_COUNT ] = { 0 };
-    {
-        char path[ COOK_PATH_MAX ];
-        man_format_path( &c, path, sizeof( path ) );
-        kv_file_read( path, man_format_line, recorded );
-    }
-
-    /* 3. Decide staleness per output. */
+    /* 2. Decide staleness per output. */
     int stale = 0, missing = 0;
     for ( int i = 0; i < c.job_count; ++i )
     {
-        man_job_t* j     = &s_man_jobs[ i ];
-        u64        dst_t = sys_file_time( j->dst );
+        man_job_t*  j         = &s_man_jobs[ i ];
+        u64         dst_t     = sys_file_time( j->dst );
+        const char* tool_file = NULL;
 
         j->missing = ( dst_t == 0 );
-        if ( a->force )                                              j->why = "forced";
-        else if ( j->missing )                                       j->why = "missing";
-        else if ( recorded[ j->kind ] != man_format_version( j->kind ) ) j->why = "format version";
-        else if ( man_input_time( j ) >= dst_t )                     j->why = "source newer";
-        j->stale = ( j->why != NULL );
+        if ( a->force )
+            snprintf( j->why, sizeof( j->why ), "forced" );
+        else if ( j->missing )
+            snprintf( j->why, sizeof( j->why ), "missing" );
+        else if ( man_input_time( j ) >= dst_t )
+            snprintf( j->why, sizeof( j->why ), "source newer" );
+        else if ( man_tool_time( &c, j, &tool_file ) >= dst_t )
+            snprintf( j->why, sizeof( j->why ), "tool newer: %s", man_basename( tool_file ) );
+        j->stale = ( j->why[ 0 ] != '\0' );
         stale   += j->stale;
         missing += j->missing;
     }
 
-    /* 4. Report, or cook. */
+    /* 3. Report, or cook. */
     int cooked = 0, failed = c.bad_rows;
     if ( a->check )
     {
@@ -1285,7 +1293,6 @@ cook_manifests( const man_args_t* a )
                 sys_file_delete( j->dst );    /* no half-written or old-format file left behind */
             }
         }
-        man_format_write( &c );
     }
 
     i64 ms = sys_tick_milliseconds() - start;
@@ -1426,10 +1433,13 @@ usage( void )
              "      other      -> copy\n"
              "  asset_tool -src <dir> -dst <dir> [-f]   incremental tree cook (-f = force all)\n"
              "  asset_tool pack <cooked_dir> <out.zip>  bundle a cooked tree (via its manifest)\n"
-             "  asset_tool -list <manifests.txt> -root <dir>... -out <dir> [-check] [-f] [-silent]\n"
+             "  asset_tool -list <manifests.txt> -root <dir>... -out <dir> [-tool <name>=<path>]...\n"
+             "             [-check] [-f] [-silent]\n"
              "      cook the shaders and recipes the build's resource manifests name into\n"
              "      <out>/<name>.<ext>; only what is missing or older than its inputs.\n"
              "      -manifest <file> names one manifest directly (repeatable, with or without -list)\n"
+             "      -tool <name>=<path>  the newest source of a tool in the cook chain (asset_tool,\n"
+             "                 shader_tool, font_tool); an edit to the tool then counts as an input\n"
              "      -check     report instead of cooking; exit 3 when anything needs a cook\n"
              "      -f         cook every name;  -silent  omit the per-name stale/cook lines\n",
              ASSET_TOOL_DEFAULT_FONT_SIZE );
@@ -1505,6 +1515,27 @@ main( int argc, char** argv )
             }
             else if ( strcmp( f, "-out" ) == 0 && val )
                 man.out = argv[ ++i ];
+            else if ( strcmp( f, "-tool" ) == 0 && val )
+            {
+                char* eq = strchr( argv[ ++i ], '=' );
+                if ( !eq || eq == argv[ i ] || !eq[ 1 ] )
+                {
+                    fprintf( stderr, "asset_tool: error: -tool wants <name>=<path>, got '%s'\n", argv[ i ] );
+                    bad = true;
+                }
+                else if ( man.tool_count < MAN_MAX_TOOLS )
+                {
+                    *eq                            = '\0';
+                    man.tools[ man.tool_count ].name = argv[ i ];
+                    man.tools[ man.tool_count ].path = eq + 1;
+                    ++man.tool_count;
+                }
+                else
+                {
+                    fprintf( stderr, "asset_tool: error: more than %d -tool arguments\n", MAN_MAX_TOOLS );
+                    bad = true;
+                }
+            }
             else if ( strcmp( f, "-check" ) == 0 )
                 man.check = true;
             else if ( strcmp( f, "-silent" ) == 0 )
@@ -1514,7 +1545,8 @@ main( int argc, char** argv )
         }
 
         bool tree_mode = ( src || dst );
-        bool man_mode  = ( man.list_path || man.manifest_count || man.out || man.root_count || man.check );
+        bool man_mode  = ( man.list_path || man.manifest_count || man.out || man.root_count || man.check ||
+                           man.tool_count );
 
         if ( bad || ( tree_mode && man_mode ) )
             usage();

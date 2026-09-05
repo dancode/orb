@@ -409,6 +409,20 @@ Cook-D -- packaging  [DONE 2026-07-06]
    COOK TRACK COMPLETE (A single-job / B tree+manifest / C .tex format / D packaging).
 
 --------------------------------------------------------------------------------
+Cook-E -- resource-manifest cook for build_tool  [DONE 2026-09-04]
+   - `asset_tool -list <manifests.txt> -root <dir>... -out <dir> [-check] [-f] [-silent]`:
+     the build's content phase (build_tool_09_content.c) hands it the resource manifests
+     res_tool wrote and it cooks the stage-tagged .hlsl and .recipe names they carry into
+     <out>.  See RESOURCE_ID_PLAN.md decision 16.
+
+Cook-F/G -- cook staleness: one make-style rule, tool sources as inputs  [DONE 2026-09-05]
+   - Replaced the per-kind .cook_format version stamp with `-tool <name>=<path>`: build_tool
+     passes the newest source of each tool in the cook chain (asset_tool, shader_tool,
+     font_tool) and asset_tool treats it as one more input beside the source and its
+     siblings.  A cooker edit or a format-header bump recooks its kind; a relink of a cooker
+     because sys or pack was rebuilt recooks nothing.  Diagnosis in COOK_STALENESS_PLAN.md,
+     design and proofs in COOK_STALENESS_REVIEW.md.
+
 ## Open decisions
 --------------------------------------------------------------------------------
 
