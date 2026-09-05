@@ -4,6 +4,12 @@
 Primary target is Windows with Visual Studio 2022+. POSIX (Linux/macOS) is a planned secondary
 target -- maintain POSIX paths as working code, never stub with `#error`.
 
+Documentation is deliberately small. `docs/README.md` is the overview (invariants, the stack
+as it exists, what comes next); `docs/CONTENT.md` covers resource names, cooking, the asset
+service and shipping; `docs/SHADERS.md` the shader pipeline; `docs/GUI.md` the gui from the
+outside. Deeper references sit beside their code: `source/runtime_service/gui/GUI_ARCHITECTURE.md`,
+`source/game/framework/world.md`, `source/engine/ref/ref.md`. Code is the source of truth.
+
 ---
 
 ## IMPORTANT: ASCII Only
@@ -24,27 +30,35 @@ ABI breakage, hot-reload staleness, or migration concerns from reordering -- jus
 ## Build System
 
 Custom C build orchestrator (`build_tool.exe`) -- not CMake or MSBuild. Directly invokes
-`cl.exe`/`link.exe`/`lib.exe` and generates Visual Studio solution files.
+`cl.exe`/`link.exe`/`lib.exe`, generates Visual Studio solution files, and runs the content
+cook (see docs/CONTENT.md). Targets are declared in `orb.targets`.
 
-**First-time setup** (run from a Developer Command Prompt with vcvarsall loaded):
+**First-time setup** (works from a plain shell; the script finds and loads vcvarsall itself):
 
 ```bat
-bootstrap_build_tool.bat    :: compile build_tool.exe only
-bootstrap_then_gen.bat      :: compile + run -gen
+bootstrap_build_tool.bat        :: compile build_tool.exe into bin/
+bin\build_tool.exe -gen         :: generate build\orb_all.sln and friends
+bin\build_tool.exe -doctor      :: diagnose environment, registry, child-project wiring
 ```
 
 **Daily workflow:**
 
 ```bat
-bin\build_tool.exe -gen                         :: regenerate .sln/.vcxproj
-bin\build_tool.exe -config Debug                :: build all targets
-bin\build_tool.exe -config Debug -target core   :: build one target
+bin\build_tool.exe -config Debug                :: build all targets, then cook stale content
+bin\build_tool.exe -config Debug -target core   :: build one target's closure
+bin\build_tool.exe -gen                         :: regenerate .sln/.vcxproj after editing orb.targets
 bin\build_tool.exe -clean                       :: wipe bin/ and obj/
-build_hot.bat <target> [Debug|Release]          :: hot-rebuild (keeps debugger attached)
+bin\build_tool.exe -help                        :: the full flag list
+build_hot.bat <target> [Debug|Release]          :: rebuild one module with -no-deps (debugger stays attached)
 ```
 
 Open `build\orb_all.sln` in Visual Studio for normal build/debug. Outputs land in `bin/`,
-intermediates in `obj/<target>/`.
+intermediates in `build/obj/<target>/`, cooked content in `build/content/`.
+
+Flags worth knowing: `-force` skips the up-to-date check; `-content` builds the cooker before
+cooking (a plain build cooks with whatever `asset_tool.exe` is already in bin/); `-no-content`
+only reports stale cooked files; `-shipping` is Release + whole-program optimization +
+`-content -strict-content`; `-create <name> -type project` scaffolds a standalone child project.
 
 **Build modes:**
 
@@ -58,14 +72,19 @@ module API headers switch behavior automatically. Call sites are identical in bo
 
 ## Testing
 
-No automated test framework. Run sandbox executables to validate:
+No automated test framework. Every layer has a sandbox executable under `source/sandbox/`;
+build it and run it. The headless ones return the failed-check count as their exit code.
 
-- `sb_sys` -- sys layer
-- `sb_core` -- core layer
-- `sb_reflect` -- ref_ reflection
-- `sb_res` -- res name helpers + the build's resource manifest (exit code = failed checks)
-- `sb_mod` -- module system / hot-reload
-- `sb_app` -- application / windowing
+| Sandbox | Validates |
+|---------|-----------|
+| `sb_base`, `sb_sys`, `sb_core`, `sb_mod`, `sb_app`, `sb_job`, `sb_net`, `sb_prof`, `sb_fs` | one engine library each |
+| `sb_reflect`, `sb_ref_exe`, `sb_gen_exe` | ref_ reflection, including reflected DLLs |
+| `sb_res` | res name helpers + the build's resource manifest (headless) |
+| `sb_asset_test` | asset registry, dedup, hot reload (headless); `sb_asset_image`, `sb_asset_shader` on screen |
+| `sb_world` | the world framework: entities, components, queries, rebind |
+| `sb_gui_test` | gui headless assertions; `sb_gui_example` is the on-screen feature explorer |
+| `sb_vulkan`, `sb_vulkan_stress`, `sb_quad_pull` | rhi |
+| `sb_host_*` | host shapes over run_host |
 
 ```bat
 bin\build_tool.exe -config Debug -target sb_mod && bin\sb_mod.exe
@@ -73,42 +92,63 @@ bin\build_tool.exe -config Debug -target sb_mod && bin\sb_mod.exe
 
 ## Architecture
 
-Strict dependency hierarchy -- lower layers never depend on higher ones.
+Strict dependency hierarchy -- lower layers never depend on higher ones. `docs/README.md`
+has the tier diagram with status per system.
 
 ```
-source/base/          -- stateless stdlib (math, strings, memory); no globals; links into host + DLLs
-source/engine/        -- root engine libraries, listed lowest to highest
-  mod/                -- module registry: loading, hot-reload, dep-ordered init; substrate, online first
-  sys/                -- OS abstractions: files, threads, time, DLL loading, paths (leaf, no deps)
-  ref/                -- reflection registry: types, fields, schema hash (leaf, no deps)
-  res/                -- resource names, header-only: the RID() marker the build scans for,
-                         canonical-form check, name hash, name+ext join; no library, no module.
-                         res_tool resolves every marked name against content/ at build time and
-                         writes obj/<t>/<t>_res_manifest.txt; see docs/CONTENT.md
-  prof/               -- profiler: SID zones, SPSC rings, trace dump (dep: sys)
-  pack/               -- compression: deflate/inflate, crc32, zip read/write; owns the single
-                         engine-wide miniz copy (leaf, no deps)
-  fs/                 -- virtual file system: mounts, zip bundles (deps: sys, pack)
-  job/                -- job system: worker pool (dep: sys)
-  net/                -- UDP transport: handshake, channels, fragmentation (dep: sys)
-  core/               -- engine orchestration layer: arenas, logging, cvars, cmd/console, config, SIDs
-                         (deps: sys, ref) -- always the TOP of the engine root libraries
-  app/                -- windowing, events, main-loop lifecycle (no hard deps; wired by hosts, above core)
-source/runtime/       -- simulation scaffolding: host loop + services + hot-reload DLLs
-source/runtime_service/
-  gui/                -- in-house immediate-mode GUI (gui.c + gui_backend.c static lib)
-  rhi/                -- render hardware interface (Vulkan backend)
-source/developer/     -- dev-only services: hot-reload wrapper
-source/game/          -- world, entity, component, actor (hot-reload DLLs)
-source/editor/        -- editor framework: windows, panels, tools (hot-reload DLLs)
-source/tools/         -- standalone exe utilities: asset pipeline, shader compiler, launcher
-source/host/          -- executable entry points: game, editor, tool, sandbox
-source/sandbox/       -- test executables for each engine layer
-source/project/       -- game-specific code (sample_game)
-third_party/          -- vendored libraries (freetype-2.14.3)
-content/              -- source content root: a resource name (RID( "ui/icon/save" )) is a file's
-                         path here minus its extension; the build resolves it (res_tool) and a
-                         child project's content/ shadows it name by name. See docs/CONTENT.md.
+source/base/            -- stateless stdlib: math, strings, utf8, fmt, memory, bit/char, test
+                           harness; no globals; links into the host AND every DLL
+source/vendor/          -- single-header third-party code: stb_image(+_write), stb_sprintf,
+                           miniz, nanosvg; each compiled in exactly one consuming TU
+source/engine/          -- root engine libraries, listed lowest to highest
+  mod/                  -- module registry: loading, hot-reload, dep-ordered init; substrate, online first
+  sys/                  -- OS abstractions: files, threads, time, DLL loading, paths, processes (leaf)
+  ref/                  -- reflection registry: types, fields, schema hash (leaf)
+  res/                  -- resource names, header-only: the RID() marker the build scans for,
+                           canonical-form check, name hash, name+ext join, cooked-file reference
+                           section; no library, no module. See docs/CONTENT.md
+  prof/                 -- profiler: SID zones, SPSC rings, trace dump (dep: sys)
+  pack/                 -- compression: deflate/inflate, crc32, zip read/write; owns the single
+                           engine-wide miniz copy (leaf)
+  fs/                   -- virtual file system: mounts, zip bundles, catalog (deps: sys, pack)
+  job/                  -- job system: worker pool (dep: sys)
+  net/                  -- UDP transport: handshake, channels, fragmentation (dep: sys)
+  core/                 -- engine orchestration layer: arenas, logging, cvars, cmd/console, config, SIDs
+                           (deps: sys, ref) -- always the TOP of the engine root libraries
+  app/                  -- windowing, events, main-loop lifecycle (no hard deps; wired by hosts)
+source/runtime/         -- run: the one host loop (run_host_main) and the project contract
+                           (run_project.h: on_start / on_sim / on_frame / on_draw / on_hud / on_stop)
+source/runtime_service/ -- static libs with a mod_desc, linked into hosts
+  rhi/                  -- render hardware interface: Vulkan, bindless descriptors, .oshd loader
+  draw/                 -- 2d/3d batch drawing over rhi
+  gui/                  -- in-house immediate-mode GUI; 16 unity units, one per band (gui_frame,
+                           gui_core, gui_render, gui_draw, gui_flow, gui_style, gui_stock, gui_chrome...)
+  asset/                -- asset registry: acquire by name, refcount, typed loaders, hot reload
+  input/                -- action binding service
+  console/              -- developer console UI over core's cvar/console backend
+  ahi/                  -- audio hardware interface: WASAPI device + mixer
+source/runtime_modules/ -- hot-reload DLLs: render, audio, example, physics (stub), animation (empty)
+source/game/            -- game runner DLL: project bind, play/stop/pause/step, fixed-step clock
+  framework/            -- the world: entities, ref-described components, dense pools, queries
+                           (unity-joined into its owner; see framework/world.md)
+source/game_service/    -- nav (stub)          source/game_modules/   -- game_example (stub)
+source/editor/          -- editor static lib: menu bar, dockspace, Viewport / Game / Deploy windows
+source/editor_service/  -- viewport (scene render target, view camera, ray pick)
+source/editor_modules/  -- editor_example (hot-reload DLL stub)
+source/developer/       -- dev-only static libs: dev_build, dev_hot (runtime rebuild + swap),
+                           dev_font (stb_truetype baker), dev_image, dev_vector, dev_ship (packager)
+source/tools/           -- standalone exes: build_tool, reflect_tool, res_tool, asset_tool,
+                           shader_tool, font_tool, image_tool, ship_tool, launch_tool
+source/host/            -- executable entry points: host_game, host_editor, host_common
+source/sandbox/         -- test executables, grouped by layer (base, engine, reflect, rhi, runtime,
+                           gui, game, host, tool)
+source/project/         -- sample_game (living reference), template_game (source of -create)
+third_party/            -- freetype-2.14.3 (font_tool only) + its prebuilt bin/
+content/                -- source content root: a resource name (RID( "ui/icon/save" )) is a file's
+                           path here minus its extension; the build resolves it (res_tool) and a
+                           child project's content/ shadows it name by name. See docs/CONTENT.md
+source_content/         -- raw sources (TTF, SVG) read by tools only; mirrors content/
+build/content/          -- generated cooked forms (.oshd, .orb_font, .tex), mounted above content/
 ```
 
 Engine libraries (`mod`, `sys`, `ref`, `prof`, `pack`, `fs`, `job`, `net`, `core`, `app`)
@@ -119,15 +159,21 @@ are always statically linked into the host. Never in a DLL.
 | Library | Location | Purpose |
 |---------|----------|---------|
 | **Vulkan** | `%VULKAN_SDK%` (runtime loaded) | Graphics API -- no volk; custom 4-stage function pointer bootstrap in `vk_library.c` |
+| **dxc** | `%VULKAN_SDK%\Bin\dxc.exe` (spawned) | HLSL -> SPIR-V in `shader_tool`; never linked |
+| **SPIRV-Reflect** | `source/tools/shader_tool/vendor/` | Shader interface extraction at cook time (tool only) |
 | **DXGI 1.5** | System (`dxgi.lib`) | VRR support check only -- not used for rendering |
-| **FreeType 2.14.3** | `third_party/freetype-2.14.3/` | Font rasterization for `font_tool` offline atlas baker |
-| **stb_rect_pack** | `source/tools/font_tool/` | Rectangle packing for font atlas layout (tool only) |
+| **FreeType 2.14.3** | `third_party/freetype-2.14.3/` | Font rasterization for the `font_tool` offline atlas baker |
+| **stb_truetype / stb_rect_pack** | `source/developer/dev_font/` | Runtime dev font baker; rect_pack also drives the gui atlases |
+| **stb_image / stb_image_write** | `source/vendor/` | Image decode in the asset image loader, gui icons, asset_tool, dev_image |
+| **stb_sprintf** | `source/vendor/` | `base/fmt` formatting |
+| **miniz** | `source/vendor/` | Deflate + zip, compiled once in `engine/pack` |
+| **nanosvg** | `source/vendor/` | SVG rasterization in dev_vector (icon import) |
 
 No GLFW, SDL, or Dear ImGui. Windowing/input use the Win32 API directly. GUI is in-house.
 
 ## Header Conventions
 
-Every engine library uses a three-header split:
+Every engine library and runtime service uses a three-header split:
 
 | Header | Who includes it | Contains |
 |--------|----------------|---------|
@@ -137,8 +183,9 @@ Every engine library uses a three-header split:
 
 **mod** has four files (self-hosting): `mod_import.h`, `mod_api.h`, `mod_host.h`, `mod_export.h`.
 
-Existing header sets: `mod_*`, `sys.*`, `ref.*`, `prof.*`, `pack.*`, `fs.*`, `job.*`, `net.*`, `core.*`, `app.*`.
-`res` is the exception: header-only (`res.h`, `res_ref.h`, `res_cook.h`), no `_api`/`_host` split.
+Engine header sets: `mod_*`, `sys.*`, `ref.*`, `prof.*`, `pack.*`, `fs.*`, `job.*`, `net.*`,
+`core.*`, `app.*`. `res` is the exception: header-only (`res.h`, `res_ref.h`, `res_cook.h`),
+no `_api`/`_host` split.
 
 ## Module System
 
@@ -175,7 +222,7 @@ Consuming a module API:
 ```c
 MOD_DEFINE_API_PTR( render_api_t, render );          // file scope
 if ( !MOD_FETCH_API( render_api_t, render ) ) ...    // in init()/reload()
-render()->begin_frame( dt );                          // call site (same in both modes)
+render()->begin_frame( ctx_id );                      // call site (same in both modes)
 ```
 
 Key invariants:
