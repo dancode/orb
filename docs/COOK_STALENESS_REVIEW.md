@@ -211,9 +211,14 @@ present, which is what a hand-run asset_tool gets today.
            dead clause at 12_gen_vs.c:1041, the -force comment at 09_content.c:458.
            [DONE 2026-09-05]
 
-  Deferred, unchanged: Plan A's Cook-J (dxc identity).  Under Plan B it would be one more
-  -tool entry pointing at dxcompiler.dll -- build_tool can locate it from %VULKAN_SDK% --
-  so the cost of doing it later is a line, not a design.
+  Cook-J   dxc identity.   [DONE 2026-09-05]
+           Landed in asset_tool, not as a -tool from build_tool: shader_tool spawns
+           %VULKAN_SDK%\Bin\dxc.exe (its dxc_locate()), and build_tool learning that would
+           be build_tool learning a cooker's internals.  man_tool_time() times the same path
+           for shader jobs.  Verified: VULKAN_SDK pointed at a scratch dir with a new
+           Bin\dxc.exe -> the 7 shaders stale as "tool newer: dxc.exe", the 8 fonts not;
+           the installed SDK's dxc.exe (2026-07-27) leaves a fresh tree at "15 cooked
+           file(s) up to date".
 
 ### What Plan B gives up
 

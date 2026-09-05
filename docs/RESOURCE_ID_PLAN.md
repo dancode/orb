@@ -232,8 +232,9 @@ piece.
 
     Staleness and the kind table live in asset_tool alone, make-style: an output is stale
     when it is missing or when any input is at least as new -- its source, a file the cook
-    reads beside it (a shader's .hlsli siblings, a recipe's family.txt), or the newest source
-    of a tool in the cook chain.  build_tool names each tool's newest source (its units plus
+    reads beside it (a shader's .hlsli siblings, a recipe's family.txt), the newest source
+    of a tool in the cook chain, or for a shader the %VULKAN_SDK%\Bin\dxc.exe shader_tool
+    runs (an SDK update).  build_tool names each tool's newest source (its units plus
     the headers in obj/<t>/_includes.txt) with `-tool <name>=<path>`, so an edit to
     shader_tool.c recooks the shaders and a bump of ORB_FONT_VERSION recooks the fonts, while
     a relink of a cooker because sys or pack was rebuilt recooks nothing: build_target_compile

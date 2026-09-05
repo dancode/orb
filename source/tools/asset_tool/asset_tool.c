@@ -1000,8 +1000,11 @@ man_basename( const char* path )
     return s ? s + 1 : path;
 }
 
-/* The newest source among the tools that produce a job's bytes: this tool and the cooker its
-   kind dispatches to.  0 when neither was named.  *out_file is the path that won. */
+/* The newest among the tools that produce a job's bytes: this tool, the cooker its kind
+   dispatches to (each as the -tool path build_tool named), and for a shader the dxc.exe that
+   shader_tool runs, at the path its dxc_locate() resolves -- an SDK update changes every
+   .oshd and no source of ours.  0 when nothing could be timed.  *out_file is the path that
+   won; for dxc it points at static storage that the next call overwrites. */
 static u64
 man_tool_time( const man_ctx_t* c, const man_job_t* j, const char** out_file )
 {
@@ -1017,6 +1020,22 @@ man_tool_time( const man_ctx_t* c, const man_job_t* j, const char** out_file )
         {
             t         = m;
             *out_file = c->tools[ i ].path;
+        }
+    }
+
+    if ( j->kind == RES_KIND_SHADER )
+    {
+        static char dxc[ COOK_PATH_MAX ];
+        const char* sdk = getenv( "VULKAN_SDK" );
+        if ( sdk && *sdk )
+        {
+            snprintf( dxc, sizeof( dxc ), "%s\\Bin\\dxc.exe", sdk );
+            u64 m = sys_file_time( dxc );
+            if ( m > t )
+            {
+                t         = m;
+                *out_file = dxc;
+            }
         }
     }
     return t;

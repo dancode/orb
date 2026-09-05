@@ -419,8 +419,9 @@ Cook-F/G -- cook staleness: one make-style rule, tool sources as inputs  [DONE 2
    - Replaced the per-kind .cook_format version stamp with `-tool <name>=<path>`: build_tool
      passes the newest source of each tool in the cook chain (asset_tool, shader_tool,
      font_tool) and asset_tool treats it as one more input beside the source and its
-     siblings.  A cooker edit or a format-header bump recooks its kind; a relink of a cooker
-     because sys or pack was rebuilt recooks nothing.  Diagnosis in COOK_STALENESS_PLAN.md,
+     siblings; for a shader, the SDK's dxc.exe is timed too.  A cooker edit, a format-header
+     bump or an SDK update recooks its kind; a relink of a cooker because sys or pack was
+     rebuilt recooks nothing.  Diagnosis in COOK_STALENESS_PLAN.md,
      design and proofs in COOK_STALENESS_REVIEW.md.
 
 ## Open decisions
