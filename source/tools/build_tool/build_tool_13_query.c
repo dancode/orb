@@ -60,13 +60,13 @@ cmd_print_help( void )
     printf( ORB_INDENT "  %-28s%s\n", "-target <name>",         "Restrict build/clean/graph to one target's closure." );
     printf( ORB_INDENT "  %-28s%s\n", "-config <Debug|Release>","Build configuration (default: Debug)." );
     printf( ORB_INDENT "  %-28s%s\n", "-release",               "Shortcut for -config Release." );
-    printf( ORB_INDENT "  %-28s%s\n", "-shipping",              "Release + /GL + /LTCG (whole-program optimization). Implies -release." );
+    printf( ORB_INDENT "  %-28s%s\n", "-shipping",              "Release + /GL + /LTCG (whole-program optimization). Implies -release -content -strict-content." );
     printf( ORB_INDENT "  %-28s%s\n", "-monolithic, -mono",     "Build DLL modules as static libs; defines BUILD_STATIC." );
     printf( ORB_INDENT "  %-28s%s\n", "-clang",                 "Use clang-cl instead of cl.exe." );
     printf( ORB_INDENT "  %-28s%s\n", "-force",                 "Skip the up-to-date check; always compile + link." );
     printf( ORB_INDENT "  %-28s%s\n", "-no-deps",               "Build only the named target; skip dep recursion. (VS -managed)" );
     printf( ORB_INDENT "  %-28s%s\n", "-compile-only",          "Compile all unity units for -target; no link. (VS Ctrl+F7)" );
-    printf( ORB_INDENT "  %-28s%s\n", "-content",               "Also cook the shaders and recipes the built targets' manifests name (build/content)." );
+    printf( ORB_INDENT "  %-28s%s\n", "-content",               "Cook the content the built targets name into build/content. Default: check and report only." );
     printf( ORB_INDENT "  %-28s%s\n", "-res-manifest",          "Generate only -target's resource manifest (obj/<t>/<t>_res_manifest.txt)." );
     printf( ORB_INDENT "  %-28s%s\n", "-file <path>",           "Compile one file with target's full flag set; no link." );
     printf( ORB_INDENT "  %-28s%s\n", "-j N",                   "Worker thread count (default: auto-detect from CPU count)." );
@@ -156,11 +156,6 @@ deps_visit( deps_topo_t* topo, target_info_t* t )
         target_info_t* rt = find_res_tool();
         if ( rt && !deps_visit( topo, rt ) ) return false;
     }
-    if ( cook_active( t ) )
-    {
-        target_info_t* at = find_asset_tool();
-        if ( at && !deps_visit( topo, at ) ) return false;
-    }
 
     topo->visited[ idx ] = 2;  // done
     if ( topo->count < DEPS_MAX_TOPO )
@@ -168,7 +163,7 @@ deps_visit( deps_topo_t* topo, target_info_t* t )
     return true;
 }
 
-// Gathers all direct deps of t (link + tool + implicit reflect/res/asset tools) into out_deps[]/out_kind[].
+// Gathers all direct deps of t (link + tool + implicit reflect/res tools) into out_deps[]/out_kind[].
 static int
 deps_collect( const target_info_t* t, target_info_t* out_deps[], const char* out_kind[], int max )
 {
@@ -183,12 +178,11 @@ deps_collect( const target_info_t* t, target_info_t* out_deps[], const char* out
         target_info_t* d = find_target( t->tool_deps[ i ] );
         if ( d ) { out_deps[ n ] = d; out_kind[ n++ ] = "tool"; }
     }
-    target_info_t* implicit[ 3 ] = {
+    target_info_t* implicit[ 2 ] = {
         t->has_reflect                 ? find_reflect_tool() : NULL,
         target_wants_res_manifest( t ) ? find_res_tool()     : NULL,
-        cook_active( t )               ? find_asset_tool()   : NULL,
     };
-    for ( int k = 0; k < 3; ++k )
+    for ( int k = 0; k < 2; ++k )
     {
         target_info_t* rt = implicit[ k ];
         if ( !rt || n >= max ) continue;
@@ -323,6 +317,11 @@ cmd_graph( const char* target_name )
                 deps_visit( &topo, &g_targets[ i ] );
     }
 
+    // -content: the cooker is a second root the scheduler adds, not a dep of anything.
+    target_info_t* cooker = g_cook ? find_asset_tool() : NULL;
+    if ( cooker && !topo.has_cycle )
+        deps_visit( &topo, cooker );
+
     if ( topo.has_cycle )
     {
         printf( ORB_INDENT "[orb error] %s\n", topo.cycle_msg );
@@ -331,6 +330,8 @@ cmd_graph( const char* target_name )
 
     const char* label = root ? root->name : "ALL";
     printf( ORB_BANNER "[orb deps]  %s  (%d in closure)\n", label, topo.count );
+    if ( cooker )
+        printf( ORB_INDENT "content phase: %s cooks the closure's manifests after the build\n", cooker->name );
 
     // Tree view: single-target mode only.
     if ( root )

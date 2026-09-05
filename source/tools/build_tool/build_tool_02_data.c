@@ -335,7 +335,7 @@ target_reflect_name( const target_info_t* t )
     (<name>_res_manifest.txt, see build_gen_res_manifest) listing the names its own units and
     its statically linked libraries mark with RID() / RES_TREE(). An image's manifest is the
     complete name set of that program and the packager's input; a lib's manifest is what
-    scopes `-target <lib> -content` to the content that lib names. Excluded: aliases, which
+    scopes the content phase of `-target <lib>` to the content that lib names. Excluded: aliases, which
     build nothing, and the tools the harvest itself depends on -- res_tool cannot depend on
     itself, and build_tool and reflect_tool must build before it exists.
 ==============================================================================================*/
@@ -370,7 +370,7 @@ target_is_content_tool( const target_info_t* t )
         return true;
 
     // A cooker the asset tool spawns: reached through find_asset_tool() so membership is
-    // computed against the same target build_cook_content() actually runs.
+    // computed against the same target build_content_phase() actually runs.
     const target_info_t* cooker = find_asset_tool();
     if ( cooker )
         for ( int d = 0; cooker->tool_deps[ d ]; ++d )

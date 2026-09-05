@@ -33,7 +33,7 @@
         06_spawn.c        -- child process spawning, output line capture
         07_compile.c      -- cl.exe command assembly and execution
         08_link.c         -- link.exe / lib.exe command assembly and execution
-        09_content.c      -- resource manifest harvest (always) + content cook (-content)
+        09_content.c      -- resource manifest harvest (per target) + content phase (per build)
         09_exec.c         -- build_target() orchestration
         10_sched.c        -- topological worker-pool parallel scheduler
         11_clean.c        -- -clean command: per-target or global artifact wipe;
@@ -195,9 +195,9 @@ static bool        g_include_track  = true;         // Use up-to-date tracking v
 static bool        g_use_rsp        = true;         // Use overflow prevention.
 static bool        g_gen_fwd_compat = true;         // -gen: emit stdcpp20 + stdc11 (for nmake).
                                                     // (suppress designated-initializer squiggles)
-static bool        g_cook           = false;        // -content: cook the manifests' shaders and
-                                                    // recipes into build/content. Off by default;
-                                                    // the manifest harvest itself always runs.
+static bool        g_cook           = false;        // -content: the content phase cooks into
+                                                    // build/content instead of only reporting what
+                                                    // is stale. The manifest harvest always runs.
 static bool        g_content_strict = false;        // -strict-content: a harvest or cook failure
                                                     // fails the target instead of warning.
 static int         g_job_threads    = 1;            // Effective scheduler worker count. Divides
@@ -401,7 +401,15 @@ main( int argc, char** argv )
         if ( str_icmp( argv[ i ], "-monolithic"       ) == 0 ) { ctx.is_monolithic = true; }
         if ( str_icmp( argv[ i ], "-mono"             ) == 0 ) { ctx.is_monolithic = true; }
         if ( str_icmp( argv[ i ], "-release"          ) == 0 ) { ctx.config = CONFIG_RELEASE; }
-        if ( str_icmp( argv[ i ], "-shipping"         ) == 0 ) { ctx.config = CONFIG_RELEASE; ctx.is_shipping = true; }
+        if ( str_icmp( argv[ i ], "-shipping"         ) == 0 )
+        {
+            // A ship build is complete or it is not a ship build: cooked content is part of the
+            // image, so it is cooked here and any content failure is fatal.
+            ctx.config       = CONFIG_RELEASE;
+            ctx.is_shipping  = true;
+            g_cook           = true;
+            g_content_strict = true;
+        }
         if ( str_icmp( argv[ i ], "-clang"            ) == 0 ) { ctx.compiler = COMPILE_CLANG; }
         if ( str_icmp( argv[ i ], "-compile-only"     ) == 0 ) { ctx.compile_only = true; }
         if ( str_icmp( argv[ i ], "-res-manifest"     ) == 0 ) { should_res_manifest = true; }
@@ -729,6 +737,9 @@ main( int argc, char** argv )
     //           Skip the scheduler; build only the named target.
     // otherwise: parallel scheduler over the full target closure.
 
+    static target_info_t* built[ MAX_TARGETS ];    // what the content phase covers
+    int                   built_count = 0;
+
     if ( ctx.skip_deps )
     {
         if ( !target ) { printf( ORB_INDENT "[orb error] -no-deps requires -target\n" ); return 1; }
@@ -743,6 +754,8 @@ main( int argc, char** argv )
 
         if ( was_skipped && ( g_out_flags & ORB_OUT_SUMMARY_COMPILE ) )
             printf( ORB_INDENT "%s[orb skipped]%s %s\n", g_clr_dim, g_clr_reset, target->name );
+
+        built[ built_count++ ] = target;
     }
     else
     {
@@ -751,6 +764,18 @@ main( int argc, char** argv )
             printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );
             return 1;
         }
+        built_count = sched_asked_targets( built, MAX_TARGETS );
+    }
+
+    // --- Content phase (see 09_content.c) ---
+    //
+    // After the code, never inside it: cooked files are runtime inputs. A check by default,
+    // a cook under -content; fails the build only under -strict-content.
+
+    if ( !build_content_phase( &ctx, built, built_count ) )
+    {
+        printf( ORB_BANNER "\n[ %s: FAILED ]\n", target_upper );
+        return 1;
     }
 
     printf( "\n" );

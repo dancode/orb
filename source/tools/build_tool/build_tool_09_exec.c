@@ -9,19 +9,15 @@
                                    locate the reflect tool and, via content_resolve(), res_tool.
       1. Per-target mutex lock  -- serialize concurrent invocations on the same target.
       2. Path preparation       -- obj_dir, gen_dir, out_path.
-      2.5 Content cook (pre)    -- -content only: asset_tool over the cookable names in the
-                                   previous manifest (shaders, recipes), into <build>/content.
       3. Up-to-date check       -- four freshness tests (A-D) on the compiled artifact. When it
                                    is current, a manifest that content_stale() reports as
-                                   behind its content directories is refreshed in place
-                                   (harvest, then cook under -content) and the target is
-                                   skipped: no compile, no link.
+                                   behind its content directories is re-harvested in place
+                                   and the target is skipped: no compile, no link.
       4. Directory creation     -- ensure every write destination exists.
       5. Locked-file management -- rename any in-use .exe aside before relinking.
       6. Reflection codegen     -- invoke reflect_tool if has_reflect is set.
-      6.5 Resource manifest     -- content_refresh(): res_tool over the target's unit closure
-                                   writes <name>_res_manifest.txt, then the cook runs again
-                                   over the fresh manifest under -content.
+      6.5 Resource manifest     -- content_harvest(): res_tool over the target's unit closure
+                                   writes <name>_res_manifest.txt.
       7. Compile + link         -- call 07_compile and 08_link; restore .exe on failure. A
                                    target with has_win_resources compiles its .rc first and
                                    links the .res in (Windows only).
@@ -41,10 +37,11 @@
       needs those built; the scheduler pre-wires them as graph deps via add_job().
 
     Content:
-      Steps 2.5, 3 (refresh) and 6.5 live in 09_content.c and produce runtime data only. A
-      failure in any of them is reported and the target still compiles and links;
+      The harvest in steps 3 (refresh) and 6.5 lives in 09_content.c and produces runtime
+      data only. A failure there is reported and the target still compiles and links;
       -strict-content restores hard failure. Step 6 (reflect_tool) is fatal in both modes:
-      its output is compiled.
+      its output is compiled. Cooked content is not a per-target concern at all: main() runs
+      build_content_phase() once, after the whole graph.
 
 ==============================================================================================*/
 // clang-format off
@@ -221,25 +218,6 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
     char gen_dir[ PATH_MAX ];
     path_gen_dir( gen_dir, sizeof( gen_dir ) );
 
-    // --- 2.5 Content Cook (pre) ---
-    //
-    // A no-op without -content. Inside the lock for the same reason everything else is --
-    // two invocations must not write one cooked file at once -- but ahead of the up-to-date
-    // check, because a cooked file is an input to the RUNTIME and not to the compiler: a
-    // shader edit must re-cook without dragging a recompile behind it, and an unchanged
-    // shader must not make the target look stale. Works from the manifest the previous build
-    // wrote; idempotent, and one mtime compare per cookable name when there is nothing to do.
-    //
-    // Returns directly rather than through cleanup: nothing has been renamed yet, and the
-    // variables that label reads are not declared until after the up-to-date check. Only
-    // -strict-content can produce that return; otherwise a cook failure is a warning.
-
-    if ( !build_cook_content( ctx, target, obj_dir ) )
-    {
-        build_unlock_target( target_lock );
-        return false;
-    }
-
     const char* ext = ( target->type == TARGET_STATIC_LIB )    ? ".lib"
                     : ( target->type == TARGET_DYNAMIC_LIB )   ? ( ctx->is_monolithic ? ".lib" : ".dll" )
                                                                : ".exe";
@@ -352,12 +330,12 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         // The code is current. The manifest may not be: a content file added, removed or
         // renamed under a directory it lists, or a manifest that has never been written
         // (a name that failed to resolve, or a target built before manifests existed).
-        // Refresh it here, in place -- harvest, then cook under -content -- and still report
-        // the target as skipped: nothing was compiled or linked.
+        // Re-harvest it here, in place, and still report the target as skipped: nothing was
+        // compiled or linked.
         if ( res_tool && content_stale( target, obj_dir, res_tool ) )
         {
             ensure_dir( obj_dir );
-            if ( !content_refresh( ctx, target, obj_dir, res_tool ) )
+            if ( !content_harvest( target, obj_dir, res_tool ) )
             {
                 result = false;    // only reachable under -strict-content
                 goto cleanup;
@@ -409,13 +387,12 @@ build_target( build_context_t* ctx, target_info_t* target, bool* out_skipped, ui
         goto cleanup;
     }
 
-    // --- 6.5 Resource Manifest + Content Cook (post) ---
+    // --- 6.5 Resource Manifest ---
     //
-    // A rebuild may add names the previous manifest did not carry; harvest now, and under
-    // -content cook the additions so the target runs against their cooked form on this
-    // same build.
+    // A rebuild may add names the previous manifest did not carry; harvest now so the
+    // content phase at the end of this build sees them.
 
-    if ( res_tool && !content_refresh( ctx, target, obj_dir, res_tool ) )
+    if ( res_tool && !content_harvest( target, obj_dir, res_tool ) )
     {
         result = false;    // only reachable under -strict-content
         goto cleanup;

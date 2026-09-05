@@ -200,22 +200,41 @@ piece.
     engine/fs says WHERE the bytes are (paths, mounts, priority) and learns nothing about
     resources.  runtime_service/asset says WHAT IS LOADED and who holds it (aid_t).
 
-16. THE BUILD COOKS WHAT THE MANIFEST NAMES.  (2026-09-02.)  A marked name whose source
-    needs a cooked form -- a stage-tagged .hlsl (-> .oshd), a .recipe (-> what its kind line
-    says; a font bake) -- is cooked by build_tool into <build>/content/<name>.<cooked ext>,
-    the mirror the host mounts above content/, so the runtime asks for the name and the cooked
-    file wins.  build_cook_content runs per image over its manifest, before the up-to-date
-    check (an edited shader recooks with no C change) and again after res_tool writes a fresh
-    manifest (a newly marked name cooks on the build that introduced it); asset_tool does the
-    cooking and reads the stage tag or the recipe itself.  This replaced the 'shader' lines in
+16. THE BUILD COOKS WHAT THE MANIFEST NAMES, WHEN ASKED.  (2026-09-02; re-cut 2026-09-04.)
+    A marked name whose source needs a cooked form -- a stage-tagged .hlsl (-> .oshd), a
+    .recipe (-> what its kind line says; a font bake) -- is cooked into
+    <build>/content/<name>.<cooked ext>, the mirror the host mounts above content/, so the
+    runtime asks for the name and the cooked file wins.  This replaced the 'shader' lines in
     orb.targets -- decision 13 now holds literally -- and it is what makes "only RID'd font
     sizes ship" produce the bakes: content/font/cascadiamono/16.recipe cooks because sb_gui
     marks the name, and no other size does.  Images stay loose (gui decodes PNG itself; the
-    asset service's .tex preference is a ship-time cook, Phase 7).  build_cook_content finds
-    and builds whichever target carries 'is_asset_tool' (asset_tool) the moment it meets a
-    manifest entry that needs cooking, so a target whose manifest names a shader or a recipe
-    needs no 'tool_dep' of its own; asset_tool itself carries 'tool_dep shader_tool font_tool',
-    since it spawns them as bin/ siblings at cook time.
+    asset service's .tex preference is a ship-time cook, Phase 7).
+
+    The cook is a PHASE, not a per-target step.  build_tool builds the code graph, harvesting
+    a manifest per target as it goes, and then runs asset_tool once over the manifests of the
+    targets it built (build_content_phase, build_tool_09_content.c):
+
+        asset_tool -list <obj>/_content_manifests.txt -root content [-root <engine>/content]
+                   -out build/content [-check]
+
+    By default that call is a CHECK: asset_tool reports which cooked files are missing or older
+    than their inputs and the build ends with one line -- "[orb content] N cooked file(s) out
+    of date (M missing) -- run build_tool -content" -- and cooks nothing.  `build_tool
+    -content` cooks them; `-target gui -content` cooks what gui's closure names; `-shipping`
+    implies `-content -strict-content`.  Nothing in the graph waits on a cooked file (it is a
+    runtime input), so the phase needs no edge into any target, asset_tool's own dependencies
+    (sys, pack, the cookers) never form a cycle, and a code-only checkout compiles without
+    ever building the content pipeline.  Under -content the scheduler adds asset_tool as a
+    root job so the cooker is current when the phase runs.
+
+    Staleness and the kind table live in asset_tool alone: an output is stale when it is
+    missing, when its source or a file the cook reads beside it (a shader's .hlsli siblings,
+    a recipe's family.txt) is at least as new, or when the format version recorded in
+    build/content/.cook_format for its kind is not the one the cooker writes (OSHD_VERSION,
+    ORB_FONT_VERSION).  A relinked cooker with an unchanged format recooks nothing.  A failed
+    cook deletes its output so it is "missing" next time, never a stale file that looks fresh.
+    asset_tool carries 'tool_dep shader_tool font_tool', since it spawns them as bin/ siblings
+    at cook time; no target that names a shader or a recipe declares a tool_dep of its own.
 
 17. THREE TIERS, TWO PIPELINES.  (2026-09-02.)  What a directory holds is decided by who reads
     it:
@@ -259,8 +278,11 @@ piece.
       res_cook.h   -- source extension -> cooked extension        (header-only, tools)
     source/tools/res_tool/res_tool.c   -- scanner + resolver + manifest writer (orb.targets: is_res_tool)
     build/obj/<target>/<target>_res_manifest.txt, _res_units.txt, _res_deps.txt
-    build/content/<name>.<cooked ext>   -- the cooked mirror build_cook_content writes from the
-                                           manifest (build_tool_09_exec.c); mounted above content/
+    build/content/<name>.<cooked ext>   -- the cooked mirror the content phase writes from the
+                                           manifests (asset_tool -list, run by build_content_phase
+                                           in build_tool_09_content.c); mounted above content/
+    build/content/.cook_format          -- the cooked format version per kind, asset_tool's
+                                           stale signal for a format bump
     content/font/<family>/family.txt    -- the family's typeface (decision 9); recipes inherit it,
                                            gui_font_family.c reads it for the runtime baker
     source/runtime_service/gui/gui_res.h -- how gui reads a name + ext through fs
@@ -330,7 +352,7 @@ Phases 0-4 -- catalogue, harvester, resolution, format sections, asset on rid   
      Output: the manifest (decision 10).  -deps: every directory listed, '!' prefix for a
      root that did not exist.
    - build_tool: build_gen_res_manifest (build_tool_09_content.c; step 6.5 of build_target
-     on the rebuild path, and content_stale/content_refresh on the up-to-date path) writes
+     on the rebuild path, and content_stale/content_harvest on the up-to-date path) writes
      obj/<t>/_res_units.txt from the link closure (NOT mono_deps) and runs res_tool with
      -root <cwd>/content [-root <engine>/content] -inc source [-inc <engine>/source].
      target_wants_res_manifest: every static lib, dynamic lib and exe except build_tool,
@@ -340,9 +362,9 @@ Phases 0-4 -- catalogue, harvester, resolution, format sections, asset on rid   
      ProjectDependencies on res_tool in the NMake solutions; -graph / -list / -doctor
      awareness.  content_stale replays _res_deps.txt against the MANIFEST's mtime (equal
      timestamps count as stale; a newer res_tool.exe is stale), and a stale manifest is
-     re-harvested without recompiling: content is never a compiler input.  The cook
-     (asset_tool over the manifest's shaders and recipes) runs only with -content.  No
-     generated .c anywhere.
+     re-harvested without recompiling: content is never a compiler input.  The cook is the
+     content phase of decision 16: one asset_tool run after the graph, a check by default
+     and a cook with -content.  No generated .c anywhere.
    - Cooked formats (Phase 3, re-cut in Phase 6): one shared contract, engine/res/res_ref.h --
      a reference section immediately after the fixed header, before the payload; every
      reader rejects the head before any size arithmetic.  Phase 3 laid it down as a
@@ -432,7 +454,7 @@ Phase 6 -- Recipes + content-declared edges                              [DONE 2
    - Recipes (decision 9).  content/font/<family>/family.txt states the family's face; the
      recipes inherit it (asset_tool reads the sibling on disk when a recipe has no "face"
      line -- not across content roots, so a child project shadowing one size of an engine
-     family carries the descriptor or spells the face); build_cook_content folds
+     family carries the descriptor or spells the face); asset_tool's manifest cook folds
      family.txt's mtime into a recipe's staleness the way it folds .hlsli siblings into a
      shader's.  Every size config/fonts.manifest lists now has a recipe (cascadiamono,
      jetbrains, roboto at 12/16/20/24/32; cascadiacode 16), so nothing is lost when the

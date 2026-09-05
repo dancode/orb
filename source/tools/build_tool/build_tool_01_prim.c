@@ -302,9 +302,9 @@ mmap_next_line( const char** p, const char* end, char* buf, size_t buf_size )
     processes in the same logon session share the same mutex object.
     Failure is non-fatal: the caller proceeds unlocked rather than refusing to build.
 
-    Usually keyed by target name, but the key is really the OUTPUT.  Two targets that share a
-    source tree can declare the same generated file, and those must serialize against each other
-    rather than against everything else their target builds -- see build_cook_content.
+    Usually keyed by target name, but the key is really the OUTPUT.  The cooked content mirror
+    is one such output shared by every build: build_content_phase() takes the "content_phase"
+    lock so two build_tool processes never cook into it at once.
 ==============================================================================================*/
 
 void*

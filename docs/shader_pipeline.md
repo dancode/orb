@@ -317,8 +317,9 @@ new pipeline must be switch-off-able. This shaped everything that follows.
 > transcript compiled into an array -- meant every edit landed in two places and only one of
 > them was what ran. The gui now has exactly one source, `content/shader/gui_quad.{vs,ps}.hlsl`,
 > named in code as `RID( "shader/gui_quad.vs" )` / `RID( "shader/gui_quad.ps" )` and cooked by
-> the build from the image's resource manifest into `build/content/shader/`; gui reads the pair
-> through fs and `render_init` fails loudly when it is missing. The draw service still carries
+> `build_tool -content` from the resource manifests into `build/content/shader/` (a plain build
+> only reports when the cooked pair is stale); gui reads the pair through fs and `render_init`
+> fails loudly when it is missing. The draw service still carries
 > its fallback and its optional cooked pair under `bin/shaders` (scripts/cook_shaders.bat).
 
 ### The HLSL twins

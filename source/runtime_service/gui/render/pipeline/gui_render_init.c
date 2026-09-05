@@ -424,7 +424,7 @@ render_load_shader( const char* res, const char* debug_name )
     if ( !blob.ok )
     {
         gui_log( GUI_LOG_ERROR, "gui shader '%s' not found -- no %s.oshd in the content mounts "
-                                "(build the gui target to cook it; the host mounts build/content)",
+                                "(run build_tool -content to cook it; the host mounts build/content)",
                  res, res );
         return ( rhi_shader_t ){ RHI_NULL_HANDLE };
     }

@@ -63,6 +63,8 @@ typedef struct
 {
     sched_job_t         jobs[ MAX_JOBS ];           // Indexed by job ID. Immutable after add_job() finishes.
     int                 job_count;                  // Number of valid entries in jobs[].
+    int                 asked_job_count;            // Jobs the caller's closure produced; the rest were
+                                                    // added for the build's own use (the -content cooker).
 
     int                 ready[ MAX_JOBS ];          // LIFO stack of jobs whose deps all finished.
     int                 ready_count;                // Number of valid entries in ready[].
@@ -254,21 +256,12 @@ add_job( target_info_t* t )
         if ( !add_implicit_dep( t, "reflect tool", find_reflect_tool(), dep_indices, &dep_count ) )
             return -1;
 
-    // Res tool: every target carrying a manifest harvests with it.
+    // Res tool: every target carrying a manifest harvests with it. The content cooker is NOT
+    // an edge of any target: cooked files are runtime inputs, so build_content_phase() runs
+    // after the whole graph, and under -content build_run_parallel() adds asset_tool as a root
+    // job instead.
     if ( target_wants_res_manifest( t ) )
         if ( !add_implicit_dep( t, "res tool", find_res_tool(), dep_indices, &dep_count ) )
-            return -1;
-
-    // Asset tool, under -content only. build_cook_content() reaches the cooker through its own
-    // nested build_target() call, which the scheduler cannot see. Without this edge that call
-    // resolves asset_tool's whole closure (sys, pack, and via its tool_deps shader_tool and
-    // font_tool) from inside a worker, concurrently with the jobs building those same targets:
-    // relinking bin/sys.lib while a sibling worker links against it fails that worker with
-    // LNK1104. Wiring the edge here makes the cooker ready before any cooking target runs.
-    // cook_active() excludes the content tools themselves: an edge into asset_tool would be a
-    // self-dep for asset_tool and a cycle for the cookers it lists as tool_deps.
-    if ( cook_active( t ) )
-        if ( !add_implicit_dep( t, "asset tool", find_asset_tool(), dep_indices, &dep_count ) )
             return -1;
 
     // Re-fetch j: nested add_job() calls may have appended to g_sched.jobs[]
@@ -507,6 +500,23 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
                 }
     }
 
+    g_sched.asked_job_count = g_sched.job_count;
+
+    // Under -content the cooker must be current when build_content_phase() runs after this
+    // graph. It is a root job, not an edge of the targets whose names it cooks: nothing in the
+    // graph waits on a cooked file, and an edge from asset_tool's own dependencies (sys, pack,
+    // the cookers) back into it would be a cycle. Jobs past asked_job_count are this closure.
+    if ( g_cook )
+    {
+        target_info_t* at = find_asset_tool();
+        if ( at && add_job( at ) < 0 )
+        {
+            platform_mutex_destroy( &g_sched.lock );
+            platform_cond_destroy( &g_sched.cv );
+            return false;
+        }
+    }
+
     g_sched.total_remaining = g_sched.job_count;
 
     // Seed the ready set with all zero-dep jobs.
@@ -616,6 +626,20 @@ build_run_parallel( build_context_t* ctx, target_info_t* root, int thread_count 
     }
 
     return !g_sched.any_failed;
+}
+
+/*  The targets the last build_run_parallel() call was asked to build -- its root's closure, or
+    every local target -- for build_content_phase(). Jobs the scheduler added for its own use
+    (the cooker's closure under -content) are not included: `-target gui -content` cooks what
+    gui names, not what font_tool names. Returns the count written. */
+
+int
+sched_asked_targets( target_info_t** out, int max )
+{
+    int n = 0;
+    for ( int i = 0; i < g_sched.asked_job_count && n < max; ++i )
+        out[ n++ ] = g_sched.jobs[ i ].target;
+    return n;
 }
 
 /*============================================================================================*/

@@ -474,10 +474,10 @@ typedef struct target_info_s
 
     bool            is_res_tool;
 
-    /*  If true, this is the content cooker (asset_tool). Under -content, build_cook_content()
-        locates and builds whichever target carries this flag the moment it finds a manifest
-        entry that needs cooking (a shader or a font recipe) -- no target that merely names
-        such an entry has to declare a tool_dep on it. */
+    /*  If true, this is the content cooker (asset_tool). build_content_phase() runs whichever
+        target carries this flag once per build over the built targets' resource manifests:
+        a check by default, a cook under -content. No target that names a shader or a font
+        recipe declares a tool_dep on it. */
 
     bool            is_asset_tool;
 
@@ -713,18 +713,21 @@ bool build_target_compile_single( build_context_t* ctx, target_info_t* target,
 
 bool build_target_compile_only( build_context_t* ctx, target_info_t* target );
 
-/*  Under -content only (a no-op otherwise): cooks every name in the target's resource
-    manifest that needs a cooked form (a stage-tagged .hlsl -> .oshd, a .recipe -> the file
-    its kind line names) into the cooked mirror <build>/content/<name>.<ext>, skipping any
-    already newer than its source and cookers. Reads the manifest at <obj_dir>; a missing
-    manifest is not an error (the first build cooks after res_tool writes one). Runs ahead
-    of the artifact's up-to-date check and again after the manifest is regenerated: a cooked
-    file is an input to the RUNTIME, not to the compiler, so editing a shader must re-cook
-    without also forcing a recompile of C code that did not change. The first entry that
-    needs cooking builds whichever target carries is_asset_tool -- no target that merely
-    names a shader or recipe has to declare a tool_dep on it. */
+/*  The content phase: one asset_tool run over the resource manifests of `targets`, after
+    the code graph has built. Without -content asset_tool only checks which cooked files
+    (a stage-tagged .hlsl -> .oshd, a .recipe -> the file its kind line names) are missing
+    or older than their inputs, and the build ends with one line saying so; with -content
+    it cooks them into <build>/content. A cooked file is an input to the RUNTIME, not to
+    the compiler, which is why nothing in the graph waits on it. A cooker that is not built
+    means no check this run, not a failure. Returns false only under -strict-content. */
 
-bool build_cook_content( build_context_t* ctx, target_info_t* target, const char* obj_dir );
+bool build_content_phase( build_context_t* ctx, target_info_t* const* targets, int count );
+
+/*  The targets the last build_run_parallel() call was asked to build, for
+    build_content_phase(). Excludes jobs the scheduler added for its own use (the cooker's
+    closure under -content). Returns the count written to `out`. */
+
+int sched_asked_targets( target_info_t** out, int max );
 
 /*  Runs reflect_tool over the target's source tree, writing <gen_dir>/<name>.generated.{c,h}
     -- the type and field tables ref_ registers at startup. The .c is a compile unit of the
@@ -738,8 +741,8 @@ bool build_gen_reflect( target_info_t* target, const char* gen_dir, const target
 /*  Harvests the resource names (RID / RES_TREE tokens) the target's code references into
     <obj_dir>/<name>_res_manifest.txt, each resolved against the content roots (this
     project's content/, then the engine's for a child project). Nothing is compiled from
-    it: an image's manifest is the packager's input, a lib's scopes a -content cook to that
-    target, and every manifest is the build's proof that each marked name has a file. The
+    it: an image's manifest is the packager's input, a lib's scopes the content phase to
+    that target, and every manifest is the build's proof that each marked name has a file. The
     scan covers the target's own units plus those of every dependency it links statically,
     so an executable's manifest is the complete name set of the program. Also writes
     <obj_dir>/_res_deps.txt, the content directories the manifest depends on, for
