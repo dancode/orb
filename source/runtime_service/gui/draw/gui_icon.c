@@ -160,9 +160,9 @@ icon_record( const char* name, u32 w, u32 h, u32 tenant, bool sdf )
     memset( e, 0, sizeof( *e ) );
 
     e->name_off = gui_names_intern( name );
-    e->w      = (u16)w;
-    e->h      = (u16)h;
-    e->tenant = icon_pack_tenant( tenant, sdf );
+    e->w        = (u16)w;
+    e->h        = (u16)h;
+    e->tenant   = icon_pack_tenant( tenant, sdf );
 
     /* id = (index + 1); 0 stays reserved for none */
 
@@ -175,7 +175,7 @@ icon_register( const char* name, u32 w, u32 h, const u8* coverage )
     if ( !s_icons.ready || !coverage || w == 0 || h == 0 )
          return GUI_ICON_NONE;
 
-    if ( s_icons.count >= ICON_MAX )
+    if ( s_icons.count >= ICON_MAX )    
          return GUI_ICON_NONE;
 
     /* Add the coverage as a tenant of the shared atlas (incremental pack; repack-on-full handled
